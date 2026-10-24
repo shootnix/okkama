@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.quoted-printable",
+  "title": "RFC 2045 quoted-printable",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.QUOTED_PRINTABLE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - control and equals\nok 2 - space before CRLF\nok 3 - decode lowercase hex\nok 4 - malformed escape\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/quoted_printable.ok",
+    "RFC 2045 section 6.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 2045 6.7: uppercase =HH escapes, whitespace before a hard line break is encoded (Python quopri agrees); decoding accepts lowercase hex and reports the byte offset of a malformed escape."
+  },
+  "status": "mandatory"
+}

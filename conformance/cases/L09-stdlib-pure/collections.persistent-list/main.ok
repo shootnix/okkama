@@ -1,0 +1,39 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "collections/list" take List, EmptyList, EmptyListAccess;
+import "collections/set" take OrderedSet, Union, Intersection, Difference;
+import "collections/heap" take Heap;
+import "collections/deque" take Deque, EmptyDequeAccess;
+
+object Texts {
+    Texts();
+    of(values is List<string>) is @string {
+        let all is @string = values.map() -> v { v; };
+        all;
+    }
+}
+
+object Lists {
+    Lists();
+    empty() is List<string> {
+        let e is List<string> = EmptyList();
+        e;
+    }
+    prefix_keeps_receiver() is int {
+        let one = self.empty().prefix("one");
+        let two = one.prefix("two");
+        one.size() + two.size() - 2;
+    }
+}
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("first", Lists().empty().prefix("Lovelace").prefix("Hopper").first(), "Hopper");
+    c = c.same_text("tail first", Lists().empty().prefix("Lovelace").prefix("Hopper").tail().first(), "Lovelace");
+    c = c.same_int("size", Lists().empty().prefix("1").prefix("2").prefix("3").size(), 3);
+    c = c.same_int("receiver unchanged", Lists().prefix_keeps_receiver(), 1);
+    c = c.same_texts("iteration order", Texts().of(Lists().empty().prefix("c").prefix("b").prefix("a")), ["a", "b", "c"]);
+    c = c.same_text("empty first", try { let probe = Lists().empty().first(); "no error"; } catch e is EmptyListAccess { "EmptyListAccess"; }, "EmptyListAccess");
+    c.done();
+}

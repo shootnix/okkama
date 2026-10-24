@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anon.captures-self",
+  "title": "anonymous actions capture self",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "21\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 10: anonymous actions capture an enclosing action's parameters and self."
+  },
+  "status": "mandatory"
+}

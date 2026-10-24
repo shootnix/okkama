@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.spawn.worker-process",
+  "title": "spawning a synchronous action runs it in a worker",
+  "purpose": "Observe a process-parallel spawn result.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.SPAWN-WORKER",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "worker-process"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "143\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 18.1: spawn of a synchronous action produces Future<T> computed in an isolated worker; arrays and maps of primitives transfer; 7*20 + 3 = 143."
+  },
+  "status": "mandatory"
+}

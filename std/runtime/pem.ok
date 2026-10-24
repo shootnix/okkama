@@ -1,0 +1,15 @@
+module runtime/pem v1.0.0;
+
+// Portable strict textual PEM boundary for encoding/pem.
+
+native pem_kind_invalid_offset(kind is string) is int;
+native pem_encode(kind is string, base64 is string) is string;
+native pem_invalid_offset(origin is string) is int;
+native pem_block_count(origin is string) is int;
+native pem_block_sources(origin is string) is @string;
+native pem_block_source(origin is string, index is int) is string;
+native pem_block_kind(origin is string, index is int) is string;
+native pem_block_base64(origin is string, index is int) is string;
+test "bulk snapshot rejects malformed native input portably" {
+    test.ok(try{pem_block_sources("not PEM");false;}catch e is NativeFailure{e.domain()=="core.pem" && e.code()=="invalid_data";});
+}

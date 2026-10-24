@@ -1,0 +1,22 @@
+// Сохранить специальные числовые значения TOML
+//
+// Построить типизированную конфигурацию: TomlTable, TomlArray и скаляры сохраняют значения TOML.
+//
+// Запуск: ./examples/cookbook/run lab example-toml-special-floats
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-toml-special-floats
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "toml/value" take TomlInfinity, TomlNaN;
+object ExampleResult {
+    ExampleResult();
+    value() is @string {
+        [TomlInfinity(false).string(), TomlInfinity(true).string(), TomlNaN().string()];
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

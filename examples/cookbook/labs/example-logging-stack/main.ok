@@ -1,0 +1,27 @@
+// Написать структурированный журнал с redaction
+//
+// Писать события от имени сервиса: NamedLogging объединяет часы, process id, имя и назначение.
+//
+// Запуск: ./examples/cookbook/run lab example-logging-stack
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-logging-stack
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "logging/named" take NamedLogging;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields;
+import "logging/stream" take JsonStreamLogs;
+import "logging/redact" take RedactedLogs;
+import "json/value" take JsonMember,JsonText;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+
+main() is int{
+    let destination=RedactedLogs(JsonStreamLogs(Stdout()),["token"],JsonText("[redacted]"));
+    let logger=NamedLogging(LogName(["example"]),destination,SystemClock(),LogFields([JsonMember("service",JsonText("demo"))]));
+    logger.log(LogLevel.info,"started");
+    logger.child("worker").log(LogLevel.warning,"retry\nrequested",LogFields([JsonMember("token",JsonText("private"))]));
+    0;
+}

@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "os/environment" take Environment, MissingEnvironmentVariable;
+
+main() is int {
+    let system = Environment();
+    Stdout().writeln(system.variable("OCS_CASE_VALUE"));
+    Stdout().writeln(system.variable("TZ"));
+    0;
+}

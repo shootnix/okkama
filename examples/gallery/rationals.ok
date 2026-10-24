@@ -1,0 +1,33 @@
+// Точные дроби и цепная дробь π
+// Задача: Сложить дроби без потери точности и построить приближения π.
+// Запуск из корня: ./examples/gallery/run rationals
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: rat, reduce, точные числитель и знаменатель.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/rationals.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/rationals v1.0.0;
+import "io/stdout" take Stdout;
+object Convergent {
+    has numerator,denominator is int;
+    Convergent(numerator is int,denominator is int){self.numerator=numerator;self.denominator=denominator;}
+    prefixed(term is int) is ^Convergent {
+        ^numerator=term*numerator+denominator;^denominator=numerator;
+    }
+    value() is rat{numerator/denominator;}
+}
+main() is int {
+    let exact=rat(1,10)+rat(2,10);confirm exact==rat(3,10);
+    Stdout().writeln("1/10 + 2/10 = "+exact.string());
+    for [1,5,10]->n{
+        let harmonic=(1..n+1).reduce(0.rat())->sum,k{sum+1/k;};
+        Stdout().writeln("H_"+n.string()+" = "+harmonic.string());
+        if n==10{confirm harmonic==rat(7381,2520);}
+    }
+    let terms=[3,7,15,1,292,1,1];
+    for (1..terms.size()+1)->length{
+        let pair=(0..length).reduce(Convergent(1,0))->pair,i{pair.prefixed(terms[length-1-i]);};
+        Stdout().writeln(pair.value().string());
+        if length==4{confirm pair.value()==rat(355,113);}
+    }0;
+}

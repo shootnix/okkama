@@ -1,0 +1,77 @@
+module cli/arguments v1.0.0;
+import "collections/sequence" take Sequencing,EmptySequence;
+import "collections/iteration" take Cursor,Iterating;
+import "error" take OutOfRange;
+import "runtime/process" take process_arguments;
+import "encoding/utf" take Utf8Decoded,InvalidUtf8;
+
+// Explicit argv bytes; never shell text. The host supplies the already split
+// sequence. Bounded snapshots can outlive a borrowed argument provider.
+object ProcessArguments does Sequencing<@byte>,Iterating<@byte>{
+    has origin is @@byte;
+    ProcessArguments(){origin=ArgumentSnapshot(process_arguments(),4096,1048576).items();}
+    ProcessArguments(arguments is Sequencing<@byte>){origin=ArgumentSnapshot(arguments,4096,1048576).items();}
+    ProcessArguments(arguments is Sequencing<@byte>,maximum_arguments is int,maximum_bytes is int){
+        origin=ArgumentSnapshot(arguments,maximum_arguments,maximum_bytes).items();
+    }
+    cursor() is Cursor<@byte>{origin.cursor();}
+    size() is int{origin.size();}
+    item(index is int) is @byte{confirm index>=0 && index<origin.size() else throw OutOfRange();origin[index];}
+    first() is @byte{confirm origin.size()>0 else throw EmptySequence();origin[0];}
+    last() is @byte{confirm origin.size()>0 else throw EmptySequence();origin[origin.size()-1];}
+}
+object ArgumentSnapshot{
+    has origin is @@byte;
+    ArgumentSnapshot(arguments is Sequencing<@byte>,maximum_arguments is int,maximum_bytes is int){
+        confirm maximum_arguments>=0 && maximum_bytes>=0 else throw ArgumentLimitExceeded();
+        let size=arguments.size();
+        confirm size>=0 && size<=maximum_arguments else throw ArgumentLimitExceeded();
+        let result=(0..size).reduce(ArgumentParts(maximum_bytes))->old,index{old.added(arguments.item(index));};
+        origin=result.items();
+    }
+    items() is @@byte{origin;}
+}
+object ArgumentParts{
+    has origin is @@byte;
+    has remaining is int;
+    ArgumentParts(maximum is int){origin=[];remaining=maximum;}
+    added(argument is @byte) is ^ArgumentParts{
+        confirm argument.size()<=remaining else throw ArgumentLimitExceeded();
+        let revised is @@byte=(0..origin.size()+1).map()->index{
+            if index<origin.size(){origin[index];}else{argument;}
+        };
+        ^origin=revised;^remaining=remaining-argument.size();
+    }
+    items() is @@byte{origin;}
+}
+object Utf8Arguments does Sequencing<string>,Iterating<string>{
+    has origin is @string;
+    Utf8Arguments(arguments is ProcessArguments){
+        let decoded is @string=(0..arguments.size()).map()->index{
+            try{Utf8Decoded(arguments.item(index)).string();}
+            catch failure is InvalidUtf8{throw InvalidArgumentEncoding(index,failure.offset());}
+        };
+        origin=decoded;
+    }
+    cursor() is Cursor<string>{origin.cursor();}
+    size() is int{origin.size();}
+    item(index is int) is string{confirm index>=0 && index<origin.size() else throw OutOfRange();origin[index];}
+    first() is string{confirm origin.size()>0 else throw EmptySequence();origin[0];}
+    last() is string{confirm origin.size()>0 else throw EmptySequence();origin[origin.size()-1];}
+}
+object InvalidArgumentEncoding does Error{
+    has at,position is int;
+    InvalidArgumentEncoding(index is int,offset is int){at=index;position=offset;}
+    index() is int{at;}
+    offset() is int{position;}
+    text() is string{"invalid UTF-8 in argument "+at.string()+" at byte "+position.string();}
+}
+object ArgumentLimitExceeded does Error{
+    ArgumentLimitExceeded();
+    text() is string{"argument snapshot budget exceeded";}
+}
+
+test "argument boundaries do not reinterpret shell text"{
+    let result=Utf8Arguments(ProcessArguments([[97.byte(),32.byte(),98.byte()],[]]));
+    test.is(result.first(),"a b");test.is(result.last(),"");
+}

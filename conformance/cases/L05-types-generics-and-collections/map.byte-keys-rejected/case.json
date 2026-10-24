@@ -1,0 +1,58 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.map.byte-keys-rejected",
+  "title": "byte values are not valid map keys",
+  "purpose": "A byte key is rejected rather than stored.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP-BYTE-KEYS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The key category may be rejected statically or when the literal is evaluated."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.3",
+    "docs/OkkamaBook.md#5.3",
+    "contracts/DISCREPANCY-LEDGER.md#d-007"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-007): byte values are not map keys (as the book and fake-storage rules already state); spec 6.3 must drop byte from the key list."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-004"
+  ]
+}

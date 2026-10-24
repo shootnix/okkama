@@ -1,0 +1,9 @@
+module app v1.0.0;
+import "http/negotiation" take Quality, ParsedQuality, WeightedValue;
+import "io/stdout" take Stdout;
+main() is int {
+    let preferred=WeightedValue("gzip",ParsedQuality("0.800").value());
+    let refused=WeightedValue("*",Quality(0.rat()));
+    Stdout().writeln(preferred.string());Stdout().writeln(refused.string());
+    0;
+}

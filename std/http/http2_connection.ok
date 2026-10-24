@@ -1,0 +1,75 @@
+module http/http2_connection v1.0.0;
+import "http/endpoint" take HttpEndpointSelection;
+import "http/http2_settings" take Http2Settings;
+import "http/internal/http2_preface" take Http2ClientPreface;
+import "http/connection" take HttpAcquisitionCleanup,HttpTcpDisposal,HttpTlsDisposal,HttpUnpublishedTcp,HttpUnpublishedTls;
+import "http/http2_session" take Http2Session;
+import "http/client_policy" take HttpLimits;
+import "http/http2_tls" take Http2TlsProtocol;
+import "http/version" take UnsupportedHttpVersion,HttpVersion;
+import "http/exchange" take ExchangeDetails;
+import "net/tcp" take TcpConnection,TcpOptions;
+import "net/tcp_racing" take TcpRacing;
+import "net/tls" take TlsClientPolicy,TlsClientHandshake,TlsConnection;
+import "url/value" take UrlHostKind;
+import "crypto/x509/trust" take CertificateIdentity,DnsCertificateIdentity,IpCertificateIdentity;
+import "time/clock" take Timing,SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "http/endpoint" take AllEndpoints;
+import "net/dns" take FixedResolution;
+import "url/value" take ParsedUrl;
+import "net/tls" take TlsVersion;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+
+// Explicit HTTP2 prior knowledge for HTTP; verified exact h2 ALPN for HTTPS. Every TCP attempt uses
+// the exact previously checked numeric endpoint; no second lookup occurs.
+// Bounded staggered TCP racing closes every losing attempt before publication.
+object Http2Connecting {
+    has route is HttpEndpointSelection;has policy is TlsClientPolicy;
+    has limits is HttpLimits;has clock is Timing;has local is Http2Settings;
+    Http2Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy){
+        for policy.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion();}
+        self.route=route;self.policy=policy;limits=HttpLimits();clock=SystemClock();local=Http2Settings();
+    }
+    Http2Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy,local is Http2Settings,limits is HttpLimits,clock is Timing){
+        for policy.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion();}
+        self.route=route;self.policy=policy;self.limits=limits;self.clock=clock;self.local=local;
+    }
+    async session() is Http2Session {
+        let group is FutureGroup<Http2Acquisition>=FutureGroup();let empty is @Future<Http2Acquisition>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(group,pending,taken,Http2AcquisitionDisposal().release);defer await cleanup.close();
+        let opening=self.acquisition();pending.replace([opening]);group.start(opening);let acquired=await opening;taken.set();acquired.session();
+    }
+    async acquisition() is Http2Acquisition {
+        let endpoints=await route.endpoints();
+        let group is FutureGroup<TcpConnection>=FutureGroup();let empty is @Future<TcpConnection>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(group,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();
+        let waiting=TcpRacing(endpoints,TcpOptions(),Duration(250.rat(),DurationUnit.millisecond),clock).connection();pending.replace([waiting]);group.start(waiting);
+        let tcp=await waiting;taken.set();let published=Event();let anchor=HttpUnpublishedTcp(tcp,published);defer anchor.close();
+        if route.url().parts().scheme()=="https" {
+            let host=route.url().parts().authority().host();
+            let identity is CertificateIdentity=if host.kind()==UrlHostKind.name{DnsCertificateIdentity(host.name());}else{IpCertificateIdentity(host.address());};
+            let tls_group is FutureGroup<TlsConnection>=FutureGroup();let empty_tls is @Future<TlsConnection>=[];let tls_pending=Atomic(empty_tls);let tls_taken=Event();
+            let tls_cleanup=HttpAcquisitionCleanup(tls_group,tls_pending,tls_taken,HttpTlsDisposal().release);defer await tls_cleanup.close();
+            let upgrading=TlsClientHandshake(tcp,identity,policy,clock).connection();tls_pending.replace([upgrading]);tls_group.start(upgrading);let tls=await upgrading;tls_taken.set();
+            let tls_anchor=HttpUnpublishedTls(tls,published);defer tls_anchor.close();
+            Http2TlsProtocol(tls.details().protocol()).version();
+            let peer=await Http2ClientPreface(tls.input(),tls.output(),local).result();
+            let session=Http2Session(tls.input(),tls.output(),tls,local,peer,limits);
+            let acquired=Http2Acquisition(session,ExchangeDetails(tls.details().endpoints(),HttpVersion.http_2,tls.details()));published.set();return acquired;
+        }
+        let peer=await Http2ClientPreface(tcp.input(),tcp.output(),local).result();
+        let session=Http2Session(tcp.input(),tcp.output(),tcp,local,peer,limits);
+        let acquired=Http2Acquisition(session,ExchangeDetails(tcp.endpoints(),HttpVersion.http_2));published.set();acquired;
+    }
+}
+object Http2Acquisition {
+    has session is Http2Session;has details is ExchangeDetails;
+    Http2Acquisition(session is Http2Session,details is ExchangeDetails){self.session=session;self.details=details;}
+    session() is Http2Session{session;}details() is ExchangeDetails{details;}
+}
+object Http2AcquisitionDisposal {Http2AcquisitionDisposal();release(acquired is Http2Acquisition) is void{acquired.session().close();}}

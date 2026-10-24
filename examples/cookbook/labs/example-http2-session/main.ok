@@ -1,0 +1,111 @@
+// Выполнить два параллельных запроса HTTP/2
+//
+// Задать локальные лимиты HTTP/2: Http2Settings описывает receive-окна, таблицу и параллельные потоки.
+//
+// Запуск: ./examples/cookbook/run lab example-http2-session
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http2-session
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/internal/http2_preface" take Http2ClientPreface;
+import "http/http2_settings" take Http2Settings,Http2SettingsWire;
+import "http/internal/http2_settings" take Http2PeerSettings;
+import "http/internal/http2_reading" take Http2FrameReading;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
+import "http/internal/http2_headers" take Http2HeaderBlockReading,Http2HeaderBlock;
+import "http/internal/http2_input" take Http2ConnectionInput,Http2ReceivingEvents;
+import "http/internal/http2_output" take Http2ConnectionOutput;
+import "http/internal/http2_sending" take Http2DataScheduler;
+import "http/internal/http2_receiving" take Http2ReceiveFlow;
+import "http/internal/http2_body" take Http2BodyBuffer,Http2BodyLength;
+import "http/internal/http2_fields" take ParsedHttp2Response,ParsedHttp2Request;
+import "http/internal/http2_flow" take Http2DataPayload,Http2WindowIncrement;
+import "http/internal/http2_controls" take Http2Reset,Http2GoAway;
+import "http/internal/hpack" take HpackDecoder,HpackBudget;
+import "http/internal/hpack_tables" take HpackField;
+import "http/body" take EmptyBody,ByteBody;
+import "http/http2_session" take Http2Session,Http2Exchange;
+import "http/client_policy" take HttpLimits;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/target" take AbsoluteTarget;
+import "http/version" take HttpVersion;
+import "url/value" take ParsedUrl;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "numbers/bigint" take BigInt;
+import "http/header" take Headers,Header,HeaderName;
+import "async/scope" take FutureGroup;
+import "io/stdout" take Stdout;
+
+object Peer {
+    has listener is TcpAcceptance;Peer(listener is TcpAcceptance){self.listener=listener;}
+    async run() is bool{
+        let connection=await listener.connection();defer connection.close();
+        let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();let offset=Atomic(0);
+        loop{
+            if offset.value()==magic.size(){last;}
+            let bytes=await connection.input().bytes(magic.size()-offset.value());confirm bytes.size()>0;
+            for bytes -> octet{confirm octet==magic[offset.value()];offset.replace(offset.value()+1);}
+        }
+        let settings=await Http2FrameReading(connection.input()).result();confirm settings.header().kind().int()==4;
+        let payload=Http2SettingsWire(Http2Settings(),false).bytes();
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),0.byte(),0,payload.size()),payload).bytes()));
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes()));
+        let acknowledgment=await Http2FrameReading(connection.input()).result();confirm acknowledgment.header().flags().int()==1;
+        let context=Atomic(HpackDecoder());
+        let head1=Event();let head3=Event();let end1=Event();let end3=Event();let count1=Atomic(0);let count3=Atomic(0);
+        loop{
+            if end1.ready() && end3.ready(){last;}
+            let frame=await Http2FrameReading(connection.input()).result();let stream=frame.header().stream();confirm stream==1 || stream==3;
+            if frame.header().kind().int()==1{
+                let block=await Http2HeaderBlockReading(frame,connection.input(),context.value(),HpackBudget()).result();context.replace(block.context());confirm !block.end_stream();
+                let request=ParsedHttp2Request(block.fields(),stream).request(EmptyBody());confirm request.method().string()=="POST";
+                if stream==1{confirm !head1.ready();head1.set();}else{confirm !head3.ready();head3.set();}
+            }else{
+                let data=Http2DataPayload(frame);let expected=if stream==1{65;}else{66;};
+                confirm (if stream==1{head1.ready() && !end1.ready();}else{head3.ready() && !end3.ready();});
+                for data.bytes() -> octet{confirm octet.int()==expected;}
+                if stream==1{count1.replace(count1.value()+data.bytes().size());if data.end_stream(){end1.set();}}
+                else{count3.replace(count3.value()+data.bytes().size());if data.end_stream(){end3.set();}}
+            }
+        }
+        confirm count1.value()==1 && count3.value()==1;
+        let output=Http2ConnectionOutput(connection.output(),8,65536);
+        output.frame(Http2Frame(Http2FrameHeader(6.byte(),0.byte(),0,8),[1.byte(),2.byte(),3.byte(),4.byte(),5.byte(),6.byte(),7.byte(),8.byte()]));
+        let second=output.headers(3,[HpackField(":status","200"),HpackField("content-length","2")],HpackBudget(),4,false);
+        let first=output.headers(1,[HpackField(":status","200"),HpackField("content-length","1")],HpackBudget(),4,false);
+        output.frame(Http2Frame(Http2FrameHeader(0.byte(),9.byte(),3,4),[1.byte(),65.byte(),66.byte(),0.byte()]));
+        output.frame(Http2Frame(Http2FrameHeader(0.byte(),1.byte(),1,1),[67.byte()]));output.finish();await output.run();await first.result();await second.result();
+        let pong=Event();let credit=Atomic(0);
+        for (0..4) -> ignored{
+            let frame=await Http2FrameReading(connection.input()).result();
+            if frame.header().kind().int()==6{confirm !pong.ready() && frame.header().flags().int()==1 && frame.payload()[7].int()==8;pong.set();}
+            else{let increment=Http2WindowIncrement(frame);confirm increment.stream()==0;credit.replace(credit.value()+increment.amount());}
+        }
+        confirm pong.ready() && credit.value()==5;true;
+    }
+}
+async main() is int{
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let peer=Peer(listener);let action is async () is bool=peer.run;let serving=spawn action();
+    let connection=await TcpConnecting(listener.local_endpoint()).connection();defer connection.close();let local=Http2Settings(4096,4,16384,8);
+    let settings=await Http2ClientPreface(connection.input(),connection.output(),local).result();
+    let session=Http2Session(connection.input(),connection.output(),connection,local,settings,HttpLimits());defer session.close();
+    let url=ParsedUrl("http://127.0.0.1:"+listener.local_endpoint().port().string()+"/").value();let fields=Headers([Header(HeaderName("Content-Length"),"1")]);
+    let request1=Request(Method("POST"),AbsoluteTarget(url),fields,ByteBody([65.byte()]),HttpVersion.http_2);
+    let request3=Request(Method("POST"),AbsoluteTarget(url),fields,ByteBody([66.byte()]),HttpVersion.http_2);
+    let first=session.exchange(request1);let third=session.exchange(request3);let group is FutureGroup<Http2Exchange>=FutureGroup();group.start(first);group.start(third);
+    let exchange1=await first;let exchange3=await third;confirm exchange1.response().status().code()==200 && exchange3.response().status().code()==200;
+    let body3=exchange3.response().body().reading();let body1=exchange1.response().body().reading();
+    confirm await body3.bytes(8)==[65.byte(),66.byte()];confirm (await body3.bytes(8)).size()==0;
+    confirm await body1.bytes(8)==[67.byte()];confirm (await body1.bytes(8)).size()==0;
+    confirm await serving;session.close();await session.settled();
+    Stdout().writeln("HTTP2 session: multiplexed typed exchanges and body ownership verified");0;
+}

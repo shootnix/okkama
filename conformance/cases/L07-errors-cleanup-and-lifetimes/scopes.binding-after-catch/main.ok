@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NotFound does Error {
+    has key is string;
+    NotFound(:key);
+    text() is string { "not found: " + key; }
+}
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+main() is int {
+    let out = Stdout();
+    try {
+        throw Denied();
+    } catch e is Denied {
+        let seen = e.text();
+    }
+    let t = e.text();
+    out.writeln("unreachable");
+    0;
+}

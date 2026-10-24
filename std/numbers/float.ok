@@ -1,0 +1,81 @@
+module numbers/float v1.0.0;
+import "encoding/binary" take FloatBytes,IntegerFromBytes,FloatWidth,Signedness;
+import "encoding/utf" take ByteOrder;
+import "runtime/format" take sprintf_values;
+import "numbers/bigint" take BigInt,BigPower,BigDifference,BigProduct;
+import "numbers/bigrational" take BigRational;
+import "math/decimal" take Decimal;
+import "compare" take Order;
+// A finite binary64 value's shortest significant decimal candidate is accepted
+// only within its exact nearest-even rounding interval. No float comparison or
+// Perl stringification decides that boundary. Zero's sign is a separate identity.
+object ShortestFloat {
+    has origin is float;has bits is int;has negative is bool;
+    ShortestFloat(origin is float){
+        self.origin=origin;let bytes=FloatBytes(origin,FloatWidth.bits64,ByteOrder.big).bytes();
+        negative=bytes[0].int()>=128;
+        let magnitude is @byte=(0..8).map()->index{if index==0{(bytes[0].int() & 127).byte();}else{bytes[index];}};
+        bits=IntegerFromBytes(magnitude,Signedness.unsigned,ByteOrder.big).value();
+    }
+    negative() is bool{negative;}
+    #projected
+    value() is Decimal {
+        if bits==0{return Decimal("0");}
+        let interval=Binary64RoundingInterval(bits);let lower=interval.lower();let upper=interval.upper();
+        let inclusive=bits%2==0;let arguments is @any=[origin];
+        for (1..18)->precision {
+            let candidate=Decimal(sprintf_values("%."+precision.string()+"g",arguments));
+            if FloatDecimalCandidate(candidate).inside(lower,upper,inclusive){return candidate;}
+        }
+        throw InvalidFloatRepresentation();
+    }
+}
+object Binary64RoundingInterval {
+    has lower,upper is BigRational;
+    Binary64RoundingInterval(bits is int){
+        confirm bits>0 && bits<9218868437227405312 else throw InvalidFloatRepresentation();
+        let exponent=(bits/4503599627370496).int();let fraction=bits%4503599627370496;
+        let coefficient=fraction+(if exponent==0{0;}else{4503599627370496;});
+        let shift=if exponent==0{-1074;}else{exponent-1075;};
+        // At a normal power of two, except the smallest normal, the preceding
+        // binade has half the spacing. The maximum-finite upper boundary uses
+        // the same exact formula; its odd significand excludes the overflow tie.
+        lower=if fraction==0 && exponent>1{BinaryPowerRatio(4*coefficient-1,shift-2).value();}else{BinaryPowerRatio(2*coefficient-1,shift-1).value();};
+        upper=BinaryPowerRatio(2*coefficient+1,shift-1).value();
+    }
+    lower() is BigRational{lower;}upper() is BigRational{upper;}
+}
+object BinaryPowerRatio {
+    has coefficient,shift is int;BinaryPowerRatio(coefficient is int,shift is int){self.coefficient=coefficient;self.shift=shift;}
+    value() is BigRational {
+        let numerator=BigInt(coefficient.string());
+        if shift>=0{
+            let power=BigPower(base:BigInt("2"),exponent:shift,maximum_bits:1100).value();
+            BigRational(BigProduct(left:numerator,right:power).value(),BigInt("1"));
+        }else{BigRational(numerator,BigPower(base:BigInt("2"),exponent:-shift,maximum_bits:1100).value());}
+    }
+}
+object FloatDecimalCandidate {
+    has numerator,denominator is BigInt;
+    FloatDecimalCandidate(origin is Decimal){
+        let coefficient=origin.coefficient();let absolute=if coefficient.sign()<0{BigDifference(left:BigInt("0"),right:coefficient).value();}else{coefficient;};
+        let exponent=origin.exponent();confirm exponent>=-400 && exponent<=400 else throw InvalidFloatRepresentation();
+        if exponent>=0{
+            let power=BigPower(base:BigInt("10"),exponent:exponent,maximum_bits:1400).value();
+            numerator=BigProduct(left:absolute,right:power).value();denominator=BigInt("1");
+        }else{numerator=absolute;denominator=BigPower(base:BigInt("10"),exponent:-exponent,maximum_bits:1400).value();}
+    }
+    inside(lower is BigRational,upper is BigRational,inclusive is bool) is bool {
+        let low=self.order(lower);let high=self.order(upper);
+        (low==Order.greater || (inclusive && low==Order.equal)) && (high==Order.less || (inclusive && high==Order.equal));
+    }
+    private:
+    order(other is BigRational) is Order {
+        BigProduct(left:numerator,right:other.denominator()).value().order(BigProduct(left:other.numerator(),right:denominator).value());
+    }
+}
+object InvalidFloatRepresentation does Error {
+    InvalidFloatRepresentation();text() is string{"finite float has no bounded roundtrip decimal representation";}
+}
+
+test "binary64 tenth has a one-digit decimal representative" {test.is(ShortestFloat(0.1).value().string(),"1e-1");}

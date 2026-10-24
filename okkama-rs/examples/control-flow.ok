@@ -1,0 +1,63 @@
+module flow v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Conditionals, loops, typed errors and early return. Exits with status 0
+// when every computed value matches.
+
+object TooLarge does Error {
+    has value is int;
+    TooLarge(:value);
+    text() is string { "too large: " + value.string(); }
+    value() is int { value; }
+}
+
+object Checker {
+    Checker();
+
+    check(value is int) is int {
+        if value > 100 {
+            throw TooLarge(value: value);
+        }
+        value;
+    }
+
+    classify(value is int) is string {
+        if value < 0 {
+            return "negative";
+        } else if value == 0 {
+            return "zero";
+        }
+        "positive";
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let checker = Checker();
+
+    for 1..=10 -> number {
+        next if number % 2 == 0;
+        out <- number.string() <- " ";
+    }
+    out <- endl;
+
+    let odd = (1..=10).filter() -> number { number % 2 == 1; };
+    let total = loop {
+        last odd.reduce(0) -> sum, number { sum + number; };
+    };
+
+    let guarded = try {
+        checker.check(500);
+    } catch error is TooLarge {
+        error.value() - 400;
+    };
+
+    let words = [checker.classify(-1), checker.classify(0), checker.classify(7)];
+    out <- total.string() + " " + guarded.string() <- endl;
+    confirm total == 25 else panic "unexpected total";
+    confirm guarded == 100;
+    // The index fallback is a whole expression, so group it before comparing.
+    confirm (words[2] else "none") == "positive";
+    0;
+}

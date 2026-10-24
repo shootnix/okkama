@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "toml/parse" take ParsedToml, InvalidToml;
+import "toml/value" take TomlTable;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("duplicate key", try { let probe = ParsedToml("a = 1\na = 2\n").value(); "no error"; } catch e is InvalidToml { "line " + e.line().string(); }, "line 2");
+    c = c.same_text("integer overflow", try { let probe = ParsedToml("x = 9223372036854775808\n").value(); "no error"; } catch e is InvalidToml { "InvalidToml"; }, "InvalidToml");
+    c = c.same_text("unterminated string", try { let probe = ParsedToml("x = \"abc\n").value(); "no error"; } catch e is InvalidToml { "InvalidToml"; }, "InvalidToml");
+    c.done();
+}

@@ -1,0 +1,50 @@
+module locale/data v1.0.0;
+import "locale/tag" take Locale,LocaleFromLanguageTag;
+import "locale/internal/parents" take CldrParents;
+import "collections/sequence" take Sequencing;
+import "collections/iteration" take Cursor;
+import "locale/internal/iana" take IanaLanguageDataVersion;
+object LocaleDataVersion {
+    LocaleDataVersion();cldr() is string {"46.1.0";}unicode() is string {"16.0.0";}
+    registry() is string{IanaLanguageDataVersion().string();}
+    currencies() is string{"2026-09-17";}
+    collation_cldr() is string{"46.0";}
+    icu() is string{"76.1";}
+    uca() is string{"16.0.0";}
+}
+// 'root' is a data key only. Its language projection fails explicitly.
+object LocaleDataKey {
+    has origin is string;
+    LocaleDataKey(tag is string){origin=if tag=="root" {"root";} else {LocaleFromLanguageTag(tag).value().string();};}
+    string() is string {origin;}
+    locale() is Locale {confirm origin!="root" else throw MissingDataLocale();LocaleFromLanguageTag(origin).value();}
+}
+object LocaleFallbacks does Sequencing<LocaleDataKey> {
+    has origin is @LocaleDataKey;
+    LocaleFallbacks(origin is Locale) {
+        let tags=LocaleDataChain(CldrParents()).values(origin.base_tag(),0);
+        let snapshot is @LocaleDataKey=tags.map()->tag{LocaleDataKey(tag);};self.origin=snapshot;
+    }
+    size() is int {origin.size();}item(index is int) is LocaleDataKey {origin.item(index);}
+    first() is LocaleDataKey {origin.first();}last() is LocaleDataKey {origin.last();}
+    cursor() is Cursor<LocaleDataKey> {origin.cursor();}
+}
+object LocaleDataChain {
+    has parents is CldrParents;LocaleDataChain(parents is CldrParents){self.parents=parents;}
+    values(tag is string, depth is int) is @string {
+        confirm depth<=32 else throw InvalidLocaleData("parent chain exceeded");
+        if tag=="root" {return ["root"];}
+        let explicit=parents.parent(tag);let parts=tag.split("-");
+        let parent=if explicit!="" {explicit;} else {
+            if parts.size()==1 {"root";} else {let shorter is @string=(0..parts.size()-1).map()->index{parts[index];};shorter.join("-");}
+        };
+        let rest=self.values(parent,depth+1);
+        let chain is @string=(0..rest.size()+1).map()->index{if index==0 {tag;} else {rest[index-1];}};chain;
+    }
+}
+object MissingDataLocale does Error {MissingDataLocale();text() is string {"CLDR root has no language tag";}}
+object InvalidLocaleData does Error {
+    has reason is string;InvalidLocaleData(reason is string){self.reason=reason;}text() is string {"invalid locale data: "+reason;}
+}
+
+test "data fallback finishes at its own root coordinate" {let chain=LocaleFallbacks(Locale("en","AU"));test.is(chain.item(1).string(),"en-001");test.is(chain.last().string(),"root");}

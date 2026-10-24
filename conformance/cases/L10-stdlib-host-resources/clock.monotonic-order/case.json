@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.clock.monotonic-order",
+  "title": "monotonic readings never go backwards and waits elapse",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.TIME.CLOCK",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "real-clock"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "advanced\nwaited\n"
+    }
+  },
+  "spec_refs": [
+    "std/time/clock.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "time/clock: monotonic instants are suitable for ordering and elapsed time; awaiting wait(20ms) cannot complete before 20ms have elapsed."
+  },
+  "status": "mandatory"
+}

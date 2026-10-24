@@ -1,0 +1,27 @@
+module app v1.0.0;
+import "net/unix" take UnixAddress, UnixPaired, UnixListening, UnixConnecting;
+import "fs/path" take Path;
+import "fs/directory" take Directory;
+import "fs/temp" take TemporaryDirectory;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let pair=await UnixPaired().result();
+    await pair.first().output().write(ByteSnapshot(Utf8Encoded("pair works").bytes()));
+    Stdout().writeln(Utf8Decoded(await pair.second().input().bytes(64)).string());
+    pair.first().close();pair.second().close();
+
+    let directory=TemporaryDirectory(Directory(Path("/tmp")),"ok-un-");
+    defer directory.close();
+    let address=UnixAddress(Path(directory.path().string()+"/service.sock"));
+    let listener=await UnixListening(address,4).acceptance();
+    defer listener.close();
+    let client=await UnixConnecting(address).connection();
+    let server=await listener.connection();
+    listener.close();
+    await client.output().write(ByteSnapshot(Utf8Encoded("accepted connection survives").bytes()));
+    Stdout().writeln(Utf8Decoded(await server.input().bytes(64)).string());
+    client.close();server.close();0;
+}

@@ -1,0 +1,42 @@
+module logging/redact v1.0.0;
+import "logging/write" take LogWriting;
+import "logging/record" take LogRecord,LogContext;
+import "logging/field" take LogFields,InvalidLogField;
+import "json/value" take JsonValue,JsonMember;
+import "collections/sequence" take Sequencing;
+object RedactedLogs does LogWriting{
+    has origin is LogWriting;has names is @string;has replacement is JsonValue;
+    RedactedLogs(origin is LogWriting,names is Sequencing<string>,replacement is JsonValue){
+        let size=names.size();confirm size>=0 && size<=256 else throw InvalidLogField("redaction name count exceeds 256");
+        let snapshot is @string=(0..size).map()->index{let name=names.item(index);confirm name!="" && name.length()<=4096 else throw InvalidLogField("invalid redaction name");name;};
+        self.origin=origin;self.names=snapshot;self.replacement=LogFields([JsonMember("replacement",replacement)]).value("replacement");
+    }
+    write(record is LogRecord) is void{
+        let members is @JsonMember=record.context().fields().members().map()->member{
+            let matches=names.reduce(false)->old,name{old || name==member.name();};
+            if matches{JsonMember(member.name(),replacement);}else{member;}
+        };
+        let causes is @Error=if record.has_cause(){[record.cause()];}else{[];};
+        origin.write(ChangedLogRecord(record,LogFields(members),causes).value());
+    }
+}
+object RedactedCauseLogs does LogWriting{
+    has origin is LogWriting;has replacement is string;
+    RedactedCauseLogs(origin is LogWriting,replacement is string){self.origin=origin;self.replacement=replacement;}
+    write(record is LogRecord) is void{
+        let causes is @Error=if record.has_cause(){[RedactedLogCause(replacement)];}else{[];};
+        origin.write(ChangedLogRecord(record,record.context().fields(),causes).value());
+    }
+}
+object RedactedLogCause does Error{
+    has origin is string;RedactedLogCause(origin is string){self.origin=origin;}text() is string{origin;}
+}
+object ChangedLogRecord{
+    has origin is LogRecord;has fields is LogFields;has causes is @Error;
+    ChangedLogRecord(origin is LogRecord,fields is LogFields,causes is @Error){confirm causes.size()<=1 else throw InvalidLogField("only one cause allowed");self.origin=origin;self.fields=fields;self.causes=causes;}
+    #projected
+    value() is LogRecord{
+        let context=LogContext(origin.context().name(),fields,origin.context().process());
+        if causes.size()==0{LogRecord(origin.time(),origin.level(),origin.message(),context);}else{LogRecord(origin.time(),origin.level(),origin.message(),context,causes[0]);}
+    }
+}

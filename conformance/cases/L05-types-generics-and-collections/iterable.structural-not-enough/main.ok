@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Fake {
+    has n is int;
+    Fake(:n);
+    cursor() is Fake { self; }
+    available() is bool { false; }
+    item() is int { n; }
+    successor() is Fake { self; }
+}
+
+main() is int {
+    let out = Stdout();
+    for Fake(n: 1) -> v {
+        out.writeln("x");
+    }
+    out.writeln("unreachable");
+    0;
+}

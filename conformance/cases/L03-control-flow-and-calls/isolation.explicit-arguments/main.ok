@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Echo {
+    has stored is int;
+    Echo(stored is int) {
+        stored = stored;
+    }
+    value() is int { stored; }
+    plus(extra is int) is int { stored + extra; }
+}
+
+main() is int {
+    let out = Stdout();
+    let amount = 42;
+    out.writeln(Echo(amount).value().string());
+    out.writeln(Echo(1).plus(amount).string());
+    0;
+}

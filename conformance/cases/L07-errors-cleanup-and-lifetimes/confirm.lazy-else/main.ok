@@ -1,0 +1,47 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has name is string;
+    Res(:name);
+    use() is string { name; }
+    destroy {
+        Stdout().writeln("destroy " + name);
+    }
+}
+
+object Log {
+    Log();
+    say(text is string) is void {
+        Stdout().writeln(text);
+    }
+    value(text is string, v is int) is int {
+        Stdout().writeln(text);
+        v;
+    }
+}
+
+object Failing does Error {
+    has code is int;
+    Failing(code is int) {
+        self.code = code;
+    }
+    code() is int { code; }
+    text() is string { "failing"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let log = Log();
+    confirm 1 < 2 else throw Failing(log.value("error constructed", 1));
+    out.writeln("passed");
+    let r = try {
+        confirm 1 > 2 else throw Failing(log.value("error constructed", 2));
+        0;
+    } catch e is Failing {
+        e.code();
+    };
+    out.writeln(r.string());
+    0;
+}

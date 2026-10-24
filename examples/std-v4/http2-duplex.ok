@@ -1,0 +1,90 @@
+module app v1.0.0;
+import "http/internal/http2_preface" take Http2ClientPreface;
+import "http/http2_settings" take Http2Settings,Http2SettingsWire;
+import "http/internal/http2_settings" take Http2PeerSettings;
+import "http/internal/http2_reading" take Http2FrameReading;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault;
+import "http/internal/http2_headers" take Http2HeaderBlockReading,Http2HeaderBlock;
+import "http/internal/http2_input" take Http2ConnectionInput,Http2ReceivingEvents;
+import "http/internal/http2_output" take Http2ConnectionOutput;
+import "http/internal/http2_sending" take Http2DataScheduler;
+import "http/internal/http2_fields" take ParsedHttp2Response,ParsedHttp2Request;
+import "http/internal/http2_flow" take Http2DataPayload,Http2WindowIncrement;
+import "http/internal/http2_controls" take Http2Reset,Http2GoAway;
+import "http/internal/hpack" take HpackDecoder,HpackBudget;
+import "http/internal/hpack_tables" take HpackField;
+import "http/body" take EmptyBody;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "async/atomic" take Atomic;
+import "async/scope" take FutureGroup;
+import "io/stdout" take Stdout;
+
+// Explicit cleartext prior knowledge. Demonstrates consuming input and queued
+// output on a shared wire; application DATA flow/body leases are not yet here.
+object Peer {
+    has listener is TcpAcceptance;Peer(listener is TcpAcceptance){self.listener=listener;}
+    async run() is bool{
+        let connection=await listener.connection();defer connection.close();
+        let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();let offset=Atomic(0);
+        loop{
+            if offset.value()==magic.size(){last;}
+            let bytes=await connection.input().bytes(magic.size()-offset.value());confirm bytes.size()>0;
+            for bytes -> octet{confirm octet==magic[offset.value()];offset.replace(offset.value()+1);}
+        }
+        let settings=await Http2FrameReading(connection.input()).result();confirm settings.header().kind().int()==4;
+        let payload=Http2SettingsWire(Http2Settings(),false).bytes();
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),0.byte(),0,payload.size()),payload).bytes()));
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes()));
+        let acknowledgment=await Http2FrameReading(connection.input()).result();confirm acknowledgment.header().flags().int()==1;
+        let context=Atomic(HpackDecoder());
+        for [1,3] -> stream{
+            let first=await Http2FrameReading(connection.input()).result();let block=await Http2HeaderBlockReading(first,connection.input(),context.value(),HpackBudget()).result();context.replace(block.context());
+            confirm block.stream()==stream && !block.end_stream();let request=ParsedHttp2Request(block.fields(),stream).request(EmptyBody());confirm request.method().string()=="GET";
+        }
+        for [1,3] -> stream{
+            let data=await Http2FrameReading(connection.input()).result();confirm data.header().kind().int()==0 && data.header().stream()==stream && data.header().flags().int()==1;
+            confirm data.payload().size()==1 && data.payload()[0].int()==(if stream==1{65;}else{66;});
+        }
+        let output=Http2ConnectionOutput(connection.output(),8,65536);
+        output.frame(Http2Frame(Http2FrameHeader(6.byte(),0.byte(),0,8),[1.byte(),2.byte(),3.byte(),4.byte(),5.byte(),6.byte(),7.byte(),8.byte()]));
+        let second=output.headers(3,[HpackField(":status","200"),HpackField("x-stream","three")],HpackBudget(),4,false);
+        let first=output.headers(1,[HpackField(":status","200"),HpackField("x-stream","one")],HpackBudget(),4,false);
+        output.frame(Http2Frame(Http2FrameHeader(0.byte(),9.byte(),3,4),[1.byte(),65.byte(),66.byte(),0.byte()]));
+        output.frame(Http2Frame(Http2FrameHeader(0.byte(),1.byte(),1,1),[67.byte()]));output.finish();await output.run();await first.result();await second.result();
+        let pong=await Http2FrameReading(connection.input()).result();confirm pong.header().kind().int()==6 && pong.header().flags().int()==1 && pong.payload()[7].int()==8;true;
+    }
+}
+object Responses does Http2ReceivingEvents {
+    has output is Http2ConnectionOutput;has entries is Atomic<@string>;
+    Responses(output is Http2ConnectionOutput,entries is Atomic<@string>){self.output=output;self.entries=entries;}
+    record(value is string) is void{let old=entries.value();let following is @string=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{value;}};entries.replace(following);}
+    headers(block is Http2HeaderBlock) is void{let head=ParsedHttp2Response(block.fields(),block.stream(),block.end_stream());confirm head.status().code()==200;self.record("head:"+block.stream().string());}
+    data(data is Http2DataPayload) is void{confirm data.end_stream();self.record("data:"+data.stream().string()+":"+data.bytes().size().string()+":"+data.flow_bytes().string());}
+    reset(reset is Http2Reset) is void{panic "unexpected reset";}
+    window(update is Http2WindowIncrement) is void{panic "unexpected window update";}
+    settings(previous is Http2PeerSettings,current is Http2PeerSettings) is void{panic "unexpected settings update";}
+    local_settings(settings is Http2Settings) is void{self.record("ack");}
+    goaway(frame is Http2GoAway) is void{panic "unexpected GOAWAY";}
+    stream_fault(fault is Http2Fault) is bool{panic "unexpected stream fault";}
+    ended() is void{self.record("end");output.finish();}
+}
+async main() is int{
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let peer=Peer(listener);let action is async () is bool=peer.run;let serving=spawn action();
+    let connection=await TcpConnecting(listener.local_endpoint()).connection();defer connection.close();let local=Http2Settings();
+    let settings=await Http2ClientPreface(connection.input(),connection.output(),local).result();
+    let output=Http2ConnectionOutput(connection.output(),8,65536);let log is @string=[];let entries=Atomic(log);
+    let reader=Http2ConnectionInput(connection.input(),Responses(output,entries),output,local,settings);
+    let fields is @HpackField=[HpackField(":method","GET"),HpackField(":scheme","http"),HpackField(":authority","127.0.0.1:"+listener.local_endpoint().port().string()),HpackField(":path","/")];
+    let first=output.headers(1,fields,HpackBudget(),4,false);let second=output.headers(3,fields,HpackBudget(),4,false);
+    let sender=Http2DataScheduler(output,settings,8);defer sender.stop();sender.open(1);sender.open(3);
+    let body1=sender.data(1,[65.byte()],true);let body3=sender.data(3,[66.byte()],true);
+    let group is FutureGroup<bool>=FutureGroup();let reading=reader.run();let writing=output.run();group.start(reading);group.start(writing);group.start(body1);group.start(body3);
+    confirm await reading;confirm await writing;confirm await body1;confirm await body3;confirm await serving;await first.result();await second.result();
+    confirm entries.value()==["ack","head:3","head:1","data:3:2:4","data:1:1:1","end"];
+    Stdout().writeln("HTTP2 duplex: scheduled request DATA, sibling responses, padding and PING ACK verified");0;
+}

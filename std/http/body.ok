@@ -1,0 +1,132 @@
+module http/body v1.0.0;
+
+import "http/header" take Headers;
+import "numbers/bigint" take BigInt;
+import "net/stream" take AsyncReading;
+import "io/stream" take Closing, InvalidReadLimit;
+import "io/decorators" take InvalidReading;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/lock" take Lock;
+import "async/scope" take FutureGroup;
+
+// Body openings describe a source; each reader owns one consumption lifetime.
+// Unknown length is explicit and never represented by a negative sentinel.
+role BodyOpening {
+    length() is BigInt;
+    replayable() is bool;
+    reading() is BodyReading;
+}
+role BodyReading {
+    async bytes(limit is int) is @byte;
+    trailers() is Headers;
+    closed() is bool;
+    close() is void;
+}
+object ByteBody does BodyOpening {
+    has origin is @byte;
+    ByteBody(origin is @byte){self.origin=origin;}
+    length() is BigInt {BigInt(origin.size().string());}
+    replayable() is bool {true;}
+    reading() is BodyReading {
+        let source=ByteBodyInput(origin);StreamBodyReading(source,source,Headers([]));
+    }
+}
+object EmptyBody does BodyOpening {
+    EmptyBody();
+    length() is BigInt {BigInt("0");}
+    replayable() is bool {true;}
+    reading() is BodyReading {ByteBody([]).reading();}
+}
+object OneShotBody does BodyOpening {
+    has origin is BodyReading;has opened is Atomic<bool>;
+    OneShotBody(origin is BodyReading) {
+        confirm !origin.closed() else throw BodyClosed();self.origin=origin;opened=Atomic(false);
+    }
+    length() is BigInt {throw UnknownBodyLength();}
+    replayable() is bool {false;}
+    reading() is BodyReading {
+        confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();origin;
+    }
+    destroy {
+        try{if !opened.value(){origin.close();}}catch failure is Error{}catch failure is NativeFailure{}
+    }
+}
+// Adopts an already body-delimited input and its exclusive owner. This is not
+// a socket/message framer. Trailer metadata is published only at clean EOF.
+// Pending storage is at most one Future and is cleared on every started exit.
+object StreamBodyReading does BodyReading, AsyncReading, Closing {
+    has input is AsyncReading;has owner is Closing;has end is Headers;
+    has stopped,finished is Event;has lock is Lock;
+    has pending is Atomic<@Future<@byte>>;
+    StreamBodyReading(input is AsyncReading, owner is Closing, trailers is Headers) {
+        confirm !owner.closed() else throw BodyClosed();
+        self.input=input;self.owner=owner;end=trailers;stopped=Event();finished=Event();lock=Lock();
+        let empty is @Future<@byte>=[];pending=Atomic(empty);
+    }
+    closed() is bool {stopped.ready();}
+    trailers() is Headers {confirm finished.ready() else throw TrailersUnavailable();end;}
+    close() is void {
+        if !stopped.ready() {
+            stopped.set();for pending.value() -> waiting {waiting.cancel();}
+            if !owner.closed(){owner.close();}
+        }
+    }
+    abort() is void {try{self.close();}catch failure is Error{}catch failure is NativeFailure{}}
+    async bytes(limit is int) is @byte {
+        confirm limit>0 else throw InvalidReadLimit(limit);
+        confirm !self.closed() else throw BodyClosed();
+        let guard=await lock.guard();defer guard.close();
+        confirm !self.closed() else throw BodyClosed();
+        if finished.ready(){return [];}
+        let complete=Event();let group is FutureGroup<@byte>=FutureGroup();
+        let cleanup=BodyReadCleanup(self,complete,pending,group);defer await cleanup.close();
+        let waiting=input.bytes(limit);pending.replace([waiting]);group.start(waiting);
+        let chunk=await waiting;confirm !self.closed() else throw BodyClosed();
+        confirm chunk.size()<=limit else throw InvalidReading("HTTP body source exceeded requested limit");
+        if chunk.size()==0 {if !owner.closed(){owner.close();}finished.set();}
+        complete.set();chunk;
+    }
+    destroy {self.abort();}
+}
+// Owned infrastructure for an immutable byte source. All operations are local;
+// the outer reader supplies serialization and the shared body lifecycle.
+object ByteBodyInput does AsyncReading, Closing {
+    has origin is @byte;has offset is Atomic<int>;has stopped is Event;
+    ByteBodyInput(origin is @byte){self.origin=origin;offset=Atomic(0);stopped=Event();}
+    async bytes(limit is int) is @byte {
+        confirm limit>0 else throw InvalidReadLimit(limit);confirm !self.closed() else throw BodyClosed();
+        let start=offset.value();let remaining=origin.size()-start;
+        let amount=if limit<remaining{limit;}else{remaining;};
+        let chunk is @byte=(start..start+amount).map() -> index {origin[index];};
+        offset.replace(start+amount);chunk;
+    }
+    closed() is bool {stopped.ready();}
+    close() is void {stopped.set();}
+}
+// One group per read: it owns exactly one child, so completed bodies never
+// accumulate read results. Group cancellation retains secondary cleanup errors.
+object BodyReadCleanup {
+    has origin is StreamBodyReading;has complete is Event;
+    has pending is Atomic<@Future<@byte>>;has group is FutureGroup<@byte>;
+    BodyReadCleanup(origin is StreamBodyReading,complete is Event,
+        pending is Atomic<@Future<@byte>>,group is FutureGroup<@byte>) {
+        self.origin=origin;self.complete=complete;self.pending=pending;self.group=group;
+    }
+    async close() is void {
+        let unfinished=group.active()>0;
+        if !complete.ready(){group.cancel();origin.abort();}
+        let empty is @Future<@byte>=[];pending.replace(empty);
+        if unfinished {await group.wait();}
+    }
+}
+object BodyClosed does Error {BodyClosed();text() is string {"HTTP body is closed";}}
+object BodyAlreadyOpened does Error {BodyAlreadyOpened();text() is string {"HTTP body has already been opened";}}
+object UnknownBodyLength does Error {UnknownBodyLength();text() is string {"HTTP body length is unknown";}}
+object TrailersUnavailable does Error {TrailersUnavailable();text() is string {"HTTP body trailers are unavailable before clean EOF";}}
+
+async test "byte body reads are independent and trailers require EOF" {
+    let body=ByteBody([7.byte()]);let first=body.reading();let second=body.reading();
+    test.is(await first.bytes(1),[7.byte()]);test.is(await second.bytes(1),[7.byte()]);
+    test.is(await first.bytes(1),[]);test.is(first.trailers().entries().size(),0);
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.caps.snapshot-after-successor",
+  "title": "a cap stays bound to the object it was acquired from",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "CAP.ACQUIRE-READ",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "SUCC.NEW-IDENTITY",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "Ada Lovelace\nGrace Lovelace\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.2.1",
+    "docs/object-caps-0.0.1-ru.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.2.1: a cap remains bound to its original immutable snapshot after a successor."
+  },
+  "status": "mandatory"
+}

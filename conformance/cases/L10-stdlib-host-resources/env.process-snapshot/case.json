@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.env.process-snapshot",
+  "title": "the process environment is observed once",
+  "purpose": "Read variables provided by the runner.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.OS.ENVIRONMENT",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "env-vars"
+    ]
+  },
+  "env": {
+    "OCS_CASE_VALUE": "hello world"
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "hello world\nUTC\n"
+    }
+  },
+  "spec_refs": [
+    "std/os/environment.ok",
+    "conformance/SPECIFICATION.md (isolation)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "The runner sets OCS_CASE_VALUE from case.json and TZ=UTC in every case environment; Environment() reads the process environment."
+  },
+  "status": "mandatory"
+}

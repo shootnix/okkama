@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.identifiers.underscore-digits",
+  "title": "identifiers may contain underscores and digits",
+  "purpose": "Accept the construct and observe the exit status.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.IDENTIFIERS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "LEX.KEYWORDS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 42,
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 4.1: lowercase identifiers with _ and digits name fields, actions and locals; 40 + 2 = 42."
+  },
+  "status": "mandatory"
+}

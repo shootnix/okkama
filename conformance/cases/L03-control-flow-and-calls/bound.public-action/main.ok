@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Account {
+    has balance is int;
+    Account(:balance);
+    preview(amount is int) is int { balance + amount; }
+}
+
+main() is int {
+    let out = Stdout();
+    let acc = Account(balance: 10);
+    let deposit is (int) is int = acc.preview;
+    out.writeln(deposit(5).string());
+    let later = Account(balance: 100);
+    let preview_later is (int) is int = later.preview;
+    out.writeln(preview_later(1).string());
+    out.writeln(deposit(1).string());
+    0;
+}

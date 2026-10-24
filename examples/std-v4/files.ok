@@ -1,0 +1,36 @@
+module example v1.0.0;
+
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "fs/file" take File, FileMode;
+import "fs/temp" take TemporaryDirectory;
+import "io/stream" take ReadingText;
+
+object UnreachableBranch does Error {
+    UnreachableBranch();
+    text() is string { "unreachable"; }
+}
+
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let directory = TemporaryDirectory(
+            parent: Directory(path: Path(".")), prefix: "okkama-v4-example-",
+        );
+        let root is Path = directory.path();
+        let path = root.child("greeting.txt");
+        let output = File(mode: FileMode.writing, path: path);
+        output.text().writeln("Hello, Ada!");
+        output.close();
+        let input is ReadingText = if true {
+            let owner = File(mode: FileMode.reading, path: path);
+            owner.text();
+        } else { throw UnreachableBranch(); };
+        input.line();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

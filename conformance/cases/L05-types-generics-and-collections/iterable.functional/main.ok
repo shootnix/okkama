@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "collections/iteration" take Cursor, Iterating;
+
+object QuietStep does Cursor<int> {
+    has n is int;
+    has limit is int;
+    QuietStep(:n, :limit);
+    available() is bool { n <= limit; }
+    item() is int { n; }
+    successor() is Cursor<int> { QuietStep(n: n + 1, limit: limit); }
+}
+
+object Quiet does Iterating<int> {
+    has limit is int;
+    Quiet(:limit);
+    cursor() is Cursor<int> { QuietStep(n: 1, limit: limit); }
+}
+
+main() is int {
+    let out = Stdout();
+    let quiet = Quiet(limit: 4);
+    let doubled = quiet.map() -> v { v * 2; };
+    let odd = quiet.filter() -> v { v % 2 == 1; };
+    let sum = quiet.reduce(0) -> acc, v { acc + v; };
+    out.writeln(doubled.size().string() + " " + odd.size().string() + " " + sum.string());
+    0;
+}

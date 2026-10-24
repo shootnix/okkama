@@ -1,0 +1,123 @@
+module time/duration v1.0.0;
+
+import "compare" take Comparing, Order;
+import "numbers/bigint" take BigInt;
+
+// Exact immutable durations with nanosecond resolution.
+//
+//     let delay = Duration(value: rat(3, 2), unit: DurationUnit.second);
+//     delay.seconds();               // rat(3, 2)
+//     delay.nanoseconds().string();  // "1500000000"
+//     DurationString(origin: delay).string(); // "3/2s"
+//
+// Every unit is an exact rational number of seconds. A day is exactly 86,400
+// seconds and is not a civil-calendar day. Negative and zero durations are
+// valid. Construction and scaling reject values that cannot be represented as
+// an integral number of nanoseconds; no rounding is performed.
+//
+// DurationString is a lossless canonical `<rat>s` representation. Primitive
+// numbers deliberately have no `.duration()` or unit conversion methods: a
+// stdlib type is always introduced through its explicit constructor.
+
+enum DurationUnit = (
+    nanosecond,
+    microsecond,
+    millisecond,
+    second,
+    minute,
+    hour,
+    day
+);
+
+object Duration does Comparing<Duration> {
+    has origin is rat;
+
+    Duration(value is rat, unit is DurationUnit) {
+        let multiplier is rat = match unit {
+            case DurationUnit.nanosecond { rat(1, 1000000000); }
+            case DurationUnit.microsecond { rat(1, 1000000); }
+            case DurationUnit.millisecond { rat(1, 1000); }
+            case DurationUnit.second { 1.rat(); }
+            case DurationUnit.minute { 60.rat(); }
+            case DurationUnit.hour { 3600.rat(); }
+            case DurationUnit.day { 86400.rat(); }
+            else { 1.rat(); }
+        };
+        let seconds is rat = value * multiplier;
+        confirm (seconds * 1000000000.rat()).denominator() == "1"
+            else throw InvalidDuration(
+                "duration must contain an integral number of nanoseconds"
+            );
+        origin = seconds;
+    }
+
+    seconds() is rat {
+        origin;
+    }
+
+    nanoseconds() is BigInt {
+        BigInt(origin: (origin * 1000000000.rat()).numerator());
+    }
+
+    plus(other is Duration) is Duration {
+        Duration(
+            value: origin + other.seconds(),
+            unit: DurationUnit.second,
+        );
+    }
+
+    minus(other is Duration) is Duration {
+        Duration(
+            value: origin - other.seconds(),
+            unit: DurationUnit.second,
+        );
+    }
+
+    order(other is Duration) is Order {
+        origin.order(other.seconds());
+    }
+}
+
+object ScaledDuration {
+    has origin is Duration;
+    has factor is rat;
+
+    ScaledDuration(origin is Duration, factor is rat) {
+        self.origin = origin;
+        self.factor = factor;
+    }
+
+    #projected
+    value() is Duration {
+        Duration(
+            value: origin.seconds() * factor,
+            unit: DurationUnit.second,
+        );
+    }
+}
+
+object DurationString {
+    has origin is Duration;
+
+    DurationString(origin is Duration) {
+        self.origin = origin;
+    }
+
+    #projected
+    string() is string {
+        origin.seconds().string() + "s";
+    }
+}
+
+object InvalidDuration does Error {
+    has message is string;
+
+    InvalidDuration(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

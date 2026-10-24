@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+object Ping {
+    Ping();
+    ping(n is int) is int { self.pong(n + 1) * 2; }
+    pong(n is int) is int { self.ping(n - 1) + 1; }
+}
+
+main() is int {
+    Ping().ping(0);
+}

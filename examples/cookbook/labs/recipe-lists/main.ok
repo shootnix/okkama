@@ -1,0 +1,37 @@
+// Сохранить прежнюю версию истории
+//
+// В отчёте нужна история изменений; несколько ветвей обработки должны видеть свои версии.
+//
+// Запуск: ./examples/cookbook/run lab recipe-lists
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-lists
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/lists v1.0.0;
+import "collections/list" take List,EmptyList;
+import "collections/sequence" take Sequencing;
+import "collections/iteration" take Iterating;
+import "collections/deque" take Deque;
+import "collections/heap" take Heap;
+import "collections/ordering" take Sorted;
+import "collections/frequencies" take Frequencies;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let empty is List<int> = EmptyList();
+    let history = empty.prefix(30).prefix(10).prefix(20);
+    let sorted = Sorted(origin: history);
+    let source is Sequencing<int> = sorted;
+    let traversal is Iterating<int> = sorted;
+    confirm source.item(0) == traversal.cursor().item();
+    let queue = Deque(values: history);
+    let urgent = queue.front().addition(5);
+    let priorities = Heap(values: history).addition(5);
+    confirm queue.size() == 3 && urgent.size() == 4;
+    confirm priorities.top() == 5 && sorted.first() == 10;
+    confirm history.first() == 20;
+    let counts = Frequencies(values: ["оплата", "доставка", "оплата"]);
+    confirm counts.amount("оплата") == 2;
+    Stdout().writeln(counts.total().string());
+    0;
+}

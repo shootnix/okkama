@@ -1,0 +1,78 @@
+module main v1.0.0;
+import "io/stdout" take Stdout;
+
+object Customer {
+    has given_name, family_name, phone_number, email_address, job_title is string;
+    has invoice_address, taxpayer_id is string;
+    has account_balance is int;
+    Customer(:given_name, :family_name, :phone_number, :email_address,
+        :job_title, :invoice_address, :taxpayer_id, :account_balance);
+
+    renamed(replacement is string) is ^Customer {
+        confirm replacement.length() > 0;
+        ^given_name = replacement;
+    }
+
+    cap BusinessCard {
+        full_name is string { given_name + " " + family_name; }
+        phone is string { phone_number; }
+        email is string { email_address; }
+        position is string { job_title; }
+    }
+
+}
+
+cap Customer::Billing {
+    billing_address is string { Customer::invoice_address; }
+    tax_number is string { Customer::taxpayer_id; }
+    balance is int { Customer::account_balance; }
+}
+
+object BusinessCardPrinter {
+    BusinessCardPrinter();
+    text(card is Customer::BusinessCard) is string {
+        card::full_name + " — " + card::position + ": " + card::email;
+    }
+    print(card is Customer::BusinessCard) is void {
+        Stdout().writeln(self.text(card));
+    }
+}
+
+object Accounting {
+    Accounting();
+    invoice(customer is Customer::Billing) is string {
+        customer::tax_number + ": " + customer::balance.string();
+    }
+}
+
+object ExampleCustomer {
+    ExampleCustomer();
+    customer() is Customer {
+        Customer(given_name: "Ada", family_name: "Lovelace", phone_number: "+44 123",
+            email_address: "ada@example.test", job_title: "Programmer",
+            invoice_address: "London", taxpayer_id: "UK-001", account_balance: 42);
+    }
+}
+
+main() is int {
+    let customer = ExampleCustomer().customer();
+    BusinessCardPrinter().print(customer::BusinessCard);
+    Stdout().writeln(Accounting().invoice(customer::Billing));
+    0;
+}
+
+test "consumers receive explicitly selected contracts" {
+    let customer = ExampleCustomer().customer();
+    let card is Customer::BusinessCard = customer::BusinessCard;
+    test.is(BusinessCardPrinter().text(card), "Ada Lovelace — Programmer: ada@example.test");
+    test.is(Accounting().invoice(customer::Billing), "UK-001: 42");
+    test.is(customer::BusinessCard::phone, "+44 123");
+}
+
+test "an existing cap keeps the original immutable customer" {
+    let customer = ExampleCustomer().customer();
+    let before = customer::BusinessCard;
+    let revised = customer.renamed("Grace");
+    test.is(before::full_name, "Ada Lovelace");
+    test.is(revised::BusinessCard::full_name, "Grace Lovelace");
+}

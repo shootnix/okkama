@@ -1,0 +1,393 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Objects, roles, caps and successors",
+  "description": "Objects and their contracts (spec sections 11-13, 15, 16).",
+  "contracts": [
+    {
+      "id": "OBJ.DECL",
+      "title": "Object names are unique type names; every object declares at least one constructor",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.1",
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.FIELDS",
+      "title": "has declarations: unique names, typed boundaries, defaults evaluated per construction in declaration scope",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.2",
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.FIELD-PRIVACY",
+      "title": "Fields are readable only by their owner through bare names or self; peers, roles, caps and root code cannot read them",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.2",
+        "docs/okkama-spec-11072026.md#16"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.CONSTRUCTION-ORDER",
+      "title": "Construction order (owner decision): defaults fill self first, the constructor then binds supplied values replacing defaults, and construction fails if any field is still unbound",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.3",
+        "contracts/DISCREPANCY-LEDGER.md#d-035"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "discrepancies": [
+        "D-035"
+      ],
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.CONSTRUCTORS",
+      "title": "Full constructors: exact-arity selection, named or positional, complete initialization",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.SHORTHAND",
+      "title": "Field shorthand constructors: named-only allow-list, required vs defaulted fields, optional body",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.CONSTRUCTOR-INVARIANTS",
+      "title": "confirm in constructors; no action calls on an unfinished receiver; failed construction returns nothing",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.VARIADIC-CONSTRUCTOR",
+      "title": "A variadic full constructor is the only constructor and is positional-only",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.PROJECTIONS",
+      "title": "`#projected` constructor projections: prefix calls equal construction then the marked action",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.ACTIONS",
+      "title": "Public actions read fields and call self; results are checked",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.PRIVATE-ACTIONS",
+      "title": "Private actions are callable only through self of the same object",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.7"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.EQUALITY",
+      "title": "Objects compare by concrete type and all fields",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "OBJ.NO-INHERITANCE",
+      "title": "No inheritance or access grants: extends/isa/super/abstract/protected/allow are rejected",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#16",
+        "docs/okkama-spec-11072026.md#22"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "SUCC.DECL",
+      "title": "Successor actions declare `is ^Type`; `^field =` is only valid inside them",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.9",
+        "docs/okkama-spec-11072026.md#9.13"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "SUCC.NEW-IDENTITY",
+      "title": "A successor is a new object; the receiver is unchanged; failed transitions produce nothing",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.9"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "SUCC.MUST-USE",
+      "title": "Successor results must be used; static and runtime checks",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.9",
+        "docs/okkama-spec-11072026.md#11.1 (static successor consumption)"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "SUCC.NO-CONSTRUCTOR-RERUN",
+      "title": "Successors do not re-run constructor invariants",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "SUCC.LOCAL-REBIND",
+      "title": "`name = expr` rebinds a local only for concrete types with an actual ^ successor action",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.12"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "ROLE.CONFORMANCE",
+      "title": "Roles are nominal: objects implement them only with `does` and exact signatures",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#12"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "ROLE.RESTRICTED-REFERENCE",
+      "title": "Role-typed references expose only role actions; no recovery of the concrete object",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#12.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "ROLE.FAKES",
+      "title": "Role fakes are test-mode only, have defaulted fields, conform exactly and own isolated storage",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#13"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "CAP.DECL",
+      "title": "Caps declare unique synchronous computed fields inside objects or externally for local owners",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.2.1",
+        "docs/object-caps-0.0.1-ru.md"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "CAP.ACQUIRE-READ",
+      "title": "`owner::Cap` acquires lazily; `cap::field` recomputes on every read; caps retain their original owner",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.2.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "CAP.RESTRICTIONS",
+      "title": "Caps have no self, no writes, no equality and cannot be constructed or unwrapped",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.2.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    },
+    {
+      "id": "ENUM.VALUES",
+      "title": "Enum cases are nominal values compared by enum type and case",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#15"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Objects, roles, caps and successors"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.byte.construction",
+  "title": "byte(value) truncates toward zero then checks 0..255",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.BYTE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.SCALAR-CASTS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "255\n0\n255\n0\n255\n7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.1",
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.1: byte() accepts int/byte/float/rat, truncates toward zero then checks 0..255 (255.9 -> 255, -0.5 -> 0, 511/2 -> 255)."
+  },
+  "status": "mandatory"
+}

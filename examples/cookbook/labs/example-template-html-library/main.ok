@@ -1,0 +1,19 @@
+// Переиспользовать HTML-фрагменты страницы
+//
+// Сформировать HTML-карточку клиента: HtmlTemplate применяет экранирование по контексту подстановки.
+//
+// Запуск: ./examples/cookbook/run lab example-template-html-library
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-template-html-library
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "template/html" take HtmlTemplate;
+import "template/html_library" take HtmlTemplateLibrary, NamedHtmlTemplate;
+import "json/value" take JsonText;
+import "io/stdout" take Stdout;
+main() is int {
+    let library=HtmlTemplateLibrary([NamedHtmlTemplate("item",HtmlTemplate("<b>{{.}}</b>"))]);
+    Stdout().writeln(library.value("item").string(JsonText("Ada & Grace")));
+    0;
+}

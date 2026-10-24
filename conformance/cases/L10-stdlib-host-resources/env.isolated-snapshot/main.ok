@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "os/environment" take Environment, MissingEnvironmentVariable;
+
+main() is int {
+    let out = Stdout();
+    let base = Environment(values: ["LANG": "C.UTF-8", "EMPTY": ""]);
+    let child = base.addition("MODE", "test").difference("LANG");
+    out.writeln(if base.membership("LANG") { "base has LANG"; } else { "?"; });
+    out.writeln(if child.membership("LANG") { "?"; } else { "child lacks LANG"; });
+    out.writeln("[" + base.variable("EMPTY") + "]");
+    out.writeln(child.variable("MODE"));
+    let missing = try { base.variable("ABSENT"); } catch e is MissingEnvironmentVariable { "missing " + e.name(); };
+    out.writeln(missing);
+    0;
+}

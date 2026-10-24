@@ -1,0 +1,23 @@
+module http/server_policy v1.0.0;
+import "http/client_policy" take HttpLimits;
+import "http/version" take HttpVersion;
+import "collections/set" take Set,OrderedSet;
+import "time/duration" take Duration,DurationUnit;
+
+object ServerTimeouts {
+    has headers,body_idle,keep_alive,handling is Duration;
+    ServerTimeouts(){headers=Duration(30.rat(),DurationUnit.second);body_idle=Duration(30.rat(),DurationUnit.second);keep_alive=Duration(5.rat(),DurationUnit.second);handling=Duration(30.rat(),DurationUnit.second);}
+    ServerTimeouts(headers is Duration,body_idle is Duration,keep_alive is Duration,handling is Duration){confirm headers.seconds()>=0.rat() && body_idle.seconds()>=0.rat() && keep_alive.seconds()>=0.rat() && handling.seconds()>=0.rat() else throw InvalidServerPolicy("negative deadline");self.headers=headers;self.body_idle=body_idle;self.keep_alive=keep_alive;self.handling=handling;}
+    headers_timeout() is Duration{headers;}body_idle_timeout() is Duration{body_idle;}keep_alive_timeout() is Duration{keep_alive;}handling_timeout() is Duration{handling;}
+}
+object ServerPolicy {
+    has protocols is Set<HttpVersion>;has limits is HttpLimits;has timeouts is ServerTimeouts;has connections,ranges is int;
+    ServerPolicy(){let enabled is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);protocols=enabled;limits=HttpLimits();timeouts=ServerTimeouts();connections=64;ranges=16;}
+    ServerPolicy(protocols is Set<HttpVersion>,limits is HttpLimits,timeouts is ServerTimeouts,connections is int,ranges is int){
+        let count=protocols.size();confirm count>=1 && count<=2 && connections>0 && connections<=1024 && ranges>0 && ranges<=128 else throw InvalidServerPolicy("protocol or resource budget");
+        let selected is @HttpVersion=[HttpVersion.http_1_1,HttpVersion.http_2].filter()->value{protocols.membership(value);};confirm selected.size()==count else throw InvalidServerPolicy("unsupported protocol identity");
+        let snapshot is Set<HttpVersion>=OrderedSet(selected);self.protocols=snapshot;self.limits=limits;self.timeouts=timeouts;self.connections=connections;self.ranges=ranges;
+    }
+    protocols() is Set<HttpVersion>{protocols;}limits() is HttpLimits{limits;}timeouts() is ServerTimeouts{timeouts;}connections() is int{connections;}ranges() is int{ranges;}
+}
+object InvalidServerPolicy does Error{has reason is string;InvalidServerPolicy(reason is string){self.reason=reason;}reason() is string{reason;}text() is string{"invalid HTTP server policy: "+reason;}}

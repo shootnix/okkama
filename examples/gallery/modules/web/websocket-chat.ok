@@ -1,0 +1,122 @@
+// WebSocket: JSON-комната и двоичное эхо
+// Задача: Подключить трёх клиентов, проверить общую нумерацию событий и выход участника.
+// Запуск из корня: ./examples/gallery/run modules/web/websocket-chat
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: актор с immutable RoomState, same-origin Upgrade, FutureGroup и native WebSocket-клиенты.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/modules/cro/use-cases/websocket-chat.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/web/websocket_chat v1.0.0;
+import "chat-room" take ChatRoom,ChatSubscription;
+import "web/routing" take WebRoutes,Get;
+import "web/request" take WebRequest;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult,WebSocketHandling,WebSocketHandlingResult;
+import "http/websocket" take WebSocketConnection,WebSocketLimits,WebSocketClosed,WebSocketMessageKind,TextWebSocketMessage,BinaryWebSocketMessage;
+import "http/websocket_server" take WebSocketUpgrade;
+import "http/websocket_client" take WebSocketConnecting,WebSocketPolicy;
+import "http/websocket_origin" take SameOriginWebSockets;
+import "http/endpoint" take ListedNetworks;
+import "http/message" take Request;
+import "http/request_context" take HttpRequestContext;
+import "http/header" take Headers,Header,HeaderName;
+import "http/server" take HttpServer;
+import "http/server_policy" take ServerPolicy;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress,IpNetwork;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "async/scope" take FutureGroup;
+import "async/channel" take ChannelClosed;
+import "url/value" take ParsedUrl;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "json/parse" take ParsedJson;
+import "json/read" take JsonView;
+import "io/stdout" take Stdout;
+object ChatOutput {
+    has member is ChatSubscription;has socket is WebSocketConnection;
+    ChatOutput(member is ChatSubscription,socket is WebSocketConnection){self.member=member;self.socket=socket;}
+    async run() is int {
+        try{loop{let wire=await member.receive();await socket.send(TextWebSocketMessage(wire));}}
+        catch ended is ChannelClosed{}catch ended is WebSocketClosed{}0;
+    }
+}
+object ClientWork {
+    has member is ChatSubscription;has group is FutureGroup<int>;
+    ClientWork(member is ChatSubscription,group is FutureGroup<int>){self.member=member;self.group=group;}
+    async close() is void{member.close();group.cancel();await group.wait();}
+}
+object ChatSocket does WebSocketHandling {
+    has room is ChatRoom;has name is string;
+    ChatSocket(room is ChatRoom,name is string){self.room=room;self.name=name;}
+    async handle(socket is WebSocketConnection,request is Request,context is HttpRequestContext) is WebSocketHandling {
+        let member=await room.subscribe(name);let group is FutureGroup<int>=FutureGroup();
+        defer await room.leave(member);defer await ClientWork(member,group).close();group.start(ChatOutput(member,socket).run());
+        try{loop{
+            let message=await socket.message();confirm message.kind()==WebSocketMessageKind.text;
+            let text=JsonView(ParsedJson(message.text())).text("text");confirm text.length()<=2000;await room.publish(name,text);
+        }}catch ended is WebSocketClosed{}self;
+    }
+}
+object EchoSocket does WebSocketHandling {
+    EchoSocket();
+    async handle(socket is WebSocketConnection,request is Request,context is HttpRequestContext) is WebSocketHandling {
+        try{loop{
+            let message=await socket.message();
+            if message.kind()==WebSocketMessageKind.text{
+                let text=message.text();let reversed is @string=(0..text.length()).map()->i{text.slice(text.length()-i-1,text.length()-i);};
+                await socket.send(TextWebSocketMessage(reversed.join("")));
+            }else{
+                let bytes=message.bytes();let reversed is @byte=(0..bytes.size()).map()->i{bytes[bytes.size()-i-1];};
+                await socket.send(BinaryWebSocketMessage(reversed));
+            }
+        }}catch ended is WebSocketClosed{}self;
+    }
+}
+object SocketRoutes {
+    has room is ChatRoom;SocketRoutes(room is ChatRoom){self.room=room;}
+    upgrade() is WebSocketUpgrade{WebSocketUpgrade(["gallery-chat"],WebSocketLimits(),SameOriginWebSockets(),Duration(10.rat(),DurationUnit.second));}
+    async room(request is WebRequest) is HandlingResult{
+        let name=request.path("name");confirm name.length()>0 && name.length()<=40 else throw Exception(422,"name required");
+        WebSocketHandlingResult(self.upgrade(),ChatSocket(room,name));
+    }
+    async echo(request is WebRequest) is HandlingResult{WebSocketHandlingResult(self.upgrade(),EchoSocket());}
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+}
+object SocketClient {
+    has port is int;SocketClient(port is int){self.port=port;}
+    async connect(path is string) is WebSocketConnection {
+        let address="127.0.0.1:"+port.string();
+        let policy=WebSocketPolicy(WebSocketLimits(),Duration(10.rat(),DurationUnit.second),Duration(3.rat(),DurationUnit.second),ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+        await WebSocketConnecting(ParsedUrl("ws://"+address+path).value(),["gallery-chat"],Headers([Header(HeaderName("Origin"),"http://"+address)]),FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,SystemClock()).connection();
+    }
+    async event(socket is WebSocketConnection,expected is int,text is string) is void {
+        let message=await socket.message();let value=JsonView(ParsedJson(message.text()));
+        confirm value.int("seq")==expected && value.text("text")==text;
+        Stdout().writeln(value.int("seq").string()+" "+value.text("from")+": "+value.text("text"));
+    }
+}
+object RoomWork {
+    has room is ChatRoom;has group is FutureGroup<int>;RoomWork(room is ChatRoom,group is FutureGroup<int>){self.room=room;self.group=group;}
+    async close() is void{room.close();await group.wait();}
+}
+async main() is int {
+    let room=ChatRoom();let rooms is FutureGroup<int>=FutureGroup();rooms.start(room.run());defer await RoomWork(room,rooms).close();
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();let port=listener.local_endpoint().port();
+    let api=SocketRoutes(room);let routes=WebRoutes([Get("/room/:name",api.room),Get("/echo",api.echo)],api.missing);
+    let server=HttpServer(listener,routes.table(),ServerPolicy(),SystemClock(),ParsedUrl("http://127.0.0.1:"+port.string()+"/").value());
+    let work is FutureGroup<HttpServer>=FutureGroup();defer await work.wait();defer server.close();work.start(server.serve());let client=SocketClient(port);
+    let echo=await client.connect("/echo");await echo.send(TextWebSocketMessage("stressed"));let reversed=await echo.message();confirm reversed.text()=="desserts";
+    await echo.send(BinaryWebSocketMessage([1.byte(),2.byte(),3.byte()]));let binary=await echo.message();confirm binary.bytes()==[3.byte(),2.byte(),1.byte()];await echo.close(1000,"done");Stdout().writeln("text and binary echo passed");
+    let ann=await client.connect("/room/ann");await client.event(ann,1,"ann joined");
+    let bob=await client.connect("/room/bob");await client.event(ann,2,"bob joined");await client.event(bob,2,"bob joined");
+    let cat=await client.connect("/room/cat");for [ann,bob,cat]->socket{await client.event(socket,3,"cat joined");}
+    await ann.send(TextWebSocketMessage("{\"text\":\"hi all\"}"));for [ann,bob,cat]->socket{await client.event(socket,4,"hi all");}
+    await cat.close(1000,"done");for [ann,bob]->socket{await client.event(socket,5,"cat left");}
+    await bob.send(TextWebSocketMessage("{\"text\":\"bye\"}"));for [ann,bob]->socket{await client.event(socket,6,"bye");}
+    await ann.close(1000,"done");await client.event(bob,7,"ann left");await bob.close(1000,"done");
+    Stdout().writeln("three clients, ordered JSON and leave events passed");0;
+}

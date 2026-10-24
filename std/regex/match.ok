@@ -1,0 +1,140 @@
+module regex/match v1.0.0;
+
+import "regex/range" take RegexRange;
+import "runtime/regex" take
+    RegexMatchState,
+    regex_match_capture_count,
+    regex_match_capture_name,
+    regex_match_capture_index,
+    regex_match_capture_span;
+
+// RegexMatching is the observable surface shared by mandatory search results
+// and matches yielded by RegexMatches. Implementations are immutable:
+//
+//     let found = FirstRegexMatch("id=42", Regex("id=(?<id>\\d+)"));
+//     found.text();             // "id=42"
+//     found.capture(0).text();  // "id=42", the complete match
+//     found.group("id").text(); // "42"
+//     found.captures().size();  // 1; capture zero is not duplicated
+//
+// An optional group still has a RegexCapture. matched() is false when that
+// group did not participate; text() and range() then throw
+// UnmatchedRegexCapture instead of inventing empty text or a fake range.
+role RegexMatching {
+    text() is string;
+    range() is RegexRange;
+    capture(index is int) is RegexCapture;
+    group(name is string) is RegexCapture;
+    captures() is @RegexCapture;
+}
+
+// The constructor requires an opaque RegexMatchState. Application code cannot
+// manufacture that state; regex/search is its only public producer.
+object RegexMatch does RegexMatching {
+    has source is string;
+    has state is RegexMatchState;
+
+    RegexMatch(origin is string, state is RegexMatchState) {
+        source = origin;
+        self.state = state;
+    }
+
+    text() is string { self.capture(0).text(); }
+
+    range() is RegexRange { self.capture(0).range(); }
+
+    capture(index is int) is RegexCapture {
+        let count = regex_match_capture_count(state);
+        confirm index >= 0 && index <= count
+            else throw MissingRegexCapture(index);
+        RegexCapture(
+            origin: source,
+            state: state,
+            index: index,
+            name: regex_match_capture_name(state, index),
+        );
+    }
+
+    group(name is string) is RegexCapture {
+        let index = regex_match_capture_index(state, name);
+        confirm index >= 0 else throw MissingRegexGroup(name);
+        RegexCapture(origin: source, state: state, index: index, name: name);
+    }
+
+    captures() is @RegexCapture {
+        let count = regex_match_capture_count(state);
+        let values is @RegexCapture = (1..count + 1).map() -> index {
+            self.capture(index);
+        };
+        values;
+    }
+}
+
+// Like RegexMatch, RegexCapture is constructible only with an opaque state.
+object RegexCapture {
+    has source is string;
+    has state is RegexMatchState;
+    has position is int;
+    has label is string;
+
+    RegexCapture(
+        origin is string,
+        state is RegexMatchState,
+        index is int,
+        name is string,
+    ) {
+        source = origin;
+        self.state = state;
+        position = index;
+        label = name;
+    }
+
+    index() is int { position; }
+
+    name() is string { label; }
+
+    matched() is bool { self.span()["start"] >= 0; }
+
+    text() is string {
+        confirm self.matched() else throw UnmatchedRegexCapture(position);
+        let span = self.span();
+        source.slice(span["start"], span["end"]);
+    }
+
+    range() is RegexRange {
+        confirm self.matched() else throw UnmatchedRegexCapture(position);
+        let span = self.span();
+        RegexRange(start: span["start"], end: span["end"]);
+    }
+
+    private:
+    span() is %string:int {
+        regex_match_capture_span(state, position);
+    }
+}
+
+object MissingRegexCapture does Error {
+    has position is int;
+    MissingRegexCapture(index is int) { position = index; }
+    index() is int { position; }
+    #projected
+    text() is string { "missing regex capture " + position.string(); }
+}
+
+object MissingRegexGroup does Error {
+    has label is string;
+    MissingRegexGroup(name is string) { label = name; }
+    name() is string { label; }
+    #projected
+    text() is string { "missing regex group " + label; }
+}
+
+object UnmatchedRegexCapture does Error {
+    has position is int;
+    UnmatchedRegexCapture(index is int) { position = index; }
+    index() is int { position; }
+    #projected
+    text() is string {
+        "regex capture " + position.string() + " did not participate";
+    }
+}

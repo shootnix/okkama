@@ -1,0 +1,49 @@
+module mime/disposition v1.0.0;
+
+import "mime/media_type" take MimeParameters, MimeToken, MimeScanning, InvalidMediaType;
+
+// Eager immutable disposition value using the shared bounded MIME grammar.
+// Extension kinds are retained, case-normalized. Filenames remain decoded
+// strings: no path conversion, sanitization or filesystem effects.
+// string() is a logical field body; see docs/std/mime-disposition.md.
+object ContentDisposition {
+    has token is string;
+    has entries is MimeParameters;
+    ContentDisposition(origin is string) {
+        let parsed=try {MimeScanning(origin,256,1048576).disposition();}
+            catch failure is InvalidMediaType {throw InvalidContentDisposition(failure.offset(),failure.reason());};
+        token=parsed.type();entries=parsed.parameters();
+    }
+    ContentDisposition(kind is string, parameters is MimeParameters) {
+        token=try {MimeToken(kind).string();}
+            catch failure is InvalidMediaType {throw InvalidContentDisposition(failure.offset(),failure.reason());};
+        entries=parameters;
+    }
+    ContentDisposition(origin is string, maximum_parameters is int, maximum_bytes is int) {
+        let parsed=try {MimeScanning(origin,maximum_parameters,maximum_bytes).disposition();}
+            catch failure is InvalidMediaType {throw InvalidContentDisposition(failure.offset(),failure.reason());};
+        token=parsed.type();entries=parsed.parameters();
+    }
+    kind() is string {token;}
+    parameters() is MimeParameters {entries;}
+    string() is string {token+if entries.entries().size()==0 {"";} else {"; "+entries.string();};}
+}
+object InvalidContentDisposition does Error {
+    has position is int;has reason is string;
+    InvalidContentDisposition(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    text() is string {"invalid content disposition at scalar offset "+position.string()+": "+reason;}
+}
+object MissingContentDisposition does Error {
+    MissingContentDisposition() {}
+    text() is string {"missing content disposition";}
+}
+
+test "content disposition retains filename data" {
+    test.is(ContentDisposition("attachment; filename=report.txt").parameters().first("filename"),"report.txt");
+}
+test "malformed disposition keeps the source offset" {
+    let offset=try {ContentDisposition("attachment; =x");-1;}
+        catch failure is InvalidContentDisposition {failure.offset();};
+    test.is(offset,12);
+}

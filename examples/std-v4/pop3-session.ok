@@ -1,0 +1,35 @@
+module app v1.0.0;
+import "mail/pop3" take PopCapabilities, PopListingLimits;
+import "mail/pop3_reply" take ParsedPopReply, PopReplyMode, PopReplyLimits;
+import "mail/pop3_session" take PopSession, PopDeleteReset;
+import "net/stream" take AsyncReading, AsyncWriting;
+import "io/stream" take Reading, ByteSource, Closing;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "async/event" take Event;
+
+// Deterministic authenticated-transport example, not a TLS/authentication client.
+object Input does AsyncReading {
+    has origin is Reading;Input(origin is Reading){self.origin=origin;}
+    async bytes(limit is int) is @byte {origin.bytes(if limit<3{limit;}else{3;});}
+}
+object Output does AsyncWriting {
+    has origin is ByteBuffer;Output(origin is ByteBuffer){self.origin=origin;}
+    async write(source is ByteSource) is AsyncWriting {origin.writing().write(source);self;}
+}
+object Owner does Closing {
+    has stopped is Event;Owner(){stopped=Event();}
+    closed() is bool {stopped.ready();}close() is void {stopped.set();}
+}
+async main() is int {
+    let input=ByteBuffer(Utf8Encoded("+OK 1 20\r\n+OK\r\n1 20\r\n.\r\n+OK\r\n1 stable-id\r\n.\r\n+OK marked\r\n+OK reset\r\n+OK done\r\n").bytes());
+    let output=ByteBuffer();defer input.closing().close();defer output.closing().close();
+    let caps=PopCapabilities(ParsedPopReply(Utf8Encoded("+OK\r\nUIDL\r\n.\r\n").bytes(),PopReplyMode.multiline).reply());
+    let session=PopSession(Input(input.reading()),Output(output),Owner(),caps,[],PopReplyLimits(),PopListingLimits());defer session.close();
+    let mailbox=session.mailbox();let state=await mailbox.state();let messages=await mailbox.messages();
+    Stdout().writeln("messages: "+state.count().string()+", bytes: "+state.size().string());
+    Stdout().writeln("identifier: "+messages.item(0).identifier().string());
+    await mailbox.delete(messages.item(0).number());await PopDeleteReset(session).reset();await session.quit();
+    Stdout().write(Utf8Decoded(output.content().bytes()).string());0;
+}

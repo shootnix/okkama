@@ -1,0 +1,6 @@
+module runtime/snapshot v1.0.0;
+native object SnapshotRootState;
+native snapshot_root_open(path is @byte) is SnapshotRootState;
+native snapshot_root_close(root is SnapshotRootState) is bool;
+native snapshot_read(root is SnapshotRootState,name is string,limit is int) is @byte;
+native snapshot_write(root is SnapshotRootState,name is string,content is @byte) is bool;

@@ -1,0 +1,529 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Grammar",
+  "description": "Grammar productions (docs/okkama-grammar-1.0.ebnf) plus productions the specification adds.",
+  "contracts": [
+    {
+      "id": "GRAM.IMPORT-FORMS",
+      "title": "import \"path\" with optional `as name` and `take a, b`",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.OBJECT-DECL",
+      "title": "object declarations with optional generic parameters and does clause",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.HAS-DECL",
+      "title": "has declarations with name lists, optional type and default",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.CONSTRUCTOR-DECL",
+      "title": "Full constructors, field shorthand with or without body, and zero-field shorthand `Name();`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.ACTION-DECL",
+      "title": "Action declarations: async mark, typed parameters, mandatory result specification (type, ^Type or void)",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.PRIVATE-SECTION",
+      "title": "`private:` marks the following actions private",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.7"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.DESTROY-BLOCK",
+      "title": "`destroy { ... }` lifecycle block in object bodies",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.ROLE-DECL",
+      "title": "Role declarations with signatures, an optional fake block and tests",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#12"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.ENUM-DECL",
+      "title": "`enum Name = (a, b);`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#15"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.TEST-BLOCK",
+      "title": "test and async test blocks at module, object and role scope; production parsing skips their bodies",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#14"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.PROJECTED-DIRECTIVE",
+      "title": "`#projected` / `#projected(alias)` marks constructor projections; single `&` projection syntax is removed",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-001"
+      ],
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.TYPE-REFS",
+      "title": "Type references: scalars, @T, %K:V, applied generics, qualified names, action types, async action types, cap types",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#6.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.LET",
+      "title": "let requires an initializer and an optional `is Type`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.CONFIRM",
+      "title": "confirm with optional `else throw expr` or `else panic expr`",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-002"
+      ],
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.THROW-PANIC",
+      "title": "`throw expr;`, bare `throw;` and `panic expr`",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-003"
+      ],
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.TRY-CATCH",
+      "title": "try needs at least one typed catch; no finally or catch-all",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.IF",
+      "title": "if / else if / else statements and complete if expressions",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.7",
+        "docs/okkama-spec-11072026.md#8.11"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.MATCH",
+      "title": "match with case lists and optional else",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.8"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.FOR",
+      "title": "for requires a source and `-> binding`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.9"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.LOOP-CONTROL",
+      "title": "loop blocks, next/last with optional values and postfix conditions",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.10",
+        "docs/okkama-spec-11072026.md#8.13"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.RETURN",
+      "title": "`return expr;` and bare `return;`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.POSTFIX-IF",
+      "title": "postfix `if` on expression statements and loop control",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: no rejected form is specified beyond ordinary condition typing (VAL.BOOL-STRICT)",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.PRECEDENCE",
+      "title": "Operator precedence and associativity as specified by the grammar",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-llm-context-1.0.md#6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.CALL-ARGS",
+      "title": "Call arguments: positional or named, trailing comma allowed",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#8.10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.ANON-ACTION",
+      "title": "Anonymous action syntax: typed parameters, mandatory result, no trailing comma or variadics",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#8.10.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.FUNCTIONAL-SUFFIX",
+      "title": "`.map()/.filter()/.reduce(init) -> bindings { }` and grouping in for sources",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#6.8"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.COLLECTION-LITERALS",
+      "title": "Array and map literals in brackets, `[:]` empty map, trailing commas",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#8.7",
+        "docs/okkama-spec-11072026.md#8.8"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.INDEX-FALLBACK",
+      "title": "Indexing with optional `else fallback`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#8.9"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: indexing failures are runtime contracts (COLL.ARRAY / COLL.MAP)",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.UNPACK",
+      "title": "Postfix `...` unpack",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#11.8.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.REMOVED-SYNTAX",
+      "title": "Removed syntax is rejected: allow, while, finally, `&` projection, `Type:(...)`, brace maps, arrow lambdas, optionals, `**`, inheritance keywords",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#16",
+        "docs/okkama-llm-context-1.0.md#2",
+        "docs/allow-removal.md"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-021"
+      ],
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.INCOMPLETE-INPUT",
+      "title": "Incomplete constructs, missing terminators and trailing garbage are syntax errors",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.TRAILING-COMMA",
+      "title": "Trailing commas are accepted where the grammar lists `trailing_comma`",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    }
+  ]
+}

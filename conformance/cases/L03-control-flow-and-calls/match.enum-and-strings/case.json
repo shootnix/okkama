@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.match.enum-and-strings",
+  "title": "match on enums and strings",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.MATCH",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "ENUM.VALUES",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "stop\ngo\nwait\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.8",
+    "docs/okkama-spec-11072026.md#15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.8/15: match compares case values with strict equality; enum values match their own cases; the first matching case runs."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let parts = "a,,b,".split(",");
+    out.writeln(parts.size().string());
+    out.writeln(parts.join("|"));
+    out.writeln("a--b".split("--").join("+"));
+    let words is @string = ["red", "green"];
+    out.writeln(words.join(" / "));
+    0;
+}

@@ -1,0 +1,36 @@
+module app v1.0.0;
+import "http/http2_server" take Http2ServerSession;
+import "http/server_policy" take ServerPolicy,ServerTimeouts;
+import "http/client_policy" take HttpLimits;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/body" take ByteBody;
+import "http/status" take Status;
+import "http/header" take Headers;
+import "http/version" take HttpVersion;
+import "http/exchange" take ExchangeDetails;
+import "collections/set" take Set,OrderedSet;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "net/stream" take ConnectionEndpoints;
+import "encoding/utf" take Utf8Encoded;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+// Explicit cleartext prior knowledge. This is a one-connection demonstration,
+// not ALPN negotiation, HTTP1 upgrade or a publicly exposed plaintext endpoint.
+object Application does Handling{
+    Application();
+    async handling(request is Request,context is HttpRequestContext) is HandlingResult{
+        ResponseHandling(Response(Status(200),Headers([]),ByteBody(Utf8Encoded("hello").bytes()),HttpVersion.http_2));
+    }
+}
+async main() is int{
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    Stdout().writeln(listener.local_endpoint().port().string());let peer=await listener.connection();defer peer.close();
+    let endpoints=peer.endpoints();
+    let protocols is Set<HttpVersion>=OrderedSet([HttpVersion.http_2]);let policy=ServerPolicy(protocols,HttpLimits(),ServerTimeouts(),1,1);
+    let session=Http2ServerSession(peer.input(),peer.output(),peer,Application(),ExchangeDetails(endpoints,HttpVersion.http_2),policy,SystemClock());
+    await session.serve();await session.settled();Stdout().writeln("HTTP2 server settled");0;
+}

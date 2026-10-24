@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.throw.role-reference",
+  "title": "a role reference exposing Error may be thrown",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.THROW",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "ROLE.RESTRICTED-REFERENCE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "concrete catch not found: r\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 12.1: a role reference exposing the Error contract may enter throw; throw retains the original object, so a concrete catch matches."
+  },
+  "status": "mandatory"
+}

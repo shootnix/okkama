@@ -1,0 +1,129 @@
+module net/tcp_racing v1.0.0;
+import "net/tcp" take TcpConnecting,TcpConnection,TcpOptions;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "collections/sequence" take Sequencing;
+import "async/collect" take FirstSuccessful,Raced;
+import "async/scope" take FutureGroup;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "time/clock" take Timing,SystemClock;
+import "time/duration" take Duration,DurationUnit;
+
+// Snapshot bounded checked numeric candidates and interleave families while
+// retaining the caller's first family and relative order within each family.
+object TcpRaceEndpoints {
+    has ordered is @IpEndpoint;
+    TcpRaceEndpoints(origins is Sequencing<IpEndpoint>){
+        let count=origins.size();confirm count>=1 && count<=256 else throw InvalidTcpRace("candidate count");
+        let source is @IpEndpoint=(0..count).map()->index{let endpoint=origins.item(index);confirm endpoint.port()>0 else throw InvalidTcpRace("destination port");endpoint;};
+        let family=source[0].address().version();let first=source.filter()->endpoint{endpoint.address().version()==family;};
+        let second=source.filter()->endpoint{endpoint.address().version()!=family;};
+        let pairs=if first.size()<second.size(){first.size();}else{second.size();};
+        let merged is @IpEndpoint=(0..count).map()->index{
+            if index<2*pairs{if (index & 1)==0{first[index >> 1];}else{second[index >> 1];}}
+            else{if first.size()>second.size(){first[pairs+index-2*pairs];}else{second[pairs+index-2*pairs];}}
+        };
+        ordered=merged;
+    }
+    items() is Sequencing<IpEndpoint>{ordered;}
+}
+object TcpRacing {
+    has endpoints is Sequencing<IpEndpoint>;has options is TcpOptions;has delay is Duration;has clock is Timing;
+    TcpRacing(origins is Sequencing<IpEndpoint>){endpoints=TcpRaceEndpoints(origins).items();options=TcpOptions();delay=Duration(250.rat(),DurationUnit.millisecond);clock=SystemClock();}
+    TcpRacing(origins is Sequencing<IpEndpoint>,options is TcpOptions,delay is Duration,clock is Timing){
+        confirm delay.seconds()>=0.rat() else throw InvalidTcpRace("negative stagger");
+        endpoints=TcpRaceEndpoints(origins).items();self.options=options;self.delay=delay;self.clock=clock;
+    }
+    async connection() is TcpConnection {
+        let started is @Event=(0..endpoints.size()).map()->index{Event();};
+        let failed is @Event=(0..endpoints.size()).map()->index{Event();};
+        let attempts is @TcpRaceAttempt=(0..endpoints.size()).map()->index{
+            let prior_started=if index==0{Event(true);}else{started[index-1];};
+            let prior_failed=if index==0{Event();}else{failed[index-1];};
+            TcpRaceAttempt(index,endpoints.item(index),options,delay,clock,prior_started,prior_failed,started[index],failed[index]);
+        };
+        let group is FutureGroup<TcpRaceWin>=FutureGroup();let keep is @int=[];let keeper=Atomic(keep);let published=Event();
+        let cleanup=TcpRaceCleanup(group,attempts,keeper,published);defer await cleanup.close();
+        let futures is @Future<TcpRaceWin>=attempts.map()->attempt{let future=attempt.result();group.start(future);future;};
+        let winner=await FirstSuccessful(origins:futures).result();keeper.replace([winner.position()]);
+        // Dispose ready losers before publication, as well as pending losers
+        // already cancelled by the selector. Cancellation during cleanup keeps
+        // published false, so the winner is also reclaimed.
+        for attempts -> attempt{await attempt.dispose(keeper.value());}
+        published.set();winner.connection();
+    }
+}
+object TcpRaceWin {
+    has position is int;has connection is TcpConnection;
+    TcpRaceWin(position is int,connection is TcpConnection){self.position=position;self.connection=connection;}
+    position() is int{position;}connection() is TcpConnection{connection;}
+}
+object TcpRaceAttempt {
+    has position is int;
+    has endpoint is IpEndpoint;has options is TcpOptions;has delay is Duration;has clock is Timing;
+    has prior_started,prior_failed,started,failed is Event;
+    has waiting is FutureGroup<bool>;has connecting is FutureGroup<TcpConnection>;has raw is Atomic<@Future<TcpConnection>>;
+    TcpRaceAttempt(position is int,endpoint is IpEndpoint,options is TcpOptions,delay is Duration,clock is Timing,prior_started is Event,prior_failed is Event,started is Event,failed is Event){
+        self.position=position;
+        self.prior_started=prior_started;self.prior_failed=prior_failed;self.started=started;self.failed=failed;
+        self.endpoint=endpoint;self.options=options;self.delay=delay;self.clock=clock;
+        let timer is FutureGroup<bool>=FutureGroup();waiting=timer;let network is FutureGroup<TcpConnection>=FutureGroup();connecting=network;
+        let empty is @Future<TcpConnection>=[];raw=Atomic(empty);
+    }
+    async result() is TcpRaceWin {
+        let cleanup=TcpRaceAttemptCleanup(waiting,connecting);defer await cleanup.close();
+        try{
+            if position>0{
+                if !prior_started.ready(){let pending=TcpRaceSignal(prior_started).ready();waiting.start(pending);await pending;}
+            }
+            if position>0 && delay.seconds()>0.rat() && !prior_failed.ready(){
+                let origins is @Future<bool>=[TcpRaceDelay(clock,delay).ready(),TcpRaceSignal(prior_failed).ready()];
+                let pending=Raced(origins:origins).result();waiting.start(pending);await pending;
+            }
+            started.set();let pending=TcpConnecting(endpoint,options).connection();raw.replace([pending]);connecting.start(pending);TcpRaceWin(position,await pending);
+        }catch e is Cancelled{throw;}catch e is Error{started.set();failed.set();throw;}catch e is NativeFailure{started.set();failed.set();throw;}
+    }
+    async dispose(keep is @int) is void {
+        for raw.value() -> pending {
+            let acquired is @TcpConnection=try{[await pending];}catch e is Cancelled{let empty is @TcpConnection=[];empty;}
+                catch e is Error{let empty is @TcpConnection=[];empty;}catch e is NativeFailure{let empty is @TcpConnection=[];empty;};
+            for acquired -> connection{if keep.size()==0 || position!=keep[0]{connection.close();}}
+        }
+    }
+}
+object TcpRaceDelay {
+    has clock is Timing;has delay is Duration;TcpRaceDelay(clock is Timing,delay is Duration){self.clock=clock;self.delay=delay;}
+    async ready() is bool{await clock.wait(delay);true;}
+}
+object TcpRaceSignal {
+    has gate is Event;TcpRaceSignal(gate is Event){self.gate=gate;}
+    async ready() is bool{await gate.wait();true;}
+}
+object TcpRaceAttemptCleanup {
+    has waiting is FutureGroup<bool>;has connecting is FutureGroup<TcpConnection>;
+    TcpRaceAttemptCleanup(waiting is FutureGroup<bool>,connecting is FutureGroup<TcpConnection>){self.waiting=waiting;self.connecting=connecting;}
+    async close() is void {
+        if waiting.active()>0{waiting.cancel();defer await waiting.wait();}
+        if connecting.active()>0{connecting.cancel();defer await connecting.wait();}
+    }
+}
+object TcpRaceCleanup {
+    has group is FutureGroup<TcpRaceWin>;has attempts is @TcpRaceAttempt;has keeper is Atomic<@int>;has published is Event;
+    TcpRaceCleanup(group is FutureGroup<TcpRaceWin>,attempts is @TcpRaceAttempt,keeper is Atomic<@int>,published is Event){self.group=group;self.attempts=attempts;self.keeper=keeper;self.published=published;}
+    async close() is void {
+        if group.active()>0{group.cancel();defer await group.wait();}
+        let keep is @int=if published.ready(){keeper.value();}else{let empty is @int=[];empty;};
+        for attempts -> attempt{await attempt.dispose(keep);}
+    }
+}
+object InvalidTcpRace does Error {
+    has reason is string;InvalidTcpRace(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid TCP race: "+reason;}
+}
+
+test "TCP racing preserves one family and rejects empty candidates" {
+    let endpoint=IpEndpoint(IpAddress("127.0.0.1"),80);
+    test.is(TcpRaceEndpoints([endpoint]).items().size(),1);
+    test.ok(try{TcpRacing([]);false;}catch e is InvalidTcpRace{true;});
+}

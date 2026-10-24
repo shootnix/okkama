@@ -1,0 +1,30 @@
+// Различить сетевые отказы по операции
+//
+// Обработать таймаут подключения отдельно от DNS: NetworkFailure сохраняет вид и операцию отказа.
+//
+// Запуск: ./examples/cookbook/run lab example-network-failure
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-network-failure
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/failure" take NetworkOperation, NetworkFailureKind, NetworkFailure, NetworkError;
+import "runtime/network" take socket;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let result=try {
+        try {socket(99,1,1);"unexpected success";}
+        catch failure is NativeFailure {
+            let translated=NetworkError(NetworkOperation.binding,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    } catch failure is NetworkFailure {
+        confirm failure.operation()==NetworkOperation.binding
+            && failure.kind()==NetworkFailureKind.unsupported else panic "wrong classification";
+        failure.text();
+    };
+    Stdout().writeln(result);
+    0;
+}

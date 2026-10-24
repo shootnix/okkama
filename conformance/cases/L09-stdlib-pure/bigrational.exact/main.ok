@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "numbers/bigint" take BigInt, BigSum, BigProduct, BigQuotient, BigRemainder, BigGcd, BigLcm, BigPower, BigDivisionByZero, InvalidBigInt;
+import "numbers/bigrational" take BigRational, BigRationalSum, ZeroBigRationalDenominator;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("sum", (value BigRationalSum(left: BigRational(numerator: BigInt("1"), denominator: BigInt("3")), right: BigRational(numerator: BigInt("1"), denominator: BigInt("6")))).string(), "1/2");
+    c = c.same_text("negative denominator normalised", BigRational(numerator: BigInt("2"), denominator: BigInt("-4")).denominator().string(), "2");
+    c.done();
+}

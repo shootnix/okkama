@@ -1,0 +1,94 @@
+module bench/app/domain v1.0.0;
+
+// Модель: деньги, товары, покупатели, строки и заказы. Только значения.
+
+object Money {
+    has cents is int;
+
+    Money(cents is int) { self.cents = cents; }
+
+    cents() is int { cents; }
+    plus(other is Money) is Money { Money(cents + other.cents()); }
+    minus(other is Money) is Money { Money(cents - other.cents()); }
+    times(amount is int) is Money { Money(cents * amount); }
+
+    // Доля `rate` процентов, с округлением вниз до цента.
+    percent(rate is int) is Money {
+        let scaled = cents * rate;
+        Money(((scaled - scaled % 100) / 100).int());
+    }
+
+    string() is string {
+        let fraction = cents % 100;
+        let whole = ((cents - fraction) / 100).int();
+        let pad = if fraction < 10 { "0"; } else { ""; };
+        whole.string() + "." + pad + fraction.string();
+    }
+}
+
+object Product {
+    has id, category, price, stock is int;
+    has name is string;
+
+    Product(:id, :name, :category, :price, :stock);
+
+    id() is int { id; }
+    name() is string { name; }
+    category() is int { category; }
+    price() is Money { Money(price); }
+    stock() is int { stock; }
+}
+
+object Customer {
+    has id, tier is int;
+    has name is string;
+
+    Customer(:id, :name, :tier);
+
+    id() is int { id; }
+    tier() is int { tier; }
+    name() is string { name; }
+}
+
+object Line {
+    has product is Product;
+    has quantity is int;
+
+    Line(:product, :quantity);
+
+    product() is Product { product; }
+    quantity() is int { quantity; }
+    subtotal() is Money { product.price().times(quantity); }
+}
+
+object Order {
+    has id is int;
+    has customer is Customer;
+    has lines is @Line;
+
+    Order(:id, :customer) {
+        let empty is @Line = [];
+        lines = empty;
+    }
+
+    id() is int { id; }
+    customer() is Customer { customer; }
+    lines() is @Line { lines; }
+    items() is int { lines.reduce(0) -> count, line { count + line.quantity(); }; }
+    subtotal() is Money { lines.reduce(Money(0)) -> sum, line { sum.plus(line.subtotal()); }; }
+
+    added(line is Line) is ^Order {
+        let appended is @Line = (0..lines.size() + 1).map() -> i { if i < lines.size() { lines[i]; } else { line; } };
+        ^lines = appended;
+    }
+}
+
+object OutOfStock does Error {
+    has product is int;
+    has available is int;
+
+    OutOfStock(:product, :available);
+
+    available() is int { available; }
+    text() is string { "product " + product.string() + " is out of stock"; }
+}

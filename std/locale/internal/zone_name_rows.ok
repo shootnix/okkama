@@ -1,0 +1,7 @@
+module locale/internal/zone_name_rows v1.0.0;
+import "compare" take Order;
+object ZoneNameRows {has fields is @string;ZoneNameRows(origin is string){fields=origin.split("|");}
+row(key is string) is @string{let index=self.search(key,0,(fields.size()/5).int());if index<0{let empty is @string=[];return empty;}let values is @string=(1..5).map()->offset{fields[index*5+offset];};values;}
+private:
+search(key is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=key.order(fields[middle*5]);if order==Order.equal{return middle;}if order==Order.less{self.search(key,start,middle);}else{self.search(key,middle+1,stop);}}
+}

@@ -1,0 +1,5 @@
+module runtime/debug v1.0.0;
+// Existing core.debug diagnostic boundary; no reflection in application code.
+native data_dump(value is any) is string;
+
+test "diagnostic string escaping is explicit" {test.is(data_dump("a\nb"),"\"a\\nb\"");}

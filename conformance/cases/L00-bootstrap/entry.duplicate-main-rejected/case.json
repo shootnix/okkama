@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.entry.duplicate-main-rejected",
+  "title": "two main declarations in one file are rejected",
+  "purpose": "A module may declare exactly one entry point.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "ENTRY.SIGNATURE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "spec 3 'exactly one' entry point; duplicate declaration detection is static but the contract does not fix parse vs analysis."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#3",
+    "docs/okkama-grammar-1.0.md#context-sensitive-restrictions"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 3: executable modules MUST declare exactly one parameterless entry point."
+  },
+  "status": "mandatory"
+}

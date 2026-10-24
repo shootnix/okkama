@@ -1,0 +1,93 @@
+module digest/sha2 v1.0.0;
+
+import "digest/state" take Digesting;
+import "digest/host" take HostDigest;
+
+// SHA-2 (FIPS 180-4) over the host provider. Each object is the digest of an
+// ordered byte history: the empty constructor binds empty input, the @byte
+// constructor binds one chunk, state(bytes) returns a successor over the
+// appended history and leaves this digest, its earlier observations and other
+// branches unchanged. bytes() returns raw bytes (28/32/48/64/32 bytes for
+// Sha224/Sha256/Sha384/Sha512/Sha512_256); format with HexEncoded and encode
+// text explicitly. Construction creates a host state; there is no I/O.
+//
+//     let digest = Sha256(Utf8Encoded("ab").bytes()).state([99.byte()]);
+//     HexEncoded(digest.bytes()).string(); // ba7816bf... for "abc"
+import "encoding/hex" take HexEncoded;
+
+object Sha224 does Digesting {
+    has digest is HostDigest;
+    Sha224() { digest = HostDigest("sha224", [], 0); }
+    Sha224(origin is @byte) { digest = HostDigest("sha224", [], 0).appended(origin); }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Sha224 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Sha256 does Digesting {
+    has digest is HostDigest;
+    Sha256() { digest = HostDigest("sha256", [], 0); }
+    Sha256(origin is @byte) { digest = HostDigest("sha256", [], 0).appended(origin); }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Sha256 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Sha384 does Digesting {
+    has digest is HostDigest;
+    Sha384() { digest = HostDigest("sha384", [], 0); }
+    Sha384(origin is @byte) { digest = HostDigest("sha384", [], 0).appended(origin); }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Sha384 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Sha512 does Digesting {
+    has digest is HostDigest;
+    Sha512() { digest = HostDigest("sha512", [], 0); }
+    Sha512(origin is @byte) { digest = HostDigest("sha512", [], 0).appended(origin); }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Sha512 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Sha512_256 does Digesting {
+    has digest is HostDigest;
+    Sha512_256() { digest = HostDigest("sha512-256", [], 0); }
+    Sha512_256(origin is @byte) { digest = HostDigest("sha512-256", [], 0).appended(origin); }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Sha512_256 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+test "SHA-2 matches FIPS 180-4 examples" {
+    let abc = [97.byte(), 98.byte(), 99.byte()];
+    test.is(HexEncoded(Sha256(abc).bytes()).string(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    test.is(HexEncoded(Sha224(abc).bytes()).string(), "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7");
+    test.is(HexEncoded(Sha384(abc).bytes()).string(), "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7");
+    test.is(HexEncoded(Sha512(abc).bytes()).string(), "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f");
+    test.is(HexEncoded(Sha512_256(abc).bytes()).string(), "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23");
+    test.is(HexEncoded(Sha256().bytes()).string(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+}
+
+test "SHA-2 successors branch immutably" {
+    let prefix = Sha256([97.byte(), 98.byte()]);
+    let whole = prefix.state([99.byte()]);
+    let other = prefix.state([100.byte()]);
+    test.is(whole.bytes(), Sha256([97.byte(), 98.byte(), 99.byte()]).bytes());
+    test.is(other.bytes(), Sha256([97.byte(), 98.byte(), 100.byte()]).bytes());
+    test.is(prefix.bytes(), Sha256([97.byte(), 98.byte()]).bytes());
+    test.is(prefix.state([]).bytes(), prefix.bytes());
+    test.is(Sha512().bytes().size(), 64);
+}
+

@@ -1,0 +1,35 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "strings/parse" take ParsedInt;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint,HostName;
+import "net/tcp" take TcpConnecting;
+import "net/tls" take TlsClientPolicy,TlsClientHandshake,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates,DnsCertificateIdentity;
+import "collections/set" take Set,OrderedSet;
+import "http/tls_session" take Http1TlsSession;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "http/body" take EmptyBody;
+import "io/stdout" take Stdout;
+
+// Use with a local TLS fixture: OKKAMA_TLS_PORT selects its numeric endpoint;
+// OKKAMA_TLS_ROOT selects the explicit DER certificate of its test trust anchor.
+// The fixture's certificate must contain the DNS SAN example.test.
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let tcp=await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"),ParsedInt(environment.variable("OKKAMA_TLS_PORT")).value())).connection();
+    let connection=await TlsClientHandshake(tcp,DnsCertificateIdentity(HostName("example.test")),policy).connection();defer connection.close();
+    confirm tcp.closed();
+    let session=Http1TlsSession(connection);defer session.close();
+    let request=ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n").value().request(EmptyBody());
+    let exchange=await session.exchange(request);
+    confirm exchange.response().status().code()==204;
+    Stdout().writeln("verified HTTPS session returned 204");0;
+}

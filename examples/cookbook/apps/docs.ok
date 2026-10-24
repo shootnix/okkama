@@ -1,0 +1,55 @@
+// Веб-приложение документации Okkama
+//
+// Показывает книгу языка, книгу stdlib и описание учебных приложений через локальный HTTP-сервер.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run docs 8080
+//     Открыть http://127.0.0.1:8080/
+//     Маршруты: /language, /stdlib, /cookbook
+//
+// Документы разбиты на страницы по 8192 символа; ?page=0, ?page=1 и т.д. выбирает страницу.
+// Аргумент — порт (0 выбирает свободный). При старте печатает PORT N. Читает только выбранные в контроллере локальные документы.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/docs v1.0.0;
+import "../support/arguments" take Arguments;
+import "fs/file" take File,FileMode,FileEntry;
+import "fs/path" take Path;
+import "strings/parse" take ParsedInt;
+import "../support/http" take LocalWeb,Page;
+import "web/routing" take WebRoutes,Get;
+import "web/request" take WebRequest;
+import "web/reply" take Html;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult;
+import "html/entities" take EscapedHtml;
+object Documentation {
+    Documentation();
+    async index(request is WebRequest) is HandlingResult{
+        Page("Документация Okkama","<nav><a href=/language>Язык</a> · <a href=/stdlib>Стандартная библиотека</a> · <a href=/cookbook>Учебные приложения</a></nav><article>Выберите книгу. Книги показаны страницами исходного Markdown; переходы расположены над текстом.</article>").reply();
+    }
+    async language(request is WebRequest) is HandlingResult{self.document(request,"Язык Okkama","docs/OkkamaBook-RU.md","/language");}
+    async stdlib(request is WebRequest) is HandlingResult{self.document(request,"Стандартная библиотека","docs/Okkama-Stdlib-RU.md","/stdlib");}
+    async cookbook(request is WebRequest) is HandlingResult{self.document(request,"Учебные приложения","examples/cookbook/README.md","/cookbook");}
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"Документ не найден");}
+    private:
+    // Читаем UTF-8 текстовым API; в ответ отправляем страницу, а не всю книгу.
+    document(request is WebRequest,title is string,path is string,route is string) is Html{
+        let number=try{ParsedInt(request.query("page","0")).value();}
+            catch error is Error{throw Exception(400,"Некорректный номер страницы");};
+        confirm number>=0 && number<=1000 else throw Exception(400,"Некорректный номер страницы");
+        let source=Path(path);
+        confirm FileEntry(source).stat().size()<=2097152 else throw Exception(413,"Документ слишком велик");
+        let file=File(mode:FileMode.reading,path:source);defer file.close();
+        let text=file.text().content();let start=number*8192;
+        confirm start<text.length() || (number==0 && text.length()==0) else throw Exception(404,"Страница не найдена");
+        let end=if start+8192<text.length(){start+8192;}else{text.length();};
+        let previous=if number>0{" · <a href="+route+"?page="+(number-1).string()+">Назад</a>";}else{"";};
+        let following=if end<text.length(){" · <a href="+route+"?page="+(number+1).string()+">Далее</a>";}else{"";};
+        Page(title,"<nav><a href=/>На главную</a> · Страница "+(number+1).string()+previous+following+"</nav><pre>"+EscapedHtml(text.slice(start,end)).string()+"</pre>").reply();
+    }
+}
+async main() is int{
+    let args=Arguments();let controller=Documentation();
+    await LocalWeb().serve(WebRoutes([Get("/",controller.index),Get("/language",controller.language),Get("/stdlib",controller.stdlib),Get("/cookbook",controller.cookbook)],controller.missing),args.integer(0,8080));0;
+}

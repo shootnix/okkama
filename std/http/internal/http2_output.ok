@@ -1,0 +1,104 @@
+module http/internal/http2_output v1.0.0;
+import "http/internal/http2_input" take Http2ControlQueuing;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2FrameRules,Http2Fault,Http2FaultScope;
+import "http/internal/hpack" take HpackBudget;
+import "http/internal/hpack_tables" take HpackField;
+import "http/internal/http2_headers" take Http2EncodedHeaderFrames;
+import "collections/sequence" take Sequencing;
+import "net/stream" take AsyncWriting;
+import "io/decorators" take ByteSnapshot;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "error" take InvalidState;
+
+role Http2OutputStarting {start() is void;}
+object Http2OutputUnreserved does Http2OutputStarting{Http2OutputUnreserved();start() is void{}}
+
+// Connection owns run(); stream callers own only tickets. Cancelling a ticket
+// never cancels a started physical frame or splits a HEADERS/CONTINUATION block.
+object Http2ConnectionOutput does Http2ControlQueuing {
+    has origin is AsyncWriting;has jobs is Atomic<@Http2OutputTicket>;has current is Atomic<@Http2OutputTicket>;
+    has changed,space is Atomic<Event>;has stopping,started is Event;has count,bytes is Atomic<int>;has maximum,byte_limit is int;
+    Http2ConnectionOutput(origin is AsyncWriting,maximum is int,byte_limit is int){
+        confirm maximum>0 && maximum<=256 && byte_limit>=9 && byte_limit<=1048576 else throw Http2OutputLimit();
+        self.origin=origin;self.maximum=maximum;self.byte_limit=byte_limit;
+        let empty is @Http2OutputTicket=[];jobs=Atomic(empty);current=Atomic(empty);changed=Atomic(Event());space=Atomic(Event());stopping=Event();started=Event();count=Atomic(0);bytes=Atomic(0);
+    }
+    submit(frames is @Http2Frame) is Http2OutputTicket{
+        self.submit(frames,Http2OutputUnreserved());
+    }
+    submit(frames is @Http2Frame,starting is Http2OutputStarting) is Http2OutputTicket{
+        confirm !stopping.ready() else throw Http2OutputStopped();
+        confirm frames.size()>0 && frames.size()<=1024 && count.value()<maximum else throw Http2OutputLimit();
+        let amount is int=frames.reduce(0)->total,frame{Http2FrameRules(frame).check();let following is int=total+9+frame.header().length();confirm following<=byte_limit-bytes.value() else throw Http2OutputLimit();following;};
+        let ticket=Http2OutputTicket(frames,amount,starting);let old=jobs.value();let following is @Http2OutputTicket=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{ticket;}};
+        jobs.replace(following);count.replace(count.value()+1);bytes.replace(bytes.value()+amount);changed.value().set();ticket;
+    }
+    frame(frame is Http2Frame) is void{self.submit([frame]);}
+    headers(stream is int,fields is Sequencing<HpackField>,budget is HpackBudget,fragment is int,end_stream is bool) is Http2OutputTicket{
+        self.headers(stream,fields,budget,fragment,end_stream,Http2OutputUnreserved());
+    }
+    headers(stream is int,fields is Sequencing<HpackField>,budget is HpackBudget,fragment is int,end_stream is bool,starting is Http2OutputStarting) is Http2OutputTicket{
+        confirm !stopping.ready() else throw Http2OutputStopped();
+        confirm count.value()<maximum else throw Http2OutputLimit();
+        let encoded=Http2EncodedHeaderFrames(stream,fields,budget,fragment,end_stream);self.submit(encoded.frames(),starting);
+    }
+
+    space() is Event{space.value();}maximum_bytes() is int{byte_limit;}
+    finish() is void{stopping.set();changed.value().set();space.value().set();}
+    take() is @Http2OutputTicket{
+        let queue=jobs.value();if queue.size()==0{return [];}
+        let first=queue[0];jobs.replace(queue.slice(1,queue.size()));current.replace([first]);[first];
+    }
+    released(ticket is Http2OutputTicket) is void{current.replace([]);count.replace(count.value()-1);bytes.replace(bytes.value()-ticket.size());space.value().set();space.replace(Event());}
+    abort() is void{
+        self.finish();for current.value() -> ticket{ticket.failed();}for jobs.value() -> ticket{ticket.failed();}
+        current.replace([]);jobs.replace([]);count.replace(0);bytes.replace(0);
+    }
+    async run() is bool{
+        confirm !started.ready() else throw InvalidState("HTTP2 wire writer is single-use");started.set();defer self.abort();
+        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2OutputSettlement(group);defer await cleanup.close();
+        let pending=self.write_loop();group.start(pending);await pending;
+    }
+
+    private:
+    async write_loop() is bool{
+        loop{
+            let available=self.take();if available.size()==0{
+                if stopping.ready(){return true;}
+                let signal=Event();changed.replace(signal);await signal.wait();next;
+            }
+            let ticket=available[0];
+            if !ticket.cancelled(){
+                ticket.begin();
+                for ticket.frames() -> frame{
+                    let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2OutputSettlement(group);defer await cleanup.close();
+                    let pending=origin.write(ByteSnapshot(frame.bytes()));group.start(pending);await pending;
+                }
+                ticket.completed();
+            }
+            self.released(ticket);
+        }
+    }
+
+}
+
+object Http2OutputTicket {
+    has frames is @Http2Frame;has amount is int;has finished,cancellation,stopped is Event;
+    has starting is Http2OutputStarting;has begun is Event;
+    Http2OutputTicket(frames is @Http2Frame,amount is int,starting is Http2OutputStarting){self.frames=frames;self.amount=amount;self.starting=starting;finished=Event();cancellation=Event();stopped=Event();begun=Event();}
+    frames() is @Http2Frame{frames;}size() is int{amount;}cancelled() is bool{cancellation.ready();}
+    begin() is void{starting.start();begun.set();}started() is bool{begun.ready();}
+    cancel() is void{if !finished.ready(){cancellation.set();finished.set();}}
+    completed() is void{finished.set();}
+    failed() is void{if !finished.ready(){stopped.set();finished.set();}}
+    async result() is bool{
+        defer self.cancel();await finished.wait();
+        confirm !stopped.ready() else throw Http2OutputStopped();confirm !cancellation.ready() else throw Http2OutputCancelled();true;
+    }
+}
+object Http2OutputSettlement<T>{has group is FutureGroup<T>;Http2OutputSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+object Http2OutputLimit does Error{Http2OutputLimit();text() is string{"HTTP2 output queue limit";}}
+object Http2OutputStopped does Error{Http2OutputStopped();text() is string{"HTTP2 output stopped";}}
+object Http2OutputCancelled does Error{Http2OutputCancelled();text() is string{"HTTP2 output ticket cancelled";}}

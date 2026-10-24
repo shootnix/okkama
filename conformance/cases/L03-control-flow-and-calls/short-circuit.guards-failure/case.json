@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.short-circuit.guards-failure",
+  "title": "short-circuit protects a failing right operand",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.SHORT-CIRCUIT",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "empty or small\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.5",
+    "docs/okkama-spec-11072026.md#8.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Short-circuit: the out-of-bounds index is never evaluated when the left operand is false."
+  },
+  "status": "mandatory"
+}

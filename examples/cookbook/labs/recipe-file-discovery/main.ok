@@ -1,0 +1,27 @@
+// Найти CSV и дождаться изменения каталога
+//
+// Папка обмена получает новые выгрузки, которые требуется обнаруживать по расширению.
+//
+// Запуск: ./examples/cookbook/run lab recipe-file-discovery
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-file-discovery
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/file_discovery v1.0.0;
+import "fs/glob" take MatchingPaths;
+import "fs/watch" take FileWatch;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let incoming = Directory(Path("."));
+    for MatchingPaths(root: incoming, pattern: "**/*.csv") -> path {
+        Stdout().writeln(path.string());
+    }
+    let watch = FileWatch(path: incoming.path());
+    defer watch.close();
+    let event = await watch.event();
+    Stdout().writeln(event.path().string());
+    0;
+}

@@ -1,0 +1,17 @@
+module bench/calls v1.0.0;
+
+// Вызовы: рекурсивный fib (нехвостовая рекурсия, ~7 млн вызовов).
+import "io/stdout" take Stdout;
+
+object Fib {
+    Fib();
+
+    fib(n is int) is int {
+        if n < 2 { n; } else { self.fib(n - 1) + self.fib(n - 2); }
+    }
+}
+
+main() is int {
+    Stdout().writeln(Fib().fib(32).string());
+    0;
+}

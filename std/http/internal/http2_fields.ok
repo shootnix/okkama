@@ -1,0 +1,187 @@
+module http/internal/http2_fields v1.0.0;
+import "http/internal/hpack_tables" take HpackField;
+import "http/internal/http2_frame" take Http2Fault,Http2FaultScope;
+import "http/message" take Request,Response;
+import "http/body" take BodyOpening;
+import "http/method" take Method,InvalidMethod;
+import "http/status" take Status,InvalidStatus;
+import "http/version" take HttpVersion;
+import "http/target" take RequestTarget,RequestTargetKind,AbsoluteTarget,ParsedRequestTarget,InvalidRequestTarget;
+import "http/header" take Headers,Header,HeaderName,HeaderLimits,Http2Headers,HttpAsciiLowercase,InvalidHeader;
+import "url/value" take Url,UrlAuthority,ParsedUrl,ParsedUrlAuthority,MissingUrlPort,UrlHostKind,InvalidUrl;
+import "encoding/single_byte" take Latin1Encoded;
+import "async/atomic" take Atomic;
+
+// Pure outbound control-data mapping. Bodies are deliberately unobserved.
+object Http2RequestFields {
+    has fields is @HpackField;
+    Http2RequestFields(request is Request,stream is int){
+        Http2StreamCoordinate(stream);let target=request.target();
+        let prefix is @HpackField=if target.kind()==RequestTargetKind.authority{
+            confirm request.method().string()=="CONNECT" else throw Http2Fault(Http2FaultScope.stream,1,stream,"authority target requires CONNECT");
+            Http2HostAgreement(request.headers(),"",target.authority().string(),stream);
+            [HpackField(":method","CONNECT"),HpackField(":authority",target.authority().string())];
+        }else{
+            confirm target.kind()==RequestTargetKind.absolute else throw Http2Fault(Http2FaultScope.stream,1,stream,"absolute URL or explicit route required");
+            Http2RequestControl(request,target.url(),stream).fields();
+        };
+        fields=Http2JoinedFields(prefix,Http2OrdinaryFields(request.headers(),true,stream).fields()).fields();
+    }
+    Http2RequestFields(request is Request,stream is int,route is Url){
+        Http2StreamCoordinate(stream);AbsoluteTarget(route);
+        if request.target().kind()==RequestTargetKind.absolute{
+            confirm request.target().url().string()==route.string() else throw Http2Fault(Http2FaultScope.stream,1,stream,"route URL disagrees with request");
+        }
+        confirm request.target().kind()!=RequestTargetKind.authority else throw Http2Fault(Http2FaultScope.stream,1,stream,"CONNECT uses authority coordinates");
+        fields=Http2JoinedFields(Http2RequestControl(request,route,stream).fields(),Http2OrdinaryFields(request.headers(),true,stream).fields()).fields();
+    }
+    fields() is @HpackField{fields;}
+}
+object Http2RequestControl {
+    has fields is @HpackField;
+    Http2RequestControl(request is Request,url is Url,stream is int){
+        AbsoluteTarget(url);let parts=url.parts();let authority=parts.authority().string();
+        Http2HostAgreement(request.headers(),parts.scheme(),authority,stream);
+        let target=request.target();
+        let path=match target.kind(){
+            case RequestTargetKind.asterisk{"*";}
+            case RequestTargetKind.origin{target.string();}
+            case RequestTargetKind.absolute{
+                (if parts.path()==""{"/";}else{parts.path();})+(if parts.query().present(){"?"+parts.query().string();}else{"";});
+            }
+            else{throw Http2Fault(Http2FaultScope.stream,1,stream,"unsupported request target");}
+        };
+        fields=[HpackField(":method",request.method().string()),HpackField(":scheme",parts.scheme()),HpackField(":authority",authority),HpackField(":path",path)];
+    }
+    fields() is @HpackField{fields;}
+}
+object Http2HostAgreement {
+    Http2HostAgreement(fields is Headers,scheme is string,authority is string,stream is int){
+        let hosts=fields.values(HeaderName("Host"));
+        confirm hosts.size()<=1 else throw Http2Fault(Http2FaultScope.stream,1,stream,"duplicate Host");
+        let expected=Http2AuthorityKey(scheme,authority,stream).string();
+        if hosts.size()==1{
+            confirm Http2AuthorityKey(scheme,hosts.item(0),stream).string()==expected
+                else throw Http2Fault(Http2FaultScope.stream,1,stream,"Host disagrees with authority");
+        }
+    }
+}
+object Http2AuthorityKey {
+    has key is string;
+    Http2AuthorityKey(scheme is string,origin is string,stream is int){
+        let authority=try{ParsedUrlAuthority(origin).value();}
+            catch failure is InvalidUrl{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid authority");};
+        confirm authority.present() && authority.host().kind()!=UrlHostKind.empty && !authority.userinfo().present()
+            else throw Http2Fault(Http2FaultScope.stream,1,stream,"authority without host or with userinfo");
+        let port=try{authority.port();}catch failure is MissingUrlPort{
+            if scheme=="https"{443;}else{if scheme=="http"{80;}else{throw Http2Fault(Http2FaultScope.stream,1,stream,"explicit authority port required");}}
+        };
+        key=authority.host().string()+":"+port.string();
+    }
+    string() is string{key;}
+}
+object Http2ResponseFields {
+    has fields is @HpackField;
+    Http2ResponseFields(response is Response,stream is int){
+        Http2StreamCoordinate(stream);confirm response.status().code()!=101 else throw Http2Fault(Http2FaultScope.stream,1,stream,"101 is invalid in HTTP2");
+        fields=Http2JoinedFields([HpackField(":status",response.status().code().string())],Http2OrdinaryFields(response.headers(),false,stream).fields()).fields();
+    }
+    fields() is @HpackField{fields;}
+}
+object Http2OrdinaryFields {
+    has fields is @HpackField;
+    Http2OrdinaryFields(origin is Headers,request is bool,stream is int){
+        let checked=try{Http2Headers(origin,request).result();}
+            catch failure is InvalidHeader{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid HTTP2 ordinary field");};
+        let entries=checked.entries();let rows is @HpackField=(0..entries.size()).map()->index{let field=entries.item(index);HpackField(field.name().string(),field.value());};fields=rows;
+    }
+    fields() is @HpackField{fields;}
+}
+object Http2JoinedFields {
+    has fields is @HpackField;
+    Http2JoinedFields(prefix is @HpackField,ordinary is @HpackField){let rows is @HpackField=(0..prefix.size()+ordinary.size()).map()->index{if index<prefix.size(){prefix[index];}else{ordinary[index-prefix.size()];}};fields=rows;}
+    fields() is @HpackField{fields;}
+}
+object ParsedHttp2Response {
+    has status is Status;has headers is Headers;
+    ParsedHttp2Response(origin is @HpackField,stream is int,end_stream is bool){
+        let section=Http2FieldSection(origin,[":status"],false,stream);let value=section.pseudos().value(":status");
+        let bytes=Latin1Encoded(value).bytes();confirm bytes.size()==3 else throw Http2Fault(Http2FaultScope.stream,1,stream,"three status digits required");
+        let code is int=bytes.reduce(0)->number,octet{let digit=octet.int();confirm digit>=48 && digit<=57 else throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid status digits");number*10+digit-48;};
+        confirm code!=101 && !(code<200 && end_stream) else throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid HTTP2 informational status or end");
+        status=try{Status(code);}catch failure is InvalidStatus{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid status range");};headers=section.headers();
+    }
+    status() is Status{status;}headers() is Headers{headers;}
+    response(body is BodyOpening) is Response{Response(status,headers,body,HttpVersion.http_2);}
+}
+object ParsedHttp2Request {
+    has method is Method;has target is RequestTarget;has headers is Headers;
+    has scheme is string;has authority is UrlAuthority;
+    ParsedHttp2Request(origin is @HpackField,stream is int){
+        let section=Http2FieldSection(origin,[":method",":scheme",":authority",":path"],true,stream);let known=section.pseudos();
+        let method=try{Method(known.value(":method"));}catch failure is InvalidMethod{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid method token");};
+        let connect=method.string()=="CONNECT";
+        let scheme=if connect{"";}else{HttpAsciiLowercase(known.value(":scheme")).string();};
+        confirm connect || scheme=="http" || scheme=="https" else throw Http2Fault(Http2FaultScope.stream,1,stream,"unsupported request scheme");
+        let raw=if known.contains(":authority"){known.value(":authority");}else{
+            let hosts=section.headers().values(HeaderName("Host"));
+            confirm !connect && hosts.size()==1 else throw Http2Fault(Http2FaultScope.stream,1,stream,"authority required");hosts.item(0);
+        };
+        Http2HostAgreement(section.headers(),scheme,raw,stream);
+        let authority=try{ParsedUrlAuthority(raw).value();}catch failure is InvalidUrl{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid authority");};
+        let target is RequestTarget=if connect{
+            confirm !known.contains(":scheme") && !known.contains(":path") else throw Http2Fault(Http2FaultScope.stream,1,stream,"CONNECT forbids scheme and path");
+            try{ParsedRequestTarget(raw,method).value();}catch failure is InvalidRequestTarget{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid CONNECT authority target");}
+        }else{
+            let path=known.value(":path");
+            let checked=try{ParsedRequestTarget(path,method).value();}catch failure is InvalidRequestTarget{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid request path");};
+            confirm checked.kind()==RequestTargetKind.origin || checked.kind()==RequestTargetKind.asterisk
+                else throw Http2Fault(Http2FaultScope.stream,1,stream,"origin or OPTIONS star path required");
+            if checked.kind()==RequestTargetKind.asterisk{checked;}else{
+                try{AbsoluteTarget(ParsedUrl(scheme+"://"+authority.string()+path).value());}
+                    catch failure is InvalidUrl{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid reconstructed URL");}
+            }
+        };
+        self.method=method;self.target=target;headers=section.headers();self.scheme=scheme;self.authority=authority;
+    }
+    method() is Method{method;}target() is RequestTarget{target;}headers() is Headers{headers;}
+    scheme() is string{scheme;}authority() is UrlAuthority{authority;}
+    request(body is BodyOpening) is Request{Request(method,target,headers,body,HttpVersion.http_2);}
+}
+object Http2StreamCoordinate {
+    Http2StreamCoordinate(stream is int){confirm stream>0 && stream<=2147483647 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid header stream");}
+}
+object Http2FieldSection {
+    has pseudos is Http2PseudoFields;has headers is Headers;
+    Http2FieldSection(origin is @HpackField,allowed is @string,request is bool,stream is int){
+        Http2StreamCoordinate(stream);confirm origin.size()<=1024 else throw Http2Fault(Http2FaultScope.stream,11,stream,"field count budget");
+        let known=Http2PseudoFields(stream);let ordinary=Atomic(false);let used=Atomic(0);
+        for origin -> field{
+            confirm field.size()<=1048576-used.value() else throw Http2Fault(Http2FaultScope.stream,11,stream,"field list budget");used.replace(used.value()+field.size());
+            let name=field.name();confirm name!="" && name==HttpAsciiLowercase(name).string() else throw Http2Fault(Http2FaultScope.stream,1,stream,"empty or uppercase field name");
+            let pseudo=name.slice(0,1)==":";
+            if pseudo{
+                let permitted is bool=allowed.reduce(false)->found,key{found || key==name;};
+                confirm permitted && !ordinary.value() && !known.contains(name) else throw Http2Fault(Http2FaultScope.stream,1,stream,"unknown duplicate or late pseudo-field");known=known.added(field);
+            }else{ordinary.replace(true);}
+            let validated=try{Header(HeaderName(if pseudo{"x";}else{name;}),field.value());}
+                catch failure is InvalidHeader{throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid field octets");};
+            confirm validated.value()==field.value() else throw Http2Fault(Http2FaultScope.stream,1,stream,"field edge whitespace");
+        }
+        let filtered is @HpackField=origin.filter()->field{field.name().slice(0,1)!=":";};
+        let entries is @Header=filtered.map()->field{Header(HeaderName(field.name()),field.value());};
+        headers=try{Http2Headers(Headers(entries,HeaderLimits(1024,1048576)),request).result();}
+            catch failure is InvalidHeader{throw Http2Fault(Http2FaultScope.stream,1,stream,"connection-specific or invalid TE field");};pseudos=known;
+    }
+    pseudos() is Http2PseudoFields{pseudos;}headers() is Headers{headers;}
+}
+object Http2PseudoFields {
+    has fields is @HpackField;has stream is int;Http2PseudoFields(stream is int){fields=[];self.stream=stream;}
+    contains(name is string) is bool{fields.reduce(false)->found,field{found || field.name()==name;};}
+    value(name is string) is string{for fields -> field{if field.name()==name{return field.value();}}throw Http2Fault(Http2FaultScope.stream,1,stream,"required pseudo-field missing");}
+    added(field is HpackField) is ^Http2PseudoFields{let following is @HpackField=(0..fields.size()+1).map()->index{if index<fields.size(){fields[index];}else{field;}};^fields=following;}
+}
+test "response pseudo-status stays outside ordinary Headers" {
+    let response=ParsedHttp2Response([HpackField(":status","200")],1,true);
+    test.is(response.status().code(),200);test.is(response.headers().entries().size(),0);
+}

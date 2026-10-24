@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/path" take Path;
+import "fs/directory" take Directory, DirectoryEntries;
+import "fs/temp" take TemporaryDirectory;
+import "encoding/utf" take Utf8Decoded;
+
+main() is int {
+    let out = Stdout();
+    let scratch = TemporaryDirectory(parent: Directory(path: Path(".")), prefix: "ocs-");
+    let inner = scratch.path().child("note.txt");
+    let f = File(mode: FileMode.writing, path: inner);
+    f.text().write("x");
+    f.close();
+    out.writeln(if FileEntry(path: inner).existence() { "exists"; } else { "missing"; });
+    scratch.close();
+    scratch.close();
+    out.writeln(if FileEntry(path: inner).existence() { "exists"; } else { "removed"; });
+    out.writeln(if scratch.closed() { "closed"; } else { "open"; });
+    0;
+}

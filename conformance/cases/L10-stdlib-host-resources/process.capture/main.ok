@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "os/command" take Command;
+import "os/command_capture" take CommandCapture;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/directory" take Directory;
+import "encoding/utf" take Utf8Decoded;
+
+async main() is int {
+    let out = Stdout();
+    let command = Command(program: Path("printf"), arguments: ["%s|%s", "a b", "c;d"], environment: Environment(), directory: Directory(path: Path(".")));
+    let completed = await CommandCapture(origin: command, limit: 4096).completion();
+    out.writeln(Utf8Decoded(origin: completed.output()).string());
+    out.writeln(if completed.exit().success() { "success"; } else { "failure"; });
+    let failing = Command(program: Path("false"), arguments: [], environment: Environment(), directory: Directory(path: Path(".")));
+    let failed = await CommandCapture(origin: failing, limit: 4096).completion();
+    out.writeln(failed.exit().code().string());
+    0;
+}

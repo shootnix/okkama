@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.caps.ordinary-block-body",
+  "title": "cap fields use ordinary blocks within their restrictions",
+  "purpose": "Observe the permitted body features of computed fields.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "CAP.RESTRICTIONS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "CAP.DECL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "12\nshadowed/store\n42\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.2.1",
+    "docs/object-caps-0.0.1-ru.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.2.1 / caps guide: field bodies are ordinary synchronous blocks with locals, control flow, explicit return and closures; locals may shadow owner fields; a callable result can be called with ordinary syntax."
+  },
+  "status": "mandatory"
+}

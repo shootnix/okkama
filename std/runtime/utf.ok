@@ -1,0 +1,43 @@
+module runtime/utf v1.0.0;
+
+// Portable UTF codec boundary for encoding/utf. Every backend implements the
+// same scalar-value, byte-order and malformed-prefix contract.
+
+native utf8_encode(origin is string) is @byte;
+native utf8_decode(origin is @byte) is string;
+native utf8_valid_prefix(origin is @byte) is int;
+
+native utf16_encode(origin is string, order is string) is @byte;
+native utf16_decode(origin is @byte, order is string) is string;
+native utf16_valid_prefix(origin is @byte, order is string) is int;
+
+native utf32_encode(origin is string, order is string) is @byte;
+native utf32_decode(origin is @byte, order is string) is string;
+native utf32_valid_prefix(origin is @byte, order is string) is int;
+
+// Encoders/decoders preserve all Unicode scalars, including noncharacters.
+// UTF-16/32 order is exactly "big" or "little"; no BOM inference/stripping.
+// valid_prefix returns full byte size for valid text or the first malformed
+// scalar's starting byte. Direct malformed decode returns native invalid_data.
+// These are pure snapshots: no I/O, ambient locale or retained resource state.
+
+test "native UTF scalar boundaries agree with decoding" {
+    let octets = [byte(239), byte(191), byte(191), byte(244), byte(143), byte(191), byte(191)];
+    test.is(utf8_valid_prefix(octets), octets.size());
+    let text = utf8_decode(octets);
+    test.is(text.length(), 2);
+    test.is(utf8_encode(text), octets);
+    for ["big", "little"] -> order {
+        let wide16 = utf16_encode(text, order);
+        let wide32 = utf32_encode(text, order);
+        test.is(utf16_valid_prefix(wide16, order), wide16.size());
+        test.is(utf32_valid_prefix(wide32, order), wide32.size());
+        test.is(utf16_decode(wide16, order), text);
+        test.is(utf32_decode(wide32, order), text);
+    }
+}
+test "native malformed UTF never becomes replacement text" {
+    test.is(try {utf8_decode([byte(192), byte(128)]); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
+    test.is(try {utf16_decode([byte(216), byte(0)], "big"); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
+    test.is(try {utf32_decode([byte(0), byte(17), byte(0), byte(0)], "big"); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
+}

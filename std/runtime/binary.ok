@@ -1,0 +1,35 @@
+module runtime/binary v1.0.0;
+
+// Portable fixed-width numeric binary boundary. Integers use unsigned
+// magnitude or two's complement. Floats use finite IEEE 754 binary32/binary64.
+
+native binary_integer_fits(
+    value is int,
+    size is int,
+    signedness is string,
+) is bool;
+native binary_integer_bytes(
+    value is int,
+    size is int,
+    signedness is string,
+    order is string,
+) is @byte;
+native binary_integer_from_bytes_fits(
+    origin is @byte,
+    signedness is string,
+    order is string,
+) is bool;
+native binary_integer_from_bytes(
+    origin is @byte,
+    signedness is string,
+    order is string,
+) is int;
+
+native binary_float_fits(value is float, width is int) is bool;
+native binary_float_bytes(value is float, width is int, order is string) is @byte;
+native binary_float_finite(origin is @byte, width is int, order is string) is bool;
+native binary_float_from_bytes(origin is @byte, width is int, order is string) is float;
+
+// Exact stringwise repeated four-octet mask, bounded to 65536 output bytes.
+// Offset is the phase at origin[0]; start advances that phase. No input consumed.
+native binary_masked_slice(origin is @byte,mask is @byte,offset is int,start is int,size is int) is @byte;

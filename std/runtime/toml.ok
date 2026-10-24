@@ -1,0 +1,55 @@
+module runtime/toml v1.0.0;
+
+// Private bounded TOML 1.0 parse tree. The public toml/parse module owns the
+// domain projection; opaque handles are not exposed by its API. No I/O.
+// State allocation binds text/budgets without parsing. First observation caches
+// a complete tree or diagnostic. Node handles are reused across observations;
+// the registry owns their memory until teardown, with no external resources.
+// Unicode scalar offsets are zero-based; line/column one-based, CRLF one line.
+// Kinds: 1 integer, 2 finite float, 3 text, 4 boolean, 5 array, 6 table,
+// 7 date, 8 time, 9 local datetime, 10 offset datetime, 11 infinity, 12 NaN.
+// coordinates(): date [year,month,day], time [hour,minute,second,nanosecond],
+// datetime concatenates those; offset datetime appends [minutes,known(0/1)].
+// text() accepts text or exact integer spelling; integer() narrows only after
+// signed 64-bit validation. boolean() also observes infinity's negative sign.
+// size/item apply to ordered arrays/tables; member_name only to tables.
+// Wrong kind/index and root access after invalid input are native failures.
+// Direct invalid budgets become a parse diagnostic; public constructors reject
+// configuration earlier as InvalidTomlBudget. Limits: depth 1..128, input >=0,
+// nodes >=1, tables <=1024 members and arrays <=10000 items.
+
+native object TomlParseState;
+native object TomlNodeState;
+native toml_parse_state(origin is string, maximum_input is int, maximum_depth is int, maximum_nodes is int) is TomlParseState;
+native toml_parse_valid(origin is TomlParseState) is bool;
+native toml_parse_offset(origin is TomlParseState) is int;
+native toml_parse_line(origin is TomlParseState) is int;
+native toml_parse_column(origin is TomlParseState) is int;
+native toml_parse_message(origin is TomlParseState) is string;
+native toml_parse_root(origin is TomlParseState) is TomlNodeState;
+native toml_node_kind(origin is TomlNodeState) is int;
+native toml_node_size(origin is TomlNodeState) is int;
+native toml_node_integer(origin is TomlNodeState) is int;
+native toml_node_real(origin is TomlNodeState) is float;
+native toml_node_boolean(origin is TomlNodeState) is bool;
+native toml_node_text(origin is TomlNodeState) is string;
+native toml_node_coordinates(origin is TomlNodeState) is @int;
+native toml_node_item(origin is TomlNodeState, index is int) is TomlNodeState;
+native toml_member_name(origin is TomlNodeState, index is int) is string;
+
+test "opaque parse state preserves diagnostics" {
+    let invalid = toml_parse_state("x=", 100, 8, 100);
+    test.is(toml_parse_valid(invalid), false);
+    test.is(toml_parse_offset(invalid), 2);
+    test.is(toml_parse_line(invalid), 1);
+    test.is(toml_parse_column(invalid), 3);
+    test.is(toml_parse_valid(invalid), false);
+}
+test "opaque nodes retain exact integer text and stable children" {
+    let parsed = toml_parse_state("x=9007199254740993", 100, 8, 100);
+    test.ok(toml_parse_valid(parsed));
+    let root = toml_parse_root(parsed);
+    test.is(toml_node_size(root), 1);
+    test.is(toml_member_name(root, 0), "x");
+    test.is(toml_node_text(toml_node_item(root, 0)), "9007199254740993");
+}

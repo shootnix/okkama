@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.json.typed-reading",
+  "title": "typed JSON reading keeps exact numbers",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.JSON.READ",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - text member\nok 2 - int member\nok 3 - exact big integer\nok 4 - big integer is not int\nok 5 - array items\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/json/read.ok",
+    "RFC 6901"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "json/read: integer() is exact at any size; int() requires signed 64-bit and reports InvalidJsonNumber with the RFC 6901 pointer /n."
+  },
+  "status": "mandatory"
+}

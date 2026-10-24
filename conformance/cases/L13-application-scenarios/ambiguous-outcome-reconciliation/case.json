@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.ambiguous-outcome-reconciliation",
+  "title": "a lost provider response is reconciled by key without double charging",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.AMBIGUOUS-OUTCOME",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - first attempt is ambiguous\nok 2 - lookup resolves\nok 3 - retry with the original key\nok 4 - exactly one provider charge\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/refund-reconciliation.md",
+    "improvements-roadmap/results/IMP-32/RESULT.md",
+    "improvements-roadmap/results/IMP-19/RESULT.md"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "IMP-32 / reconciliation: a lost charge response is UNKNOWN, not a failure; lookup with the original key resolves it; retries reuse the key, so the provider records exactly one charge."
+  },
+  "status": "mandatory"
+}

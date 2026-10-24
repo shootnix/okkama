@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.if.expression-without-else",
+  "title": "an else-less if cannot supply a value",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.IF",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "grammar if_expr requires else, so a parser may reject the form; an implementation that parses it as a statement must reject the missing value statically or at runtime."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.11",
+    "docs/okkama-spec-11072026.md#7.2",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.11: if is an expression only when both branches are present; a missing value cannot cross a typed let boundary."
+  },
+  "status": "mandatory"
+}

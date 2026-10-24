@@ -1,0 +1,95 @@
+module http/endpoint v1.0.0;
+import "url/value" take ParsedUrl,Url,UrlHost,UrlHostKind,MissingUrlPort;
+import "net/ip" take IpAddress,IpNetwork,IpProperty;
+import "net/endpoint" take IpEndpoint,HostEndpoint;
+import "net/dns" take Resolving;
+import "collections/sequence" take Sequencing;
+import "async/scope" take FutureGroup;
+
+// The caller can inspect both the effective URL and the exact numeric candidate.
+// This capability grants no DNS lookup, socket mutation or implicit redirect.
+role EndpointAllowing {allowed(url is Url,endpoint is IpEndpoint) is bool;}
+object AllEndpoints does EndpointAllowing {
+    AllEndpoints();allowed(url is Url,endpoint is IpEndpoint) is bool{true;}
+}
+object PublicEndpoints does EndpointAllowing {
+    PublicEndpoints();
+    allowed(url is Url,endpoint is IpEndpoint) is bool {
+        if endpoint.zone()!=""{return false;}
+        let properties=endpoint.address().properties();
+        properties.membership(IpProperty.global)
+            && !properties.membership(IpProperty.unspecified)
+            && !properties.membership(IpProperty.loopback)
+            && !properties.membership(IpProperty.link_local)
+            && !properties.membership(IpProperty.private_network)
+            && !properties.membership(IpProperty.multicast)
+            && !properties.membership(IpProperty.reserved)
+            && !properties.membership(IpProperty.documentation);
+    }
+}
+object ListedNetworks does EndpointAllowing {
+    has networks is @IpNetwork;
+    ListedNetworks(origins is Sequencing<IpNetwork>){
+        let count=origins.size();confirm count>=0 && count<=1024 else throw EndpointSelectionLimit("networks");
+        let snapshot is @IpNetwork=(0..count).map()->index{origins.item(index);};networks=snapshot;
+    }
+    allowed(url is Url,endpoint is IpEndpoint) is bool{
+        networks.reduce(false)->permitted,network{permitted || network.membership(endpoint.address());};
+    }
+}
+// A bounded resolution request, not a connection or a record of unchecked
+// addresses. It validates route coordinates eagerly and filters every candidate
+// at lazy startup, retaining exact numeric endpoints for the eventual connector.
+object HttpEndpointSelection {
+    has url is Url;has host is UrlHost;has port is int;
+    has resolver is Resolving;has access is EndpointAllowing;
+    HttpEndpointSelection(url is Url,resolver is Resolving,access is EndpointAllowing){
+        let parts=url.parts();let scheme=parts.scheme();
+        confirm scheme=="http" || scheme=="https" else throw InvalidHttpEndpoint("scheme");
+        let authority=parts.authority();confirm authority.present() else throw InvalidHttpEndpoint("authority");
+        confirm !authority.userinfo().present() else throw InvalidHttpEndpoint("userinfo");
+        let host=authority.host();confirm host.kind()==UrlHostKind.name || host.kind()==UrlHostKind.address else throw InvalidHttpEndpoint("host");
+        let marker=authority.port_marker();let number=if marker.present(){
+            try{marker.value();}catch e is MissingUrlPort{throw InvalidHttpEndpoint("explicit port");}
+        }else{if scheme=="https"{443;}else{80;}};
+        confirm number>0 else throw InvalidHttpEndpoint("destination port");
+        self.url=url;self.host=host;port=number;self.resolver=resolver;self.access=access;
+    }
+    url() is Url{url;}
+    async endpoints() is Sequencing<IpEndpoint>{
+        let group is FutureGroup<Sequencing<IpEndpoint>>=FutureGroup();let cleanup=HttpResolutionCleanup(group);defer await cleanup.close();
+        let source is Sequencing<IpEndpoint>=if host.kind()==UrlHostKind.address{
+            let direct is @IpEndpoint=[IpEndpoint(host.address(),port)];direct;
+        }else{
+            let pending=resolver.addresses(HostEndpoint(host.name(),port));group.start(pending);await pending;
+        };
+        let count=source.size();confirm count>=0 && count<=256 else throw EndpointSelectionLimit("addresses");
+        let snapshot is @IpEndpoint=(0..count).map()->index{
+            let endpoint=source.item(index);confirm endpoint.port()==port else throw InvalidHttpEndpoint("resolver port");
+            endpoint;
+        };
+        let allowed is @IpEndpoint=snapshot.filter()->endpoint{access.allowed(url,endpoint);};
+        confirm allowed.size()>0 else throw EndpointDenied();allowed;
+    }
+}
+object HttpResolutionCleanup {
+    has group is FutureGroup<Sequencing<IpEndpoint>>;HttpResolutionCleanup(group is FutureGroup<Sequencing<IpEndpoint>>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+object InvalidHttpEndpoint does Error {
+    has reason is string;InvalidHttpEndpoint(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid HTTP endpoint: "+reason;}
+}
+object EndpointDenied does Error {EndpointDenied();text() is string{"HTTP endpoint denied";}}
+object EndpointSelectionLimit does Error {
+    has stage is string;EndpointSelectionLimit(stage is string){self.stage=stage;}
+    stage() is string{stage;}text() is string{"HTTP endpoint selection limit: "+stage;}
+}
+
+
+test "explicit empty network selection grants no endpoint" {
+    let url=ParsedUrl("https://example.test/").value();let endpoint=IpEndpoint(IpAddress("127.0.0.1"),443);
+    test.ok(AllEndpoints().allowed(url,endpoint));
+    test.ok(!ListedNetworks([]).allowed(url,endpoint));
+    test.ok(!PublicEndpoints().allowed(url,endpoint));
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.nonreserved-words",
+  "title": "optional, setters, mutable and var are ordinary identifiers",
+  "purpose": "These words are not reserved and may name locals, fields, parameters and actions.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.NONRESERVED-WORDS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "10\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.3",
+    "contracts/DISCREPANCY-LEDGER.md#d-005"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-005): the words are not reserved; spec 4.3 must drop them. 1 + 2 + 3 + 4 = 10."
+  },
+  "status": "mandatory"
+}

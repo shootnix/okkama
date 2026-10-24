@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    has value is int;
+    Counter(:value);
+    increment() is ^Counter { ^value = value + 1; }
+    value() is int { value; }
+}
+
+object Other {
+    Other();
+}
+
+main() is int {
+    let out = Stdout();
+    let c = Counter(value: 1);
+    c = Other();
+    out.writeln("unreachable");
+    0;
+}

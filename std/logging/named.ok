@@ -1,0 +1,32 @@
+module logging/named v1.0.0;
+import "logging/level" take LogLevel;
+import "logging/name" take LogName,ChildLogName;
+import "logging/field" take LogFields,EmptyLogFields,CombinedLogFields;
+import "logging/record" take LogContext,LogRecord;
+import "logging/write" take LogWriting;
+import "time/clock" take Timing;
+import "runtime/process" take process_current_id;
+role LogProcessReading{id() is int;}
+object CurrentLogProcess does LogProcessReading{CurrentLogProcess();id() is int{process_current_id();}}
+role Logging{
+    log(level is LogLevel,message is string) is void;
+    log(level is LogLevel,message is string,fields is LogFields) is void;
+    log(level is LogLevel,message is string,fields is LogFields,cause is Error) is void;
+}
+object NamedLogging does Logging{
+    has name is LogName;has destination is LogWriting;has clock is Timing;has fields is LogFields;has process is LogProcessReading;
+    NamedLogging(name is LogName,destination is LogWriting,clock is Timing,fields is LogFields){self.name=name;self.destination=destination;self.clock=clock;self.fields=fields;process=CurrentLogProcess();}
+    NamedLogging(name is LogName,destination is LogWriting,clock is Timing,fields is LogFields,process is LogProcessReading){self.name=name;self.destination=destination;self.clock=clock;self.fields=fields;self.process=process;}
+    log(level is LogLevel,message is string) is void{let empty is @Error=[];self.emit(level,message,EmptyLogFields().value(),empty);}
+    log(level is LogLevel,message is string,fields is LogFields) is void{let empty is @Error=[];self.emit(level,message,fields,empty);}
+    log(level is LogLevel,message is string,fields is LogFields,cause is Error) is void{self.emit(level,message,fields,[cause]);}
+    child(segment is string) is NamedLogging{NamedLogging(ChildLogName(name,segment).value(),destination,clock,fields,process);}
+    name() is LogName{name;}
+    private:
+    emit(level is LogLevel,message is string,fields is LogFields,causes is @Error) is void{
+        let merged=CombinedLogFields(self.fields,fields).value();
+        let at=clock.instant();let pid=process.id();let context=LogContext(name,merged,pid);
+        let record=if causes.size()==0{LogRecord(at,level,message,context);}else{LogRecord(at,level,message,context,causes[0]);};
+        destination.write(record);
+    }
+}

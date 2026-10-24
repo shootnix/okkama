@@ -1,0 +1,50 @@
+module async/atomic v1.0.0;
+import "io/stream" take Closing;
+
+/*
+=head1 NAME
+
+async/atomic - shared single-value effect capability
+
+=head1 DESCRIPTION
+
+Atomic(value: initial) creates an initialized cell. value() observes its current
+value; replace(value) publishes one complete value. compare_and_replace(expected,
+revised) publishes only when the current value equals expected, returning true on
+success and false on mismatch. Equality is Okkama's existing strict structural
+comparison; incomparable values raise a programming failure without publication.
+Equal replacement is a successful publication. This is value CAS, not an ABA-safe
+revision protocol: applications requiring monotonicity store and validate their
+own revision as part of T. Atomic capabilities themselves compare by identity.
+
+All operations are synchronous, have no suspension point, and are linearizable
+among tasks sharing one interpreter. Subsequent observations see the complete
+publication. No cross-process/shared-memory or host-thread guarantee is provided.
+A sequence of operations is not a transaction. No callbacks run inside an operation.
+
+Returned values are ordinary Okkama values, not mutable references into the cell.
+Nested effect capabilities remain shared. Stored resource capabilities are borrowed:
+their owner's close/defer/destroy contract still applies; Atomic does not acquire
+resource ownership or extend scoped resource lifetimes. Prefer immutable snapshots.
+
+close() is explicit and idempotent, drops the stored value, and affects all aliases.
+All subsequent reads and writes throw AtomicClosed. Dropping an alias does not
+close the cell; no OS resource or waiter requires implicit destroy. No null/empty
+sentinel can be read. The cell's identity is stable; object fields remain immutable.
+
+=cut
+*/
+object Atomic<T> does Closing {
+    Atomic(value is T) {}
+    value() is T { panic "Atomic.value is a VM intrinsic"; }
+    replace(value is T) is void { panic "Atomic.replace is a VM intrinsic"; }
+    compare_and_replace(expected is T, revised is T) is bool {
+        panic "Atomic.compare_and_replace is a VM intrinsic";
+    }
+    closed() is bool { panic "Atomic.closed is a VM intrinsic"; }
+    close() is void { panic "Atomic.close is a VM intrinsic"; }
+}
+object AtomicClosed does Error {
+    AtomicClosed();
+    text() is string { "atomic state is closed"; }
+}

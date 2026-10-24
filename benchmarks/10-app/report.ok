@@ -1,0 +1,36 @@
+module bench/app/report v1.0.0;
+
+// Отчёт: выручка по категориям, позиции, средний чек; накопление — successor.
+import "domain" take Money, Order;
+
+object Report {
+    has revenue is @int;
+    has orders, items, cents is int;
+
+    Report() {
+        revenue = (0..10).map() -> i { 0; };
+        orders = 0;
+        items = 0;
+        cents = 0;
+    }
+
+    recorded(order is Order, total is Money) is ^Report {
+        let lines = order.lines();
+        ^revenue = (0..10).map() -> category {
+            let own = lines.filter() -> line { line.product().category() == category; };
+            let earned = own.reduce(0) -> sum, line { sum + line.subtotal().cents(); };
+            revenue[category] + earned;
+        };
+        ^orders = orders + 1;
+        ^items = items + order.items();
+        ^cents = cents + total.cents();
+    }
+
+    text() is string {
+        let names = ["tools", "garden", "books", "music", "toys", "food", "sports", "office", "kitchen", "auto"];
+        let rows = (0..10).map() -> category { names[category] + ": " + Money(revenue[category]).string(); };
+        let average = Money(((cents - cents % orders) / orders).int());
+        let summary = ["orders: " + orders.string(), "items: " + items.string(), "revenue: " + Money(cents).string(), "average: " + average.string()];
+        @string(rows..., summary...).join("\n");
+    }
+}

@@ -1,0 +1,155 @@
+module http/cache_memory v1.0.0;
+import "http/message" take Request,Response;
+import "http/exchange" take ClientResponse;
+import "http/header" take Headers,Header,HeaderName,ReplacedHeader,HeadersWithout;
+import "http/body" take BodyOpening,ByteBody,EmptyBody,BodyReading,ByteBodyInput,StreamBodyReading;
+import "http/cache_control" take CacheControl;
+import "http/cache_freshness" take CacheResponseTiming,CacheFreshness;
+import "http/date" take HttpDate,ParsedHttpDate;
+import "http/target" take RequestTargetKind;
+import "http/media_type" take HttpMediaItems;
+import "time/clock" take Timing,MonotonicInstant,Instant;
+import "async/atomic" take Atomic;
+import "io/stream" take Closing;
+import "numbers/bigint" take BigInt;
+import "encoding/single_byte" take AsciiEncoded;
+import "compare" take Order;
+// Explicit completed storage boundary: bytes/trailers are supplied only after
+// clean body EOF by a consuming adapter. This store never opens a live body.
+role ResponseCaching {
+    entry(request is Request) is CachedHttpEntry;
+    budget() is int;
+    revision() is int;
+    conditional_store(entry is CachedHttpEntry,revision is int) is void;
+    response(request is Request) is ClientResponse;
+    store(entry is CachedHttpEntry) is void;
+    invalidate(request is Request) is void;
+}
+object CachedHttpEntry {
+    has request is Request;has result is ClientResponse;has timing is CacheResponseTiming;
+    has bytes is @byte;has trailers is Headers;has vary is @HeaderName;has freshness is CacheFreshness;has cacheable is bool;
+    CachedHttpEntry(request is Request,result is ClientResponse,timing is CacheResponseTiming,bytes is @byte,trailers is Headers){
+        confirm request.target().kind()==RequestTargetKind.absolute && result.request().target().kind()==RequestTargetKind.absolute && request.target().string()==result.request().target().string() && result.history().size()==0 else throw InvalidCachedResponse();
+        let snapshot=Request(request.method(),request.target(),request.headers());self.request=snapshot;
+        let original=result.response();cacheable=CacheAdmissionControl(original.headers()).allowed();let sanitized=CacheStoredHeaders(original.headers()).result();self.result=ClientResponse(snapshot,Response(original.status(),sanitized,CachedByteBody(bytes,trailers),original.version()),result.details());
+        self.timing=timing;self.bytes=bytes;self.trailers=trailers;
+        let fields=sanitized;let dated=if fields.membership(HeaderName("Date")){fields;}else{fields.addition(Header(HeaderName("Date"),HttpDate(timing.received()).string()));};
+        freshness=CacheFreshness(dated,timing);vary=CacheVary(fields).names();
+    }
+    storable() is bool{let wildcard=vary.reduce(false)->found,name{found || name.string()=="*";};cacheable && !wildcard;}
+    request() is Request{request;}result() is ClientResponse{result;}bytes() is @byte{bytes;}trailers() is Headers{trailers;}timing() is CacheResponseTiming{timing;}
+    dated() is Instant{let fields=result.response().headers();try{ParsedHttpDate(fields.first(HeaderName("Date")),timing.received()).value();}catch e is Error{timing.received();}}
+    vary() is @HeaderName{vary;}
+    freshness() is CacheFreshness{freshness;}
+    key() is string{request.target().string();}
+    matches(other is Request) is bool{
+        if other.target().kind()!=RequestTargetKind.absolute || other.target().string()!=self.key() || other.method().string()!=request.method().string(){return false;}
+        // Explicitly approved auth still partitions identities; Cookie partitions
+        // are conservative even without origin Vary metadata.
+        let partitions is @HeaderName=[HeaderName("Authorization"),HeaderName("Cookie")];
+        for partitions -> name{if !CacheFieldMatching(request.headers(),other.headers(),name).matches(){return false;}}
+        for vary -> name{if !CacheFieldMatching(request.headers(),other.headers(),name).matches(){return false;}}true;
+    }
+    same(other is CachedHttpEntry) is bool{
+        if self.key()!=other.key() || request.method().string()!=other.request().method().string() || vary.size()!=other.vary().size(){return false;}
+        for (0..vary.size()) -> index{if vary[index].lowercase()!=other.vary()[index].lowercase(){return false;}}self.matches(other.request());
+    }
+    cost() is int{128+self.key().length()+bytes.size()+CacheHeaderSize(request.headers()).value()+CacheHeaderSize(result.response().headers()).value()+CacheHeaderSize(trailers).value();}
+    response(request is Request,now is MonotonicInstant) is ClientResponse{
+        let current=freshness.age(now).seconds().int();let fields=ReplacedHeader(result.response().headers(),Header(HeaderName("Age"),current.string())).result();
+        let dated=if fields.membership(HeaderName("Date")){fields;}else{fields.addition(Header(HeaderName("Date"),HttpDate(timing.received()).string()));};
+        let original=result.response();let body is BodyOpening=if request.method().string()=="HEAD"{EmptyBody();}else{CachedByteBody(bytes,trailers);};
+        ClientResponse(request,Response(original.status(),dated,body,original.version()),result.details());
+    }
+}
+object MemoryHttpCache does ResponseCaching,Closing {
+    has clock is Timing;has maximum is int;has authenticated is bool;has cell is Atomic<@CachedHttpEntry>;has revision is Atomic<int>;
+    MemoryHttpCache(clock is Timing,maximum is BigInt){let config=CacheMemoryBudget(maximum);self.clock=clock;self.maximum=config.value();authenticated=false;let empty is @CachedHttpEntry=[];cell=Atomic(empty);revision=Atomic(0);}
+    MemoryHttpCache(clock is Timing,maximum is BigInt,authenticated is bool){let config=CacheMemoryBudget(maximum);self.clock=clock;self.maximum=config.value();self.authenticated=authenticated;let empty is @CachedHttpEntry=[];cell=Atomic(empty);revision=Atomic(0);}
+    entry(request is Request) is CachedHttpEntry{
+        confirm !cell.closed() else throw CacheClosed();if request.headers().membership(HeaderName("Authorization")) && !authenticated{throw MissingCachedResponse();}
+        let entries=cell.value();let selected=CacheEntrySelection();
+        for entries -> item{if item.matches(request){selected=selected.following(item);}}selected.value();
+    }
+    response(request is Request) is ClientResponse{let now=clock.monotonic_instant();let item=self.entry(request);confirm item.freshness().fresh(now) else throw MissingCachedResponse();item.response(request,now);}
+    store(entry is CachedHttpEntry) is void{
+        confirm !cell.closed() else throw CacheClosed();let request=entry.request();let result=entry.result();
+        if request.method().string()!="GET" || (request.headers().membership(HeaderName("Authorization")) && !authenticated){return;}
+        let accepted=try{let outgoing=CacheControl(request.headers());let incoming=CacheControl(result.response().headers());!outgoing.present("no-store") && !incoming.present("no-store");}catch e is Error{false;};
+        let status=result.response().status().code();if !accepted || !entry.storable() || status!=200 || result.response().headers().membership(HeaderName("Content-Range")){return;}
+        let amount=entry.cost();if amount>maximum{return;}
+        let old=cell.value();let kept is @CachedHttpEntry=old.filter()->item{!item.same(entry);};
+        let count=CacheStorageSelection(kept,maximum-amount).offset();
+        let revised is @CachedHttpEntry=(count..kept.size()+1).map()->index{if index<kept.size(){kept[index];}else{entry;}};cell.replace(revised);
+    }
+    invalidate(request is Request) is void{confirm !cell.closed() else throw CacheClosed();if request.target().kind()!=RequestTargetKind.absolute{return;}revision.replace(revision.value()+1);let target=request.target().string();let kept is @CachedHttpEntry=cell.value().filter()->item{item.key()!=target;};cell.replace(kept);}
+    revision() is int{revision.value();}
+    conditional_store(entry is CachedHttpEntry,revision is int) is void{if self.revision()==revision{self.store(entry);}}
+    budget() is int{maximum;}
+    size() is int{cell.value().size();}closed() is bool{cell.closed();}close() is void{cell.close();revision.close();}
+}
+object CacheStorageSelection {
+    has offset is int;CacheStorageSelection(entries is @CachedHttpEntry,budget is int){
+        let total=entries.reduce(0)->sum,item{sum+item.cost();};let state=CacheStoragePosition(0,total);
+        loop{last if state.cost()<=budget;state=state.following(entries[state.offset()].cost());}offset=state.offset();
+    }
+    offset() is int{offset;}
+}
+object CacheStoragePosition {
+    has offset,cost is int;CacheStoragePosition(offset is int,cost is int){self.offset=offset;self.cost=cost;}
+    offset() is int{offset;}cost() is int{cost;}following(removed is int) is ^CacheStoragePosition{^offset=offset+1;^cost=cost-removed;}
+}
+object CacheVary {
+    has names is @HeaderName;
+    CacheVary(headers is Headers){let parsed is HttpMediaItems<HeaderName>=HttpMediaItems();let count=CacheStoragePosition(0,0);
+        for headers.values(HeaderName("Vary")) -> field{confirm field.length()<=8192 else throw InvalidCachedResponse();for field.split(",") -> raw{
+            let name=Header(HeaderName("Vary"),raw).value();if name!=""{confirm count.offset()<128 else throw InvalidCachedResponse();let checked=HeaderName(name);parsed=parsed.following(checked);count=count.following(0);}
+        }}names=parsed.values();
+    }
+    names() is @HeaderName{names;}
+}
+object CacheFieldMatching {
+    has left,right is Headers;has name is HeaderName;CacheFieldMatching(left is Headers,right is Headers,name is HeaderName){self.left=left;self.right=right;self.name=name;}
+    matches() is bool{if left==right{return true;}let a=left.values(name);let b=right.values(name);if a.size()!=b.size(){return false;}for (0..a.size()) -> index{if a.item(index)!=b.item(index){return false;}}true;}
+}
+object CacheHeaderSize {
+    has origin is Headers;CacheHeaderSize(origin is Headers){self.origin=origin;}
+    value() is int{origin.entries().reduce(0)->total,field{total+field.name().string().length()+field.value().length()+4;};}
+}
+object CacheMemoryBudget {
+    has value is int;CacheMemoryBudget(maximum is BigInt){confirm maximum.sign()>=0 && maximum.order(BigInt("1073741824"))!=Order.greater else throw InvalidCachedResponse();value=AsciiEncoded(maximum.string()).bytes().reduce(0)->sum,octet{sum*10+octet.int()-48;};}value() is int{value;}
+}
+object CachedByteBody does BodyOpening {
+    has bytes is @byte;has trailers is Headers;CachedByteBody(bytes is @byte,trailers is Headers){self.bytes=bytes;self.trailers=trailers;}
+    length() is BigInt{BigInt(bytes.size().string());}replayable() is bool{true;}
+    reading() is BodyReading{let input=ByteBodyInput(bytes);StreamBodyReading(input,input,trailers);}
+}
+object InvalidCachedResponse does Error{InvalidCachedResponse();text() is string{"invalid completed HTTP cache entry";}}
+object MissingCachedResponse does Error{MissingCachedResponse();text() is string{"no reusable cached HTTP response";}}
+object CacheClosed does Error{CacheClosed();text() is string{"HTTP cache is closed";}}
+
+object CacheEntrySelection {
+    has selected is @CachedHttpEntry;CacheEntrySelection(){selected=[];}
+    value() is CachedHttpEntry{confirm selected.size()==1 else throw MissingCachedResponse();selected[0];}
+    following(item is CachedHttpEntry) is ^CacheEntrySelection{if selected.size()==0 || item.dated().order(selected[0].dated())!=Order.less{^selected=[item];}}
+}
+
+object CacheStoredHeaders {
+    has result is Headers;
+    CacheStoredHeaders(origin is Headers){
+        let names is HttpMediaItems<HeaderName>=HttpMediaItems();let count=CacheStoragePosition(0,0);
+        for origin.values(HeaderName("Connection")) -> field{for field.split(",") -> raw{let value=Header(HeaderName("Connection"),raw).value();confirm value!="" && count.offset()<128 else throw InvalidCachedResponse();names=names.following(HeaderName(value));count=count.following(0);}}
+        let present is @HeaderName=names.values().filter()->name{origin.membership(name);};let clean=HeadersWithout(origin,present).result();
+        let excluded is @HeaderName=[HeaderName("Connection"),HeaderName("Proxy-Connection"),HeaderName("Keep-Alive"),HeaderName("Transfer-Encoding"),HeaderName("Trailer"),HeaderName("TE"),HeaderName("Upgrade"),HeaderName("Proxy-Authenticate"),HeaderName("Proxy-Authorization")];let selected is @HeaderName=excluded.filter()->name{clean.membership(name);};result=HeadersWithout(clean,selected).result();
+    }
+    result() is Headers{result;}
+}
+
+object CacheAdmissionControl {
+    has headers is Headers;CacheAdmissionControl(headers is Headers){self.headers=headers;}
+    allowed() is bool{
+        let valid=try{!CacheControl(headers).present("no-store");}catch e is Error{false;};if !valid{return false;}
+        let metadata is @string=["cache-control","vary","date","age","expires","etag","last-modified"];
+        for headers.values(HeaderName("Connection")) -> field{for field.split(",") -> raw{let name=HeaderName(Header(HeaderName("Connection"),raw).value()).lowercase();let nominated=metadata.reduce(false)->found,item{found || item==name;};if nominated{return false;}}}true;
+    }
+}

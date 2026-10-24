@@ -1,0 +1,92 @@
+module uuid/value v1.0.0;
+
+import "compare" take Comparing, Order;
+import "runtime/uuid" take
+    uuid_valid,
+    uuid_bytes,
+    uuid_string,
+    uuid_version,
+    uuid_variant;
+
+// Immutable 128-bit UUID values.
+//
+//     let id = Uuid(origin: "550e8400-e29b-41d4-a716-446655440000");
+//     id.version();                  // 4
+//     id.variant();                  // UuidVariant.rfc
+//     id.string();                   // canonical lowercase text
+//     id.bytes();                    // exactly 16 bytes
+//
+// Text construction is deliberately strict: exactly 8-4-4-4-12 ASCII hex
+// digits with hyphens in their canonical positions. Uppercase digits are
+// accepted and normalized; compact text, braces, URNs and whitespace are not.
+// UuidFromBytes requires exactly sixteen bytes.
+//
+// version() exposes the raw four-bit version field for every variant. Variant
+// decoding follows the RFC bit prefixes: 0xxx reserved/NCS, 10xx RFC,
+// 110x Microsoft and 111x future. order() compares the unsigned 128-bit value,
+// most-significant byte first; canonical string ordering is identical.
+
+enum UuidVariant = (rfc, microsoft, reserved, future);
+
+object Uuid does Comparing<Uuid> {
+    has origin is @byte;
+
+    Uuid(origin is string) {
+        confirm uuid_valid(origin)
+            else throw InvalidUuid("invalid canonical UUID text");
+        self.origin = uuid_bytes(origin);
+    }
+
+    version() is int {
+        uuid_version(origin);
+    }
+
+    variant() is UuidVariant {
+        match uuid_variant(origin) {
+            case "rfc" { UuidVariant.rfc; }
+            case "microsoft" { UuidVariant.microsoft; }
+            case "reserved" { UuidVariant.reserved; }
+            else { UuidVariant.future; }
+        }
+    }
+
+    order(other is Uuid) is Order {
+        self.string().order(other.string());
+    }
+
+    string() is string {
+        uuid_string(origin);
+    }
+
+    bytes() is @byte {
+        origin;
+    }
+}
+
+object UuidFromBytes {
+    has origin is @byte;
+
+    UuidFromBytes(origin is @byte) {
+        self.origin = origin;
+    }
+
+    #projected
+    value() is Uuid {
+        confirm origin.size() == 16
+            else throw InvalidUuid("UUID binary value must contain sixteen bytes");
+        Uuid(origin: uuid_string(origin));
+    }
+}
+
+object InvalidUuid does Error {
+    has message is string;
+
+    InvalidUuid(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

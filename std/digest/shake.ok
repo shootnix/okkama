@@ -1,0 +1,59 @@
+module digest/shake v1.0.0;
+
+import "digest/state" take Digesting;
+import "digest/host" take HostDigest;
+import "encoding/hex" take HexEncoded;
+
+// SHAKE128 and SHAKE256 extendable-output functions (FIPS 202) over the host
+// provider. The output length is part of the object: bytes() returns exactly
+// `length` bytes (1..1048576, InvalidShakeLength otherwise), and successors
+// keep it. A longer output of the same history starts with the shorter one.
+//
+//     Shake128(32, message).bytes(); // 32 raw bytes
+object Shake128 does Digesting {
+    has digest is HostDigest;
+    Shake128(length is int) {
+        confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength(length);
+        digest = HostDigest("shake128", [], length);
+    }
+    Shake128(length is int, origin is @byte) {
+        confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength(length);
+        digest = HostDigest("shake128", [], length).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Shake128 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Shake256 does Digesting {
+    has digest is HostDigest;
+    Shake256(length is int) {
+        confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength(length);
+        digest = HostDigest("shake256", [], length);
+    }
+    Shake256(length is int, origin is @byte) {
+        confirm length >= 1 && length <= 1048576 else throw InvalidShakeLength(length);
+        digest = HostDigest("shake256", [], length).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Shake256 {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object InvalidShakeLength does Error {
+    has origin is int;
+    InvalidShakeLength(length is int) { origin = length; }
+    length() is int { origin; }
+    text() is string { "SHAKE output length must be 1..1048576, got " + origin.string(); }
+}
+
+test "SHAKE matches FIPS 202 empty-message outputs" {
+    test.is(HexEncoded(Shake128(32).bytes()).string(), "7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26");
+    test.is(HexEncoded(Shake256(32).bytes()).string(), "46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f");
+    test.is(Shake128(64, [1.byte()]).bytes().slice(0, 32), Shake128(32, [1.byte()]).bytes());
+    test.ok(try { Shake256(0); false; } catch e is InvalidShakeLength { e.length() == 0; });
+}

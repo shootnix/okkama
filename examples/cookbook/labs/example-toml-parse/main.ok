@@ -1,0 +1,24 @@
+// Прочитать TOML-настройки запуска
+//
+// Загрузить TOML-конфигурацию сервиса: ParsedToml разбирает текст с явными бюджетами.
+//
+// Запуск: ./examples/cookbook/run lab example-toml-parse
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-toml-parse
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "toml/parse" take ParsedToml;
+object ExampleResult {
+    ExampleResult();
+    value() is @string {
+        let settings = ParsedToml("title='Okkama'\n[database]\nport=5432\nenabled=true").value();
+        let names is @string = settings.members().map() -> member { member.name(); };
+        names;
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

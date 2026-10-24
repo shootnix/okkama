@@ -1,0 +1,55 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/collect" take AllFutures;
+
+object Writer {
+    has counter is Atomic<int>;
+    has gate is Event;
+    Writer(:counter, :gate);
+    async run(times is int) is int {
+        await gate.wait();
+        for 1..=times -> step {
+            loop {
+                let seen = counter.value();
+                last if counter.compare_and_replace(seen, seen + 1);
+            }
+        }
+        times;
+    }
+}
+
+object Ledger {
+    has applied is Atomic<@string>;
+    Ledger(:applied);
+    apply(command is string) is bool {
+        loop {
+            let seen = applied.value();
+            let duplicate = seen.filter() -> id { id == command; };
+            last false if duplicate.size() > 0;
+            let updated = @string(seen..., command);
+            last true if applied.compare_and_replace(seen, updated);
+        }
+    }
+}
+
+async main() is int {
+    let counter is Atomic<int> = Atomic(value: 0);
+    let gate is Event = Event();
+    let writers is @Future<int> = [
+        spawn Writer(counter: counter, gate: gate).run(50),
+        spawn Writer(counter: counter, gate: gate).run(50),
+        spawn Writer(counter: counter, gate: gate).run(50),
+    ];
+    gate.set();
+    let all is AllFutures<int> = AllFutures(origins: writers);
+    let done = await all.results();
+    Stdout().writeln(counter.value().string());
+    let empty is @string = [];
+    let ledger = Ledger(applied: Atomic(value: empty));
+    let results = ["c1", "c2", "c1", "c3", "c2"].map() -> id { if ledger.apply(id) { "applied"; } else { "duplicate"; } };
+    Stdout().writeln(results.join(","));
+    0;
+}

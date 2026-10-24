@@ -1,0 +1,53 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has name is string;
+    Res(:name);
+    destroy {
+        Stdout().writeln("destroy " + name);
+    }
+}
+
+object Refused does Error {
+    Refused();
+    text() is string { "refused"; }
+}
+
+object Holder {
+    has first is Res;
+    has second is Res;
+    Holder(fail is bool) {
+        if true {
+            first = Res(name: "first");
+        }
+        let staged = try {
+            second = Res(name: "second");
+            1;
+        } catch e is Error {
+            0;
+        };
+        let temporary = Res(name: "temporary");
+        confirm !fail else throw Refused();
+    }
+    destroy {
+        Stdout().writeln("holder destroyed");
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let r = try {
+        let h = Holder(fail: true);
+        "built";
+    } catch e is Refused {
+        "construction failed";
+    };
+    out.writeln(r);
+    {
+        let ok_holder = Holder(fail: false);
+        out.writeln("holder alive");
+    }
+    0;
+}

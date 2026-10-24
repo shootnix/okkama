@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.file-identity.symlinked-consumer",
+  "title": "a symlinked module imports relative to its physical file",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.FILE-IDENTITY",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "real/consumer.ok",
+    "real/child.ok",
+    "links/child.ok",
+    "links/consumer.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/import-identity.md",
+    "improvements-roadmap/results/IMP-17/RESULT.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "IMP-17 policy: imports from symlinked modules are relative to the physical source file; links/consumer.ok -> ../real/consumer.ok imports real/child.ok (7), not links/child.ok (99)."
+  },
+  "status": "mandatory"
+}

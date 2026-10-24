@@ -1,0 +1,70 @@
+module runtime/process v1.0.0;
+
+// Shared lazy process capability. Logical strings cross this boundary; each
+// runtime provider performs its own host encoding and process setup.
+
+native object ProcessState;
+native object CapturedProcess;
+native object PipelineState;
+native object CapturedPipeline;
+
+// Exact host-split arguments, excluding interpreter/source options.
+native process_arguments() is @@byte;
+// Existing process provider observation; no logging-specific native state.
+native process_current_id() is int;
+
+native process_state_create() is ProcessState;
+native process_state_start(
+    state is ProcessState,
+    program is string,
+    arguments is @string,
+    directory is string,
+    environment is %string:string,
+) is bool;
+native process_state_started(state is ProcessState) is bool;
+native process_state_id(state is ProcessState) is int;
+native process_state_running(state is ProcessState) is bool;
+native async process_state_exit(state is ProcessState) is %string:int;
+native process_state_signal(state is ProcessState, signal is int) is bool;
+native process_state_close(state is ProcessState) is bool;
+
+native process_state_input_write(state is ProcessState, source is @byte) is int;
+native process_state_input_flush(state is ProcessState) is bool;
+native process_state_input_closed(state is ProcessState) is bool;
+native process_state_input_close(state is ProcessState) is bool;
+native process_state_output_read(state is ProcessState, limit is int) is @byte;
+native process_state_errors_read(state is ProcessState, limit is int) is @byte;
+
+// Atomically communicates with a started child: writes all input, closes
+// stdin, drains stdout and stderr concurrently, and waits for termination.
+// The limit applies independently to each captured output stream.
+native async process_state_capture(
+    state is ProcessState,
+    input is @byte,
+    limit is int,
+) is CapturedProcess;
+native captured_process_status(origin is CapturedProcess) is %string:int;
+// 0 means complete, 1 means stdout exceeded its limit, 2 means stderr did.
+native captured_process_overflow(origin is CapturedProcess) is int;
+native captured_process_output(origin is CapturedProcess) is @byte;
+native captured_process_errors(origin is CapturedProcess) is @byte;
+
+native pipeline_state_create() is PipelineState;
+native pipeline_state_add(
+    state is PipelineState,
+    program is string,
+    arguments is @string,
+    directory is string,
+    environment is %string:string,
+) is bool;
+native async pipeline_state_capture(
+    state is PipelineState,
+    input is @byte,
+    limit is int,
+) is CapturedPipeline;
+native captured_pipeline_statuses(origin is CapturedPipeline) is @%string:int;
+// 0 means complete, 1 means final stdout overflow, 2 means stderr overflow.
+native captured_pipeline_overflow_stream(origin is CapturedPipeline) is int;
+native captured_pipeline_overflow_index(origin is CapturedPipeline) is int;
+native captured_pipeline_output(origin is CapturedPipeline) is @byte;
+native captured_pipeline_errors(origin is CapturedPipeline) is @@byte;

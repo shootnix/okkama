@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.random.secure-invariants",
+  "title": "secure randomness meets its invariants",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.RANDOM.SOURCE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "real-random"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "16\ndistinct\nin range\n"
+    }
+  },
+  "spec_refs": [
+    "std/random/source.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "random/source: SecureRandom reads fresh OS entropy for every operation; ranges are half-open. Two equal 128-bit draws have probability 2^-128."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,240 @@
+module http/media_type v1.0.0;
+import "http/method" take Method, InvalidMethod;
+import "http/header" take HttpAsciiLowercase;
+import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
+import "collections/sequence" take Sequencing;
+import "collections/ordering" take Sorted, LowerBound;
+import "collections/list" take List, EmptyList;
+import "compare" take Comparing, Order;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+
+// HTTP parameters retain literal extension names: no MIME RFC2231 assembly.
+// Charset is a case-insensitive token identity; other parameter values are exact.
+object HttpMediaParameter does Comparing<HttpMediaParameter> {
+    has name,value is string;
+    HttpMediaParameter(name is string, value is string) {
+        let checked=try {Method(name).string();}catch failure is InvalidMethod {throw InvalidHttpMediaType(0,"HTTP parameter name required");};
+        let key=HttpAsciiLowercase(checked).string();
+        let bytes=try {Latin1Encoded(value).bytes();}
+            catch failure is UnrepresentableLatin1Character {throw InvalidHttpMediaType(failure.offset(),"parameter is not an octet string");};
+        for (0..bytes.size()) -> index {
+            let code=bytes[index].int();confirm code==9 || (code>=32 && code!=127)
+                else throw InvalidHttpMediaType(index,"control in parameter value");
+        }
+        let text=if key=="charset" {
+            let token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidHttpMediaType(0,"charset token required");};
+            HttpAsciiLowercase(token).string();
+        }else{value;};
+        self.name=key;self.value=text;
+    }
+    name() is string {name;}value() is string {value;}
+    order(other is HttpMediaParameter) is Order {name.order(other.name());}
+    string() is string {
+        let token=try {Method(value);true;}catch failure is InvalidMethod {false;};
+        let text=if token {value;}else{"\""+value.replace("\\","\\\\").replace("\"","\\\"")+"\"";};
+        name+"="+text;
+    }
+}
+object HttpMediaParameters {
+    has origin is @HttpMediaParameter;
+    HttpMediaParameters(values is Sequencing<HttpMediaParameter>) {origin=HttpMediaSnapshot(values,128).values();}
+    HttpMediaParameters(values is Sequencing<HttpMediaParameter>, maximum is int) {origin=HttpMediaSnapshot(values,maximum).values();}
+    entries() is Sequencing<HttpMediaParameter> {origin;}
+    membership(name is string) is bool {
+        self.find(name).size()==1;
+    }
+    first(name is string) is string {
+        let matching=self.find(name);if matching.size()==1 {return matching[0].value();}
+        throw MissingHttpMediaParameter(self.key(name));
+    }
+    string() is string {let parts is @string=origin.map() -> entry {entry.string();};parts.join("; ");}
+    private:
+    find(name is string) is @HttpMediaParameter {
+        let key=self.key(name);
+        // Parameter ordering compares names only. The valid probe value is not
+        // a missing-value sentinel and is never observed as a field parameter.
+        let at=LowerBound(origin:origin,item:HttpMediaParameter(key,"probe")).value();
+        if at<origin.size() && origin[at].name()==key {return [origin[at]];}
+        let empty is @HttpMediaParameter=[];empty;
+    }
+    key(name is string) is string {
+        let checked=try {Method(name).string();}catch failure is InvalidMethod {throw InvalidHttpMediaType(0,"HTTP parameter lookup name required");};
+        HttpAsciiLowercase(checked).string();
+    }
+}
+object HttpMediaSnapshot {
+    has origin is @HttpMediaParameter;
+    HttpMediaSnapshot(values is Sequencing<HttpMediaParameter>, maximum is int) {
+        confirm maximum>=0 else throw InvalidArgument("HTTP parameter budget must be nonnegative");
+        let count=values.size();confirm count>=0 else throw InvalidArgument("negative HTTP parameter sequence size");
+        confirm count<=maximum else throw HttpMediaLimitExceeded("parameters");
+        let materialized is @HttpMediaParameter=(0..count).map() -> index {values.item(index);};
+        let sorted is Sorted<HttpMediaParameter>=Sorted(origin:materialized);
+        let snapshot is @HttpMediaParameter=(0..count).map() -> index {sorted.item(index);};
+        for (0..count) -> index {
+            if index>0 {confirm snapshot[index-1].name()!=snapshot[index].name()
+                else throw InvalidHttpMediaType(0,"duplicate parameter");}
+        }
+        origin=snapshot;
+    }
+    values() is @HttpMediaParameter {origin;}
+}
+object HttpMediaType {
+    has major,minor is string;has parameters is HttpMediaParameters;
+    HttpMediaType(origin is string) {
+        let fields=HttpMediaScanning(origin,HttpMediaLimits()).value();
+        confirm fields.type()!="*" && fields.subtype()!="*" else throw InvalidHttpMediaType(0,"concrete media type required");
+        major=fields.type();minor=fields.subtype();parameters=fields.parameters();
+    }
+    HttpMediaType(origin is string, limits is HttpMediaLimits) {
+        let fields=HttpMediaScanning(origin,limits).value();
+        confirm fields.type()!="*" && fields.subtype()!="*" else throw InvalidHttpMediaType(0,"concrete media type required");
+        major=fields.type();minor=fields.subtype();parameters=fields.parameters();
+    }
+    HttpMediaType(type is string, subtype is string, parameters is HttpMediaParameters) {
+        let type_name=try {Method(type).string();}catch failure is InvalidMethod {throw InvalidHttpMediaType(0,"type token required");};
+        let subtype_name=try {Method(subtype).string();}catch failure is InvalidMethod {throw InvalidHttpMediaType(0,"subtype token required");};
+        confirm type_name!="*" && subtype_name!="*" else throw InvalidHttpMediaType(0,"concrete media type required");
+        major=HttpAsciiLowercase(type_name).string();minor=HttpAsciiLowercase(subtype_name).string();self.parameters=parameters;
+    }
+    type() is string {major;}subtype() is string {minor;}parameters() is HttpMediaParameters {parameters;}
+    string() is string {major+"/"+minor+if parameters.entries().size()==0 {"";}else{"; "+parameters.string();};}
+}
+object HttpMediaLimits {
+    has bytes,parameters is int;
+    HttpMediaLimits() {bytes=8192;parameters=128;}
+    HttpMediaLimits(bytes is int, parameters is int) {
+        confirm bytes>=0 && parameters>=0 else throw InvalidArgument("HTTP media budgets must be nonnegative");
+        self.bytes=bytes;self.parameters=parameters;
+    }
+    bytes() is int {bytes;}parameters() is int {parameters;}
+}
+// Grammar infrastructure also admits range wildcards; HttpMediaType requires
+// concrete coordinates. Wire quoting/source offsets stay out of value identity.
+object HttpMediaScanning {
+    has origin is string;has bytes is @byte;has width is int;has limits is HttpMediaLimits;
+    HttpMediaScanning(origin is string, limits is HttpMediaLimits) {
+        confirm origin.length()<=limits.bytes() else throw HttpMediaLimitExceeded("bytes");
+        let wire=try {Latin1Encoded(origin).bytes();}
+            catch failure is UnrepresentableLatin1Character {throw InvalidHttpMediaType(failure.offset(),"HTTP octet string required");};
+        for (0..wire.size()) -> index {let code=wire[index].int();confirm code==9 || (code>=32 && code!=127)
+            else throw InvalidHttpMediaType(index,"control in media field");}
+        self.origin=origin;bytes=wire;width=wire.size();self.limits=limits;
+    }
+    value() is HttpMediaFields {
+        let major=self.token(self.space(0));let slash=major.end();
+        confirm slash<width && bytes[slash].int()==47 else throw InvalidHttpMediaType(slash,"type/subtype separator required");
+        let minor=self.token(slash+1);
+        confirm major.text()!="*" || minor.text()=="*" else throw InvalidHttpMediaType(0,"invalid wildcard range");
+        let position=HttpMediaPosition(self.space(minor.end()),0);
+        let parsed is HttpMediaItems<HttpMediaWireParameter>=HttpMediaItems();
+        loop {
+            let at=position.index();last if at==width;
+            confirm bytes[at].int()==59 else throw InvalidHttpMediaType(at,"parameter separator required");
+            confirm position.slots()<limits.parameters() else throw HttpMediaLimitExceeded("parameters");
+            position=position.separator(self.space(at+1));let start=position.index();
+            if start==width || bytes[start].int()==59 {next;}
+            let name=self.token(start);let equals=name.end();
+            confirm equals<width && bytes[equals].int()==61 else throw InvalidHttpMediaType(equals,"adjacent parameter assignment required");
+            let value_at=equals+1;confirm value_at<width else throw InvalidHttpMediaType(value_at,"parameter value required");
+            let quoted=bytes[value_at].int()==34;
+            let value=if quoted {self.quoted(value_at);}else{self.token(value_at);};
+            let parameter=try {HttpMediaParameter(name.text(),value.text());}
+                catch failure is InvalidHttpMediaType {throw InvalidHttpMediaType(start,failure.reason());};
+            parsed=parsed.following(HttpMediaWireParameter(parameter,quoted,start));
+            position=position.following(self.space(value.end()));
+        }
+        HttpMediaFields(HttpAsciiLowercase(major.text()).string(),HttpAsciiLowercase(minor.text()).string(),parsed.values(),limits.parameters());
+    }
+    private:
+    space(start is int) is int {
+        let position=HttpMediaPosition(start,0);
+        loop {let at=position.index();if at==width {return at;}
+            let code=bytes[at].int();if code!=32 && code!=9 {return at;}
+            position=position.following(at+1);}
+    }
+    token(start is int) is HttpMediaScanned {
+        let position=HttpMediaPosition(start,0);
+        loop {let at=position.index();last if at==width || !HttpMediaOctet(bytes[at].int()).token();position=position.following(at+1);}
+        confirm position.index()>start else throw InvalidHttpMediaType(start,"HTTP token required");
+        HttpMediaScanned(origin.slice(start,position.index()),position.index());
+    }
+    quoted(start is int) is HttpMediaScanned {
+        let position=HttpMediaPosition(start+1,0);let output=ByteBuffer();defer output.closing().close();let writer=output.writing();
+        loop {
+            let at=position.index();confirm at<width else throw InvalidHttpMediaType(start,"unterminated quoted value");
+            let code=bytes[at].int();
+            if code==34 {return HttpMediaScanned(Latin1Decoded(output.content().bytes()).string(),at+1);}
+            if code==92 {
+                confirm at+1<width else throw InvalidHttpMediaType(at,"unfinished quoted pair");
+                writer.write(ByteSnapshot([bytes[at+1]]));position=position.following(at+2);
+            }else{writer.write(ByteSnapshot([bytes[at]]));position=position.following(at+1);}
+        }
+    }
+}
+object HttpMediaFields {
+    has major,minor is string;has wire is @HttpMediaWireParameter;has parameters is HttpMediaParameters;
+    HttpMediaFields(type is string, subtype is string, wire is @HttpMediaWireParameter, maximum is int) {
+        let values is @HttpMediaParameter=wire.map() -> entry {entry.parameter();};
+        major=type;minor=subtype;self.wire=wire;parameters=HttpMediaParameters(values,maximum);
+    }
+    type() is string {major;}subtype() is string {minor;}parameters() is HttpMediaParameters {parameters;}
+    wire_parameters() is Sequencing<HttpMediaWireParameter> {wire;}
+}
+object HttpMediaWireParameter {
+    has parameter is HttpMediaParameter;has quoted is bool;has offset is int;
+    HttpMediaWireParameter(parameter is HttpMediaParameter, quoted is bool, offset is int) {
+        confirm offset>=0 else throw InvalidArgument("negative HTTP parameter offset");
+        self.parameter=parameter;self.quoted=quoted;self.offset=offset;
+    }
+    parameter() is HttpMediaParameter {parameter;}quoted() is bool {quoted;}offset() is int {offset;}
+}
+object HttpMediaScanned {
+    has text is string;has end is int;
+    HttpMediaScanned(text is string, end is int){confirm end>=0 else throw InvalidArgument("negative HTTP scan end");self.text=text;self.end=end;}
+    text() is string {text;}end() is int {end;}
+}
+object HttpMediaPosition {
+    has index,slots is int;
+    HttpMediaPosition(index is int, slots is int){confirm index>=0 && slots>=0 else throw InvalidArgument("negative HTTP media position");self.index=index;self.slots=slots;}
+    index() is int {index;}slots() is int {slots;}
+    following(index is int) is ^HttpMediaPosition {^index=index;}
+    separator(index is int) is ^HttpMediaPosition {^index=index;^slots=slots+1;}
+}
+object HttpMediaItems<T> {
+    has reversed is List<T>;HttpMediaItems(){let empty is List<T>=EmptyList();reversed=empty;}
+    following(item is T) is ^HttpMediaItems<T> {^reversed=reversed.prefix(item);}
+    values() is @T {
+        let reverse is @T=reversed.map() -> item {item;};
+        let values is @T=(0..reverse.size()).map() -> index {reverse[reverse.size()-index-1];};values;
+    }
+}
+object HttpMediaOctet {
+    has code is int;HttpMediaOctet(code is int){confirm code>=0 && code<=255 else throw InvalidArgument("HTTP octet outside 0..255");self.code=code;}
+    token() is bool {
+        (code>=48 && code<=57) || (code>=65 && code<=90) || (code>=97 && code<=122)
+        || code==33 || code==35 || code==36 || code==37 || code==38 || code==39
+        || code==42 || code==43 || code==45 || code==46 || code==94 || code==95
+        || code==96 || code==124 || code==126;
+    }
+}
+object InvalidHttpMediaType does Error {
+    has offset is int;has reason is string;InvalidHttpMediaType(offset is int, reason is string){self.offset=offset;self.reason=reason;}
+    offset() is int {offset;}reason() is string {reason;}text() is string {"invalid HTTP media type at octet "+offset.string()+": "+reason;}
+}
+object HttpMediaLimitExceeded does Error {
+    has kind is string;HttpMediaLimitExceeded(kind is string){self.kind=kind;}
+    kind() is string {kind;}text() is string {"HTTP media "+kind+" limit exceeded";}
+}
+object MissingHttpMediaParameter does Error {
+    has name is string;MissingHttpMediaParameter(name is string){self.name=name;}
+    name() is string {name;}text() is string {"missing HTTP media parameter: "+name;}
+}
+
+test "HTTP media parameters have canonical ordered identity" {
+    let type=HttpMediaType("Text/PLAIN; z=one; Charset=\"UTF-8\"");
+    test.is(type.string(),"text/plain; charset=utf-8; z=one");
+    test.is(type,HttpMediaType("text/plain;charset=utf-8;z=one"));
+}

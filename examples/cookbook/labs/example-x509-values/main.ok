@@ -1,0 +1,21 @@
+// Проверить срок действия сертификата
+//
+// Проверить календарный интервал сертификата: CertificateValidity и CertificateConstraints представляют его условия.
+//
+// Запуск: ./examples/cookbook/run lab example-x509-values
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-x509-values
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "crypto/x509/value" take CertificateValidity,CertificateConstraints,MissingCertificateDepth;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+main() is int {
+    let period=CertificateValidity(Instant(Duration(0.rat(),DurationUnit.second)),Instant(Duration(10.rat(),DurationUnit.second)));
+    let unlimited=CertificateConstraints(true);let direct=CertificateConstraints(true,0);
+    confirm period.starts()!=period.ends() && direct.maximum_depth()==0;
+    confirm try{unlimited.maximum_depth();false;}catch e is MissingCertificateDepth{true;};
+    Stdout().writeln("certificate metadata values verified; trust is a separate operation");0;
+}

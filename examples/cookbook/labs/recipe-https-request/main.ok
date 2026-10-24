@@ -1,0 +1,42 @@
+// Получить JSON по HTTPS
+//
+// Приложение обращается к опубликованному API с системными доверенными корнями и явной политикой адресатов.
+//
+// Запуск: ./examples/cookbook/run lab recipe-https-request
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-https-request
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/https_request v1.0.0;
+import "http/client" take HttpClient;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take PublicEndpoints;
+import "http/version" take HttpVersion;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/header" take Headers;
+import "http/target" take AbsoluteTarget;
+import "net/dns" take SystemResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take SystemTrustStore;
+import "collections/set" take Set,OrderedSet;
+import "time/clock" take SystemClock;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let versions is Set<HttpVersion> = OrderedSet([HttpVersion.http_1_1]);
+    let policy = ClientPolicy(versions, HttpLimits(), ClientTimeouts(), 2, PublicEndpoints());
+    let client = HttpClient(SystemResolution(), TlsClientPolicy(SystemTrustStore().result()), policy, SystemClock());
+    defer client.close();
+    let request = Request(Method("GET"), AbsoluteTarget(ParsedUrl("https://example.org/").value()), Headers([]));
+    let result = await client.response(request);
+    Stdout().writeln("HTTP " + result.response().status().code().string());
+    let body = result.response().body().reading();
+    defer body.close();
+    loop {
+        let chunk = await body.bytes(4096);
+        last if chunk.size() == 0;
+    }
+    0;
+}

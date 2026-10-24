@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Echo<T> {
+    echo(value is T) is T;
+}
+
+object EchoBox<T> does Echo<T> {
+    EchoBox();
+    echo(value is T) is T { value; }
+}
+
+object Wrapper<T> {
+    has inner is Echo<T>;
+    has sample is T;
+    Wrapper(:inner, :sample);
+}
+
+main() is int {
+    let out = Stdout();
+    let w = Wrapper(inner: EchoBox(), sample: 3);
+    out.writeln("unreachable");
+    0;
+}

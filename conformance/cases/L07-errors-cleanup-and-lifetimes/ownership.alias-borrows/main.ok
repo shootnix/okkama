@@ -1,0 +1,42 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has name is string;
+    Res(:name);
+    use() is string { name; }
+    destroy {
+        Stdout().writeln("destroy " + name);
+    }
+}
+
+object Log {
+    Log();
+    say(text is string) is void {
+        Stdout().writeln(text);
+    }
+    value(text is string, v is int) is int {
+        Stdout().writeln(text);
+        v;
+    }
+}
+
+object Inspector {
+    Inspector();
+    look(r is Res) is void {
+        Stdout().writeln("looked at " + r.use());
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    {
+        let a = Res(name: "shared");
+        let b = a;
+        let list = [a, b];
+        Inspector().look(a);
+        out.writeln("end of block");
+    }
+    0;
+}

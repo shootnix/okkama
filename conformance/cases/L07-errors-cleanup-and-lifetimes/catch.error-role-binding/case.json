@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.catch.error-role-binding",
+  "title": "catch e is Error exposes only text()",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CATCH",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "ERR.ERROR-ROLE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "not found: z\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.1",
+    "docs/okkama-spec-11072026.md#9.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 12.1: `catch e is Error` binds the restricted text()-only contract."
+  },
+  "status": "mandatory"
+}

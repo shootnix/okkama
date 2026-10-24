@@ -1,0 +1,188 @@
+module template/tree v1.0.0;
+import "template/compile" take TemplateProgram, TemplateInstruction, TemplateFailure, InvalidTemplateLimits;
+import "collections/list" take List, EmptyList;
+
+// Immutable structured source program, compiled entirely in Okkama. Constructors
+// bind only; nodes() validates the complete source anew before returning a tree.
+// Default budgets: 1048576 input scalars, 20000 flat tokens (including closing
+// tags), 64 nested sections. All budgets are nonnegative; empty input accepts 0.
+// Grammar: flat TextTemplate syntax plus #/path sections, ^/path inverted
+// sections, current item '.', and static >name partials. Standalone structural
+// tags drop indentation and their following LF/CRLF. No data/library observation,
+// partial expansion, I/O, native parsing or cache. Returned nodes outlive us.
+// Errors retain original scalar/CRLF coordinates. Memory is bounded by the
+// input/token/depth budgets. TextTemplate still accepts only the flat grammar.
+// Example: TemplateTree("{{#users}}{{.}}{{/users}}").nodes().
+// Contract: docs/std/template-tree-guide.md. Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/tree.ok
+enum TemplateTreeKind = (literal, variable, section, inverted, partial);
+
+object TemplateTree {
+    has source is string;
+    has maximum_input, maximum_tokens, maximum_depth is int;
+    TemplateTree(source is string) {
+        self.source=source;maximum_input=1048576;maximum_tokens=20000;maximum_depth=64;
+    }
+    TemplateTree(source is string, maximum_input is int, maximum_tokens is int, maximum_depth is int) {
+        confirm maximum_input>=0 && maximum_tokens>=0 && maximum_depth>=0 else throw InvalidTemplateLimits();
+        self.source=source;self.maximum_input=maximum_input;self.maximum_tokens=maximum_tokens;self.maximum_depth=maximum_depth;
+    }
+    nodes() is @TemplateTreeNode {
+        let tokens=TemplateProgram(source,maximum_input,maximum_tokens,true).instructions();
+        let tree=TemplateTreeBuilder(source,maximum_depth);
+        for tokens -> token {tree=tree.following(token);}
+        tree.nodes();
+    }
+}
+
+// Domain grammar nodes, not application reflection. text() is exact literal
+// text or a trimmed name/path. Only section/inverted nodes can contain children.
+// Child arrays are immutable; leaf children are the meaningful empty sequence.
+object TemplateTreeNode {
+    has category is TemplateTreeKind;
+    has origin is string;
+    has nested is @TemplateTreeNode;
+    TemplateTreeNode(kind is TemplateTreeKind, text is string, children is @TemplateTreeNode) {
+        confirm text!="" else throw InvalidTemplateTreeNode();
+        confirm kind==TemplateTreeKind.section || kind==TemplateTreeKind.inverted || children.size()==0
+            else throw InvalidTemplateTreeNode();
+        category=kind;origin=text;nested=children;
+    }
+    kind() is TemplateTreeKind {category;}
+    text() is string {origin;}
+    children() is @TemplateTreeNode {nested;}
+}
+object InvalidTemplateTreeNode does Error {
+    InvalidTemplateTreeNode();
+    text() is string {"invalid template tree node";}
+}
+
+// Internal parser stack. The root frame represents the program, not an emitted
+// section; all subsequent frames correspond to unmatched opening tags.
+object TemplateTreeFrame {
+    has name is string;
+    has category is TemplateTreeKind;
+    has at is int;
+    has content is List<TemplateTreeNode>;
+    TemplateTreeFrame(name is string, kind is TemplateTreeKind, offset is int) {
+        self.name=name;category=kind;at=offset;
+        let empty is List<TemplateTreeNode> = EmptyList();content=empty;
+    }
+    text() is string {name;}
+    kind() is TemplateTreeKind {category;}
+    offset() is int {at;}
+    following(node is TemplateTreeNode) is ^TemplateTreeFrame {^content=content.prefix(node);}
+    nodes() is @TemplateTreeNode {
+        let reversed is @TemplateTreeNode=content.map() -> node {node;};
+        let result is @TemplateTreeNode=(0..reversed.size()).map() -> index {reversed[reversed.size()-index-1];};
+        result;
+    }
+}
+object TemplateTreeBuilder {
+    has source is string;
+    has maximum_depth is int;
+    has stack is List<TemplateTreeFrame>;
+    TemplateTreeBuilder(source is string, maximum_depth is int) {
+        self.source=source;self.maximum_depth=maximum_depth;
+        let empty is List<TemplateTreeFrame> = EmptyList();
+        stack=empty.prefix(TemplateTreeFrame("",TemplateTreeKind.section,0));
+    }
+    following(token is TemplateInstruction) is ^TemplateTreeBuilder {
+        let tag=token.tag();
+        if tag=="#" || tag=="^" {
+            confirm stack.size()-1<maximum_depth else throw self.failure(token.offset(),"template section depth exceeded");
+            let kind=if tag=="#" {TemplateTreeKind.section;} else {TemplateTreeKind.inverted;};
+            ^stack=stack.prefix(TemplateTreeFrame(token.text(),kind,token.offset()));
+            return;
+        }
+        if tag=="/" {
+            confirm stack.size()>1 else throw self.failure(token.offset(),"unexpected closing template section");
+            let closed=stack.first();
+            confirm closed.text()==token.text() else throw self.failure(token.offset(),"mismatched closing template section");
+            let node=TemplateTreeNode(closed.kind(),closed.text(),closed.nodes());
+            let parent=stack.tail().first().following(node);
+            ^stack=stack.tail().tail().prefix(parent);
+            return;
+        }
+        let kind=if tag==">" {TemplateTreeKind.partial;}
+            else {if token.variable() {TemplateTreeKind.variable;} else {TemplateTreeKind.literal;}};
+        let parent=stack.first().following(TemplateTreeNode(kind,token.text(),[]));
+        ^stack=stack.tail().prefix(parent);
+    }
+    nodes() is @TemplateTreeNode {
+        confirm stack.size()==1 else throw self.failure(stack.first().offset(),"unclosed template section");
+        stack.first().nodes();
+    }
+    private:
+    failure(offset is int, message is string) is TemplateFailure {
+        let lines=source.slice(0,offset).replace("\r\n","\n").split("\n");
+        TemplateFailure(offset,lines.size(),lines[lines.size()-1].length()+1,message);
+    }
+}
+
+// Root inline catches use builtin Error because imported catch types are not
+// resolved by the current runner; consumer tests verify exact nominal types.
+test "structured template tree preserves literal and named positions" {
+    let nodes=TemplateTree("hello {{name}}!").nodes();
+    test.is(nodes.size(),3);
+    test.is(nodes[0].kind(),TemplateTreeKind.literal);
+    test.is(nodes[0].text(),"hello ");
+    test.is(nodes[1].kind(),TemplateTreeKind.variable);
+    test.is(nodes[1].text(),"name");
+    test.is(nodes[1].children().size(),0);
+}
+test "nested sections inverted sections and current item compile" {
+    let nodes=TemplateTree("{{#users}}Hi {{.}}{{^active}}!{{/active}}{{/users}}").nodes();
+    test.is(nodes.size(),1);
+    test.is(nodes[0].kind(),TemplateTreeKind.section);
+    test.is(nodes[0].text(),"users");
+    test.is(nodes[0].children().size(),3);
+    test.is(nodes[0].children()[1].text(),".");
+    test.is(nodes[0].children()[2].kind(),TemplateTreeKind.inverted);
+    test.is(nodes[0].children()[2].children()[0].text(),"!");
+}
+test "standalone structural tags remove original indentation and endings" {
+    let nodes=TemplateTree("a\n  {{# x}}\r\ninside\n\t{{/ x }}\nb\n {{> header/footer}}\nc").nodes();
+    test.is(nodes.size(),5);
+    test.is(nodes[0].text(),"a\n");
+    test.is(nodes[1].children()[0].text(),"inside\n");
+    test.is(nodes[2].text(),"b\n");
+    test.is(nodes[3].kind(),TemplateTreeKind.partial);
+    test.is(nodes[3].text(),"header/footer");
+    test.is(nodes[4].text(),"c");
+}
+test "inline tags preserve whitespace and empty sections have no children" {
+    let nodes=TemplateTree("a {{#x}}{{/x}} b").nodes();
+    test.is(nodes[0].text(),"a ");
+    test.is(nodes[1].children().size(),0);
+    test.is(nodes[2].text()," b");
+    test.is(TemplateTree("{{# .}}{{/.}}").nodes()[0].text(),".");
+}
+test "structured syntax errors keep original source positions" {
+    for ["{{/x}}","{{#x}}{{/y}}","{{#x}}{{#y}}{{/x}}{{/y}}","{{#x}}"] -> source {
+        test.ok(try {TemplateTree(source).nodes();false;} catch e is Error {true;});
+    }
+    test.is(try {TemplateTree("é\r\n{{#x}}{{/y}}").nodes();[0,0,0];}
+        catch e is TemplateFailure {[e.offset(),e.line(),e.column()];},[9,2,7]);
+    test.is(try {TemplateTree("a\n{{#x}}").nodes();[0,0,0];}
+        catch e is TemplateFailure {[e.offset(),e.line(),e.column()];},[2,2,1]);
+}
+test "tree input token and depth limits are explicit" {
+    test.is(TemplateTree("",0,0,0).nodes().size(),0);
+    test.is(TemplateTree("x",1,1,0).nodes()[0].text(),"x");
+    test.is(TemplateTree("{{#x}}{{/x}}",12,2,1).nodes().size(),1);
+    test.ok(try {TemplateTree("{{#x}}{{/x}}",12,1,1).nodes();false;} catch e is Error {true;});
+    test.ok(try {TemplateTree("{{#x}}{{/x}}",12,2,0).nodes();false;} catch e is Error {true;});
+    test.ok(try {TemplateTree("xx",1,2,0).nodes();false;} catch e is Error {true;});
+    test.ok(try {TemplateTree("",0,-1,0);false;} catch e is Error {true;});
+}
+test "partial names are static and unsupported directives stay errors" {
+    test.is(TemplateTree("{{>é.header}}").nodes()[0].text(),"é.header");
+    for ["{{>}}","{{> (name)}}","{{>two names}}","{{= x =}}","{{& x}}","{{{x}}}"] -> source {
+        test.ok(try {TemplateTree(source).nodes();false;} catch e is Error {true;});
+    }
+}
+test "tree observations are repeatable and escaped delimiters remain literal" {
+    let program=TemplateTree("{{{{#x}}}} {{!ignored}}done");
+    test.is(program.nodes()[0].text(),"{{#x}} done");
+    test.is(program.nodes()[0].text(),"{{#x}} done");
+}

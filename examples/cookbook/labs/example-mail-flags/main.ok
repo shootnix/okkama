@@ -1,0 +1,17 @@
+// Сохранить Seen и предметные флаги письма
+//
+// Сохранить письмо и флаги в Maildir: Maildir и представления флагов связывают сообщения с локальным хранилищем.
+//
+// Запуск: ./examples/cookbook/run lab example-mail-flags
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-mail-flags
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mail/mailbox" take SystemFlag, SystemMailFlag, KeywordFlag;
+import "io/stdout" take Stdout;
+main() is int {
+    Stdout().writeln(SystemFlag(SystemMailFlag.seen).string());
+    Stdout().writeln(KeywordFlag("$CustomLabel").keyword());
+    0;
+}

@@ -1,0 +1,30 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/path" take Path;
+import "fs/directory" take Directory, DirectoryEntries;
+import "fs/temp" take TemporaryDirectory;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdin" take EndOfInput;
+
+main() is int {
+    let out = Stdout();
+    {
+        let w = File(mode: FileMode.writing, path: Path("lines.txt"));
+        defer w.close();
+        w.text().write("a\r\nb\n\nlast");
+    }
+    let r = File(mode: FileMode.reading, path: Path("lines.txt"));
+    defer r.close();
+    loop {
+        let line = try {
+            "[" + r.text().line() + "]";
+        } catch e is EndOfInput {
+            "EOF";
+        };
+        out.writeln(line);
+        last if line == "EOF";
+    }
+    0;
+}

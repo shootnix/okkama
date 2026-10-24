@@ -1,0 +1,91 @@
+module app v1.0.0;
+
+import "db/postgres" take PostgresDatabase, PostgresTcp, PostgresCredentials, PostgresOptions;
+import "db/statement" take Statement;
+import "db/row" take RowsEnded;
+import "db/read" take RowReader;
+import "db/value" take DbInteger, DbText, DbDecimal, ObservedDbValue;
+import "db/error" take DbFailure, DbFailureKind;
+import "db/transaction" take TransactionOptions, Isolation;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "os/environment" take Environment;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take SystemEntropy;
+import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take ParsedInt;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+
+// A small inventory against a live PostgreSQL server, through db/postgres:
+// SCRAM login, a serializable transaction, a prepared lookup, a streamed
+// report and a constraint failure mapped to DbFailureKind.constraint.
+//
+// The server comes from the environment (defaults in parentheses):
+// OKKAMA_PG_ADDRESS (127.0.0.1), OKKAMA_PG_PORT (5432), OKKAMA_PG_USER
+// (postgres), OKKAMA_PG_PASSWORD (empty: no password), OKKAMA_PG_DATABASE
+// (postgres). Run from the repository root:
+//
+//     OKKAMA_PG_PORT=55432 OKKAMA_PG_USER=okkama OKKAMA_PG_PASSWORD=secret \
+//         OKKAMA_PG_DATABASE=okkama okkama-rs/target/release/okkama examples/std-v4/db-postgres.ok
+//
+// Everything lives in a TEMP table, so the run leaves nothing behind.
+object Settings {
+    has environment is Environment;
+    Settings(environment is Environment) { self.environment = environment; }
+    value(name is string, fallback is string) is string {
+        if environment.membership(name) { environment.variable(name); } else { fallback; }
+    }
+    database() is PostgresDatabase {
+        let endpoint = IpEndpoint(IpAddress(self.value("OKKAMA_PG_ADDRESS", "127.0.0.1")), ParsedInt(self.value("OKKAMA_PG_PORT", "5432")).value());
+        let user = self.value("OKKAMA_PG_USER", "postgres");
+        let password = self.value("OKKAMA_PG_PASSWORD", "");
+        let credentials = if password == "" { PostgresCredentials(user); } else { PostgresCredentials(user, SecretBytes(Utf8Encoded(password).bytes())); };
+        PostgresDatabase(PostgresTcp(endpoint), credentials, PostgresOptions(self.value("OKKAMA_PG_DATABASE", "postgres")), SystemEntropy());
+    }
+}
+
+async main() is int {
+    let output = Stdout();
+    let connection = await Settings(Environment()).database().connection();
+    defer connection.close();
+    output.writeln("connected to PostgreSQL " + connection.server_version());
+
+    await connection.execution(Statement("CREATE TEMP TABLE stock (sku text PRIMARY KEY, title text NOT NULL, price numeric(10, 2) NOT NULL, quantity int4 NOT NULL CHECK (quantity >= 0))"));
+
+    let restock = await connection.transaction(TransactionOptions(Isolation.serializable, false, false));
+    for [["A-1", "Lamp", "19.90", "4"], ["B-2", "Desk", "149.00", "1"], ["C-3", "Chair", "59.50", "6"]] -> item {
+        await restock.execution(Statement("INSERT INTO stock VALUES ($1, $2, $3, $4)",
+            [DbText(item[0]), DbText(item[1]), DbDecimal(Decimal(item[2])), DbInteger(BigInt(item[3]))]));
+    }
+    await restock.commit();
+
+    let lookup = await connection.prepared("SELECT title, quantity FROM stock WHERE sku = $1");
+    for ["A-1", "C-3"] -> sku {
+        let rows = await lookup.rows([DbText(sku)]);
+        let found = RowReader(await rows.row());
+        output.writeln(sku + ": " + found.text("title") + " x" + found.int("quantity").string());
+        rows.close();
+    }
+    lookup.close();
+
+    let oversold = try {
+        await connection.execution(Statement("UPDATE stock SET quantity = quantity - $1 WHERE sku = $2", [DbInteger(BigInt("2")), DbText("B-2")]));
+        "accepted";
+    } catch failure is DbFailure {
+        if failure.kind() == DbFailureKind.constraint { "refused by " + failure.code(); } else { throw; }
+    };
+    output.writeln("selling two desks: " + oversold);
+
+    let report = await connection.rows(Statement("SELECT sku, price * quantity AS worth FROM stock ORDER BY sku"));
+    let streamed = try {
+        loop {
+            let row = await report.row();
+            output.writeln(ObservedDbValue(row.value("sku")).text() + " worth " + ObservedDbValue(row.value("worth")).decimal().string());
+        }
+        false;
+    } catch ended is RowsEnded { true; };
+    output.writeln("report complete: " + streamed.string());
+    return 0;
+}

@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "io/stdin" take Stdin, Utf8Input, EndOfInput;
+
+main() is int {
+    let input = Utf8Input(origin: Stdin());
+    let first = input.line();
+    let rest = input.text();
+    Stdout().writeln("first=" + first);
+    Stdout().write("rest=" + rest);
+    let after = try { input.line(); } catch e is EndOfInput { "EOF"; };
+    Stdout().writeln(after);
+    input.close();
+    0;
+}

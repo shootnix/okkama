@@ -1,0 +1,62 @@
+module crypto/chacha20_poly1305 v1.0.0;
+
+import "crypto/aead" take Sealing;
+import "crypto/secret" take SecretBytes;
+import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
+import "encoding/hex" take HexEncoded, HexDecoded;
+
+// ChaCha20-Poly1305 (RFC 8439, 96-bit nonce) and XChaCha20-Poly1305
+// (192-bit nonce, safe for random nonces). 256-bit SecretBytes key, 128-bit
+// tag; see crypto/aead for the sealing contract.
+object ChaCha20Poly1305 does Sealing {
+    has key is SecretBytes;
+    ChaCha20Poly1305(key is SecretBytes) {
+        confirm key.size() == 32 else throw InvalidCryptoInput("ChaCha20-Poly1305 key must be 32 bytes");
+        self.key = key;
+    }
+    nonce_size() is int { 12; }
+    tag_size() is int { 16; }
+    sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
+        HostOperation("aead-seal:chacha20-poly1305", [key.export_bytes(), nonce, aad, plaintext]).bytes();
+    }
+    opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
+        HostOperation("aead-open:chacha20-poly1305", [key.export_bytes(), nonce, aad, sealed]).bytes();
+    }
+}
+
+object XChaCha20Poly1305 does Sealing {
+    has key is SecretBytes;
+    XChaCha20Poly1305(key is SecretBytes) {
+        confirm key.size() == 32 else throw InvalidCryptoInput("XChaCha20-Poly1305 key must be 32 bytes");
+        self.key = key;
+    }
+    nonce_size() is int { 24; }
+    tag_size() is int { 16; }
+    sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
+        HostOperation("aead-seal:xchacha20-poly1305", [key.export_bytes(), nonce, aad, plaintext]).bytes();
+    }
+    opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
+        HostOperation("aead-open:xchacha20-poly1305", [key.export_bytes(), nonce, aad, sealed]).bytes();
+    }
+}
+
+test "ChaCha20-Poly1305 matches RFC 8439 section 2.8.2" {
+    let key is @byte = (0..32).map() -> i { (128 + i).byte(); };
+    let nonce = [7, 0, 0, 0, 64, 65, 66, 67, 68, 69, 70, 71].map() -> value { value.byte(); };
+    let aad = [80, 81, 82, 83, 192, 193, 194, 195, 196, 197, 198, 199].map() -> value { value.byte(); };
+    let text = HexDecoded("4c616469657320616e642047656e746c656d656e206f662074686520636c617373206f66202739393a204966204920636f756c64206f6666657220796f75206f6e6c79206f6e652074697020666f7220746865206675747572652c2073756e73637265656e20776f756c642062652069742e").bytes();
+    let sealed = ChaCha20Poly1305(SecretBytes(key)).sealed(nonce, aad, text);
+    test.is(HexEncoded(sealed.slice(sealed.size() - 16, sealed.size())).string(), "1ae10b594f09e26a7e902ecbd0600691");
+    test.is(HexEncoded(sealed.slice(0, 16)).string(), "d31a8d34648e60db7b86afbc53ef7ec2");
+    test.is(ChaCha20Poly1305(SecretBytes(key)).opened(nonce, aad, sealed), text);
+}
+
+test "XChaCha20-Poly1305 round-trips and authenticates" {
+    let key is @byte = (0..32).map() -> i { i.byte(); };
+    let nonce is @byte = (0..24).map() -> i { 3.byte(); };
+    let cipher = XChaCha20Poly1305(SecretBytes(key));
+    let sealed = cipher.sealed(nonce, [], [1.byte()]);
+    test.is(cipher.opened(nonce, [], sealed), [1.byte()]);
+    test.ok(try { cipher.opened(nonce, [], sealed.slice(0, sealed.size() - 1)); false; } catch e is AuthenticationFailed { true; });
+}
+

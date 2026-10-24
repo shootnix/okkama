@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.eval-order.cast-operands",
+  "title": "array-cast operands evaluate before conversion",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.EVAL-ORDER",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "VAL.ARRAY-CASTS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "x\ny\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6.1: operands evaluate exactly once left-to-right before conversions."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.rat.zero-denominator",
+  "title": "rat with a zero denominator fails",
+  "purpose": "The value-dependent operation fails at runtime after earlier effects.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.RAT",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": "before\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.3: rat(numerator, denominator) rejects a zero denominator."
+  },
+  "status": "mandatory"
+}

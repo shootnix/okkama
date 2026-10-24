@@ -1,0 +1,131 @@
+module async/collect v1.0.0;
+
+import "collections/sequence" take Sequencing;
+
+/*
+=head1 NAME
+
+async/collect - structured collection of futures
+
+=head1 DESCRIPTION
+
+C<AllFutures<T>> starts every supplied future and publishes results in input
+order only after every future succeeds. The input may be any C<Sequencing>
+object; it is read when C<results()> starts, not during construction.
+
+    let pending is @Future<int> = [
+        Worker(id: 1).run(),
+        Worker(id: 2).run(),
+        Worker(id: 3).run(),
+    ];
+    let collected is AllFutures<int> = AllFutures(origins: pending);
+    let values is Sequencing<int> = await collected.results();
+
+The returned sequence preserves input order rather than completion order. An
+empty input completes immediately with an empty sequence.
+
+If one future fails, unfinished siblings are cancelled and their cleanup is
+awaited. The observed failure remains primary; failures raised by sibling
+cleanup remain ordered secondary diagnostics. Cancelling C<results()> applies
+the same structured cleanup rule. Repeated calls return the same future and
+never restart the inputs.
+
+C<Raced<T>> returns the value of the first settled input. A failing first
+settlement remains a failure; the race does not wait for a later success.
+Every loser is cancelled and fully cleaned before the result settles:
+
+    let race is Raced<Response> = Raced(origins: requests);
+    let response = await race.result();
+
+C<FirstSuccessful<T>> instead ignores failed attempts while success is still
+possible. If all inputs fail, the first failure in completion order remains
+primary and later failures become ordered secondary diagnostics:
+
+    let attempts is FirstSuccessful<Response> = FirstSuccessful(
+        origins: requests,
+    );
+    let response = await attempts.result();
+
+Neither selector accepts an empty input; both throw C<NoFutures>. A successful
+winner is not published when cancelling a loser exposes a cleanup failure.
+
+C<FutureCompletions<T>> exposes settlement order without turning a suspending
+operation into a synchronous cursor. C<completion()> returns the original,
+already-settled C<Future<T>> rather than extracting its value or failure:
+
+    let stream is FutureCompletions<Response> = FutureCompletions(
+        origins: requests,
+    );
+
+    while stream.remaining_count() > 0 {
+        let completed = await stream.completion();
+        try {
+            let response = await completed;
+            responses.write(response);
+        }
+        catch error is RequestFailed {
+            failures.write(error);
+        }
+    }
+
+Every input position is returned once, including duplicate future identities.
+Concurrent completion requests and simultaneous settlements are paired FIFO;
+already-settled inputs are ordered by their input positions. Calling
+C<completion()> after exhaustion throws C<NoFutures>. Cancelling a pending
+completion request cancels the stream's unfinished inputs and waits for their
+cleanup.
+
+=cut
+*/
+
+object AllFutures<T> {
+    has origins is Sequencing<Future<T>>;
+
+    AllFutures(:origins);
+
+    async results() is Sequencing<T> {
+        panic "AllFutures.results is a VM intrinsic";
+    }
+}
+
+object Raced<T> {
+    has origins is Sequencing<Future<T>>;
+
+    Raced(:origins);
+
+    async result() is T {
+        throw NoFutures();
+    }
+}
+
+object FirstSuccessful<T> {
+    has origins is Sequencing<Future<T>>;
+
+    FirstSuccessful(:origins);
+
+    async result() is T {
+        throw NoFutures();
+    }
+}
+
+object FutureCompletions<T> {
+    has origins is Sequencing<Future<T>>;
+
+    FutureCompletions(:origins);
+
+    remaining_count() is int {
+        panic "FutureCompletions.remaining_count is a VM intrinsic";
+    }
+
+    async completion() is Future<T> {
+        throw NoFutures();
+    }
+}
+
+object NoFutures does Error {
+    NoFutures();
+
+    text() is string {
+        "no futures remain";
+    }
+}

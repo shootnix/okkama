@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let t = Tracer();
+    let v = loop {
+        last t.mark("payload one", 1) if t.flag("condition one", false);
+        last t.mark("payload two", 2) if t.flag("condition two", true);
+    };
+    out.writeln(v.string());
+    0;
+}

@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.constraint-failure",
+  "title": "a constraint violation is a typed database failure",
+  "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.SQLITE",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.DB.ERROR",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "constraint rejected\n1\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/error.ok",
+    "docs/std/db-sqlite.md"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "A UNIQUE violation is reported as the typed DbFailure (no partial insert); the table still holds one row."
+  },
+  "status": "mandatory"
+}

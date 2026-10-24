@@ -1,0 +1,105 @@
+{
+  "node": "Program",
+  "module": {
+    "node": "ModuleDecl",
+    "path": [
+      "examples",
+      "sparrow_control_flow"
+    ],
+    "version": "v1.0.0"
+  },
+  "imports": [],
+  "items": [
+    {
+      "node": "ActionDecl",
+      "async": false,
+      "visibility": "public",
+      "projection": null,
+      "name": "main",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      },
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "ForStatement",
+            "source": {
+              "node": "Range",
+              "operator": "..=",
+              "start": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "1"
+              },
+              "end": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "4"
+              }
+            },
+            "bindings": [
+              {
+                "node": "ForBinding",
+                "name": "i",
+                "batch": null
+              }
+            ],
+            "body": {
+              "node": "Block",
+              "statements": [
+                {
+                  "node": "NextStatement",
+                  "condition": {
+                    "node": "Binary",
+                    "operator": "<",
+                    "left": {
+                      "node": "NameExpression",
+                      "name": "i"
+                    },
+                    "right": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "4"
+                    }
+                  }
+                },
+                {
+                  "node": "ExpressionStatement",
+                  "expression": {
+                    "node": "Binary",
+                    "operator": "-",
+                    "left": {
+                      "node": "Binary",
+                      "operator": "+",
+                      "left": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "40"
+                      },
+                      "right": {
+                        "node": "NameExpression",
+                        "name": "i"
+                      }
+                    },
+                    "right": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "2"
+                    }
+                  },
+                  "condition": null
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

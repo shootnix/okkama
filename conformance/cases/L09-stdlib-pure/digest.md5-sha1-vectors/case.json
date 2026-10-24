@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.digest.md5-sha1-vectors",
+  "title": "MD5 (RFC 1321) and SHA-1 (RFC 3174) test vectors",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.DIGEST.LEGACY",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "STD.DIGEST.STATE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - md5 abc\nok 2 - md5 empty\nok 3 - md5 message digest\nok 4 - sha1 abc\nok 5 - sha1 empty\nok 6 - sha1 two blocks\nok 7 - md5 chunked state\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/digest/legacy.ok",
+    "RFC 1321 appendix A.5",
+    "RFC 3174 section 7.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 1321 A.5 and RFC 3174 test suites (cross-checked with Python hashlib); chunking via state() must not change the digest."
+  },
+  "status": "mandatory"
+}

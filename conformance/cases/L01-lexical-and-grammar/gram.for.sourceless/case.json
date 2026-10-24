@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.for.sourceless",
+  "title": "malformed for: source-less for is invalid; use loop",
+  "purpose": "Malformed source is rejected by the lexer/parser.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.FOR",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#9.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.9 / grammar: source-less for is invalid; use loop."
+  },
+  "status": "mandatory"
+}

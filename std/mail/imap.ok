@@ -1,0 +1,181 @@
+module mail/imap v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "collections/set" take Set, OrderedSet;
+import "mime/media_type" take MimeItems;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+
+// Eager CAPABILITY advertisement snapshots, not negotiated session state.
+// Unknown atom tokens and duplicates retain source order/spelling. names() and
+// features() deduplicate; AUTH mechanisms retain first advertisement order.
+// Require IMAP4rev1 or IMAP4rev2, without inferring either revision's implicit
+// features. Replace the snapshot after TLS/authentication; never merge it.
+// ParsedImapCapabilities accepts one complete untagged line, not a greeting,
+// response code, ENABLED response or tagged command completion.
+enum ImapFeature = (imap4rev1, imap4rev2, start_tls, login_disabled, idle,
+    uid_plus, move, enable, utf8_accept, utf8_only, literal_plus, literal_minus,
+    sasl_ir, condstore, qresync, namespace, unselect, binary);
+object ImapCapabilityLimits {
+    has tokens, token_bytes, wire_bytes is int;
+    ImapCapabilityLimits() {tokens=256;token_bytes=256;wire_bytes=65536;}
+    ImapCapabilityLimits(tokens is int, token_bytes is int, wire_bytes is int) {
+        confirm tokens>=0 && token_bytes>=0 && wire_bytes>=0 else throw InvalidArgument("IMAP capability limits must be nonnegative");
+        self.tokens=tokens;self.token_bytes=token_bytes;self.wire_bytes=wire_bytes;
+    }
+    tokens() is int {tokens;}
+    token_bytes() is int {token_bytes;}
+    wire_bytes() is int {wire_bytes;}
+}
+object ImapCapability {
+    has original, name is string;
+    ImapCapability(origin is string) {original=origin;name=ImapCapabilityToken(origin,ImapCapabilityLimits()).name();}
+    ImapCapability(origin is string, limits is ImapCapabilityLimits) {original=origin;name=ImapCapabilityToken(origin,limits).name();}
+    string() is string {original;}
+    name() is string {name;}
+}
+object ImapCapabilities does ByteSource {
+    has value is ImapCapabilitySnapshot;
+    ImapCapabilities(entries is Sequencing<string>) {value=ImapCapabilitySnapshot(entries,ImapCapabilityLimits());}
+    ImapCapabilities(entries is Sequencing<string>, limits is ImapCapabilityLimits) {value=ImapCapabilitySnapshot(entries,limits);}
+    tokens() is Sequencing<ImapCapability> {value.tokens();}
+    names() is Set<string> {value.names();}
+    features() is Set<ImapFeature> {value.features();}
+    authentication() is Sequencing<string> {value.authentication();}
+    bytes() is @byte {value.bytes();}
+}
+object ParsedImapCapabilities {
+    has value is ImapCapabilities;
+    ParsedImapCapabilities(origin is @byte) {value=ImapCapabilityLine(origin,ImapCapabilityLimits()).capabilities();}
+    ParsedImapCapabilities(origin is @byte, limits is ImapCapabilityLimits) {value=ImapCapabilityLine(origin,limits).capabilities();}
+    capabilities() is ImapCapabilities {value;}
+}
+object InvalidImapCapabilities does Error {
+    has reason is string;
+    InvalidImapCapabilities(reason is string) {self.reason=reason;}
+    reason() is string {reason;}
+    text() is string {"invalid IMAP capabilities: "+reason;}
+}
+object ImapCapabilityLimitExceeded does Error {
+    has limit is string;
+    ImapCapabilityLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"IMAP capability "+limit+" limit exceeded";}
+}
+object ImapCapabilityToken {
+    has origin is string;has limits is ImapCapabilityLimits;
+    ImapCapabilityToken(origin is string, limits is ImapCapabilityLimits) {self.origin=origin;self.limits=limits;}
+    name() is string {
+        confirm origin.length()<=limits.token_bytes() else throw ImapCapabilityLimitExceeded("token_bytes");
+        confirm origin!="" else throw InvalidImapCapabilities("empty capability atom");
+        for (0..origin.length()) -> index {
+            let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();
+            confirm bytes.size()==1 else throw InvalidImapCapabilities("non-ASCII capability atom");
+            let code=bytes[0].int();
+            confirm code>=33 && code<=126 && code!=40 && code!=41 && code!=123 && code!=37 && code!=42
+                && code!=34 && code!=92 && code!=93 else throw InvalidImapCapabilities("invalid capability atom");
+        }
+        let upper=ImapCapabilityUpper(origin).string();
+        if upper.length()>=5 && upper.slice(0,5)=="AUTH=" {
+            // Explicit SASL-name profile: the prefix is ASCII-insensitive;
+            // mechanism spelling itself uses the uppercase SASL grammar.
+            let mechanism=origin.slice(5,origin.length());
+            confirm mechanism.length()>0 && mechanism.length()<=20 else throw InvalidImapCapabilities("SASL mechanism length outside 1..20");
+            for Utf8Encoded(mechanism).bytes() -> octet {
+                let code=octet.int();
+                confirm (code>=65 && code<=90) || (code>=48 && code<=57) || code==45 || code==95
+                    else throw InvalidImapCapabilities("invalid SASL mechanism name");
+            }
+        }
+        upper;
+    }
+}
+object ImapCapabilityUpper {
+    has origin is string;
+    ImapCapabilityUpper(origin is string) {self.origin=origin;}
+    string() is string {
+        let bytes is @byte=Utf8Encoded(origin).bytes().map() -> octet {
+            let code=octet.int();if code>=97 && code<=122 {(code-32).byte();} else {octet;}
+        };Utf8Decoded(bytes).string();
+    }
+}
+object ImapCapabilitySnapshot {
+    has entries is @ImapCapability;has names is Set<string>;has features is Set<ImapFeature>;
+    has mechanisms is @string;has wire is @byte;
+    ImapCapabilitySnapshot(origin is Sequencing<string>, limits is ImapCapabilityLimits) {
+        let count=origin.size();confirm count>=0 else throw InvalidArgument("IMAP capability source size must be nonnegative");
+        confirm count>0 else throw InvalidImapCapabilities("missing protocol revision");
+        confirm count<=limits.tokens() else throw ImapCapabilityLimitExceeded("tokens");
+        confirm limits.wire_bytes()>=14 else throw ImapCapabilityLimitExceeded("wire_bytes");
+        let buffer=ByteBuffer();defer buffer.closing().close();buffer.writing().write(ByteSnapshot(Utf8Encoded("* CAPABILITY").bytes()));
+        let all is MimeItems<string>=MimeItems();let known is MimeItems<ImapFeature>=MimeItems();let auth is MimeItems<string>=MimeItems();
+        let tokens is @ImapCapability=(0..count).map() -> index {
+            let token=ImapCapability(origin.item(index),limits);let raw=token.string();let name=token.name();
+            confirm raw.length()<=limits.wire_bytes()-buffer.content().size()-3 else throw ImapCapabilityLimitExceeded("wire_bytes");
+            buffer.writing().write(ByteSnapshot(Utf8Encoded(" "+raw).bytes()));all=all.following(name);
+            let recognized=ImapKnownFeature(name).features();
+            if recognized.size()>0 {known=known.following(recognized[0]);}
+            if name.length()>=5 && name.slice(0,5)=="AUTH=" {
+                let mechanism=name.slice(5,name.length());let present=auth.entries().reduce(false) -> found,previous {found || previous==mechanism;};
+                if !present {auth=auth.following(mechanism);}
+            }
+            token;
+        };
+        let unique is Set<string>=OrderedSet(all.entries());
+        confirm unique.membership("IMAP4REV1") || unique.membership("IMAP4REV2") else throw InvalidImapCapabilities("missing supported protocol revision");
+        buffer.writing().write(ByteSnapshot(Utf8Encoded("\r\n").bytes()));
+        entries=tokens;names=unique;features=OrderedSet(known.entries());mechanisms=auth.entries();wire=buffer.content().bytes();
+    }
+    tokens() is Sequencing<ImapCapability> {entries;}
+    names() is Set<string> {names;}
+    features() is Set<ImapFeature> {features;}
+    authentication() is Sequencing<string> {mechanisms;}
+    bytes() is @byte {wire;}
+}
+object ImapCapabilityLine {
+    has origin is @byte;has limits is ImapCapabilityLimits;
+    ImapCapabilityLine(origin is @byte, limits is ImapCapabilityLimits) {self.origin=origin;self.limits=limits;}
+    capabilities() is ImapCapabilities {
+        confirm origin.size()<=limits.wire_bytes() else throw ImapCapabilityLimitExceeded("wire_bytes");
+        confirm origin.size()>=2 && origin[origin.size()-2].int()==13 && origin[origin.size()-1].int()==10
+            else throw InvalidImapCapabilities("response requires terminal CRLF");
+        for (0..origin.size()-2) -> index {
+            confirm origin[index].int()>=32 && origin[index].int()<=126 else throw InvalidImapCapabilities("response contains non-ASCII or control bytes");
+        }
+        let text=Utf8Decoded(origin).string();
+        confirm text.length()>15 && ImapCapabilityUpper(text.slice(0,13)).string()=="* CAPABILITY "
+            else throw InvalidImapCapabilities("expected one untagged CAPABILITY response");
+        let entries=text.slice(13,text.length()-2).split(" ");ImapCapabilities(entries,limits);
+    }
+}
+object ImapKnownFeature {
+    has name is string;
+    ImapKnownFeature(name is string) {self.name=name;}
+    features() is @ImapFeature {
+        match name {
+            case "IMAP4REV1" {[ImapFeature.imap4rev1];} case "IMAP4REV2" {[ImapFeature.imap4rev2];}
+            case "STARTTLS" {[ImapFeature.start_tls];} case "LOGINDISABLED" {[ImapFeature.login_disabled];}
+            case "IDLE" {[ImapFeature.idle];} case "UIDPLUS" {[ImapFeature.uid_plus];}
+            case "MOVE" {[ImapFeature.move];} case "ENABLE" {[ImapFeature.enable];}
+            case "UTF8=ACCEPT" {[ImapFeature.utf8_accept];} case "UTF8=ONLY" {[ImapFeature.utf8_only];}
+            case "LITERAL+" {[ImapFeature.literal_plus];} case "LITERAL-" {[ImapFeature.literal_minus];}
+            case "SASL-IR" {[ImapFeature.sasl_ir];} case "CONDSTORE" {[ImapFeature.condstore];}
+            case "QRESYNC" {[ImapFeature.qresync];} case "NAMESPACE" {[ImapFeature.namespace];}
+            case "UNSELECT" {[ImapFeature.unselect];} case "BINARY" {[ImapFeature.binary];}
+            else {let empty is @ImapFeature=[];empty;}
+        }
+    }
+}
+
+test "IMAP advertisements retain unknown atoms without enabling features" {
+    let caps=ImapCapabilities(["IMAP4rev2","X-Local=Value"]);
+    test.is(caps.tokens().last().string(),"X-Local=Value");
+    test.ok(caps.names().membership("X-LOCAL=VALUE"));test.is(caps.features().size(),1);
+}
+test "IMAP AUTH mechanisms retain distinct first occurrences" {
+    let caps=ImapCapabilities(["IMAP4rev1","AUTH=PLAIN","AUTH=PLAIN","AUTH=GSSAPI"]);
+    test.is(caps.authentication().size(),2);test.is(caps.authentication().last(),"GSSAPI");
+}

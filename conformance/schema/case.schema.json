@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-case/1",
+  "title": "Okkama conformance case (case.json)",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "purpose",
+    "level",
+    "contracts",
+    "mode",
+    "sources",
+    "entry",
+    "expect",
+    "spec_refs",
+    "budget",
+    "provenance",
+    "status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "ocs-case/1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^L[0-9]{2}(\\.[a-z0-9][a-z0-9_-]*)+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "enum": [
+        "L00",
+        "L01",
+        "L02",
+        "L03",
+        "L04",
+        "L05",
+        "L06",
+        "L07",
+        "L08",
+        "L09",
+        "L10",
+        "L11",
+        "L12",
+        "L13"
+      ]
+    },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "contract",
+          "aspects"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9]*(\\.[A-Z0-9][A-Z0-9_-]*)+$"
+          },
+          "aspects": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "normal",
+                "boundary",
+                "invalid",
+                "interaction"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "mode": {
+      "enum": [
+        "parse",
+        "check",
+        "run",
+        "test"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "\\.ok$"
+      }
+    },
+    "entry": {
+      "type": "string"
+    },
+    "support": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stdin": {
+      "type": "string"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stdout",
+              "stderr",
+              "stdin",
+              "args",
+              "env-vars",
+              "filesystem",
+              "process-spawn",
+              "worker-process",
+              "real-clock",
+              "real-random",
+              "loopback-network",
+              "tls",
+              "sqlite",
+              "unicode-data",
+              "locale-data",
+              "timezone-data"
+            ]
+          }
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          }
+        }
+      }
+    },
+    "harness": {
+      "type": "boolean"
+    },
+    "expect": {
+      "type": "object",
+      "required": [
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "success",
+            "reject",
+            "failure",
+            "error"
+          ]
+        },
+        "exit_status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "stdout": {
+          "oneOf": [
+            {
+              "const": "ignore"
+            },
+            {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "file"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "bytes_b64"
+              ],
+              "properties": {
+                "bytes_b64": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "partial_order",
+                "justification"
+              ],
+              "properties": {
+                "partial_order": {
+                  "type": "object",
+                  "required": [
+                    "lines"
+                  ],
+                  "properties": {
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "before": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    }
+                  }
+                },
+                "justification": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "oneOf": [
+            {
+              "const": "ignore"
+            },
+            {
+              "type": "object",
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "file"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "bytes_b64"
+              ],
+              "properties": {
+                "bytes_b64": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "partial_order",
+                "justification"
+              ],
+              "properties": {
+                "partial_order": {
+                  "type": "object",
+                  "required": [
+                    "lines"
+                  ],
+                  "properties": {
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "before": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    }
+                  }
+                },
+                "justification": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          ]
+        },
+        "rejection": {
+          "type": "object",
+          "required": [
+            "stages",
+            "categories"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "stages": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "parse",
+                  "check"
+                ]
+              }
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "syntax",
+                  "semantic",
+                  "resolution",
+                  "runtime",
+                  "panic",
+                  "uncaught-error"
+                ]
+              }
+            },
+            "error_type": {
+              "type": "string"
+            },
+            "justification": {
+              "type": "string"
+            }
+          }
+        },
+        "failure": {
+          "type": "object",
+          "required": [
+            "stages",
+            "categories"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "stages": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "parse",
+                  "check",
+                  "runtime"
+                ]
+              }
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": [
+                  "syntax",
+                  "semantic",
+                  "resolution",
+                  "runtime",
+                  "panic",
+                  "uncaught-error"
+                ]
+              }
+            },
+            "error_type": {
+              "type": "string"
+            },
+            "justification": {
+              "type": "string"
+            }
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ]
+          }
+        },
+        "justification": {
+          "type": "string"
+        }
+      }
+    },
+    "spec_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "timeout_s"
+      ],
+      "properties": {
+        "timeout_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3600
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "origin",
+        "expected_basis"
+      ],
+      "properties": {
+        "origin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_basis": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "mandatory",
+        "informative",
+        "unresolved"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    },
+    "defects": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^DEF-[0-9]{3}$"
+      }
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

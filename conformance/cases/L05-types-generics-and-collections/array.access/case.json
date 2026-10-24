@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.access",
+  "title": "array indexing, size and slicing",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "10 40\n4\n2 20\n0\n30\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.7",
+    "docs/okkama-spec-11072026.md#8.9",
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.9/6.6: zero-based indexing, end-exclusive slice, empty slice at the end. language owner decision, 21.10.2026 (D-046): different numeric categories interact only after an explicit cast; no implicit promotion, so a byte index is converted with .int()."
+  },
+  "status": "mandatory"
+}

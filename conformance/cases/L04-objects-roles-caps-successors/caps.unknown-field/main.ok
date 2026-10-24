@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Customer {
+    has name is string;
+    Customer(:name);
+    cap Card {
+        title is string { name; }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let card = Customer(name: "Ada")::Card;
+    let x = card::missing;
+    0;
+}

@@ -1,0 +1,28 @@
+// Прочитать отчёт runner и получить JUnit
+//
+// Промежуточный JSON-отчёт нужно превратить в типизированный результат и сериализовать для CI.
+//
+// Запуск: ./examples/cookbook/run lab recipe-runner-report
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-runner-report
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/runner_report v1.0.0;
+import "testing/runner" take RecordedTestReport;
+import "testing/report" take JUnitTestReport;
+import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber,JsonArray;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let wire = CompactJson(origin: JsonObject([
+        JsonMember("start_ns", JsonText("0")),
+        JsonMember("duration_ns", JsonText("0")),
+        JsonMember("seed", JsonNumber(Decimal("42"))),
+        JsonMember("results", JsonArray([]))
+    ])).string();
+    let report = RecordedTestReport(wire).value();
+    Stdout().writeln(JUnitTestReport(report, "cookbook").string());
+    0;
+}

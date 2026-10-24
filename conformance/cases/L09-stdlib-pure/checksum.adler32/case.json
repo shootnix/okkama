@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.checksum.adler32",
+  "title": "Adler-32 values",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.CHECKSUM.ADLER32",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - Wikipedia\nok 2 - chunked\nok 3 - empty\nchecks: 3, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/checksum/adler32.ok",
+    "RFC 1950"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 1950 Adler-32 of \"Wikipedia\" = 0x11E60398 = 300286872 (zlib.adler32); empty input yields 1."
+  },
+  "status": "mandatory"
+}

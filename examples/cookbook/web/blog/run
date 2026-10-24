@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Блог: самостоятельный запуск HTTP-приложения.
+# Использование: ./run DATABASE [PORT]; таблицы создаются автоматически.
+set -euo pipefail
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPOSITORY_DIR="$(cd "$PROJECT_DIR/../../../.." && pwd)"
+# Интерпретатор: `okkama` из PATH (make install) или собранный в okkama-rs.
+OKKAMA="${OKKAMA:-$(command -v okkama || echo "$REPOSITORY_DIR/okkama-rs/target/release/okkama")}"
+cd "$REPOSITORY_DIR"
+export OKKAMA_STDLIB_DIR="$REPOSITORY_DIR/std"
+exec "$OKKAMA" "$PROJECT_DIR/main.ok" "$@"

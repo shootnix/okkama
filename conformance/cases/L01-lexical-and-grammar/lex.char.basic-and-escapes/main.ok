@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(if 'x' == 'x' { "same"; } else { "different"; });
+    out.writeln(if 'x' != 'y' { "distinct"; } else { "equal"; });
+    out.writeln(if '\n' == '\n' { "newline"; } else { "?"; });
+    out.writeln(if '\'' != '\\' { "quote-backslash"; } else { "?"; });
+    0;
+}

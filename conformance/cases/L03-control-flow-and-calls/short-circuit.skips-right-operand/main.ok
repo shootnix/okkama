@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let t = Tracer();
+    let a = t.flag("left false", false) && t.flag("right of and", true);
+    let b = t.flag("left true", true) || t.flag("right of or", false);
+    let c = t.flag("left true again", true) && t.flag("right evaluated", false);
+    out.writeln(if a || b || c { "some"; } else { "none"; });
+    0;
+}

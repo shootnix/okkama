@@ -1,0 +1,41 @@
+// JSON как типизированное дерево
+// Задача: Разобрать данные космической миссии, пройти дерево и сохранить точное число.
+// Запуск из корня: ./examples/gallery/run json
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: ParsedJson, JsonView, JsonKind, Decimal; обход объектов и массивов.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/json.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/json v1.0.0;
+import "json/parse" take ParsedJson;
+import "json/read" take JsonView;
+import "json/value" take JsonKind,JsonValue;
+import "json/write" take CompactJson,PrettyJson;
+import "io/stdout" take Stdout;
+object JsonTree {
+    JsonTree();
+    dump(value is JsonView,depth is int) is void {
+        let padding is @string=(0..depth).map()->i{"  ";};let pad=padding.join("");
+        match value.kind(){
+            case JsonKind.object_value{
+                for value.members()->member{
+                    Stdout().writeln(pad+member.name()+":");self.dump(value.member(member.name()),depth+1);
+                }
+            }
+            case JsonKind.array_value{
+                let items=value.items();for (0..items.size())->i{Stdout().writeln(pad+"["+i.string()+"]:");self.dump(items[i],depth+1);}
+            }
+            else{Stdout().writeln(pad+CompactJson(origin:value.value()).string());}
+        }
+    }
+}
+main() is int {
+    let source="{\"mission\":\"Voyager 1\",\"launched\":1977,\"active\":true,\"distance_au\":163.9,\"instruments\":[\"ISS\",\"PLS\",\"MAG\"],\"target\":null,\"trajectory\":{\"escaped\":true,\"speed_km_s\":17.0}}";
+    let parsed=ParsedJson(source);let view=JsonView(parsed);JsonTree().dump(view,0);
+    confirm view.text("mission")=="Voyager 1" && view.member("instruments").items()[0].text()=="ISS";
+    let distance=view.number("distance_au");
+    confirm distance.coefficient().string()=="1639" && distance.exponent()==-1;
+    Stdout().writeln("distance exact: 1639/10");
+    let rendered=PrettyJson(origin:parsed,indentation:2).string();
+    confirm CompactJson(origin:ParsedJson(rendered)).string()==CompactJson(origin:parsed).string();0;
+}

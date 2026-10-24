@@ -1,0 +1,386 @@
+module template/sections v1.0.0;
+
+import "template/library" take TemplateLibrary;
+import "template/tree" take TemplateTree, TemplateTreeNode, TemplateTreeKind;
+import "template/compile" take InvalidTemplateLimits, TemplateOutputLimitExceeded;
+import "template/path" take TemplatePathFromString;
+import "template/json" take JsonTemplateStrings, InvalidTemplateJsonSize, InvalidTemplateJsonProtocol, TemplateJsonLimitExceeded;
+import "json/value" take JsonValue, JsonWriting, JsonMember, JsonObject, JsonText, JsonBoolean, JsonNumber, JsonNull;
+import "collections/sequence" take Sequencing;
+import "math/decimal" take Decimal;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Decoded, ByteOrder;
+import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
+import "io/stream" take WritingText;
+import "io/text" take Utf8Output;
+import "runtime/template" take template_output_size;
+
+// Bounded JSON section template, entirely in Okkama. Construction binds source
+// and nonnegative budgets; string(data) compiles the complete tree before JSON
+// observation, then returns text only on success. No escaping or parent fallback.
+// Arrays iterate in order; objects render once. Truthy scalars render once as
+// current context; zero is true. False/null/empty text/empty array/absence are
+// false. Inverted blocks keep enclosing context. '.' selects the current item.
+// Each executed body costs one shared iteration, even an empty/inverted body.
+// Defaults: 10000 iterations, 1048576 UTF-8 output bytes, 1024 object members;
+// input/token/depth bounds are TemplateTree defaults. Partial tags anywhere in
+// the tree fail before data observation unless an explicit library is supplied.
+// Library constructors enable lazy reached-partial expansion; source catalog
+// entries compile with TemplateTree defaults. Flat TextTemplate budgets do not
+// apply. Default partial depth 32; each expansion costs one shared iteration.
+// Active section depth remains <=64 across partials; no indentation propagation.
+// write(data,destination) streams the same result in <=1024-scalar chunks. Each
+// contribution is byte-preflighted before writing. Successful prefixes survive
+// later errors; source/sink failures stop further work. Borrowed sinks are never
+// closed/flushed and no newline is added. No ambient file/module access.
+// Every custom JSON print must emit exactly one event; source errors propagate.
+// Temporary buffers close on all paths; sources are borrowed, never closed.
+// Streaming storage: eight-byte output meter + one byte per executed body + bounded member snapshots
+// and depth-bounded parser/visitor stacks and one scalar interpolation. string()
+// additionally owns its result buffer. Repeated rendering uses fresh budgets.
+// Contract: docs/std/template-sections-guide.md. Example: SectionTemplate("{{#.}}{{.}}{{/.}}").string(items).
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/sections.ok
+object SectionTemplate {
+    has program is TemplateTree;
+    has maximum_iterations, maximum_output, maximum_members is int;
+    has partials is TemplateLibrary;
+    has maximum_partial_depth is int = 32;
+    has partials_enabled is bool = false;
+    SectionTemplate(source is string) {
+        program=TemplateTree(source);partials=TemplateLibrary();
+        maximum_iterations=10000;maximum_output=1048576;maximum_members=1024;
+    }
+    SectionTemplate(source is string, maximum_iterations is int, maximum_output is int, maximum_members is int) {
+        confirm maximum_iterations>=0 && maximum_output>=0 && maximum_members>=0 else throw InvalidTemplateLimits();
+        program=TemplateTree(source);partials=TemplateLibrary();
+        self.maximum_iterations=maximum_iterations;self.maximum_output=maximum_output;self.maximum_members=maximum_members;
+    }
+    SectionTemplate(source is string, partials is TemplateLibrary) {
+        program=TemplateTree(source);self.partials=partials;partials_enabled=true;
+        maximum_iterations=10000;maximum_output=1048576;maximum_members=1024;
+    }
+    SectionTemplate(source is string, partials is TemplateLibrary, maximum_iterations is int, maximum_output is int, maximum_members is int, maximum_partial_depth is int) {
+        confirm maximum_iterations>=0 && maximum_output>=0 && maximum_members>=0 && maximum_partial_depth>=0 else throw InvalidTemplateLimits();
+        program=TemplateTree(source);self.partials=partials;partials_enabled=true;
+        self.maximum_iterations=maximum_iterations;self.maximum_output=maximum_output;self.maximum_members=maximum_members;
+        self.maximum_partial_depth=maximum_partial_depth;
+    }
+    string(data is JsonValue) is string {
+        let output=ByteBuffer();
+        defer output.closing().close();
+        self.write(data,Utf8Output(origin:output.writing()));
+        Utf8Decoded(output.content().bytes()).string();
+    }
+    write(data is JsonValue, destination is WritingText) is void {
+        let nodes=program.nodes();
+        if !partials_enabled {self.validate(nodes);}
+        let output=TemplateSectionOutput(destination,maximum_output);
+        let iterations=TemplateIterationBudget(maximum_iterations);
+        TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
+            partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:0,section_depth:0).write(nodes,data);
+    }
+    private:
+    validate(nodes is @TemplateTreeNode) is void {
+        for nodes -> node {
+            confirm node.kind()!=TemplateTreeKind.partial else throw UnsupportedTemplatePartial(node.text());
+            self.validate(node.children());
+        }
+    }
+}
+
+// Internal owned iteration ledger. A bounded byte per claim lets nested printing
+// commands share accounting without mutable language fields or new native APIs.
+// No iteration is spent on a skipped body. remaining() never copies the ledger.
+object TemplateIterationBudget {
+    has maximum is int;
+    has marks is ByteBuffer;
+    TemplateIterationBudget(maximum is int) {
+        confirm maximum>=0 else throw InvalidTemplateLimits();
+        self.maximum=maximum;marks=ByteBuffer();
+    }
+    remaining() is int {maximum-marks.content().size();}
+    claim() is void {
+        confirm self.remaining()>0 else throw TemplateIterationLimitExceeded();
+        marks.writing() <- [byte(1)];
+    }
+    destroy {marks.closing().close();}
+}
+
+// Internal command sharing a metered text destination and iteration ledger.
+// Nested sections/partials retain the same output meter; failures stop traversal.
+object TemplateSectionRun {
+    has output is TemplateSectionOutput;
+    has iterations is TemplateIterationBudget;
+    has maximum_members is int;
+    has partials is TemplateLibrary;
+    has maximum_partial_depth, partial_depth, section_depth is int;
+    TemplateSectionRun(:output,:iterations,:maximum_members,:partials,:maximum_partial_depth,:partial_depth,:section_depth);
+    nested() is TemplateSectionRun {
+        confirm section_depth<64 else throw TemplateSectionDepthExceeded();
+        TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
+            partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:partial_depth,section_depth:section_depth+1);
+    }
+    write(nodes is @TemplateTreeNode, data is JsonValue) is void {
+        for nodes -> node {
+            if node.kind()==TemplateTreeKind.literal {output.append(node.text());}
+            else {
+                if node.kind()==TemplateTreeKind.partial {self.partial(node.text(),data);}
+                else {if node.kind()==TemplateTreeKind.variable {
+                    output.append(JsonTemplateStrings(data,maximum_members,output.remaining()).string(node.text()));
+                } else {
+                    let path is @string=if node.text()=="." {[];}
+                        else {TemplatePathFromString(node.text()).value().segments().map() -> part {part;};};
+                    TemplateSectionLookup(origin:data,path:path,index:0,maximum_members:maximum_members,
+                        destination:TemplateSectionVisitor(run:self,node:node,enclosing:data,iterations:iterations,maximum_members:maximum_members)).write();
+                }}
+            }
+        }
+    }
+    private:
+    partial(name is string, data is JsonValue) is void {
+        confirm partial_depth<maximum_partial_depth else throw TemplatePartialDepthExceeded();
+        iterations.claim();
+        let nodes=TemplateTree(partials.value(name).source()).nodes();
+        TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
+            partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:partial_depth+1,section_depth:section_depth).write(nodes,data);
+    }
+}
+
+// Internal owned eight-byte count. claim() reserves a whole UTF-8 contribution
+// before its first sink call, using remaining subtraction to prevent overflow.
+// Binary adapters are existing std capabilities. No content proportional to the
+// rendered output is retained here; close releases only this private record.
+object TemplateOutputMeter {
+    has maximum is int;
+    has count is ByteBuffer;
+    TemplateOutputMeter(maximum is int) {
+        confirm maximum>=0 else throw InvalidTemplateLimits();
+        self.maximum=maximum;
+        count=ByteBuffer(IntegerBytes(0,8,Signedness.unsigned,ByteOrder.big).bytes());
+    }
+    remaining() is int {maximum-IntegerFromBytes(count.content().bytes(),Signedness.unsigned,ByteOrder.big).value();}
+    claim(value is string) is void {
+        let remaining=self.remaining();
+        let amount=template_output_size(value,remaining);
+        confirm amount>=0 else throw TemplateOutputLimitExceeded();
+        let following=IntegerBytes(maximum-remaining+amount,8,Signedness.unsigned,ByteOrder.big).bytes();
+        let previous=count.reading().bytes(8);
+        count.writing() <- following;
+    }
+    destroy {count.closing().close();}
+}
+
+// Internal borrowed sink composition. It owns only the meter, never the sink.
+// Empty contributions produce no calls. No newline/flush/close or retry, and no
+// whole-result storage. At most 1024 scalars (4096 UTF-8 bytes) per sink call.
+object TemplateSectionOutput {
+    has destination is WritingText;
+    has meter is TemplateOutputMeter;
+    TemplateSectionOutput(destination is WritingText, maximum is int) {
+        self.destination=destination;meter=TemplateOutputMeter(maximum);
+    }
+    remaining() is int {meter.remaining();}
+    append(value is string) is void {
+        meter.claim(value);
+        for (0..((value.length() >> 10)+1)) -> chunk {
+            let start=chunk << 10;
+            if start<value.length() {
+                let end=if value.length()-start>1024 {start+1024;} else {value.length();};
+                destination.write(value.slice(start,end));
+            }
+        }
+    }
+}
+
+// Internal nominal path observation. Missing paths emit JSON null to the truth
+// visitor only; errors thrown by the source are not caught or reclassified.
+// A marker records start/completion (two bytes), or invalid reentry (three).
+// Suppressed duplicate-event and downstream errors remain visible after print
+// returns. No kind() reflection or data casts.
+object TemplateSectionLookup {
+    has origin is JsonValue;
+    has path is @string;
+    has index, maximum_members is int;
+    has destination is JsonWriting;
+    TemplateSectionLookup(:origin,:path,:index,:maximum_members,:destination);
+    write() is void {
+        let seen=ByteBuffer();
+        defer seen.closing().close();
+        origin.print(TemplateSectionLookupVisitor(path:path,index:index,maximum_members:maximum_members,destination:destination,seen:seen));
+        confirm seen.content().size()==2 else throw InvalidTemplateJsonProtocol();
+    }
+}
+object TemplateSectionLookupVisitor does JsonWriting {
+    has path is @string;
+    has index, maximum_members is int;
+    has destination is JsonWriting;
+    has seen is ByteBuffer;
+    TemplateSectionLookupVisitor(:path,:index,:maximum_members,:destination,:seen);
+    null_value() is void {self.mark();destination.null_value();self.complete();}
+    boolean(value is bool) is void {
+        self.mark();if index==path.size() {destination.boolean(value);} else {destination.null_value();}
+        self.complete();
+    }
+    number(value is Decimal) is void {
+        self.mark();if index==path.size() {destination.number(value);} else {destination.null_value();}
+        self.complete();
+    }
+    text(value is string) is void {
+        self.mark();if index==path.size() {destination.text(value);} else {destination.null_value();}
+        self.complete();
+    }
+    elements(values is Sequencing<JsonValue>) is void {
+        self.mark();if index==path.size() {destination.elements(values);} else {destination.null_value();}
+        self.complete();
+    }
+    members(members is Sequencing<JsonMember>) is void {
+        self.mark();
+        if index==path.size() {destination.members(members);}
+        else {
+            let document=TemplateSectionObject(members,maximum_members).value();
+            if document.membership(path[index]) {
+                TemplateSectionLookup(origin:document.value(path[index]),path:path,index:index+1,maximum_members:maximum_members,destination:destination).write();
+            } else {destination.null_value();}
+        }
+        self.complete();
+    }
+    private:
+    mark() is void {
+        if seen.content().size()==0 {seen.writing() <- [byte(1)];}
+        else {
+            if seen.content().size()==1 {seen.writing() <- [byte(1),byte(1)];}
+            if seen.content().size()==2 {seen.writing() <- [byte(1)];}
+            throw InvalidTemplateJsonProtocol();
+        }
+    }
+    complete() is void {
+        confirm seen.content().size()==1 else throw InvalidTemplateJsonProtocol();
+        seen.writing() <- [byte(1)];
+    }
+}
+
+// Internal bounded object snapshot. size once, budget before item reads, then
+// ascending reads once and duplicate validation before selection/body execution.
+object TemplateSectionObject {
+    has members is Sequencing<JsonMember>;
+    has maximum is int;
+    TemplateSectionObject(members is Sequencing<JsonMember>, maximum is int) {self.members=members;self.maximum=maximum;}
+    value() is JsonObject {
+        let size=members.size();
+        confirm size>=0 else throw InvalidTemplateJsonSize();
+        confirm size<=maximum else throw TemplateJsonLimitExceeded();
+        let snapshot is @JsonMember=(0..size).map() -> index {members.item(index);};
+        JsonObject(snapshot);
+    }
+}
+
+// Internal section truth/iteration visitor. Inverted collections inspect only
+// their truth (array size; objects always true). Positive object bodies receive
+// a bounded snapshot; array bodies borrow each item in source order.
+object TemplateSectionVisitor does JsonWriting {
+    has run is TemplateSectionRun;
+    has node is TemplateTreeNode;
+    has enclosing is JsonValue;
+    has iterations is TemplateIterationBudget;
+    has maximum_members is int;
+    TemplateSectionVisitor(:run,:node,:enclosing,:iterations,:maximum_members);
+    null_value() is void {self.scalar(false,JsonNull());}
+    boolean(value is bool) is void {self.scalar(value,JsonBoolean(value));}
+    number(value is Decimal) is void {self.scalar(true,JsonNumber(value));}
+    text(value is string) is void {self.scalar(value!="",JsonText(value));}
+    elements(values is Sequencing<JsonValue>) is void {
+        let size=values.size();
+        confirm size>=0 else throw InvalidTemplateSectionSize();
+        if node.kind()==TemplateTreeKind.inverted {
+            if size==0 {self.body(enclosing);}
+        } else {
+            confirm size<=iterations.remaining() else throw TemplateIterationLimitExceeded();
+            for (0..size) -> index {
+                iterations.claim();
+                run.nested().write(node.children(),values.item(index));
+            }
+        }
+    }
+    members(members is Sequencing<JsonMember>) is void {
+        if node.kind()!=TemplateTreeKind.inverted {self.body(TemplateSectionObject(members,maximum_members).value());}
+    }
+    private:
+    scalar(truth is bool, value is JsonValue) is void {
+        if node.kind()==TemplateTreeKind.inverted {
+            if !truth {self.body(enclosing);}
+        } else {if truth {self.body(value);}}
+    }
+    body(value is JsonValue) is void {
+        iterations.claim();run.nested().write(node.children(),value);
+    }
+}
+
+object TemplateIterationLimitExceeded does Error {
+    TemplateIterationLimitExceeded();
+    text() is string {"template iteration limit exceeded";}
+}
+object InvalidTemplateSectionSize does Error {
+    InvalidTemplateSectionSize();
+    text() is string {"template section size must be nonnegative";}
+}
+object UnsupportedTemplatePartial does Error {
+    has partial is string;
+    UnsupportedTemplatePartial(name is string) {partial=name;}
+    name() is string {partial;}
+    text() is string {"template partial rendering is not implemented: "+partial;}
+}
+
+test "section iterations share a bounded ledger" {
+    let budget=TemplateIterationBudget(2);
+    test.is(budget.remaining(),2);
+    budget.claim();budget.claim();
+    test.is(budget.remaining(),0);
+    test.ok(try {budget.claim();false;} catch e is TemplateIterationLimitExceeded {true;});
+    test.is(budget.remaining(),0);
+}
+test "zero iterations permit no executed body" {
+    let budget=TemplateIterationBudget(0);
+    test.ok(try {budget.claim();false;} catch e is TemplateIterationLimitExceeded {true;});
+    test.is(budget.remaining(),0);
+}
+test "section configuration rejects negatives before parsing" {
+    test.ok(try {SectionTemplate("{{",-1,0,0);false;} catch e is Error {true;});
+    test.ok(try {SectionTemplate("{{",0,-1,0);false;} catch e is Error {true;});
+    test.ok(try {SectionTemplate("{{",0,0,-1);false;} catch e is Error {true;});
+}
+test "section diagnostics retain names and limits" {
+    test.is(UnsupportedTemplatePartial("header").name(),"header");
+    test.is(TemplateIterationLimitExceeded().text(),"template iteration limit exceeded");
+    test.is(InvalidTemplateSectionSize().text(),"template section size must be nonnegative");
+}
+
+// Partial expansion and active section depth are separate bounded dimensions.
+object TemplatePartialDepthExceeded does Error {
+    TemplatePartialDepthExceeded();
+    text() is string {"template partial depth exceeded";}
+}
+object TemplateSectionDepthExceeded does Error {
+    TemplateSectionDepthExceeded();
+    text() is string {"template active section depth exceeded";}
+}
+test "partial and active section depth errors stay distinct" {
+    test.is(TemplatePartialDepthExceeded().text(),"template partial depth exceeded");
+    test.is(TemplateSectionDepthExceeded().text(),"template active section depth exceeded");
+}
+
+test "output meter reserves exact UTF-8 contributions" {
+    let meter=TemplateOutputMeter(6);
+    meter.claim("é");test.is(meter.remaining(),4);
+    meter.claim("😀");test.is(meter.remaining(),0);
+    meter.claim("");test.is(meter.remaining(),0);
+    test.ok(try {meter.claim("x");false;} catch e is Error {true;});
+    test.is(meter.remaining(),0);
+}
+test "output meter failure is atomic and int maximum does not overflow" {
+    let meter=TemplateOutputMeter(1);
+    test.ok(try {meter.claim("é");false;} catch e is Error {true;});
+    test.is(meter.remaining(),1);
+    let large=TemplateOutputMeter(9223372036854775807);
+    large.claim("x");test.is(large.remaining(),9223372036854775806);
+    test.ok(try {TemplateOutputMeter(-1);false;} catch e is Error {true;});
+}

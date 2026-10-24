@@ -1,0 +1,40 @@
+module app v1.0.0;
+import "net/udp" take UdpBinding, UdpOptions, Datagram;
+import "net/multicast" take MulticastJoining, MulticastOptions;
+import "net/ip" take IpAddress, IpInterface;
+import "net/interface" take NetworkInterface;
+import "net/endpoint" take IpEndpoint;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+import "os/environment" take Environment;
+import "strings/parse" take ParsedInt;
+import "async/timeout" take Within;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+// Supply the host loopback name/index explicitly until SystemInterfaces exists:
+// macOS: OKKAMA_MULTICAST_INTERFACE=lo0 OKKAMA_MULTICAST_INDEX=1
+// Linux commonly uses lo/1; the provider checks the actual name/index pair.
+// This example selects that interface before sending any multicast packet.
+async main() is int {
+    let environment=Environment();
+    let addresses is @IpInterface=[];
+    let interface=NetworkInterface(environment.variable("OKKAMA_MULTICAST_INTERFACE"),
+        ParsedInt(environment.variable("OKKAMA_MULTICAST_INDEX")).value(),addresses,true,true);
+    let socket=await UdpBinding(IpEndpoint(IpAddress("0.0.0.0"),0),UdpOptions()).socket();
+    let group=IpAddress("239.255.42.99");
+    let membership=MulticastJoining(socket,group,interface,MulticastOptions()).membership();
+    let count=await socket.send(IpEndpoint(group,socket.local_endpoint().port()),
+        ByteSnapshot([byte(0),byte(255),byte(42)]));
+    let bounded is Within<Datagram>=Within(socket.datagram(8),
+        Duration(2.rat(),DurationUnit.second),SystemClock());
+    let packet=await bounded.result();
+    membership.close();
+    let independent=membership.closed() && !socket.closed();
+    socket.close();
+    Stdout().writeln("group: "+membership.group().string());
+    Stdout().writeln("accepted: "+count.string());
+    Stdout().writeln(if packet.bytes()==[byte(0),byte(255),byte(42)] {"binary intact";} else {"mismatch";});
+    Stdout().writeln(if independent {"membership left; socket remained open";} else {"lifetime mismatch";});
+    0;
+}

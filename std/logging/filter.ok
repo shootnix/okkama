@@ -1,0 +1,47 @@
+module logging/filter v1.0.0;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel,LogLevelOrder;
+import "logging/record" take LogRecord;
+import "logging/write" take LogWriting;
+import "collections/sequence" take Sequencing;
+import "compare" take Order;
+role LogAllowing{allowed(name is LogName,level is LogLevel) is bool;}
+object LevelOverride{
+    has name is LogName;has level is LogLevel;
+    LevelOverride(name is LogName,level is LogLevel){self.name=name;self.level=level;}
+    name() is LogName{name;}level() is LogLevel{level;}
+}
+object LevelThresholds does LogAllowing{
+    has fallback is LogLevel;has overrides is @LevelOverride;
+    LevelThresholds(fallback is LogLevel,overrides is Sequencing<LevelOverride>){
+        let size=overrides.size();confirm size>=0 && size<=1024 else throw InvalidLogThreshold();
+        let snapshot is @LevelOverride=(0..size).map()->index{overrides.item(index);};
+        for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name().order(snapshot[previous].name())!=Order.equal else throw InvalidLogThreshold();}}
+        self.fallback=fallback;self.overrides=snapshot;
+    }
+    allowed(name is LogName,level is LogLevel) is bool{
+        let choice=overrides.reduce(LogThresholdChoice(fallback,0))->old,override{
+            let prefix=override.name().segments();let actual=name.segments();
+            let matches=if prefix.size()>actual.size(){false;}else{(0..prefix.size()).reduce(true)->same,index{same && prefix.item(index)==actual.item(index);};};
+            if matches && prefix.size()>old.size(){LogThresholdChoice(override.level(),prefix.size());}else{old;}
+        };
+        LogLevelOrder(level,choice.level()).value()!=Order.less;
+    }
+}
+object LogThresholdChoice{
+    has level is LogLevel;has size is int;
+    LogThresholdChoice(level is LogLevel,size is int){self.level=level;self.size=size;}
+    level() is LogLevel{level;}size() is int{size;}
+}
+object AllowedLogs does LogWriting{
+    has origin is LogWriting;has allowing is LogAllowing;
+    AllowedLogs(origin is LogWriting,allowing is LogAllowing){self.origin=origin;self.allowing=allowing;}
+    write(record is LogRecord) is void{if allowing.allowed(record.context().name(),record.level()){origin.write(record);}}
+}
+object EnabledLog{
+    has origin is LogAllowing;has name is LogName;has level is LogLevel;
+    EnabledLog(origin is LogAllowing,name is LogName,level is LogLevel){self.origin=origin;self.name=name;self.level=level;}
+    #projected
+    value() is bool{origin.allowed(name,level);}
+}
+object InvalidLogThreshold does Error{InvalidLogThreshold();text() is string{"invalid or duplicate log threshold override";}}

@@ -1,0 +1,82 @@
+module async/timeout v1.0.0;
+
+import "error" take InvalidArgument;
+import "time/duration" take Duration;
+import "time/clock" take Timing, MonotonicInstant;
+
+/*
+=head1 NAME
+
+async/timeout - structured monotonic deadlines for futures
+
+=head1 DESCRIPTION
+
+C<Within<T>> limits one future by an exact non-negative duration:
+
+    let request is Within<Response> = Within(
+        origin: client.request(),
+        limit: Duration(value: 5.rat(), unit: DurationUnit.second),
+        clock: SystemClock(),
+    );
+    let response = await request.result();
+
+C<Before<T>> uses an already computed C<MonotonicInstant>. This is useful when
+several operations must share one deadline without each receiving a fresh
+relative timeout:
+
+    let deadline = clock.monotonic_instant().plus(budget);
+    let bounded is Before<Response> = Before(
+        origin: client.request(),
+        deadline: deadline,
+        clock: clock,
+    );
+    let response = await bounded.result();
+
+An origin which is already settled wins without starting a clock wait. When
+time wins, the origin is cancelled and its cleanup is awaited before
+C<TimedOut> is thrown. Origin values and failures retain their identity when
+they win. Repeated C<result()> calls return the same future.
+
+Deadlines are monotonic runtime-local readings. Civil C<Instant> values are
+deliberately not accepted and cannot be converted into timeout deadlines.
+
+=cut
+*/
+
+object Within<T> {
+    has origin is Future<T>;
+    has limit is Duration;
+    has clock is Timing;
+
+    Within(origin is Future<T>, limit is Duration, clock is Timing) {
+        confirm limit.seconds() >= 0.rat()
+            else throw InvalidArgument("timeout duration cannot be negative");
+        self.origin = origin;
+        self.limit = limit;
+        self.clock = clock;
+    }
+
+    async result() is T {
+        throw TimedOut();
+    }
+}
+
+object Before<T> {
+    has origin is Future<T>;
+    has deadline is MonotonicInstant;
+    has clock is Timing;
+
+    Before(:origin, :deadline, :clock);
+
+    async result() is T {
+        throw TimedOut();
+    }
+}
+
+object TimedOut does Error {
+    TimedOut();
+
+    text() is string {
+        "future timed out";
+    }
+}

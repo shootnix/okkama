@@ -1,0 +1,114 @@
+module net/multicast v1.0.0;
+
+import "error" take InvalidArgument;
+import "net/udp" take UdpSocket, UdpMembership;
+import "net/ip" take IpAddress, IpVersion, IpProperty;
+import "net/interface" take NetworkInterface;
+import "net/failure" take NetworkClosed, NetworkError, NetworkOperation;
+import "runtime/network";
+import "runtime/net" take ip_parse;
+
+// Immutable multicast send-option request. Defaults request one hop and local
+// delivery; loopback does not select a loopback network interface. Values are
+// independent, and hop limits include both 0 and 255. There is no host-default
+// sentinel, clamping or wrapping. Construction performs no socket I/O.
+// Membership acquisition applies these settings and reports host failures.
+// The first successful join pins the policy for the socket's remaining life.
+//
+//     let options=MulticastOptions(hop_limit:1,loopback:false);
+//     options.hop_limit(); // 1
+object MulticastOptions {
+    has hops is int;
+    has local_delivery is bool;
+    MulticastOptions() {hops=1;local_delivery=true;}
+    MulticastOptions(hop_limit is int, loopback is bool) {
+        confirm hop_limit>=0 && hop_limit<=255
+            else throw InvalidArgument("multicast hop limit must be in 0..255: "+hop_limit.string());
+        hops=hop_limit;local_delivery=loopback;
+    }
+    hop_limit() is int {hops;}
+    loopback() is bool {local_delivery;}
+}
+
+object InvalidMulticastGroup does Error {
+    has origin is IpAddress;
+    InvalidMulticastGroup(origin is IpAddress) {self.origin=origin;}
+    text() is string {"invalid multicast group: "+origin.string();}
+}
+
+// Pure validated request. Every membership() call attempts a new acquisition;
+// a duplicate live group fails. The socket is retained, never transferred.
+object MulticastJoining {
+    has socket is UdpSocket;
+    has group is IpAddress;
+    has interface is NetworkInterface;
+    has options is MulticastOptions;
+    MulticastJoining(socket is UdpSocket, group is IpAddress,
+        interface is NetworkInterface, options is MulticastOptions) {
+        confirm group.properties().membership(IpProperty.multicast)
+            else throw InvalidMulticastGroup(group);
+        self.socket=socket;self.group=group;self.interface=interface;self.options=options;
+    }
+    membership() is MulticastMembership {
+        MulticastMembership(socket,group,interface,options);
+    }
+}
+
+// Owned any-source membership on the exact socket. Constructor is acquisition
+// infrastructure for MulticastJoining.membership(), like fs/lock.FileLock.
+// Observations survive close; aliases share closure. Retaining this object
+// retains the parent owner. Closing it leaves once, keeping the socket open;
+// closing the socket implicitly ends all memberships. Failed leave closes the
+// parent to guarantee cleanup and reports the original failure.
+object MulticastMembership does UdpMembership {
+    has lease is UdpMembership;
+    has owner is UdpSocket;
+    has joined is IpAddress;
+    has device is NetworkInterface;
+    MulticastMembership(socket is UdpSocket, group is IpAddress,
+        interface is NetworkInterface, options is MulticastOptions) {
+        confirm group.properties().membership(IpProperty.multicast)
+            else throw InvalidMulticastGroup(group);
+        lease=try {
+            socket.membership(group,interface,options.hop_limit(),options.loopback());
+        } catch failure is NativeFailure {
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed();}
+            if failure.domain()=="core.net" && failure.code()=="invalid_input" {throw InvalidArgument(failure.message());}
+            let translated=NetworkError(NetworkOperation.binding,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        };
+        owner=socket;joined=group;device=interface;
+    }
+    group() is IpAddress {joined;}
+    interface() is NetworkInterface {device;}
+
+    closed() is bool{lease.closed();}
+
+    close() is void{lease.close();}
+    destroy {self.close();}
+}
+
+test "multicast defaults agree with explicit requests" {
+    test.ok(MulticastOptions()==MulticastOptions(1,true));
+}
+test "multicast hop boundaries and loopback are independent" {
+    let local=MulticastOptions(0,false);
+    let widest=MulticastOptions(loopback:true,hop_limit:255);
+    test.is(local.hop_limit(),0);
+    test.ok(!local.loopback());
+    test.is(widest.hop_limit(),255);
+    test.ok(widest.loopback());
+}
+test "multicast hop limit rejects host default and overflow" {
+    let negative=try {MulticastOptions(-1,true);false;}
+        catch failure is InvalidArgument {true;};
+    let overflow=try {MulticastOptions(256,false);false;}
+        catch failure is InvalidArgument {true;};
+    test.ok(negative && overflow);
+}
+
+test "invalid multicast group diagnostic preserves canonical address" {
+    let failure=InvalidMulticastGroup(IpAddress("2001:0db8::1"));
+    test.is(failure.text(),"invalid multicast group: 2001:db8::1");
+}

@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "regex/pattern" take Regex, InvalidRegex;
+import "regex/search" take FirstRegexMatch, EntireRegexMatch, RegexMatches;
+import "regex/replace" take RegexSubstitution, LiteralRegexReplacement, ExpandedRegexReplacement;
+import "regex/split" take RegexParts;
+import "regex/escape" take EscapedRegex;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("unbalanced group", try { let probe = FirstRegexMatch("a", Regex("(a")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
+    c = c.same_text("backreference", try { let probe = FirstRegexMatch("aa", Regex("(a)\\1")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
+    c = c.same_text("lookahead", try { let probe = FirstRegexMatch("ab", Regex("a(?=b)")).text(); "no error"; } catch e is InvalidRegex { "InvalidRegex"; }, "InvalidRegex");
+    c.done();
+}

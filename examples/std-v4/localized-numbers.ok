@@ -1,0 +1,14 @@
+module example v1.0.0;
+import "locale/number" take LocalizedDecimal,LocalizedDecimalFromString,NumberFormat,NumberNotation,NumberGrouping,NumberSign,NumberPrecision;
+import "locale/tag" take Locale;
+import "math/decimal" take Decimal;
+import "math/rounding" take Rounding;
+import "io/stdout" take Stdout;
+main() is int {
+    let format=NumberFormat(NumberNotation.standard,NumberGrouping.automatic,NumberSign.automatic,NumberPrecision(1,2,2,Rounding.half_even));
+    let locale=Locale("fr");
+    let text=LocalizedDecimal(Decimal("1234.567"),locale,format).string();
+    Stdout().writeln(text);
+    Stdout().writeln(LocalizedDecimalFromString(text,locale,format).value().string());
+    0;
+}

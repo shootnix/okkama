@@ -1,0 +1,30 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+import "runtime/debug" take data_dump;
+
+// Программа преобразует массив чисел в байты и передаёт их вариадическому конструктору.
+// Запуск из корня: OKKAMA_STDLIB_DIR=std ./okkama-pl/okkama examples/array-spread.ok
+// Первые две строки показывают байты исходного пакета и пакета с границами 0/255.
+// Третья строка — 0: тип T выводится даже из пустого @byte.
+// Последняя строка — 123: результат выражения можно распаковать сразу в поток.
+object Packet<T> {
+    has content is @T;
+    Packet(values is ...T) { content = values...; }
+    items() is @T { content; }
+}
+
+main() is int {
+    let output = Stdout();
+    let nums is @int = [1, 2, 3, 4, 5];
+    let bytes = @byte(nums...);
+    let framed = @byte(0, nums..., 255);
+    let packet = Packet(bytes...);
+    let empty = @byte();
+    let empty_packet = Packet(empty...);
+
+    output.writeln(data_dump(packet.items()));
+    output.writeln(data_dump(framed));
+    output.writeln(string(empty_packet.items().size()));
+    output <- @string(1, 2, 3)... <- endl;
+    return 0;
+}

@@ -1,0 +1,29 @@
+// Прочитать UTF-8 CSV из байтового источника
+//
+// Прочитать ограниченный CSV-документ из байтов: CsvInput выполняет явное UTF-8 декодирование и разбор.
+//
+// Запуск: ./examples/cookbook/run lab example-csv-input
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-csv-input
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "csv/input" take CsvInput;
+import "csv" take CsvDialect, CsvString;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded;
+
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let source = ByteBuffer(Utf8Encoded("name;note\nAda;'one; two'\n").bytes());
+        let dialect = CsvDialect(";", "'", "\n");
+        let rows = CsvInput(source.reading(), dialect).read();
+        CsvString(rows, dialect).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

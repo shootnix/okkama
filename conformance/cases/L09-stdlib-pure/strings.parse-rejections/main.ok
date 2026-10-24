@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "strings/parse" take ParsedInt, ParsedByte, ParsedBool, InvalidInteger, InvalidByte, InvalidBoolean;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("leading space", try { let probe = value ParsedInt(" 42"); "no error"; } catch e is InvalidInteger { e.source(); }, " 42");
+    c = c.same_text("plus sign", try { let probe = value ParsedInt("+1"); "no error"; } catch e is InvalidInteger { e.source(); }, "+1");
+    c = c.same_text("byte overflow", try { let probe = value ParsedByte("256"); "no error"; } catch e is InvalidByte { e.source(); }, "256");
+    c = c.same_text("capitalised bool", try { let probe = value ParsedBool("True"); "no error"; } catch e is InvalidBoolean { e.source(); }, "True");
+    c.done();
+}

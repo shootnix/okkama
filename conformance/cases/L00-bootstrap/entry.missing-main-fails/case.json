@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.entry.missing-main-fails",
+  "title": "running a module without main does not succeed",
+  "purpose": "An executable run requires an entry point; library modules may omit main only when imported.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "ENTRY.REQUIRED",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "spec 3 requires an entry point for executable modules but does not state whether its absence is diagnosed statically or when execution starts; no program code exists to run either way."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#3",
+    "docs/okkama-grammar-1.0.md#context-sensitive-restrictions"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 3: executable modules MUST declare exactly one entry point; a run without one cannot complete."
+  },
+  "status": "mandatory"
+}

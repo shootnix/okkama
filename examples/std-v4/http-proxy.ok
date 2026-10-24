@@ -1,0 +1,42 @@
+module app v1.0.0;
+import "http/proxy" take Proxied;
+import "http/proxy_policy" take ProxyPolicy,ProxyAuthorizationConflict;
+import "http/auth" take BasicCredentials;
+import "crypto/secret" take SecretBytes;
+import "encoding/single_byte" take AsciiEncoded;
+import "os/environment" take Environment;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/endpoint" take HostName;
+import "net/ip" take IpAddress,IpNetwork;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take ListedNetworks,EndpointDenied;
+import "time/clock" take SystemClock;
+import "http/version" take HttpVersion;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/header" take Headers,Header,HeaderName;
+import "http/target" take AbsoluteTarget;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+async main() is int {
+    let environment=Environment();let scenario=environment.variable("OKKAMA_PROXY_CASE");let url=ParsedUrl(environment.variable("OKKAMA_PROXY_URL")).value();
+    let password=SecretBytes(AsciiEncoded("proxy-pass").bytes());defer password.close();
+    let proxy=if scenario=="auth"{ProxyPolicy(url,BasicCredentials("proxy-user",password));}else{ProxyPolicy(url);};
+    let versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);let ip=if scenario=="denied"{IpAddress("192.0.2.0");}else{IpAddress("127.0.0.0");};let width=if scenario=="denied"{24;}else{8;};
+    let policy=ClientPolicy(versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(ip,width)]));
+    let resolver=FixedResolution([HostAddresses(HostName("proxy.test"),[IpAddress("127.0.0.1")])]);
+    let client=Proxied(proxy,resolver,TlsClientPolicy(TrustedCertificates([])),policy,SystemClock());defer client.close();
+    let headers=if scenario=="conflict"{Headers([Header(HeaderName("Proxy-Authorization"),"caller")]);}else{Headers([Header(HeaderName("Authorization"),"Bearer origin")]);};
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl("http://origin.test/x?number=1").value()),headers);
+    if scenario=="denied" || scenario=="conflict"{
+        let rejected=try{await client.response(request);false;}catch e is EndpointDenied{scenario=="denied";}catch e is ProxyAuthorizationConflict{scenario=="conflict";};confirm rejected;
+    }else{
+        let first=await client.response(request);confirm first.response().status().code()==204;
+        let result=await client.response(request);confirm result.response().status().code()==200 && result.details().endpoints().remote_endpoint().port()==url.parts().authority().port();
+        confirm !result.request().headers().membership(HeaderName("Proxy-Authorization"));let reader=result.response().body().reading();defer reader.close();confirm await reader.bytes(8)==[66.byte()];confirm (await reader.bytes(8)).size()==0;
+    }
+    Stdout().writeln("proxy case "+scenario+" passed");0;
+}

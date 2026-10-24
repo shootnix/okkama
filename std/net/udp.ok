@@ -1,0 +1,366 @@
+module net/udp v1.0.0;
+
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress, IpVersion;
+import "net/interface" take NetworkInterface;
+import "io/stream" take ByteSource;
+import "runtime/network";
+import "runtime/net" take ip_parse;
+import "strings/parse" take ParsedInt;
+import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
+import "net/stream" take ConnectionEndpoints;
+import "error" take InvalidArgument;
+
+// Immutable observation of one received packet: sender, retained payload and
+// explicit truncation flag. No socket I/O, decoding or inferred truncation.
+// Empty payloads are packets, not EOF; even an empty retained prefix may be
+// marked truncated. Discarded bytes and original packet size are not recoverable.
+//
+//     let packet=Datagram(IpEndpoint(IpAddress("192.0.2.7"),5353),
+//         [byte(0),byte(255)],false);
+//     packet.source().string(); // "192.0.2.7:5353"
+//     packet.bytes();           // exact retained octets
+//
+// ByteSource exposes only this finite payload for explicit forwarding. It does
+// not make a Datagram a byte stream or transfer sender metadata to a new send.
+// Repeated observations preserve the snapshot; equality includes all metadata.
+object Datagram does ByteSource {
+    has peer is IpEndpoint;
+    has payload is @byte;
+    has incomplete is bool;
+    Datagram(source is IpEndpoint, bytes is @byte, truncated is bool) {
+        peer=source;payload=bytes;incomplete=truncated;
+    }
+    source() is IpEndpoint {peer;}
+    bytes() is @byte {payload;}
+    truncated() is bool {incomplete;}
+}
+
+// Failed UDP payload size, measured in bytes. The sending operation determines
+// its effective limit; this immutable diagnostic only retains a non-negative
+// attempted count. It holds no payload or socket and remains usable after close.
+//
+//     let failure=DatagramTooLarge(65508);
+//     failure.size(); // 65508
+//
+// Zero is a valid diagnostic count; a negative count is an InvalidArgument.
+object DatagramTooLarge does Error {
+    has amount is int;
+    DatagramTooLarge(size is int) {
+        confirm size>=0 else throw InvalidArgument("UDP payload size must be non-negative");
+        amount=size;
+    }
+    size() is int {amount;}
+    text() is string {"UDP datagram too large: "+amount.string()+" bytes";}
+}
+
+// Immutable UDP binding requests. Defaults disable address reuse, broadcast
+// and dual stack. The flags are independent; constructor validation does not
+// probe platforms or infer an address family. A future binding applies requests
+// before bind and reports unsupported combinations for its selected family.
+//
+//     UdpOptions(address_reuse:true,broadcast:false,dual_stack:false);
+//
+// Observations preserve exact flags; no socket option is changed by this value.
+object UdpOptions {
+    has reuse is bool;
+    has broadcasting is bool;
+    has dual is bool;
+    UdpOptions() {reuse=false;broadcasting=false;dual=false;}
+    UdpOptions(address_reuse is bool, broadcast is bool, dual_stack is bool) {
+        reuse=address_reuse;broadcasting=broadcast;dual=dual_stack;
+    }
+    address_reuse() is bool {reuse;}
+    broadcast() is bool {broadcasting;}
+    dual_stack() is bool {dual;}
+}
+
+// Lazy UDP bind request. Construction retains only values; each socket() call
+// creates a fresh Future, and repeated await of that Future shares one socket.
+// Options are applied before bind; port zero is replaced by the OS-selected port.
+// Failures close unpublished descriptors and are attributed to binding.
+//
+//     let socket=await UdpBinding(IpEndpoint(IpAddress("127.0.0.1"),0),
+//         UdpOptions()).socket();
+//     socket.local_endpoint(); // actual bound address and OS-selected port
+//     socket.close();          // also runs automatically on owner scope exit
+object UdpBinding {
+    has local is IpEndpoint;
+    has options is UdpOptions;
+    UdpBinding(local is IpEndpoint, options is UdpOptions) {
+        self.local=local;self.options=options;
+    }
+    async socket() is UdpSocket {
+        let family=if local.address().version()==IpVersion.v4 {1;} else {2;};
+        try {
+            let address=ip_parse(family,local.address().string(),local.port());
+            let state=network.udp_bound(address,local.zone(),options.address_reuse(),
+                options.broadcast(),options.dual_stack());
+            UdpSocket(state);
+        } catch failure is NativeFailure {
+            let translated=NetworkError(NetworkOperation.binding,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+}
+
+// Owner of one bound nonblocking socket. datagram(limit) lazily receives one
+// packet, retaining a bounded prefix and explicit truncation. Empty is not EOF.
+// Each Future consumes once; repeat awaits observe the same captured packet.
+// Non-positive limits fail before I/O. One receive may wait at a time; overlap
+// reports NetworkFailure(resource_exhausted). Cancel removes readiness without
+// consuming a later packet. Close wakes pending receives with NetworkClosed.
+// The native receive buffer is 65536 bytes; IPv6 jumbograms are excluded.
+// send(target,source) samples the ByteSource once on first await and submits one
+// complete packet. Its int result counts bytes accepted by the OS (zero for an
+// empty packet), not remote delivery. Repeated awaits never resend. Port zero
+// and closed state fail before source evaluation; size failures retain the byte
+// count in DatagramTooLarge. One send may wait independently of one receive.
+// All aliases share closed state. Endpoint is a snapshot usable after close.
+// The SocketState constructor is provider infrastructure; use UdpBinding.
+// Lifecycle of an acquired membership, following fs/file.FileLocking.
+// The socket executes acquisition and retains its private native state.
+role UdpMembership {
+    closed() is bool;
+    close() is void;
+}
+
+object UdpSocket {
+    has state is network.SocketState;
+    has endpoint is IpEndpoint;
+
+    UdpSocket(state is network.SocketState) {
+        self.state=state;
+        endpoint=try {
+            let fields=network.local_endpoint(state);
+            IpEndpoint(IpAddress(fields[0]),ParsedInt(fields[1]).value(),fields[2]);
+        } catch failure is NativeFailure {
+            network.close(state);throw;
+        } catch failure is Error {
+            network.close(state);throw;
+        };
+    }
+    local_endpoint() is IpEndpoint {endpoint;}
+    closed() is bool {network.closed(state);}
+    async send(target is IpEndpoint, source is ByteSource) is int {
+        confirm target.port()>0 else throw InvalidArgument("UDP destination port must be positive");
+        confirm !self.closed() else throw NetworkClosed();
+        let payload=source.bytes();
+        let family=if target.address().version()==IpVersion.v4 {1;} else {2;};
+        try {
+            let address=ip_parse(family,target.address().string(),target.port());
+            await network.udp_send(state,address,target.zone(),payload);
+        } catch failure is NativeFailure {
+            if failure.domain()=="core.net" && failure.code()=="message_too_large" {
+                throw DatagramTooLarge(payload.size());
+            }
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {
+                throw NetworkClosed();
+            }
+            let translated=NetworkError(NetworkOperation.writing,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+    async datagram(limit is int) is Datagram {
+        confirm limit>0 else throw InvalidArgument("UDP receive limit must be positive");
+        try {
+            let packet=await network.udp_receive(state,limit);
+            let peer=network.packet_source(packet);
+            Datagram(IpEndpoint(IpAddress(peer[0]),ParsedInt(peer[1]).value(),peer[2]),
+                network.packet_bytes(packet),network.packet_truncated(packet));
+        } catch failure is NativeFailure {
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {
+                throw NetworkClosed();
+            }
+            let translated=NetworkError(NetworkOperation.reading,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+    close() is void {
+        try {network.close(state);}
+        catch failure is NativeFailure {
+            let translated=NetworkError(NetworkOperation.closing,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+    destroy {network.close(state);}
+
+    membership(group is IpAddress,interface is NetworkInterface,hop_limit is int,loopback is bool) is UdpMembership {
+        let family=if group.version()==IpVersion.v4{1;}else{2;};
+        UdpMembershipLease(network.multicast_join(state,ip_parse(family,group.string(),0),interface.name(),interface.index(),hop_limit,loopback),self);
+    }
+
+}
+
+// Immutable request for a NEW socket with a fixed numeric peer. Construction
+// and unstarted Futures do no I/O; each started connection() call owns a fresh
+// bind/connect, while repeated await of the same Future shares its owner.
+// This does not consume or mutate an existing public UdpSocket.
+//
+//     let request=UdpConnecting(IpEndpoint(IpAddress("127.0.0.1"),0),
+//         peer,UdpOptions());
+//     let connection=await request.connection();
+//
+// The unpublished UdpSocket is a scoped ownership anchor during native await.
+// Returned UdpConnection retains it; failure/cancellation releases it. Binding
+// failures and connecting failures retain their respective operation categories.
+object UdpConnecting {
+    has local is IpEndpoint;
+    has remote is IpEndpoint;
+    has options is UdpOptions;
+    UdpConnecting(local is IpEndpoint, remote is IpEndpoint, options is UdpOptions) {
+        self.local=local;self.remote=remote;self.options=options;
+    }
+    async connection() is UdpConnection {
+        confirm remote.port()>0 else throw InvalidArgument("UDP destination port must be positive");
+        let local_family=if local.address().version()==IpVersion.v4 {1;} else {2;};
+        let remote_family=if remote.address().version()==IpVersion.v4 {1;} else {2;};
+        let state=try {
+            network.udp_bound(ip_parse(local_family,local.address().string(),local.port()),
+                local.zone(),options.address_reuse(),options.broadcast(),options.dual_stack());
+        } catch failure is NativeFailure {
+            let translated=NetworkError(NetworkOperation.binding,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        };
+        let owner=UdpSocket(state);
+        try {
+            await network.udp_connect(state,
+                ip_parse(remote_family,remote.address().string(),remote.port()),remote.zone());
+            UdpConnection(state,owner);
+        } catch failure is NativeFailure {
+            let translated=NetworkError(NetworkOperation.connecting,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+}
+
+// Owner of one connected UDP socket. Only its fixed peer can send packets to
+// datagram(limit); send(source) never accepts an alternate destination. Empty
+// payload is a packet, not EOF; datagram preserves truncation explicitly.
+// Endpoints are actual post-connect OS observations and survive closure.
+// The native-state/owner constructor is infrastructure: use UdpConnecting.
+object UdpConnection {
+    has state is network.SocketState;
+    has owner is UdpSocket;
+    has ends is ConnectionEndpoints<IpEndpoint>;
+    UdpConnection(state is network.SocketState, owner is UdpSocket) {
+        self.state=state;self.owner=owner;
+        ends=try {
+            let local=network.local_endpoint(state);let remote=network.peer_endpoint(state);
+            ConnectionEndpoints(
+                IpEndpoint(IpAddress(local[0]),ParsedInt(local[1]).value(),local[2]),
+                IpEndpoint(IpAddress(remote[0]),ParsedInt(remote[1]).value(),remote[2]));
+        } catch failure is NativeFailure {owner.close();throw;}
+          catch failure is Error {owner.close();throw;};
+    }
+    endpoints() is ConnectionEndpoints<IpEndpoint> {ends;}
+    closed() is bool {owner.closed();}
+    close() is void {owner.close();}
+    async send(source is ByteSource) is int {
+        confirm !self.closed() else throw NetworkClosed();
+        let payload=source.bytes();
+        try {await network.udp_connected_send(state,payload);}
+        catch failure is NativeFailure {
+            if failure.domain()=="core.net" && failure.code()=="message_too_large" {
+                throw DatagramTooLarge(payload.size());
+            }
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed();}
+            let translated=NetworkError(NetworkOperation.writing,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+    async datagram(limit is int) is Datagram {
+        confirm limit>0 else throw InvalidArgument("UDP receive limit must be positive");
+        try {
+            let packet=await network.udp_connected_receive(state,limit);
+            let peer=network.packet_source(packet);
+            Datagram(IpEndpoint(IpAddress(peer[0]),ParsedInt(peer[1]).value(),peer[2]),
+                network.packet_bytes(packet),network.packet_truncated(packet));
+        } catch failure is NativeFailure {
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed();}
+            let translated=NetworkError(NetworkOperation.reading,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    }
+    destroy {network.close(state);}
+}
+
+test "datagram retains binary payload and sender" {
+    let packet=Datagram(IpEndpoint(IpAddress("192.0.2.7"),5353),[byte(0),byte(255)],false);
+    test.is(packet.source().string(),"192.0.2.7:5353");
+    test.is(packet.bytes(),[byte(0),byte(255)]);
+    test.ok(!packet.truncated());
+}
+test "empty retained datagram can still be truncated" {
+    let empty is @byte=[];
+    let packet=Datagram(IpEndpoint(IpAddress("::1"),80),empty,true);
+    test.is(packet.bytes().size(),0);
+    test.ok(packet.truncated());
+}
+test "UDP option defaults and independent explicit requests" {
+    test.ok(UdpOptions()==UdpOptions(false,false,false));
+    let options=UdpOptions(true,false,true);
+    test.ok(options.address_reuse());
+    test.ok(!options.broadcast());
+    test.ok(options.dual_stack());
+}
+
+test "UDP binding construction accepts requests without acquiring sockets" {
+    let endpoint=IpEndpoint(IpAddress("127.0.0.1"),0);
+    let request=UdpBinding(endpoint,UdpOptions(false,false,true));
+    test.ok(request==UdpBinding(endpoint,UdpOptions(false,false,true)));
+}
+
+test "oversized UDP payload diagnostic preserves byte count" {
+    let failure=DatagramTooLarge(65508);
+    test.is(failure.size(),65508);
+    test.is(failure.text(),"UDP datagram too large: 65508 bytes");
+    let rejected=try {DatagramTooLarge(-1);false;}
+        catch error is InvalidArgument {true;};
+    test.ok(rejected);
+}
+
+test "receive creation is lazy and cancellation leaves its owner open" {
+    let socket=UdpSocket(network.socket(1,2,2));
+    let pending=socket.datagram(0);
+    pending.cancel();
+    test.ok(!socket.closed());
+    socket.close();
+    test.ok(socket.closed());
+}
+
+test "send creation does not validate or submit until awaited" {
+    let socket=UdpSocket(network.socket(1,2,2));
+    let empty is @byte=[];
+    let target=IpEndpoint(IpAddress("127.0.0.1"),0);
+    let pending=socket.send(target,Datagram(target,empty,false));
+    pending.cancel();
+    test.ok(!socket.closed());
+    socket.close();
+    test.ok(socket.closed());
+}
+
+test "connected request and unstarted cancellation do not acquire a socket" {
+    let endpoint=IpEndpoint(IpAddress("127.0.0.1"),0);
+    let request=UdpConnecting(endpoint,endpoint,UdpOptions());
+    test.ok(request==UdpConnecting(endpoint,endpoint,UdpOptions()));
+    let pending=request.connection();
+    pending.cancel();
+    test.ok(true);
+}
+
+object UdpMembershipLease does UdpMembership {
+    has state is network.MembershipState;has owner is UdpSocket;
+    UdpMembershipLease(state is network.MembershipState,owner is UdpSocket){self.state=state;self.owner=owner;}
+    closed() is bool{network.multicast_closed(state);}
+    close() is void{try{network.multicast_close(state);}catch failure is NativeFailure{let translated=NetworkError(NetworkOperation.closing,failure);if translated.applicable(){throw translated.value();}throw;}}
+    destroy{self.close();}
+}

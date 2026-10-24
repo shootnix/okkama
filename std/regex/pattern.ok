@@ -1,0 +1,188 @@
+module regex/pattern v1.0.0;
+
+import "regex/range" take RegexRange;
+import "regex/match" take RegexMatch, RegexMatching;
+import "runtime/regex" take
+    RegexQueryState,
+    regex_query_create,
+    regex_query_found,
+    regex_query_match;
+
+import "runtime/regex" take
+    RegexState,
+    regex_state_create,
+    regex_state_prepare,
+    regex_state_group_count,
+    regex_state_group_names;
+
+// Okkama Regex Dialect 1 is a locale-independent regular-language dialect
+// implemented by a bounded Thompson NFA. It supports literals, escaping, `.`,
+// `^`, `$`, character classes, alternation, capturing/non-capturing/named
+// groups and `?`, `*`, `+`, `{m}`, `{m,}` and `{m,n}` quantifiers.
+// Backreferences, lookaround, conditionals, recursion, subroutine calls and
+// executable constructs are not part of the dialect.
+// Syntax offsets count Unicode scalar values from zero. Compile limits are
+// 4,096 expression scalars, 256 nested groups, 1,024 captures and 16,384 NFA
+// states. Unicode property and case-fold data are pinned to Unicode 16.0.0.
+//
+// Construction retains expression and flags and creates only an empty lazy
+// compile state. expression() and flags() never compile. The first metadata or
+// matching action compiles once and memoizes either its program or typed error.
+
+enum RegexFlag = (ascii, ignore_case, multiline, dot_all, verbose);
+
+enum RegexLimit = (expression_size, nesting, groups, states);
+
+object Regex {
+    has source is string;
+    has selected_flags is @RegexFlag;
+    has state is RegexState;
+
+    Regex(expression is string) {
+        source = expression;
+        selected_flags = [];
+        state = regex_state_create(expression, []);
+    }
+
+    Regex(expression is string, flags is @RegexFlag) {
+        source = expression;
+        selected_flags = flags;
+        let codes is @int = flags.map() -> flag {
+            match flag {
+                case RegexFlag.ascii { 0; }
+                case RegexFlag.ignore_case { 1; }
+                case RegexFlag.multiline { 2; }
+                case RegexFlag.dot_all { 3; }
+                else { 4; }
+            }
+        };
+        state = regex_state_create(expression, codes);
+    }
+
+    expression() is string { source; }
+
+    flags() is @RegexFlag { selected_flags; }
+
+    group_count() is int {
+        self.prepare();
+        regex_state_group_count(state);
+    }
+
+    group_names() is %string:int {
+        self.prepare();
+        regex_state_group_names(state);
+    }
+
+    observation(origin is string,range is RegexRange,mode is RegexQuery) is RegexQueryObservation {
+        let query=regex_query_create(state,origin,range.start(),range.end(),if mode==RegexQuery.first{0;}else{if mode==RegexQuery.prefix{1;}else{2;}});
+        RegexQueryObservation(origin,self,range,query);
+    }
+    private:
+    prepare() is void {
+        let status is %string:int = try {
+            regex_state_prepare(state);
+        }
+        catch failure is NativeFailure {
+            panic "regex provider could not prepare pattern";
+        };
+        if status["status"] == 1 {
+            throw InvalidRegex(
+                offset: status["offset"],
+                message: "invalid regex expression",
+            );
+        }
+        if status["status"] == 2 {
+            throw RegexLimitExceeded(
+                kind: self.limit_kind(status["kind"]),
+                limit: status["limit"],
+            );
+        }
+    }
+
+    limit_kind(code is int) is RegexLimit {
+        match code {
+            case 0 { RegexLimit.expression_size; }
+            case 1 { RegexLimit.nesting; }
+            case 2 { RegexLimit.groups; }
+            else { RegexLimit.states; }
+        }
+    }
+
+}
+
+object InvalidRegex does Error {
+    has source_offset is int;
+    has message is string;
+
+    InvalidRegex(offset is int, message is string) {
+        source_offset = offset;
+        self.message = message;
+    }
+
+    offset() is int { source_offset; }
+
+    #projected
+    text() is string {
+        message + " at offset " + source_offset.string();
+    }
+}
+
+object RegexLimitExceeded does Error {
+    has limit_kind is RegexLimit;
+    has maximum is int;
+
+    RegexLimitExceeded(kind is RegexLimit, limit is int) {
+        limit_kind = kind;
+        maximum = limit;
+    }
+
+    kind() is RegexLimit { limit_kind; }
+
+    limit() is int { maximum; }
+
+    #projected
+    text() is string { "regex compilation limit exceeded"; }
+}
+
+enum RegexQuery = (first, prefix, entire);
+
+object RegexMatchObservation {
+    has origin is RegexQueryObservation;
+    RegexMatchObservation(origin is string,regex is Regex,range is RegexRange,mode is RegexQuery){self.origin=regex.observation(origin,range,mode);}
+    found() is bool{origin.found();}match() is RegexMatching{origin.match();}
+}
+
+object RegexRangeOutsideInput does Error {
+    has selected is RegexRange;
+    has source_length is int;
+    RegexRangeOutsideInput(range is RegexRange, length is int) {
+        selected = range;
+        source_length = length;
+    }
+    range() is RegexRange { selected; }
+    length() is int { source_length; }
+    #projected
+    text() is string { "regex range lies outside its input"; }
+}
+
+object NoRegexMatch does Error {
+    NoRegexMatch();
+    #projected
+    text() is string { "no regex match"; }
+}
+
+object RegexQueryObservation {
+    has source is string;has pattern is Regex;has selected is RegexRange;has query is RegexQueryState;
+    RegexQueryObservation(source is string,pattern is Regex,selected is RegexRange,query is RegexQueryState){self.source=source;self.pattern=pattern;self.selected=selected;self.query=query;}
+
+    found() is bool {
+        confirm selected.end() <= source.length()
+            else throw RegexRangeOutsideInput(selected, source.length());
+        pattern.group_count();
+        regex_query_found(query);
+    }
+    match() is RegexMatching {
+        confirm self.found() else throw NoRegexMatch();
+        RegexMatch(source, regex_query_match(query));
+    }
+}

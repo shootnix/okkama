@@ -1,0 +1,54 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object InvalidCash does Error {
+    has digit is int;
+    InvalidCash(:digit);
+    text() is string { "invalid cash " + digit.string(); }
+}
+
+object Cash {
+    has digit is int;
+    has cents is int = 0;
+
+    Cash(digit is int, cents is int) {
+        digit = digit;
+        cents = cents;
+        confirm self.digit >= 0 else throw InvalidCash(digit: self.digit);
+    }
+
+    Cash(:digit) {
+        confirm self.digit >= 0 else throw InvalidCash(digit: self.digit);
+    }
+
+    total() is int { digit * 100 + cents; }
+    touch() is Cash { self; }
+    same_as(other is Cash) is bool { self == other; }
+}
+
+object Point {
+    has x is int = 0;
+    has y is int = 0;
+    Point() {}
+    Point(both is int) {
+        x = both;
+        y = both;
+    }
+    Point(x is int, y is int) {
+        self.x = x;
+        self.y = y;
+    }
+    sum() is int { x + y; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Cash(1, 50).total().string());
+    out.writeln(Cash(cents: 5, digit: 2).total().string());
+    out.writeln(Cash(digit: 4).total().string());
+    out.writeln(Point().sum().string());
+    out.writeln(Point(3).sum().string());
+    out.writeln(Point(3, 4).sum().string());
+    0;
+}

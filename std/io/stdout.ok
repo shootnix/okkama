@@ -1,0 +1,99 @@
+module io/stdout v1.0.0;
+
+import "io/stream" take
+    Writing,
+    WritingText,
+    ByteSource,
+    IncompleteWrite;
+import "encoding/utf" take Utf8Encoded;
+import "runtime/stdio" take stdout_write, stderr_write;
+
+// Process standard output capabilities.
+//
+//     Stdout().write("answer: ", answer.string());
+//     Stdout().writeln("ready");
+//     Stdout() <- "raw UTF-8 text" <- packet <- "\n";
+//
+//     Stderr().writeln("cannot continue");
+//
+// ByteSource writes preserve the exact source octets. Text writes encode every
+// string as strict UTF-8, concatenate only by writing arguments in order, and
+// add no separators. writeln appends exactly one LF after all arguments. Empty
+// write() emits nothing; empty writeln() emits one LF. No method formats
+// arbitrary values: callers use explicit .string() or strings/format objects.
+//
+// The raw runtime boundary reports an accepted prefix length. A short count is
+// exposed as IncompleteWrite; errors are never retried here. flush() is a no-op
+// because these unbuffered capabilities retain no pending user-space bytes.
+
+object Stdout does Writing, WritingText {
+    Stdout();
+
+    write(source is ByteSource) is void {
+        self.write_bytes(source.bytes());
+    }
+
+    flush() is void {}
+
+    write(values is ...string) is void {
+        let data is @string = values...;
+        for data -> value {
+            self.write_text(value);
+        }
+    }
+
+    writeln(values is ...string) is void {
+        let data is @string = values...;
+        for data -> value {
+            self.write_text(value);
+        }
+        self.write_text("\n");
+    }
+
+    private:
+
+    write_text(value is string) is void {
+        self.write_bytes(Utf8Encoded(origin: value).bytes());
+    }
+
+    write_bytes(value is @byte) is void {
+        let written is int = stdout_write(value);
+        confirm written == value.size() else throw IncompleteWrite(written);
+    }
+}
+
+object Stderr does Writing, WritingText {
+    Stderr();
+
+    write(source is ByteSource) is void {
+        self.write_bytes(source.bytes());
+    }
+
+    flush() is void {}
+
+    write(values is ...string) is void {
+        let data is @string = values...;
+        for data -> value {
+            self.write_text(value);
+        }
+    }
+
+    writeln(values is ...string) is void {
+        let data is @string = values...;
+        for data -> value {
+            self.write_text(value);
+        }
+        self.write_text("\n");
+    }
+
+    private:
+
+    write_text(value is string) is void {
+        self.write_bytes(Utf8Encoded(origin: value).bytes());
+    }
+
+    write_bytes(value is @byte) is void {
+        let written is int = stderr_write(value);
+        confirm written == value.size() else throw IncompleteWrite(written);
+    }
+}

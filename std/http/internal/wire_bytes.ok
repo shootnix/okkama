@@ -1,0 +1,28 @@
+module http/internal/wire_bytes v1.0.0;
+import "runtime/buffer" take buffer_state_create,buffer_state_append,buffer_state_bytes,buffer_state_close;
+
+// Bounded in-memory concatenation through the existing native buffer boundary.
+// No interpreted per-octet callback and no new provider or transport effect.
+object HttpWireBytes {
+    has chunks is @@byte;
+    HttpWireBytes(chunks is @@byte,maximum is int){
+        confirm maximum>=0 && maximum<=16777224 && chunks.size()<=1024
+            else throw WireByteLimit();
+        let total is int=chunks.reduce(0)->used,chunk{
+            confirm chunk.size()<=maximum-used else throw WireByteLimit();used+chunk.size();
+        };
+        self.chunks=chunks;
+    }
+    bytes() is @byte{
+        let buffer=buffer_state_create([]);defer buffer_state_close(buffer);
+        for chunks -> chunk{
+            let copied=buffer_state_append(buffer,chunk);confirm copied==chunk.size() else throw WireByteLimit();
+        }
+        buffer_state_bytes(buffer);
+    }
+}
+object WireByteLimit does Error{WireByteLimit();text() is string{"HTTP wire byte budget exceeded";}}
+test "bulk join returns independent octets after its private buffer closes" {
+    let wire=HttpWireBytes([[0.byte(),255.byte()],[],[65.byte()]],3).bytes();
+    test.is(wire.size(),3);test.is(wire[1].int(),255);
+}

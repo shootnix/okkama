@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "net/dns" take SystemResolution;
+import "net/endpoint" take HostName,HostEndpoint;
+import "io/stdout" take Stdout;
+async main() is int {
+    let resolver=SystemResolution();let result=await resolver.addresses(HostEndpoint(HostName("localhost"),80));
+    confirm result.size()>0;
+    for (0..result.size()) -> index {confirm result.item(index).port()==80;}
+    Stdout().writeln("system resolver worker and requested ports verified");0;
+}

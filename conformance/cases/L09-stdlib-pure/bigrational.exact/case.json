@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.bigrational.exact",
+  "title": "canonical exact rationals",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.NUMBERS.BIGRATIONAL",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - sum\nok 2 - negative denominator normalised\nchecks: 2, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/numbers/bigrational.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Canonical exact ratios: 1/3 + 1/6 = 1/2; the denominator is positive and gcd-reduced (2/-4 = -1/2)."
+  },
+  "status": "mandatory"
+}

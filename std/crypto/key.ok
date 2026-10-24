@@ -1,0 +1,25 @@
+module crypto/key v1.0.0;
+
+import "crypto/secret" take SecretBytes;
+
+// Key roles shared by crypto/ed25519, crypto/ecdsa, crypto/rsa,
+// crypto/key_format and crypto/x509.
+//
+// PublicKey is a public key as DER SubjectPublicKeyInfo, including the
+// algorithm identifier. VerifyingKey checks signatures of one fixed algorithm
+// (and, for RSA, one scheme and hash): verified() answers false for any
+// malformed or non-matching signature and never throws for them. SigningKey
+// produces such signatures; pkcs8() exports the private key as DER PKCS#8 in a
+// fresh SecretBytes and public_key() is the matching VerifyingKey.
+role PublicKey { bytes() is @byte; }
+
+role VerifyingKey {
+    bytes() is @byte;
+    verified(message is @byte, signature is @byte) is bool;
+}
+
+role SigningKey {
+    pkcs8() is SecretBytes;
+    public_key() is VerifyingKey;
+    signature(message is @byte) is @byte;
+}

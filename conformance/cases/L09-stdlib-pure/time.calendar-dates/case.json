@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.time.calendar-dates",
+  "title": "proleptic Gregorian dates",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TIME.DATE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.TIME.ISO",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - 2026-08-11 is a Tuesday\nok 2 - leap February span\nok 3 - century leap day\nok 4 - first ordinal\nok 5 - ordinal 2026-01-01\nok 6 - day one is Monday\nok 7 - invalid date\nok 8 - iso parse\nok 9 - iso strict\nchecks: 9, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/time/date.ok",
+    "std/time/iso.ok",
+    "ISO 8601"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Proleptic Gregorian arithmetic cross-checked with Python datetime: 2026-08-11 is Tuesday, 2024 is leap, 2000-02-29 exists, ordinal(2026-01-01) = 739617, 0001-01-01 is Monday, 2023-02-29 is invalid; ISO dates are exactly YYYY-MM-DD."
+  },
+  "status": "mandatory"
+}

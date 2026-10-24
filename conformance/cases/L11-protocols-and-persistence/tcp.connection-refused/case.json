@@ -1,0 +1,58 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.tcp.connection-refused",
+  "title": "connecting to a closed port is a typed network failure",
+  "purpose": "Exercise a protocol boundary against a suite-owned loopback fixture.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.NET.TCP",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.NET.FAILURE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "args": [
+    "{fixture.free-port.port}"
+  ],
+  "requires": {
+    "environment": [
+      "stdout",
+      "args",
+      "loopback-network"
+    ],
+    "fixtures": [
+      "free-port"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "network failure\n"
+    }
+  },
+  "spec_refs": [
+    "std/net/tcp.ok",
+    "std/net/failure.ok"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "A refused connection surfaces as the typed NetworkFailure; host errno values do not leak."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+main() is int {
+    let out = Stdout();
+    let inner = Box(value: 4);
+    let outer is Box<Box<int>> = Box(value: inner);
+    out.writeln(outer.get().get().string());
+    out.writeln((32 >> 2).string());
+    0;
+}

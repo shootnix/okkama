@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.rat.arithmetic",
+  "title": "rat arithmetic and conversions",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.RAT",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3/2\n1/3\n-1/2\n-1/3\n3\n-3\n0.25\nless\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3",
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.3: rat arithmetic is exact; unary minus preserves rat; .int() truncates toward zero; .float() is explicit. language owner decision, 21.10.2026 (D-046): different numeric categories interact only after an explicit cast; no implicit promotion, so int/byte operands are converted with .rat()."
+  },
+  "status": "mandatory"
+}

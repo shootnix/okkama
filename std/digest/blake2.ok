@@ -1,0 +1,96 @@
+module digest/blake2 v1.0.0;
+
+import "digest/state" take Digesting;
+import "digest/host" take HostDigest;
+import "crypto/secret" take SecretBytes;
+import "encoding/hex" take HexEncoded;
+
+// BLAKE2 (RFC 7693) over the host provider. Blake2b and Blake2s take the
+// output length, which is a BLAKE2 parameter (not a truncation): Blake2b
+// accepts 16, 20, 28, 32, 48 or 64 bytes, Blake2s 16, 20, 28 or 32; other
+// lengths are InvalidBlake2Length. Blake2bMac/Blake2sMac are the keyed modes
+// with full-width output (64/32 bytes); the key is a SecretBytes capability
+// of 1..64 / 1..32 bytes, exported once to the host at construction.
+// Successors and observation follow digest/state.
+object Blake2b does Digesting {
+    has digest is HostDigest;
+    Blake2b(length is int) {
+        confirm length == 16 || length == 20 || length == 28 || length == 32 || length == 48 || length == 64 else throw InvalidBlake2Length(length);
+        digest = HostDigest("blake2b", [], length);
+    }
+    Blake2b(length is int, origin is @byte) {
+        confirm length == 16 || length == 20 || length == 28 || length == 32 || length == 48 || length == 64 else throw InvalidBlake2Length(length);
+        digest = HostDigest("blake2b", [], length).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Blake2b {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Blake2s does Digesting {
+    has digest is HostDigest;
+    Blake2s(length is int) {
+        confirm length == 16 || length == 20 || length == 28 || length == 32 else throw InvalidBlake2Length(length);
+        digest = HostDigest("blake2s", [], length);
+    }
+    Blake2s(length is int, origin is @byte) {
+        confirm length == 16 || length == 20 || length == 28 || length == 32 else throw InvalidBlake2Length(length);
+        digest = HostDigest("blake2s", [], length).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Blake2s {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Blake2bMac does Digesting {
+    has digest is HostDigest;
+    Blake2bMac(key is SecretBytes) { digest = HostDigest("blake2b-mac", key.export_bytes(), 0); }
+    Blake2bMac(key is SecretBytes, origin is @byte) {
+        digest = HostDigest("blake2b-mac", key.export_bytes(), 0).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Blake2bMac {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object Blake2sMac does Digesting {
+    has digest is HostDigest;
+    Blake2sMac(key is SecretBytes) { digest = HostDigest("blake2s-mac", key.export_bytes(), 0); }
+    Blake2sMac(key is SecretBytes, origin is @byte) {
+        digest = HostDigest("blake2s-mac", key.export_bytes(), 0).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Blake2sMac {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+}
+
+object InvalidBlake2Length does Error {
+    has origin is int;
+    InvalidBlake2Length(length is int) { origin = length; }
+    length() is int { origin; }
+    text() is string { "unsupported BLAKE2 output length " + origin.string(); }
+}
+
+test "BLAKE2 matches RFC 7693 abc examples" {
+    let abc = [97.byte(), 98.byte(), 99.byte()];
+    test.is(HexEncoded(Blake2b(64, abc).bytes()).string(), "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923");
+    test.is(HexEncoded(Blake2s(32, abc).bytes()).string(), "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982");
+    test.ok(Blake2b(32, abc).bytes() != Blake2b(64, abc).bytes().slice(0, 32));
+    test.ok(try { Blake2s(64); false; } catch e is InvalidBlake2Length { e.length() == 64; });
+}
+
+test "keyed BLAKE2 depends on the key" {
+    let message = [1.byte(), 2.byte()];
+    let first = Blake2bMac(SecretBytes([7.byte()]), message).bytes();
+    test.is(first.size(), 64);
+    test.ok(first != Blake2bMac(SecretBytes([8.byte()]), message).bytes());
+    test.is(Blake2sMac(SecretBytes([7.byte()])).state(message).bytes(), Blake2sMac(SecretBytes([7.byte()]), message).bytes());
+}

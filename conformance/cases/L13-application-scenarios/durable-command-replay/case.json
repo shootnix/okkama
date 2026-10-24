@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.durable-command-replay",
+  "title": "idempotency keys replay results and reject changed payloads",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.DURABLE-COMMANDS",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - first execution\nok 2 - duplicate replays\nok 3 - second command\nok 4 - changed payload rejected\nok 5 - ledger entries\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/durable-commands.md",
+    "improvements-roadmap/results/IMP-10/RESULT.md"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Durable idempotency (IMP-10): the effect and the stored result commit together; replay returns the stored result without a new ledger entry; a reused key with a changed payload is a conflict. Two effects in total."
+  },
+  "status": "mandatory"
+}

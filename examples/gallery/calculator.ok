@@ -1,0 +1,71 @@
+// Калькулятор с приоритетами и скобками
+// Задача: Разобрать выражение с +, -, *, / и унарными знаками.
+// Запуск из корня: ./examples/gallery/run calculator ['1 + 2 * 3']
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: recursive descent; результат разбора содержит значение rat и новую позицию.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/calculator.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/calculator v1.0.0;
+import "regex/pattern" take Regex;
+import "regex/search" take PrefixRegexMatch,RegexMatches;
+import "strings/parse" take ParsedInt;
+import "cli/arguments" take Utf8Arguments,ProcessArguments;
+import "io/stdout" take Stdout;
+object ParseResult {
+    has number is rat;has position is int;
+    ParseResult(number is rat,position is int){self.number=number;self.position=position;}
+    number() is rat{number;}position() is int{position;}
+}
+object Expression {
+    has source is string;
+    Expression(source is string){confirm source.length()>0 && source.length()<=256;self.source=source.replace(" ","").replace("\t","").replace("\n","");}
+    at(position is int) is string{if position<source.length(){source.slice(position,position+1);}else{"";}}
+    value() is rat {
+        let parsed=self.sum(0);confirm parsed.position()==source.length();parsed.number();
+    }
+    sum(position is int) is ParseResult{self.sum_tail(self.product(position));}
+    sum_tail(left is ParseResult) is ParseResult {
+        let operator=self.at(left.position());
+        if operator!="+" && operator!="-"{return left;}
+        let right=self.product(left.position()+1);
+        let number=if operator=="+"{left.number()+right.number();}else{left.number()-right.number();};
+        self.sum_tail(ParseResult(number,right.position()));
+    }
+    product(position is int) is ParseResult{self.product_tail(self.atom(position));}
+    product_tail(left is ParseResult) is ParseResult {
+        let operator=self.at(left.position());
+        if operator!="*" && operator!="/"{return left;}
+        let right=self.atom(left.position()+1);
+        let number=if operator=="*"{left.number()*right.number();}else{left.number()/right.number();};
+        self.product_tail(ParseResult(number,right.position()));
+    }
+    atom(position is int) is ParseResult {
+        let symbol=self.at(position);
+        if symbol=="-" || symbol=="+"{
+            let parsed=self.atom(position+1);
+            return ParseResult(if symbol=="-"{-parsed.number();}else{parsed.number();},parsed.position());
+        }
+        if symbol=="("{
+            let parsed=self.sum(position+1);confirm self.at(parsed.position())==")";
+            return ParseResult(parsed.number(),parsed.position()+1);
+        }
+        confirm position<source.length();
+        let tail=source.slice(position,source.length());
+        let token=PrefixRegexMatch(tail,Regex("[0-9]+(?:\\.[0-9]+)?")).text();
+        let parts=token.split(".");confirm parts[0].length()<=9;
+        let number=if parts.size()==1{ParsedInt(parts[0]).value().rat();}else{
+            confirm parts[1].length()<=9;
+            let scale=(0..parts[1].length()).reduce(1)->value,i{value*10;};
+            ParsedInt(parts[0]).value().rat()+ParsedInt(parts[1]).value()/scale;
+        };
+        ParseResult(number,position+token.length());
+    }
+}
+main() is int {
+    let args=Utf8Arguments(ProcessArguments());
+    let expressions=if args.size()>0{[args.item(0)];}else{["1 + 2 * 3","(1 + 2) * 3","10 / 4","2 * (3 + 4) - 5 / 2","-3 + 4 * -2","0.1 + 0.2"];};
+    for expressions->text{Stdout().writeln(text+" = "+Expression(text).value().string());}
+    confirm Expression("0.1+0.2").value()==rat(3,10);
+    confirm Expression("8/4/2").value()==1.rat();0;
+}

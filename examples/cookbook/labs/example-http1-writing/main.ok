@@ -1,0 +1,22 @@
+// Сериализовать head HTTP/1
+//
+// Записать head HTTP/1 в транспорт: head-writing операции сначала формируют проверенные канонические байты.
+//
+// Запуск: ./examples/cookbook/run lab example-http1-writing
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http1-writing
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/http1_writing" take Http1RequestHeadWriting;
+import "http/http1_reading" take Http1RequestHeadReading;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "net/unix" take UnixPaired;
+import "io/stdout" take Stdout;
+async main() is int {
+    let pair=await UnixPaired().result();let client=pair.first();let server=pair.second();defer client.close();defer server.close();
+    let head=ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").value();
+    await Http1RequestHeadWriting(client.output(),head).result();
+    let received=await Http1RequestHeadReading(server.input()).result();
+    Stdout().writeln(received.head().host().string());0;
+}

@@ -1,0 +1,27 @@
+module http/request_context v1.0.0;
+import "http/exchange" take ExchangeDetails;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/tls" take TlsDetails;
+import "async/cancellation" take Cancelling;
+import "error" take InvalidArgument;
+
+// Infrastructure creates one context per request; handlers observe transport
+// facts and cancellation, but receive no socket mutation or cancellation owner.
+// Routing changes only the immutable parameter snapshot in a successor.
+object HttpRequestContext {
+    has details is ExchangeDetails;has cancellation is Cancelling;has parameters is %string:string;
+    HttpRequestContext(details is ExchangeDetails,cancellation is Cancelling){self.details=details;self.cancellation=cancellation;parameters=[:];}
+    HttpRequestContext(details is ExchangeDetails,cancellation is Cancelling,parameters is %string:string){self.details=details;self.cancellation=cancellation;self.parameters=HttpContextParameters(parameters).value();}
+    endpoints() is ConnectionEndpoints<IpEndpoint>{details.endpoints();}secure() is bool{details.secure();}tls() is TlsDetails{details.tls();}
+    cancelling() is Cancelling{cancellation;}parameters() is %string:string{parameters;}
+    parameters(origin is %string:string) is ^HttpRequestContext{^parameters=HttpContextParameters(origin).value();}
+}
+object HttpContextParameters {
+    has origin is %string:string;
+    HttpContextParameters(origin is %string:string){
+        confirm origin.size()<=128 else throw InvalidArgument("HTTP route parameter count");
+        let used=origin.keys().reduce(0)->used,key{let width=key.length()+origin[key].length();confirm key!="" && key.length()<=256 && width<=8192-used else throw InvalidArgument("HTTP route parameter budget");used+width;};self.origin=origin;
+    }
+    value() is %string:string{origin;}
+}

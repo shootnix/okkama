@@ -1,0 +1,15 @@
+module runtime/tls_transport v1.0.0;
+import "runtime/network" take SocketState;
+native object TlsState;
+native client(origin is SocketState,versions is int,protocols is @string,server is string) is TlsState;
+native close(origin is TlsState) is bool;
+native closed(origin is TlsState) is bool;
+native async handshake(origin is TlsState) is bool;
+native authorize(origin is TlsState,roots is @@byte,kind is string,host is string,at is string) is bool;
+native async read(origin is TlsState,limit is int) is @byte;
+native async write(origin is TlsState,source is @byte) is bool;
+native async shutdown(origin is TlsState) is bool;
+native peer(origin is TlsState) is @@byte;
+native version(origin is TlsState) is string;
+native cipher(origin is TlsState) is string;
+native protocol(origin is TlsState) is string;

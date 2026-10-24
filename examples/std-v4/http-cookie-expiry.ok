@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "http/cookie" take CookieExpiry, MissingCookieExpiry;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+main() is int {
+    let session=CookieExpiry();
+    Stdout().writeln(try{session.instant();"persistent";}catch e is MissingCookieExpiry{"session";});
+    let persistent=CookieExpiry(Instant(Duration(0.rat(),DurationUnit.second)));
+    Stdout().writeln(persistent.instant().unix_duration().seconds().string());
+    0;
+}

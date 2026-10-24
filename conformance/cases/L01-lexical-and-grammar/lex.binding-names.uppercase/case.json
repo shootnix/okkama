@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.binding-names.uppercase",
+  "title": "let/for/catch bindings accept uppercase spellings",
+  "purpose": "Accept uppercase local binding names in every binding form spec 4.3 lists.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.BINDING-NAMES",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 16,
+    "stdout": {
+      "text": "9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 4.3: let, for and catch bindings accept [A-Za-z_][A-Za-z0-9_]* including USER_NAME, A, UserName; the for prints 9 and 1+2+3+10 = 16."
+  },
+  "status": "mandatory"
+}

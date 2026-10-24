@@ -1,0 +1,110 @@
+module html/entities v1.0.0;
+
+import "runtime/html" take html_events, html_event_value;
+
+// HTML character-escaped representation of immutable source text.
+// Constructors only bind source and quotation policy; string() computes afresh.
+// Default/false escapes &, < and >; true also escapes double and single quotes
+// as &quot; and &#39;. Existing references are ordinary text, so &amp; becomes
+// &amp;amp;. Replacement text is never escaped again within one observation.
+// Empty input stays empty; other Unicode scalars and whitespace are unchanged.
+// Constant-count replacement passes take O(n) time and auxiliary memory, with
+// at most six output scalars per input scalar. No native imports, I/O, resource
+// ownership or destroy. This is not HTML context validation or sanitization.
+// Example: EscapedHtml("<Ada & Bob>").string() == "&lt;Ada &amp; Bob&gt;".
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/html/entities.ok
+object EscapedHtml {
+    has origin is string;
+    has quotes is bool;
+
+    EscapedHtml(origin is string) {
+        self.origin = origin;
+        self.quotes = false;
+    }
+
+    EscapedHtml(origin is string, quotes is bool) {
+        self.origin = origin;
+        self.quotes = quotes;
+    }
+
+    string() is string {
+        // Ampersands first: later replacements introduce entity ampersands.
+        let escaped = origin.replace("&", "&amp;")
+            .replace("<", "&lt;").replace(">", "&gt;");
+        if quotes {
+            escaped.replace("\"", "&quot;").replace("'", "&#39;");
+        } else {
+            escaped;
+        }
+    }
+}
+
+// Character-reference-decoded text, using HTML text-context recovery rules.
+// Construction retains source only. string() decodes once, preserving literal
+// markup and all non-reference scalars (including NUL and CRLF). Unknown names
+// and digitless numeric references stay literal; invalid numeric scalars become
+// U+FFFD and HTML C1 replacements apply. This is not attribute-context decoding,
+// document parsing, sanitization or recursive decoding of the resulting text.
+// The pinned runtime/html table supplies all 2231 named spellings.
+// Example: UnescapedHtml("<b>&amp;lt;</b>").string() == "<b>&lt;</b>".
+// Empty source bypasses native allocation. Each other observation uses O(n)
+// memory and one private immutable event handle, retained by the native registry
+// until interpreter teardown (no scope release/close API). Repeated calls agree
+// but allocate anew. Native failures propagate; no external resources or I/O.
+object UnescapedHtml {
+    has origin is string;
+
+    UnescapedHtml(origin is string) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        if origin == "" {
+            "";
+        } else {
+            // Prevent markup recognition without escaping original references.
+            // No literal '<' remains: exactly one text event, decoded once.
+            let state = html_events(origin.replace("<", "&lt;"));
+            html_event_value(state, 0);
+        }
+    }
+}
+
+test "HTML reference decoding preserves markup and is not recursive" {
+    test.is(UnescapedHtml("").string(), "");
+    test.is(UnescapedHtml("<b>&amp;lt;</b>").string(), "<b>&lt;</b>");
+    test.is(UnescapedHtml("<!--&copy;-->").string(), "<!--©-->");
+}
+
+test "HTML named and numeric recovery" {
+    test.is(UnescapedHtml("&notin; &notit; &unknown;").string(), "∉ ¬it; &unknown;");
+    test.is(UnescapedHtml("&#65 &#x41; &#X1F600;").string(), "A A 😀");
+    test.is(UnescapedHtml("&#0; &#xD800; &#128;").string(), "� � €");
+}
+
+test "HTML decoding repeats and composes with escaping" {
+    let source = "<&amp;\"'é>";
+    let value = UnescapedHtml(EscapedHtml(source, true).string());
+    test.is(value.string(), source);
+    test.is(value.string(), source);
+}
+
+test "HTML text and quotation policies" {
+    test.is(EscapedHtml("&<>\"'").string(), "&amp;&lt;&gt;\"'");
+    test.is(EscapedHtml("&<>\"'", false).string(), "&amp;&lt;&gt;\"'");
+    test.is(EscapedHtml("&<>\"'", true).string(), "&amp;&lt;&gt;&quot;&#39;");
+}
+
+test "HTML escaping preserves empty text Unicode and whitespace" {
+    test.is(EscapedHtml("").string(), "");
+    test.is(EscapedHtml("", true).string(), "");
+    test.is(EscapedHtml("é é 😀\t\r\n").string(), "é é 😀\t\r\n");
+}
+
+test "HTML references are ordinary source and queries repeat" {
+    let source = "&amp; <";
+    let escaped = EscapedHtml(source);
+    test.is(escaped.string(), "&amp;amp; &lt;");
+    test.is(escaped.string(), "&amp;amp; &lt;");
+    test.is(source, "&amp; <");
+}

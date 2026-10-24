@@ -1,0 +1,391 @@
+module url/value v1.0.0;
+
+import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf32Encoded, ByteOrder, InvalidUtf8;
+import "encoding/binary" take IntegerFromBytes, Signedness;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+import "net/endpoint" take HostName, InvalidHostName;
+import "net/ip" take IpAddress, IpVersion, InvalidIpAddress;
+import "runtime/url_text" take url_dot_segments;
+
+// Presence is separate from text. Inputs are URI/IRI component text, with
+// existing escapes; plain field data must first be encoded explicitly.
+object UrlQuery {
+    has supplied is bool;
+    has text is string;
+    UrlQuery() {supplied=false;text="";}
+    UrlQuery(origin is string) {supplied=true;text=UrlComponentText(origin,UrlComponent.query).string();}
+    present() is bool {supplied;}
+    string() is string {text;}
+}
+object UrlFragment {
+    has supplied is bool;
+    has text is string;
+    UrlFragment() {supplied=false;text="";}
+    UrlFragment(origin is string) {supplied=true;text=UrlComponentText(origin,UrlComponent.fragment).string();}
+    present() is bool {supplied;}
+    string() is string {text;}
+}
+object InvalidUrl does Error {
+    has position is int;
+    has reason is string;
+    InvalidUrl(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid URL at scalar offset "+position.string()+": "+reason;}
+}
+
+// Importable implementation collaborator, not a complete URL parser.
+object UrlComponentText {
+    has origin is string;
+    has component is UrlComponent;
+    UrlComponentText(origin is string, component is UrlComponent) {
+        confirm component==UrlComponent.query || component==UrlComponent.fragment
+            || component==UrlComponent.path || component==UrlComponent.userinfo
+            else throw InvalidArgument("unsupported URL component canonicalization");
+        self.origin=origin;self.component=component;
+    }
+    string() is string {
+        let output=ByteBuffer();defer output.closing().close();let writer=output.writing();
+        let digits="0123456789ABCDEF";
+        let consumed=(0..origin.length()).reduce(0) -> after,index {
+            if index<after {after;}
+            else {
+                let scalar=origin.slice(index,index+1);
+                if scalar=="%" {
+                    confirm origin.length()-index>=3 else throw InvalidUrl(index,"incomplete percent escape");
+                    let value=try {PercentDecoded(origin.slice(index,index+3)).bytes()[0].int();}
+                        catch failure is InvalidPercentEncoding {throw InvalidUrl(index,"invalid percent escape");};
+                    let unreserved=(value>=65 && value<=90) || (value>=97 && value<=122)
+                        || (value>=48 && value<=57) || value==45 || value==46 || value==95 || value==126;
+                    let text=if unreserved {Utf8Decoded([value.byte()]).string();}
+                        else {let high=(value/16).int();let low=value%16;
+                            "%"+digits.slice(high,high+1)+digits.slice(low,low+1);};
+                    writer.write(ByteSnapshot(Utf8Encoded(text).bytes()));index+3;
+                } else {
+                    let bytes=Utf8Encoded(scalar).bytes();
+                    let encoded=PercentEncoded(scalar,component).string();
+                    if bytes.size()==1 {
+                        confirm encoded==scalar else throw InvalidUrl(index,"character is not allowed in component");
+                    } else {
+                        let code=IntegerFromBytes(Utf32Encoded(scalar,ByteOrder.big).bytes(),Signedness.unsigned,ByteOrder.big).value();
+                        confirm self.unicode_allowed(code) else throw InvalidUrl(index,"character is not allowed in IRI component");
+                    }
+                    writer.write(ByteSnapshot(Utf8Encoded(encoded).bytes()));index+1;
+                }
+            }
+        };
+        Utf8Decoded(output.content().bytes()).string();
+    }
+    private:
+    unicode_allowed(code is int) is bool {
+        if (code>=160 && code<=55295) || (code>=63744 && code<=64975)
+            || (code>=65008 && code<=65519) {return true;}
+        if code>=65536 && code<=917501 && code%65536<=65533 {return true;}
+        if code>=921600 && code<=983037 {return true;}
+        component==UrlComponent.query && ((code>=57344 && code<=63743)
+            || (code>=983040 && code<=1114109 && code%65536<=65533));
+    }
+}
+
+enum UrlHostKind = (empty, name, address, future);
+role UrlHost {
+    kind() is UrlHostKind;
+    name() is HostName;
+    address() is IpAddress;
+    string() is string;
+}
+object NamedUrlHost does UrlHost {
+    has origin is HostName;NamedUrlHost(origin is HostName){self.origin=origin;}
+    kind() is UrlHostKind {UrlHostKind.name;}name() is HostName {origin;}
+    address() is IpAddress {throw UrlHostIsNotAddress();}
+    string() is string {origin.ascii();}
+}
+object AddressUrlHost does UrlHost {
+    has origin is IpAddress;AddressUrlHost(origin is IpAddress){self.origin=origin;}
+    kind() is UrlHostKind {UrlHostKind.address;}address() is IpAddress {origin;}
+    name() is HostName {throw UrlHostIsNotName();}
+    string() is string {if origin.version()==IpVersion.v6 {"["+origin.string()+"]";}else{origin.string();}}
+}
+object EmptyUrlHost does UrlHost {
+    EmptyUrlHost();kind() is UrlHostKind {UrlHostKind.empty;}
+    name() is HostName {throw UrlHostIsNotName();}address() is IpAddress {throw UrlHostIsNotAddress();}
+    string() is string {"";}
+}
+object FutureUrlHost does UrlHost {
+    has origin is string;
+    FutureUrlHost(origin is string) {
+        confirm origin.length()>=4 && origin.length()<=1024 else throw InvalidUrl(0,"invalid IPvFuture width");
+        confirm origin.slice(0,1)=="v" || origin.slice(0,1)=="V" else throw InvalidUrl(0,"IPvFuture prefix required");
+        let parts=origin.split(".");confirm parts.size()>=2 else throw InvalidUrl(0,"IPvFuture version separator required");
+        let version=parts[0].slice(1,parts[0].length());
+        confirm UrlAsciiText(version).characters("0123456789abcdefABCDEF") else throw InvalidUrl(1,"IPvFuture hexadecimal version required");
+        let text is @string=(1..parts.size()).map() -> index {parts[index];};
+        let address=text.join(".");
+        confirm UrlAsciiText(address).characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'()*+,;=:")
+            else throw InvalidUrl(parts[0].length()+1,"IPvFuture address required");
+        self.origin=UrlAsciiText(origin).lower();
+    }
+    kind() is UrlHostKind {UrlHostKind.future;}name() is HostName {throw UrlHostIsNotName();}
+    address() is IpAddress {throw UrlHostIsNotAddress();}string() is string {"["+origin+"]";}
+}
+object UrlUserInfo {
+    has supplied is bool;has origin is string;
+    UrlUserInfo(){supplied=false;origin="";}
+    UrlUserInfo(origin is string){supplied=true;self.origin=UrlComponentText(origin,UrlComponent.userinfo).string();}
+    present() is bool {supplied;}string() is string {origin;}
+}
+// Delimiter presence is distinct from an assigned numeric value: host: is
+// legal generic URI text, yet port() cannot invent a scheme-default integer.
+object UrlPort {
+    has supplied is bool;has values is @int;
+    UrlPort(){supplied=false;values=[];}
+    UrlPort(origin is string) {
+        confirm origin.length()<=8192 else throw InvalidUrl(0,"port source limit exceeded");
+        supplied=true;
+        if origin=="" {values=[];}else{
+            let number=Utf8Encoded(origin).bytes().reduce(0) -> value,octet {
+                let code=octet.int();confirm code>=48 && code<=57 else throw InvalidUrl(0,"ASCII decimal port required");
+                let number=value*10+code-48;confirm number<=65535 else throw InvalidUrl(0,"port exceeds 65535");number;
+            };
+            values=[number];
+        }
+    }
+    present() is bool {supplied;}
+    value() is int {confirm values.size()==1 else throw MissingUrlPort();values[0];}
+    string() is string {if values.size()==1 {values[0].string();}else{"";}}
+}
+object UrlAuthority {
+    has hosts is @UrlHost;has userinfo is UrlUserInfo;has port is UrlPort;
+    UrlAuthority(){hosts=[];userinfo=UrlUserInfo();port=UrlPort();}
+    UrlAuthority(host is UrlHost){hosts=[UrlHostSnapshot(host).value()];userinfo=UrlUserInfo();port=UrlPort();}
+    UrlAuthority(host is UrlHost, port is int) {
+        confirm port>=0 && port<=65535 else throw InvalidUrl(0,"port outside 0..65535");
+        hosts=[UrlHostSnapshot(host).value()];userinfo=UrlUserInfo();self.port=UrlPort(port.string());
+    }
+    UrlAuthority(host is UrlHost, userinfo is UrlUserInfo, port is UrlPort) {
+        hosts=[UrlHostSnapshot(host).value()];self.userinfo=userinfo;self.port=port;
+    }
+    present() is bool {hosts.size()==1;}
+    host() is UrlHost {confirm self.present() else throw MissingUrlAuthority();hosts[0];}
+    userinfo() is UrlUserInfo {confirm self.present() else throw MissingUrlAuthority();userinfo;}
+    port() is int {confirm self.present() else throw MissingUrlAuthority();port.value();}
+    port_marker() is UrlPort {confirm self.present() else throw MissingUrlAuthority();port;}
+    string() is string {
+        if !self.present() {return "";}
+        (if userinfo.present(){userinfo.string()+"@";}else{"";})+hosts[0].string()
+            +(if port.present(){":"+port.string();}else{"";});
+    }
+}
+// A nominal role can be implemented by callers. Snapshot its documented
+// coordinates and enforce their canonical wire agreement at composition.
+object UrlHostSnapshot {
+    has origin is UrlHost;UrlHostSnapshot(origin is UrlHost){self.origin=origin;}
+    value() is UrlHost {
+        let kind=origin.kind();let wire=origin.string();
+        let host is UrlHost=if kind==UrlHostKind.name {NamedUrlHost(origin.name());}else{
+            if kind==UrlHostKind.address {AddressUrlHost(origin.address());}else{
+                if kind==UrlHostKind.empty {EmptyUrlHost();}else{
+                    confirm wire.length()>=2 && wire.slice(0,1)=="[" && wire.slice(wire.length()-1,wire.length())=="]"
+                        else throw InvalidUrl(0,"IPvFuture host requires brackets");
+                    FutureUrlHost(wire.slice(1,wire.length()-1));
+                }
+            }
+        };
+        confirm host.string()==wire else throw InvalidUrl(0,"host coordinates and canonical wire spelling disagree");host;
+    }
+}
+object ParsedUrlAuthority {
+    has origin is string;ParsedUrlAuthority(origin is string){self.origin=origin;}
+    value() is UrlAuthority {
+        confirm origin.length()<=8192 else throw InvalidUrl(8192,"authority source limit exceeded");
+        let parts=origin.split("@");confirm parts.size()<=2 else throw InvalidUrl(0,"multiple userinfo separators");
+        let userinfo=if parts.size()==2 {UrlUserInfo(parts[0]);}else{UrlUserInfo();};
+        let host_port=parts[parts.size()-1];
+        if host_port=="" {return UrlAuthority(EmptyUrlHost(),userinfo,UrlPort());}
+        if host_port.slice(0,1)=="[" {
+            let brackets=host_port.split("]");confirm brackets.size()==2 else throw InvalidUrl(0,"IP literal closing bracket required");
+            let raw=brackets[0].slice(1,brackets[0].length());let tail=brackets[1];
+            confirm tail=="" || tail.slice(0,1)==":" else throw InvalidUrl(brackets[0].length()+1,"invalid IP literal suffix");
+            let port=if tail=="" {UrlPort();}else{UrlPort(tail.slice(1,tail.length()));};
+            let host is UrlHost=if raw.length()>0 && (raw.slice(0,1)=="v" || raw.slice(0,1)=="V") {
+                FutureUrlHost(raw);
+            }else{
+                let address=try{IpAddress(raw);}catch failure is InvalidIpAddress {throw InvalidUrl(1,"invalid IPv6 literal");};
+                confirm address.version()==IpVersion.v6 else throw InvalidUrl(1,"bracketed literal must be IPv6");AddressUrlHost(address);
+            };
+            return UrlAuthority(host,userinfo,port);
+        }
+        let fields=host_port.split(":");confirm fields.size()<=2 else throw InvalidUrl(0,"IPv6 literal requires brackets");
+        let decoded=try{PercentDecoded(fields[0]).string();}
+            catch failure is InvalidPercentEncoding {throw InvalidUrl(failure.offset(),"invalid host escape");}
+            catch failure is InvalidUtf8 {throw InvalidUrl(0,"host escape requires valid UTF-8");};
+        let port=if fields.size()==2 {UrlPort(fields[1]);}else{UrlPort();};
+        let host is UrlHost=if decoded=="" {EmptyUrlHost();}else{
+            try{AddressUrlHost(IpAddress(decoded));}catch failure is InvalidIpAddress {
+                let name=try{HostName(decoded);}catch failure is InvalidHostName {throw InvalidUrl(0,"invalid registered host name");};
+                NamedUrlHost(name);
+            }
+        };
+        UrlAuthority(host,userinfo,port);
+    }
+}
+object UrlAsciiText {
+    has origin is string;UrlAsciiText(origin is string){self.origin=origin;}
+    characters(alphabet is string) is bool {
+        if origin=="" {return false;}
+        (0..origin.length()).reduce(true) -> valid,index {valid && alphabet.split(origin.slice(index,index+1)).size()==2;};
+    }
+    lower() is string {
+        let text is @string=Utf8Encoded(origin).bytes().map() -> octet {
+            let code=octet.int();Utf8Decoded([(if code>=65 && code<=90 {code+32;}else{code;}).byte()]).string();
+        };text.join("");
+    }
+}
+object MissingUrlAuthority does Error {MissingUrlAuthority();text() is string {"URL has no authority";}}
+object MissingUrlPort does Error {MissingUrlPort();text() is string {"URL has no assigned numeric port";}}
+object UrlHostIsNotName does Error {UrlHostIsNotName();text() is string {"URL host is not a registered name";}}
+object UrlHostIsNotAddress does Error {UrlHostIsNotAddress();text() is string {"URL host is not a numeric address";}}
+
+object UrlParts {
+    has scheme,path is string;has authority is UrlAuthority;
+    has query is UrlQuery;has fragment is UrlFragment;
+    UrlParts(scheme is string, authority is UrlAuthority, path is string, query is UrlQuery, fragment is UrlFragment) {
+        confirm path.length()<=8192 else throw InvalidUrl(8192,"path source limit exceeded");
+        let protocol=UrlSchemeText(scheme).string();let canonical=UrlComponentText(path,UrlComponent.path).string();
+        confirm canonical.split("/").size()<=1024 else throw InvalidUrl(0,"path segment limit exceeded");
+        if authority.present() {
+            confirm canonical=="" || canonical.slice(0,1)=="/" else throw InvalidUrl(0,"authority requires an empty or absolute path");
+        }else{
+            confirm canonical.length()<2 || canonical.slice(0,2)!="//" else throw InvalidUrl(0,"path cannot introduce an undeclared authority");
+            if protocol=="" && canonical!="" && canonical.slice(0,1)!="/" {
+                confirm canonical.split("/")[0].split(":").size()==1 else throw InvalidUrl(0,"relative first segment cannot contain colon");
+            }
+        }
+        self.scheme=protocol;self.authority=authority;self.path=canonical;self.query=query;self.fragment=fragment;
+        let complete=(if protocol=="" {"";}else{protocol+":";})+(if authority.present(){"//"+authority.string();}else{"";})+canonical
+            +(if query.present(){"?"+query.string();}else{"";})+(if fragment.present(){"#"+fragment.string();}else{"";});
+        confirm complete.length()<=8192 else throw InvalidUrl(8192,"canonical URL output limit exceeded");
+    }
+    scheme() is string {scheme;}authority() is UrlAuthority {authority;}path() is string {path;}
+    query() is UrlQuery {query;}fragment() is UrlFragment {fragment;}
+    string() is string {
+        (if scheme=="" {"";}else{scheme+":";})+(if authority.present(){"//"+authority.string();}else{"";})+path
+            +(if query.present(){"?"+query.string();}else{"";})+(if fragment.present(){"#"+fragment.string();}else{"";});
+    }
+}
+object Url {
+    has origin is UrlParts;
+    Url(origin is UrlParts){confirm origin.scheme()!="" else throw InvalidUrl(0,"absolute URL requires scheme");self.origin=origin;}
+    parts() is UrlParts {origin;}string() is string {origin.string();}
+    url(reference is UrlReference) is Url {UrlResolution(self,reference).value();}
+}
+object UrlReference {
+    has origin is UrlParts;UrlReference(origin is UrlParts){self.origin=origin;}
+    absolute() is bool {origin.scheme()!="";}parts() is UrlParts {origin;}string() is string {origin.string();}
+}
+object ParsedUrl {
+    has origin is string;ParsedUrl(origin is string){self.origin=origin;}
+    value() is Url {Url(ParsedUrlReference(origin).value().parts());}
+}
+object ParsedUrlReference {
+    has origin is string;ParsedUrlReference(origin is string){self.origin=origin;}
+    value() is UrlReference {
+        confirm origin.length()<=8192 else throw InvalidUrl(8192,"URL source limit exceeded");
+        let fragments=origin.split("#");confirm fragments.size()<=2 else throw InvalidUrl(fragments[0].length()+1,"multiple fragment separators");
+        let fragment=if fragments.size()==2 {
+            try{UrlFragment(fragments[1]);}catch failure is InvalidUrl {throw InvalidUrl(fragments[0].length()+1+failure.offset(),failure.reason());}
+        }else{UrlFragment();};
+        let body=fragments[0];let queries=body.split("?");
+        let query=if queries.size()>1 {
+            try{UrlQuery(body.slice(queries[0].length()+1,body.length()));}
+                catch failure is InvalidUrl {throw InvalidUrl(queries[0].length()+1+failure.offset(),failure.reason());}
+        }else{UrlQuery();};
+        let hierarchical=queries[0];let colons=hierarchical.split(":");
+        let has_scheme=colons.size()>1 && colons[0].split("/").size()==1;
+        let scheme=if has_scheme {
+            confirm colons[0]!="" else throw InvalidUrl(0,"empty scheme");UrlSchemeText(colons[0]).string();
+        }else{"";};
+        let path_authority=if has_scheme {hierarchical.slice(colons[0].length()+1,hierarchical.length());}else{hierarchical;};
+        let prefix=if has_scheme {colons[0].length()+1;}else{0;};
+        if path_authority.length()>=2 && path_authority.slice(0,2)=="//" {
+            let after=path_authority.slice(2,path_authority.length());let segments=after.split("/");
+            let authority=try{ParsedUrlAuthority(segments[0]).value();}
+                catch failure is InvalidUrl {throw InvalidUrl(prefix+2+failure.offset(),failure.reason());};
+            let path=after.slice(segments[0].length(),after.length());
+            let parts=try{UrlParts(scheme,authority,path,query,fragment);}
+                catch failure is InvalidUrl {
+                    let offset=prefix+2+segments[0].length()+failure.offset();
+                    throw InvalidUrl(if offset>origin.length() {origin.length();}else{offset;},failure.reason());
+                };
+            return UrlReference(parts);
+        }
+        let parts=try{UrlParts(scheme,UrlAuthority(),path_authority,query,fragment);}
+            catch failure is InvalidUrl {throw InvalidUrl(prefix+failure.offset(),failure.reason());};
+        UrlReference(parts);
+    }
+}
+object UrlSchemeText {
+    has origin is string;UrlSchemeText(origin is string){self.origin=origin;}
+    string() is string {
+        if origin=="" {return "";}
+        confirm origin.length()<=8192 && UrlAsciiText(origin.slice(0,1)).characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            && UrlAsciiText(origin).characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
+            else throw InvalidUrl(0,"invalid URL scheme");
+        UrlAsciiText(origin).lower();
+    }
+}
+// Resolution, rather than reference construction, removes dot segments. The
+// profiled bulk operation avoids VM ownership walks over a persistent stack.
+object UrlDotSegments {
+    has origin is string;UrlDotSegments(origin is string){self.origin=origin;}
+    value() is string {
+        confirm origin.length()<=8192 else throw InvalidUrl(8192,"dot path source limit exceeded");
+        let path=try{url_dot_segments(origin);}catch failure is NativeFailure {
+            if failure.domain()=="core.url_text" && failure.code()=="invalid_input" {throw InvalidUrl(0,"invalid bounded dot path");}
+            throw;
+        };path;
+    }
+}
+object UrlResolution {
+    has base is Url;has reference is UrlReference;
+    UrlResolution(base is Url, reference is UrlReference){self.base=base;self.reference=reference;}
+    value() is Url {
+        let original=base.parts();let relative=reference.parts();
+        if relative.scheme()!="" {
+            return Url(UrlParts(relative.scheme(),relative.authority(),UrlDotSegments(relative.path()).value(),relative.query(),relative.fragment()));
+        }
+        if relative.authority().present() {
+            return Url(UrlParts(original.scheme(),relative.authority(),UrlDotSegments(relative.path()).value(),relative.query(),relative.fragment()));
+        }
+        if relative.path()=="" {
+            let query=if relative.query().present() {relative.query();}else{original.query();};
+            return Url(UrlParts(original.scheme(),original.authority(),original.path(),query,relative.fragment()));
+        }
+        let merged=if relative.path().slice(0,1)=="/" {relative.path();}else{
+            if original.authority().present() && original.path()=="" {"/"+relative.path();}else{
+                let segments=original.path().split("/");
+                let prefix is @string=(0..segments.size()-1).map() -> index {segments[index];};
+                (if segments.size()>1 {prefix.join("/")+"/";}else{"";})+relative.path();
+            }
+        };
+        Url(UrlParts(original.scheme(),original.authority(),UrlDotSegments(merged).value(),relative.query(),relative.fragment()));
+    }
+}
+
+test "query presence and reserved escapes survive canonicalization" {
+    test.ok(UrlQuery()!=UrlQuery(""));
+    test.is(UrlQuery("%7e%2f").string(),"~%2F");
+}
+test "authority presence includes empty userinfo and unassigned port" {
+    test.is(ParsedUrlAuthority("@example:").value().string(),"@example:");
+    test.ok(!UrlAuthority().present());
+    test.ok(ParsedUrlAuthority("").value().present());
+}
+test "explicit URL reference resolution preserves empty query and trailing slash" {
+    let base=ParsedUrl("http://a/b/c?q#old").value();
+    test.is(base.url(ParsedUrlReference("../g/").value()).string(),"http://a/g/");
+    test.is(base.url(ParsedUrlReference("?").value()).string(),"http://a/b/c?");
+}

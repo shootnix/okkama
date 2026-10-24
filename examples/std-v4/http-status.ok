@@ -1,0 +1,9 @@
+module app v1.0.0;
+import "http/status" take Status, StatusClass;
+import "io/stdout" take Stdout;
+main() is int {
+    let status=Status(422);Stdout().writeln(status.code().string()+" "+status.phrase());
+    let extension=Status(599);
+    Stdout().writeln("extension class is server_error: "+(extension.class()==StatusClass.server_error).string());
+    0;
+}

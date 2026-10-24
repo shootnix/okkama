@@ -1,0 +1,226 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Modules and native boundaries",
+  "description": "Module system and native declarations (spec section 5).",
+  "contracts": [
+    {
+      "id": "MOD.RESOLUTION",
+      "title": "Import paths are source paths resolved local-first (importer directory, then stdlib); .ok is appended; local shadows stdlib",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.NAMESPACE",
+      "title": "Plain imports expose owned declarations only through the basename namespace, also in type positions",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.TAKE",
+      "title": "take exposes exactly the selected owned names as bare bindings; missing names fail",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-012"
+      ],
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.ALIAS",
+      "title": "`as` replaces the namespace",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-008"
+      ],
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.NO-REEXPORT",
+      "title": "A module's own imports are not re-exported",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.DEFINING-SCOPE",
+      "title": "Declaration bodies resolve names in their defining module",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.MULTI-FILE",
+      "title": "Several files form one module with file-local imports; names and versions must match",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.IDEMPOTENT",
+      "title": "Repeated and shared imports register once",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.IMPORT-MAIN-NOT-RUN",
+      "title": "Importing a module never runs its main",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.CYCLES",
+      "title": "Cyclic imports are rejected",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.DUPLICATES",
+      "title": "Duplicate bare names are errors; qualified same-named declarations coexist with distinct identities",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "MOD.FILE-IDENTITY",
+      "title": "A physical file reached through different spellings is one module; imports are relative to the physical file",
+      "spec_refs": [
+        "docs/import-identity.md",
+        "improvements-roadmap/results/IMP-17/RESULT.md"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "NATIVE.DECL",
+      "title": "Native declarations are module-scoped, typed and bodyless; main, byte, async, variadic and defaults are not native forms",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.3",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Modules and native boundaries"
+    },
+    {
+      "id": "NATIVE.LINK",
+      "title": "A native declaration without a matching provider is a runtime error with no Okkama fallback",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.3",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Modules and native boundaries"
+    }
+  ]
+}

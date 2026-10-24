@@ -1,0 +1,83 @@
+module runtime/fs v1.0.0;
+
+// Portable lexical path helpers. Style is 0 for POSIX and 1 for Windows.
+native path_join(parts is @string, style is int) is string;
+native path_parent(origin is string, style is int) is string;
+native path_child(origin is string, part is string, style is int) is string;
+native path_absolute(origin is string, style is int) is bool;
+
+// Raw filesystem capabilities shared by every high-level filesystem module.
+native object FileHandle;
+native object DirectoryHandle;
+native object FileState;
+native object FileLockState;
+native object TemporaryDirectoryState;
+native object FileWatchState;
+
+native path_encode(path is string) is @byte;
+native path_decode(path is @byte) is string;
+
+native open(path is @byte, flags is int, mode is int) is FileHandle;
+native read(handle is FileHandle, size is int) is @byte;
+native write(handle is FileHandle, bytes is @byte) is int;
+native seek(handle is FileHandle, offset is int, origin is int) is int;
+native flush(handle is FileHandle) is bool;
+native truncate(handle is FileHandle, size is int) is bool;
+native sync(handle is FileHandle) is bool;
+native lock_shared(handle is FileHandle) is bool;
+native lock_exclusive(handle is FileHandle) is bool;
+native unlock(handle is FileHandle) is bool;
+native close(handle is FileHandle) is bool;
+
+// Lazy high-level file state. mode is FileMode's stable 0..4 ABI code;
+// encoding is one of the canonical portable names, or empty in binary mode.
+native file_state_create(path is @byte, mode is int, encoding is string, binary is bool) is FileState;
+native file_state_read_text(state is FileState) is string;
+native file_state_read_line(state is FileState) is string;
+native file_state_read(state is FileState, limit is int) is @byte;
+native file_state_write(state is FileState, value is @byte) is int;
+native file_state_write_text(state is FileState, values is @string, newline is bool) is int;
+native file_state_flush(state is FileState) is bool;
+native file_state_close(state is FileState) is bool;
+native file_state_position(state is FileState) is int;
+native file_state_seek(state is FileState, offset is int, origin is int) is int;
+native file_state_truncate(state is FileState, size is int) is bool;
+// mode: 0 shared, 1 exclusive; waiting: 0 wait, 1 immediate.
+native file_state_lock(state is FileState, mode is int, waiting is int) is FileLockState;
+native file_lock_closed(state is FileLockState) is bool;
+native file_lock_close(state is FileLockState) is bool;
+native file_content(path is @byte) is @byte;
+native directory_entries(path is @byte) is @string;
+native directory_remove_tree(path is @byte) is bool;
+native matching_paths(root is @byte, pattern is string) is @string;
+native file_watch_create(path is @byte) is FileWatchState;
+native async file_watch_event(state is FileWatchState) is %string:string;
+native file_watch_closed(state is FileWatchState) is bool;
+native file_watch_close(state is FileWatchState) is bool;
+native temporary_file_create(directory is @byte, prefix is string) is FileState;
+native file_state_closed(state is FileState) is bool;
+native temporary_file_path(state is FileState) is @byte;
+native temporary_file_preserve(state is FileState, destination is @byte) is bool;
+native temporary_directory_create(directory is @byte, prefix is string) is TemporaryDirectoryState;
+native temporary_directory_path(state is TemporaryDirectoryState) is @byte;
+native temporary_directory_closed(state is TemporaryDirectoryState) is bool;
+native temporary_directory_close(state is TemporaryDirectoryState) is bool;
+
+native stat(path is @byte) is %string:int;
+native lstat(path is @byte) is %string:int;
+native mkdir(path is @byte, mode is int) is bool;
+native rmdir(path is @byte) is bool;
+native unlink(path is @byte) is bool;
+native rename(source is @byte, target is @byte) is bool;
+native link(source is @byte, target is @byte) is bool;
+native symlink(target is @byte, link_path is @byte) is bool;
+native readlink(path is @byte) is @byte;
+native cwd() is @byte;
+native chdir(path is @byte) is bool;
+native chmod(path is @byte, mode is int) is bool;
+native chown(path is @byte, owner is int, group is int) is bool;
+
+native opendir(path is @byte) is DirectoryHandle;
+native readdir(handle is DirectoryHandle) is @byte;
+native rewinddir(handle is DirectoryHandle) is bool;
+native closedir(handle is DirectoryHandle) is bool;

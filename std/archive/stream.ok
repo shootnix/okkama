@@ -1,0 +1,217 @@
+module archive/stream v1.0.0;
+
+import "archive/entry" take ArchiveEntry;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "error" take InvalidState;
+
+// Consuming archive resources, never cursors. entry() returns one independent
+// immutable member or throws EndOfArchive after observed normal completion.
+// finished() is passive: no input read, prefetch or implicit finalization.
+// Writers accept explicit write commands; finish writes the format terminator
+// and performs its documented flush before reporting successful completion.
+// Writes/repeated finish after completion are InvalidState.
+//
+// Borrowed byte streams remain caller-owned on success and failure. close() is
+// idempotent, releases only private state and never means finish. After close
+// only close/closed are valid. Other processing Errors preserve their identity
+// and leave the adapter failed: only close/closed remain valid, with no retry.
+// Partial output is neither retried nor rolled back. Concrete owners destroy
+// their own state; retained entries outlive them. No concrete wire format here.
+role ReadingArchive {
+    entry() is ArchiveEntry;
+    finished() is bool;
+    close() is void;
+    closed() is bool;
+
+    // One empty file, then observed EOF. Test storage is per fake instance.
+    fake {
+        entry() is ArchiveEntry {
+            confirm !self.closed() else throw InvalidState("archive reading is closed");
+            if fake.storage.has("read") {
+                fake.storage.set("finished", true);
+                throw EndOfArchive();
+            }
+            fake.storage.set("read", true);
+            ArchiveEntry.fake();
+        }
+        finished() is bool {
+            confirm !self.closed() else throw InvalidState("archive reading is closed");
+            fake.storage.has("finished");
+        }
+        close() is void { fake.storage.clear(); fake.storage.set("closed", true); }
+        closed() is bool { fake.storage.has("closed"); }
+    }
+}
+
+role WritingArchive {
+    write(entry is ArchiveEntry) is void;
+    finish() is void;
+    finished() is bool;
+    close() is void;
+    closed() is bool;
+
+    // Accepts values and records completion; it does not encode any format.
+    fake {
+        write(entry is ArchiveEntry) is void {
+            confirm !self.finished() else throw InvalidState("archive writing has finished");
+        }
+        finish() is void {
+            confirm !self.finished() else throw InvalidState("archive writing has finished");
+            fake.storage.set("finished", true);
+        }
+        finished() is bool {
+            confirm !self.closed() else throw InvalidState("archive writing is closed");
+            fake.storage.has("finished");
+        }
+        close() is void { fake.storage.clear(); fake.storage.set("closed", true); }
+        closed() is bool { fake.storage.has("closed"); }
+    }
+}
+
+// Shared lifecycle adapter over an explicit synchronous one-entry operation.
+// Construction does not invoke it. Each active entry() invokes it exactly once,
+// retains no returned member and does not prefetch. The operation must enforce
+// ArchiveLimits BEFORE materializing payload; this adapter cannot retroactively
+// bound returned data. Format errors and actual allocation bounds belong to the
+// operation/concrete reader. Captured dependencies follow normal closure lifetime.
+// Owns only status: empty=active, byte 1=normal EOF, byte 2=processing failure.
+//
+//     let stream = ArchiveReading(() is ArchiveEntry { source.entry(); });
+//     let member = stream.entry(); // may throw EndOfArchive
+//     stream.close();             // does not close source
+object ArchiveReading does ReadingArchive, Closing {
+    has next_entry is () is ArchiveEntry;
+    has status is ByteBuffer;
+
+    ArchiveReading(next_entry is () is ArchiveEntry) {
+        self.next_entry = next_entry;
+        status = ByteBuffer();
+    }
+
+    entry() is ArchiveEntry {
+        confirm !self.finished() else throw EndOfArchive();
+        try { next_entry(); }
+        catch end is EndOfArchive {
+            status.writing() <- [byte(1)];
+            throw end;
+        }
+        catch error is Error {
+            status.writing() <- [byte(2)];
+            throw error;
+        }
+    }
+    finished() is bool {
+        self.usable();
+        status.content().size() > 0;
+    }
+    close() is void { status.closing().close(); }
+    closed() is bool { status.closing().closed(); }
+    destroy { self.close(); }
+
+    private:
+    usable() is void {
+        confirm !self.closed() else throw InvalidState("archive reading is closed");
+        let phase = status.content().bytes();
+        confirm phase.size() == 0 || phase[0] != byte(2)
+            else throw InvalidState("archive reading has failed");
+    }
+}
+
+// Shared writer lifecycle. The supplied write/finish operations perform all
+// format work and documented flushing. They receive the exact entry once; the
+// adapter neither inspects members nor independently flushes/closes a sink.
+// Constructor only binds operations and private state. A failed write or finish
+// poisons the stream, including an EndOfArchive raised by a writer operation.
+// Destructor/close never invoke either operation or synthesize a terminator.
+object ArchiveWriting does WritingArchive, Closing {
+    has write_entry is (ArchiveEntry) is void;
+    has finish_stream is () is void;
+    has status is ByteBuffer;
+
+    ArchiveWriting(write_entry is (ArchiveEntry) is void, finish_stream is () is void) {
+        self.write_entry = write_entry;
+        self.finish_stream = finish_stream;
+        status = ByteBuffer();
+    }
+
+    write(entry is ArchiveEntry) is void {
+        confirm !self.finished() else throw InvalidState("archive writing has finished");
+        try { write_entry(entry); }
+        catch error is Error { status.writing() <- [byte(2)]; throw error; }
+    }
+    finish() is void {
+        confirm !self.finished() else throw InvalidState("archive writing has finished");
+        try { finish_stream(); }
+        catch error is Error { status.writing() <- [byte(2)]; throw error; }
+        status.writing() <- [byte(1)];
+    }
+    finished() is bool {
+        self.usable();
+        status.content().size() > 0;
+    }
+    close() is void { status.closing().close(); }
+    closed() is bool { status.closing().closed(); }
+    destroy { self.close(); }
+
+    private:
+    usable() is void {
+        confirm !self.closed() else throw InvalidState("archive writing is closed");
+        let phase = status.content().bytes();
+        confirm phase.size() == 0 || phase[0] != byte(2)
+            else throw InvalidState("archive writing has failed");
+    }
+}
+
+object EndOfArchive does Error {
+    EndOfArchive();
+    text() is string { "end of archive"; }
+}
+
+// Root inline test bodies cannot resolve imported ArchiveEntry identity in
+// anonymous action signatures. Consumer suite 313 verifies the concrete callback
+// adapters through ordinary imports; inline tests cover the local role contracts.
+test "archive reader fake consumes one entry before stable EOF" {
+    let reader = ReadingArchive.fake();
+    let independent = ReadingArchive.fake();
+    test.ok(!reader.finished());
+    let entry = reader.entry();
+    test.is(entry.path().string(), "entry");
+    test.ok(!reader.finished());
+    test.ok(try { reader.entry(); false; } catch end is EndOfArchive { true; });
+    test.ok(reader.finished());
+    test.ok(try { reader.entry(); false; } catch end is EndOfArchive { true; });
+    test.ok(!independent.finished());
+    reader.close();reader.close();
+    test.ok(reader.closed());
+    test.is(entry.path().string(), "entry");
+    test.ok(try { reader.entry(); false; } catch error is Error { true; });
+    independent.close();
+}
+
+test "archive writer fake finishes once and rejects terminal writes" {
+    let reader = ReadingArchive.fake();
+    let entry = reader.entry();
+    let writer = WritingArchive.fake();
+    test.ok(!writer.finished());
+    writer.write(entry);
+    writer.finish();
+    test.ok(writer.finished());
+    test.ok(try { writer.write(entry); false; } catch error is Error { true; });
+    test.ok(try { writer.finish(); false; } catch error is Error { true; });
+    writer.close();writer.close();
+    test.ok(writer.closed());
+    test.ok(!reader.closed());reader.close();
+}
+
+test "archive fake lifetimes are independent and end diagnostic is stable" {
+    let abandoned = WritingArchive.fake();
+    let empty = WritingArchive.fake();
+    abandoned.close();
+    test.ok(!empty.finished());
+    empty.finish();test.ok(empty.finished());
+    test.ok(try { abandoned.finish(); false; } catch error is Error { true; });
+    test.ok(try { abandoned.finished(); false; } catch error is Error { true; });
+    empty.close();
+    test.is(EndOfArchive().text(), "end of archive");
+}

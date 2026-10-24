@@ -1,0 +1,38 @@
+module app v1.0.0;
+import "mail/imap_session" take ImapSession, SearchedMail, FetchedMail;
+import "mail/imap_exchange" take ImapCommandChannel;
+import "mail/imap_command_reading" take ImapCommandLimits;
+import "mail/imap_command" take ImapDatum;
+import "mail/imap" take ImapCapabilities;
+import "mail/imap_name" take ImapMailboxName;
+import "mail/imap_search" take AllMail;
+import "net/stream" take AsyncReading, AsyncWriting;
+import "io/stream" take Reading, ByteSource, Closing;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "async/event" take Event;
+
+// A deterministic authenticated-protocol transcript, not a TLS/auth connector.
+// Account scope is explicit; reuse the same scope only for the same account.
+object Transcript does AsyncReading, AsyncWriting, Closing {
+    has input is Reading;has output is ByteBuffer;has stopped is Event;
+    Transcript(input is Reading, output is ByteBuffer) {self.input=input;self.output=output;stopped=Event();}
+    async bytes(limit is int) is @byte {input.bytes(if limit<3 {limit;} else {3;});}
+    async write(source is ByteSource) is AsyncWriting {output.writing().write(source);self;}
+    closed() is bool {stopped.ready();}
+    close() is void {stopped.set();}
+}
+async main() is int {
+    let input=ByteBuffer(Utf8Encoded("* FLAGS ()\r\n* 1 EXISTS\r\n* OK [UIDVALIDITY 7] epoch\r\nO1 OK selected\r\n* SEARCH 42\r\nO2 OK found\r\n* 1 FETCH (UID 42 BODY[TEXT] {5}\r\nHello)\r\nO3 OK fetched\r\n").bytes());
+    let output=ByteBuffer();defer input.closing().close();defer output.closing().close();
+    let transcript=Transcript(input.reading(),output);
+    let channel=ImapCommandChannel(transcript,transcript,transcript,[],ImapCommandLimits());
+    let session=ImapSession(channel,ImapCapabilities(["IMAP4rev1"]),"example-account");defer session.close();
+    let selected=await session.mailbox(ImapMailboxName("INBOX"));
+    let ids=await SearchedMail(selected,AllMail()).uids();
+    let messages=await FetchedMail(selected,ids,[ImapDatum.body]).messages();
+    Stdout().writeln("UID "+messages.item(0).uid().string()+": "+Utf8Decoded(messages.item(0).body()).string());
+    Stdout().writeln(Utf8Decoded(output.content().bytes()).string());
+    0;
+}

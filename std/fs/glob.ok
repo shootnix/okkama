@@ -1,0 +1,100 @@
+module fs/glob v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "fs/directory" take DirectoryLocating;
+import "fs/file" take FileSystemFailure;
+import "fs/path" take Path;
+import "runtime/fs" take path_encode, matching_paths;
+
+// MatchingPaths snapshots every path below root that matches a relative glob
+// pattern. Results are globally lexicographically sorted before cursor()
+// returns. Patterns always use / between segments, including on Windows.
+//
+// Files immediately inside src:
+//
+//     let sources is @Path = MatchingPaths(
+//         root: project,
+//         pattern: "src/*.ok",
+//     ).map() -> path { path; };
+//
+// Recursive test discovery:
+//
+//     for MatchingPaths(root: project, pattern: "**/*-test.ok") -> path {
+//         output.writeln(path.string());
+//     }
+//
+// `*` matches zero or more Unicode characters inside one segment, `?` matches
+// exactly one, and classes accept literals, ranges and leading ! negation:
+//
+//     MatchingPaths(root: logs, pattern: "202[4-6]-[!0]?-*.log");
+//
+// Matching is case-sensitive on every platform and includes leading dots.
+// `**` is recursive only as a complete segment and matches zero or more path
+// segments. A matching symlink path is returned, but traversal never enters it.
+
+object MatchingPaths does Iterating<Path> {
+    has origin is DirectoryLocating;
+    has glob is string;
+
+    MatchingPaths(root is DirectoryLocating, pattern is string) {
+        origin = root;
+        glob = pattern;
+    }
+
+    cursor() is Cursor<Path> {
+        let paths is @string = try {
+            matching_paths(path_encode(origin.path().string()), glob);
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "invalid_input" {
+                throw InvalidGlobPattern(glob, failure.message());
+            }
+            else if failure.code() == "not_found" {
+                throw FileSystemFailure(
+                    "invalid_input",
+                    "glob root must be an existing directory",
+                );
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        };
+        MatchingPathCursor(paths: paths, position: 0);
+    }
+}
+
+object MatchingPathCursor does Cursor<Path> {
+    has paths is @string;
+    has position is int;
+
+    MatchingPathCursor(:paths, :position);
+
+    available() is bool { position < paths.size(); }
+
+    item() is Path {
+        confirm self.available() else throw IterationEnded();
+        Path(paths[position]);
+    }
+
+    successor() is Cursor<Path> {
+        confirm self.available() else throw IterationEnded();
+        MatchingPathCursor(paths: paths, position: position + 1);
+    }
+}
+
+object InvalidGlobPattern does Error {
+    has origin is string;
+    has message is string;
+
+    InvalidGlobPattern(pattern is string, message is string) {
+        origin = pattern;
+        self.message = message;
+    }
+
+    pattern() is string { origin; }
+
+    #projected
+    text() is string {
+        "invalid glob pattern \"" + origin + "\": " + message;
+    }
+}

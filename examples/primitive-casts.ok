@@ -1,0 +1,22 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+
+// Программа показывает одиночные преобразования и построение массивов @T(...).
+// Запуск из корня: OKKAMA_STDLIB_DIR=std ./okkama-pl/okkama examples/primitive-casts.ok
+// Вывод: 101, -3, 3, 112, 0 (каждое значение на отдельной строке).
+// Числа преобразуются явно; строки не разбираются, массивы иммутабельны.
+main() is int {
+    let output = Stdout();
+    let label is string = string(101);
+    let whole is int = int(-3.9);
+    let packet = @byte(122, 11, 22);
+    let singleton = @byte(112);
+    let empty = @byte();
+
+    output.writeln(label);
+    output.writeln(string(whole));
+    output.writeln(string(packet.size()));
+    output.writeln(string(singleton[0]));
+    output.writeln(string(empty.size()));
+    return 0;
+}

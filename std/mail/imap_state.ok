@@ -1,0 +1,119 @@
+module mail/imap_state v1.0.0;
+import "mail/imap_response" take ParsedImapResponse;
+import "encoding/utf" take Utf8Encoded;
+
+import "mail/imap_response" take ImapResponse, ImapResponseKind;
+import "mail/imap_command_reading" take ImapCommandRead;
+import "mail/imap_metadata" take ImapStatusCode, ImapUnsigned, ImapFlagsValue;
+import "mail/imap_data" take ParsedImapData, ImapValueKind, InvalidImapData;
+import "mail/imap_uid" take ImapUid, ImapUidValidity, ImapSequence;
+import "mail/mailbox" take MailFlags;
+import "numbers/bigint" take BigInt;
+import "error" take InvalidState;
+
+// SELECT's UNSEEN response code is a first sequence number, not an unseen count.
+// Optional observations remain explicit. EXPUNGE invalidates a nonzero RECENT
+// observation and adjusts/invalidates the first-unseen sequence conservatively.
+object ImapMailboxState {
+    has value is ImapSelectionProgress;
+    ImapMailboxState(result is ImapCommandRead, read_only is bool) {
+        result.require_success();let progress=ImapSelectionProgress(read_only);
+        let responses=result.responses();
+        for (0..responses.size()) -> index {progress=progress.observed(responses.item(index));}
+        progress=progress.observed(result.completion());progress.validate();value=progress;
+    }
+    messages() is int {value.messages();}
+    has_recent() is bool {value.has_recent();}
+    recent() is int {value.recent();}
+    has_first_unseen() is bool {value.has_first_unseen();}
+    first_unseen() is ImapSequence {value.first_unseen();}
+    uid_validity() is ImapUidValidity {value.uid_validity();}
+    has_uid_next() is bool {value.has_uid_next();}
+    uid_next() is ImapUid {value.uid_next();}
+    flags() is MailFlags {value.flags();}
+    read_only() is bool {value.read_only();}
+    persistent_uids() is bool {value.persistent_uids();}
+    observed(response is ImapResponse) is ^ImapMailboxState {
+        let progress=value.observed(response);progress.validate();^value=progress;
+    }
+}
+object ImapSelectionProgress {
+    has count, recent is int;has unseen is @ImapSequence;has validity is @ImapUidValidity;has following_uid is @ImapUid;
+    has marks is MailFlags;has readonly, forced_readonly, persistent, flags_seen is bool;
+    ImapSelectionProgress(read_only is bool) {
+        count=-1;recent=-1;unseen=[];validity=[];following_uid=[];marks=MailFlags([]);
+        readonly=read_only;forced_readonly=read_only;persistent=true;flags_seen=false;
+    }
+    observed(response is ImapResponse) is ^ImapSelectionProgress {
+        let name=response.name();
+        if response.kind()==ImapResponseKind.untagged && (name=="EXISTS" || name=="RECENT" || name=="EXPUNGE") {
+            let values=ParsedImapData(response).entries();
+            confirm values.size()==3 && values.item(1).kind()==ImapValueKind.atom else throw InvalidImapData("invalid numeric mailbox update");
+            let number=ImapUnsigned(values.item(1).string(),name=="EXPUNGE").value();
+            if name=="EXISTS" {
+                confirm count<0 || number>=count else throw InvalidImapData("EXISTS cannot decrease without EXPUNGE");
+                ^count=number;
+            } else {
+                if name=="RECENT" {^recent=number;} else {
+                    confirm count>=number else throw InvalidImapData("EXPUNGE sequence exceeds mailbox size");
+                    ^count=count-1;
+                    if recent>0 {^recent=-1;}
+                    if unseen.size()>0 {
+                        if unseen[0].value()==number {^unseen=[];}
+                        else {if unseen[0].value()>number {^unseen=[ImapSequence(unseen[0].value()-1)];}}
+                    }
+                }
+            }
+        }
+        if response.kind()==ImapResponseKind.untagged && name=="FLAGS" {
+            let values=ParsedImapData(response).entries();confirm values.size()==3 else throw InvalidImapData("invalid FLAGS response");
+            ^marks=ImapFlagsValue(values.item(2)).flags();^flags_seen=true;
+        }
+        if response.kind()==ImapResponseKind.untagged && name=="FETCH" {^unseen=[];}
+        if response.kind()==ImapResponseKind.tagged || name=="OK" || name=="NO" || name=="BAD" || name=="PREAUTH" || name=="BYE" {
+            let code=ImapStatusCode(response);
+            if code.present() {
+                let key=code.name();let arguments=code.arguments();
+                if key=="UIDVALIDITY" || key=="UIDNEXT" || key=="UNSEEN" {
+                    confirm arguments.size()==1 && arguments.item(0).kind()==ImapValueKind.atom else throw InvalidImapData("invalid numeric response code");
+                    let number=ImapUnsigned(arguments.item(0).string(),true).value();
+                    if key=="UIDVALIDITY" {
+                        if validity.size()>0 && validity[0].string()!=number.string() {^following_uid=[];^unseen=[];}
+                        ^validity=[ImapUidValidity(BigInt(number.string()))];
+                    }
+                    if key=="UIDNEXT" {^following_uid=[ImapUid(BigInt(number.string()))];}
+                    if key=="UNSEEN" {^unseen=[ImapSequence(number)];}
+                }
+                if key=="READ-ONLY" {confirm arguments.size()==0 else throw InvalidImapData("READ-ONLY has arguments");^readonly=true;}
+                if key=="READ-WRITE" {
+                    confirm arguments.size()==0 else throw InvalidImapData("READ-WRITE has arguments");
+                    // EXAMINE's read-only request cannot be relaxed by the server.
+                    ^readonly=forced_readonly;
+                }
+                if key=="UIDNOTSTICKY" {^persistent=false;}
+            }
+        }
+    }
+    validate() is void {
+        confirm count>=0 && validity.size()==1 && flags_seen else throw InvalidImapData("selection requires EXISTS, FLAGS and UIDVALIDITY");
+        confirm recent<0 || recent<=count else throw InvalidImapData("RECENT exceeds EXISTS");
+        confirm unseen.size()==0 || unseen[0].value()<=count else throw InvalidImapData("first unseen sequence exceeds EXISTS");
+    }
+    messages() is int {count;}
+    has_recent() is bool {recent>=0;}
+    recent() is int {confirm self.has_recent() else throw InvalidState("RECENT is unknown");recent;}
+    has_first_unseen() is bool {unseen.size()>0;}
+    first_unseen() is ImapSequence {confirm self.has_first_unseen() else throw InvalidState("first unseen sequence is unknown");unseen[0];}
+    uid_validity() is ImapUidValidity {confirm validity.size()==1 else throw InvalidState("UIDVALIDITY is unknown");validity[0];}
+    has_uid_next() is bool {following_uid.size()>0;}
+    uid_next() is ImapUid {confirm self.has_uid_next() else throw InvalidState("UIDNEXT is unknown");following_uid[0];}
+    flags() is MailFlags {marks;}
+    read_only() is bool {readonly;}
+    persistent_uids() is bool {persistent;}
+}
+
+test "selection progress keeps absent observations distinct from zero" {
+    let state=ImapSelectionProgress(true);
+    state=state.observed(ParsedImapResponse(Utf8Encoded("* 0 EXISTS\r\n").bytes()).response());
+    test.is(state.messages(),0);test.is(state.has_recent(),false);test.is(state.read_only(),true);
+}

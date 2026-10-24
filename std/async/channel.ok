@@ -1,0 +1,133 @@
+module async/channel v1.0.0;
+
+/*
+=head1 NAME
+
+async/channel - bounded typed channels for cooperative async work
+
+=head1 DESCRIPTION
+
+C<Channel<T>> owns one FIFO communication state. C<sending()> returns a
+write-only C<Sending<T>> capability and C<receiving()> returns a read-only
+C<Receiving<T>> capability. Keep the channel owner where lifecycle decisions
+belong and pass only the narrower capability to collaborators.
+
+A positive capacity buffers at most that many values. Capacity zero creates an
+unbuffered rendezvous: C<send()> and C<item()> finish only after meeting each
+other. Negative capacities throw C<InvalidChannelCapacity>.
+
+=head1 BUFFERED CHANNEL
+
+    let channel is Channel<string> = Channel(capacity: 16);
+    let producer = spawn Producer(output: channel.sending()).run();
+
+    for 0..16 -> ignored {
+        consume(await channel.receiving().item());
+    }
+    await producer;
+
+=head1 UNBUFFERED RENDEZVOUS
+
+    object Producer {
+        has output is Sending<int>;
+        Producer(:output);
+
+        async run() is int {
+            await output.send(42);
+            return 0;
+        }
+    }
+
+    async main() is int {
+        let channel is Channel<int> = Channel(capacity: 0);
+        let producer = spawn Producer(output: channel.sending()).run();
+        let value = await channel.receiving().item();
+        await producer;
+        confirm value == 42;
+        return 0;
+    }
+
+=head1 CLOSING
+
+Either endpoint may close the complete channel. Closing is idempotent. New and
+blocked sends throw C<ChannelClosed>. Already buffered values remain available;
+after they are drained, C<item()> throws C<ChannelClosed>.
+
+    let sending = channel.sending();
+    defer sending.close();
+    await sending.send(value);
+
+Dropping endpoint objects does not close a channel. Failure of an unrelated
+task does not close it either. Close ownership must remain explicit.
+
+=head1 FAIRNESS AND CANCELLATION
+
+Waiting senders and receivers are selected FIFO. Once an operation enters a
+waiter queue, a later operation of the same kind cannot bypass it. Scheduling
+of runnable continuations belongs to the async runtime rather than the channel.
+
+Cancelling a blocked operation removes that waiter exactly once. Cancellation
+after a direct handoff cannot undo or duplicate the delivered value. The API
+deliberately has no polling C<try_send()>, C<try_receive()> or C<closed()>
+observation.
+
+=cut
+*/
+
+object Channel<T> {
+    Channel(capacity is int) {}
+
+    sending() is Sending<T> {
+        Sending();
+    }
+
+    receiving() is Receiving<T> {
+        Receiving();
+    }
+}
+
+object Sending<T> {
+    Sending() {}
+
+    async send(value is T) is Sending<T> {
+        panic "Sending.send is a VM intrinsic";
+        self;
+    }
+
+    close() is void {
+        panic "Sending.close is a VM intrinsic";
+    }
+}
+
+object Receiving<T> {
+    Receiving() {}
+
+    async item() is T {
+        panic "Receiving.item is a VM intrinsic";
+    }
+
+    close() is void {
+        panic "Receiving.close is a VM intrinsic";
+    }
+}
+
+object ChannelClosed does Error {
+    ChannelClosed();
+
+    text() is string {
+        "channel is closed";
+    }
+}
+
+object InvalidChannelCapacity does Error {
+    has capacity is int;
+    InvalidChannelCapacity(:capacity);
+
+    capacity() is int {
+        capacity;
+    }
+
+    text() is string {
+        "channel capacity must not be negative";
+    }
+}

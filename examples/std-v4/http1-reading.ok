@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "http/http1_reading" take Http1ResponseHeadReading;
+import "net/unix" take UnixPaired;
+import "io/decorators" take ByteSnapshot;
+import "encoding/single_byte" take Latin1Encoded;
+import "io/stdout" take Stdout;
+async main() is int {
+    let pair=await UnixPaired().result();let input=pair.first();let output=pair.second();
+    defer input.close();defer output.close();
+    await output.output().write(ByteSnapshot(Latin1Encoded("HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nbody").bytes()));
+    let parsed=await Http1ResponseHeadReading(input.input()).result();
+    Stdout().writeln(parsed.head().status().code().string());
+    // parsed.remainder() belongs to the next body framing operation. A stream
+    // may split the write anywhere, so it need not contain all four body bytes.
+    confirm !input.closed();0;
+}

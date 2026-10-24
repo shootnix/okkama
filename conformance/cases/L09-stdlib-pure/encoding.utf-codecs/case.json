@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.utf-codecs",
+  "title": "UTF-8/16/32 codecs with explicit byte order",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.UTF",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - utf8 bytes\nok 2 - utf16 big endian\nok 3 - utf32 little endian\nok 4 - utf16 round trip\nok 5 - overlong rejected\nok 6 - surrogate rejected\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/utf.ok",
+    "RFC 3629",
+    "RFC 2781"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "UTF-8 (RFC 3629) and UTF-16/32 encodings computed independently with Python codecs; overlong and surrogate sequences are malformed at the byte offset where the scalar begins."
+  },
+  "status": "mandatory"
+}

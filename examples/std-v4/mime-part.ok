@@ -1,0 +1,17 @@
+module app v1.0.0;
+import "mime/part" take MimePart, TextBody, MultipartBody, ParsedMime, MimeContent;
+import "message/header" take MessageHeader, MessageHeaderName, MessageHeaders;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdout" take Stdout;
+main() is int {
+    let leaf_headers=MessageHeaders([
+        MessageHeader(MessageHeaderName("Content-Type"),"text/plain; charset=UTF-8"),
+        MessageHeader(MessageHeaderName("Content-Transfer-Encoding"),"base64")]);
+    let leaf=MimePart(leaf_headers,TextBody("Привет, MIME!","UTF-8"));
+    let body=MultipartBody("mixed","okkama-example",[leaf]);
+    let headers=MessageHeaders([MessageHeader(MessageHeaderName("Content-Type"),"multipart/mixed; boundary=okkama-example")]);
+    let message=MimePart(headers,body);let wire=message.bytes();
+    Stdout().writeln(Utf8Decoded(wire).string());
+    Stdout().writeln(MimeContent(ParsedMime(wire).part()).type().string());
+    0;
+}

@@ -1,0 +1,132 @@
+module template/library v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "template/compile" take TextTemplate;
+
+// Exact association between a nonempty Unicode name and a plain template.
+// Names are not paths: no trimming, case folding, normalization or I/O.
+// Declaration/lookup never compiles or renders the retained template.
+// Example: NamedTemplate("header", TextTemplate("Hello {{name}}"));
+object NamedTemplate {
+    has key is string;
+    has origin is TextTemplate;
+    NamedTemplate(name is string, value is TextTemplate) {
+        confirm name != "" else throw InvalidTemplateName();
+        key = name;
+        origin = value;
+    }
+    name() is string { key; }
+    value() is TextTemplate { origin; }
+}
+
+// Immutable ordered library, empty by default. Sequence constructors snapshot
+// size once then each ascending item once, rejecting invalid size/excess count
+// before item access. Optional nonnegative maximum_templates defaults to 1024;
+// zero permits an empty source. Duplicates are checked after the full snapshot.
+// Original source failures propagate; no cursor/first/last/close calls.
+// Queries never revisit the source. Missing names throw MissingTemplate, while
+// membership returns false, including for "". Returned values/names outlive us.
+// Retains TextTemplate owners; no resource acquisition, compilation or destroy.
+// O(n) references, O(n²) duplicate checks, O(n) lookups within the count bound.
+// The count does not limit source bytes; TextTemplate owns compile/output limits.
+// Example: TemplateLibrary([NamedTemplate("greeting",TextTemplate("Hello"))]);
+// Partial expansion is a separate contract: this module only names templates.
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/library.ok
+object TemplateLibrary {
+    has origin is @NamedTemplate;
+    TemplateLibrary() { origin = []; }
+    TemplateLibrary(values is Sequencing<NamedTemplate>) {
+        origin = TemplateLibrarySnapshot(values, 1024).items();
+    }
+    TemplateLibrary(values is Sequencing<NamedTemplate>, maximum_templates is int) {
+        origin = TemplateLibrarySnapshot(values, maximum_templates).items();
+    }
+    membership(name is string) is bool {
+        for origin -> item {
+            if item.name() == name { return true; }
+        }
+        false;
+    }
+    value(name is string) is TextTemplate {
+        for origin -> item {
+            if item.name() == name { return item.value(); }
+        }
+        throw MissingTemplate(name);
+    }
+    names() is Sequencing<string> {
+        let names is @string = origin.map() -> item { item.name(); };
+        names;
+    }
+}
+
+// Internal snapshot collaborator; public only because Okkama has no
+// module-private declarations. No source observation after construction.
+object TemplateLibrarySnapshot {
+    has origin is @NamedTemplate;
+    TemplateLibrarySnapshot(source is Sequencing<NamedTemplate>, maximum is int) {
+        confirm maximum >= 0 else throw InvalidTemplateLibraryLimit();
+        let size = source.size();
+        confirm size >= 0 else throw InvalidTemplateLibrarySize();
+        confirm size <= maximum else throw TemplateLibraryLimitExceeded();
+        let snapshot is @NamedTemplate = (0..size).map() -> index { source.item(index); };
+        for (0..size) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[index].name() != snapshot[previous].name()
+                    else throw DuplicateTemplate(snapshot[index].name());
+            }
+        }
+        origin = snapshot;
+    }
+    items() is @NamedTemplate { origin; }
+}
+
+// Lookup/declaration errors preserve exact names for programmatic diagnostics.
+object MissingTemplate does Error {
+    has origin is string;
+    MissingTemplate(name is string) { origin = name; }
+    name() is string { origin; }
+    text() is string { "missing template: " + origin; }
+}
+object DuplicateTemplate does Error {
+    has origin is string;
+    DuplicateTemplate(name is string) { origin = name; }
+    name() is string { origin; }
+    text() is string { "duplicate template: " + origin; }
+}
+object InvalidTemplateName does Error {
+    InvalidTemplateName();
+    text() is string { "template name must not be empty"; }
+}
+object InvalidTemplateLibraryLimit does Error {
+    InvalidTemplateLibraryLimit();
+    text() is string { "template library limit must be nonnegative"; }
+}
+object InvalidTemplateLibrarySize does Error {
+    InvalidTemplateLibrarySize();
+    text() is string { "template library source size must be nonnegative"; }
+}
+object TemplateLibraryLimitExceeded does Error {
+    TemplateLibraryLimitExceeded();
+    text() is string { "template library limit exceeded"; }
+}
+
+// Imported constructors currently fail lookup in root test bodies; successful
+// nonempty library/rendering and source-failure cases run in consumer suite 285.
+test "empty and missing templates have explicit behavior" {
+    test.is(TemplateLibrary().names().size(), 0);
+    test.is(TemplateLibrary([], 0).membership(""), false);
+    test.is(try {TemplateLibrary().value("x"); "bad";}
+        catch e is MissingTemplate {e.name();}, "x");
+}
+test "empty library permits zero and rejects negative bounds" {
+    test.is(TemplateLibrary([]).names().size(), 0);
+    test.is(TemplateLibrary([],0).names().size(), 0);
+    test.ok(try {TemplateLibrary([],-1);false;} catch e is InvalidTemplateLibraryLimit {true;});
+}
+test "template errors retain exact names and stable diagnostics" {
+    test.is(MissingTemplate("é.x").name(), "é.x");
+    test.is(MissingTemplate("é.x").text(), "missing template: é.x");
+    test.is(DuplicateTemplate("é.x").name(), "é.x");
+    test.is(DuplicateTemplate("é.x").text(), "duplicate template: é.x");
+    test.is(InvalidTemplateName().text(), "template name must not be empty");
+}

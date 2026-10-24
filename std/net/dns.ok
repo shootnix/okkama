@@ -1,0 +1,137 @@
+module net/dns v1.0.0;
+import "net/endpoint" take HostName,HostEndpoint,IpEndpoint,InvalidHostName;
+import "runtime/network" as network;
+import "async/scope" take FutureGroup;
+import "net/ip" take IpAddress;
+import "collections/sequence" take Sequencing;
+import "collections/ordering" take Sorted,SortedBy;
+import "compare" take Comparing,Order;
+import "error" take InvalidArgument;
+
+role Resolving {
+    async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint>;
+    async name(origin is IpAddress) is HostName;
+}
+// Explicit configuration records, never native DNS wire records or object map
+// keys. Snapshot at construction; canonical identity and source order are exact.
+object HostAddresses {
+    has host is HostName;has origin is @IpAddress;
+    HostAddresses(host is HostName,addresses is Sequencing<IpAddress>){self.host=host;origin=DnsAddressSnapshot(addresses).items();}
+    host() is HostName{host;}addresses() is Sequencing<IpAddress>{origin;}
+}
+object AddressName {
+    has address is IpAddress;has name is HostName;
+    AddressName(address is IpAddress,name is HostName){self.address=address;self.name=name;}
+    address() is IpAddress{address;}name() is HostName{name;}
+}
+object FixedResolution does Resolving {
+    has hosts is @HostAddresses;has names is @AddressName;
+    FixedResolution(hosts is Sequencing<HostAddresses>){
+        let empty is @AddressName=[];let records=DnsConfiguration(hosts,empty);self.hosts=records.hosts();names=records.names();
+    }
+    FixedResolution(hosts is Sequencing<HostAddresses>,names is Sequencing<AddressName>){
+        let records=DnsConfiguration(hosts,names);self.hosts=records.hosts();self.names=records.names();
+    }
+    async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint> {
+        for hosts -> record {if record.host().order(origin.host())==Order.equal {
+            let source=record.addresses();let endpoints is @IpEndpoint=(0..source.size()).map()->index{IpEndpoint(source.item(index),origin.port());};return endpoints;
+        }}
+        throw UnknownHost(origin.host());
+    }
+    async name(origin is IpAddress) is HostName {
+        for names -> record{if record.address().order(origin)==Order.equal{return record.name();}}
+        throw UnknownAddress(origin);
+    }
+}
+object SystemResolution does Resolving {
+    SystemResolution();
+    async addresses(origin is HostEndpoint) is Sequencing<IpEndpoint> {
+        let group is FutureGroup<@@string>=FutureGroup();let cleanup=DnsAnswerCleanup(group);defer await cleanup.close();
+        try {
+            let pending=network.dns_addresses(origin.host().ascii(),origin.port());group.start(pending);let records=await pending;
+            let result is @IpEndpoint=records.map()->record{IpEndpoint(IpAddress(record[0]),origin.port(),record[2]);};result;
+        }catch e is NativeFailure {
+            if e.domain()=="core.net" {
+                if e.code()=="not_found" {throw UnknownHost(origin.host());}
+                if e.code()=="resource_exhausted" {throw ResolutionLimitExceeded("addresses");}
+                throw DnsFailure(e.message());
+            }throw;
+        }
+    }
+    async name(origin is IpAddress) is HostName {
+        let group is FutureGroup<string>=FutureGroup();let cleanup=DnsNameCleanup(group);defer await cleanup.close();
+        try {
+            let pending=network.dns_name(origin.string());group.start(pending);let value=await pending;
+            try{HostName(value);}catch e is InvalidHostName{throw DnsFailure("invalid reverse hostname from system resolver");}
+        }catch e is NativeFailure {
+            if e.domain()=="core.net" {if e.code()=="not_found"{throw UnknownAddress(origin);}throw DnsFailure(e.message());}throw;
+        }
+    }
+}
+object DnsAnswerCleanup {
+    has group is FutureGroup<@@string>;DnsAnswerCleanup(group is FutureGroup<@@string>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+object DnsNameCleanup {
+    has group is FutureGroup<string>;DnsNameCleanup(group is FutureGroup<string>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+object DnsFailure does Error {
+    has message is string;DnsFailure(message is string){self.message=message;}
+    text() is string{"system DNS failure: "+message;}
+}
+object DnsConfiguration {
+    has hosts is @HostAddresses;has names is @AddressName;
+    DnsConfiguration(hosts is Sequencing<HostAddresses>,names is Sequencing<AddressName>){
+        let forward=hosts.size();let reverse=names.size();
+        confirm forward>=0 && reverse>=0 else throw InvalidArgument("negative DNS configuration size");
+        confirm forward<=256 && reverse<=256 else throw ResolutionLimitExceeded("records");
+        let h is @HostAddresses=(0..forward).map()->index{hosts.item(index);};let n is @AddressName=(0..reverse).map()->index{names.item(index);};
+        let host_keys is @string=h.map()->record{record.host().ascii();};let address_keys is @string=n.map()->record{record.address().string();};
+        let by_host=Sorted(host_keys);let by_address=Sorted(address_keys);
+        for (0..forward) -> index{if index>0{confirm by_host.item(index)!=by_host.item(index-1) else throw InvalidArgument("duplicate canonical DNS host");}}
+        for (0..reverse) -> index{if index>0{confirm by_address.item(index)!=by_address.item(index-1) else throw InvalidArgument("duplicate DNS reverse address");}}
+        self.hosts=h;self.names=n;
+    }
+    hosts() is @HostAddresses{hosts;}names() is @AddressName{names;}
+}
+object DnsAddressSnapshot {
+    has origin is @IpAddress;
+    DnsAddressSnapshot(source is Sequencing<IpAddress>){
+        let count=source.size();confirm count>0 else throw InvalidArgument("DNS answer must contain addresses");
+        confirm count<=256 else throw ResolutionLimitExceeded("addresses");
+        let indexed is @DnsIndexedAddress=(0..count).map()->index{DnsIndexedAddress(source.item(index),index);};
+        let ordered=Sorted(indexed);
+        let positions is @int=(0..count).filter()->index{index==0 || ordered.item(index).address().order(ordered.item(index-1).address())!=Order.equal;};
+        let kept is @DnsIndexedAddress=positions.map()->index{ordered.item(index);};
+        let preserved is SortedBy<DnsIndexedAddress,int>=SortedBy(kept,(item is DnsIndexedAddress) is int {item.position();});
+        let values is @IpAddress=(0..preserved.size()).map()->index{preserved.item(index).address();};origin=values;
+    }
+    items() is @IpAddress{origin;}
+}
+object DnsIndexedAddress does Comparing<DnsIndexedAddress> {
+    has address is IpAddress;has position is int;
+    DnsIndexedAddress(address is IpAddress,position is int){self.address=address;self.position=position;}
+    address() is IpAddress{address;}position() is int{position;}
+    order(other is DnsIndexedAddress) is Order{address.order(other.address());}
+}
+object UnknownHost does Error {
+    has host is HostName;UnknownHost(host is HostName){self.host=host;}host() is HostName{host;}
+    text() is string{"unknown network host: "+host.ascii();}
+}
+object UnknownAddress does Error {
+    has address is IpAddress;UnknownAddress(address is IpAddress){self.address=address;}address() is IpAddress{address;}
+    text() is string{"no configured reverse name for "+address.string();}
+}
+object ResolutionLimitExceeded does Error {
+    has kind is string;ResolutionLimitExceeded(kind is string){self.kind=kind;}kind() is string{kind;}
+    text() is string{"DNS "+kind+" limit exceeded";}
+}
+async test "fixed lookup preserves requested port without a system resolver" {
+    let resolver=FixedResolution([HostAddresses(HostName("example.com"),[IpAddress("192.0.2.1")])]);
+    test.is((await resolver.addresses(HostEndpoint(HostName("EXAMPLE.com"),443))).item(0).port(),443);
+}
+async test "system lookup cancellation before start launches no worker" {
+    let pending=SystemResolution().addresses(HostEndpoint(HostName("unused.invalid"),80));pending.cancel();
+    test.ok(try{await pending;false;}catch e is Cancelled{true;});
+}

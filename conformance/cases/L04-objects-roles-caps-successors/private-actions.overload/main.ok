@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Fmt {
+    Fmt();
+    show(v is int) is string { self.render(v); }
+    show(v is string) is string { self.render(v); }
+    private:
+    render(v is int) is string { "int:" + v.string(); }
+    render(v is string) is string { "text:" + v; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Fmt().show(5));
+    out.writeln(Fmt().show("x"));
+    0;
+}

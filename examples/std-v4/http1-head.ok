@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "http/http1_head" take ParsedHttp1RequestHead,ParsedHttp1ResponseHead;
+import "http/body" take EmptyBody;
+import "io/stdout" take Stdout;
+main() is int {
+    let request=ParsedHttp1RequestHead("GET //report? HTTP/1.1\r\nHost: example.com\r\n\r\n").value();
+    let response=ParsedHttp1ResponseHead("HTTP/1.1 299 custom\r\nX: one\r\nX: two\r\n\r\n").value();
+    confirm request.host().string()=="example.com" && response.headers().entries().size()==2;
+    Stdout().writeln(request.request(EmptyBody()).target().string());
+    Stdout().writeln(response.response(EmptyBody()).status().code().string());
+    0;
+}

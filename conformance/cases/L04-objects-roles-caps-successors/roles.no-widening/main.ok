@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Named {
+    name() is string;
+}
+
+role Labeled {
+    name() is string;
+    label() is string;
+}
+
+object Tag does Named, Labeled {
+    Tag();
+    name() is string { "tag"; }
+    label() is string { "#tag"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let narrow is Named = Tag();
+    let wide is Labeled = narrow;
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,159 @@
+module fs/watch v1.0.0;
+
+import "fs/file" take FileSystemFailure;
+import "fs/path" take Path;
+import "io/stream" take Closing;
+import "runtime/fs" take
+    FileWatchState,
+    path_encode,
+    file_watch_create,
+    file_watch_event,
+    file_watch_closed,
+    file_watch_close;
+
+// FileWatch observes an existing file or directory without exposing blocking
+// operating-system events through Cursor. A directory watch covers the
+// directory itself and its immediate children; it is deliberately not
+// recursive. Use one FileWatch per directory when a tree must be observed.
+//
+// Wait for one change:
+//
+//     let watch = FileWatch(path: workspace.path());
+//     defer watch.close();
+//     let event is FileEvent = await watch.event();
+//     output.writeln(event.kind().string(), ": ", event.path().string());
+//
+// Consume changes continuously:
+//
+//     let watch = FileWatch(path: configuration.parent());
+//     defer watch.close();
+//     loop {
+//         let event is FileEvent = await watch.event();
+//         if event.path() == configuration {
+//             reload(configuration);
+//         }
+//     }
+//
+// A rename carries the new path in path() and the old path in
+// previous_path():
+//
+//     let event is FileEvent = await watch.event();
+//     if event.kind() == FileEventKind.renamed {
+//         output.writeln(
+//             event.previous_path().string(),
+//             " -> ",
+//             event.path().string(),
+//         );
+//     }
+//
+// previous_path() is intentionally unavailable for created, modified and
+// removed events. Only one event() call may be pending on a watch. Providers
+// may coalesce repeated identical changes that happen faster than they can be
+// observed, but preserve the order of the events they do report.
+
+enum FileEventKind = (created, modified, removed, renamed);
+
+object FileEvent {
+    has origin is Path;
+    has classification is FileEventKind;
+    has previous is string;
+
+    FileEvent(path is Path, kind is FileEventKind) {
+        origin = path;
+        classification = kind;
+        previous = "";
+    }
+
+    FileEvent(path is Path, kind is FileEventKind, previous_path is Path) {
+        origin = path;
+        classification = kind;
+        previous = previous_path.string();
+    }
+
+    path() is Path { origin; }
+
+    kind() is FileEventKind { classification; }
+
+    previous_path() is Path {
+        confirm !previous.empty() else throw MissingPreviousPath(origin);
+        Path(previous);
+    }
+}
+
+object FileWatch does Closing {
+    has state is FileWatchState;
+
+    FileWatch(path is Path) {
+        state = try {
+            file_watch_create(path_encode(path.string()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        };
+    }
+
+    async event() is FileEvent {
+        let details is %string:string = try {
+            await file_watch_event(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        };
+        let name is string = details["kind"];
+        let kind is FileEventKind = match name {
+            case "created" { FileEventKind.created; }
+            case "modified" { FileEventKind.modified; }
+            case "removed" { FileEventKind.removed; }
+            case "renamed" { FileEventKind.renamed; }
+            else {
+                throw FileSystemFailure(
+                    "invalid_data",
+                    "runtime returned an unknown file-event kind",
+                );
+            }
+        };
+        if kind == FileEventKind.renamed {
+            FileEvent(
+                path: Path(details["path"]),
+                kind: kind,
+                previous_path: Path(details["previous"]),
+            );
+        }
+        else {
+            FileEvent(path: Path(details["path"]), kind: kind);
+        }
+    }
+
+    closed() is bool {
+        try {
+            file_watch_closed(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    close() is void {
+        try {
+            file_watch_close(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object MissingPreviousPath does Error {
+    has origin is Path;
+
+    MissingPreviousPath(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    #projected
+    text() is string {
+        "file event has no previous path: " + origin.string();
+    }
+}

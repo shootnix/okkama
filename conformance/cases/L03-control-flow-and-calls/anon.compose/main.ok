@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let compose is ((int) is int, (int) is int) is (int) is int =
+        (first is (int) is int, second is (int) is int) is (int) is int {
+            (value is int) is int { second(first(value)); };
+        };
+    let inc is (int) is int = (v is int) is int { v + 1; };
+    let dbl is (int) is int = (v is int) is int { v * 2; };
+    out.writeln(compose(inc, dbl)(5).string());
+    out.writeln(compose(dbl, inc)(5).string());
+    0;
+}

@@ -1,0 +1,209 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Cross-feature interactions",
+  "description": "L12 interaction contracts derived from research and improvement findings.",
+  "contracts": [
+    {
+      "id": "X.GENERIC-ROLE-SUCCESSOR",
+      "title": "Generic successors keep specialization through role contracts",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5",
+        "okkama-pl/t/interpreter/916-generic-successor-arguments.t"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "required",
+        "interaction": "n/a: the contract itself is an interaction"
+      }
+    },
+    {
+      "id": "X.AWAIT-CAP",
+      "title": "Cap selection on an awaited receiver suspends cooperatively (IMP-21)",
+      "spec_refs": [
+        "improvements-roadmap/results/IMP-21/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.CTOR-RESOURCES",
+      "title": "Constructor-owned resources in nested blocks are released on failure and owned on success (IMP-09)",
+      "spec_refs": [
+        "improvements-roadmap/results/IMP-09/RESULT.md",
+        "docs/resource-lifetimes.md"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.ALIAS-NOMINAL",
+      "title": "Aliased modules with same-spelled nominal types keep distinct identities",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "required",
+        "interaction": "n/a: the contract itself is an interaction"
+      }
+    },
+    {
+      "id": "X.EXACT-TRANSPORT",
+      "title": "Exact numbers survive JSON and database transport (IMP-24)",
+      "spec_refs": [
+        "docs/sql-numeric-transport.md",
+        "improvements-roadmap/results/IMP-24/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "n/a: the contract itself is an interaction"
+      }
+    },
+    {
+      "id": "X.PRIMARY-FAILURE",
+      "title": "A primary failure survives a failing cleanup during transactions",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#19",
+        "improvements-roadmap/results/IMP-09/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.CONCURRENT-WRITERS",
+      "title": "Concurrent writers via compare-and-replace lose no updates; duplicate commands apply once (IMP-08, IMP-10)",
+      "spec_refs": [
+        "improvements-roadmap/results/IMP-08/RESULT.md",
+        "improvements-roadmap/results/IMP-10/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.MALFORMED-BOUNDARY",
+      "title": "Malformed inputs are rejected with typed errors at decoding/resource boundaries",
+      "spec_refs": [
+        "std/encoding/utf.ok",
+        "std/json/parse.ok"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "required",
+        "interaction": "n/a: the contract itself is an interaction"
+      }
+    },
+    {
+      "id": "X.CANCELLATION-CLEANUP",
+      "title": "Cancelling a running task runs its cleanup and surfaces Cancelled",
+      "spec_refs": [
+        "docs/async-guide.md#4.5"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.ROLE-ASYNC",
+      "title": "Role restrictions survive async results",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#12.1"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "required",
+        "interaction": "n/a: the contract itself is an interaction"
+      }
+    },
+    {
+      "id": "X.CAP-TRANSPORT",
+      "title": "Caps keep their type through collections, generics and closures",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.2.1"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.RETURN-CLEANUP",
+      "title": "Return, defer and destroy ordering with a returned resource",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.6",
+        "docs/okkama-spec-11072026.md#19"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "n/a: no failing combination is specified beyond the member contracts' own invalid cases",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "X.FUTURE-SUCCESSOR",
+      "title": "Successor obligations transfer through awaited futures",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.1"
+      ],
+      "status": "mandatory",
+      "family": "Cross-feature interactions",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: interaction contracts are exercised through their combined behaviour",
+        "invalid": "required",
+        "interaction": "n/a: the contract itself is an interaction"
+      }
+    }
+  ]
+}

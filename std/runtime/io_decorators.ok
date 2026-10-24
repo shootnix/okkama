@@ -1,0 +1,15 @@
+module runtime/io_decorators v1.0.0;
+
+// Narrow mutable counters used by io/decorators. They retain no wrapped
+// Reading/Writing objects and expose no generic mutable-cell abstraction.
+
+native object LimitedReadingState;
+native object ChainedReadingState;
+
+native limited_reading_state_create(limit is int) is LimitedReadingState;
+native limited_reading_state_remaining(state is LimitedReadingState) is int;
+native limited_reading_state_consume(state is LimitedReadingState, amount is int) is int;
+
+native chained_reading_state_create() is ChainedReadingState;
+native chained_reading_state_position(state is ChainedReadingState) is int;
+native chained_reading_state_advance(state is ChainedReadingState) is int;

@@ -1,0 +1,29 @@
+// Поднять API проверки готовности
+//
+// Сервис должен отвечать на /health и возвращать понятный ответ для остальных путей.
+//
+// Запуск: ./examples/cookbook/run lab recipe-web
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-web
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/web v1.0.0;
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes,Get;
+import "web/request" take WebRequest;
+import "web/reply" take Text;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult;
+
+object Health {
+    Health();
+    async ready(request is WebRequest) is HandlingResult { Text(200, "готов"); }
+    async missing(request is WebRequest) is HandlingResult { Exception(404, "Маршрут не найден"); }
+}
+
+async main() is int {
+    let endpoints = Health();
+    let routes = WebRoutes([Get("/health", endpoints.ready)], endpoints.missing);
+    await WebApplication(routes).listen("127.0.0.1", 8080);
+    0;
+}

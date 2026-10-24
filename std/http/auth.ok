@@ -1,0 +1,117 @@
+module http/auth v1.0.0;
+import "crypto/secret" take SecretBytes,ExportedSecret;
+import "http/client" take Exchanging,HttpClientKey;
+import "http/exchange" take ClientResponse;
+import "http/message" take Request;
+import "http/header" take Header,HeaderName;
+import "http/target" take RequestTargetKind;
+import "http/endpoint" take HttpEndpointSelection,AllEndpoints;
+import "net/dns" take FixedResolution;
+import "url/value" take Url,UrlDotSegments;
+import "url/value" take ParsedUrl;
+import "http/target" take AbsoluteTarget;
+import "http/header" take Headers;
+import "http/method" take Method;
+import "encoding/single_byte" take AsciiEncoded,AsciiDecoded,UnrepresentableAsciiCharacter;
+import "encoding/base64" take Base64Encoded;
+
+object BasicCredentials {
+    has username is string;has password is SecretBytes;
+
+    BasicCredentials(username is string,password is SecretBytes){
+        confirm username.length()<=1024 && password.size()<=4096 else throw InvalidAuthentication("credential size");
+        let octets=try{AsciiEncoded(username).bytes();}catch e is UnrepresentableAsciiCharacter{throw InvalidAuthentication("ASCII username required");};
+        let valid is bool=octets.reduce(true)->valid,octet{valid && octet.int()>=32 && octet.int()<=126 && octet.int()!=58;};
+        confirm valid else throw InvalidAuthentication("username syntax");
+        self.username=username;self.password=password;
+    }
+    username() is string{username;}
+
+    authorization() is Header{
+        let password=ExportedSecret(password).bytes();
+        let valid is bool=password.reduce(true)->valid,octet{valid && octet.int()>=32 && octet.int()<=126;};
+        confirm valid else throw InvalidAuthentication("ASCII password required");
+        let prefix=AsciiEncoded(self.username()+":").bytes();
+        let value is @byte=(0..prefix.size()+password.size()).map()->index{if index<prefix.size(){prefix[index];}else{password[index-prefix.size()];}};
+        Header(HeaderName("Authorization"),"Basic "+Base64Encoded(value).string());
+    }
+}
+role HttpAuthorizing {header() is Header;}
+// Explicit wire serialization capabilities. Neither diagnostic nor ordinary
+// SecretBytes observation performs this export; scoped consumers choose it.
+object BasicAuthorization does HttpAuthorizing {
+    has credentials is BasicCredentials;
+    BasicAuthorization(credentials is BasicCredentials){self.credentials=credentials;}
+
+    header() is Header{credentials.authorization();}
+}
+object BearerAuthorization does HttpAuthorizing {
+    has token is SecretBytes;
+    BearerAuthorization(token is SecretBytes){confirm token.size()>=1 && token.size()<=8192 else throw InvalidAuthentication("bearer size");self.token=token;}
+    header() is Header{
+        let octets=ExportedSecret(token).bytes();
+        let padding is int=(0..octets.size()).reduce(octets.size())->position,index{if position==octets.size() && octets[index].int()==61{index;}else{position;}};
+        let valid is bool=(0..octets.size()).reduce(padding>0)->correct,index{
+            let code=octets[index].int();correct && if index>=padding{code==61;}else{
+                (code>=65 && code<=90) || (code>=97 && code<=122) || (code>=48 && code<=57)
+                    || code==45 || code==46 || code==95 || code==126 || code==43 || code==47;
+            };
+        };
+        confirm valid else throw InvalidAuthentication("bearer token syntax");
+        Header(HeaderName("Authorization"),"Bearer "+AsciiDecoded(octets).string());
+    }
+}
+object BasicExchanging does Exchanging {
+    has scoped is ScopedAuthorization;
+    BasicExchanging(origin is Exchanging,scope is Url,credentials is BasicCredentials){scoped=ScopedAuthorization(origin,scope,BasicAuthorization(credentials));}
+    async response(request is Request) is ClientResponse{await scoped.response(request);}
+}
+object BearerExchanging does Exchanging {
+    has scoped is ScopedAuthorization;
+    BearerExchanging(origin is Exchanging,scope is Url,authorization is BearerAuthorization){scoped=ScopedAuthorization(origin,scope,authorization);}
+    async response(request is Request) is ClientResponse{await scoped.response(request);}
+}
+object AuthenticationScope {
+    has key,path is string;
+    AuthenticationScope(origin is Url){
+        confirm origin.parts().scheme()=="https" && !origin.parts().query().present() && !origin.parts().fragment().present()
+            else throw InvalidAuthentication("HTTPS scope without query or fragment required");
+        HttpEndpointSelection(origin,FixedResolution([]),AllEndpoints());
+        key=HttpClientKey(origin).string();let canonical=UrlDotSegments(origin.parts().path()).value();path=if canonical==""{"/";}else{canonical;};
+    }
+    matches(request is Request) is bool{
+        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidAuthentication("absolute auth target required");
+        let url=request.target().url();if HttpClientKey(url).string()!=key{return false;}
+        // Avoid credential emission for encoded path separators with differing
+        // application routing interpretations.
+        let raw=url.parts().path();if raw.split("%2F").size()>1 || raw.split("%5C").size()>1{return false;}
+        let candidate=UrlDotSegments(raw).value();let checked=if candidate==""{"/";}else{candidate;};
+        if checked==path{return true;}
+        if checked.length()<=path.length() || checked.slice(0,path.length())!=path{return false;}
+        path.slice(path.length()-1,path.length())=="/" || checked.slice(path.length(),path.length()+1)=="/";
+    }
+}
+object ScopedAuthorization does Exchanging {
+    has origin is Exchanging;has scope is AuthenticationScope;has authorization is HttpAuthorizing;
+    ScopedAuthorization(origin is Exchanging,scope is Url,authorization is HttpAuthorizing){self.origin=origin;self.scope=AuthenticationScope(scope);self.authorization=authorization;}
+    async response(request is Request) is ClientResponse{
+        if !scope.matches(request){return await origin.response(request);}
+        confirm !request.headers().membership(HeaderName("Authorization")) else throw AuthenticationConflict();
+        let outgoing=Request(request.method(),request.target(),request.headers().addition(authorization.header()),request.body(),request.version());
+        let result=await origin.response(outgoing);
+        if result.history().size()==0 && result.request().target().url().string()==request.target().url().string(){
+            return ClientResponse(request,result.response(),result.details());
+        }
+        result;
+    }
+}
+object InvalidAuthentication does Error {
+    has reason is string;InvalidAuthentication(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid authentication: "+reason;}
+}
+object AuthenticationConflict does Error{AuthenticationConflict();text() is string{"explicit Authorization conflicts with configured credentials";}}
+test "authentication scope uses canonical origin and path boundaries" {
+    let scope=AuthenticationScope(ParsedUrl("https://example.test/private/").value());
+    test.ok(scope.matches(Request(Method("GET"),AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").value()),Headers([]))));
+    test.ok(!scope.matches(Request(Method("GET"),AbsoluteTarget(ParsedUrl("https://example.test/private/../public").value()),Headers([]))));
+}

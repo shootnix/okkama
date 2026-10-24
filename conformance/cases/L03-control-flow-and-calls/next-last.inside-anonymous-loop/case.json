@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.next-last.inside-anonymous-loop",
+  "title": "a loop inside an anonymous action is its own target",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.NEXT-LAST",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "8\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.10: a loop declared inside the anonymous action establishes its own normal target."
+  },
+  "status": "mandatory"
+}

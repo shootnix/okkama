@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tagged {
+    has label is string;
+    has hidden is int;
+    Tagged(:label, :hidden);
+    label() is string { label; }
+}
+
+main() is int {
+    let out = Stdout();
+    let a = Tagged(label: "x", hidden: 1);
+    let b = Tagged(label: "x", hidden: 1);
+    let c = Tagged(label: "x", hidden: 2);
+    out.writeln(if a == b { "a==b"; } else { "a!=b"; });
+    out.writeln(if a == c { "a==c"; } else { "a!=c"; });
+    out.writeln(if a.label() == c.label() { "same label"; } else { "?"; });
+    0;
+}

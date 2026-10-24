@@ -1,0 +1,182 @@
+module mime/word v1.0.0;
+
+import "mime/media_type" take MimeToken, InvalidMediaType, MimeItems, MimePosition;
+import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
+import "encoding/hex" take HexDecoded, InvalidHex;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+
+// Strict RFC 2047 words for explicitly unstructured, unfolded field bodies.
+// Do not apply to whole structured headers. Forbidden context preserves text.
+// UTF-8/US-ASCII only; B output, B/Q input, no charset guessing or I/O.
+// See docs/std/mime-word.md for limits, observation and error positions.
+enum EncodedWordContext = (unstructured, forbidden);
+
+object EncodedWord {
+    has origin, charset is string;has maximum is int;
+    EncodedWord(origin is string) {
+        WordText(origin,"UTF-8",0).validate();self.origin=origin;charset="UTF-8";maximum=1048576;
+    }
+    EncodedWord(origin is string, charset is string) {
+        let label=WordCharset(charset,0).string();WordText(origin,label,0).validate();
+        self.origin=origin;self.charset=label;maximum=1048576;
+    }
+    EncodedWord(origin is string, charset is string, maximum_bytes is int) {
+        confirm maximum_bytes>=0 else throw InvalidArgument("encoded-word limit must be nonnegative");
+        let label=WordCharset(charset,0).string();WordText(origin,label,0).validate();
+        self.origin=origin;self.charset=label;maximum=maximum_bytes;
+    }
+    string() is string {
+        confirm Utf8Encoded(origin).bytes().size()<=maximum else throw EncodedWordLimitExceeded("input");
+        let start=MimePosition(0);let count=MimePosition(0);let words is MimeItems<string>=MimeItems();
+        for (0..origin.length()) -> index {
+            let width=Utf8Encoded(origin.slice(index,index+1)).bytes().size();
+            if count.index()+width>45 {
+                words=words.following(self.word(origin.slice(start.index(),index)));
+                start=start.following(index);count=count.following(0);
+            }
+            count=count.following(count.index()+width);
+        }
+        if start.index()<origin.length() {words=words.following(self.word(origin.slice(start.index(),origin.length())));}
+        let text=words.entries().join("\r\n ");
+        confirm text.length()<=maximum else throw EncodedWordLimitExceeded("output");text;
+    }
+    private:
+    word(text is string) is string {"=?"+charset+"?B?"+Base64Encoded(Utf8Encoded(text).bytes()).string()+"?=";}
+}
+object DecodedWords {
+    has origin is string;has context is EncodedWordContext;has maximum is int;
+    DecodedWords(origin is string) {self.origin=origin;context=EncodedWordContext.unstructured;maximum=1048576;}
+    DecodedWords(origin is string, context is EncodedWordContext) {self.origin=origin;self.context=context;maximum=1048576;}
+    DecodedWords(origin is string, context is EncodedWordContext, maximum_bytes is int) {
+        confirm maximum_bytes>=0 else throw InvalidArgument("encoded-word limit must be nonnegative");
+        self.origin=origin;self.context=context;maximum=maximum_bytes;
+    }
+    string() is string {
+        confirm Utf8Encoded(origin).bytes().size()<=maximum else throw EncodedWordLimitExceeded("input");
+        if context==EncodedWordContext.forbidden {return origin;}
+        WordText(origin,"US-ASCII",0).validate();
+        let output=ByteBuffer();defer output.closing().close();let writer=output.writing();
+        let position=MimePosition(0);let previous=WordPrevious(false);
+        loop {
+            let space=position.index();
+            loop {
+                let index=position.index();last if index==origin.length();
+                let char=origin.slice(index,index+1);last if char!=" " && char!="\t";
+                position=position.following(index+1);
+            }
+            let start=position.index();
+            if start==origin.length() {
+                writer.write(ByteSnapshot(Utf8Encoded(origin.slice(space,start)).bytes()));last;
+            }
+            loop {
+                let index=position.index();last if index==origin.length();
+                let char=origin.slice(index,index+1);last if char==" " || char=="\t";
+                position=position.following(index+1);
+            }
+            let token=origin.slice(start,position.index());let encoded=token.length()>=2 && token.slice(0,2)=="=?";
+            if !previous.encoded() || !encoded {writer.write(ByteSnapshot(Utf8Encoded(origin.slice(space,start)).bytes()));}
+            let text=if encoded {ParsedEncodedWord(token,start).string();} else {token;};
+            writer.write(ByteSnapshot(Utf8Encoded(text).bytes()));previous=previous.following(encoded);
+            confirm output.content().size()<=maximum else throw EncodedWordLimitExceeded("output");
+        }
+        let bytes=output.content().bytes();
+        confirm bytes.size()<=maximum else throw EncodedWordLimitExceeded("output");Utf8Decoded(bytes).string();
+    }
+}
+object InvalidEncodedWord does Error {
+    has position is int;has reason is string;
+    InvalidEncodedWord(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    text() is string {"invalid encoded word at scalar offset "+position.string()+": "+reason;}
+}
+object EncodedWordLimitExceeded does Error {
+    has limit is string;
+    EncodedWordLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"encoded-word "+limit+" byte limit exceeded";}
+}
+object WordPrevious {
+    has encoded is bool;
+    WordPrevious(encoded is bool) {self.encoded=encoded;}
+    encoded() is bool {encoded;}
+    following(encoded is bool) is ^WordPrevious {^encoded=encoded;}
+}
+object WordCharset {
+    has label is string;
+    WordCharset(origin is string, offset is int) {
+        let name=try {MimeToken(origin).string();}
+            catch failure is InvalidMediaType {throw InvalidEncodedWord(offset,"invalid charset");};
+        confirm name=="utf-8" || name=="us-ascii" else throw InvalidEncodedWord(offset,"unsupported charset");
+        label=if name=="utf-8" {"UTF-8";} else {"US-ASCII";};
+    }
+    string() is string {label;}
+}
+object WordText {
+    has origin, charset is string;has offset is int;
+    WordText(origin is string, charset is string, offset is int) {self.origin=origin;self.charset=charset;self.offset=offset;}
+    validate() is void {
+        for (0..origin.length()) -> index {
+            let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();let code=bytes[0].int();
+            confirm code==9 || (code>=32 && code!=127) else throw InvalidEncodedWord(offset+index,"control in word text");
+            confirm charset!="US-ASCII" || code<=127 else throw InvalidEncodedWord(offset+index,"non-ASCII text");
+        }
+    }
+}
+object ParsedEncodedWord {
+    has origin is string;has offset is int;
+    ParsedEncodedWord(origin is string, offset is int) {self.origin=origin;self.offset=offset;}
+    string() is string {
+        confirm origin.length()<=75 else throw InvalidEncodedWord(offset,"word exceeds 75 characters");
+        let fields=origin.split("?");
+        confirm fields.size()==5 && fields[0]=="=" && fields[4]=="=" && fields[3]!=""
+            else throw InvalidEncodedWord(offset,"malformed word delimiters");
+        let charset=WordCharset(fields[1],offset).string();let encoding=fields[2];
+        let begin=fields[1].length()+fields[2].length()+4;
+        let bytes is @byte=if encoding=="B" || encoding=="b" {
+            try {Base64Decoded(fields[3]).bytes();}
+                catch failure is InvalidBase64 {throw InvalidEncodedWord(offset+begin+failure.offset(),"invalid B encoding");}
+        } else {
+            confirm encoding=="Q" || encoding=="q" else throw InvalidEncodedWord(offset,"unsupported word encoding");
+            QWordBytes(fields[3],offset+begin).bytes();
+        };
+        let text=try {Utf8Decoded(bytes).string();}
+            catch failure is InvalidUtf8 {throw InvalidEncodedWord(offset,"invalid UTF-8 word");};
+        try {WordText(text,charset,0).validate();}
+            catch failure is InvalidEncodedWord {throw InvalidEncodedWord(offset,"invalid decoded word text");}
+        text;
+    }
+}
+object QWordBytes {
+    has origin is string;has offset is int;
+    QWordBytes(origin is string, offset is int) {self.origin=origin;self.offset=offset;}
+    bytes() is @byte {
+        let output=ByteBuffer();defer output.closing().close();let writer=output.writing();let position=MimePosition(0);
+        loop {
+            let index=position.index();last if index==origin.length();let char=origin.slice(index,index+1);
+            if char=="=" {
+                confirm index+3<=origin.length() else throw InvalidEncodedWord(offset+index,"incomplete Q escape");
+                let bytes=try {HexDecoded(origin.slice(index+1,index+3)).bytes();}
+                    catch failure is InvalidHex {throw InvalidEncodedWord(offset+index,"invalid Q escape");};
+                writer.write(ByteSnapshot(bytes));position=position.following(index+3);
+            } else {
+                let code=Utf8Encoded(char).bytes()[0].int();
+                confirm code>=33 && code<=126 && char!="?" else throw InvalidEncodedWord(offset+index,"invalid Q literal");
+                writer.write(ByteSnapshot([if char=="_" {32.byte();} else {code.byte();}]));position=position.following(index+1);
+            }
+        }
+        output.content().bytes();
+    }
+}
+
+test "encoded-word UTF-8 round trip" {
+    test.is(DecodedWords(EncodedWord("чай").string()).string(),"чай");
+}
+test "encoded words obey explicit context and reject malformed Q escapes" {
+    test.is(DecodedWords("=?UTF-8?Q?text?=",EncodedWordContext.forbidden).string(),"=?UTF-8?Q?text?=");
+    let offset=try {DecodedWords("=?UTF-8?Q?=GG?=").string();-1;}
+        catch failure is InvalidEncodedWord {failure.offset();};
+    test.is(offset,10);
+}

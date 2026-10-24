@@ -1,0 +1,187 @@
+module toml/parse v1.0.0;
+import "toml/value" take
+    TomlValue, TomlVisitor, TomlInteger, TomlFloat, TomlString, TomlBoolean,
+    TomlInfinity, TomlNaN, TomlArray, TomlTable, TomlMember,
+    TomlLocalDate, TomlLocalTime, TomlLocalDateTime, TomlOffset, TomlOffsetDateTime;
+import "runtime/toml" take
+    TomlParseState, TomlNodeState, toml_parse_state, toml_parse_valid,
+    toml_parse_offset, toml_parse_line, toml_parse_column, toml_parse_message,
+    toml_parse_root, toml_node_kind, toml_node_size, toml_node_integer,
+    toml_node_real, toml_node_boolean, toml_node_text, toml_node_coordinates,
+    toml_node_item, toml_member_name;
+
+// Immutable TOML 1.0 document representation; parsing occurs on value().
+// Construction binds text/budgets and rejects invalid configuration only.
+// Default bounds: 1048576 input Unicode scalars, depth 64, 10000 total nodes.
+// Root depth is 1. Arrays/table members each add a depth level, including
+// implicit dotted/header tables and each array-of-table element. Tables have
+// <=1024 members and arrays <=10000 items. Explicit depth is capped at 128
+// to prevent host stack exhaustion. No unbounded recursive configuration.
+// value() returns a complete nominal TomlTable, preserving insertion order;
+// syntax/number/conflict/budget errors throw InvalidToml with source coordinates.
+// Repeated observations are deterministic. Native parse memoization is private.
+// Returned values contain their own coordinates, so they outlive this object.
+// No resource acquisition/close/destroy, host zone, locale or implicit output.
+//
+// Strings: all four TOML forms, exact Unicode escapes, multiline CRLF -> LF,
+// initial newline trimming and basic-string backslash line folding.
+// Numbers: exact signed 64-bit int; finite binary64 retains signed zeros and
+// subnormals, overflow fails. Explicit infinity/NaN use separate value objects.
+// Temporal: validated dates/year zero, second 60 notation, fixed/unknown offset;
+// fractions beyond nine digits truncate, never round. No instant conversion.
+// Tables: decoded key uniqueness, sealed inline tables, dotted/table conflicts,
+// implicit parent declarations and most-recent array-of-table binding.
+// See docs/std/toml-parse-guide.md. This module does not write TOML documents.
+//
+//     let settings = ParsedToml("name='Ada'\nenabled=true").value();
+//     settings.value("name").accept(observer);
+//
+// Run tests as a root module, because dependency test blocks are not executed:
+// OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/toml/parse.ok
+
+object ParsedToml {
+    has state is TomlParseState;
+    ParsedToml(origin is string) {
+        state = toml_parse_state(origin, 1048576, 64, 10000);
+    }
+    ParsedToml(origin is string, maximum_input is int, maximum_depth is int, maximum_nodes is int) {
+        confirm maximum_input >= 0 && maximum_depth >= 1 && maximum_depth <= 128 && maximum_nodes >= 1
+            else throw InvalidTomlBudget();
+        state = toml_parse_state(origin, maximum_input, maximum_depth, maximum_nodes);
+    }
+    value() is TomlTable {
+        confirm toml_parse_valid(state) else throw InvalidToml(
+            toml_parse_offset(state), toml_parse_line(state),
+            toml_parse_column(state), toml_parse_message(state));
+        TomlNode(toml_parse_root(state)).table();
+    }
+}
+
+// Internal projection entity: one validated native node. Its represented
+// value/table is reconstructed with nominal constructors, never casts or JSON.
+// The kind switch is private substrate translation, not a TomlValue protocol.
+// Recursive projection is bounded by the parser's depth/node checks.
+object TomlNode {
+    has origin is TomlNodeState;
+    TomlNode(origin is TomlNodeState) { self.origin = origin; }
+    table() is TomlTable {
+        let members is @TomlMember = (0..toml_node_size(origin)).map() -> index {
+            TomlMember(toml_member_name(origin, index), TomlNode(toml_node_item(origin, index)).value());
+        };
+        TomlTable(members);
+    }
+    value() is TomlValue {
+        match toml_node_kind(origin) {
+            case 1 { let result is TomlValue = TomlInteger(toml_node_integer(origin)); result; }
+            case 2 { let result is TomlValue = TomlFloat(toml_node_real(origin)); result; }
+            case 3 { let result is TomlValue = TomlString(toml_node_text(origin)); result; }
+            case 4 { let result is TomlValue = TomlBoolean(toml_node_boolean(origin)); result; }
+            case 5 {
+                let values is @TomlValue = (0..toml_node_size(origin)).map() -> index {
+                    TomlNode(toml_node_item(origin, index)).value();
+                };
+                let result is TomlValue = TomlArray(values);
+                result;
+            }
+            case 6 { let result is TomlValue = self.table(); result; }
+            case 7 {
+                let c = toml_node_coordinates(origin);
+                let result is TomlValue = TomlLocalDate(c[0], c[1], c[2]);
+                result;
+            }
+            case 8 {
+                let c = toml_node_coordinates(origin);
+                let result is TomlValue = TomlLocalTime(c[0], c[1], c[2], c[3]);
+                result;
+            }
+            case 9 {
+                let c = toml_node_coordinates(origin);
+                let result is TomlValue = TomlLocalDateTime(
+                    TomlLocalDate(c[0], c[1], c[2]), TomlLocalTime(c[3], c[4], c[5], c[6]));
+                result;
+            }
+            case 10 {
+                let c = toml_node_coordinates(origin);
+                let result is TomlValue = TomlOffsetDateTime(TomlLocalDateTime(
+                    TomlLocalDate(c[0], c[1], c[2]), TomlLocalTime(c[3], c[4], c[5], c[6])),
+                    TomlOffset(c[7], c[8] == 1));
+                result;
+            }
+            case 11 { let result is TomlValue = TomlInfinity(toml_node_boolean(origin)); result; }
+            else { let result is TomlValue = TomlNaN(); result; }
+        }
+    }
+}
+
+object InvalidTomlBudget does Error {
+    InvalidTomlBudget();
+    text() is string { "invalid TOML parser budgets"; }
+}
+
+// Source coordinates identify the failed observation. No partial tree escapes.
+// text() supplies a readable diagnostic; message wording is not a stable ABI.
+object InvalidToml does Error {
+    has at is int;
+    has row is int;
+    has col is int;
+    has message is string;
+    InvalidToml(offset is int, line is int, column is int, message is string) {
+        at = offset; row = line; col = column; self.message = message;
+    }
+    offset() is int { at; }
+    line() is int { row; }
+    column() is int { col; }
+    text() is string { message + " at line " + row.string() + ", column " + col.string(); }
+}
+
+
+
+test "empty and ordered root are repeatable" {
+    let empty = ParsedToml("");
+    test.is(empty.value().members().size(), 0);
+    test.is(empty.value().members().size(), 0);
+    let table = ParsedToml("b=true\na=1").value();
+    test.is(table.members().first().name(), "b");
+    test.is(table.members().last().name(), "a");
+}
+test "nominal scalar and temporal projection" {
+    let table = ParsedToml("text=\"é\\n\"\ninteger=9007199254740993\nreal=1.25\nflag=true\ndate=0000-02-29\ntime=23:59:60.123400000999").value();
+    for ["text", "integer", "real", "flag", "date", "time"] -> name {
+        table.value(name).accept(TomlVisitor.fake());
+    }
+}
+test "lazy failure repeated observation and configuration errors" {
+    let invalid = ParsedToml("x=");
+    for 0..2 -> attempt {
+        test.is(try { invalid.value(); -1; } catch error is InvalidToml { error.offset(); }, 2);
+    }
+    test.ok(try { ParsedToml("", -1, 1, 1); false; } catch error is InvalidTomlBudget { true; });
+}
+test "duplicate and resource limits are typed failures" {
+    for ["x=1\nx=2", "a.b=1\n[a]", "a={b=1}\na.c=2", "x=9223372036854775808"] -> source {
+        test.ok(try { ParsedToml(source).value(); false; } catch error is InvalidToml { true; });
+    }
+    test.ok(try { ParsedToml("x=1", 2, 2, 2).value(); false; } catch error is InvalidToml { true; });
+    test.ok(try { ParsedToml("x=1", 3, 1, 2).value(); false; } catch error is InvalidToml { true; });
+    test.ok(try { ParsedToml("x=1", 3, 2, 1).value(); false; } catch error is InvalidToml { true; });
+}
+
+test "all value categories project through nominal callbacks" {
+    let table = ParsedToml("array=[\"é\\n\",true]\ninfinity=-inf\nnan=+nan\nlocal=0000-02-29T23:59:60.1234\nfixed=0000-02-29T23:59:60.1234-00:00").value();
+    for ["array", "infinity", "nan", "local", "fixed"] -> name {
+        table.value(name).accept(TomlVisitor.fake());
+    }
+    ParsedToml("\"\"=1\n\"a.b\"=true").value().accept(TomlVisitor.fake());
+}
+test "header-defined tables cannot be reopened with dotted keys" {
+    for ["[[a.b]]\n[a]\nb.y=2", "[a.b.c]\nz=9\n[a]\nb.c.t='bad'"] -> source {
+        test.ok(try { ParsedToml(source).value(); false; } catch error is InvalidToml { true; });
+    }
+    let invalid = try { ParsedToml("x=@").value(); "";} catch error is InvalidToml {
+        test.is(error.offset(), 2);
+        test.is(error.line(), 1);
+        test.is(error.column(), 3);
+        error.text();
+    };
+    test.ok(invalid.length() > 0);
+}

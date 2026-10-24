@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.bigint.arithmetic",
+  "title": "arbitrary-precision integer arithmetic",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.NUMBERS.BIGINT",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - bits of 2^64\nok 2 - square of 2^64\nok 3 - 2^100\nok 4 - truncating quotient\nok 5 - remainder sign\nok 6 - gcd\nok 7 - lcm\nok 8 - normalised zeros\nok 9 - sign\nchecks: 9, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/numbers/bigint.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Exact integer arithmetic (Python int): 2^128 = 340282366920938463463374607431768211456, 2^100 = 1267650600228229401496703205376; quotient truncates toward zero and the remainder has the dividend's sign."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.statistics.exact-samples",
+  "title": "descriptive statistics on exactly representable samples",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.STATISTICS",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - mean\nok 2 - median even\nok 3 - population variance\nok 4 - sample variance\nok 5 - exclusive quartiles\nok 6 - inclusive quartiles\nok 7 - empty sample\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/statistics.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Values chosen to be exact in binary64; cross-checked with Python statistics (mean 3, median 2.5, pvariance 2, variance 2.5, quantiles exclusive [2.25, 4.5, 6.75], inclusive [2.75, 4.5, 6.25]); empty samples throw StatisticsError."
+  },
+  "status": "mandatory"
+}

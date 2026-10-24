@@ -1,0 +1,32 @@
+// Прочитать элементы TAR по очереди
+//
+// Сохранить набор документов в TAR и прочитать обратно: TarArchive и TarWriting работают с явными потоками и форматом.
+//
+// Запуск: ./examples/cookbook/run lab example-archive-tar-reading
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-archive-tar-reading
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "archive/tar" take TarArchive, ParsedTar;
+import "archive/entry" take ArchiveEntry, ArchiveFile;
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "archive/limits" take ArchiveLimits;
+import "collections/list" take List, EmptyList;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let metadata=ArchiveMetadata(ArchiveModificationFromEpoch(rat(-1,2)).value(), "example");
+    let file=ArchiveFile(ArchivePath("документы/hello.txt"),metadata,Utf8Encoded("hello\n").bytes());
+    let empty is List<ArchiveEntry> = EmptyList();
+    let wire=TarArchive(empty.prefix(file)).bytes();
+    let parsed=ParsedTar(wire,ArchiveLimits(4,1024,4096,255));
+    let entries=parsed.entries();
+    Stdout().writeln("members: "+entries.size().string());
+    Stdout().writeln(entries.first().path().string());
+    confirm TarArchive(entries).bytes()==wire else panic "TAR round trip differs";
+    Stdout().writeln("PAX round trip agrees");
+    0;
+}

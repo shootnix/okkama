@@ -1,0 +1,22 @@
+module terminal/mode v1.0.0;
+import "runtime/application" take TerminalState,TerminalModeState,terminal_mode_open,terminal_mode_closed,terminal_mode_close,terminal_mode_drop;
+import "terminal/error" take TerminalProblem;
+import "io/stream" take Closing;
+enum TerminalMode=(cooked,cbreak,raw,secret);
+role TerminalModeApplying{apply(mode is TerminalMode) is TerminalModeLease;}
+object AppliedTerminalMode{
+    has origin is TerminalModeApplying;has mode is TerminalMode;
+    AppliedTerminalMode(origin is TerminalModeApplying,mode is TerminalMode){self.origin=origin;self.mode=mode;}
+    lease() is TerminalModeLease{origin.apply(mode);}
+}
+object TerminalModeLease does Closing{
+    has state is TerminalModeState;has mode is TerminalMode;
+    TerminalModeLease(origin is TerminalState,mode is TerminalMode){
+        let code=match mode{case TerminalMode.cooked{0;}case TerminalMode.cbreak{1;}case TerminalMode.raw{2;}case TerminalMode.secret{3;}};
+        state=try{terminal_mode_open(origin,code);}catch e is NativeFailure{throw TerminalProblem(e).value();};self.mode=mode;
+    }
+    mode() is TerminalMode{mode;}
+    closed() is bool{terminal_mode_closed(state);}
+    close() is void{try{terminal_mode_close(state);}catch e is NativeFailure{throw TerminalProblem(e).value();}}
+    destroy{terminal_mode_drop(state);}
+}

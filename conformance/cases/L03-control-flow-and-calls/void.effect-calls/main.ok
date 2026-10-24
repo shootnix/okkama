@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Log {
+    Log();
+    note(text is string) is void {
+        Stdout().writeln(text);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let log = Log();
+    log.note("first");
+    log.note("second");
+    0;
+}

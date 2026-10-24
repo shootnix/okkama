@@ -1,0 +1,95 @@
+module encoding/base64 v1.0.0;
+
+import "runtime/base64" take
+    base64_encode, base64_invalid_offset, base64_decode;
+
+// Strict RFC 4648 Base64 with explicit standard and URL-safe alphabets.
+//
+//     Base64Encoded(origin: [byte(102), byte(111), byte(111)]).string();
+//     // "Zm9v"
+//
+//     Base64Encoded(
+//         origin: [byte(251), byte(255)],
+//         alphabet: Base64Alphabet.url,
+//     ).string();
+//     // "-_8="
+//
+// The one-argument constructors select the standard `A-Z a-z 0-9 + /`
+// alphabet. The URL-safe alphabet replaces `+ /` with `- _`; it does not
+// change padding rules. Encoding always emits canonical `=` padding to a
+// multiple of four characters. Decoding requires that padding and rejects
+// whitespace, mixed alphabets, misplaced padding and nonzero unused bits.
+// Empty input is valid. InvalidBase64.offset() is a Unicode-scalar offset; a
+// structurally incomplete final quantum reports origin.length().
+
+enum Base64Alphabet = (standard, url);
+
+object Base64Encoded {
+    has origin is @byte;
+    has alphabet is Base64Alphabet;
+
+    Base64Encoded(origin is @byte) {
+        self.origin = origin;
+        alphabet = Base64Alphabet.standard;
+    }
+
+    Base64Encoded(origin is @byte, alphabet is Base64Alphabet) {
+        self.origin = origin;
+        self.alphabet = alphabet;
+    }
+
+    string() is string {
+        base64_encode(origin, self.alphabet_name());
+    }
+
+    private:
+
+    alphabet_name() is string {
+        if alphabet == Base64Alphabet.standard { "standard"; } else { "url"; }
+    }
+}
+
+object Base64Decoded {
+    has origin is string;
+    has alphabet is Base64Alphabet;
+
+    Base64Decoded(origin is string) {
+        self.origin = origin;
+        alphabet = Base64Alphabet.standard;
+    }
+
+    Base64Decoded(origin is string, alphabet is Base64Alphabet) {
+        self.origin = origin;
+        self.alphabet = alphabet;
+    }
+
+    bytes() is @byte {
+        let name is string = self.alphabet_name();
+        let offset is int = base64_invalid_offset(origin, name);
+        confirm offset == -1 else throw InvalidBase64(offset);
+        base64_decode(origin, name);
+    }
+
+    private:
+
+    alphabet_name() is string {
+        if alphabet == Base64Alphabet.standard { "standard"; } else { "url"; }
+    }
+}
+
+object InvalidBase64 does Error {
+    has invalid_offset is int;
+
+    InvalidBase64(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid Base64 at scalar offset " + invalid_offset.string();
+    }
+}

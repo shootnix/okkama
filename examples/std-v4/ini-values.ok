@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "config/ini" take IniDocument, IniSection, IniEntry;
+object ExampleResult {
+    ExampleResult();
+    value() is @string {
+        let settings = IniDocument([IniSection("app", [
+            IniEntry("name", "Ada"), IniEntry("enabled", "true"),
+        ])]).section("app");
+        [settings.value("name"), settings.value("enabled")];
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

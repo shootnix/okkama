@@ -1,0 +1,125 @@
+module parallel/map v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "collections/list" take List, EmptyList;
+import "collections/views" take Reversed;
+import "async/scope" take FutureScope, Supervising;
+import "async/collect" take AllFutures;
+import "runtime/system" take system_cpu_count;
+
+// An ordered mapping performed by bounded batches of isolated process workers.
+//
+//     let mapped is ParallelMapped<int,int> = ParallelMapped(
+//         origins: [1,2,3], action: Worker(seed: 10).run, workers: 2);
+//     let values = await mapped.results();
+//
+// Construction stores the inputs and validates the positive worker bound. The
+// default comes from the runtime CPU count. Each results() call creates a fresh
+// lazy run; awaiting the same Future again reuses its completed outcome.
+//
+// A worker must be a synchronous typed bound action accepted by spawn. Receiver
+// fields must reconstruct its constructor and all boundary values must satisfy
+// the spawn codec. Closures, async actions and arbitrary objects are unsupported.
+// The single-file CLI uses processes; embedded execution uses its configured
+// executor. This module does not turn Local execution into process parallelism.
+//
+// Batches preserve input order and never exceed workers active children. A batch
+// failure prevents later batches. Input/dispatch failure and caller cancellation
+// also cancel outstanding children and await their cleanup before settlement.
+// Worker failures retain the existing spawn diagnostics, not reconstructed child
+// Error objects. Empty inputs yield an empty sequence without dispatch.
+
+object ParallelMapped<T,R> {
+    has origins is Sequencing<T>;
+    has action is (T) is R;
+    has bound is int;
+
+    ParallelMapped(origins is Sequencing<T>, action is (T) is R, workers is int) {
+        confirm workers > 0 else throw InvalidWorkerCount(workers);
+        self.origins = origins;
+        self.action = action;
+        bound = workers;
+    }
+
+    ParallelMapped(origins is Sequencing<T>, action is (T) is R) {
+        let workers = system_cpu_count();
+        confirm workers > 0 else throw InvalidWorkerCount(workers);
+        self.origins = origins;
+        self.action = action;
+        bound = workers;
+    }
+
+    workers() is int { bound; }
+
+    async results() is Sequencing<R> {
+        let run is ParallelMapRun<T,R> = ParallelMapRun(
+            origins: origins, action: action, workers: bound);
+        let scope is FutureScope<R,Sequencing<R>> = FutureScope(action: run.run);
+        await scope.result();
+    }
+}
+
+// Implementation body owned by one FutureScope. All started children remain
+// supervised even if reading or encoding a later input throws during dispatch.
+object ParallelMapRun<T,R> {
+    has origins is Sequencing<T>;
+    has action is (T) is R;
+    has workers is int;
+    ParallelMapRun(:origins, :action, :workers);
+
+    async run(group is Supervising<R>) is Sequencing<R> {
+        let amount = origins.size();
+        let state is ParallelMapProgress<R> = ParallelMapProgress();
+        loop {
+            let position = state.position();
+            if position >= amount { last; }
+            let count = if workers < amount-position {workers;} else {amount-position;};
+            let batch = AllFutures(origins: self.pending(group, position, count));
+            let values = await batch.results();
+            for values -> value { state = state.added(value); }
+        }
+        state.values();
+    }
+
+    pending(group is Supervising<R>, position is int, count is int) is @Future<R> {
+        let result is @Future<R> = (position..position+count).map() -> index {
+            let child = spawn action(origins.item(index));
+            group.start(child);
+            child;
+        };
+        result;
+    }
+}
+
+// Persistent run-local accumulator; a successor appends one ordered result.
+object ParallelMapProgress<R> {
+    has position is int;
+    has reversed is List<R>;
+    ParallelMapProgress() {
+        let empty is List<R> = EmptyList();
+        position = 0;
+        reversed = empty;
+    }
+    position() is int { position; }
+    added(value is R) is ^ParallelMapProgress<R> {
+        ^reversed = reversed.prefix(value);
+        ^position = position + 1;
+    }
+    values() is Sequencing<R> {
+        let materialized is @R = reversed.map() -> value {value;};
+        Reversed(origin: materialized);
+    }
+}
+
+object InvalidWorkerCount does Error {
+    has origin is int;
+    InvalidWorkerCount(workers is int) {origin = workers;}
+    workers() is int {origin;}
+    text() is string {"worker count must be positive: " + origin.string();}
+}
+
+test "worker error preserves the supplied count" {
+    let error = InvalidWorkerCount(-2);
+    test.is(error.workers(), -2);
+    test.is(error.text(), "worker count must be positive: -2");
+}

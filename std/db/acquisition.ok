@@ -1,0 +1,28 @@
+module db/acquisition v1.0.0;
+import "db/connection" take DbConnecting,DbConnection;
+import "db/prepared" take DbPreparing,DbPreparedOpening;
+import "db/error" take DbFailure,DbFailureKind,DbOperation;
+
+// A connector may explicitly retain a second capability at acquisition.
+// The pool never downcasts its portable connection to recover hidden methods.
+role DbAcquiring{async acquisition() is DbAcquisition;}
+object DbAcquisition{
+    has connection is DbConnection;has preparation is @DbPreparing;has transactions is @DbPreparedOpening;
+    DbAcquisition(connection is DbConnection){self.connection=connection;preparation=[];transactions=[];}
+    DbAcquisition(connection is DbConnection,preparation is DbPreparing){self.connection=connection;self.preparation=[preparation];transactions=[];}
+    DbAcquisition(connection is DbConnection,preparation is DbPreparing,transactions is DbPreparedOpening){self.connection=connection;self.preparation=[preparation];self.transactions=[transactions];}
+    connection() is DbConnection{connection;}
+    preparing() is DbPreparing{
+        confirm preparation.size()==1 else throw DbFailure(DbFailureKind.unsupported,DbOperation.preparing,"DB_PREPARATION_UNAVAILABLE","connector did not supply preparation capability");
+        preparation[0];
+    }
+    transactions() is DbPreparedOpening{
+        confirm transactions.size()==1 else throw DbFailure(DbFailureKind.unsupported,DbOperation.preparing,"DB_TRANSACTION_PREPARATION_UNAVAILABLE","connector did not supply transaction preparation capability");
+        transactions[0];
+    }
+}
+object PortableDbAcquiring does DbAcquiring{
+    has origin is DbConnecting;
+    PortableDbAcquiring(origin is DbConnecting){self.origin=origin;}
+    async acquisition() is DbAcquisition{DbAcquisition(await origin.connection());}
+}

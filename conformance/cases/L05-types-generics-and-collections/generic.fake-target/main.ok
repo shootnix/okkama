@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+role Echo<T> {
+    echo(value is T) is T;
+    fake {
+        echo(value is T) is T { value; }
+    }
+}
+
+test "generic fake with target" {
+    let e is Echo<int> = Echo.fake();
+    test.is(e.echo(3), 3);
+}
+
+main() is int {
+    0;
+}

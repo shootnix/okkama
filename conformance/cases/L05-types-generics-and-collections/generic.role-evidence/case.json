@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.role-evidence",
+  "title": "a typed role target supplies a generic specialization",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.INFERENCE",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "GEN.ROLES",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "GEN.EXPECTED-TYPE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "5\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: a unique implemented role template may supply the expected specialization, as with a typed local; EchoBox<int> does Echo<int>."
+  },
+  "status": "mandatory"
+}

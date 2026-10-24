@@ -1,0 +1,11 @@
+module runtime/csv_state v1.0.0;
+// Opaque bounded scanner state; owned by csv/stream, never owns its source.
+native object CsvState;
+native csv_state_create(bytes is int, input is int, field is int, rows is int, columns is int) is CsvState;
+native csv_state_feed(state is CsvState, bytes is @byte) is bool;
+native csv_state_advance(state is CsvState) is string;
+native csv_state_row(state is CsvState) is @string;
+native csv_state_offset(state is CsvState) is int;
+native csv_state_request(state is CsvState) is int;
+native csv_state_closed(state is CsvState) is bool;
+native csv_state_close(state is CsvState) is bool;

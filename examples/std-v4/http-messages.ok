@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "http/message" take Request,Response;
+import "http/method" take Method;
+import "http/target" take OriginTarget;
+import "http/header" take Headers;
+import "http/status" take Status;
+import "url/value" take UrlQuery;
+import "io/stdout" take Stdout;
+main() is int {
+    let request=Request(Method("GET"),OriginTarget("/report",UrlQuery("")),Headers([]));
+    let response=Response(Status(200),Headers([]));
+    confirm request.body().length().string()=="0" && response.body().replayable();
+    Stdout().writeln(request.target().string());Stdout().writeln(response.status().code().string());
+    0;
+}

@@ -1,0 +1,129 @@
+module fs/lock v1.0.0;
+
+import "fs/file" take
+    File,
+    FileLocking,
+    InvalidFileOperation,
+    FileSystemFailure;
+import "io/stream" take Closing;
+
+// Whole-file advisory locks over the exact handle owned by File.
+//
+//     let file = File(mode: FileMode.reading_and_writing, path: path);
+//     defer file.close();
+//     let lock = FileLock(origin: file, mode: FileLockMode.exclusive);
+//     defer lock.close();
+//
+// The default waits until the lock can be acquired. Use immediate only when
+// contention is an ordinary branch:
+//
+//     try {
+//         let lock = FileLock(
+//             origin: file,
+//             mode: FileLockMode.exclusive,
+//             waiting: FileLockWaiting.immediate,
+//         );
+//         defer lock.close();
+//         update(file);
+//     }
+//     catch error is UnavailableFileLock {
+//         retry_later();
+//     }
+//
+// Locks are advisory and whole-file on every provider. Shared locks coexist
+// only with shared locks; an exclusive lock conflicts with every live lock.
+// At most one live lock is associated with a File. FileLock retains its File
+// owner when escaping a scope; destroying the lock releases it. Closing either
+// the lock or its File releases the lock, and both closes are idempotent.
+
+enum FileLockMode = (shared, exclusive);
+enum FileLockWaiting = (wait, immediate);
+
+object FileLock does Closing, FileLocking {
+    has lease is FileLocking;
+    has owner is File;
+
+    FileLock(origin is File, mode is FileLockMode) {
+        try {
+            lease = origin.locking(
+                value FileLockModeCode(origin: mode),
+                0,
+            );
+            owner = origin;
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "would_block" {
+                throw UnavailableFileLock();
+            }
+            else if failure.code() == "invalid_input"
+                || failure.code() == "already_closed" {
+                throw InvalidFileOperation(failure.message());
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    FileLock(
+        origin is File,
+        mode is FileLockMode,
+        waiting is FileLockWaiting,
+    ) {
+        try {
+            lease = origin.locking(
+                value FileLockModeCode(origin: mode),
+                value FileLockWaitingCode(origin: waiting),
+            );
+            owner = origin;
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "would_block" {
+                throw UnavailableFileLock();
+            }
+            else if failure.code() == "invalid_input"
+                || failure.code() == "already_closed" {
+                throw InvalidFileOperation(failure.message());
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    destroy { self.close(); }
+
+    closed() is bool { lease.closed(); }
+
+    close() is void { lease.close(); }
+
+}
+
+object FileLockModeCode {
+    has origin is FileLockMode;
+
+    FileLockModeCode(:origin);
+
+    #projected
+    value() is int {
+        if origin == FileLockMode.shared { 0; } else { 1; }
+    }
+}
+
+object FileLockWaitingCode {
+    has origin is FileLockWaiting;
+
+    FileLockWaitingCode(:origin);
+
+    #projected
+    value() is int {
+        if origin == FileLockWaiting.wait { 0; } else { 1; }
+    }
+}
+
+object UnavailableFileLock does Error {
+    UnavailableFileLock();
+
+    #projected
+    text() is string { "file lock is unavailable"; }
+}

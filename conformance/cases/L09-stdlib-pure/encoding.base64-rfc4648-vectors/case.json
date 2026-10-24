@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.base64-rfc4648-vectors",
+  "title": "Base64 RFC 4648 test vectors",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.BASE64",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - empty\nok 2 - f\nok 3 - fo\nok 4 - foo\nok 5 - foob\nok 6 - fooba\nok 7 - foobar\nok 8 - url alphabet\nok 9 - decode\nchecks: 9, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/base64.ok",
+    "RFC 4648 section 10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 4648 section 10 test vectors; URL alphabet replaces + / with - _ (cross-checked with Python base64)."
+  },
+  "status": "mandatory"
+}

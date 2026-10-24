@@ -1,0 +1,23 @@
+module strings/format v1.0.0;
+
+// Exact, typed interpolation: only {} denotes a slot; other braces are literal.
+object Formatted {
+    has pattern is string;
+    has values is @string;
+    Formatted(:pattern, :values);
+
+    #projected
+    string() is string {
+        let parts is @string = pattern.split("{}");
+        confirm parts.size() == values.size() + 1 else throw InvalidFormat();
+        (0..values.size()).reduce(parts[0]) -> result, index {
+            result + values[index] + parts[index + 1];
+        };
+    }
+}
+
+object InvalidFormat does Error {
+    InvalidFormat();
+    #projected
+    text() is string { "format slot count differs from argument count"; }
+}

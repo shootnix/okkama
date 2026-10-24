@@ -1,0 +1,38 @@
+module config/value v1.0.0;
+import "collections/sequence" take Sequencing;
+import "config/key" take SettingKey;
+import "config/source" take SettingReading,SettingEntry,SettingSource,SettingSourceKind;
+object Setting{
+    has origin is SettingReading;
+    has key is SettingKey;
+    Setting(origin is SettingReading,key is SettingKey){self.origin=origin;self.key=key;}
+    values() is Sequencing<string>{origin.entry(key).values();}
+    source() is SettingSource{origin.entry(key).source();}
+}
+object ScalarSetting{
+    has origin is SettingReading;
+    has key is SettingKey;
+    ScalarSetting(origin is SettingReading,key is SettingKey){self.origin=origin;self.key=key;}
+    value() is string{
+        let values=origin.entry(key).values();
+        confirm values.size()==1 else throw NonScalarSetting(key,values.size());
+        values.first();
+    }
+    source() is SettingSource{origin.entry(key).source();}
+}
+object ScalarSettingOr{
+    has origin is SettingReading;
+    has key is SettingKey;
+    has fallback is string;
+    ScalarSettingOr(origin is SettingReading,key is SettingKey,fallback is string){self.origin=origin;self.key=key;self.fallback=fallback;}
+    value() is string{if origin.membership(key){ScalarSetting(origin,key).value();}else{fallback;}}
+    source() is SettingSource{if origin.membership(key){origin.entry(key).source();}else{SettingSource(SettingSourceKind.defaults,"fallback");}}
+}
+object NonScalarSetting does Error{
+    has identity is SettingKey;
+    has amount is int;
+    NonScalarSetting(key is SettingKey,count is int){identity=key;amount=count;}
+    key() is SettingKey{identity;}
+    count() is int{amount;}
+    text() is string{"setting must contain exactly one value: "+identity.string();}
+}

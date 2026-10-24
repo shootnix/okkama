@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.unpack.forms",
+  "title": "unpack as let value and variadic argument",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.UNPACK",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "6\n3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.8.1: `xs...` unpacks as a complete let value and as the final variadic argument; sum = 6."
+  },
+  "status": "mandatory"
+}

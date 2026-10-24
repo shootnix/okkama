@@ -1,0 +1,35 @@
+module db/row v1.0.0;
+import "db/value" take DbValue;
+import "db/statement" take DbValueSnapshot,DbLimits,DbBoundaryLimit;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Encoded;
+
+object Column {
+    has index is int;has name,declaration is string;
+    Column(index is int,name is string,declaration is string){confirm index>=0 && index<1024 && Utf8Encoded(name).bytes().size()<=4096 && Utf8Encoded(declaration).bytes().size()<=4096 else throw InvalidRow();self.index=index;self.name=name;self.declaration=declaration;}
+    index() is int{index;}name() is string{name;}declaration() is string{declaration;}
+}
+object DbColumns {
+    has origin is @Column;
+    DbColumns(values is Sequencing<Column>,limits is DbLimits){let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("column count");let columns is @Column=(0..count).map()->index{let column=values.item(index);confirm column.index()==index else throw InvalidRow();Column(index,column.name(),column.declaration());};origin=columns;}
+    values() is @Column{origin;}
+}
+object Row {
+    has columns is @Column;has values is @DbValue;
+    Row(columns is Sequencing<Column>,values is Sequencing<DbValue>){confirm columns.size()==values.size() else throw InvalidRow();let limits=DbLimits();self.columns=DbColumns(columns,limits).values();self.values=DbValueSnapshot(values,limits).values();}
+    Row(columns is Sequencing<Column>,values is Sequencing<DbValue>,limits is DbLimits){confirm columns.size()==values.size() else throw InvalidRow();self.columns=DbColumns(columns,limits).values();self.values=DbValueSnapshot(values,limits).values();}
+    size() is int{values.size();}columns() is Sequencing<Column>{columns;}
+    item(index is int) is DbValue{confirm index>=0 && index<values.size() else throw InvalidRowIndex(index);values[index];}
+    value(name is string) is DbValue{let matches is @Column=columns.filter()->column{column.name()==name;};confirm matches.size()>0 else throw MissingColumn(name);confirm matches.size()==1 else throw AmbiguousColumn(name);values[matches[0].index()];}
+}
+role RowReading {
+    async row() is Row;
+    columns() is Sequencing<Column>;
+    closed() is bool;
+    close() is void;
+}
+object RowsEnded does Error{RowsEnded();text() is string{"database rows exhausted";}}
+object MissingColumn does Error{has name is string;MissingColumn(name is string){self.name=name;}name() is string{name;}text() is string{"database column is missing";}}
+object AmbiguousColumn does Error{has name is string;AmbiguousColumn(name is string){self.name=name;}name() is string{name;}text() is string{"database column name is ambiguous";}}
+object InvalidRow does Error{InvalidRow();text() is string{"database row width/column coordinates disagree";}}
+object InvalidRowIndex does Error{has index is int;InvalidRowIndex(index is int){self.index=index;}index() is int{index;}text() is string{"database row index is outside its width";}}

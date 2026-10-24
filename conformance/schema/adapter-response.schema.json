@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-adapter-response/1",
+  "title": "Adapter response (observations only)",
+  "type": "object",
+  "required": [
+    "protocol",
+    "mode",
+    "outcome"
+  ],
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "verdict"
+        ]
+      },
+      {
+        "required": [
+          "pass"
+        ]
+      },
+      {
+        "required": [
+          "status"
+        ]
+      }
+    ]
+  },
+  "properties": {
+    "protocol": {
+      "const": "ocs-adapter/1"
+    },
+    "mode": {
+      "enum": [
+        "parse",
+        "check",
+        "run",
+        "test"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "accepted",
+        "rejected",
+        "failed",
+        "internal-error",
+        "unsupported"
+      ]
+    },
+    "exit_status": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "stage_reached": {
+      "enum": [
+        "none",
+        "parse",
+        "check",
+        "runtime"
+      ]
+    },
+    "unsupported_reason": {
+      "type": "string"
+    },
+    "failure": {
+      "type": "object",
+      "required": [
+        "stage",
+        "category"
+      ],
+      "properties": {
+        "stage": {
+          "enum": [
+            "parse",
+            "check",
+            "runtime"
+          ]
+        },
+        "category": {
+          "enum": [
+            "syntax",
+            "semantic",
+            "resolution",
+            "runtime",
+            "panic",
+            "uncaught-error",
+            "unclassified",
+            "internal"
+          ]
+        },
+        "error_type": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        }
+      }
+    },
+    "adapter": {
+      "type": "object"
+    },
+    "elapsed_ms": {
+      "type": "integer"
+    }
+  }
+}

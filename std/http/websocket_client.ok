@@ -1,0 +1,75 @@
+module http/websocket_client v1.0.0;
+import "http/websocket" take WebSocketConnection,WebSocketLimits,WebSocketFailure;
+import "http/websocket_handshake" take WebSocketClientHandshake;
+import "http/websocket_session" take WebSocketSession;
+import "http/internal/websocket_upgrade" take WebSocketOpeningCleanup,WebSocketPrefixedInput;
+import "http/endpoint" take HttpEndpointSelection,EndpointAllowing,PublicEndpoints;
+import "http/header" take Headers;
+import "http/http1_head" take Http1Limits,Http1ResponseHead;
+import "http/http1_reading" take Http1ResponseHeadReading,Http1HeadRead;
+import "http/http1_message_writing" take Http1RequestWriting;
+import "http/body" take EmptyBody;
+import "http/connection" take HttpAcquisitionCleanup,HttpTcpDisposal,HttpTlsDisposal,HttpUnpublishedTcp,HttpUnpublishedTls;
+import "http/internal/websocket_output" take WebSocketOutputSettlement;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "net/tcp" take TcpConnection,TcpOptions;
+import "net/tcp_racing" take TcpRacing;
+import "net/dns" take Resolving;
+import "net/tls" take TlsClientPolicy,TlsClientHandshake,TlsConnection;
+import "crypto/x509/trust" take CertificateIdentity,DnsCertificateIdentity,IpCertificateIdentity;
+import "url/value" take Url,UrlParts,UrlFragment,UrlHostKind;
+import "random/source" take SecureRandom;
+import "time/clock" take Timing;
+import "time/duration" take Duration,DurationUnit;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/timeout" take Within;
+import "io/stream" take InvalidReadLimit;
+
+object WebSocketPolicy {
+    has limits is WebSocketLimits;has opening,closing is Duration;has access is EndpointAllowing;
+    WebSocketPolicy(){limits=WebSocketLimits();opening=Duration(30.rat(),DurationUnit.second);closing=Duration(5.rat(),DurationUnit.second);access=PublicEndpoints();}
+    WebSocketPolicy(limits is WebSocketLimits,opening is Duration,closing is Duration,access is EndpointAllowing){confirm opening.seconds()>0.rat() && closing.seconds()>0.rat() else throw WebSocketFailure("positive WebSocket deadlines required");self.limits=limits;self.opening=opening;self.closing=closing;self.access=access;}
+    limits() is WebSocketLimits{limits;}opening_timeout() is Duration{opening;}closing_timeout() is Duration{closing;}access() is EndpointAllowing{access;}
+}
+// Direct HTTP1 Upgrade opener; ordinary Exchanging cannot transfer the socket.
+// Repeated connection() observes the same lazy attempt/result, never reconnects.
+object WebSocketConnecting {
+    has waiting is Future<WebSocketSession>;
+    WebSocketConnecting(url is Url,protocols is @string,headers is Headers,resolver is Resolving,tls is TlsClientPolicy,policy is WebSocketPolicy,clock is Timing){
+        let nonce is @byte=(0..16).map()->index{0.byte();};WebSocketClientHandshake(url,protocols,headers,nonce);
+        for tls.protocols() -> protocol{confirm protocol=="http/1.1" else throw WebSocketFailure("HTTP1 Upgrade ALPN policy required");}
+        let parts=url.parts();let transport=Url(UrlParts(if parts.scheme()=="wss"{"https";}else{"http";},parts.authority(),parts.path(),parts.query(),UrlFragment()));
+        let route=HttpEndpointSelection(transport,resolver,policy.access());let operation=WebSocketOpening(url,protocols,headers,route,tls,policy,clock);let bounded is Within<WebSocketSession>=Within(operation.open(),policy.opening_timeout(),clock);waiting=bounded.result();
+    }
+    async connection() is WebSocketConnection{
+        let group is FutureGroup<WebSocketSession>=FutureGroup();let taken=Event();let cleanup=WebSocketOpeningCleanup(group,waiting,taken);defer await cleanup.close();group.start(waiting);let session=await waiting;taken.set();await session.started();session;
+    }
+}
+object WebSocketOpening {
+    has url is Url;has protocols is @string;has headers is Headers;has route is HttpEndpointSelection;has tls is TlsClientPolicy;has policy is WebSocketPolicy;has clock is Timing;
+    WebSocketOpening(url is Url,protocols is @string,headers is Headers,route is HttpEndpointSelection,tls is TlsClientPolicy,policy is WebSocketPolicy,clock is Timing){self.url=url;self.protocols=protocols;self.headers=headers;self.route=route;self.tls=tls;self.policy=policy;self.clock=clock;}
+    async open() is WebSocketSession{
+        let random=SecureRandom();let handshake=WebSocketClientHandshake(url,protocols,headers,random.bytes(16));let endpoints=await route.endpoints();
+        let group is FutureGroup<TcpConnection>=FutureGroup();let empty is @Future<TcpConnection>=[];let pending=Atomic(empty);let taken=Event();let cleanup=HttpAcquisitionCleanup(group,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();
+        let waiting=TcpRacing(endpoints,TcpOptions(),Duration(250.rat(),DurationUnit.millisecond),clock).connection();pending.replace([waiting]);group.start(waiting);let tcp=await waiting;taken.set();let published=Event();let anchor=HttpUnpublishedTcp(tcp,published);defer anchor.close();
+        if url.parts().scheme()=="wss"{
+            let host=url.parts().authority().host();let identity is CertificateIdentity=if host.kind()==UrlHostKind.name{DnsCertificateIdentity(host.name());}else{IpCertificateIdentity(host.address());};
+            let group is FutureGroup<TlsConnection>=FutureGroup();let empty is @Future<TlsConnection>=[];let pending=Atomic(empty);let taken=Event();let cleanup=HttpAcquisitionCleanup(group,pending,taken,HttpTlsDisposal().release);defer await cleanup.close();
+            let waiting=TlsClientHandshake(tcp,identity,tls,clock).connection();pending.replace([waiting]);group.start(waiting);let secure=await waiting;taken.set();let anchor=HttpUnpublishedTls(secure,published);defer anchor.close();
+            let protocol=secure.details().protocol();confirm protocol=="" || protocol=="http/1.1" else throw WebSocketFailure("negotiated ALPN is not HTTP1");
+            let prefix=await self.upgrade(secure.input(),secure.output(),handshake);let session=WebSocketSession(WebSocketPrefixedInput(secure.input(),prefix),secure.output(),secure,true,random,policy.limits(),policy.closing_timeout(),clock);published.set();return session;
+        }
+        let prefix=await self.upgrade(tcp.input(),tcp.output(),handshake);let session=WebSocketSession(WebSocketPrefixedInput(tcp.input(),prefix),tcp.output(),tcp,true,random,policy.limits(),policy.closing_timeout(),clock);published.set();session;
+    }
+    async upgrade(input is AsyncReading,output is AsyncWriting,handshake is WebSocketClientHandshake) is @byte{
+        let writing is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(writing);defer await cleanup.close();let pending=Http1RequestWriting(output,handshake.request()).result();writing.start(pending);await pending;
+        let empty is @byte=[];let prefix=Atomic(empty);let count=Atomic(0);
+        loop{
+            let group is FutureGroup<Http1HeadRead<Http1ResponseHead>>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=Http1ResponseHeadReading(input,prefix.value(),Http1Limits(),4096).result();group.start(pending);let received=await pending;let status=received.head().status().code();
+            if status<200 && status!=101{confirm count.value()<16 else throw WebSocketFailure("informational handshake limit");count.replace(count.value()+1);prefix.replace(received.remainder());next;}
+            handshake.selected(received.head().response(EmptyBody()));return received.remainder();
+        }
+    }
+}

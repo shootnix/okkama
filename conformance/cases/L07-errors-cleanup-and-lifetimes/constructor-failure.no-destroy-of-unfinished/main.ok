@@ -1,0 +1,61 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NotFound does Error {
+    has key is string;
+    NotFound(:key);
+    text() is string { "not found: " + key; }
+}
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+object Res {
+    has name is string;
+    Res(:name);
+    use() is string { name; }
+    destroy {
+        Stdout().writeln("destroy " + name);
+    }
+}
+
+object Log {
+    Log();
+    say(text is string) is void {
+        Stdout().writeln(text);
+    }
+    value(text is string, v is int) is int {
+        Stdout().writeln(text);
+        v;
+    }
+}
+
+object Holder {
+    has child is Res;
+    Holder(fail is bool) {
+        child = Res(name: "child");
+        confirm !fail else throw Denied();
+    }
+    destroy {
+        Stdout().writeln("holder destroyed");
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let r = try {
+        let h = Holder(fail: true);
+        "built";
+    } catch e is Denied {
+        "construction failed";
+    };
+    out.writeln(r);
+    {
+        let ok_holder = Holder(fail: false);
+        out.writeln("holder ready");
+    }
+    0;
+}

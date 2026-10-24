@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.loop.control-forms",
+  "title": "loop with next/last forms and postfix if",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.LOOP-CONTROL",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "GRAM.POSTFIX-IF",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "7\n1\n3\n9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.10",
+    "docs/okkama-spec-11072026.md#8.13"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.10: `next if` skips even numbers; `last if n > 4` stops at 5; `last value` supplies the loop result."
+  },
+  "status": "mandatory"
+}

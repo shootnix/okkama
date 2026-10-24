@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "http/conditional" take EntityTag, ParsedEntityTags;
+import "io/stdout" take Stdout;
+main() is int {
+    let current=EntityTag("revision-7",false);
+    let condition=ParsedEntityTags("W/\"revision-7\", \"another\"").value();
+    Stdout().writeln(condition.string());
+    Stdout().writeln(if condition.weak_matches(current) {"If-None-Match matches";}else{"no match";});
+    Stdout().writeln(if condition.strong_matches(current) {"If-Match matches";}else{"strong match failed";});
+    0;
+}

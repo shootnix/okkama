@@ -1,0 +1,30 @@
+// Извлечь номер заказа и скрыть цифры
+//
+// В строке журнала требуется найти номер заказа, затем подготовить обезличенную копию.
+//
+// Запуск: ./examples/cookbook/run lab recipe-regex
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-regex
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/regex v1.0.0;
+import "regex/pattern" take Regex;
+import "regex/search" take FirstRegexMatch,RegexMatches;
+import "regex/replace" take RegexSubstitution,LiteralRegexReplacement;
+import "regex/escape" take EscapedRegex;
+import "regex/split" take RegexParts;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let source = "order=4711; amount=120";
+    let number = FirstRegexMatch(source, Regex("order=(?<id>\\d+)"));
+    confirm number.group("id").text() == "4711";
+    let safe = RegexSubstitution(source, Regex("\\d+"), LiteralRegexReplacement("***")).string();
+    Stdout().writeln(safe);
+    let literal = Regex(EscapedRegex("a+b").string());
+    confirm RegexMatches("a+b", literal).found();
+    for RegexParts("чай, кофе;сок", Regex("[,;]\\s*")) -> part {
+        Stdout().writeln(part);
+    }
+    0;
+}

@@ -1,0 +1,44 @@
+module billing v1.0.0;
+
+enum Plan = (basic, pro);
+
+object HalfEven {
+    has value is rat;
+    HalfEven(:value);
+    #projected(cents)
+    rounded() is int {
+        let floor = value.int();
+        let fraction = value - floor.rat();
+        if fraction > rat(1, 2) {
+            floor + 1;
+        } else {
+            if fraction < rat(1, 2) { floor; } else { if floor % 2 == 0 { floor; } else { floor + 1; } }
+        }
+    }
+}
+
+object InvoiceLine {
+    has plan is Plan;
+    has seats is int;
+    has days_used is int;
+    has days_in_period is int;
+    InvoiceLine(:plan, :seats, :days_used, :days_in_period);
+    cents() is int {
+        let monthly = match plan {
+            case Plan.basic { 1000; }
+            case Plan.pro { 2500; }
+            else { 0; }
+        };
+        cents HalfEven(value: monthly * seats * days_used / days_in_period);
+    }
+}
+
+object Invoice {
+    has lines is @InvoiceLine;
+    has tax_basis_points is int;
+    Invoice(:lines, :tax_basis_points);
+    line_cents() is @int { lines.map() -> line { line.cents(); }; }
+    subtotal() is int { self.line_cents().reduce(0) -> sum, v { sum + v; }; }
+    tax() is int { cents HalfEven(value: self.subtotal() * tax_basis_points / 10000); }
+    total() is int { self.subtotal() + self.tax(); }
+}

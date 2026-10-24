@@ -1,0 +1,203 @@
+module time/format v1.0.0;
+
+import "time/date" take Date;
+import "time/day" take TimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "runtime/time_format" take
+    time_pattern_invalid_offset,
+    time_format_date,
+    time_format_local,
+    time_parse_invalid_offset,
+    time_parse_parts;
+
+// Explicit, locale-free formatting and parsing.
+//
+//     FormattedDate(
+//         origin: Date(year: 2026, month: 8, day: 11),
+//         pattern: "%d/%m/%Y",
+//     ).string(); // "11/08/2026"
+//
+//     value DateFromFormat(origin: "11/08/2026", pattern: "%d/%m/%Y");
+//
+// Directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%f` and `%%`.
+// Numeric fields have fixed widths 4/2/2/2/2/2/9. Date patterns reject time
+// directives. Parsing requires every date field, and local-date-time parsing
+// additionally requires hour, minute and second; nanoseconds default to zero.
+// Every other character is a literal Unicode scalar. Month/day names and all
+// locale-dependent directives are deliberately absent until an explicit
+// locale value exists.
+
+object FormattedDate {
+    has origin is Date;
+    has pattern is string;
+
+    FormattedDate(origin is Date, pattern is string) {
+        self.origin = origin;
+        self.pattern = pattern;
+    }
+
+    #projected
+    string() is string {
+        let invalid is int = time_pattern_invalid_offset(pattern, false, false);
+        confirm invalid == -1 else throw InvalidTimePattern(pattern, invalid);
+        time_format_date(
+            origin.year(),
+            origin.month(),
+            origin.day(),
+            pattern,
+        );
+    }
+}
+
+object DateFromFormat {
+    has origin is string;
+    has pattern is string;
+
+    DateFromFormat(origin is string, pattern is string) {
+        self.origin = origin;
+        self.pattern = pattern;
+    }
+
+    #projected
+    value() is Date {
+        let pattern_offset is int = time_pattern_invalid_offset(
+            pattern,
+            false,
+            true,
+        );
+        confirm pattern_offset == -1
+            else throw InvalidTimePattern(pattern, pattern_offset);
+        let source_offset is int = time_parse_invalid_offset(
+            origin,
+            pattern,
+            false,
+        );
+        confirm source_offset == -1
+            else throw InvalidFormattedDate(origin, source_offset);
+        let parts is @int = time_parse_parts(origin, pattern, false);
+        Date(year: parts[0], month: parts[1], day: parts[2]);
+    }
+}
+
+object FormattedLocalDateTime {
+    has origin is LocalDateTime;
+    has pattern is string;
+
+    FormattedLocalDateTime(origin is LocalDateTime, pattern is string) {
+        self.origin = origin;
+        self.pattern = pattern;
+    }
+
+    #projected
+    string() is string {
+        let invalid is int = time_pattern_invalid_offset(pattern, true, false);
+        confirm invalid == -1 else throw InvalidTimePattern(pattern, invalid);
+        let date is Date = origin.date();
+        let time is TimeOfDay = origin.time();
+        time_format_local(
+            date.year(),
+            date.month(),
+            date.day(),
+            time.hour(),
+            time.minute(),
+            time.second(),
+            time.nanosecond(),
+            pattern,
+        );
+    }
+}
+
+object LocalDateTimeFromFormat {
+    has origin is string;
+    has pattern is string;
+
+    LocalDateTimeFromFormat(origin is string, pattern is string) {
+        self.origin = origin;
+        self.pattern = pattern;
+    }
+
+    #projected
+    value() is LocalDateTime {
+        let pattern_offset is int = time_pattern_invalid_offset(
+            pattern,
+            true,
+            true,
+        );
+        confirm pattern_offset == -1
+            else throw InvalidTimePattern(pattern, pattern_offset);
+        let source_offset is int = time_parse_invalid_offset(
+            origin,
+            pattern,
+            true,
+        );
+        confirm source_offset == -1
+            else throw InvalidFormattedLocalDateTime(origin, source_offset);
+        let parts is @int = time_parse_parts(origin, pattern, true);
+        LocalDateTime(
+            date: Date(year: parts[0], month: parts[1], day: parts[2]),
+            time: TimeOfDay(
+                hour: parts[3],
+                minute: parts[4],
+                second: parts[5],
+                nanosecond: parts[6],
+            ),
+        );
+    }
+}
+
+object InvalidTimePattern does Error {
+    has pattern is string;
+    has position is int;
+
+    InvalidTimePattern(pattern is string, offset is int) {
+        self.pattern = pattern;
+        position = offset;
+    }
+
+    offset() is int {
+        position;
+    }
+
+    #projected
+    text() is string {
+        "invalid time pattern at offset " + position.string();
+    }
+}
+
+object InvalidFormattedDate does Error {
+    has origin is string;
+    has position is int;
+
+    InvalidFormattedDate(origin is string, offset is int) {
+        self.origin = origin;
+        position = offset;
+    }
+
+    offset() is int {
+        position;
+    }
+
+    #projected
+    text() is string {
+        "date does not match pattern at offset " + position.string();
+    }
+}
+
+object InvalidFormattedLocalDateTime does Error {
+    has origin is string;
+    has position is int;
+
+    InvalidFormattedLocalDateTime(origin is string, offset is int) {
+        self.origin = origin;
+        position = offset;
+    }
+
+    offset() is int {
+        position;
+    }
+
+    #projected
+    text() is string {
+        "local date-time does not match pattern at offset " + position.string();
+    }
+}

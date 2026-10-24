@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.cast.array-element-out-of-range",
+  "title": "a failing element conversion fails the whole array cast",
+  "purpose": "The value-dependent operation fails at runtime after earlier effects.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.ARRAY-CASTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": "before\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6.1: the first failed conversion terminates the expression; no partial array."
+  },
+  "status": "mandatory"
+}

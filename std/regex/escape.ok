@@ -1,0 +1,16 @@
+module regex/escape v1.0.0;
+
+import "runtime/regex" take regex_escape;
+
+// EscapedRegex converts arbitrary text into one literal Dialect 1 expression.
+// The result remains literal even when RegexFlag.verbose is selected.
+//
+//     let literal = "price: $5.00";
+//     let pattern = Regex(string EscapedRegex(literal));
+//     EntireRegexMatch(literal, pattern).text(); // "price: $5.00"
+object EscapedRegex {
+    has source is string;
+    EscapedRegex(origin is string) { source = origin; }
+    #projected
+    string() is string { regex_escape(source); }
+}

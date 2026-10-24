@@ -1,0 +1,212 @@
+module locale/date_time v1.0.0;
+// Immutable Gregorian standard-style representations. Wall values never acquire
+// a timezone; an Instant requires an explicit TimeZone. CLDR data is pinned,
+// patterns are compiled at generation time, and host locale state is not read.
+import "locale/tag" take Locale,LocaleExtensions;
+import "locale/data" take LocaleFallbacks;
+import "locale/number" take NumberLocaleData,NumberZeroes,InvalidLocalizedNumber;
+import "locale/internal/gregorian" take CldrGregorian;
+import "locale/internal/day_periods" take CldrDayPeriods;
+import "locale/internal/zone_meta" take CldrZoneMeta;
+import "locale/internal/zone_names" take CldrZoneNames;
+import "time/date" take Date,Weekday;
+import "time/day" take TimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "time/zone" take TimeZone,ZonedDateTime,FixedZone,Zone,UnknownTimeZone;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "strings/parse" take ParsedInt;
+enum DateStyle=(full,long,medium,short);
+enum TimeStyle=(full,long,medium,short);
+object DateTimeStyle {
+    has date is DateStyle;has time is TimeStyle;
+    DateTimeStyle(date is DateStyle,time is TimeStyle){self.date=date;self.time=time;}
+    date() is DateStyle{date;}time() is TimeStyle{time;}
+}
+object InvalidLocalizedDateTime does Error {
+    has reason is string;InvalidLocalizedDateTime(reason is string){self.reason=reason;}
+    text() is string{"invalid localized date/time: "+reason;}
+}
+object DateStyleIndex {
+    has value is int;DateStyleIndex(style is DateStyle){value=match style{case DateStyle.full{0;}case DateStyle.long{1;}case DateStyle.medium{2;}else{3;}};}
+    value() is int{value;}
+}
+object TimeStyleIndex {
+    has value is int;TimeStyleIndex(style is TimeStyle){value=match style{case TimeStyle.full{0;}case TimeStyle.long{1;}case TimeStyle.medium{2;}else{3;}};}
+    value() is int{value;}
+}
+object GregorianLocaleData {
+    has table is CldrGregorian;has numbers is NumberLocaleData;has fields,rules,tags is @string;
+    GregorianLocaleData(locale is Locale){
+        let extensions=LocaleExtensions(locale).unicode();
+        for (0..extensions.size())->index{let keyword=extensions.item(index);if keyword.key()=="ca"{let values=keyword.values();confirm values.size()==1 && values.item(0)=="gregory" else throw InvalidLocalizedDateTime("only the Gregorian calendar is supported");}}
+        let table=CldrGregorian();let chain=LocaleFallbacks(locale);let tags is @string=(0..chain.size()).map()->index{chain.item(index).string();};
+        let profile=tags.reduce(-1)->chosen,tag{if chosen>=0{chosen;}else{table.profile(tag);}};
+        confirm profile>=0 else throw InvalidLocalizedDateTime("missing pinned Gregorian root");
+        let fields=table.fields(profile);confirm fields.size()==179 else throw InvalidLocalizedDateTime("Gregorian profile shape");
+        let periods=CldrDayPeriods();let empty_rules is @string=[];let rules is @string=tags.reduce(empty_rules)->chosen,tag{if chosen.size()>0{chosen;}else{periods.rules(tag);}};
+        // Supplemental rule sets inherit a language rule independently of the
+        // calendar parent chain (zh-Hant calendar data can inherit from und).
+        let language=locale.base_tag().split("-")[0];
+        self.table=table;self.fields=fields;self.rules=if rules.size()>0{rules;}else{periods.rules(language);};self.tags=tags;
+        numbers=try{NumberLocaleData(locale);}catch error is InvalidLocalizedNumber{throw InvalidLocalizedDateTime("unsupported numbering system");};
+    }
+    tags() is @string{tags;}numbers() is NumberLocaleData{numbers;}
+    date(style is DateStyle) is string{table.program(ParsedInt(fields[167+DateStyleIndex(style).value()]).value());}
+    time(style is TimeStyle,zoned is bool) is string{let width=TimeStyleIndex(style).value();let selected=if !zoned && width<2{2;}else{width;};table.program(ParsedInt(fields[171+selected]).value());}
+    combination(style is DateStyle) is string{fields[175+DateStyleIndex(style).value()];}
+    month(number is int,width is int,standalone is bool) is string{let style=if width==3{0;}else{if width==4{1;}else{2;}};fields[(if standalone{36;}else{0;})+style*12+number-1];}
+    weekday(day is Weekday,width is int,standalone is bool) is string{
+        let index=match day{case Weekday.monday{0;}case Weekday.tuesday{1;}case Weekday.wednesday{2;}case Weekday.thursday{3;}case Weekday.friday{4;}case Weekday.saturday{5;}else{6;}};
+        let style=if width<=3{0;}else{if width==4{1;}else{if width==5{2;}else{3;}}};fields[72+(if standalone{28;}else{0;})+style*7+index];
+    }
+    era(width is int) is string{fields[128+(if width<=3{0;}else{if width==4{1;}else{2;}})];}
+    period(time is TimeOfDay,width is int,flexible is bool) is string{
+        let ordinary=if time.hour()<12{0;}else{1;};let tick=(time.hour()*3600+time.minute()*60+time.second())*1000000000+time.nanosecond();
+        let selected=if flexible{
+            (0..(rules.size()/4).int()).reduce(-1)->chosen,index{
+                if chosen>=0{chosen;}else{
+                    let start=ParsedInt(rules[index*4+1]).value();let finish=ParsedInt(rules[index*4+2]).value();let exact=rules[index*4+3]=="1";
+                    let matched=if exact{tick==start;}else{if start<finish{tick>=start && tick<finish;}else{tick>=start || tick<finish;}};
+                    if matched{ParsedInt(rules[index*4]).value();}else{-1;}
+                }
+            };
+        }else{ordinary;};
+        let style=if width<=3{0;}else{if width==4{1;}else{2;}};let index=if selected<0{ordinary;}else{selected;};let name=fields[131+style*12+index];
+        if name!=""{name;}else{fields[131+style*12+ordinary];}
+    }
+    number(value is int,width is int) is string{let text=value.string();numbers.localized((if text.length()<width{NumberZeroes(width-text.length()).string();}else{"";})+text);}
+}
+object GregorianProgram {
+    has values is @string;
+    GregorianProgram(origin is string){let values=origin.split("|");confirm values.size()>0 && values.size()%3==0 && values.size()<=384 else throw InvalidLocalizedDateTime("compiled pattern shape");self.values=values;}
+    size() is int{(values.size()/3).int();}kind(index is int) is string{values[index*3];}width(index is int) is int{ParsedInt(values[index*3+1]).value();}literal(index is int) is string{values[index*3+2];}
+}
+// Freeze one explicit zone observation for consistent local fields and naming.
+object LocalizedZoneObservation {
+    has name is string;has offset is Duration;has daylight is bool;has instant is Instant;
+    LocalizedZoneObservation(zone is TimeZone,instant is Instant){
+        let name=zone.name();confirm name.length()>0 && name.length()<=255 else throw InvalidLocalizedDateTime("timezone name length");
+        let offset=zone.offset(instant);confirm offset.seconds().denominator()=="1" && offset.seconds()>(-86400).rat() && offset.seconds()<86400.rat() else throw InvalidLocalizedDateTime("timezone offset must contain whole seconds within a day");
+        self.name=name;self.offset=offset;daylight=zone.daylight_saving(instant);self.instant=instant;
+    }
+    local() is LocalDateTime{ZonedDateTime(instant,FixedZone(name,offset)).local_datetime();}
+    name() is string{name;}offset() is Duration{offset;}daylight() is bool{daylight;}instant() is Instant{instant;}
+}
+object LocalizedZoneName {
+    has origin is LocalizedZoneObservation;has data is GregorianLocaleData;has wide is bool;
+    LocalizedZoneName(origin is LocalizedZoneObservation,data is GregorianLocaleData,wide is bool){self.origin=origin;self.data=data;self.wide=wide;}
+    string() is string{
+        let metadata=CldrZoneMeta();let canonical=metadata.canonical(origin.name());let intervals=metadata.intervals(canonical);let seconds=origin.instant().unix_duration().seconds();
+        let zone=(0..(intervals.size()/3).int()).reduce("")->chosen,index{if chosen!=""{chosen;}else{let start=ParsedInt(intervals[index*3]).value().rat();let finish=ParsedInt(intervals[index*3+1]).value().rat();if seconds>=start && seconds<finish{intervals[index*3+2];}else{"";}}};
+        let table=CldrZoneNames();let tags=data.tags();let index=(if wide{2;}else{0;})+(if origin.daylight(){1;}else{0;});
+        let specific=self.field(table,tags,"z:"+canonical,index);
+        // FixedZone.name is a free label. A known name may select CLDR names
+        // only when its offset/daylight state agrees with that named zone.
+        if !self.compatible(canonical,zone,specific!=""){return LocalizedGmtOffset(origin.offset(),data,table,wide).string();}
+        if specific!=""{return specific;}
+        if zone!=""{let named=self.field(table,tags,"m:"+zone,index);if named!=""{return named;}}
+        LocalizedGmtOffset(origin.offset(),data,table,wide).string();
+    }
+    private:
+    compatible(canonical is string,metazone is string,specific is bool) is bool{
+        if canonical=="Etc/UTC" || canonical=="Etc/GMT"{return origin.offset().seconds()==0.rat() && !origin.daylight();}
+        if metazone=="" && !specific{return false;}
+        try{let named=Zone(canonical);named.offset(origin.instant()).seconds()==origin.offset().seconds() && named.daylight_saving(origin.instant())==origin.daylight();}catch error is UnknownTimeZone{false;}
+    }
+    field(table is CldrZoneNames,tags is @string,key is string,index is int) is string{
+        tags.reduce("")->chosen,tag{if chosen!=""{chosen;}else{let row=table.row(tag,key);if row.size()==4{row[index];}else{"";}}};
+    }
+}
+object LocalizedGmtOffset {
+    has offset is Duration;has data is GregorianLocaleData;has fields is @string;has wide is bool;
+    LocalizedGmtOffset(offset is Duration,data is GregorianLocaleData,table is CldrZoneNames,wide is bool){
+        self.offset=offset;self.data=data;self.wide=wide;let rows is @@string=data.tags().map()->tag{table.gmt(tag);};
+        let fields is @string=(0..3).map()->index{rows.reduce("")->chosen,row{if chosen!=""{chosen;}else{if row.size()==3{row[index];}else{"";}}};};
+        confirm fields[0]!="" && fields[1].split("{0}").size()==2 && fields[2]!="" else throw InvalidLocalizedDateTime("GMT pattern shape");self.fields=fields;
+    }
+    string() is string{
+        let seconds=offset.seconds().int();if seconds==0{return fields[2];}let negative=seconds<0;let absolute=if negative{-seconds;}else{seconds;};
+        let hour=(absolute/3600).int();let minute=((absolute%3600)/60).int();let second=absolute%60;
+        let formats=fields[0].split(";");confirm formats.size()==2 else throw InvalidLocalizedDateTime("GMT hour pattern shape");let source=formats[if negative{1;}else{0;}];
+        let pattern=if wide{source;}else{source.replace("HH","H");};
+        let split=pattern.split("m");let hour_text=split[0];let with_hour=hour_text.replace("HH",data.number(hour,2)).replace("H",data.number(hour,1));
+        let separator=pattern.split("H").last().split("m")[0];
+        let body=if !wide && minute==0 && second==0{with_hour.slice(0,with_hour.length()-separator.length());}else{
+            pattern.replace("HH",data.number(hour,2)).replace("H",data.number(hour,1)).replace("mm",data.number(minute,2)).replace("ss",data.number(second,2))+(if second!=0 && pattern.split("s").size()==1{(if separator==""{":";}else{separator;})+data.number(second,2);}else{"";});
+        };
+        let symbols=data.numbers();let signed=body.replace("+",symbols.symbol(2)).replace("-",symbols.symbol(3));let parts=fields[1].split("{0}");parts[0]+signed+parts[1];
+    }
+}
+object GregorianPrinting {
+    has dates is @Date;has times is @TimeOfDay;has zones is @LocalizedZoneObservation;has data is GregorianLocaleData;
+    GregorianPrinting(dates is @Date,times is @TimeOfDay,zones is @LocalizedZoneObservation,data is GregorianLocaleData){self.dates=dates;self.times=times;self.zones=zones;self.data=data;}
+    string(source is string) is string{
+        let program=GregorianProgram(source);let parts is @string=(0..program.size()).map()->index{let kind=program.kind(index);if kind=="literal"{program.literal(index);}else{self.field(kind,program.width(index));}};
+        let length=parts.reduce(0)->total,part{total+part.length();};confirm length<=8192 else throw InvalidLocalizedDateTime("output exceeds 8192 scalars");parts.join("");
+    }
+    private:
+    date() is Date{confirm dates.size()==1 else throw InvalidLocalizedDateTime("date field requested from wall time");dates[0];}
+    time() is TimeOfDay{confirm times.size()==1 else throw InvalidLocalizedDateTime("time field requested from date");times[0];}
+    field(kind is string,width is int) is string{
+        match kind{
+            case "G"{data.era(width);}
+            case "y"{let year=self.date().year();data.number(if width==2{year%100;}else{year;},width);}
+            case "M","L"{let month=self.date().month();if width<=2{data.number(month,width);}else{data.month(month,width,kind=="L");}}
+            case "roman-month"{["i","ii","iii","iv","v","vi","vii","viii","ix","x","xi","xii"][self.date().month()-1];}
+            case "d"{data.number(self.date().day(),width);}
+            case "E","c"{data.weekday(self.date().weekday(),width,kind=="c");}
+            case "H"{data.number(self.time().hour(),width);}
+            case "h"{let hour=self.time().hour()%12;data.number(if hour==0{12;}else{hour;},width);}
+            case "m"{data.number(self.time().minute(),width);}
+            case "s"{data.number(self.time().second(),width);}
+            case "a","B"{data.period(self.time(),width,kind=="B");}
+            case "z"{confirm zones.size()==1 else throw InvalidLocalizedDateTime("timezone field requested from wall value");LocalizedZoneName(zones[0],data,width>=4).string();}
+            else{throw InvalidLocalizedDateTime("unsupported compiled field: "+kind);}
+        }
+    }
+}
+object GregorianCombined {
+    has date,time,pattern is string;
+    GregorianCombined(date is string,time is string,pattern is string){self.date=date;self.time=time;self.pattern=pattern;}
+    string() is string{
+        let split=pattern.split("{0}");confirm split.size()==2 && pattern.split("{1}").size()==2 else throw InvalidLocalizedDateTime("date/time combination shape");
+        let text=split[0].replace("{1}",date)+time+split[1].replace("{1}",date);confirm text.length()<=8192 else throw InvalidLocalizedDateTime("combined output budget");text;
+    }
+}
+// Wall coordinates and policies are immutable, so their derived representation
+// is computed once. This is a per-object value, not a process-global cache.
+object LocalizedDate {
+    has origin is Date;has locale is Locale;has style is DateStyle;has rendered is string;
+    LocalizedDate(origin is Date,locale is Locale,style is DateStyle){
+        self.origin=origin;self.locale=locale;self.style=style;let data=GregorianLocaleData(locale);let times is @TimeOfDay=[];let zones is @LocalizedZoneObservation=[];
+        rendered=GregorianPrinting([origin],times,zones,data).string(data.date(style));
+    }
+    string() is string{rendered;}
+}
+object LocalizedTime {
+    has origin is TimeOfDay;has locale is Locale;has style is TimeStyle;has rendered is string;
+    LocalizedTime(origin is TimeOfDay,locale is Locale,style is TimeStyle){
+        self.origin=origin;self.locale=locale;self.style=style;let data=GregorianLocaleData(locale);let dates is @Date=[];let zones is @LocalizedZoneObservation=[];
+        rendered=GregorianPrinting(dates,[origin],zones,data).string(data.time(style,false));
+    }
+    string() is string{rendered;}
+}
+object LocalizedLocalDateTime {
+    has origin is LocalDateTime;has locale is Locale;has style is DateTimeStyle;has rendered is string;
+    LocalizedLocalDateTime(origin is LocalDateTime,locale is Locale,style is DateTimeStyle){
+        self.origin=origin;self.locale=locale;self.style=style;let data=GregorianLocaleData(locale);let zones is @LocalizedZoneObservation=[];let printing=GregorianPrinting([origin.date()],[origin.time()],zones,data);
+        rendered=GregorianCombined(printing.string(data.date(style.date())),printing.string(data.time(style.time(),false)),data.combination(style.date())).string();
+    }
+    string() is string{rendered;}
+}
+object LocalizedInstant {
+    has data is GregorianLocaleData;has origin is Instant;has zone is TimeZone;has locale is Locale;has style is DateTimeStyle;
+    LocalizedInstant(origin is Instant,zone is TimeZone,locale is Locale,style is DateTimeStyle){self.origin=origin;self.zone=zone;self.locale=locale;self.style=style;data=GregorianLocaleData(locale);}
+    string() is string{
+        let data=self.data;let observed=LocalizedZoneObservation(zone,origin);let local=observed.local();let printing=GregorianPrinting([local.date()],[local.time()],[observed],data);
+        GregorianCombined(printing.string(data.date(style.date())),printing.string(data.time(style.time(),true)),data.combination(style.date())).string();
+    }
+}
+
+test "localized date keeps the Gregorian year explicit" {test.is(LocalizedDate(Date(2026,8,11),Locale("en"),DateStyle.short).string(),"8/11/26");}

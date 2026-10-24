@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.defer.on-throw",
+  "title": "defers run when a throw leaves the scope",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "DEFER.EXITS",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "ERR.CATCH",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "try cleanup\nhandled\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 19: an enclosing catch observes the failure only after the exited try scope's defers ran."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,42 @@
+// Фибоначчи: последовательность и быстрое удвоение
+// Задача: Получить большие числа Фибоначчи и сверить два алгоритма.
+// Запуск из корня: ./examples/gallery/run fibonacci
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: BigInt, рекурсивная пара и persistent-переход.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/fibonacci.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/fibonacci v1.0.0;
+import "numbers/bigint" take BigInt,BigSum,BigDifference,BigProduct;
+import "io/stdout" take Stdout;
+object FibonacciPair {
+    has first,second is BigInt;
+    FibonacciPair(first is BigInt,second is BigInt){self.first=first;self.second=second;}
+    first() is BigInt{first;}second() is BigInt{second;}
+    following() is ^FibonacciPair{^first=second;^second=BigSum(left:first,right:second).value();}
+}
+object Fibonacci {
+    Fibonacci();
+    pair(n is int) is FibonacciPair {
+        confirm n>=0 && n<=10000;
+        if n==0{return FibonacciPair(BigInt("0"),BigInt("1"));}
+        let smaller=self.pair((n/2).int());let a=smaller.first();let b=smaller.second();
+        let c=BigProduct(left:a,right:BigDifference(left:BigProduct(left:BigInt("2"),right:b).value(),right:a).value()).value();
+        let d=BigSum(left:BigProduct(left:a,right:a).value(),right:BigProduct(left:b,right:b).value()).value();
+        if n%2==0{FibonacciPair(c,d);}else{FibonacciPair(d,BigSum(left:c,right:d).value());}
+    }
+}
+main() is int {
+    let fibonacci=Fibonacci();let state=FibonacciPair(BigInt("0"),BigInt("1"));
+    for (0..31)->n{
+        confirm state.first().string()==fibonacci.pair(n).first().string();
+        if n<16{Stdout().writeln("F("+n.string()+") = "+state.first().string());}
+        state=state.following();
+    }
+    for [100,250,500]->n{
+        let number=fibonacci.pair(n).first().string();
+        Stdout().writeln("F("+n.string()+") ["+number.length().string()+" digits] = "+number);
+        if n==100{confirm number=="354224848179261915075";}
+        if n==500{confirm number.length()==105;}
+    }0;
+}

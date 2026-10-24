@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.collections.frequencies",
+  "title": "frequency counts in first-occurrence order",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.COLLECTIONS.FREQUENCIES",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - distinct\nok 2 - total\nok 3 - amount\nok 4 - absent amount\nok 5 - first-occurrence order\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/frequencies.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "collections/frequencies header example: blue:2, red:1 in first-occurrence order; absent values count 0."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.float.basic",
+  "title": "float literals and exact binary fractions",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.FLOAT-LITERALS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "VAL.FLOAT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0.75\nequal\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "docs/okkama-spec-11072026.md#8.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "0.5 + 0.25 = 0.75 exactly in binary64; canonical text 0.75."
+  },
+  "status": "mandatory"
+}

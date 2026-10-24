@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+role Named {
+    name() is string;
+}
+
+object Account does Named {
+    Account();
+    name() is string { "acct"; }
+    secret() is string { "s3cret"; }
+}
+
+object Loader {
+    Loader();
+    async load() is Named { Account(); }
+}
+
+async main() is int {
+    let named = await Loader().load();
+    let s = named.secret();
+    0;
+}

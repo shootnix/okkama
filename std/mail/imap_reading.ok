@@ -1,0 +1,69 @@
+module mail/imap_reading v1.0.0;
+
+import "net/stream" take AsyncReading;
+import "mail/imap_response" take ImapResponse, ImapResponseDecoder, ImapResponseLimits, ImapResponseLimitExceeded;
+import "io/decorators" take InvalidReading;
+import "error" take InvalidArgument;
+
+// One lazy read of one bounded IMAP response from a borrowed byte stream.
+// result() returns the same Future, including after failure or cancellation.
+// Literal framing and syntax follow the ASCII mail/imap_response profile.
+// Pass remainder() explicitly to the next operation on the same stream.
+// A complete prefix requires no source read; untagged and continuation responses
+// are returned immediately, without waiting for tagged command completion.
+//
+// Only one operation may consume a stream at a time. The caller owns and closes
+// the stream. A started failure/cancellation may consume part of a response:
+// discard that session rather than retry a read or replay an IMAP command.
+// Within/Before compose around result() and await source cancellation cleanup.
+// No implicit timeout, retry, command queue or aggregate command-output budget.
+object ImapResponseReading {
+    has pending is Future<ImapResponseRead>;
+    ImapResponseReading(origin is AsyncReading) {
+        pending=ImapResponseInput(origin,[],ImapResponseLimits(),4096).read();
+    }
+    ImapResponseReading(origin is AsyncReading, prefix is @byte) {
+        pending=ImapResponseInput(origin,prefix,ImapResponseLimits(),4096).read();
+    }
+    ImapResponseReading(origin is AsyncReading, prefix is @byte, limits is ImapResponseLimits, chunk_bytes is int) {
+        pending=ImapResponseInput(origin,prefix,limits,chunk_bytes).read();
+    }
+    result() is Future<ImapResponseRead> {pending;}
+}
+object ImapResponseRead {
+    has value is ImapResponse;has tail is @byte;has count is int;
+    ImapResponseRead(decoder is ImapResponseDecoder) {
+        value=decoder.finish();tail=decoder.remainder();count=decoder.consumed();
+    }
+    response() is ImapResponse {value;}
+    remainder() is @byte {tail;}
+    consumed() is int {count;}
+}
+object ImapResponseInput {
+    has origin is AsyncReading;has prefix is @byte;has limits is ImapResponseLimits;has chunk_bytes is int;
+    ImapResponseInput(origin is AsyncReading, prefix is @byte, limits is ImapResponseLimits, chunk_bytes is int) {
+        confirm chunk_bytes>0 else throw InvalidArgument("IMAP read chunk size must be positive");
+        confirm prefix.size()<=limits.wire_bytes() else throw ImapResponseLimitExceeded("chunk_bytes");
+        self.origin=origin;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;
+    }
+    async read() is ImapResponseRead {
+        let decoder=ImapResponseDecoder(limits);decoder=decoder.fed(prefix);
+        loop {
+            last if decoder.complete();
+            let remaining=limits.wire_bytes()-decoder.consumed();
+            confirm remaining>0 else throw ImapResponseLimitExceeded("wire_bytes");
+            let requested=if chunk_bytes<remaining {chunk_bytes;} else {remaining;};
+            let chunk=await origin.bytes(requested);
+            confirm chunk.size()<=requested else throw InvalidReading("IMAP origin returned more bytes than requested");
+            if chunk.size()==0 {decoder.finish();}
+            decoder=decoder.fed(chunk);
+        }
+        ImapResponseRead(decoder);
+    }
+}
+
+test "IMAP read snapshot preserves response and exact remainder" {
+    let decoder=ImapResponseDecoder();decoder=decoder.fed([43.byte(),32.byte(),13.byte(),10.byte(),1.byte()]);
+    let read=ImapResponseRead(decoder);test.is(read.response().name(),"");test.is(read.consumed(),4);
+    test.is(read.remainder(),[1.byte()]);
+}

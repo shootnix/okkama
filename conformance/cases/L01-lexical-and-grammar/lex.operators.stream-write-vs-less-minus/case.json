@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.operators.stream-write-vs-less-minus",
+  "title": "`<-` is one token; `a < -b` compares",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.OPERATOR-TOKENS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "VAL.STREAM-WRITE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "written\nnot less\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#8.4.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar note: `<-` is one contiguous token; `a < -b` is comparison with unary minus (1 < -2 is false)."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let answer = () is int { 42; };
+    let add = (a is int, b is int) is int { a + b; };
+    let effect = () is void { Stdout().writeln("effect"); };
+    effect();
+    out.writeln((answer() + add(1, 2)).string());
+    0;
+}

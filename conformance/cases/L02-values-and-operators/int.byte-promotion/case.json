@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.int.byte-promotion",
+  "title": "byte arithmetic produces int results",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-ARITH",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "VAL.BYTE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "300\n300\n9\nint 256\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3",
+    "docs/okkama-spec-11072026.md#6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.3: arithmetic never produces byte; byte+byte is int (no wrapping), so 255+1 = 256 compares equal to int 256. language owner decision, 21.10.2026 (D-046): different numeric categories interact only after an explicit cast; no implicit promotion, so byte+int needs .int()."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,738 @@
+module random/distribution v1.0.0;
+
+import "random/source" take Randomizing;
+import "collections/sequence" take Sequencing;
+import "collections/list" take List, EmptyList;
+import "collections/combining" take UnequalSizes;
+import "math/constants" take Pi, Tau;
+import "runtime/random_distribution" take
+    distribution_uniform,
+    distribution_log,
+    distribution_exp,
+    distribution_sqrt,
+    distribution_cos,
+    distribution_acos,
+    distribution_power,
+    distribution_angle;
+
+// Stateful distribution views over an injected Randomizing capability.
+// Calling sample() advances that source.
+//
+//     let dice = UniformIntegers(random: random, start: 1, stop: 7);
+//     let roll is int = dice.sample();
+//
+//     let noise = NormalDistribution(
+//         random: random,
+//         mean: 0.0,
+//         deviation: 1.0,
+//     );
+//     let value is float = noise.sample();
+//
+// Integer and float uniforms are half-open. Samples chooses without
+// replacement and rejects count outside 0..values.size(). Choices and weighted
+// choices require non-empty values. Weights must be non-negative, have the same
+// size as values, and contain at least one positive value.
+// The current immutable linked-list removal used by Samples costs O(n*count);
+// it can later be replaced by a persistent indexed collection without changing
+// this public contract.
+//
+// Continuous algorithms are fixed for seeded reproducibility: Box-Muller for
+// normal values, Marsaglia-Tsang for gamma, two independent gamma samples for
+// beta, and Best-Fisher rejection for von Mises. Degenerate normal and
+// log-normal distributions with zero deviation consume no random values.
+
+role Distribution<T> {
+    sample() is T;
+}
+
+object UniformIntegers does Distribution<int> {
+    has random is Randomizing;
+    has beginning is int;
+    has ending is int;
+
+    UniformIntegers(random is Randomizing, start is int, stop is int) {
+        confirm start < stop else throw InvalidDistribution(
+            "uniform integer range must satisfy start < stop"
+        );
+        self.random = random;
+        beginning = start;
+        ending = stop;
+    }
+
+    sample() is int {
+        random.integer(beginning, ending);
+    }
+}
+
+object UniformFloats does Distribution<float> {
+    has random is Randomizing;
+    has beginning is float;
+    has ending is float;
+
+    UniformFloats(random is Randomizing, start is float, stop is float) {
+        confirm start < stop else throw InvalidDistribution(
+            "uniform float range must satisfy start < stop"
+        );
+        self.random = random;
+        beginning = start;
+        ending = stop;
+    }
+
+    sample() is float {
+        distribution_uniform(beginning, ending, random.float());
+    }
+}
+
+object NormalDistribution does Distribution<float> {
+    has random is Randomizing;
+    has center is float;
+    has spread is float;
+
+    NormalDistribution(
+        random is Randomizing,
+        mean is float,
+        deviation is float,
+    ) {
+        confirm deviation >= 0.0 else throw InvalidDistribution(
+            "normal deviation must be non-negative"
+        );
+        self.random = random;
+        center = mean;
+        spread = deviation;
+    }
+
+    sample() is float {
+        if spread == 0.0 {
+            center;
+        }
+        else {
+            center + spread * (value StandardNormal(random: random));
+        }
+    }
+}
+
+object StandardNormal {
+    has random is Randomizing;
+
+    StandardNormal(random is Randomizing) {
+        self.random = random;
+    }
+
+    #projected
+    value() is float {
+        let radius is float = distribution_sqrt(
+            -2.0 * distribution_log(1.0 - random.float())
+        );
+        let angle is float = (value Tau()) * random.float();
+        radius * distribution_cos(angle);
+    }
+}
+
+object ExponentialDistribution does Distribution<float> {
+    has random is Randomizing;
+    has rate is float;
+
+    ExponentialDistribution(random is Randomizing, rate is float) {
+        confirm rate > 0.0
+            else throw InvalidDistribution("exponential rate must be positive");
+        self.random = random;
+        self.rate = rate;
+    }
+
+    sample() is float {
+        -distribution_log(1.0 - random.float()) / rate;
+    }
+}
+
+object GammaDistribution does Distribution<float> {
+    has random is Randomizing;
+    has shape is float;
+    has scale is float;
+
+    GammaDistribution(
+        random is Randomizing,
+        shape is float,
+        scale is float,
+    ) {
+        confirm shape > 0.0
+            else throw InvalidDistribution("gamma shape must be positive");
+        confirm scale > 0.0
+            else throw InvalidDistribution("gamma scale must be positive");
+        self.random = random;
+        self.shape = shape;
+        self.scale = scale;
+    }
+
+    sample() is float {
+        scale * (value GammaUnit(random: random, shape: shape));
+    }
+}
+
+object GammaUnit {
+    has random is Randomizing;
+    has shape is float;
+
+    GammaUnit(random is Randomizing, shape is float) {
+        self.random = random;
+        self.shape = shape;
+    }
+
+    #projected
+    value() is float {
+        if shape < 1.0 {
+            let boosted is float = value GammaUnit(
+                random: random,
+                shape: shape + 1.0,
+            );
+            boosted * distribution_power(random.float(), 1.0 / shape);
+        }
+        else {
+            value GammaCandidate(random: random, shape: shape);
+        }
+    }
+}
+
+object GammaCandidate {
+    has random is Randomizing;
+    has shape is float;
+
+    GammaCandidate(random is Randomizing, shape is float) {
+        self.random = random;
+        self.shape = shape;
+    }
+
+    #projected
+    value() is float {
+        let adjusted is float = shape - 0.3333333333333333;
+        let factor is float = 1.0 / distribution_sqrt(9.0 * adjusted);
+        let normal is float = value StandardNormal(random: random);
+        let base is float = 1.0 + factor * normal;
+        if base <= 0.0 {
+            self.value();
+        }
+        else {
+            let cube is float = base * base * base;
+            let uniform is float = random.float();
+            let square is float = normal * normal;
+            if uniform == 0.0
+                || uniform < 1.0 - 0.0331 * square * square
+                || distribution_log(uniform)
+                    < 0.5 * square
+                        + adjusted * (1.0 - cube + distribution_log(cube)) {
+                adjusted * cube;
+            }
+            else {
+                self.value();
+            }
+        }
+    }
+}
+
+object BetaDistribution does Distribution<float> {
+    has random is Randomizing;
+    has alpha is float;
+    has beta is float;
+
+    BetaDistribution(
+        random is Randomizing,
+        alpha is float,
+        beta is float,
+    ) {
+        confirm alpha > 0.0
+            else throw InvalidDistribution("beta alpha must be positive");
+        confirm beta > 0.0
+            else throw InvalidDistribution("beta beta must be positive");
+        self.random = random;
+        self.alpha = alpha;
+        self.beta = beta;
+    }
+
+    sample() is float {
+        value BetaSample(random: random, alpha: alpha, beta: beta);
+    }
+}
+
+object BetaSample {
+    has random is Randomizing;
+    has alpha is float;
+    has beta is float;
+
+    BetaSample(random is Randomizing, alpha is float, beta is float) {
+        self.random = random;
+        self.alpha = alpha;
+        self.beta = beta;
+    }
+
+    #projected
+    value() is float {
+        let left is float = value GammaUnit(random: random, shape: alpha);
+        let right is float = value GammaUnit(random: random, shape: beta);
+        if left == 0.0 && right == 0.0 {
+            self.value();
+        }
+        else {
+            if left == 0.0 {
+                0.0;
+            }
+            else {
+                if right == 0.0 {
+                    1.0;
+                }
+                else {
+                    if left > right {
+                        1.0 / (1.0 + right / left);
+                    }
+                    else {
+                        let ratio is float = left / right;
+                        ratio / (1.0 + ratio);
+                    }
+                }
+            }
+        }
+    }
+}
+
+object LogNormalDistribution does Distribution<float> {
+    has random is Randomizing;
+    has center is float;
+    has spread is float;
+
+    LogNormalDistribution(
+        random is Randomizing,
+        mean is float,
+        deviation is float,
+    ) {
+        confirm deviation >= 0.0 else throw InvalidDistribution(
+            "log-normal deviation must be non-negative"
+        );
+        self.random = random;
+        center = mean;
+        spread = deviation;
+    }
+
+    sample() is float {
+        if spread == 0.0 {
+            distribution_exp(center);
+        }
+        else {
+            distribution_exp(
+                center + spread * (value StandardNormal(random: random))
+            );
+        }
+    }
+}
+
+object VonMisesDistribution does Distribution<float> {
+    has random is Randomizing;
+    has center is float;
+    has concentration is float;
+
+    VonMisesDistribution(
+        random is Randomizing,
+        mean is float,
+        concentration is float,
+    ) {
+        confirm concentration >= 0.0 else throw InvalidDistribution(
+            "von Mises concentration must be non-negative"
+        );
+        self.random = random;
+        center = mean;
+        self.concentration = concentration;
+    }
+
+    sample() is float {
+        if concentration <= 0.000001 {
+            distribution_angle(center + (value Tau()) * random.float());
+        }
+        else {
+            value VonMisesSample(
+                random: random,
+                mean: center,
+                concentration: concentration,
+            );
+        }
+    }
+}
+
+object VonMisesSample {
+    has random is Randomizing;
+    has center is float;
+    has concentration is float;
+
+    VonMisesSample(
+        random is Randomizing,
+        mean is float,
+        concentration is float,
+    ) {
+        self.random = random;
+        center = mean;
+        self.concentration = concentration;
+    }
+
+    #projected
+    value() is float {
+        let scaling is float = 0.5 / concentration;
+        let ratio is float = scaling
+            + distribution_sqrt(1.0 + scaling * scaling);
+        value VonMisesCandidate(
+            random: random,
+            mean: center,
+            ratio: ratio,
+        );
+    }
+}
+
+object VonMisesCandidate {
+    has random is Randomizing;
+    has center is float;
+    has ratio is float;
+
+    VonMisesCandidate(
+        random is Randomizing,
+        mean is float,
+        ratio is float,
+    ) {
+        self.random = random;
+        center = mean;
+        self.ratio = ratio;
+    }
+
+    #projected
+    value() is float {
+        let cosine is float = distribution_cos(
+            (value Pi()) * random.float()
+        );
+        let delta is float = cosine / (ratio + cosine);
+        let uniform is float = random.float();
+        if uniform < 1.0 - delta * delta
+            || uniform <= (1.0 - delta) * distribution_exp(delta) {
+            let reciprocal is float = 1.0 / ratio;
+            let projected is float = (reciprocal + cosine)
+                / (1.0 + reciprocal * cosine);
+            let bounded is float = if projected < -1.0 {
+                -1.0;
+            }
+            else {
+                if projected > 1.0 {
+                    1.0;
+                }
+                else {
+                    projected;
+                }
+            };
+            let angle is float = distribution_acos(bounded);
+            if random.float() > 0.5 {
+                distribution_angle(center + angle);
+            }
+            else {
+                distribution_angle(center - angle);
+            }
+        }
+        else {
+            self.value();
+        }
+    }
+}
+
+object ParetoDistribution does Distribution<float> {
+    has random is Randomizing;
+    has shape is float;
+    has scale is float;
+
+    ParetoDistribution(
+        random is Randomizing,
+        shape is float,
+        scale is float,
+    ) {
+        confirm shape > 0.0
+            else throw InvalidDistribution("Pareto shape must be positive");
+        confirm scale > 0.0
+            else throw InvalidDistribution("Pareto scale must be positive");
+        self.random = random;
+        self.shape = shape;
+        self.scale = scale;
+    }
+
+    sample() is float {
+        scale / distribution_power(1.0 - random.float(), 1.0 / shape);
+    }
+}
+
+object WeibullDistribution does Distribution<float> {
+    has random is Randomizing;
+    has shape is float;
+    has scale is float;
+
+    WeibullDistribution(
+        random is Randomizing,
+        shape is float,
+        scale is float,
+    ) {
+        confirm shape > 0.0
+            else throw InvalidDistribution("Weibull shape must be positive");
+        confirm scale > 0.0
+            else throw InvalidDistribution("Weibull scale must be positive");
+        self.random = random;
+        self.shape = shape;
+        self.scale = scale;
+    }
+
+    sample() is float {
+        scale * distribution_power(
+            -distribution_log(1.0 - random.float()),
+            1.0 / shape,
+        );
+    }
+}
+
+object Choices<T> does Distribution<T> {
+    has random is Randomizing;
+    has origin is Sequencing<T>;
+
+    Choices(random is Randomizing, values is Sequencing<T>) {
+        confirm values.size() > 0
+            else throw InvalidDistribution("choices require non-empty values");
+        self.random = random;
+        origin = values;
+    }
+
+    sample() is T {
+        origin.item(random.integer(0, origin.size()));
+    }
+}
+
+object WeightedChoices<T> does Distribution<T> {
+    has random is Randomizing;
+    has origin is Sequencing<T>;
+    has weights is Sequencing<float>;
+    has scaling is float;
+    has total is float;
+
+    WeightedChoices(
+        random is Randomizing,
+        values is Sequencing<T>,
+        weights is Sequencing<float>,
+    ) {
+        confirm values.size() == weights.size() else throw UnequalSizes();
+        confirm values.size() > 0 else throw InvalidDistribution(
+            "weighted choices require non-empty values"
+        );
+        let valid is bool = (0..weights.size()).reduce(true) -> valid, index {
+            valid && weights.item(index) >= 0.0;
+        };
+        confirm valid
+            else throw InvalidDistribution("weights must be non-negative");
+        let maximum is float = (0..weights.size()).reduce(0.0)
+            -> largest, index {
+                if weights.item(index) > largest {
+                    weights.item(index);
+                }
+                else {
+                    largest;
+                }
+            };
+        confirm maximum > 0.0 else throw InvalidDistribution(
+            "weighted choices require a positive weight"
+        );
+        self.random = random;
+        origin = values;
+        self.weights = weights;
+        scaling = maximum;
+        let normalized is float = (0..weights.size()).reduce(0.0)
+            -> sum, index {
+            sum + weights.item(index) / maximum;
+        };
+        total = normalized;
+    }
+
+    sample() is T {
+        value WeightedSelection(
+            values: origin,
+            weights: weights,
+            scaling: scaling,
+            target: distribution_uniform(0.0, total, random.float()),
+            position: 0,
+            cumulative: 0.0,
+        );
+    }
+}
+
+object WeightedSelection<T> {
+    has values is Sequencing<T>;
+    has weights is Sequencing<float>;
+    has scaling is float;
+    has target is float;
+    has position is int;
+    has cumulative is float;
+
+    WeightedSelection(
+        values is Sequencing<T>,
+        weights is Sequencing<float>,
+        scaling is float,
+        target is float,
+        position is int,
+        cumulative is float,
+    ) {
+        self.values = values;
+        self.weights = weights;
+        self.scaling = scaling;
+        self.target = target;
+        self.position = position;
+        self.cumulative = cumulative;
+    }
+
+    #projected
+    value() is T {
+        let following is float = cumulative
+            + weights.item(position) / scaling;
+        if target < following || position == values.size() - 1 {
+            values.item(position);
+        }
+        else {
+            value WeightedSelection(
+                values: values,
+                weights: weights,
+                scaling: scaling,
+                target: target,
+                position: position + 1,
+                cumulative: following,
+            );
+        }
+    }
+}
+
+object Samples<T> does Distribution<@T> {
+    has random is Randomizing;
+    has origin is Sequencing<T>;
+    has amount is int;
+
+    Samples(
+        random is Randomizing,
+        values is Sequencing<T>,
+        count is int,
+    ) {
+        confirm count >= 0 && count <= values.size() else throw InvalidDistribution(
+            "sample count must be between zero and the values size"
+        );
+        self.random = random;
+        origin = values;
+        amount = count;
+    }
+
+    sample() is @T {
+        let empty is @T = [];
+        if amount == 0 {
+            empty;
+        }
+        else {
+            let no_positions is List<int> = EmptyList();
+            let positions is List<int> = (0..origin.size()).reduce(no_positions)
+                -> items, index { items.prefix(index); };
+            let no_selected is List<int> = EmptyList();
+            let reversed is List<int> = value IndexSamples(
+                random: random,
+                positions: positions,
+                count: amount,
+                selected: no_selected,
+            );
+            let ordered is List<int> = reversed.reduce(EmptyList())
+                -> items, index { items.prefix(index); };
+            ordered.map() -> index { origin.item(index); };
+        }
+    }
+}
+
+object IndexSamples {
+    has random is Randomizing;
+    has positions is List<int>;
+    has amount is int;
+    has selected is List<int>;
+
+    IndexSamples(
+        random is Randomizing,
+        positions is List<int>,
+        count is int,
+        selected is List<int>,
+    ) {
+        self.random = random;
+        self.positions = positions;
+        amount = count;
+        self.selected = selected;
+    }
+
+    #projected
+    value() is List<int> {
+        if amount == 0 {
+            selected;
+        }
+        else {
+            let removal is ListRemoval<int> = ListRemoval(
+                origin: positions,
+                index: random.integer(0, positions.size()),
+            );
+            value IndexSamples(
+                random: random,
+                positions: removal.remainder(),
+                count: amount - 1,
+                selected: selected.prefix(removal.item()),
+            );
+        }
+    }
+}
+
+object ListRemoval<T> {
+    has origin is List<T>;
+    has index is int;
+
+    ListRemoval(origin is List<T>, index is int) {
+        self.origin = origin;
+        self.index = index;
+    }
+
+    item() is T {
+        if index == 0 {
+            origin.first();
+        }
+        else {
+            ListRemoval(origin: origin.tail(), index: index - 1).item();
+        }
+    }
+
+    remainder() is List<T> {
+        if index == 0 {
+            origin.tail();
+        }
+        else {
+            ListRemoval(origin: origin.tail(), index: index - 1)
+                .remainder()
+                .prefix(origin.first());
+        }
+    }
+}
+
+object PermutationSamples<T> does Distribution<@T> {
+    has random is Randomizing;
+    has origin is Sequencing<T>;
+
+    PermutationSamples(random is Randomizing, values is Sequencing<T>) {
+        self.random = random;
+        origin = values;
+    }
+
+    sample() is @T {
+        Samples(random: random, values: origin, count: origin.size()).sample();
+    }
+}
+
+object InvalidDistribution does Error {
+    has message is string;
+
+    InvalidDistribution(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

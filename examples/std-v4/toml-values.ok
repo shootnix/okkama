@@ -1,0 +1,19 @@
+module app v1.0.0;
+import "toml/value" take TomlTable, TomlMember, TomlString, TomlBoolean;
+
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let settings = TomlTable([
+            TomlMember("name", TomlString("Ada")),
+            TomlMember("enabled", TomlBoolean(true)),
+        ]);
+        let names is @string = settings.members().map() -> member { member.name(); };
+        names.join(",");
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

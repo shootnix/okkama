@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.try-cleanup.before-catch",
+  "title": "try-owned objects are destroyed before catch selection",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.TRY-CLEANUP",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "destroy try-owned\nin catch\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6",
+    "docs/okkama-llm-context-1.0.md#12"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.6: unrelated objects owned by the try scope are destroyed before catch selection."
+  },
+  "status": "mandatory"
+}

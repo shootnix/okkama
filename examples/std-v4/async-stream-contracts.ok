@@ -1,0 +1,25 @@
+module app v1.0.0;
+import "net/stream" take AsyncReading, ConnectionEndpoints;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint;
+
+// In-memory contract example; this object is not a network connection.
+object ExampleInput does AsyncReading {
+    has buffer is ByteBuffer;
+    ExampleInput() {buffer=ByteBuffer([byte(1),byte(2),byte(3)]);}
+    async bytes(limit is int) is @byte {buffer.reading().bytes(limit);}
+}
+
+async main() is int {
+    let input is AsyncReading=ExampleInput();
+    let first=await input.bytes(2);
+    let second=await input.bytes(2);
+    let ended=await input.bytes(2);
+    Stdout().writeln(first.size().string()+","+second.size().string()+","+ended.size().string());
+    let endpoints is ConnectionEndpoints<IpEndpoint>=ConnectionEndpoints(
+        IpEndpoint(IpAddress("127.0.0.1"),40000),IpEndpoint(IpAddress("::1"),443));
+    Stdout().writeln(endpoints.local_endpoint().string()+" -> "+endpoints.remote_endpoint().string());
+    0;
+}

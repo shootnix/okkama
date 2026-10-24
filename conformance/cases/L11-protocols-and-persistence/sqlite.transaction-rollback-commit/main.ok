@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "db/sqlite" take SqliteMemory;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbInteger, DbText, DbDecimal, DbNull, ObservedDbValue;
+import "db/row" take RowsEnded;
+import "db/read" take RowReader;
+import "db/error" take DbFailure;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "compare" take Order;
+
+async main() is int {
+    let out = Stdout();
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE events(n INTEGER)"));
+    let first = await connection.transaction(TransactionOptions());
+    await first.execution(Statement("INSERT INTO events VALUES(1)"));
+    let rolled = await first.rollback();
+    let second = await connection.transaction(TransactionOptions());
+    await second.execution(Statement("INSERT INTO events VALUES(2)"));
+    let committed = await second.commit();
+    let rows = await connection.rows(Statement("SELECT COUNT(*) AS c, MAX(n) AS m FROM events"));
+    let row = await rows.row();
+    rows.close();
+    out.writeln(RowReader(origin: row).int("c").string() + " " + RowReader(origin: row).int("m").string());
+    0;
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.shorthand.named-only",
+  "title": "field shorthand binds supplied fields by name",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.SHORTHAND",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "Alice#7/40\nBob#8/40\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.3: listed fields are named-only inputs in any order; the unlisted defaulted field keeps its default (40)."
+  },
+  "status": "mandatory"
+}

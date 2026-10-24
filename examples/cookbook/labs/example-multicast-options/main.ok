@@ -1,0 +1,19 @@
+// Выбрать параметры локальной multicast-группы
+//
+// Получать объявления в локальной сети: MulticastOptions и MulticastMembership описывают участие в группе.
+//
+// Запуск: ./examples/cookbook/run lab example-multicast-options
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-multicast-options
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/multicast" take MulticastOptions;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let options=MulticastOptions(hop_limit:1,loopback:false);
+    Stdout().writeln("hop limit: "+options.hop_limit().string());
+    Stdout().writeln(if options.loopback() {"local delivery requested";} else {"local delivery disabled";});
+    0;
+}

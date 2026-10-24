@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.ordering.numeric",
+  "title": "numeric ordering within one category and after explicit casts",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.ORDERING",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "t\nt\nf\nt\nt\nt\nt\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.4",
+    "docs/okkama-llm-context-1.0.md#6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 21.10.2026 (D-046): different numeric categories interact only after an explicit cast; no implicit promotion; spec 8.4: ordering compares numbers of one category exactly (float(1) < 1.5, byte(3) > byte(2), rat(1, 2) < 1.rat())."
+  },
+  "status": "mandatory"
+}

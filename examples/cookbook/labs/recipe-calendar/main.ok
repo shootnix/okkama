@@ -1,0 +1,26 @@
+// Построить календарь поставок
+//
+// На странице заказа нужны все даты выбранного месяца и единое строковое представление.
+//
+// Запуск: ./examples/cookbook/run lab recipe-calendar
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-calendar
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/calendar v1.0.0;
+import "calendar" take YearMonth,MonthDates;
+import "time/iso" take IsoDate;
+import "time/format" take FormattedDate;
+import "time/day" take TimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "time/date" take Date;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let dates = MonthDates(origin: YearMonth(year: 2026, month: 10));
+    confirm dates.size() == 31;
+    for dates -> date { Stdout().writeln(IsoDate(date).string()); }
+    let delivery = LocalDateTime(Date(2026, 10, 18), TimeOfDay(14, 30, 0, 0));
+    Stdout().writeln(FormattedDate(origin: delivery.date(), pattern: "%d.%m.%Y").string());
+    0;
+}

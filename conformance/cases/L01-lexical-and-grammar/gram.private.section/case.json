@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.private.section",
+  "title": "actions after `private:` are private helpers",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.PRIVATE-SECTION",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "OBJ.PRIVATE-ACTIONS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "42\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#11.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.7: private actions are callable through self; 40 + 2 = 42."
+  },
+  "status": "mandatory"
+}

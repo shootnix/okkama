@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.args.utf8-arguments",
+  "title": "program arguments are exact and ordered",
+  "purpose": "Observe argv as supplied by the runner.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.CLI.ARGUMENTS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "args": [
+    "alpha",
+    "",
+    "βeta two"
+  ],
+  "requires": {
+    "environment": [
+      "stdout",
+      "args"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3\n[alpha]\n[]\n[βeta two]\n"
+    }
+  },
+  "spec_refs": [
+    "std/cli/arguments.ok",
+    "docs/okkama-spec-11072026.md#5.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "cli/arguments: argv is explicit, already split, excludes the program path; empty arguments remain present; UTF-8 is decoded strictly."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,266 @@
+module http/form v1.0.0;
+import "http/body" take BodyReading,BodyClosed;
+import "http/header" take Headers,Header,HeaderName,HeaderLimits,HttpAsciiLowercase;
+import "mime/media_type" take MediaType,MediaTypeLimits,MimeToken,MimeCharacter;
+import "encoding/single_byte" take Latin1Decoded,Latin1Encoded,AsciiDecoded;
+import "encoding/utf" take Utf8Decoded,Utf8Encoded;
+import "numbers/bigint" take BigInt;
+import "strings/parse" take ParsedInt;
+import "compare" take Order;
+import "io/stream" take InvalidReadLimit;
+import "io/decorators" take InvalidReading;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "url/form" take ParsedForm;
+import "url/query" take QueryParameters,QueryLimitExceeded;
+import "fs/temp" take TemporaryFile;
+import "fs/directory" take DirectoryLocating;
+import "io/decorators" take ByteSnapshot;
+
+object FormLimits {
+    has fields,files is int;has field_bytes,file_bytes,total_bytes is BigInt;
+    FormLimits(){fields=1000;files=100;field_bytes=BigInt("1048576");file_bytes=BigInt("67108864");total_bytes=BigInt("134217728");}
+    FormLimits(fields is int,files is int,field_bytes is BigInt,file_bytes is BigInt,total_bytes is BigInt){
+        confirm fields>=0 && fields<=65535 && files>=0 && files<=65535 else throw InvalidFormLimits();
+        for [field_bytes,file_bytes,total_bytes] -> limit{confirm limit.sign()>=0 && limit.order(BigInt("9007199254740991"))!=Order.greater else throw InvalidFormLimits();}
+        self.fields=fields;self.files=files;self.field_bytes=field_bytes;self.file_bytes=file_bytes;self.total_bytes=total_bytes;
+    }
+    fields() is int{fields;}files() is int{files;}field_bytes() is BigInt{field_bytes;}file_bytes() is BigInt{file_bytes;}total_bytes() is BigInt{total_bytes;}
+}
+object InvalidFormLimits does Error{InvalidFormLimits();text() is string{"invalid form quotas";}}
+object InvalidMultipartForm does Error{has reason is string;InvalidMultipartForm(reason is string){self.reason=reason;}text() is string{"invalid multipart form: "+reason;}}
+object FormLimitExceeded does Error{has kind is string;FormLimitExceeded(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"form limit: "+kind;}}
+object MultipartFormEnded does Error{MultipartFormEnded();text() is string{"multipart form ended";}}
+object MultipartFormClosed does Error{MultipartFormClosed();text() is string{"multipart form closed";}}
+object MultipartPartUnread does Error{MultipartPartUnread();text() is string{"read the current part before advancing";}}
+object MissingFormFilename does Error{MissingFormFilename();text() is string{"field has no filename";}}
+object UnsupportedFormCharset does Error{UnsupportedFormCharset();text() is string{"unsupported form text charset";}}
+role FormPart{name() is string;file() is bool;filename() is string;headers() is Headers;body() is BodyReading;}
+role MultipartParts{async part() is FormPart;closed() is bool;close() is void;async settled() is bool;}
+role FormDraining{cancel() is void;async settled() is bool;}
+// Successful construction adopts the source; invalid boundary/limits do not.
+// Every parts() observes the same session, with one serialized current part.
+object ParsedMultipartForm {
+    has session is MultipartSession;
+    ParsedMultipartForm(origin is BodyReading,boundary is string,limits is FormLimits){let checked=FormBoundary(boundary);confirm !origin.closed() else throw MultipartFormClosed();session=MultipartSession(MultipartState(origin,checked.string(),limits));}
+    parts() is MultipartParts{session;}
+}
+object FormBoundary {
+    has origin is string;
+    FormBoundary(origin is string){
+        let bytes=Utf8Encoded(origin).bytes();confirm bytes.size()>0 && bytes.size()<=70 && bytes.size()==origin.length() && origin.slice(origin.length()-1,origin.length())!=" " else throw InvalidMultipartForm("boundary budget or ASCII grammar");
+        for bytes -> octet{let code=octet.int();let letter=(code>=65 && code<=90) || (code>=97 && code<=122) || (code>=48 && code<=57);let scalar=AsciiDecoded([octet]).string();confirm letter || " '()+_,-./:=?".split(scalar).size()>1 else throw InvalidMultipartForm("invalid boundary character");}self.origin=origin;
+    }
+    string() is string{origin;}
+}
+// A fixed window retains at most marker+256 padding+closing/CRLF octets.
+// Search all candidates once per fill; safe bytes are cached between small
+// caller reads, avoiding a full-window scan for every requested byte.
+object FormBoundarySpot {
+    has position,width is int;has ending is bool;
+    FormBoundarySpot(position is int,width is int,ending is bool){self.position=position;self.width=width;self.ending=ending;}
+    position() is int{position;}width() is int{width;}ending() is bool{ending;}
+}
+object FormBoundarySearch {
+    has text,marker is string;has initial,eof is bool;
+    FormBoundarySearch(text is string,marker is string,initial is bool,eof is bool){self.text=text;self.marker=marker;self.initial=initial;self.eof=eof;}
+    first() is @FormBoundarySpot{
+        let pieces=text.split(marker);let offset=Atomic(0);
+        for (0..pieces.size()-1) -> index{
+            let start=offset.value()+pieces[index].length();offset.replace(start+marker.length());
+            if initial && start>0 && (start<2 || text.slice(start-2,start)!="\r\n"){next;}
+            let after=start+marker.length();let end=if text.length()-after>260{after+260;}else{text.length();};let suffix=text.slice(after,end);
+            let closing=suffix.length()>=2 && suffix.slice(0,2)=="--";let position=Atomic(if closing{2;}else{0;});
+            loop{let at=position.value();if at>=suffix.length() || (suffix.slice(at,at+1)!=" " && suffix.slice(at,at+1)!="\t"){last;}position.replace(at+1);}
+            let at=position.value();if at-(if closing{2;}else{0;})>256{throw InvalidMultipartForm("boundary padding budget");}
+            if suffix.length()-at>=2 && suffix.slice(at,at+2)=="\r\n"{return [FormBoundarySpot(start,marker.length()+at+2,closing)];}
+            if closing && eof && after+at==text.length(){return [FormBoundarySpot(start,marker.length()+at,true)];}
+        }[];
+    }
+}
+object MultipartSession does MultipartParts {
+    has state is MultipartState;MultipartSession(state is MultipartState){self.state=state;}
+    closed() is bool{state.closed();}close() is void{state.close();}async settled() is bool{await state.settled();}
+    async part() is FormPart{
+        state.advance_allowed();let group is FutureGroup<FormPart>=FutureGroup();let registration=FormRegistration(state,FormGroupDrain(group));defer registration.close();let cleanup=FormSettlement(group);defer await cleanup.close();let pending=state.next_part();group.start(pending);await pending;
+    }
+    destroy{state.close();}
+}
+object MultipartState {
+    has origin is BodyReading;has boundary,marker is string;has limits is FormLimits;has field_limit,file_limit,total_limit is int;
+    has tail is Atomic<string>;has wire,fields,files,serial,safe is Atomic<int>;has current is Atomic<@MultipartFormPart>;has spots is Atomic<@FormBoundarySpot>;
+    has active is Atomic<@FormDraining>;has eof,initialized,closing,ended,stopped is Event;has busy is Atomic<bool>;
+    MultipartState(origin is BodyReading,boundary is string,limits is FormLimits){self.origin=origin;self.boundary=boundary;marker="\r\n--"+boundary;self.limits=limits;field_limit=ParsedInt(limits.field_bytes().string()).value();file_limit=ParsedInt(limits.file_bytes().string()).value();total_limit=ParsedInt(limits.total_bytes().string()).value();tail=Atomic("");wire=Atomic(0);fields=Atomic(0);files=Atomic(0);serial=Atomic(0);safe=Atomic(0);let parts is @MultipartFormPart=[];current=Atomic(parts);let operations is @FormDraining=[];active=Atomic(operations);let found is @FormBoundarySpot=[];spots=Atomic(found);eof=Event();initialized=Event();closing=Event();ended=Event();stopped=Event();busy=Atomic(false);}
+    closed() is bool{stopped.ready() || ended.ready();}
+    register(operation is FormDraining) is void{confirm active.value().size()==0 else throw InvalidMultipartForm("concurrent form operation");active.replace([operation]);}
+    released() is void{active.replace([]);}
+    close() is void{if !stopped.ready(){stopped.set();for active.value() -> operation{operation.cancel();}origin.close();tail.replace("");spots.replace([]);}}
+    async settled() is bool{let batch=active.value();for batch -> operation{await operation.settled();}true;}
+    check() is void{confirm !stopped.ready() else throw MultipartFormClosed();}
+    advance_allowed() is void{if ended.ready(){throw MultipartFormEnded();}self.check();for current.value() -> part{confirm part.ended() else throw MultipartPartUnread();}}
+    consume(count is int) is string{let value=tail.value();let result=value.slice(0,count);tail.replace(value.slice(count,value.length()));result;}
+    async fill() is bool{
+        self.check();if eof.ready(){return false;}let remaining=total_limit-wire.value();let limit=if remaining>=8192{8192;}else{remaining+1;};
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;
+        confirm bytes.size()<=limit else throw InvalidReading("form source exceeded requested limit");confirm bytes.size()<=remaining else throw FormLimitExceeded("total_bytes");wire.replace(wire.value()+bytes.size());
+        if bytes.size()==0{eof.set();return false;}tail.replace(tail.value()+Latin1Decoded(bytes).string());true;
+    }
+    async initialize() is bool{
+        let discarded=Atomic(0);loop{
+            let found=FormBoundarySearch(tail.value(),"--"+boundary,true,eof.ready()).first();if found.size()>0{let spot=found[0];confirm discarded.value()+spot.position()<=8192 else throw FormLimitExceeded("preamble_bytes");self.consume(spot.position()+spot.width());if spot.ending(){closing.set();}initialized.set();return true;}
+            confirm !eof.ready() else throw InvalidMultipartForm("missing opening boundary");let retained=boundary.length()+264;let excess=tail.value().length()-retained;if excess>0{discarded.replace(discarded.value()+excess);confirm discarded.value()<=8192 else throw FormLimitExceeded("preamble_bytes");self.consume(excess);}await self.fill();
+        }
+    }
+    async finish() is bool{tail.replace("");loop{if eof.ready(){last;}await self.fill();tail.replace("");}ended.set();origin.close();true;}
+    async metadata() is Headers{
+        loop{
+            let pieces=tail.value().split("\r\n\r\n");if pieces.size()>1{let size=pieces[0].length();confirm size<=16384 else throw FormLimitExceeded("header_bytes");let block=self.consume(size+4);return FormHeaders(block.slice(0,size)).headers();}
+            confirm tail.value().length()<=16387 else throw FormLimitExceeded("header_bytes");confirm !eof.ready() else throw InvalidMultipartForm("truncated part headers");await self.fill();
+        }
+    }
+    async next_part() is FormPart{
+        confirm busy.compare_and_replace(false,true) else throw InvalidMultipartForm("concurrent form operation");let complete=Event();let cleanup=FormOperationCleanup(self,busy,complete);defer cleanup.close();
+        if !initialized.ready(){await self.initialize();}if closing.ready(){await self.finish();complete.set();throw MultipartFormEnded();}
+        let headers=await self.metadata();let details=FormMetadata(headers);let file=details.file();let count=if file{files.value()+1;}else{fields.value()+1;};
+        confirm count<=if file{limits.files();}else{limits.fields();} else throw FormLimitExceeded(if file{"files";}else{"fields";});
+        if file{files.replace(count);}else{fields.replace(count);}let id=serial.value();serial.replace(id+1);let part=MultipartFormPart(self,id,details,if file{file_limit;}else{field_limit;});current.replace([part]);spots.replace([]);safe.replace(0);complete.set();part;
+    }
+    async payload(part is MultipartFormPart,limit is int) is @byte{
+        confirm limit>0 else throw InvalidReadLimit(limit);self.check();if part.ended(){return [];}
+        confirm current.value().size()==1 && current.value()[0].id()==part.id() else throw InvalidMultipartForm("part is no longer current");confirm busy.compare_and_replace(false,true) else throw InvalidMultipartForm("concurrent form operation");let complete=Event();let cleanup=FormOperationCleanup(self,busy,complete);defer cleanup.close();
+        loop{
+            if safe.value()>0{let count=if safe.value()<limit{safe.value();}else{limit;};part.charge(count);let data=self.consume(count);safe.replace(safe.value()-count);complete.set();return Latin1Encoded(data).bytes();}
+            let found=spots.value();if found.size()>0{let spot=found[0];self.consume(spot.width());spots.replace([]);if spot.ending(){closing.set();}part.finished();complete.set();return [];}
+            let available=FormBoundarySearch(tail.value(),marker,false,eof.ready()).first();if available.size()>0{let spot=available[0];safe.replace(spot.position());spots.replace([FormBoundarySpot(0,spot.width(),spot.ending())]);next;}
+            confirm !eof.ready() else throw InvalidMultipartForm("truncated part body");let retained=marker.length()+260;let excess=tail.value().length()-retained;if excess>0{safe.replace(excess);next;}await self.fill();
+        }
+    }
+}
+object MultipartFormPart does FormPart {
+    has owner is MultipartState;has id,maximum is int;has details is FormMetadata;has used is Atomic<int>;has ending is Event;has input is FormPartInput;
+    MultipartFormPart(owner is MultipartState,id is int,details is FormMetadata,maximum is int){self.owner=owner;self.id=id;self.details=details;self.maximum=maximum;used=Atomic(0);ending=Event();input=FormPartInput(self,owner);}
+    id() is int{id;}name() is string{details.name();}file() is bool{details.file();}filename() is string{details.filename();}headers() is Headers{details.headers();}body() is BodyReading{input;}
+    ended() is bool{ending.ready();}finished() is void{ending.set();}
+    charge(count is int) is void{confirm count<=maximum-used.value() else throw FormLimitExceeded(if details.file(){"file_bytes";}else{"field_bytes";});used.replace(used.value()+count);}
+}
+object FormPartInput does BodyReading {
+    has part is MultipartFormPart;has owner is MultipartState;has stopped is Event;
+    FormPartInput(part is MultipartFormPart,owner is MultipartState){self.part=part;self.owner=owner;stopped=Event();}
+    closed() is bool{stopped.ready() || owner.closed();}close() is void{if !stopped.ready(){stopped.set();if !part.ended(){owner.close();}}}
+    trailers() is Headers{confirm part.ended() else throw InvalidMultipartForm("part trailers unavailable before EOF");Headers([]);}
+    async bytes(limit is int) is @byte{confirm !stopped.ready() else throw BodyClosed();let group is FutureGroup<@byte>=FutureGroup();let registration=FormRegistration(owner,FormGroupDrain(group));defer registration.close();let cleanup=FormSettlement(group);defer await cleanup.close();let pending=owner.payload(part,limit);group.start(pending);await pending;}
+}
+object FormHeaders {
+    has fields is Headers;
+    FormHeaders(origin is string){
+        let lines=origin.split("\r\n");confirm lines.size()<=64 else throw FormLimitExceeded("header_fields");let entries is @Header=lines.map()->line{
+            confirm line!="" && line.length()<=8192 && line.slice(0,1)!=" " && line.slice(0,1)!="\t" else throw InvalidMultipartForm("part header line or folding");let pieces=line.split(":");confirm pieces.size()>1 else throw InvalidMultipartForm("part header colon");let name=pieces[0];let value=line.slice(name.length()+1,line.length());
+            try{Header(HeaderName(name),value);}catch e is Error{throw InvalidMultipartForm("invalid part header");}
+        };fields=Headers(entries,HeaderLimits(64,16384));
+    }
+    headers() is Headers{fields;}
+}
+object FormDispositionRules {
+    FormDispositionRules(origin is string){
+        let quoted=Atomic(false);let escaped=Atomic(false);let start=Atomic(0);
+        for (0..origin.length()) -> index{let scalar=origin.slice(index,index+1);if escaped.value(){escaped.replace(false);next;}if quoted.value() && scalar=="\\"{escaped.replace(true);next;}if scalar=="\""{quoted.replace(!quoted.value());next;}if !quoted.value() && scalar==";"{start.replace(index+1);}if !quoted.value() && scalar=="="{let name=Header(HeaderName("x"),origin.slice(start.value(),index)).value();confirm name.split("*").size()==1 else throw InvalidMultipartForm("extended disposition parameters are forbidden");}}
+    }
+}
+object FormMetadata {
+    has name is string;has filename is @string;has headers is Headers;
+    FormMetadata(headers is Headers){
+        let dispositions=headers.values(HeaderName("content-disposition"));confirm dispositions.size()==1 else throw InvalidMultipartForm("one form-data disposition required");let raw=dispositions.item(0);FormDispositionRules(raw);
+        let disposition=try{FormDisposition(raw);}catch e is Error{throw InvalidMultipartForm("invalid disposition");};confirm disposition.kind()=="form-data" else throw InvalidMultipartForm("form-data disposition required");let parameters=disposition.parameters();let names=parameters.values("name");let filenames=parameters.values("filename");confirm names.size()==1 && filenames.size()<=1 else throw InvalidMultipartForm("name/filename cardinality");
+        name=FormMetadataText(names[0],256).string();let files is @string=(0..filenames.size()).map()->index{FormMetadataText(filenames[index],1024).string();};filename=files;
+        confirm !headers.membership(HeaderName("Content-Transfer-Encoding")) else throw InvalidMultipartForm("form transfer encoding unsupported");let types=headers.values(HeaderName("content-type"));confirm types.size()<=1 else throw InvalidMultipartForm("duplicate part content type");if types.size()==1{try{MediaType(types.item(0),MediaTypeLimits(16,16384));}catch e is Error{throw InvalidMultipartForm("invalid part content type");}}
+        self.headers=headers;
+    }
+    name() is string{name;}file() is bool{filename.size()==1;}filename() is string{confirm filename.size()==1 else throw MissingFormFilename();filename[0];}headers() is Headers{headers;}
+}
+// RFC7578 disposition: ASCII tokens, byte-preserving quoted parameter values.
+// General mail MIME is intentionally stricter ASCII and is not weakened here.
+object FormParameter{has name,value is string;FormParameter(name is string,value is string){self.name=name;self.value=value;}name() is string{name;}value() is string{value;}}
+object FormDisposition {
+    has kind is string;has entries is @FormParameter;
+    FormDisposition(origin is string){
+        let parser=FormDispositionScan(origin);kind=MimeToken(parser.token()).string();let parameters is @FormParameter=[];let collected=Atomic(parameters);
+        loop{parser.space();if parser.ended(){last;}confirm parser.scalar()==";" else throw InvalidMultipartForm("disposition separator");parser.advance();parser.space();let name=MimeToken(parser.token()).string();parser.space();confirm parser.scalar()=="=" else throw InvalidMultipartForm("disposition assignment");parser.advance();parser.space();let value=if parser.scalar()=="\""{parser.quoted();}else{parser.token();};confirm collected.value().size()<16 else throw FormLimitExceeded("disposition_parameters");let old=collected.value();let updated is @FormParameter=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{FormParameter(name,value);}};collected.replace(updated);}
+        entries=collected.value();
+    }
+    kind() is string{kind;}parameters() is FormDisposition{self;}
+    values(name is string) is @string{let found=entries.filter()->entry{entry.name()==name;};let results is @string=found.map()->entry{entry.value();};results;}
+}
+object FormDispositionScan {
+    has origin is string;has position is Atomic<int>;FormDispositionScan(origin is string){self.origin=origin;position=Atomic(0);}
+    ended() is bool{position.value()==origin.length();}scalar() is string{confirm !self.ended() else throw InvalidMultipartForm("unfinished disposition");origin.slice(position.value(),position.value()+1);}
+    advance() is void{position.replace(position.value()+1);}
+    space() is void{loop{if self.ended(){last;}let scalar=self.scalar();if scalar!=" " && scalar!="\t"{last;}self.advance();}}
+    token() is string{let start=position.value();loop{if self.ended() || !MimeCharacter(self.scalar()).token(){last;}self.advance();}confirm position.value()>start else throw InvalidMultipartForm("disposition token");origin.slice(start,position.value());}
+    quoted() is string{
+        self.advance();let value=Atomic("");loop{let scalar=self.scalar();self.advance();if scalar=="\""{return value.value();}let actual=if scalar=="\\"{let escaped=self.scalar();self.advance();escaped;}else{scalar;};value.replace(value.value()+actual);}
+    }
+}
+object FormMetadataText {
+    has value is string;FormMetadataText(origin is string,maximum is int){let bytes=Latin1Encoded(origin).bytes();confirm bytes.size()<=maximum else throw FormLimitExceeded("metadata_bytes");value=try{Utf8Decoded(bytes).string();}catch e is Error{throw InvalidMultipartForm("metadata must be UTF8");};}
+    string() is string{value;}
+}
+object FormText {
+    has part is FormPart;has charset is string;has maximum is int;
+    FormText(part is FormPart){self.part=part;charset=FormTextCharset(part.headers()).string();maximum=1048576;confirm !part.file() else throw InvalidMultipartForm("file is not a text field");}
+    FormText(part is FormPart,charset is string,maximum is int){confirm !part.file() && maximum>=0 && maximum<=1048576 else throw InvalidMultipartForm("text field projection limit");self.part=part;self.charset=charset;self.maximum=maximum;let declared=FormTextCharset(part.headers());if declared.declared(){confirm FormCharset(charset).name()==FormCharset(declared.string()).name() else throw UnsupportedFormCharset();}FormCharset(charset);}
+    async text() is string{
+        let input=part.body();defer input.close();let text=Atomic("");loop{
+            let remaining=maximum-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let pending=input.bytes(limit);group.start(pending);let bytes=await pending;confirm bytes.size()<=remaining else throw FormLimitExceeded("text_bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());
+        }FormCharset(charset).decoded(Latin1Encoded(text.value()).bytes());
+    }
+}
+object FormTextCharset {
+    has declared is bool;has value is string;FormTextCharset(headers is Headers){let types=headers.values(HeaderName("content-type"));declared=false;let selected=if types.size()==1{let type=MediaType(types.item(0));confirm type.type()=="text" else throw UnsupportedFormCharset();let charsets=type.parameters().values("charset");confirm charsets.size()<=1 else throw UnsupportedFormCharset();if charsets.size()==1{self.declared=true;charsets.item(0);}else{"US-ASCII";}}else{"US-ASCII";};FormCharset(selected);value=selected;}
+    declared() is bool{declared;}string() is string{value;}
+}
+object FormCharset {
+    has charset is string;FormCharset(charset is string){let key=Header(HeaderName("x"),charset).value();let lower=HttpAsciiLowercase(key).string();confirm lower=="utf-8" || lower=="us-ascii" || lower=="iso-8859-1" else throw UnsupportedFormCharset();self.charset=lower;}
+    name() is string{charset;}
+    decoded(bytes is @byte) is string{if charset=="utf-8"{Utf8Decoded(bytes).string();}else{if charset=="us-ascii"{AsciiDecoded(bytes).string();}else{Latin1Decoded(bytes).string();}}}
+}
+// This field-only format deliberately materializes at most 1 MiB of wire data.
+// Its single lazy Future owns the body and returns immutable ordered parameters.
+object ParsedUrlEncodedForm {
+    has origin is BodyReading;has limits is FormLimits;has pending is Atomic<@Future<QueryParameters>>;
+    ParsedUrlEncodedForm(origin is BodyReading,limits is FormLimits){confirm !origin.closed() else throw MultipartFormClosed();self.origin=origin;self.limits=limits;let empty is @Future<QueryParameters>=[];pending=Atomic(empty);}
+    async parameters() is QueryParameters{let group is FutureGroup<QueryParameters>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
+    closed() is bool{origin.closed();}close() is void{for pending.value() -> task{task.cancel();}origin.close();}
+    destroy{self.close();}
+    async read() is QueryParameters{
+        defer origin.close();let maximum=ParsedInt(limits.total_bytes().string()).value();let cap=if maximum<1048576{maximum;}else{1048576;};let text=Atomic("");
+        loop{let remaining=cap-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let reading=origin.bytes(limit);group.start(reading);let bytes=await reading;confirm bytes.size()<=limit else throw InvalidReading("form source exceeded requested limit");confirm bytes.size()<=remaining else throw FormLimitExceeded("total_bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());}
+        let parameters=try{ParsedForm(Latin1Encoded(text.value()).bytes(),limits.fields(),cap).parameters();}catch e is QueryLimitExceeded{throw FormLimitExceeded("fields");};let entries=parameters.entries();let field_limit=ParsedInt(limits.field_bytes().string()).value();
+        for (0..entries.size()) -> index{let entry=entries.item(index);confirm Utf8Encoded(entry.value()).bytes().size()<=field_limit else throw FormLimitExceeded("field_bytes");confirm Utf8Encoded(entry.name()).bytes().size()<=256 else throw FormLimitExceeded("metadata_bytes");}parameters;
+    }
+    private:
+    operation() is Future<QueryParameters>{let known=pending.value();if known.size()>0{known[0];}else{let task=self.read();pending.replace([task]);task;}}
+}
+// Only an explicit caller-selected directory/prefix can acquire a spool. The
+// returned TemporaryFile owns deletion/preservation; cancellation deletes it.
+object FormFileSpooling {
+    has part is FormPart;has directory is DirectoryLocating;has prefix is string;has pending is Atomic<@Future<TemporaryFile>>;
+    FormFileSpooling(part is FormPart,directory is DirectoryLocating,prefix is string){confirm part.file() else throw InvalidMultipartForm("only file parts can be spooled");self.part=part;self.directory=directory;self.prefix=prefix;let empty is @Future<TemporaryFile>=[];pending=Atomic(empty);}
+    async file() is TemporaryFile{let group is FutureGroup<TemporaryFile>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
+    async copy() is TemporaryFile{
+        let input=part.body();defer input.close();let file=TemporaryFile(directory,prefix);let complete=Event();let guard=FormSpoolCleanup(file,complete);defer guard.close();
+        loop{let group is FutureGroup<@byte>=FutureGroup();let cleanup=FormSettlement(group);defer await cleanup.close();let reading=input.bytes(8192);group.start(reading);let bytes=await reading;if bytes.size()==0{last;}file.write(ByteSnapshot(bytes));}file.flush();complete.set();file;
+    }
+    private:
+    operation() is Future<TemporaryFile>{let known=pending.value();if known.size()>0{known[0];}else{let task=self.copy();pending.replace([task]);task;}}
+}
+object FormSpoolCleanup{has file is TemporaryFile;has complete is Event;FormSpoolCleanup(file is TemporaryFile,complete is Event){self.file=file;self.complete=complete;}close() is void{if !complete.ready(){file.close();}}}
+// The session owns only its one active logical operation. Close cancels that
+// group's nested physical read even if a custom source close does not wake it.
+object FormGroupDrain<T> does FormDraining{has group is FutureGroup<T>;FormGroupDrain(group is FutureGroup<T>){self.group=group;}cancel() is void{group.cancel();}async settled() is bool{await group.wait();true;}}
+object FormRegistration{has state is MultipartState;FormRegistration(state is MultipartState,operation is FormDraining){self.state=state;state.register(operation);}close() is void{state.released();}}
+object FormOperationCleanup{has state is MultipartState;has busy is Atomic<bool>;has complete is Event;FormOperationCleanup(state is MultipartState,busy is Atomic<bool>,complete is Event){self.state=state;self.busy=busy;self.complete=complete;}close() is void{busy.replace(false);if !complete.ready(){state.close();}}}
+object FormSettlement<T>{has group is FutureGroup<T>;FormSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+test "multipart boundary is bounded ASCII, including quoted MIME spaces" {
+    test.is(FormBoundary("a b").string(),"a b");test.ok(try{FormBoundary("bad ");false;}catch e is InvalidMultipartForm{true;});
+}

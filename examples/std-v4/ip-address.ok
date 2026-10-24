@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "net/ip" take IpAddress, IpProperty, InvalidIpAddress;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let address=IpAddress("2001:0DB8:0:0:0:0:0:1");
+    Stdout().writeln(address.string());
+    Stdout().writeln(address.bytes().size().string());
+    if address.properties().membership(IpProperty.documentation) {
+        Stdout().writeln("documentation");
+    }
+    try {IpAddress("[::1]:443");}
+    catch error is InvalidIpAddress {Stdout().writeln(error.text());}
+    0;
+}

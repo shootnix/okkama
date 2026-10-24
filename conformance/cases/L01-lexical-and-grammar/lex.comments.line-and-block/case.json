@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.comments.line-and-block",
+  "title": "line and block comments are ignored",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.COMMENTS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4",
+    "docs/okkama-llm-context-1.0.md#5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "LLM context 5: `// line` and `/* block */` comments; a+b = 3."
+  },
+  "status": "mandatory"
+}

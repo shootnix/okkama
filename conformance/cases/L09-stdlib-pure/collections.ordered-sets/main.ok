@@ -1,0 +1,30 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "collections/list" take List, EmptyList, EmptyListAccess;
+import "collections/set" take OrderedSet, Union, Intersection, Difference;
+import "collections/heap" take Heap;
+import "collections/deque" take Deque, EmptyDequeAccess;
+
+object Sets {
+    Sets();
+    names() is OrderedSet<string> {
+        let empty is List<string> = EmptyList();
+        OrderedSet(values: empty.prefix("third").prefix("first").prefix("second").prefix("first"));
+    }
+    others() is OrderedSet<string> {
+        let empty is List<string> = EmptyList();
+        OrderedSet(values: empty.prefix("fourth").prefix("second").prefix("third"));
+    }
+}
+
+main() is int {
+    let c = Checks();
+    c = c.same_texts("deduplicated order", Sets().names().map() -> v { v; }, ["first", "second", "third"]);
+    c = c.same_int("size", Sets().names().size(), 3);
+    c = c.same_bool("membership", Sets().names().membership("second"), true);
+    c = c.same_texts("union order", Union(left: Sets().names(), right: Sets().others()).map() -> v { v; }, ["first", "second", "third", "fourth"]);
+    c = c.same_texts("intersection keeps left order", Intersection(left: Sets().names(), right: Sets().others()).map() -> v { v; }, ["second", "third"]);
+    c = c.same_texts("difference", Difference(left: Sets().names(), right: Sets().others()).map() -> v { v; }, ["first"]);
+    c.done();
+}

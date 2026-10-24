@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let pick = (n is int) is int {
+        if n > 0 { return 1; }
+        return -1;
+    };
+    out.writeln(pick(5).string());
+    out.writeln(pick(-5).string());
+    out.writeln("still in main");
+    0;
+}

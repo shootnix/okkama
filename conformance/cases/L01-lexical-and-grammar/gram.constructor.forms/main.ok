@@ -1,0 +1,33 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Cash {
+    has digit is int;
+    has cents is int = 0;
+    has total_cents is int = 0;
+
+    Cash(value is int) {
+        digit = value;
+        total_cents = value * 100;
+    }
+
+    Cash(:digit, :cents) {
+        self.total_cents = digit * 100 + cents;
+    }
+
+    total() is int { total_cents; }
+}
+
+object Marker {
+    Marker();
+    code() is int { 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Cash(digit: 2, cents: 5).total().string());
+    out.writeln(Cash(7).total().string());
+    out.writeln(Marker().code().string());
+    0;
+}

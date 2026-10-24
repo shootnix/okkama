@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fields.default-evaluated-then-replaced",
+  "title": "a field default is evaluated before construction even when the field is supplied",
+  "purpose": "Defaults fill self first; a supplied shorthand value replaces the default afterwards.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTION-ORDER",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "default evaluated\nafter supplied\ndefault evaluated\n5 7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3",
+    "contracts/DISCREPANCY-LEDGER.md#d-035"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-035, refined): before the constructor runs, every defaulted field is filled with its default; the constructor then binds the supplied values, replacing defaults; finally every field must be bound, otherwise construction fails. Stamp(id: 5) evaluates the default (prints) and then binds 5; Stamp() keeps 7."
+  },
+  "status": "mandatory"
+}

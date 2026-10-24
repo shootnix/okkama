@@ -1,0 +1,46 @@
+// Жизнь Конвея на торе
+// Задача: Проследить эволюцию клеточного поля с замкнутыми границами.
+// Запуск из корня: ./examples/gallery/run life
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: неизменяемая двумерная сетка, новый снимок на каждом шаге.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/life.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/life v1.0.0;
+import "io/stdout" take Stdout;
+object Life {
+    has cells is @@int;
+    Life(cells is @@int){confirm cells.size()>2 && cells[0].size()>2;self.cells=cells;}
+    cells() is @@int{cells;}
+    population() is int{cells.reduce(0)->sum,row{sum+(row.reduce(0)->n,cell{n+cell;});};}
+    neighbours(row is int,column is int) is int {
+        (-1..2).reduce(0)->sum,dr{
+            sum+((-1..2).reduce(0)->count,dc{
+                count+if dr==0 && dc==0{0;}else{
+                    cells[(row+dr+cells.size())%cells.size()][(column+dc+cells[0].size())%cells[0].size()];
+                };
+            });
+        };
+    }
+    following() is ^Life {
+        ^cells=(0..cells.size()).map()->row{(0..cells[0].size()).map()->column{
+            let near=self.neighbours(row,column);
+            if near==3 || (cells[row][column]==1 && near==2){1;}else{0;}
+        };};
+    }
+    show(generation is int) is void {
+        Stdout().writeln("generation "+generation.string()+" ("+self.population().string()+" alive)");
+        for cells->row{Stdout().writeln(row.map()->cell{if cell==1{"#";}else{".";}}.join(""));}
+    }
+}
+main() is int {
+    // Воспроизводимый glider: это позволяет сравнивать поколения и результаты запуска.
+    let seed=(0..8).map()->row{(0..12).map()->column{
+        if (row==1 && column==2) || (row==2 && column==3) || (row==3 && column>=1 && column<=3){1;}else{0;}
+    };};
+    let first=Life(seed);let board=first;
+    for (0..8)->generation{board.show(generation);board=board.following();}
+    confirm first.population()==5 && board.population()==5;
+    let blinker=Life([[0,0,0,0,0],[0,0,0,0,0],[0,1,1,1,0],[0,0,0,0,0],[0,0,0,0,0]]);
+    confirm blinker.following().following().cells()==blinker.cells();0;
+}

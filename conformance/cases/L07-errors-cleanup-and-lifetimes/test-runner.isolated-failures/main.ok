@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+object NotFound does Error {
+    has key is string;
+    NotFound(:key);
+    text() is string { "not found: " + key; }
+}
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+test "throws" {
+    throw Denied();
+}
+
+test "passes" {
+    test.is(1 + 1, 2);
+}
+
+main() is int {
+    0;
+}

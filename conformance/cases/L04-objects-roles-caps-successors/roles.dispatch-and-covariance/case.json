@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.roles.dispatch-and-covariance",
+  "title": "role dispatch and covariant successor results",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "ROLE.CONFORMANCE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "ROLE.RESTRICTED-REFERENCE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "closed box\nopen box\nclosed box\nopen box\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12",
+    "docs/okkama-spec-11072026.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 12: ^Box satisfies ^Package; role-typed references dispatch role actions on the original value."
+  },
+  "status": "mandatory"
+}

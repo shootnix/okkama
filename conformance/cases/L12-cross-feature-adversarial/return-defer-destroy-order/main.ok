@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has name is string;
+    Res(:name);
+    name() is string { name; }
+    destroy {
+        Stdout().writeln("destroy " + name);
+    }
+}
+
+object Factory {
+    Factory();
+    make() is Res {
+        let scratch = Res(name: "scratch");
+        let kept = Res(name: "kept");
+        defer Stdout().writeln("defer sees " + kept.name());
+        return kept;
+    }
+}
+
+main() is int {
+    {
+        let r = Factory().make();
+        Stdout().writeln("caller got " + r.name());
+    }
+    Stdout().writeln("end");
+    0;
+}

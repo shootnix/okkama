@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "billing/money" as money;
+import "inventory/money" as stock;
+
+object Price does money.Amount {
+    Price();
+    cents() is int { 250; }
+}
+
+main() is int {
+    let p is stock.Amount = Price();
+    0;
+}

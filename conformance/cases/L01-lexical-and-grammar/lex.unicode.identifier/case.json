@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.unicode.identifier",
+  "title": "identifiers are ASCII only",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.UNICODE-SOURCE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax"
+      ],
+      "justification": "A character outside the token set may be reported by the lexer or as a parse error."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#4.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: BINDING_NAME = [a-zA-Z_][a-zA-Z0-9_]*; a non-ASCII letter is not an identifier character."
+  },
+  "status": "mandatory"
+}

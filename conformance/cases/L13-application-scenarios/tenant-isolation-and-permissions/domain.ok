@@ -1,0 +1,32 @@
+module billing v1.0.0;
+
+enum Role = (admin, viewer, support);
+
+object Principal {
+    has tenant is string;
+    has access is Role;
+    Principal(:tenant, :access);
+    owns(owner is string) is bool { tenant == owner; }
+    may_write() is bool { access == Role.admin; }
+    redacted() is bool { access == Role.support; }
+}
+
+object InvoiceStore {
+    has owners is %string:string;
+    has emails is %string:string;
+    InvoiceStore(:owners, :emails);
+    read(principal is Principal, id is string) is string {
+        let owner = owners[id] else "";
+        if owner == "" || !principal.owns(owner) {
+            return "404";
+        }
+        if principal.redacted() { "200 [redacted]"; } else { "200 " + emails[id]; }
+    }
+    write(principal is Principal, id is string) is string {
+        let owner = owners[id] else "";
+        if owner == "" || !principal.owns(owner) {
+            return "404";
+        }
+        if principal.may_write() { "204"; } else { "403"; }
+    }
+}

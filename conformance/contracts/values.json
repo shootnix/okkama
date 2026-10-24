@@ -1,0 +1,518 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Values and operators",
+  "description": "Scalars, strings and operators (spec sections 6.6, 7, 8).",
+  "contracts": [
+    {
+      "id": "VAL.INT-ARITH",
+      "title": "int + - * % produce int; division and modulo by zero fail",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.INT-MODULO-SIGN",
+      "title": "`%` uses truncated division: the result has the sign of the dividend, as in Go (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3",
+        "contracts/DISCREPANCY-LEDGER.md#d-031"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: division by zero is covered by VAL.INT-ARITH",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-031"
+      ],
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.INT-OVERFLOW",
+      "title": "Signed 64-bit int arithmetic wraps on overflow, as in Go (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3",
+        "docs/bitwise-guide.md",
+        "contracts/DISCREPANCY-LEDGER.md#d-016"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: wrapping produces a value; no overflow failure exists",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-016"
+      ],
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.INT-DIVISION",
+      "title": "`/` on integer categories produces an exact rat",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.RAT",
+      "title": "rat(n, d) normalises by gcd, keeps the denominator positive, rejects zero; exact arithmetic on two rats (int/byte only after .rat()) and canonical n/d text",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3",
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.FLOAT",
+      "title": "float arithmetic on two floats, separate from rat and int (explicit casts only); integral floats print without a forced .0",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3",
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.FLOAT-TEXT",
+      "title": "Float text is Go's FormatFloat(x, 'g', -1, 64): shortest round-trip digits, exponent below 1e-4 or from 1e6, -0 (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6",
+        "contracts/DISCREPANCY-LEDGER.md#d-032"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: every finite float has a text; non-finite values are not representable",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-032"
+      ],
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.BYTE",
+      "title": "byte is a checked 0..255 category; byte arithmetic gives int; byte mixes with other categories only after an explicit cast",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.1",
+        "docs/okkama-spec-11072026.md#8.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.CHAR",
+      "title": "char is distinct from string and compares only with char",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.1",
+        "docs/okkama-spec-11072026.md#8.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-CONCAT",
+      "title": "string + string concatenates; mixing with other categories fails",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-LENGTH-SLICE",
+      "title": "length() and slice() count Unicode code points; slice never clamps",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6",
+        "docs/okkama-spec-11072026.md#6.6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-SPLIT-JOIN",
+      "title": "split is literal and keeps empty fields; join needs exact strings",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-REPLACE",
+      "title": "replace / replace_first are literal, left-to-right, non-overlapping; empty target means code-point boundaries",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: no failing form is specified besides wrong argument types (VAL.BUILTIN-CALLS)",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-TRIM-CHOMP",
+      "title": "trim() and chomp() return new strings",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the exact whitespace set and CR LF handling are tracked separately as VAL.STRING-WHITESPACE (unresolved)",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-WHITESPACE",
+      "title": "trim() removes Unicode White_Space (Go strings.TrimSpace); chomp() removes one trailing CRLF or LF (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6",
+        "contracts/DISCREPANCY-LEDGER.md#d-033"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: both actions accept every string",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-033"
+      ],
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.BUILTIN-CALLS",
+      "title": "Builtin receiver actions are positional-only, exact-arity and never shadow object actions",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6",
+        "docs/okkama-spec-11072026.md#6.6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.EQUALITY",
+      "title": "Equality is strict per category; mixed categories fail instead of returning false",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.COMPOSITE-EQUALITY",
+      "title": "Arrays, maps and ranges compare deeply",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.ORDERING",
+      "title": "< <= > >= compare numbers of one category exactly; mixed categories (int, byte, float, rat) fail without an explicit cast; non-numbers fail",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.NUMERIC-METHODS",
+      "title": "less/less_or_equal/more/more_or_equal require the exact same numeric category",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.BOOL-STRICT",
+      "title": "Conditions and ! && || require bool; no truthiness",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#7.1",
+        "docs/okkama-spec-11072026.md#8.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.BITWISE",
+      "title": "& | ^ ~ on int/int or byte/byte preserve the category; mixed or other categories fail",
+      "spec_refs": [
+        "docs/bitwise-guide.md",
+        "docs/okkama-llm-context-1.0.md#6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.SHIFTS",
+      "title": "<< >> >>> with int counts in 0..W-1; >> sign-extends int, >>> zero-fills",
+      "spec_refs": [
+        "docs/bitwise-guide.md"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.BIT-METHODS",
+      "title": "bit_count, leading/trailing_zeros, rotate_left/right, reverse_bits, swap_bytes",
+      "spec_refs": [
+        "docs/bitwise-guide.md",
+        "docs/okkama-llm-context-1.0.md#6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.RANGES",
+      "title": "Ranges with int bounds (byte only after .int()), start <= end, no chaining; expansion in array literals",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.SCALAR-CASTS",
+      "title": "int(), float(), byte(), string() primitive cast calls",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.CAST-METHODS",
+      "title": "Zero-argument cast methods .int() .float() .rat() .byte() .string() and rat numerator/denominator",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.ARRAY-CASTS",
+      "title": "@int(...) @float(...) @byte(...) @string(...) array casts with unpack",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.EVAL-ORDER",
+      "title": "Binary operands and call arguments evaluate exactly once, left to right",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.1",
+        "docs/okkama-spec-11072026.md#11.8",
+        "docs/okkama-llm-context-1.0.md#6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STREAM-WRITE",
+      "title": "`sink <- source` writes through the Writing/ByteSource roles, left-associative, returns the sink",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.4.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.UNICODE-STRINGS",
+      "title": "Strings are sequences of Unicode code points without normalisation",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.DECIMAL-SPELLING",
+      "title": "The general canonical string rule of math/decimal Decimal values (deferred: decimals are not a language feature yet)",
+      "spec_refs": [
+        "std/math/decimal.ok"
+      ],
+      "status": "deferred",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-045"
+      ],
+      "family": "Values and operators"
+    }
+  ]
+}

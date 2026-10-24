@@ -1,0 +1,48 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+import "async/atomic" take Atomic;
+
+object ResponseLost does Error {
+    ResponseLost();
+    text() is string { "provider response lost"; }
+}
+
+object Provider {
+    has charged is Atomic<@string>;
+    has lose_next is Atomic<bool>;
+    Provider(:charged, :lose_next);
+    charge(key is string, amount is int) is string {
+        if !self.lookup(key) {
+            charged.replace(@string(charged.value()..., key));
+        }
+        if lose_next.value() {
+            lose_next.replace(false);
+            throw ResponseLost();
+        }
+        "ok " + key;
+    }
+    lookup(key is string) is bool {
+        let found = charged.value().filter() -> k { k == key; };
+        found.size() > 0;
+    }
+    count() is int { charged.value().size(); }
+}
+
+main() is int {
+    let empty is @string = [];
+    let provider = Provider(charged: Atomic(value: empty), lose_next: Atomic(value: true));
+    let first = try {
+        provider.charge("pay-1", 2970);
+    } catch e is ResponseLost {
+        "unknown";
+    };
+    let reconciled = if first == "unknown" && provider.lookup("pay-1") { "paid"; } else { "unpaid"; };
+    let retried = provider.charge("pay-1", 2970);
+    let c = Checks();
+    c = c.same_text("first attempt is ambiguous", first, "unknown");
+    c = c.same_text("lookup resolves", reconciled, "paid");
+    c = c.same_text("retry with the original key", retried, "ok pay-1");
+    c = c.same_int("exactly one provider charge", provider.count(), 1);
+    c.done();
+}

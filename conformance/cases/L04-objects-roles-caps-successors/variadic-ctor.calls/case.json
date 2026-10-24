@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.variadic-ctor.calls",
+  "title": "variadic full constructors with empty and non-empty tails",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.VARIADIC-CONSTRUCTOR",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "GEN.INFERENCE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3\n1\na\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.3: the tail may be empty; exact T inference spans prefix and tail (int, then string)."
+  },
+  "status": "mandatory"
+}

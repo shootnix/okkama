@@ -1,0 +1,25 @@
+module app v1.0.0;
+import "mail/mbox_store" take Mbox;
+import "mail/mbox" take MboxRecord, MboxSeparator;
+import "mail/message" take ParsedMail;
+import "fs/path" take Path;
+import "fs/file" take File, FileMode;
+import "fs/directory" take Directory;
+import "fs/temp" take TemporaryDirectory;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let directory=TemporaryDirectory(Directory(Path(".")),"mbox-example-");defer directory.close();
+    let path=directory.path().child("archive");
+    let file=File(mode:FileMode.writing,path:path,binary:true);file.binary().write(ByteSnapshot([]));file.close();
+    let session=Mbox(path).session();defer session.close();
+    let message=ParsedMail(Utf8Encoded("Subject: example\r\n\r\nFrom sender\r\n").bytes()).message();
+    session=session.add(MboxRecord(MboxSeparator("From sender@example.test Thu Jan  1 00:00:00 1970"),message));
+    let saved=session.messages().first();
+    Stdout().writeln(Utf8Decoded(saved.message().body().bytes()).string());
+    session=session.remove(saved.identifier());
+    Stdout().writeln(session.messages().size().string());
+    0;
+}

@@ -1,0 +1,32 @@
+module app v1.0.0;
+import "archive/entry" take ArchiveEntry, ArchiveEntryVisitor, ArchiveFile, ArchiveDirectory,
+    ArchiveSymbolicLink, ArchiveHardLink, ArchiveFifo, ArchiveDevice;
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "io/stdout" take Stdout;
+
+// The visitor receives concrete variants from a heterogeneous entry sequence.
+// Merely constructing/visiting these values does not extract anything.
+object EntrySummary does ArchiveEntryVisitor {
+    EntrySummary();
+    file(entry is ArchiveFile) is void {
+        Stdout().writeln(entry.path().string()+": "+entry.data().size().string()+" bytes");
+    }
+    directory(entry is ArchiveDirectory) is void { Stdout().writeln("directory: "+entry.path().string()); }
+    symbolic_link(entry is ArchiveSymbolicLink) is void { Stdout().writeln("symbolic target: "+entry.target().string()); }
+    hard_link(entry is ArchiveHardLink) is void { Stdout().writeln("hard target: "+entry.target().string()); }
+    fifo(entry is ArchiveFifo) is void { Stdout().writeln("fifo: "+entry.path().string()); }
+    device(entry is ArchiveDevice) is void { Stdout().writeln("device: "+entry.major().string()+":"+entry.minor().string()); }
+}
+
+main() is int {
+    let meta = ArchiveMetadata(ArchiveModificationFromEpoch(0.rat()).value(), "");
+    let entries is @ArchiveEntry = [
+        ArchiveDirectory(ArchivePath("assets"), meta),
+        ArchiveFile(ArchivePath("assets/icon.bin"), meta, [byte(0), byte(255)]),
+        ArchiveSymbolicLink(ArchivePath("assets/current"), meta, ArchivePath("icon.bin")),
+    ];
+    let summary = EntrySummary();
+    for entries -> entry { entry.accept(summary); }
+    0;
+}

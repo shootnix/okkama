@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.resolve.importer-directory-not-cwd",
+  "title": "nested imports resolve from the importing file's directory",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.RESOLUTION",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "app/entry.ok",
+    "app/helper.ok",
+    "helper.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2",
+    "docs/okkama-llm-context-1.0.md#3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.2 / LLM context 3: lookup uses the importing file's own directory, never the working directory; app/entry.ok gets app/helper.ok (7), not ./helper.ok (99)."
+  },
+  "status": "mandatory"
+}

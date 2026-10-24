@@ -1,0 +1,67 @@
+module terminal/screen v1.0.0;
+import "terminal/capability" take TerminalSize;
+import "terminal/error" take TerminalUnavailable,TerminalProblem,TerminalClosed;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "runtime/application" take TerminalResizeState,terminal_resize_next,terminal_resize_closed,terminal_resize_close;
+import "async/atomic" take Atomic;
+import "async/lock" take Lock;
+import "io/stream" take Closing;
+enum ClearRegion=(screen,line,to_end,to_start);
+object TerminalScreen{
+    has origin is TerminalScreenApplying;
+    TerminalScreen(origin is TerminalScreenApplying){self.origin=origin;}
+    clear(region is ClearRegion) is void{origin.clear(region);}
+    move(row is int,column is int) is void{origin.move(row,column);}
+    display_cursor(visible is bool) is void{origin.display_cursor(visible);}
+    use_alternate_screen(enabled is bool) is void{origin.use_alternate_screen(enabled);}
+}
+role TerminalScreenApplying{
+    clear(region is ClearRegion) is void;
+    move(row is int,column is int) is void;
+    display_cursor(visible is bool) is void;
+    use_alternate_screen(enabled is bool) is void;
+}
+role TerminalResizeOpening{
+    async resizes() is TerminalResizeReading;
+    closed() is bool;
+}
+role TerminalResizeReading{
+    async size() is TerminalSize;
+    closed() is bool;
+    close() is void;
+}
+// Private native boundary adapter, owned by the public TerminalResizes wrapper.
+// It has no independent destroy hook that could shorten a borrowed role's life.
+object TerminalResizeReader does TerminalResizeReading{
+    has state is TerminalResizeState;
+    TerminalResizeReader(state is TerminalResizeState){self.state=state;}
+    async size() is TerminalSize{
+        let pending=terminal_resize_next(state);defer pending.cancel();
+        let size=try{await pending;}catch e is NativeFailure{throw TerminalProblem(e).value();};
+        TerminalSize(size[0],size[1]);
+    }
+    closed() is bool{terminal_resize_closed(state);}
+    close() is void{terminal_resize_close(state);}
+}
+
+object TerminalResizes does Closing{
+    has origin is TerminalResizeOpening;
+    has source is Atomic<@TerminalResizeReading>;has stopped is Atomic<bool>;has lock is Lock;
+    TerminalResizes(origin is TerminalResizeOpening){self.origin=origin;let empty is @TerminalResizeReading=[];source=Atomic(empty);stopped=Atomic(false);lock=Lock();}
+    async size() is TerminalSize{
+        confirm !self.closed() else throw TerminalClosed();
+        let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw TerminalClosed();
+        if source.value().size()==0{
+            let state=await origin.resizes();source.replace([state]);
+            if stopped.value(){state.close();throw TerminalClosed();}
+        }
+        await source.value()[0].size();
+    }
+    closed() is bool{
+        stopped.value() || origin.closed() || (source.value().size()>0 && source.value()[0].closed());
+    }
+    close() is void{
+        if !stopped.value(){stopped.replace(true);if source.value().size()>0{source.value()[0].close();}}
+    }
+    destroy{self.close();}
+}

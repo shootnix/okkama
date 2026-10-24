@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let empty is @int = [];
+    for empty -> n {
+        out.writeln("never");
+    }
+    for [42] -> n {
+        out.writeln(n.string());
+    }
+    for 3..3 -> n {
+        out.writeln("never");
+    }
+    out.writeln("done");
+    0;
+}

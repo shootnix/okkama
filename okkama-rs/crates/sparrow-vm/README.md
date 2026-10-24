@@ -1,0 +1,94 @@
+# Sparrow VM
+
+Самостоятельный исполнитель `.spb`. Не зависит от компилятора Okkama,
+IR, лексера, парсера, Java или исходников пользовательской программы.
+Зависимости: `okkama-sparrow` (байткод/верификатор), `okkama-runtime-core`
+(значения, операции, планировщик, natives) и Cranelift (JIT).
+
+## Отдельный бинарник
+
+Из `okkama-rs`:
+
+```sh
+cargo build --offline --release -p sparrow-cli
+./target/release/sparrow --help
+./target/release/sparrow check out.spb
+./target/release/sparrow out.spb
+```
+
+Компилятор создаёт файл отдельно:
+
+```sh
+cargo run --offline -p okkama-cli -- build examples/sparrow-control-flow.ok --target sparrow -o out.spb
+cargo run --offline -p sparrow-cli -- out.spb
+```
+
+Пример возвращает 42 как код выхода. `run` проверяет SPB 9 и исполняет его в
+текущем процессе с аргументами программы; `test` исполняет тесты файла,
+собранного с `-t`; `check` проверяет без запуска (бесконечный цикл не мешает
+проверке); `--assemble`/`--disassemble` переводят между SPB и текстом
+ассемблера ([sparrow-isa.md](../../docs/sparrow-isa.md)). Загрузчик
+ограничивает чтение 256 MiB + один контрольный байт. Неперехваченный отказ
+программы — диагностика в stderr и код 1; ошибки формата — 1, аргументов — 2,
+чтения — 3. Результат main обязан помещаться в 0..255.
+
+## Встраивание
+
+```rust,ignore
+let program = okkama_sparrow::decode(&bytes)?;
+let value = sparrow_vm::execute_with_arguments(&program, arguments)?;
+println!("{value}");
+```
+
+`execute` проверяет модель и создаёт отдельный стек кадров на каждый запуск;
+`run_tests` исполняет тестовый профиль, `report` даёт текст отказа как у JVM.
+`Error::InvalidProgram` обозначает неверный байткод; `Error::Operation`
+содержит функцию, индекс инструкции и ошибку операции. Ошибки не содержат типов IR
+или фиктивных source spans. Отображение позиции в исходнике — будущий source map.
+
+Прежний `okkama_runtime::sparrow::execute` остаётся совместимым адаптером:
+он вызывает этот движок и переводит ошибки в прежние типы Okkama runtime.
+`ir::IntValue` теперь реэкспортирует общий `okkama_runtime_core::IntValue`,
+поэтому результат API сохраняет прежние методы и типовую совместимость.
+
+## Границы модулей
+
+- `okkama-runtime-abi`: стабильные native ID, сигнатуры и NativeFailure.
+- `okkama-runtime-core`: значения, операции `ops`, кучи, регионы, отказы,
+  планировщик, natives, intrinsics, тесты и воркеры — общие для IR и Sparrow.
+  Не зависит от формата программы или исполнителя.
+- `okkama-sparrow`: модель программы, SPB codec, verifier и ассемблер; без движка.
+- `sparrow-vm`: кадры, переходы, вызовы и исполнение инструкций.
+- `sparrow-cli`: файлы, аргументы, вывод диагностики и process exit status.
+- `okkama-runtime`: IR-интерпретатор, source-диагностика, адаптер совместимости.
+
+Значения — общие `Value` ядра (`Rc` с итеративным освобождением); циклы
+ссылок собирает общий сборщик циклов `okkama_runtime_core::gc`. Строки,
+объекты, successor, массивы, словари, Future, регионы, natives и intrinsics
+исполняются через общее ядро. Состояние stdin (буфер и EOF) принадлежит одному
+запуску VM.
+
+## JIT
+
+Горячие функции (1000 вызовов или обратных переходов) компилируются в машинный
+код Cranelift (`src/jit.rs`); вход — в начале функции или в цели обратного
+перехода (OSR). Регистры — те же слоты `Value`, инструкции без быстрого пути
+исполняет `evaluate` интерпретатора, поэтому поведение не меняется.
+`OKKAMA_JIT=off` выключает JIT, `OKKAMA_JIT=eager` компилирует каждую функцию
+при первом вызове (режим проверки), `OKKAMA_JIT_DEBUG=1` печатает журнал
+компиляции. Устройство — в
+[sparrow-runtime-roadmap.md](../../docs/sparrow-runtime-roadmap.md#jit--машинный-код-sparrow-реализован-24102026).
+
+## Проверки независимости
+
+```sh
+cargo tree --offline -p sparrow-cli
+cargo test --offline -p sparrow-cli -p sparrow-vm -p okkama-runtime-core
+```
+
+В дереве нет `okkama-compiler` и `okkama-runtime`. Тесты отдельного бинарника
+создают байткод напрямую и запускают VM с пустым PATH. Тесты движка проверяют
+SPB 9, глубокую рекурсию (200 000 кадров), цикл SPB → ASM → SPB, обработчики
+отказов, точные целые за пределами 128 бит, ошибки и горячий код (OSR,
+переполнение в машинном коде, обработчики в скомпилированной функции). Общая регрессия Okkama дополнительно
+сравнивает исполнение IR и этой VM через совместимый адаптер.

@@ -1,0 +1,268 @@
+module example/async/sharded_cache v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+import "collections/list" take List, EmptyList;
+
+object ShardEntry {
+    has key is int;
+    has value is string;
+    ShardEntry(:key, :value);
+
+    key() is int { key; }
+    value() is string { value; }
+}
+
+object ShardState {
+    has entries is List<ShardEntry>;
+    ShardState(:entries);
+
+    put(entry is ShardEntry) is ^ShardState {
+        ^entries = self.without(entries, entry.key()).prefix(entry);
+    }
+
+    value(key is int) is string {
+        self.find_in(entries, key).value();
+    }
+
+    size() is int { entries.size(); }
+
+    find_in(remaining is List<ShardEntry>, key is int) is ShardEntry {
+        confirm !(remaining.size() == 0)
+            else panic "sharded cache example requested a missing key";
+
+        if remaining.first().key() == key {
+            remaining.first();
+        }
+        else {
+            self.find_in(remaining.tail(), key);
+        }
+    }
+
+    without(
+        remaining is List<ShardEntry>,
+        key is int
+    ) is List<ShardEntry> {
+        if (remaining.size() == 0) {
+            remaining;
+        }
+        else if remaining.first().key() == key {
+            self.without(remaining.tail(), key);
+        }
+        else {
+            self.without(remaining.tail(), key)
+                .prefix(remaining.first());
+        }
+    }
+}
+
+enum ShardOperation = (get, put, size, stop);
+
+object ShardReply {
+    has value is string;
+    has size is int;
+    ShardReply(:value, :size);
+
+    value() is string { value; }
+    size() is int { size; }
+}
+
+object ShardCommand {
+    has operation is ShardOperation;
+    has key is int;
+    has value is string;
+    has reply is Sending<ShardReply>;
+    ShardCommand(:operation, :key, :value, :reply);
+
+    operation() is ShardOperation { operation; }
+    key() is int { key; }
+    value() is string { value; }
+    reply() is Sending<ShardReply> { reply; }
+}
+
+object ShardOwner {
+    has commands is Receiving<ShardCommand>;
+    ShardOwner(:commands);
+
+    async run() is int {
+        let empty is List<ShardEntry> = EmptyList();
+        let state = ShardState(entries: empty);
+
+        loop {
+            let command = await commands.item();
+
+            if command.operation() == ShardOperation.put {
+                state = state.put(
+                    ShardEntry(
+                        key: command.key(),
+                        value: command.value()
+                    )
+                );
+                await command.reply().send(
+                    ShardReply(value: command.value(), size: state.size())
+                );
+            }
+            else if command.operation() == ShardOperation.get {
+                await command.reply().send(
+                    ShardReply(
+                        value: state.value(command.key()),
+                        size: state.size()
+                    )
+                );
+            }
+            else if command.operation() == ShardOperation.size {
+                await command.reply().send(
+                    ShardReply(value: "", size: state.size())
+                );
+            }
+            else {
+                await command.reply().send(
+                    ShardReply(value: "", size: state.size())
+                );
+                last state.size();
+            }
+        }
+    }
+}
+
+object CacheShard {
+    has commands is Sending<ShardCommand>;
+    CacheShard(:commands);
+
+    async request(
+        operation is ShardOperation,
+        key is int,
+        value is string
+    ) is ShardReply {
+        let reply is Channel<ShardReply> = Channel(capacity: 1);
+        await commands.send(
+            ShardCommand(
+                operation: operation,
+                key: key,
+                value: value,
+                reply: reply.sending()
+            )
+        );
+        await reply.receiving().item();
+    }
+
+    async put(key is int, value is string) is int {
+        let result = await self.request(ShardOperation.put, key, value);
+        result.size();
+    }
+
+    async value(key is int) is string {
+        let result = await self.request(ShardOperation.get, key, "");
+        result.value();
+    }
+
+    async size() is int {
+        let result = await self.request(ShardOperation.size, 0, "");
+        result.size();
+    }
+
+    async stop() is int {
+        let result = await self.request(ShardOperation.stop, 0, "");
+        result.size();
+    }
+}
+
+object ShardedCache {
+    has shards is @CacheShard;
+    ShardedCache(:shards);
+
+    shard(key is int) is CacheShard {
+        shards[key % shards.size()];
+    }
+
+    async put(key is int, value is string) is int {
+        await self.shard(key).put(key, value);
+    }
+
+    async value(key is int) is string {
+        await self.shard(key).value(key);
+    }
+
+    async shard_size(index is int) is int {
+        await shards[index].size();
+    }
+
+    async stop(index is int) is int {
+        await shards[index].stop();
+    }
+}
+
+object PutRequest {
+    has cache is ShardedCache;
+    has key is int;
+    has value is string;
+    PutRequest(:cache, :key, :value);
+
+    async run() is int {
+        await cache.put(key, value);
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let first_commands is Channel<ShardCommand> = Channel(capacity: 2);
+        let second_commands is Channel<ShardCommand> = Channel(capacity: 2);
+        let first_owner = spawn ShardOwner(
+            commands: first_commands.receiving()
+        ).run();
+        let second_owner = spawn ShardOwner(
+            commands: second_commands.receiving()
+        ).run();
+
+        let clients is @CacheShard = [
+            CacheShard(commands: first_commands.sending()),
+            CacheShard(commands: second_commands.sending())
+        ];
+        let cache = ShardedCache(shards: clients);
+
+        let zero = spawn PutRequest(
+            cache: cache,
+            key: 0,
+            value: "zero"
+        ).run();
+        let one = spawn PutRequest(
+            cache: cache,
+            key: 1,
+            value: "one"
+        ).run();
+        let two = spawn PutRequest(
+            cache: cache,
+            key: 2,
+            value: "two"
+        ).run();
+        await zero;
+        await one;
+        await two;
+
+        let value = await cache.value(2);
+        let first_size = await cache.shard_size(0);
+        let second_size = await cache.shard_size(1);
+        await cache.stop(0);
+        await cache.stop(1);
+        let first_owned = await first_owner;
+        let second_owned = await second_owner;
+        first_commands.sending().close();
+        second_commands.sending().close();
+
+        if value == "two"
+            && first_size == 2
+            && second_size == 1
+            && first_owned == 2
+            && second_owned == 1 {
+            42;
+        }
+        else {
+            0;
+        }
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}

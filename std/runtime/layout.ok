@@ -1,0 +1,12 @@
+module runtime/layout v1.0.0;
+
+// Native bulk primitives for text/layout.
+//
+// This module is intentionally low-level. Applications should construct the
+// validated value objects from text/layout instead of calling these actions
+// directly.
+
+native indent(origin is string, prefix is string) is string;
+native dedent(origin is string) is string;
+native wrap(origin is string, width is int) is string;
+native shorten(origin is string, width is int, placeholder is string) is string;

@@ -1,0 +1,198 @@
+module terminal/session v1.0.0;
+import "runtime/application" take TerminalState,TerminalResizeState,terminal_resize_open,terminal_standard,terminal_controlling,terminal_metadata,terminal_write,terminal_read,terminal_closed,terminal_close,terminal_cleanup;
+import "terminal/capability" take TerminalCapabilities,TerminalColorDepth,ColorPolicy,DetectedTerminalCapabilities;
+import "terminal/style" take StyledText;
+import "terminal/screen" take ClearRegion,TerminalScreenApplying,TerminalResizeOpening,TerminalResizeReading,TerminalResizeReader;
+import "terminal/mode" take TerminalModeApplying,TerminalMode,TerminalModeLease;
+import "terminal/error" take TerminalProblem,TerminalClosed,TerminalInputLimit,TerminalUnavailable;
+import "os/environment" take Environment;
+import "async/atomic" take Atomic;
+import "async/lock" take Lock;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "runtime/system" take system_platform;
+import "io/stream" take Closing,Writing,WritingText,ByteSource,IncompleteWrite;
+import "io/buffer" take ByteBuffer;
+
+enum TerminalOutputKind=(standard_output,standard_error);
+object OpenedStandardTerminal{
+    has output is TerminalOutputKind;has policy is ColorPolicy;has environment is Environment;
+    OpenedStandardTerminal(output is TerminalOutputKind,policy is ColorPolicy){self.output=output;self.policy=policy;environment=Environment();}
+    OpenedStandardTerminal(output is TerminalOutputKind,policy is ColorPolicy,environment is Environment){self.output=output;self.policy=policy;self.environment=environment;}
+    async session() is TerminalSession{
+        let kind=if output==TerminalOutputKind.standard_output{0;}else{1;};
+        let state=try{await terminal_standard(kind);}catch e is NativeFailure{throw TerminalProblem(e).value();};
+        try{TerminalSession(state,policy,environment);}catch e is Error{terminal_close(state);throw e;}
+    }
+}
+object OpenedControllingTerminal{
+    has policy is ColorPolicy;has environment is Environment;
+    OpenedControllingTerminal(policy is ColorPolicy){self.policy=policy;environment=Environment();}
+    OpenedControllingTerminal(policy is ColorPolicy,environment is Environment){self.policy=policy;self.environment=environment;}
+    async session() is TerminalSession{
+        let state=try{await terminal_controlling();}catch e is NativeFailure{throw TerminalProblem(e).value();};
+        try{TerminalSession(state,policy,environment);}catch e is Error{terminal_close(state);throw e;}
+    }
+}
+// One owning session. Its input/output/mode/resize capabilities are borrowed;
+// closing or dropping the session revokes all children and restores host state.
+object TerminalSession does Closing,TerminalModeApplying,TerminalScreenApplying,TerminalResizeOpening{
+    has state is TerminalState;
+    has observation is TerminalObservation;
+    has reading is TerminalInput;has writing is TerminalOutput;
+    TerminalSession(state is TerminalState,policy is ColorPolicy,environment is Environment){
+        self.state=state;observation=TerminalObservation(state,policy,environment);
+        reading=TerminalInput(state,self.observation);writing=TerminalOutput(state,self.observation);
+    }
+    input() is TerminalInput{reading;}
+    output() is TerminalOutput{writing;}
+    capabilities() is TerminalCapabilities{observation.capabilities();}
+    controlling() is bool{observation.controlling();}
+    apply(mode is TerminalMode) is TerminalModeLease{TerminalModeLease(state,mode);}
+    clear(region is ClearRegion) is void{
+        self.interactive_screen();
+        let code=match region{case ClearRegion.screen{"2J";}case ClearRegion.line{"2K";}case ClearRegion.to_end{"J";}case ClearRegion.to_start{"1J";}};
+        self.control(code);
+    }
+    move(row is int,column is int) is void{
+        self.interactive_screen();
+        confirm row>=0 && column>=0 && row<65535 && column<65535 else throw TerminalUnavailable("screen coordinates must be in 0..65534");
+        self.control((row+1).string()+";"+(column+1).string()+"H");
+    }
+    display_cursor(visible is bool) is void{
+        self.interactive_screen();self.restoration();self.control(if visible{"?25h";}else{"?25l";});
+    }
+    use_alternate_screen(enabled is bool) is void{
+        self.interactive_screen();self.restoration();self.control(if enabled{"?1049h";}else{"?1049l";});
+    }
+    async resizes() is TerminalResizeReading{
+        let opened=try{await terminal_resize_open(state);}catch e is NativeFailure{throw TerminalProblem(e).value();};
+        TerminalResizeReader(opened);
+    }
+    closed() is bool{terminal_closed(state);}
+    close() is void{try{terminal_close(state);}catch e is NativeFailure{throw TerminalProblem(e).value();}}
+    destroy{self.close();}
+    private:
+    interactive_screen() is void{
+        confirm observation.capabilities().output_interactive() && observation.screen_capable()
+            else throw TerminalUnavailable("screen control requires interactive VT-capable output");
+    }
+    control(code is string) is void{writing.write(Utf8Decoded([27.byte()]).string()+"["+code);}
+    restoration() is void{
+        let esc=Utf8Decoded([27.byte()]).string();
+        try{terminal_cleanup(state,Utf8Encoded(esc+"[?25h"+esc+"[?1049l").bytes());}
+        catch e is NativeFailure{throw TerminalProblem(e).value();}
+    }
+}
+object TerminalObservation{
+    has state is TerminalState;has initial is TerminalCapabilities;
+    has environment is Environment;has policy is ColorPolicy;
+    TerminalObservation(state is TerminalState,policy is ColorPolicy,environment is Environment){
+        let fields=try{terminal_metadata(state);}catch e is NativeFailure{throw TerminalProblem(e).value();};
+        let depth=match fields["colors"]{case 1{TerminalColorDepth.basic;}case 2{TerminalColorDepth.indexed;}case 3{TerminalColorDepth.true_color;}else{TerminalColorDepth.disabled;}};
+        initial=DetectedTerminalCapabilities(fields["input"]==1,fields["output"]==1,depth,fields["columns"],fields["rows"],environment,policy).value();
+        self.state=state;self.environment=environment;self.policy=policy;
+    }
+    capabilities() is TerminalCapabilities{
+        let fields=try{terminal_metadata(state);}catch e is NativeFailure{throw TerminalProblem(e).value();};
+        let geometry=DetectedTerminalCapabilities(initial.input_interactive(),initial.output_interactive(),initial.colors(),fields["columns"],fields["rows"],environment,policy).value().size();
+        TerminalCapabilities(initial.input_interactive(),initial.output_interactive(),initial.colors(),geometry);
+    }
+    controlling() is bool{try{terminal_metadata(state)["controlling"]==1;}catch e is NativeFailure{throw TerminalProblem(e).value();}}
+    screen_capable() is bool{try{terminal_metadata(state)["colors"]>0;}catch e is NativeFailure{throw TerminalProblem(e).value();}}
+}
+object TerminalInput{
+    has state is TerminalState;has observation is TerminalObservation;
+    has lock is Lock;has buffer is Atomic<@byte>;
+    TerminalInput(state is TerminalState,observation is TerminalObservation){self.state=state;self.observation=observation;lock=Lock();let empty is @byte=[];buffer=Atomic(empty);}
+    capabilities() is TerminalCapabilities{observation.capabilities();}
+    async bytes(limit is int) is @byte{
+        confirm limit>0 && limit<=65536 else throw TerminalInputLimit();
+        let guard=await lock.guard();defer guard.close();
+        confirm !terminal_closed(state) else throw TerminalClosed();
+        let old=buffer.value();
+        if old.size()>0{
+            let count=if limit<old.size(){limit;}else{old.size();};
+            let result is @byte=(0..count).map()->index{old[index];};
+            let tail is @byte=(count..old.size()).map()->index{old[index];};buffer.replace(tail);result;
+        }else{await self.read(limit);}
+    }
+    async line(limit is int) is string{
+        confirm limit>0 && limit<=1048576 else throw TerminalInputLimit();
+        let guard=await lock.guard();defer guard.close();
+        confirm !terminal_closed(state) else throw TerminalClosed();
+        let output=ByteBuffer();defer output.closing().close();let count=Atomic(0);
+        loop{
+            let old=buffer.value();
+            let capacity=limit-count.value()+1;let maximum=if capacity<4096{capacity;}else{4096;};
+            let chunk is @byte=if old.size()>0{old;}else{await self.read(maximum);};
+            let newline=(0..chunk.size()).reduce(-1)->found,index{if found<0 && chunk[index].int()==10{index;}else{found;}};
+            let size=if newline>=0{newline;}else{chunk.size();};
+            if size>limit-count.value(){terminal_close(state);throw TerminalInputLimit();}
+            let data is @byte=(0..size).map()->index{chunk[index];};output.writing() <- data;count.replace(count.value()+size);
+            let consumed=size+if newline>=0{1;}else{0;};
+            let tail is @byte=(consumed..chunk.size()).map()->index{chunk[index];};buffer.replace(tail);
+            if newline>=0 || chunk.size()==0{last;}
+        }
+        let text=Utf8Decoded(output.content().bytes()).string();
+        if text.length()>0 && text.slice(text.length()-1,text.length())=="\r"{text.slice(0,text.length()-1);}else{text;}
+    }
+    private:
+    async read(limit is int) is @byte{
+        let pending=terminal_read(state,limit);defer pending.cancel();
+        try{await pending;}catch e is NativeFailure{throw TerminalProblem(e).value();}
+    }
+}
+object TerminalOutput does Writing,WritingText{
+    has unicode_console is bool;
+    has state is TerminalState;has observation is TerminalObservation;
+    TerminalOutput(state is TerminalState,observation is TerminalObservation){self.state=state;self.observation=observation;unicode_console=system_platform()=="windows" && observation.capabilities().output_interactive();}
+    capabilities() is TerminalCapabilities{observation.capabilities();}
+    write(source is ByteSource) is void{self.write_bytes(source.bytes());}
+    write(values is ...string) is void{let items is @string=values...;for items->value{self.write_bytes(Utf8Encoded(value).bytes());}}
+    write(value is StyledText) is void{self.write_bytes(Utf8Encoded(value.rendered(observation.capabilities().colors())).bytes());}
+    writeln(values is ...string) is void{let items is @string=values...;for items->value{self.write_bytes(Utf8Encoded(value).bytes());}self.write_bytes([10.byte()]);}
+    writeln(value is StyledText) is void{self.write(value);self.write_bytes([10.byte()]);}
+    flush() is void{confirm !terminal_closed(state) else throw TerminalClosed();}
+    private:
+    write_bytes(bytes is @byte) is void{
+        // Keep the Stage07 source size independent of the bounded host write.
+        if bytes.size()<=65536{
+            let written=self.accepted(bytes);
+            confirm written==bytes.size() else throw IncompleteWrite(written);
+        }else{if unicode_console{
+            let consumed=Atomic(0);
+            for TerminalTextChunks(bytes).items()->chunk{
+                let written=self.accepted(chunk);
+                confirm written==chunk.size() else throw IncompleteWrite(consumed.value()+written);
+                consumed.replace(consumed.value()+written);
+            }
+        }else{
+            let chunks=ByteBuffer(initial:bytes);defer chunks.closing().close();
+            let reading=chunks.reading();let consumed=Atomic(0);
+            loop{
+                let chunk=reading.bytes(65536);if chunk.size()==0{last;}
+                let written=self.accepted(chunk);
+                confirm written==chunk.size() else throw IncompleteWrite(consumed.value()+written);
+                consumed.replace(consumed.value()+written);
+            }
+        }}
+    }
+    accepted(bytes is @byte) is int{
+        try{terminal_write(state,bytes);}catch e is NativeFailure{throw TerminalProblem(e).value();}
+    }
+}
+
+// Console output converts whole Unicode scalar slices, never arbitrary byte
+// slices: a 64 KiB byte boundary must not split a UTF-8 scalar for WriteConsoleW.
+object TerminalTextChunks{
+    has origin is string;
+    TerminalTextChunks(bytes is @byte){origin=Utf8Decoded(bytes).string();}
+    items() is @@byte{
+        let count=((origin.length()+16383)/16384).int();
+        let result is @@byte=(0..count).map()->index{
+            let start=index*16384;let stop=if start+16384<origin.length(){start+16384;}else{origin.length();};
+            Utf8Encoded(origin.slice(start,stop)).bytes();
+        };
+        result;
+    }
+}

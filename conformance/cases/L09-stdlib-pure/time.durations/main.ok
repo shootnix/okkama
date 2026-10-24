@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "time/duration" take Duration, DurationUnit, DurationString, InvalidDuration;
+import "time/date" take Date, ShiftedDate, DaysBetween, DateOrdinal, Weekday, InvalidDate;
+import "time/iso" take IsoDate, DateFromIso, InvalidIsoDate;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("nanoseconds", Duration(value: rat(3, 2), unit: DurationUnit.second).nanoseconds().string(), "1500000000");
+    c = c.same_text("canonical string", DurationString(origin: Duration(value: rat(3, 2), unit: DurationUnit.second)).string(), "3/2s");
+    c = c.same_text("minute in seconds", string(Duration(value: 1.rat(), unit: DurationUnit.minute).seconds()), "60");
+    c = c.same_text("day is 86400 s", string(Duration(value: 1.rat(), unit: DurationUnit.day).seconds()), "86400");
+    c = c.same_text("sum", string(Duration(value: 1.rat(), unit: DurationUnit.second).plus(Duration(value: 500.rat(), unit: DurationUnit.millisecond)).seconds()), "3/2");
+    c = c.same_text("non-integral nanoseconds", try { let probe = Duration(value: rat(1, 3), unit: DurationUnit.second).seconds(); "no error"; } catch e is InvalidDuration { "InvalidDuration"; }, "InvalidDuration");
+    c.done();
+}

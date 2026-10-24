@@ -1,0 +1,104 @@
+module http/connection v1.0.0;
+import "http/endpoint" take HttpEndpointSelection;
+import "http/transport_observation" take HttpResponseObservation;
+import "http/http1_session" take Http1Session;
+import "http/http1_head" take Http1Limits;
+import "http/tls_session" take Http1TlsProtocol;
+import "http/version" take UnsupportedHttpVersion,HttpVersion;
+import "http/exchange" take ExchangeDetails;
+import "net/tcp" take TcpConnection,TcpOptions;
+import "net/tcp_racing" take TcpRacing;
+import "net/tls" take TlsClientPolicy,TlsClientHandshake,TlsConnection;
+import "url/value" take UrlHostKind;
+import "crypto/x509/trust" take CertificateIdentity,DnsCertificateIdentity,IpCertificateIdentity;
+import "time/clock" take Timing,SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "http/endpoint" take AllEndpoints;
+import "net/dns" take FixedResolution;
+import "url/value" take ParsedUrl;
+import "net/tls" take TlsVersion;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+
+// A supplied HTTP route opens an HTTP1 conversation. Every TCP attempt uses
+// the exact previously checked numeric endpoint; no second lookup occurs.
+// Bounded staggered TCP racing closes every losing attempt before publication.
+object Http1Connecting {
+    has route is HttpEndpointSelection;has policy is TlsClientPolicy;
+    has limits is Http1Limits;has clock is Timing;
+    Http1Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy){
+        for policy.protocols() -> protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion();}
+        self.route=route;self.policy=policy;limits=Http1Limits();clock=SystemClock();
+    }
+    Http1Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy,limits is Http1Limits,clock is Timing){
+        for policy.protocols() -> protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion();}
+        self.route=route;self.policy=policy;self.limits=limits;self.clock=clock;
+    }
+    async session() is Http1Session {
+        let group is FutureGroup<Http1Acquisition>=FutureGroup();let empty is @Future<Http1Acquisition>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(group,pending,taken,Http1AcquisitionDisposal().release);defer await cleanup.close();
+        let opening=self.acquisition();pending.replace([opening]);group.start(opening);let acquired=await opening;taken.set();acquired.session();
+    }
+    async acquisition() is Http1Acquisition {
+        let endpoints=await route.endpoints();
+        let group is FutureGroup<TcpConnection>=FutureGroup();let empty is @Future<TcpConnection>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(group,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();
+        let waiting=TcpRacing(endpoints,TcpOptions(),Duration(250.rat(),DurationUnit.millisecond),clock).connection();pending.replace([waiting]);group.start(waiting);
+        let tcp=await waiting;taken.set();let published=Event();let anchor=HttpUnpublishedTcp(tcp,published);defer anchor.close();
+        if route.url().parts().scheme()=="https" {
+            let host=route.url().parts().authority().host();
+            let identity is CertificateIdentity=if host.kind()==UrlHostKind.name{DnsCertificateIdentity(host.name());}else{IpCertificateIdentity(host.address());};
+            let tls_group is FutureGroup<TlsConnection>=FutureGroup();let empty_tls is @Future<TlsConnection>=[];let tls_pending=Atomic(empty_tls);let tls_taken=Event();
+            let tls_cleanup=HttpAcquisitionCleanup(tls_group,tls_pending,tls_taken,HttpTlsDisposal().release);defer await tls_cleanup.close();
+            let upgrading=TlsClientHandshake(tcp,identity,policy,clock).connection();tls_pending.replace([upgrading]);tls_group.start(upgrading);let tls=await upgrading;tls_taken.set();
+            let tls_anchor=HttpUnpublishedTls(tls,published);defer tls_anchor.close();
+            Http1TlsProtocol(tls.details().protocol()).version();
+            let observation=HttpResponseObservation();let session=Http1Session(observation.reading(tls.input()),observation.writing(tls.output()),tls,limits);
+            let acquired=Http1Acquisition(session,ExchangeDetails(tls.details().endpoints(),HttpVersion.http_1_1,tls.details()),observation);published.set();return acquired;
+        }
+        let observation=HttpResponseObservation();let session=Http1Session(observation.reading(tcp.input()),observation.writing(tcp.output()),tcp,limits);
+        let acquired=Http1Acquisition(session,ExchangeDetails(tcp.endpoints(),HttpVersion.http_1_1),observation);published.set();acquired;
+    }
+}
+object Http1Acquisition {
+    has session is Http1Session;has details is ExchangeDetails;has observation is @HttpResponseObservation;
+    Http1Acquisition(session is Http1Session,details is ExchangeDetails){self.session=session;self.details=details;observation=[];}
+    Http1Acquisition(session is Http1Session,details is ExchangeDetails,observation is HttpResponseObservation){self.session=session;self.details=details;self.observation=[observation];}
+    begin() is void{for observation -> value{value.begin();}}
+    session() is Http1Session{session;}details() is ExchangeDetails{details;}
+}
+object Http1AcquisitionDisposal {Http1AcquisitionDisposal();release(acquired is Http1Acquisition) is void{acquired.session().close();}}
+// Own the raw result before eager adaptation. A granted successful connection
+// can become unclaimed when cancellation wins; it must be explicitly disposed.
+object HttpAcquisitionCleanup<T> {
+    has group is FutureGroup<T>;has pending is Atomic<@Future<T>>;has taken is Event;has dispose is (T) is void;
+    HttpAcquisitionCleanup(group is FutureGroup<T>,pending is Atomic<@Future<T>>,taken is Event,dispose is (T) is void){self.group=group;self.pending=pending;self.taken=taken;self.dispose=dispose;}
+    async close() is void {
+        if group.active()>0{group.cancel();defer await group.wait();}
+        if !taken.ready(){for pending.value() -> waiting {
+            let acquired is @T=try{[await waiting];}catch e is Cancelled{let empty is @T=[];empty;}
+                catch e is Error{let empty is @T=[];empty;}catch e is NativeFailure{let empty is @T=[];empty;};
+            for acquired -> value{dispose(value);}
+        }}
+    }
+}
+object HttpTcpDisposal {HttpTcpDisposal();release(connection is TcpConnection) is void{connection.close();}}
+object HttpTlsDisposal {HttpTlsDisposal();release(connection is TlsConnection) is void{connection.close();}}
+object HttpUnpublishedTcp {
+    has origin is TcpConnection;has published is Event;HttpUnpublishedTcp(origin is TcpConnection,published is Event){self.origin=origin;self.published=published;}
+    close() is void{if !published.ready(){origin.close();}}
+}
+object HttpUnpublishedTls {
+    has origin is TlsConnection;has published is Event;HttpUnpublishedTls(origin is TlsConnection,published is Event){self.origin=origin;self.published=published;}
+    close() is void{if !published.ready(){origin.close();}}
+}
+
+test "HTTP1 opener rejects incompatible ALPN before acquisition" {
+    let route=HttpEndpointSelection(ParsedUrl("https://example.test/").value(),FixedResolution([]),AllEndpoints());
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(TrustedCertificates([]),versions,["h2"]);
+    test.ok(try{Http1Connecting(route,policy);false;}catch e is UnsupportedHttpVersion{true;});
+}

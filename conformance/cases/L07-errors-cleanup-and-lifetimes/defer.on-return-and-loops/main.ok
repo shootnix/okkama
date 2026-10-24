@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Worker {
+    Worker();
+    run() is int {
+        defer Stdout().writeln("worker cleanup");
+        Stdout().writeln("work");
+        return 5;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Worker().run().string());
+    for 1..=3 -> n {
+        defer out.writeln("iteration cleanup " + n.string());
+        next if n == 1;
+        last if n == 2;
+        out.writeln("never");
+    }
+    0;
+}

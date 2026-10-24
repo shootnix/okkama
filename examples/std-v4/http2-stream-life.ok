@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/internal/http2_life" take Http2StreamLife,Http2StreamState,Http2ClientStreamIds;
+import "io/stdout" take Stdout;
+// Pure lifecycle example; no physical reset is sent by a state transition.
+main() is int{
+    let ids=Http2ClientStreamIds();let first=Http2StreamLife(ids.next_stream());ids=ids.allocated();let sibling=Http2StreamLife(ids.next_stream());
+    first=first.local_headers(true);sibling=sibling.local_headers(false);first=first.remote_reset();
+    confirm first.state()==Http2StreamState.closed && sibling.state()==Http2StreamState.open;
+    Stdout().writeln("stream 1 closed; sibling stream 3 remains open");0;
+}

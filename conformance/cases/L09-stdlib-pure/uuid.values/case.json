@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.uuid.values",
+  "title": "UUID parsing and fields",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.UUID.VALUE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - version\nok 2 - variant\nok 3 - uppercase normalised\nok 4 - bytes\nok 5 - compact rejected\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/uuid/value.ok",
+    "RFC 9562"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 9562 field layout (cross-checked with Python uuid): version 4, RFC variant, canonical lowercase text, 16 big-endian bytes; compact text is rejected."
+  },
+  "status": "mandatory"
+}

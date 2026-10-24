@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+object Member {
+    has id is int = Tracer().mark("default evaluated", 1);
+    has tag is string;
+    Member(:id) {
+        Stdout().writeln("body sees " + self.id.string());
+        self.tag = "m" + self.id.string();
+    }
+    tag() is string { tag; }
+}
+
+main() is int {
+    let out = Stdout();
+    let m = Member(id: 4);
+    out.writeln(m.tag());
+    0;
+}

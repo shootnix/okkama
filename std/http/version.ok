@@ -1,0 +1,25 @@
+module http/version v1.0.0;
+// Message identities and the exact HTTP/1 textual token grammar. ALPN selection
+// and consuming connection policy belong to a later verified transport slice.
+enum HttpVersion = (http_1_0, http_1_1, http_2);
+object Http1VersionText {
+    has origin is HttpVersion;Http1VersionText(origin is HttpVersion){self.origin=origin;}
+    string() is string {
+        match origin {case HttpVersion.http_1_0{"HTTP/1.0";}case HttpVersion.http_1_1{"HTTP/1.1";}
+            else{throw UnsupportedHttpVersion();}}
+    }
+}
+object ParsedHttp1Version {
+    has origin is string;ParsedHttp1Version(origin is string){self.origin=origin;}
+    value() is HttpVersion {
+        match origin {case "HTTP/1.0"{HttpVersion.http_1_0;}case "HTTP/1.1"{HttpVersion.http_1_1;}
+            else{throw UnsupportedHttpVersion();}}
+    }
+}
+object UnsupportedHttpVersion does Error {
+    UnsupportedHttpVersion();text() is string{"unsupported HTTP wire version";}
+}
+test "HTTP2 identity cannot be serialized as an HTTP1 version" {
+    test.ok(ParsedHttp1Version("HTTP/1.1").value()==HttpVersion.http_1_1);
+    test.ok(try{Http1VersionText(HttpVersion.http_2).string();false;}catch e is UnsupportedHttpVersion{true;});
+}

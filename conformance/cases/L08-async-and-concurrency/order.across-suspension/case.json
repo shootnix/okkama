@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.order.across-suspension",
+  "title": "operands keep left-to-right order across await",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.ORDER",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "x\ny\n3\nfirst\nsecond\n34\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18",
+    "docs/async-guide.md#5.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 18: operands and call arguments retain left-to-right order across suspension without replaying earlier operands."
+  },
+  "status": "mandatory"
+}

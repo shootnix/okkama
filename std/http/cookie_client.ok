@@ -1,0 +1,81 @@
+module http/cookie_client v1.0.0;
+import "http/client" take Exchanging;
+import "http/exchange" take ClientResponse;
+import "http/message" take Request;
+import "http/target" take RequestTargetKind;
+import "http/header" take Header,HeaderName,HeadersWithout;
+import "http/cookie_jar" take CookieStoring;
+import "http/cookie_policy" take CookieContext;
+import "http/cookie" take Cookie;
+import "http/redirect" take RedirectResponseCleanup;
+import "collections/sequence" take Sequencing;
+import "async/event" take Event;
+import "async/atomic" take Atomic;
+import "error" take InvalidArgument;
+import "http/target" take AbsoluteTarget;
+import "http/method" take Method;
+import "http/header" take Headers;
+import "url/value" take ParsedUrl;
+
+role CookieContextualizing {context(request is Request) is CookieContext;}
+object FirstPartyCookies does CookieContextualizing {
+    FirstPartyCookies();
+    context(request is Request) is CookieContext{
+        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidArgument("absolute cookie request required");
+        CookieContext(request.target().url(),true,request.method());
+    }
+}
+enum CallerCookiePolicy=(reject,preserve,replace);
+object CookieExchanging does Exchanging {
+    has origin is Exchanging;has jar is CookieStoring;has contexts is CookieContextualizing;has conflict is CallerCookiePolicy;
+    CookieExchanging(origin is Exchanging,jar is CookieStoring,contexts is CookieContextualizing){self.origin=origin;self.jar=jar;self.contexts=contexts;conflict=CallerCookiePolicy.reject;}
+    CookieExchanging(origin is Exchanging,jar is CookieStoring,contexts is CookieContextualizing,conflict is CallerCookiePolicy){self.origin=origin;self.jar=jar;self.contexts=contexts;self.conflict=conflict;}
+    async response(request is Request) is ClientResponse{
+        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidArgument("absolute cookie request required");
+        let supplied=request.headers().values(HeaderName("Cookie"));
+        confirm supplied.size()<=1 && (supplied.size()==0 || conflict!=CallerCookiePolicy.reject) else throw CallerCookieConflict();
+        let context=contexts.context(request);
+        let fields=if supplied.size()==1 && conflict==CallerCookiePolicy.preserve{request.headers();}else{
+            let selected=CookieRequestPairs(jar.cookies(request.target().url(),context)).string();
+            let clean=HeadersWithout(request.headers(),[HeaderName("Cookie")]).result();
+            if selected==""{clean;}else{clean.addition(Header(HeaderName("Cookie"),selected));}
+        };
+        let outgoing=Request(request.method(),request.target(),fields,request.body(),request.version());
+        let result=await origin.response(outgoing);let retained=Event();let cleanup=RedirectResponseCleanup(result.response(),retained);defer cleanup.close();
+        // Storage is correct even if a caller places this outside Redirecting,
+        // but selection per hop requires Redirecting(CookieExchanging(...)).
+        for result.history()->hop{jar.store(hop.request().target().url(),hop.response().headers(),contexts.context(hop.request()));}
+        let same_hop=result.history().size()==0 && result.request().target().url().string()==request.target().url().string();
+        let effective_context=if same_hop{context;}else{contexts.context(result.request());};
+        jar.store(result.request().target().url(),result.response().headers(),effective_context);
+        // Generated jar headers are internal to this hop. Returning the caller's
+        // coordinates prevents the next redirect from treating them as explicit
+        // caller Cookie fields. Preserve an origin's actual multi-hop result.
+        let reported=if same_hop{ClientResponse(request,result.response(),result.details());}else{result;};
+        retained.set();reported;
+    }
+}
+object CookieRequestPairs {
+    has text is string;
+    CookieRequestPairs(cookies is Sequencing<Cookie>){
+        let count=cookies.size();confirm count>=0 && count<=256 else throw CookieExchangeLimit("cookie count");
+        let used=Atomic(0);
+        let pairs is @string=(0..count).map()->index{
+            let pair=cookies.item(index).pair();let size=used.value()+pair.length()+2;
+            confirm size<=65536 else throw CookieExchangeLimit("cookie bytes");used.replace(size);pair;
+        };
+        text=pairs.join("; ");
+    }
+    string() is string{text;}
+}
+object CallerCookieConflict does Error{CallerCookieConflict();text() is string{"explicit Cookie requires a conflict policy";}}
+object CookieExchangeLimit does Error {
+    has reason is string;CookieExchangeLimit(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"cookie exchange limit exceeded: "+reason;}
+}
+test "first-party cookies use the current request site and method" {
+    let request=Request(Method("POST"),AbsoluteTarget(ParsedUrl("https://example.com/path").value()),Headers([]));
+    let context=FirstPartyCookies().context(request);
+    test.ok(context.top_level() && context.method().string()=="POST" && context.site().string()=="https://example.com/path");
+    test.ok(CookieRequestPairs([]).string()=="");
+}

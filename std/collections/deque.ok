@@ -1,0 +1,369 @@
+module collections/deque v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/list" take List, EmptyList;
+import "collections/views" take Dropped, Taken;
+import "error" take InvalidArgument, OutOfRange;
+import "size" take Sizing;
+
+// An immutable persistent double-ended queue.
+//
+// Construct from any Iterating value and select an end as a capability:
+//
+//     let queue = Deque(values: jobs);
+//     let urgent = queue.front().addition(high_priority);
+//     let ordinary = urgent.back().addition(low_priority);
+//     let next = ordinary.front().value();
+//     let remaining = ordinary.front().remainder();
+//
+// addition() and remainder() return new deques. Every earlier deque remains
+// unchanged and may share immutable list nodes with its successors.
+//
+// Deque deliberately does not implement Sequencing. first() and last() would
+// duplicate front().value() and back().value(), while exposing both endpoint
+// capabilities would push the object beyond five public actions. It remains
+// Iterating and Sizing and offers item(index) for Python-style deque indexing.
+// Middle indexing is O(n).
+//
+// Internally the logical order is a forward list followed by the reverse of a
+// backward list. End additions are O(1). When one half grows beyond roughly
+// twice the other, construction of the returned deque rebalances both halves
+// in O(n); along a linear chain of returned deques, end operations are
+// amortized O(1). Traversal preserves insertion order.
+//
+// front() and back() are valid even for an empty deque. Calling value() or
+// remainder() on either empty endpoint throws EmptyDequeAccess. item() uses
+// strict zero-based bounds and throws OutOfRange.
+
+object Deque<T> does Iterating<T>, Sizing {
+    has beginning is List<T>;
+    has ending is List<T>;
+    has amount is int;
+
+    Deque(values is Iterating<T>) {
+        let parts = BalancedDeque(values: values).parts();
+        beginning = parts.front();
+        ending = parts.back();
+        amount = parts.size();
+    }
+
+    Deque(front is List<T>, back is List<T>, size is int) {
+        let parts = NormalizedDeque(
+            front: front,
+            back: back,
+            size: size,
+        ).parts();
+        beginning = parts.front();
+        ending = parts.back();
+        amount = parts.size();
+    }
+
+    cursor() is Cursor<T> {
+        DequeItems(front: beginning, back: ending).cursor();
+    }
+
+    size() is int {
+        amount;
+    }
+
+    item(index is int) is T {
+        confirm index >= 0 && index < amount
+            else throw OutOfRange("deque index is outside the sequence");
+        if index < beginning.size() {
+            Dropped(origin: beginning, count: index).cursor().item();
+        }
+        else {
+            Dropped(
+                origin: ending,
+                count: amount - index - 1,
+            ).cursor().item();
+        }
+    }
+
+    front() is DequeFront<T> {
+        DequeFront(front: beginning, back: ending, size: amount);
+    }
+
+    back() is DequeBack<T> {
+        DequeBack(front: beginning, back: ending, size: amount);
+    }
+}
+
+object DequeFront<T> {
+    has beginning is List<T>;
+    has ending is List<T>;
+    has amount is int;
+
+    DequeFront(front is List<T>, back is List<T>, size is int) {
+        confirm size >= 0 && size == front.size() + back.size()
+            else throw InvalidArgument("deque endpoint state is inconsistent");
+        beginning = front;
+        ending = back;
+        amount = size;
+    }
+
+    value() is T {
+        confirm amount > 0 else throw EmptyDequeAccess(operation: "front value");
+        if beginning.size() > 0 { beginning.first(); } else { ending.first(); }
+    }
+
+    addition(value is T) is Deque<T> {
+        Deque(front: beginning.prefix(value), back: ending, size: amount + 1);
+    }
+
+    remainder() is Deque<T> {
+        confirm amount > 0 else throw EmptyDequeAccess(operation: "front remainder");
+        if beginning.size() > 0 {
+            Deque(front: beginning.tail(), back: ending, size: amount - 1);
+        }
+        else {
+            Deque(front: beginning, back: ending.tail(), size: amount - 1);
+        }
+    }
+}
+
+object DequeBack<T> {
+    has beginning is List<T>;
+    has ending is List<T>;
+    has amount is int;
+
+    DequeBack(front is List<T>, back is List<T>, size is int) {
+        confirm size >= 0 && size == front.size() + back.size()
+            else throw InvalidArgument("deque endpoint state is inconsistent");
+        beginning = front;
+        ending = back;
+        amount = size;
+    }
+
+    value() is T {
+        confirm amount > 0 else throw EmptyDequeAccess(operation: "back value");
+        if ending.size() > 0 { ending.first(); } else { beginning.first(); }
+    }
+
+    addition(value is T) is Deque<T> {
+        Deque(front: beginning, back: ending.prefix(value), size: amount + 1);
+    }
+
+    remainder() is Deque<T> {
+        confirm amount > 0 else throw EmptyDequeAccess(operation: "back remainder");
+        if ending.size() > 0 {
+            Deque(front: beginning, back: ending.tail(), size: amount - 1);
+        }
+        else {
+            Deque(front: beginning.tail(), back: ending, size: amount - 1);
+        }
+    }
+}
+
+object DequeItems<T> does Iterating<T> {
+    has beginning is List<T>;
+    has ending is List<T>;
+
+    DequeItems(front is List<T>, back is List<T>) {
+        beginning = front;
+        ending = back;
+    }
+
+    cursor() is Cursor<T> {
+        ConcatenatedDequeCursor(
+            front: beginning.cursor(),
+            back: ReversedList(values: ending).list().cursor(),
+        );
+    }
+}
+
+object ConcatenatedDequeCursor<T> does Cursor<T> {
+    has beginning is Cursor<T>;
+    has ending is Cursor<T>;
+
+    ConcatenatedDequeCursor(front is Cursor<T>, back is Cursor<T>) {
+        beginning = front;
+        ending = back;
+    }
+
+    available() is bool {
+        beginning.available() || ending.available();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        if beginning.available() { beginning.item(); } else { ending.item(); }
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        if beginning.available() {
+            ConcatenatedDequeCursor(front: beginning.successor(), back: ending);
+        }
+        else {
+            ConcatenatedDequeCursor(front: beginning, back: ending.successor());
+        }
+    }
+}
+
+object ArrayItems<T> does Iterating<T> {
+    has origin is @T;
+    has witness is Iterating<T>;
+
+    ArrayItems(values is @T, witness is Iterating<T>) {
+        origin = values;
+        self.witness = witness;
+    }
+
+    cursor() is Cursor<T> {
+        ArrayCursor(values: origin, position: 0, witness: witness);
+    }
+}
+
+object ArrayCursor<T> does Cursor<T> {
+    has origin is @T;
+    has position is int;
+    has witness is Iterating<T>;
+
+    ArrayCursor(values is @T, position is int, witness is Iterating<T>) {
+        confirm position >= 0 && position <= values.size()
+            else throw InvalidArgument("array cursor position is invalid");
+        origin = values;
+        self.position = position;
+        self.witness = witness;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        origin[position];
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        ArrayCursor(values: origin, position: position + 1, witness: witness);
+    }
+}
+
+object ForwardList<T> {
+    has origin is Iterating<T>;
+
+    ForwardList(values is Iterating<T>) {
+        origin = values;
+    }
+
+    list() is List<T> {
+        let reversed is List<T> = origin.reduce(EmptyList()) -> items, item {
+            items.prefix(item);
+        };
+        let result is List<T> = reversed.reduce(EmptyList()) -> items, item {
+            items.prefix(item);
+        };
+        result;
+    }
+}
+
+object ReversedList<T> {
+    has origin is Iterating<T>;
+
+    ReversedList(values is Iterating<T>) {
+        origin = values;
+    }
+
+    list() is List<T> {
+        let result is List<T> = origin.reduce(EmptyList()) -> items, item {
+            items.prefix(item);
+        };
+        result;
+    }
+}
+
+object DequeParts<T> {
+    has beginning is List<T>;
+    has ending is List<T>;
+    has amount is int;
+
+    DequeParts(front is List<T>, back is List<T>, size is int) {
+        confirm size >= 0 && size == front.size() + back.size()
+            else throw InvalidArgument("deque parts are inconsistent");
+        beginning = front;
+        ending = back;
+        amount = size;
+    }
+
+    front() is List<T> { beginning; }
+    back() is List<T> { ending; }
+    size() is int { amount; }
+}
+
+object BalancedDeque<T> {
+    has origin is @T;
+    has witness is Iterating<T>;
+
+    BalancedDeque(values is Iterating<T>) {
+        let materialized is @T = values.map() -> item { item; };
+        origin = materialized;
+        witness = values;
+    }
+
+    parts() is DequeParts<T> {
+        let items = ArrayItems(values: origin, witness: witness);
+        let front_size = ((origin.size() + 1) / 2).int();
+        DequeParts(
+            front: ForwardList(
+                values: Taken(origin: items, count: front_size),
+            ).list(),
+            back: ReversedList(
+                values: Dropped(origin: items, count: front_size),
+            ).list(),
+            size: origin.size(),
+        );
+    }
+}
+
+object NormalizedDeque<T> {
+    has beginning is List<T>;
+    has ending is List<T>;
+    has amount is int;
+
+    NormalizedDeque(front is List<T>, back is List<T>, size is int) {
+        confirm size >= 0 && size == front.size() + back.size()
+            else throw InvalidArgument("deque state is inconsistent");
+        beginning = front;
+        ending = back;
+        amount = size;
+    }
+
+    parts() is DequeParts<T> {
+        if self.unbalanced() {
+            BalancedDeque(values: DequeItems(front: beginning, back: ending)).parts();
+        }
+        else {
+            DequeParts(front: beginning, back: ending, size: amount);
+        }
+    }
+
+    private:
+    unbalanced() is bool {
+        if beginning.size() > ending.size() {
+            beginning.size() - ending.size() > ending.size() + 1;
+        }
+        else {
+            ending.size() - beginning.size() > beginning.size() + 1;
+        }
+    }
+}
+
+object EmptyDequeAccess does Error {
+    has origin is string;
+
+    EmptyDequeAccess(operation is string) {
+        origin = operation;
+    }
+
+    operation() is string {
+        origin;
+    }
+
+    text() is string {
+        "cannot read " + origin + " from an empty deque";
+    }
+}

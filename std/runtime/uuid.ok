@@ -1,0 +1,15 @@
+module runtime/uuid v1.0.0;
+
+// Strict canonical UUID parsing and formatting boundary.
+native uuid_valid(origin is string) is bool;
+native uuid_bytes(origin is string) is @byte;
+native uuid_string(origin is @byte) is string;
+native uuid_version(origin is @byte) is int;
+native uuid_variant(origin is @byte) is string;
+native uuid_versioned(origin is @byte, version is int) is @byte;
+native uuid_named(
+    namespace is @byte,
+    name is @byte,
+    version is int,
+) is @byte;
+native uuid_custom(high is int, middle is int, low is int) is @byte;

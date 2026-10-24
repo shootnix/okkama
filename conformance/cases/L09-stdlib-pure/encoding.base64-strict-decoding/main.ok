@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "encoding/base64" take Base64Decoded, InvalidBase64;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("incomplete quantum", try { let probe = Base64Decoded(origin: "Zm9").bytes(); "no error"; } catch e is InvalidBase64 { "offset " + e.offset().string(); }, "offset 3");
+    c = c.same_text("whitespace", try { let probe = Base64Decoded(origin: "Zm9v YQ==").bytes(); "no error"; } catch e is InvalidBase64 { "offset " + e.offset().string(); }, "offset 4");
+    c.done();
+}

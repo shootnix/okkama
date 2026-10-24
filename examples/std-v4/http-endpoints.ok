@@ -1,0 +1,17 @@
+module app v1.0.0;
+import "http/endpoint" take HttpEndpointSelection,PublicEndpoints;
+import "url/value" take ParsedUrl;
+import "net/endpoint" take HostName;
+import "net/ip" take IpAddress;
+import "net/dns" take FixedResolution,HostAddresses;
+import "io/stdout" take Stdout;
+
+// Deterministic resolution/filtering only: no external DNS or connection.
+async main() is int {
+    let host=HostName("example.test");
+    let resolver=FixedResolution([HostAddresses(host,[IpAddress("127.0.0.1"),IpAddress("8.8.8.8"),IpAddress("2606:4700:4700::1111")])]);
+    let selected=await HttpEndpointSelection(ParsedUrl("https://example.test:8443/").value(),resolver,PublicEndpoints()).endpoints();
+    confirm selected.size()==2;
+    Stdout().writeln(selected.item(0).string());
+    Stdout().writeln(selected.item(1).string());0;
+}

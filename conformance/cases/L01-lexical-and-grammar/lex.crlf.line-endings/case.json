@@ -1,0 +1,39 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.crlf.line-endings",
+  "title": "CR LF line endings are accepted",
+  "purpose": "CR is insignificant whitespace in source text.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.CRLF",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 5,
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "Go spec: Source code representation, Raw string literals"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-030): line endings behave as in Go; CR between tokens is whitespace; 4 + 1 = 5."
+  },
+  "status": "mandatory"
+}

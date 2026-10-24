@@ -1,0 +1,45 @@
+// DirStat: обход каталога и снимки файлов.
+// Scan().files(Directory(Path("path"))) возвращает @ScannedFile.
+// Скрытые имена пропускаются; символические ссылки не обходятся.
+// Это помощник dirstat.ok; запуск: ./examples/gallery/run dirstat/dirstat PATH.
+module gallery/dirstat/scan v1.0.0;
+import "fs/directory" take Directory,DirectoryEntries;
+import "fs/stat" take FileKind;
+import "fs/path" take Path;
+object ScannedFile {
+    has path,extension is string;has bytes is int;
+    ScannedFile(path is string,bytes is int){
+        self.path=path;self.bytes=bytes;
+        let parts=path.replace("\\","/").split("/");let name=parts[parts.size()-1];
+        let components=name.split(".");extension=if components.size()>1 && components[components.size()-1]!=""{components[components.size()-1];}else{"(none)";};
+    }
+    extension() is string{extension;}bytes() is int{bytes;}path() is string{path;}
+}
+object ScannedFiles {
+    has values is @ScannedFile;
+    ScannedFiles(){let empty is @ScannedFile=[];values=empty;}
+    joined(files is @ScannedFile) is ^ScannedFiles {
+        let combined is @ScannedFile=(0..values.size()+files.size()).map()->i{
+            if i<values.size(){values[i];}else{files[i-values.size()];}
+        };^values=combined;
+    }
+    values() is @ScannedFile{values;}
+}
+object Scan {
+    Scan();
+    files(directory is Directory) is @ScannedFile{self.descendants(directory,0).values();}
+    descendants(directory is Directory,depth is int) is ScannedFiles {
+        confirm depth<=64;
+        DirectoryEntries(directory).reduce(ScannedFiles())->found,entry{
+            let path=entry.path().string();let components=path.replace("\\","/").split("/");let name=components[components.size()-1];
+            if name.slice(0,1)=="."{found;}else{
+                let stat=entry.stat();
+                match stat.kind(){
+                    case FileKind.directory{found.joined(self.descendants(Directory(entry.path()),depth+1).values());}
+                    case FileKind.file{found.joined([ScannedFile(path,stat.size())]);}
+                    else{found;}
+                }
+            }
+        };
+    }
+}

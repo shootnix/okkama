@@ -1,0 +1,20 @@
+module logging/record v1.0.0;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields;
+import "time/clock" take Instant;
+object LogContext{
+    has origin is LogName;has fields is LogFields;has process is int;
+    LogContext(name is LogName,fields is LogFields,process is int){confirm process>=0 else throw InvalidLogProcess();origin=name;self.fields=fields;self.process=process;}
+    name() is LogName{origin;}fields() is LogFields{fields;}process() is int{process;}
+}
+object LogRecord{
+    has occurred is Instant;has level is LogLevel;has message is string;has context is LogContext;has causes is @Error;
+    LogRecord(occurred is Instant,level is LogLevel,message is string,context is LogContext){self.occurred=occurred;self.level=level;self.message=message;self.context=context;causes=[];}
+    LogRecord(occurred is Instant,level is LogLevel,message is string,context is LogContext,cause is Error){self.occurred=occurred;self.level=level;self.message=message;self.context=context;causes=[cause];}
+    time() is Instant{occurred;}level() is LogLevel{level;}message() is string{message;}context() is LogContext{context;}
+    has_cause() is bool{causes.size()==1;}
+    cause() is Error{confirm self.has_cause() else throw MissingLogCause();causes[0];}
+}
+object MissingLogCause does Error{MissingLogCause();text() is string{"log record has no cause";}}
+object InvalidLogProcess does Error{InvalidLogProcess();text() is string{"log process identifier must be non-negative";}}

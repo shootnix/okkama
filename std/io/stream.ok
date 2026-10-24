@@ -1,0 +1,89 @@
+module io/stream v1.0.0;
+
+import "error" take InvalidArgument;
+
+// Small nominal contracts for byte and text streams.
+//
+//     writer.write(packet);
+//     writer.flush();
+//     writer <- "header: " <- payload <- "\n";
+//
+// `<-` accepts a formal ByteSource. Only inside that operator, builtin string
+// is adapted through strict UTF-8 and builtin @byte is adapted without any
+// transformation. Explicit `writer <- array_expression...` writes each source
+// in order after evaluating the array once; empty arrays make no writes.
+// No other value is converted implicitly. The operator calls
+// Writing.write(), then returns the same Writing capability so left-associated
+// chains remain commands rather than builders. Every operand is evaluated once
+// from left to right; a failed write prevents evaluation of later sources.
+//
+// Writing.write() either consumes the complete source or throws
+// IncompleteWrite with the consumed prefix length. It does not retry, flush or
+// close implicitly. Reading.bytes(limit) requires limit > 0. An empty result is
+// normal EOF, remains empty on later reads, and is not an error.
+
+role ByteSource {
+    bytes() is @byte;
+}
+
+role Writing {
+    write(source is ByteSource) is void;
+    flush() is void;
+}
+
+role Reading {
+    bytes(limit is int) is @byte;
+}
+
+role WritingText {
+    write(values is ...string) is void;
+    writeln(values is ...string) is void;
+}
+
+role ReadingText {
+    line() is string;
+    text() is string;
+}
+
+role Closing {
+    closed() is bool;
+    close() is void;
+}
+
+object IncompleteWrite does Error {
+    has amount is int;
+
+    IncompleteWrite(written is int) {
+        amount = written;
+
+        confirm self.amount >= 0 else throw InvalidArgument(
+            "written byte count cannot be negative"
+        );
+    }
+
+    written() is int {
+        amount;
+    }
+
+    #projected
+    text() is string {
+        "incomplete write after " + amount.string() + " bytes";
+    }
+}
+
+object InvalidReadLimit does Error {
+    has value is int;
+
+    InvalidReadLimit(limit is int) {
+        value = limit;
+    }
+
+    limit() is int {
+        value;
+    }
+
+    #projected
+    text() is string {
+        "read limit must be positive, got " + value.string();
+    }
+}

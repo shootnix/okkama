@@ -1,0 +1,9 @@
+module app v1.0.0;
+import "http/method" take Method, MethodSemantics;
+import "io/stdout" take Stdout;
+main() is int {
+    let method=Method("DELETE");let semantics=MethodSemantics(method);
+    Stdout().writeln(method.string()+": safe="+semantics.safe().string()+", idempotent="+semantics.idempotent().string());
+    Stdout().writeln(Method("X-Custom").string());
+    0;
+}

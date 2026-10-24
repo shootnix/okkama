@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.private-actions.overload",
+  "title": "private actions participate in overload dispatch",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.PRIVATE-ACTIONS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "int:5\ntext:x\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.7: private actions participate in overload dispatch like public actions."
+  },
+  "status": "mandatory"
+}

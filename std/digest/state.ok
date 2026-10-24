@@ -1,0 +1,52 @@
+module digest/state v1.0.0;
+
+// An immutable digest of an ordered byte history. bytes() returns raw bytes;
+// use HexEncoded for hexadecimal display and explicit UTF encoding for text.
+// state(bytes) appends into a fresh successor without changing this digest,
+// its earlier bytes() results or the input. Empty chunks preserve the result.
+// Observation does not prevent later append. Empty concrete constructors bind
+// empty input; digest computation is deferred until bytes() is observed.
+//
+//     let complete = partial.state([byte(0), byte(255)]);
+//     complete.bytes(); // partial is still available for another branch
+//
+// No I/O, resource ownership or close action. Algorithm-specific output widths,
+// errors and security limitations belong to concrete modules. The test-only
+// fake echoes bytes; it is not a cryptographic function or an algorithm oracle.
+role Digesting {
+    state(origin is @byte) is ^Digesting;
+    bytes() is @byte;
+
+    fake {
+        has origin is @byte = [];
+        bytes() is @byte { origin; }
+        state(origin is @byte) is ^Digesting {
+            let before = self.origin;
+            let appended is @byte = (0..before.size() + origin.size()).map() -> i {
+                if i < before.size() { before[i]; }
+                else { origin[i - before.size()]; }
+            };
+            ^origin = appended;
+        }
+    }
+}
+
+test "digest fake preserves byte order and branches immutably" {
+    let origin = Digesting.fake();
+    let input = [byte(0), byte(255)];
+    let first = origin.state(input);
+    let saved = first.bytes();
+    test.is(origin.bytes().size(), 0);
+    test.is(first.state([byte(128)]).bytes(), [byte(0), byte(255), byte(128)]);
+    test.is(first.state([byte(7)]).bytes(), [byte(0), byte(255), byte(7)]);
+    test.is(first.bytes(), input);
+    test.is(saved, input);
+}
+
+test "empty append and separate digest fakes remain independent" {
+    test.is(Digesting.fake().state([]).bytes().size(), 0);
+    let origin = Digesting.fake().state([byte(1)]);
+    test.is(origin.state([]).bytes(), [byte(1)]);
+    test.is(origin.bytes(), [byte(1)]);
+    test.is(Digesting.fake().bytes().size(), 0);
+}

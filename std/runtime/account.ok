@@ -1,0 +1,8 @@
+module runtime/account v1.0.0;
+
+// Portable immutable account lookup boundary. Identity strings are opaque to
+// the language and may contain a UID, SID or another provider representation.
+native account_current_user() is %string:string;
+native account_user_named(name is string) is %string:string;
+native account_group_named(name is string) is %string:string;
+native account_group_users(name is string) is @string;

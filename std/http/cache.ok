@@ -1,0 +1,124 @@
+module http/cache v1.0.0;
+import "http/client" take Exchanging;
+import "http/cache_admission" take CacheAdmissions,CacheAdmissionLease,CacheAdmissionAnchor;
+import "http/cache_validation" take CacheValidation,CacheRequestFreshness,InvalidCacheRevalidation;
+import "http/cache_memory" take ResponseCaching,CachedHttpEntry,MissingCachedResponse,CacheClosed;
+import "http/cache_control" take CacheControl;
+import "http/cache_freshness" take CacheResponseTiming;
+import "http/body" take BodyReading,OneShotBody,BodyClosed,TrailersUnavailable;
+import "http/message" take Request,Response;
+import "http/exchange" take ClientResponse;
+import "http/header" take Headers,HeaderName;
+import "http/target" take RequestTargetKind;
+import "time/clock" take Timing;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/lock" take Lock;
+import "async/scope" take FutureGroup;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot,InvalidReading;
+import "io/stream" take InvalidReadLimit,Closing;
+// Private cache decorator; returned live bodies remain lazy. Publication needs
+// clean EOF and validated trailers, with bounded capture and no retained socket.
+object Caching does Exchanging {
+    has origin is Exchanging;has cache is ResponseCaching;has clock is Timing;has admissions is CacheAdmissions;
+    Caching(origin is Exchanging,cache is ResponseCaching,clock is Timing){self.origin=origin;self.cache=cache;self.clock=clock;admissions=CacheAdmissions();}
+    async response(request is Request) is ClientResponse{
+        let eligible=request.method().string()=="GET" && request.target().kind()==RequestTargetKind.absolute && CacheRequestSelection(request).allowed();
+        if eligible{
+            let now=clock.monotonic_instant();let peek is @CachedHttpEntry=try{[cache.entry(request)];}catch e is MissingCachedResponse{let empty is @CachedHttpEntry=[];empty;};
+            if peek.size()==1 && CacheRequestFreshness(request,peek[0]).usable(now){return peek[0].response(request,now);}
+        }
+        let leases is @CacheAdmissionLease=if eligible{
+            let booking=admissions.booking(request);let acquired=Event();let anchor=CacheAdmissionAnchor([booking],acquired);defer anchor.close();
+            let guard=await booking.guard();let lease=CacheAdmissionLease(booking,guard);acquired.set();[lease];
+        }else{let empty is @CacheAdmissionLease=[];empty;};
+        let closers is @Closing=leases.map()->lease{let owner is Closing=lease;owner;};
+        let transferred=Event();let admission=CacheAdmissionAnchor(closers,transferred);defer admission.close();
+        let admitted_at=clock.monotonic_instant();
+        if leases.size()==1{let shared=leases[0].published();if shared.size()==1 && shared[0].revision()==cache.revision() && shared[0].entry().matches(request){return shared[0].entry().response(request,admitted_at);}}
+        let selected is @CachedHttpEntry=if eligible{try{[cache.entry(request)];}catch e is MissingCachedResponse{let empty is @CachedHttpEntry=[];empty;}}else{let empty is @CachedHttpEntry=[];empty;};
+        if selected.size()==1{if CacheRequestFreshness(request,selected[0]).usable(admitted_at){return selected[0].response(request,admitted_at);}}
+        let only_cached=try{CacheControl(request.headers()).present("only-if-cached");}catch e is Error{false;};confirm !only_cached else throw MissingCachedResponse();
+        let validation is @CacheValidation=if selected.size()==1{[CacheValidation(request,selected[0])];}else{let empty is @CacheValidation=[];empty;};
+        let outgoing=if validation.size()==1 && validation[0].conditional(){validation[0].request();}else{request;};
+        let revision=cache.revision();let started=clock.monotonic_instant();let result=await origin.response(outgoing);
+        let timing=CacheResponseTiming(clock.instant(),started,clock.monotonic_instant());
+        let code=result.response().status().code();
+        if code==304 && validation.size()==1 && validation[0].conditional(){
+            let body=result.response().body().reading();defer body.close();let empty=await body.bytes(1);confirm empty.size()==0 else throw InvalidCacheRevalidation();body.trailers();body.close();
+            confirm cache.revision()==revision else throw InvalidCacheRevalidation();let refreshed=validation[0].refreshed(result,timing);
+            if CacheResponseSelection(refreshed.result().response().headers()).allowed() && refreshed.storable(){cache.conditional_store(refreshed,revision);CacheVerifiedPublication(cache,request,refreshed,revision,leases).publish();}else{cache.invalidate(request);}
+            return refreshed.response(request,clock.monotonic_instant());
+        }
+
+        if request.target().kind()==RequestTargetKind.absolute && request.method().string()!="GET" && request.method().string()!="HEAD" && request.method().string()!="OPTIONS" && request.method().string()!="TRACE" && code>=200 && code<400{cache.invalidate(request);}
+        let direct=result.history().size()==0 && result.request().target().kind()==RequestTargetKind.absolute && result.request().target().string()==request.target().string() && result.request().method().string()==request.method().string();
+        let publication=if selected.size()==1 && direct && code>=200 && code<500 && cache.revision()==revision{cache.invalidate(request);cache.revision();}else{revision;};
+        let reported=if direct && validation.size()==1 && validation[0].conditional(){ClientResponse(request,result.response(),result.details());}else{result;};
+        let allowed=eligible && code==200 && direct && CacheResponseSelection(result.response().headers()).allowed();
+        if !allowed{return reported;}
+        let original=result.response();let reader=original.body().reading();let retained=Event();let anchor=CacheReaderAnchor(reader,retained);defer anchor.close();
+        let capturing=CacheBodyReading(reader,cache,request,result,timing,publication,leases);let response=Response(original.status(),original.headers(),OneShotBody(capturing),original.version());
+        let returned=ClientResponse(request,response,result.details());retained.set();transferred.set();returned;
+    }
+}
+object CacheRequestSelection {
+    has request is Request;CacheRequestSelection(request is Request){self.request=request;}
+    allowed() is bool{
+        let excluded is @string=["Range","If-Range","If-Match","If-None-Match","If-Modified-Since","If-Unmodified-Since"];
+        for excluded -> name{if request.headers().membership(HeaderName(name)){return false;}}
+        let empty=try{request.body().length().string()=="0";}catch e is Error{false;};if !empty{return false;}
+        let valid=try{!CacheControl(request.headers()).present("no-store");}catch e is Error{false;};valid;
+    }
+}
+object CacheResponseSelection {
+    has headers is Headers;CacheResponseSelection(headers is Headers){self.headers=headers;}
+    allowed() is bool{if headers.membership(HeaderName("Content-Range")){return false;}let valid=try{!CacheControl(headers).present("no-store");}catch e is Error{false;};valid;}
+}
+object CacheBodyReading does BodyReading {
+    has origin is BodyReading;has cache is ResponseCaching;has request is Request;has result is ClientResponse;has timing is CacheResponseTiming;has revision,budget is int;
+    has buffer is ByteBuffer;has stopped,finished,overflow is Event;has trailers is Atomic<@Headers>;has lock is Lock;has pending is Atomic<@Future<@byte>>;has leases is @CacheAdmissionLease;
+    CacheBodyReading(origin is BodyReading,cache is ResponseCaching,request is Request,result is ClientResponse,timing is CacheResponseTiming,revision is int,leases is @CacheAdmissionLease){
+        self.origin=origin;self.cache=cache;self.request=request;self.result=result;self.timing=timing;self.revision=revision;self.leases=leases;budget=cache.budget();buffer=ByteBuffer();stopped=Event();finished=Event();overflow=Event();let empty is @Headers=[];trailers=Atomic(empty);lock=Lock();let waiting is @Future<@byte>=[];pending=Atomic(waiting);
+    }
+    async bytes(limit is int) is @byte{
+        confirm limit>0 else throw InvalidReadLimit(limit);confirm !stopped.ready() else throw BodyClosed();let guard=await lock.guard();defer guard.close();confirm !stopped.ready() else throw BodyClosed();if finished.ready(){return [];}
+        let group is FutureGroup<@byte>=FutureGroup();let complete=Event();let cleanup=CacheReadSettlement(self,group,complete);defer await cleanup.close();
+        let waiting=origin.bytes(limit);pending.replace([waiting]);group.start(waiting);let chunk=await waiting;confirm chunk.size()<=limit else throw InvalidReading("cache body source exceeded requested limit");confirm !stopped.ready() else throw BodyClosed();
+        if chunk.size()>0{
+            if !overflow.ready(){let held=buffer.content().size();if chunk.size()<=budget-held{buffer.writing().write(ByteSnapshot(chunk));}else{overflow.set();buffer.closing().close();}}
+        }else{
+            let ending=origin.trailers();trailers.replace([ending]);
+            if !overflow.ready(){let entry is @CachedHttpEntry=try{[CachedHttpEntry(request,result,timing,buffer.content().bytes(),ending)];}catch e is Error{let empty is @CachedHttpEntry=[];empty;};
+                if entry.size()==1{try{cache.conditional_store(entry[0],revision);CacheVerifiedPublication(cache,request,entry[0],revision,leases).publish();}catch e is CacheClosed{}}
+            }
+            buffer.closing().close();origin.close();finished.set();
+        }complete.set();chunk;
+    }
+    trailers() is Headers{confirm finished.ready() else throw TrailersUnavailable();trailers.value()[0];}
+    closed() is bool{stopped.ready();}
+    close() is void{if !stopped.ready(){stopped.set();for pending.value() -> waiting{waiting.cancel();}origin.close();buffer.closing().close();if pending.value().size()==0{self.release();}}}
+    settled() is void{let empty is @Future<@byte>=[];pending.replace(empty);if stopped.ready() || finished.ready() || overflow.ready(){self.release();}}
+    release() is void{for leases -> lease{lease.close();}}
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+object CacheReaderAnchor {
+    has reader is BodyReading;has retained is Event;CacheReaderAnchor(reader is BodyReading,retained is Event){self.reader=reader;self.retained=retained;}
+    close() is void{if !retained.ready(){reader.close();}}
+}
+object CacheReadSettlement {
+    has reader is CacheBodyReading;has group is FutureGroup<@byte>;has complete is Event;
+    CacheReadSettlement(reader is CacheBodyReading,group is FutureGroup<@byte>,complete is Event){self.reader=reader;self.group=group;self.complete=complete;}
+    async close() is void{if !complete.ready(){group.cancel();reader.close();}if group.active()>0{await group.wait();}reader.settled();}
+}
+
+object CacheVerifiedPublication {
+    has cache is ResponseCaching;has request is Request;has entry is CachedHttpEntry;has revision is int;has leases is @CacheAdmissionLease;
+    CacheVerifiedPublication(cache is ResponseCaching,request is Request,entry is CachedHttpEntry,revision is int,leases is @CacheAdmissionLease){self.cache=cache;self.request=request;self.entry=entry;self.revision=revision;self.leases=leases;}
+    publish() is void{
+        if leases.size()==0 || cache.revision()!=revision || !entry.storable(){return;}
+        let stored is @CachedHttpEntry=try{[cache.entry(request)];}catch e is MissingCachedResponse{let empty is @CachedHttpEntry=[];empty;};
+        if stored.size()==1 && stored[0].bytes()==entry.bytes() && stored[0].result().response().headers()==entry.result().response().headers() && stored[0].timing().finished().reading().seconds()==entry.timing().finished().reading().seconds(){leases[0].publish(entry,revision);}
+    }
+}

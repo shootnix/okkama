@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracked {
+    has tag is int;
+    Tracked(:tag);
+    next() is ^Tracked { ^tag = tag + 1; }
+    tag() is int { tag; }
+    destroy {
+        Stdout().writeln("tracked " + tag.string() + " destroyed");
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    {
+        let first = Tracked(tag: 1);
+        {
+            let second = first.next();
+            out.writeln("inner has tag " + second.tag().string());
+        }
+        out.writeln("outer end");
+    }
+    0;
+}

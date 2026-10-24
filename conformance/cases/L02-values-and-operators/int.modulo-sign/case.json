@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.int.modulo-sign",
+  "title": "the sign of % follows the dividend",
+  "purpose": "Remainders use truncated division as in Go.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-MODULO-SIGN",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-1\n1\n-1\n1\n0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3",
+    "Go spec: Integer operators (truncated division)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-031): as in Go, x % y has the sign of x and |x % y| < |y| (truncated division): -7%3=-1, 7%-3=1, -7%-3=-1, 7%3=1, -6%3=0."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-007"
+  ]
+}

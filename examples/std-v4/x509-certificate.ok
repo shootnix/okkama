@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "crypto/x509/certificate" take ParsedCertificate;
+import "encoding/base64" take Base64Decoded;
+import "io/stdout" take Stdout;
+// Public certificate fixture only; no private key or trust assertion.
+main() is int {
+    let c=ParsedCertificate(Base64Decoded("MIIDOjCCAiKgAwIBAgIBBzANBgkqhkiG9w0BAQsFADASMRAwDgYDVQQKDAdFeGFtcGxlMB4XDTIzMTExNDIyMTMyMFoXDTI3MDExNTA4MDAwMFowMTEQMA4GA1UECgwHRXhhbXBsZTEdMAoGA1UECwwDVExTMA8GA1UEAwwIb25lLnRlc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC0AVC8f6+i1jHzanXSfK2FMi3bYKF1ad9otQDiozQGBrjHWxvvjjbZkTZxVRZfhu7Tv0jutLhO1ZhjIH11dmoRVq77R/9xW3ox4nhl1/lxntoSP9MIU5zJzxrTh/1HZW5IAOC2uhsBP4EFvT6jl5eEzbPFHhRZ0IKN91h4snoEyLcdYI7bLN0cKsbnFVsuMkxsi+1V9w7BC6xIyschDhQh3oYUcpF9Oo3Nm4H3r/1U26DS97o7iIuRbVmcOK8GzfAbAwlH12sjglRf6luK9qE/e7Bb/KyKyws58NTxpNIEBaCKHssSqjnM7LwxJECeT4Lrr3rLwx4uCTN8oNZb1uTVAgMBAAGjfDB6MB0GA1UdDgQWBBSFl6gGd/HXDSNXcbW9tr4pQeQxFjAJBgNVHSMEAjAAMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgWgMBEGCWCGSAGG+EIBAQQEAwIGwDAdBgNVHSUEFjAUBggrBgEFBQcDAgYIKwYBBQUHAwEwDQYJKoZIhvcNAQELBQADggEBAJEoEe/bTTyK43RdY5pJjtYA6rTnt0lZlBJCpybQM8o7vBUQp3H0Qi/B1kDnQxFDOt+7RtdjwqnnNQn9+AbUH0lKSZJHNJNbyU/AlG0ONedyUkMkDmP8t0SzzH5INF+qdo/06wZnzDOGHhYH/gcCfjdfTHETGXe2eWaqz3f5Z6102K0mO6ZjkH8nJJ0ynhBbcTJFQMMXQDkfafZjQZHFhydYQ9XK2yd3kKd9kYvUfZGh2bLaCPsTU7OTofBGIoHWgc23w8W0RatEJIFMZUINF5qx4PmVomy1qVh+XJPtSQq6vvWJgVDSOzzpBIbKXua3cQ7wzkTkoziGEG3qQydEg9A=").bytes()).value();
+    confirm c.subject().relative_names().size()==2;
+    confirm c.subject().relative_names().item(1).attributes().size()==2;
+    confirm c.validity().starts().unix_duration().seconds()==1700000000.rat();
+    confirm c.public_key().bytes().size()>200;
+    Stdout().writeln("DER, grouped certificate names, validity and SPKI verified");0;
+}

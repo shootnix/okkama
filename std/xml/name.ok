@@ -1,0 +1,29 @@
+module xml/name v1.0.0;
+import "regex/pattern" take Regex,RegexMatchObservation,RegexQuery;
+import "regex/range" take RegexRange;
+object XmlName {
+    has namespace,local,prefix is string;
+    XmlName(local is string){XmlNCName(local);namespace="";self.local=local;prefix="";}
+    XmlName(namespace is string,local is string,prefix is string){
+        XmlNCName(local);if prefix!=""{XmlNCName(prefix);}
+        confirm namespace.length()<=4096 && (prefix=="" || namespace!="") else throw InvalidXml(0,"invalid namespace binding");
+        confirm prefix!="xmlns" && namespace!="http://www.w3.org/2000/xmlns/" else throw InvalidXml(0,"reserved xmlns binding");
+        confirm (prefix=="xml")== (namespace=="http://www.w3.org/XML/1998/namespace") else throw InvalidXml(0,"reserved xml binding");
+        self.namespace=namespace;self.local=local;self.prefix=prefix;
+    }
+    namespace() is string{namespace;}local_name() is string{local;}prefix() is string{prefix;}
+    lexical() is string{if prefix==""{local;}else{prefix+":"+local;}}
+}
+object XmlNCName {
+    XmlNCName(origin is string){
+        confirm origin.length()>0 && origin.length()<=256 else throw InvalidXml(0,"XML name length must be 1..256");
+        let start="A-Z_a-z\\x{C0}-\\x{D6}\\x{D8}-\\x{F6}\\x{F8}-\\x{2FF}\\x{370}-\\x{37D}\\x{37F}-\\x{1FFF}\\x{200C}-\\x{200D}\\x{2070}-\\x{218F}\\x{2C00}-\\x{2FEF}\\x{3001}-\\x{D7FF}\\x{F900}-\\x{FDCF}\\x{FDF0}-\\x{FFFD}\\x{10000}-\\x{EFFFF}";
+        let pattern=Regex("["+start+"][\\-.0-9\\x{B7}\\x{300}-\\x{36F}\\x{203F}-\\x{2040}"+start+"]*");
+        confirm RegexMatchObservation(origin,pattern,RegexRange(0,origin.length()),RegexQuery.entire).found() else throw InvalidXml(0,"invalid XML NCName");
+    }
+}
+object InvalidXml does Error {
+    has offset is int;has reason is string;
+    InvalidXml(offset is int,reason is string){self.offset=offset;self.reason=reason;}
+    offset() is int{offset;}text() is string{"invalid XML at "+offset.string()+": "+reason;}
+}

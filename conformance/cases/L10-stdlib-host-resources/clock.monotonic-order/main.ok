@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+import "compare" take Order;
+
+async main() is int {
+    let out = Stdout();
+    let clock = SystemClock();
+    let before = clock.monotonic_instant();
+    await clock.wait(Duration(value: 20.rat(), unit: DurationUnit.millisecond));
+    let after = clock.monotonic_instant();
+    let elapsed = after.minus(before);
+    out.writeln(if after.order(before) == Order.greater { "advanced"; } else { "not advanced"; });
+    out.writeln(if elapsed.order(Duration(value: 20.rat(), unit: DurationUnit.millisecond)) != Order.less { "waited" ; } else { "too short"; });
+    0;
+}

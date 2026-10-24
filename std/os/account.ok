@@ -1,0 +1,284 @@
+module os/account v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing, EmptySequence;
+import "error" take OutOfRange;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "runtime/account" take
+    account_current_user,
+    account_user_named,
+    account_group_named,
+    account_group_users;
+import "size" take Sizing;
+
+// User() denotes the effective security identity of the current process.
+// User(name: ...) denotes a named account. Construction only retains that
+// choice; account information is requested lazily by name(), identity() and
+// home():
+//
+//     let current = User();
+//     let alice = User(name: "alice");
+//     output.writeln(current.name(), " ", current.identity());
+//
+// identity() is deliberately opaque. A provider may use a decimal UID, a
+// Windows SID or another stable account identifier; portable code compares or
+// stores it only as a string. home() comes from the account database, not from
+// HOME, USERPROFILE or another process-environment variable.
+
+object User {
+    has selected_name is string;
+    has current is bool;
+
+    User() {
+        selected_name = "";
+        current = true;
+    }
+
+    User(name is string) {
+        selected_name = name;
+        current = false;
+    }
+
+    name() is string {
+        self.record()["name"];
+    }
+
+    identity() is string {
+        self.record()["identity"];
+    }
+
+    home() is Directory {
+        let record is %string:string = self.record();
+        confirm !record["home"].empty()
+            else throw MissingUserHome(record["name"]);
+        Directory(path: Path(record["home"]));
+    }
+
+    private:
+    record() is %string:string {
+        if current {
+            try {
+                account_current_user();
+            }
+            catch failure is NativeFailure {
+                throw UnavailableAccountInformation(
+                    "current user information is unavailable"
+                );
+            }
+        }
+        else {
+            confirm !selected_name.empty()
+                else throw InvalidAccountName(selected_name);
+            try {
+                account_user_named(selected_name);
+            }
+            catch failure is NativeFailure {
+                match failure.code() {
+                    case "not_found" { throw MissingUser(selected_name); }
+                    case "invalid_input" {
+                        throw InvalidAccountName(selected_name);
+                    }
+                    else {
+                        throw UnavailableAccountInformation(
+                            "user information is unavailable"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Group(name: ...) only retains the group selector. Metadata is resolved by
+// name() and identity(). users() returns a lazy sequence; each sequence action
+// observes current direct membership, while each cursor retains one stable
+// membership snapshot. Nested groups are not expanded recursively:
+//
+//     let staff = Group(name: "staff");
+//     for staff.users() -> user {
+//         output.writeln(user.name());
+//     }
+
+object Group {
+    has selected_name is string;
+
+    Group(name is string) {
+        selected_name = name;
+    }
+
+    name() is string {
+        self.record()["name"];
+    }
+
+    identity() is string {
+        self.record()["identity"];
+    }
+
+    users() is Sequencing<User> {
+        GroupUsers(name: selected_name);
+    }
+
+    private:
+    record() is %string:string {
+        confirm !selected_name.empty()
+            else throw InvalidAccountName(selected_name);
+        try {
+            account_group_named(selected_name);
+        }
+        catch failure is NativeFailure {
+            match failure.code() {
+                case "not_found" { throw MissingGroup(selected_name); }
+                case "invalid_input" {
+                    throw InvalidAccountName(selected_name);
+                }
+                else {
+                    throw UnavailableAccountInformation(
+                        "group information is unavailable"
+                    );
+                }
+            }
+        }
+    }
+}
+
+object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
+    has group_name is string;
+
+    GroupUsers(name is string) {
+        group_name = name;
+    }
+
+    cursor() is Cursor<User> {
+        GroupUserCursor(names: self.names(), position: 0);
+    }
+
+    size() is int {
+        self.names().size();
+    }
+
+    item(index is int) is User {
+        let names is @string = self.names();
+        confirm index >= 0 && index < names.size()
+            else throw OutOfRange("group-user index is outside the sequence");
+        User(name: names[index]);
+    }
+
+    first() is User {
+        let names is @string = self.names();
+        confirm names.size() > 0 else throw EmptySequence();
+        User(name: names[0]);
+    }
+
+    last() is User {
+        let names is @string = self.names();
+        confirm names.size() > 0 else throw EmptySequence();
+        User(name: names[names.size() - 1]);
+    }
+
+    private:
+    names() is @string {
+        confirm !group_name.empty() else throw InvalidAccountName(group_name);
+        try {
+            account_group_users(group_name);
+        }
+        catch failure is NativeFailure {
+            match failure.code() {
+                case "not_found" { throw MissingGroup(group_name); }
+                case "invalid_input" {
+                    throw InvalidAccountName(group_name);
+                }
+                else {
+                    throw UnavailableAccountInformation(
+                        "group membership is unavailable"
+                    );
+                }
+            }
+        }
+    }
+}
+
+object GroupUserCursor does Cursor<User> {
+    has origin is @string;
+    has position is int;
+
+    GroupUserCursor(names is @string, position is int) {
+        origin = names;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is User {
+        confirm self.available() else throw IterationEnded();
+        User(name: origin[position]);
+    }
+
+    successor() is Cursor<User> {
+        confirm self.available() else throw IterationEnded();
+        GroupUserCursor(names: origin, position: position + 1);
+    }
+}
+
+object MissingUser does Error {
+    has origin is string;
+
+    MissingUser(name is string) {
+        origin = name;
+    }
+
+    name() is string { origin; }
+
+    #projected
+    text() is string { "user was not found: " + origin; }
+}
+
+object MissingGroup does Error {
+    has origin is string;
+
+    MissingGroup(name is string) {
+        origin = name;
+    }
+
+    name() is string { origin; }
+
+    #projected
+    text() is string { "group was not found: " + origin; }
+}
+
+object MissingUserHome does Error {
+    has origin is string;
+
+    MissingUserHome(name is string) {
+        origin = name;
+    }
+
+    name() is string { origin; }
+
+    #projected
+    text() is string { "user has no home directory: " + origin; }
+}
+
+object InvalidAccountName does Error {
+    has origin is string;
+
+    InvalidAccountName(name is string) {
+        origin = name;
+    }
+
+    #projected
+    text() is string { "invalid account name"; }
+}
+
+object UnavailableAccountInformation does Error {
+    has message is string;
+
+    UnavailableAccountInformation(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string { message; }
+}

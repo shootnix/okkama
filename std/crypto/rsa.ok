@@ -1,0 +1,156 @@
+module crypto/rsa v1.0.0;
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+import "encoding/utf" take Utf8Decoded;
+import "strings/parse" take ParsedInt;
+import "encoding/pem" take PemBlock;
+import "encoding/hex" take HexDecoded;
+
+// RSA (RFC 8017) over the host provider (RustCrypto rsa, constant-time
+// big integers, blinded private operations). Keys are 2048, 3072 or 4096
+// bits. RsaPrivateKey(bits:, entropy:) generates (seconds for 4096 bits) once
+// at construction; RsaPrivateKey(pkcs8: ...) takes DER PKCS#8. Signing and
+// encryption are explicit schemes over a key and a hash:
+//
+//     RsaPssSigning(key, RsaHash.sha256, entropy)   // RSASSA-PSS, salt = hash length
+//     RsaPkcs1Signing(key, RsaHash.sha256)          // RSASSA-PKCS1-v1_5
+//     RsaOaepEncryption(public, RsaHash.sha256, entropy).encrypted(message)
+//     RsaOaepDecryption(key, RsaHash.sha256, entropy).decrypted(ciphertext)
+//
+// Verifying keys answer false for invalid signatures; failed OAEP decryption
+// is AuthenticationFailed without distinguishing padding errors.
+enum RsaHash = (sha256, sha384, sha512);
+
+object RsaHashName {
+    has hash is RsaHash;
+    RsaHashName(hash is RsaHash) { self.hash = hash; }
+    string() is string {
+        match hash { case RsaHash.sha256 { "sha256"; } case RsaHash.sha384 { "sha384"; } case RsaHash.sha512 { "sha512"; } }
+    }
+}
+
+object RsaPrivateKey {
+    has key is SecretBytes;
+    RsaPrivateKey(pkcs8 is SecretBytes) {
+        let algorithm = HostOperation("pkcs8-algorithm", [pkcs8.export_bytes()]).bytes();
+        confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1" else throw InvalidCryptoInput("PKCS#8 key is not an RSA key");
+        key = pkcs8;
+    }
+    RsaPrivateKey(bits is int, entropy is Entropy) {
+        confirm bits == 2048 || bits == 3072 || bits == 4096 else throw InvalidCryptoInput("RSA modulus must be 2048, 3072 or 4096 bits");
+        key = SecretBytes(HostOperation("rsa-generate", [DecimalArgument(bits).bytes(), entropy.bytes(32)]).bytes());
+    }
+    pkcs8() is SecretBytes { SecretBytes(key.export_bytes()); }
+    public_key() is RsaPublicKey { RsaPublicKey(HostOperation("rsa-public", [key.export_bytes()]).bytes()); }
+}
+
+object RsaPublicKey does PublicKey {
+    has origin is @byte;
+    RsaPublicKey(spki is @byte) {
+        let algorithm = HostOperation("spki-algorithm", [spki]).bytes();
+        confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1" else throw InvalidCryptoInput("SubjectPublicKeyInfo is not an RSA key");
+        origin = spki;
+    }
+    bytes() is @byte { origin; }
+    bits() is int { ParsedInt(Utf8Decoded(HostOperation("rsa-bits", [origin]).bytes()).string()).value(); }
+}
+
+object RsaPssSigning does SigningKey {
+    has key is RsaPrivateKey;
+    has hash is RsaHash;
+    has entropy is Entropy;
+    RsaPssSigning(key is RsaPrivateKey, hash is RsaHash, entropy is Entropy) {
+        self.key = key;
+        self.hash = hash;
+        self.entropy = entropy;
+    }
+    pkcs8() is SecretBytes { key.pkcs8(); }
+    public_key() is VerifyingKey { RsaPssVerifying(key.public_key(), hash); }
+    signature(message is @byte) is @byte {
+        HostOperation("rsa-pss-sign:" + RsaHashName(hash).string(), [key.pkcs8().export_bytes(), message, entropy.bytes(32)]).bytes();
+    }
+}
+
+object RsaPssVerifying does VerifyingKey {
+    has key is RsaPublicKey;
+    has hash is RsaHash;
+    RsaPssVerifying(key is RsaPublicKey, hash is RsaHash) { self.key = key; self.hash = hash; }
+    bytes() is @byte { key.bytes(); }
+    verified(message is @byte, signature is @byte) is bool {
+        HostOperation("rsa-pss-verify:" + RsaHashName(hash).string(), [key.bytes(), message, signature]).truth();
+    }
+}
+
+object RsaPkcs1Signing does SigningKey {
+    has key is RsaPrivateKey;
+    has hash is RsaHash;
+    RsaPkcs1Signing(key is RsaPrivateKey, hash is RsaHash) { self.key = key; self.hash = hash; }
+    pkcs8() is SecretBytes { key.pkcs8(); }
+    public_key() is VerifyingKey { RsaPkcs1Verifying(key.public_key(), hash); }
+    signature(message is @byte) is @byte {
+        HostOperation("rsa-pkcs1-sign:" + RsaHashName(hash).string(), [key.pkcs8().export_bytes(), message]).bytes();
+    }
+}
+
+object RsaPkcs1Verifying does VerifyingKey {
+    has key is RsaPublicKey;
+    has hash is RsaHash;
+    RsaPkcs1Verifying(key is RsaPublicKey, hash is RsaHash) { self.key = key; self.hash = hash; }
+    bytes() is @byte { key.bytes(); }
+    verified(message is @byte, signature is @byte) is bool {
+        HostOperation("rsa-pkcs1-verify:" + RsaHashName(hash).string(), [key.bytes(), message, signature]).truth();
+    }
+}
+
+object RsaOaepEncryption {
+    has key is RsaPublicKey;
+    has hash is RsaHash;
+    has entropy is Entropy;
+    RsaOaepEncryption(key is RsaPublicKey, hash is RsaHash, entropy is Entropy) { self.key = key; self.hash = hash; self.entropy = entropy; }
+    encrypted(message is @byte) is @byte {
+        HostOperation("rsa-oaep-encrypt:" + RsaHashName(hash).string(), [key.bytes(), message, entropy.bytes(32)]).bytes();
+    }
+}
+
+object RsaOaepDecryption {
+    has key is RsaPrivateKey;
+    has hash is RsaHash;
+    has entropy is Entropy;
+    RsaOaepDecryption(key is RsaPrivateKey, hash is RsaHash, entropy is Entropy) { self.key = key; self.hash = hash; self.entropy = entropy; }
+    decrypted(ciphertext is @byte) is SecretBytes {
+        SecretBytes(HostOperation("rsa-oaep-decrypt:" + RsaHashName(hash).string(), [key.pkcs8().export_bytes(), ciphertext, entropy.bytes(32)]).bytes());
+    }
+}
+
+test "RSA signatures and OAEP round-trip" {
+    let key = RsaPrivateKey(bits: 2048, entropy: Entropy.fake());
+    test.is(key.public_key().bits(), 2048);
+    let pss = RsaPssSigning(key, RsaHash.sha256, Entropy.fake());
+    let signature = pss.signature([5.byte()]);
+    test.is(signature.size(), 256);
+    test.ok(pss.public_key().verified([5.byte()], signature));
+    test.ok(!pss.public_key().verified([6.byte()], signature));
+    let pkcs1 = RsaPkcs1Signing(RsaPrivateKey(pkcs8: key.pkcs8()), RsaHash.sha512);
+    test.is(pkcs1.signature([1.byte()]), pkcs1.signature([1.byte()]));
+    test.ok(pkcs1.public_key().verified([1.byte()], pkcs1.signature([1.byte()])));
+    let sealed = RsaOaepEncryption(key.public_key(), RsaHash.sha256, Entropy.fake()).encrypted([7.byte(), 8.byte()]);
+    test.is(RsaOaepDecryption(key, RsaHash.sha256, Entropy.fake()).decrypted(sealed).export_bytes(), [7.byte(), 8.byte()]);
+    test.ok(try { RsaPrivateKey(bits: 1024, entropy: Entropy.fake()); false; } catch e is InvalidCryptoInput { true; });
+}
+
+test "OpenSSL RSA keys, PKCS#1 v1.5, PSS and OAEP interoperate" {
+    let message = [104.byte(), 101.byte(), 108.byte(), 108.byte(), 111.byte()];
+    let public = RsaPublicKey(PemBlock("-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApXK3hfNeafhb+Q2vhlh1\nMNhgBscPEto29NJQFaQaXVOlSEvMvOO1Lap8VeIipc9bTKngjR5qPUNBG/PR2fCe\nVgagNaxDIKYlqwEinVvKs0CcbAfYWRJ+XT2RYBmQzwiEl2Jq8+fyZpDxXUWJJsr+\nq05pFoZoGOew7oZlEgzYITu98bvLZ210+8OR0li1JoX6tPNQ0MKv1l9IBPBfSMqC\nkBXRX5DWiTvGuNWLytkpql8peqRgHJ8mc3QGm8+Uj3yCELrK8xMjarYfZ2i4/PDX\nvQI7N/YvajQQ4JPWWixil50T+aVrOeIMts+3Qd4hI71Nd9qmEu94zyl9umnr5Zu+\niwIDAQAB\n-----END PUBLIC KEY-----\n").bytes());
+    test.is(public.bits(), 2048);
+    let signature = HexDecoded("a25ee1feb4491ae4b5abf67c3d86faaaa9ce36fccb226222a2767cb28d9e066aa1a3647cd84d6d1c427ba3c008d6c81fd45b117522143159803ff526fe97b9dfab4c087e21a4f4950a0531ceb15efae385868c56285404ca4cd6de19096ca362880ff4216bf23514f52615c403d081699e305cf4369300201cf5c158364edf63a0bb2ce1afa7f7c587fb01e529b78bd98a392b800851586e7da6f7449666edd37dc1c19f85a4e248835c4e9152baf07c74a11500da55855af89e95ef61e48392d60e5301b38df9c491835e6aab2a0d8ef34672e8763f3aa2253b7b2ed644f7250286507e8671da4b8647565093caa6a934f3f806ab1a35ba59ee2dbb030d49e9").bytes();
+    test.ok(RsaPkcs1Verifying(public, RsaHash.sha256).verified(message, signature));
+    let owner = RsaPrivateKey(pkcs8: SecretBytes(PemBlock("-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQClcreF815p+Fv5\nDa+GWHUw2GAGxw8S2jb00lAVpBpdU6VIS8y847UtqnxV4iKlz1tMqeCNHmo9Q0Eb\n89HZ8J5WBqA1rEMgpiWrASKdW8qzQJxsB9hZEn5dPZFgGZDPCISXYmrz5/JmkPFd\nRYkmyv6rTmkWhmgY57DuhmUSDNghO73xu8tnbXT7w5HSWLUmhfq081DQwq/WX0gE\n8F9IyoKQFdFfkNaJO8a41YvK2SmqXyl6pGAcnyZzdAabz5SPfIIQusrzEyNqth9n\naLj88Ne9Ajs39i9qNBDgk9ZaLGKXnRP5pWs54gy2z7dB3iEjvU132qYS73jPKX26\naevlm76LAgMBAAECggEANWWeXKGMvbfV+z4TAdGH1SFocJeLQmLiLMa56RojFi7a\nX8hzBh2ZymjFIzTOSORxC3+iRPllgWs01tAs0OGLQKl3yIrVyXJGIvhFUzMeaxb1\nxRoNFcZVuUMXKcRmi6Mso+00Jo8cGUU7WQaJutb2NZSjbw0nCK6yWHFQqnAxyxuH\nW/fA3ztmL8Tc57/vGo6/EgITSMmITK4nQfJKLTp3GQCDu6Ui6aKkmBFGQnOtxTIs\nk/avfW1cSB+Ecr20ilDHM8SrUW7eLz/aqHkoRGObaNtNZzir3cEGSb4A4ny+8WQ/\nBsck46qE4/qv1r3kI0xUJ2EPtBvhUnKWgy3ttgnlBQKBgQDa5RzTliKjRddRtwPm\n4tG9DkfrbDeGNINi8zJdK1umgcerS2ZV1Z67BMiWj4+omQnOM5W/jeDbrdjXR1jt\nZ5OdhF+0sGpWpqaF6+uuaKzXvePujVYGFkluEJoNO1zdAI70kimdN1pEUHlBneZN\n4uGlPLZBbKnQGGeAp3hfOCRFZQKBgQDBfkrgkUskEhNiRcqF2GY1z6lBnhJ4ByUT\nytdhjFUkebzUTUUznQELmQ/px32qhcXGAGbZAV/JvxEeAdbjSL3j2IEgSuxv3E8k\naqlGhP4yi7yCQ9tWukfE8KmvdKmuoVWim7Z17nJBtCXkSdhbwzpGMWJopDg4JP0H\nPMdiKNttLwKBgQCqGpvhLW3zdcXTIactmJwnD98B61HmwA5OKfG8h4IsjfQNgIWh\nNGWqrhf3MM8R1QPSszGu72GLNbkp6q8HppMHOKRrNSEd/1mu/txi58NR0KY9bqYo\nCs+7cblViQksUU/GbYNbQnWqWuMwA7XCVwrFLr3vb7MzHJPqXbpkPKurJQKBgQCv\ns7XcnDMGax+M8mEID0wo+wvwGNEeiyZhBaV04BCEkcMlaZE4YA6N8IyhtdPoH5dK\nyBycW4IW2dh6TiNKukgsePIwV7jBjuWS5QQXlDabwYYJKAMpivgW3o7HU4GtoLT5\ndrpF9qNsBGEQHvpHwUzOZpO8/7pJSVU22DsZaI5wYwKBgQCfYLTKcp2YRE1SFUHl\nqjpYHyDgCaoggLHwq0JSRZfiWdE8eN3Ipqw2bep/qO7IkL7mr8S1+x8HMblcXAqI\nxR+4pCvSTiD9/KEGLiNmWc4TishmuTd0yfXFhhjHVGoZ7PVBIjPCSUpfCdzeeaml\naCVhjunRYNIoO7jzgo/muY2kzA==\n-----END PRIVATE KEY-----\n").bytes()));
+    test.is(RsaPkcs1Signing(owner, RsaHash.sha256).signature(message), signature);
+    // OpenSSL: dgst -sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:digest, and
+    // pkeyutl -encrypt -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256.
+    test.ok(RsaPssVerifying(public, RsaHash.sha256).verified(message, HexDecoded("26145c8d8d7998673ff7007044ceedac5b9675c32d188dcf5af7a331dd4f2618fad19261c41b03431f7eca74dce9a0c05355a148371864caec1b032c0f69ebe80236a188ebbf954fc525293b839ee3d80a37e17496256a8cb2c77b9db25eb5f1f32df3cc0ed81a4f4f0f37282863a2f869ade0f10c3d020a76dc404f7b23b3aa9da42923fc4010d58fc0cb24cad466df7f0d38e3bdbd8429dd55b0432b92c5c203d5b7358de7073c0ed8f055f8437456a3dbad72dd8ab9effb0db0777e31935b4040c6fcfc3297bd246124e99c40647f96592363b88d8e53014ec579381b553e95e4bf188dacca2a43075290a766054dfae2402d6a35f76b0b1bb76f8aa68609").bytes()));
+    test.is(RsaOaepDecryption(owner, RsaHash.sha256, Entropy.fake()).decrypted(HexDecoded("0de7f50b4ded4626e43111e7b2bd568089aacb553e82d0d16da1b7e1b8c921a62f784cf39a50a07d986c60b97b2272cb2035a0d817f871c93afc7a793c8bff31ecddb10674e813fcbe05dad8fdc42989915d2d439f86c4d04baead181878d5d67860fa0eaaa3b68381b4b966db7d32e5d27b4196e84988488df8072a4648b6cccf76f1fe36b91e18f08dc0214d22db3ebc4c48ce4015384302a10eb7805ab2e3c75848e27ed8f658cae13d5b76d79c98dfdd5f32e43c017b5941ee72bc060d70cca966e3161421e23a51a10a5c2df526bba102a1056549160de26d2b2f4d2d011a0d0cdd4845e3bab94e2b7e7e6fae46723cf8fbe4a5bbee24ce65a10a9b70c3").bytes()).export_bytes(), message);
+}

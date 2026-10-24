@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.catch.arbitrary-role",
+  "title": "an arbitrary role is not a valid catch type",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CATCH",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.6: arbitrary roles are invalid catch boundaries."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,181 @@
+module mail/imap_name v1.0.0;
+
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf16Encoded, Utf16Decoded, ByteOrder, InvalidUtf16;
+import "encoding/base64" take Base64Encoded, Base64Decoded, InvalidBase64;
+import "mime/media_type" take MimePosition;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+
+// Bounded, eager IMAP4rev1 mailbox-name values. No connection or negotiation.
+// Modified UTF-7 uses UTF-16BE, comma instead of slash, no Base64 padding,
+// &- for ampersand and maximal runs of non-printable/non-ASCII scalars.
+// Decoding accepts only this canonical form. Codecs preserve all Unicode
+// scalars without normalization; ImapMailboxName rejects ASCII controls.
+// Quoting protects syntax, not LIST wildcard interpretation or authorization.
+object ImapNameLimits {
+    has scalars, wire_bytes is int;
+    ImapNameLimits() {scalars=4096;wire_bytes=32768;}
+    ImapNameLimits(scalars is int, wire_bytes is int) {
+        confirm scalars>=0 && wire_bytes>=0 else throw InvalidArgument("IMAP name limits must be nonnegative");
+        self.scalars=scalars;self.wire_bytes=wire_bytes;
+    }
+    scalars() is int {scalars;}
+    wire_bytes() is int {wire_bytes;}
+}
+object ImapUtf7Encoded {
+    has value is string;
+    ImapUtf7Encoded(origin is string) {value=ImapUtf7Encoder(origin,ImapNameLimits()).string();}
+    ImapUtf7Encoded(origin is string, limits is ImapNameLimits) {value=ImapUtf7Encoder(origin,limits).string();}
+    string() is string {value;}
+}
+object ImapUtf7Decoded {
+    has value is string;
+    ImapUtf7Decoded(origin is string) {value=ImapUtf7Parser(origin,ImapNameLimits()).string();}
+    ImapUtf7Decoded(origin is string, limits is ImapNameLimits) {value=ImapUtf7Parser(origin,limits).string();}
+    string() is string {value;}
+}
+object ImapMailboxName {
+    has value, wire, argument is string;
+    ImapMailboxName(origin is string) {
+        let prepared=ImapNameValue(origin,ImapNameLimits());value=origin;wire=prepared.wire();argument=prepared.quoted();
+    }
+    ImapMailboxName(origin is string, limits is ImapNameLimits) {
+        let prepared=ImapNameValue(origin,limits);value=origin;wire=prepared.wire();argument=prepared.quoted();
+    }
+    string() is string {value;}
+    wire_name() is string {wire;}
+    quoted() is string {argument;}
+}
+object InvalidImapUtf7 does Error {
+    has position is int;has reason is string;
+    InvalidImapUtf7(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid IMAP modified UTF-7 at scalar offset "+position.string()+": "+reason;}
+}
+object InvalidImapMailboxName does Error {
+    has position is int;
+    InvalidImapMailboxName(offset is int) {position=offset;}
+    offset() is int {position;}
+    text() is string {"ASCII control in IMAP mailbox name at scalar offset "+position.string();}
+}
+object ImapNameLimitExceeded does Error {
+    has limit is string;
+    ImapNameLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"IMAP name "+limit+" limit exceeded";}
+}
+object ImapUtf7Encoder {
+    has origin is string;has limits is ImapNameLimits;
+    ImapUtf7Encoder(origin is string, limits is ImapNameLimits) {self.origin=origin;self.limits=limits;}
+    string() is string {
+        confirm origin.length()<=limits.scalars() else throw ImapNameLimitExceeded("scalars");
+        let buffer=ByteBuffer();defer buffer.closing().close();let output=ImapNameOutput(buffer,limits.wire_bytes());
+        let start=MimePosition(0);
+        for (0..origin.length()) -> index {
+            let char=origin.slice(index,index+1);let bytes=Utf8Encoded(char).bytes();
+            if bytes.size()==1 && bytes[0].int()>=32 && bytes[0].int()<=126 {
+                if start.index()<index {output.write(ImapUtf7Run(origin.slice(start.index(),index)).string());}
+                output.write(if char=="&" {"&-";} else {char;});start=start.following(index+1);
+            }
+        }
+        if start.index()<origin.length() {output.write(ImapUtf7Run(origin.slice(start.index(),origin.length())).string());}
+        Utf8Decoded(buffer.content().bytes()).string();
+    }
+}
+object ImapUtf7Run {
+    has origin is string;
+    ImapUtf7Run(origin is string) {self.origin=origin;}
+    string() is string {
+        let encoded=Base64Encoded(Utf16Encoded(origin,ByteOrder.big).bytes()).string();
+        let chars is @string=(0..encoded.length()).map() -> index {
+            let char=encoded.slice(index,index+1);if char=="=" {"";} else {if char=="/" {",";} else {char;}}
+        };"&"+chars.join("")+"-";
+    }
+}
+object ImapUtf7Parser {
+    has origin is string;has limits is ImapNameLimits;
+    ImapUtf7Parser(origin is string, limits is ImapNameLimits) {self.origin=origin;self.limits=limits;}
+    string() is string {
+        confirm origin.length()<=limits.wire_bytes() else throw ImapNameLimitExceeded("wire_bytes");
+        for (0..origin.length()) -> index {
+            let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();
+            confirm bytes.size()==1 && bytes[0].int()>=32 && bytes[0].int()<=126
+                else throw InvalidImapUtf7(index,"wire name must be printable ASCII");
+        }
+        let buffer=ByteBuffer();defer buffer.closing().close();let position=MimePosition(0);let count=MimePosition(0);
+        loop {
+            let start=position.index();last if start==origin.length();let char=origin.slice(start,start+1);
+            let piece=if char!="&" {position=position.following(start+1);char;}
+            else {
+                let end=MimePosition(start+1);
+                loop {last if end.index()==origin.length() || origin.slice(end.index(),end.index()+1)=="-";end=end.following(end.index()+1);}
+                confirm end.index()<origin.length() else throw InvalidImapUtf7(start,"unterminated shift");
+                position=position.following(end.index()+1);
+                if end.index()==start+1 {"&";} else {ImapUtf7Shift(origin.slice(start+1,end.index()),start).string();}
+            };
+            confirm piece.length()<=limits.scalars()-count.index() else throw ImapNameLimitExceeded("scalars");
+            buffer.writing().write(ByteSnapshot(Utf8Encoded(piece).bytes()));count=count.following(count.index()+piece.length());
+        }
+        let decoded=Utf8Decoded(buffer.content().bytes()).string();
+        confirm ImapUtf7Encoded(decoded,limits).string()==origin else throw InvalidImapUtf7(0,"noncanonical shift or encoded printable ASCII");
+        decoded;
+    }
+}
+object ImapUtf7Shift {
+    has origin is string;has offset is int;
+    ImapUtf7Shift(origin is string, offset is int) {self.origin=origin;self.offset=offset;}
+    string() is string {
+        let chars is @string=(0..origin.length()).map() -> index {
+            let char=origin.slice(index,index+1);let code=Utf8Encoded(char).bytes()[0].int();
+            confirm (code>=65 && code<=90) || (code>=97 && code<=122) || (code>=48 && code<=57) || code==43 || code==44
+                else throw InvalidImapUtf7(offset+1+index,"invalid modified Base64 alphabet");
+            if char=="," {"/";} else {char;}
+        };
+        let remainder=origin.length()%4;
+        confirm remainder!=1 else throw InvalidImapUtf7(offset,"invalid Base64 quantum");
+        let padded=chars.join("")+(if remainder==2 {"==";} else {if remainder==3 {"=";} else {"";}});
+        let bytes=try {Base64Decoded(padded).bytes();}
+            catch failure is InvalidBase64 {throw InvalidImapUtf7(offset,"invalid Base64 padding bits");};
+        try {Utf16Decoded(bytes,ByteOrder.big).string();}
+            catch failure is InvalidUtf16 {throw InvalidImapUtf7(offset,"invalid UTF-16BE shift");}
+    }
+}
+object ImapNameValue {
+    has wire, argument is string;
+    ImapNameValue(origin is string, limits is ImapNameLimits) {
+        confirm origin.length()<=limits.scalars() else throw ImapNameLimitExceeded("scalars");
+        for (0..origin.length()) -> index {
+            let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();
+            confirm bytes.size()!=1 || (bytes[0].int()>=32 && bytes[0].int()!=127) else throw InvalidImapMailboxName(index);
+        }
+        let encoded=ImapUtf7Encoded(origin,limits).string();let buffer=ByteBuffer();defer buffer.closing().close();
+        let output=ImapNameOutput(buffer,limits.wire_bytes());output.write("\"");
+        for (0..encoded.length()) -> index {
+            let char=encoded.slice(index,index+1);
+            if char=="\"" || char=="\\" {output.write("\\");}
+            output.write(char);
+        }
+        output.write("\"");wire=encoded;argument=Utf8Decoded(buffer.content().bytes()).string();
+    }
+    wire() is string {wire;}
+    quoted() is string {argument;}
+}
+object ImapNameOutput {
+    has buffer is ByteBuffer;has maximum is int;
+    ImapNameOutput(buffer is ByteBuffer, maximum is int) {self.buffer=buffer;self.maximum=maximum;}
+    write(origin is string) is void {
+        confirm origin.length()<=maximum-buffer.content().size() else throw ImapNameLimitExceeded("wire_bytes");
+        buffer.writing().write(ByteSnapshot(Utf8Encoded(origin).bytes()));
+    }
+}
+
+test "IMAP modified UTF-7 preserves ampersands and supplementary scalars" {
+    test.is(ImapUtf7Encoded("A&😀").string(),"A&-&2D3eAA-");
+    test.is(ImapUtf7Decoded("A&-&2D3eAA-").string(),"A&😀");
+}
+test "IMAP mailbox argument is always quoted" {
+    test.is(ImapMailboxName("NIL").quoted(),"\"NIL\"");
+    test.is(ImapMailboxName("").quoted(),"\"\"");
+}

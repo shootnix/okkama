@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Reader {
+    Reader();
+    read() is int {
+        leaked;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let leaked = 42;
+    let x = Reader().read();
+    out.writeln("unreachable");
+    0;
+}

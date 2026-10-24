@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, ChannelClosed, InvalidChannelCapacity;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/collect" take AllFutures, Raced, NoFutures;
+import "async/cancellation" take Cancellation, Cancelling;
+import "async/atomic" take Atomic;
+
+object Waiter {
+    has gate is Event;
+    has id is int;
+    Waiter(:gate, :id);
+    async run() is int {
+        await gate.wait();
+        Stdout().writeln("released " + id.string());
+        id;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let gate is Event = Event();
+    let first = spawn Waiter(gate: gate, id: 1).run();
+    let second = spawn Waiter(gate: gate, id: 2).run();
+    out.writeln("setting");
+    gate.set();
+    gate.set();
+    out.writeln(((await first) + (await second)).string());
+    0;
+}

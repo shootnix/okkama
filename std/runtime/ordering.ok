@@ -1,0 +1,32 @@
+module runtime/ordering v1.0.0;
+
+import "compare" take Comparing;
+
+// The low-level bulk ordering boundary used by collections/ordering.
+//
+// The host runtime owns the stable merge sort behind @T.ordering(). This
+// object keeps that intrinsic out of collection decorators and gives stdlib
+// code one explicit dependency for bulk ordering:
+//
+//     let ordered = BulkOrdering(values: materialized).items();
+//
+// T must satisfy Comparing<T>. The returned array is a new value; the input
+// array is unchanged. Equal values retain their input order.
+//
+// This is a fixed runtime intrinsic rather than a portable bodyless native
+// declaration. The portable native ABI intentionally cannot receive language
+// action callbacks or opaque domain objects, both of which generic Comparing
+// requires. If that ABI gains a safe callback protocol, this module is the
+// single boundary that can move to an external provider.
+
+object BulkOrdering<T: Comparing<T>> {
+    has origin is @T;
+
+    BulkOrdering(values is @T) {
+        origin = values;
+    }
+
+    items() is @T {
+        origin.ordering();
+    }
+}

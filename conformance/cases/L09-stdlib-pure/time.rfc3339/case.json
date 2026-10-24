@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.time.rfc3339",
+  "title": "RFC 3339 parsing and canonical formatting",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TIME.RFC3339",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - unix nanoseconds\nok 2 - UTC rendering\nok 3 - offset rendering\nok 4 - unknown offset is zero\nok 5 - lowercase t rejected\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/time/rfc3339.ok",
+    "RFC 3339"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 3339: 12:30:45.125+05:00 is 07:30:45.125Z, i.e. 1786433445.125 s after the epoch (Python datetime); zero displacements format as Z, -00:00 parses as zero; this profile requires uppercase T."
+  },
+  "status": "mandatory"
+}

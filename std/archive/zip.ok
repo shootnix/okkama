@@ -1,0 +1,103 @@
+module archive/zip v1.0.0;
+
+import "error" take InvalidArgument;
+import "archive/entry" take ArchiveEntry;
+
+// A ZIP method name, not a wire identifier or a promise of an installed codec.
+// The module currently represents writing choices only. ZIP wire processing
+// and the deferred compression providers are separate capabilities.
+enum ZipMethod = (stored, deflated, bzip2, lzma, zstandard);
+
+// Immutable choice of ZIP method and effective compression level. Construction
+// validates local invariants; observations have no I/O or provider discovery.
+// Defaults are stored=0, deflated=6, bzip2=9, lzma=0, zstandard=3.
+// Explicit levels: deflated 0..9, bzip2 1..9, zstandard -131072..22 inclusive.
+// Zstandard 0 resolves to 3. DEFLATE 0 remains a distinct real level.
+// Stored/LZMA reject every explicit level, even 0; their observed zero means
+// no configurable ZIP level, not an LZMA preset. InvalidArgument is immediate.
+// The fixed Zstandard range does not depend on an installed host version.
+// No clamping, implicit method, ambient defaults, resources or compression.
+//
+//     let stored = ZipCompression(ZipMethod.stored);
+//     let chosen = ZipCompression(ZipMethod.deflated, 9);
+//     chosen.method(); // ZipMethod.deflated
+//     chosen.level();  // 9; this value itself does not compress anything
+object ZipCompression {
+    has selected is ZipMethod;
+    has effective is int;
+
+    ZipCompression(method is ZipMethod) {
+        selected = method;
+        effective = if method == ZipMethod.deflated {6;}
+        else {
+            if method == ZipMethod.bzip2 {9;}
+            else {if method == ZipMethod.zstandard {3;} else {0;}}
+        };
+    }
+
+    ZipCompression(method is ZipMethod, level is int) {
+        confirm method != ZipMethod.stored && method != ZipMethod.lzma
+            else throw InvalidArgument("this ZIP method has no configurable level");
+        let valid = if method == ZipMethod.deflated {level >= 0 && level <= 9;}
+        else {
+            if method == ZipMethod.bzip2 {level >= 1 && level <= 9;}
+            else {level >= -131072 && level <= 22;}
+        };
+        confirm valid else throw InvalidArgument("compression level is outside the ZIP method range");
+        selected = method;
+        effective = if method == ZipMethod.zstandard && level == 0 {3;} else {level;};
+    }
+
+    method() is ZipMethod {selected;}
+    level() is int {effective;}
+}
+
+// One member's explicit ZIP writing request: an archive value paired with a
+// validated compression choice. Both coordinates are retained unchanged. Binding
+// and observing them never calls entry methods, visits payload, reads metadata,
+// compresses bytes or owns/closes a resource. No format capability is implied:
+// a writer must check entry kind, metadata and codec support before output.
+//
+// The wrapper is not itself an ArchiveEntry. Unwrap deliberately to use ordinary
+// archive visitors or writers. A second compression choice creates a separate
+// request for the same immutable entry; neither request changes the other.
+//
+//     let request = ZipArchiveEntry(file, ZipCompression(ZipMethod.stored));
+//     request.entry().accept(visitor); // only this explicit call visits file
+object ZipArchiveEntry {
+    has origin is ArchiveEntry;
+    has choice is ZipCompression;
+
+    ZipArchiveEntry(entry is ArchiveEntry, compression is ZipCompression) {
+        origin = entry;
+        choice = compression;
+    }
+
+    entry() is ArchiveEntry {origin;}
+    compression() is ZipCompression {choice;}
+}
+
+test "ZIP choices resolve defaults and preserve the method" {
+    test.is(ZipCompression(ZipMethod.stored).level(),0);
+    test.is(ZipCompression(ZipMethod.deflated).level(),6);
+    test.is(ZipCompression(ZipMethod.bzip2).level(),9);
+    test.is(ZipCompression(ZipMethod.lzma).level(),0);
+    test.is(ZipCompression(ZipMethod.zstandard).level(),3);
+    test.is(ZipCompression(ZipMethod.deflated,0).method(),ZipMethod.deflated);
+}
+test "ZIP level ranges are exact and zero has method-specific meaning" {
+    test.is(ZipCompression(ZipMethod.deflated,0).level(),0);
+    test.is(ZipCompression(ZipMethod.zstandard,0),ZipCompression(ZipMethod.zstandard,3));
+    test.is(ZipCompression(ZipMethod.zstandard,-131072).level(),-131072);
+    test.is(ZipCompression(ZipMethod.zstandard,22).level(),22);
+    // Imported InvalidArgument identity is checked by the ordinary-import suite.
+    test.ok(try {ZipCompression(ZipMethod.deflated,10);false;} catch e is Error {true;});
+    test.ok(try {ZipCompression(ZipMethod.bzip2,0);false;} catch e is Error {true;});
+    test.ok(try {ZipCompression(ZipMethod.zstandard,23);false;} catch e is Error {true;});
+    test.ok(try {ZipCompression(ZipMethod.stored,0);false;} catch e is Error {true;});
+    test.ok(try {ZipCompression(ZipMethod.lzma,0);false;} catch e is Error {true;});
+}
+
+// ZipArchiveEntry is covered by ordinary-import consumer suite 319. The root
+// inline runner cannot resolve imported ArchiveEntry.fake(); keeping its tests
+// external avoids adding test-only roles/factories to the library's public scope.

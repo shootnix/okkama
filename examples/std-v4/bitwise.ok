@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+object ExampleResult {
+    ExampleResult();
+    value() is @string {
+        let flags = 0b1010;
+        let mask = 1 << 2;
+        let enabled = flags | mask;
+        let cleared = enabled & ~mask;
+        let toggled = flags ^ mask;
+        let octet = byte(128).rotate_left(1);
+        [enabled.string(), cleared.string(), toggled.string(),
+         (-8 >> 2).string(), (-1 >>> 1).string(),
+         octet.string(), (0x0102_0304_0506_0708.swap_bytes()).string()];
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

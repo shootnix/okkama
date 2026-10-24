@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.trim-chomp",
+  "title": "trim and chomp return new strings",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-TRIM-CHOMP",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[hi]\n[line]\n[line]\n[ x ][x]\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6: trim() removes surrounding spaces, chomp() a trailing newline; all string transformations are immutable."
+  },
+  "status": "mandatory"
+}

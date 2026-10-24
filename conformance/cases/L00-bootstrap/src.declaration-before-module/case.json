@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.src.declaration-before-module",
+  "title": "a declaration before the module declaration is rejected",
+  "purpose": "Source-file shape violations are syntax errors.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "SRC.MODULE-DECL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#3",
+    "docs/okkama-spec-11072026.md#5.1",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.1: the module declaration MUST be first."
+  },
+  "status": "mandatory"
+}

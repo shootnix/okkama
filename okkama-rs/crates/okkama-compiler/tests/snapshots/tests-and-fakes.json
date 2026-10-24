@@ -1,0 +1,342 @@
+{
+  "node": "Program",
+  "module": {
+    "node": "ModuleDecl",
+    "path": [
+      "accounts"
+    ],
+    "version": "v1.0.0"
+  },
+  "imports": [],
+  "items": [
+    {
+      "node": "RoleDecl",
+      "name": "Ledger",
+      "generics": [],
+      "members": [
+        {
+          "node": "ActionSignature",
+          "async": false,
+          "name": "balance",
+          "params": [],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          }
+        },
+        {
+          "node": "FakeDecl",
+          "body": {
+            "node": "FakeBody",
+            "members": [
+              {
+                "node": "ActionDecl",
+                "async": false,
+                "visibility": "public",
+                "projection": null,
+                "name": "balance",
+                "params": [],
+                "result": {
+                  "node": "NamedType",
+                  "path": [
+                    "int"
+                  ],
+                  "args": []
+                },
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "ExpressionStatement",
+                      "expression": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "42"
+                      },
+                      "condition": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "node": "ObjectDecl",
+      "name": "Account",
+      "generics": [],
+      "roles": [],
+      "members": [
+        {
+          "node": "HasDecl",
+          "names": [
+            "ledger"
+          ],
+          "type": {
+            "node": "NamedType",
+            "path": [
+              "Ledger"
+            ],
+            "args": []
+          },
+          "default": null
+        },
+        {
+          "node": "ShorthandConstructor",
+          "name": "Account",
+          "fields": [
+            "ledger"
+          ],
+          "body": null
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": null,
+          "name": "doubled",
+          "params": [],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Binary",
+                  "operator": "*",
+                  "left": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "ledger"
+                      },
+                      "name": "balance"
+                    },
+                    "arguments": []
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "2"
+                  }
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "TestDecl",
+          "async": false,
+          "name": "doubles the ledger balance",
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "Get",
+                    "object": {
+                      "node": "NameExpression",
+                      "name": "test"
+                    },
+                    "name": "is"
+                  },
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "Call",
+                        "callee": {
+                          "node": "Get",
+                          "object": {
+                            "node": "Call",
+                            "callee": {
+                              "node": "NameExpression",
+                              "name": "Account"
+                            },
+                            "arguments": [
+                              {
+                                "node": "Argument",
+                                "name": "ledger",
+                                "value": {
+                                  "node": "Call",
+                                  "callee": {
+                                    "node": "Get",
+                                    "object": {
+                                      "node": "NameExpression",
+                                      "name": "Ledger"
+                                    },
+                                    "name": "fake"
+                                  },
+                                  "arguments": []
+                                }
+                              }
+                            ]
+                          },
+                          "name": "doubled"
+                        },
+                        "arguments": []
+                      }
+                    },
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "84"
+                      }
+                    }
+                  ]
+                },
+                "condition": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "node": "ActionDecl",
+      "async": false,
+      "visibility": "public",
+      "projection": null,
+      "name": "main",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      },
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "0"
+            },
+            "condition": null
+          }
+        ]
+      }
+    },
+    {
+      "node": "TestDecl",
+      "async": false,
+      "name": "fake ledgers report a fixed balance",
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "NameExpression",
+                  "name": "test"
+                },
+                "name": "is"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "Call",
+                        "callee": {
+                          "node": "Get",
+                          "object": {
+                            "node": "NameExpression",
+                            "name": "Ledger"
+                          },
+                          "name": "fake"
+                        },
+                        "arguments": []
+                      },
+                      "name": "balance"
+                    },
+                    "arguments": []
+                  }
+                },
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "42"
+                  }
+                }
+              ]
+            },
+            "condition": null
+          }
+        ]
+      }
+    },
+    {
+      "node": "TestDecl",
+      "async": true,
+      "name": "async tests may await",
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "NameExpression",
+                  "name": "test"
+                },
+                "name": "ok"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "BoolLiteral",
+                    "value": true
+                  }
+                }
+              ]
+            },
+            "condition": null
+          }
+        ]
+      }
+    }
+  ]
+}

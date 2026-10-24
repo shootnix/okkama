@@ -1,0 +1,26 @@
+// Выбирать cookie по адресу и времени
+//
+// Сохранить cookie между запросами: MemoryCookieJar применяет правила выбора и сроков к явно переданным наблюдениям.
+//
+// Запуск: ./examples/cookbook/run lab example-http-cookie-jar
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-cookie-jar
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/cookie_jar" take MemoryCookieJar;
+import "http/cookie_policy" take CookieContext;
+import "http/header" take Header, HeaderName, Headers;
+import "http/method" take Method;
+import "url/value" take ParsedUrl;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+main() is int {
+    let jar=MemoryCookieJar(SystemClock());defer jar.close();
+    let origin=ParsedUrl("https://example.com/a/b").value();
+    let context=CookieContext(origin,true,Method("GET"));
+    jar.store(origin,Headers([Header(HeaderName("Set-Cookie"),"session=opaque; Secure; HttpOnly; SameSite=Lax; Path=/")]),context);
+    let cookies=jar.cookies(origin,context);confirm cookies.size()==1;
+    Stdout().writeln(cookies.item(0).diagnostic());
+    0;
+}

@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Meters {
+    has n is int;
+    Meters(:n);
+}
+
+main() is int {
+    let out = Stdout();
+    let ms is @Meters = [Meters(n: 1), Meters(n: 2)];
+    out.writeln(ms.size().string());
+    0;
+}

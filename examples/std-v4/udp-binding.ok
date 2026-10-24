@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint;
+import "net/udp" take UdpBinding, UdpOptions;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let request=UdpBinding(IpEndpoint(IpAddress("127.0.0.1"),0),UdpOptions());
+    let socket=await request.socket();
+    let endpoint=socket.local_endpoint();
+    Stdout().writeln(endpoint.address().string());
+    Stdout().writeln(if endpoint.port()>0 {"OS port assigned";} else {"missing port";});
+    socket.close();
+    Stdout().writeln(if socket.closed() {"closed";} else {"open";});
+    0;
+}

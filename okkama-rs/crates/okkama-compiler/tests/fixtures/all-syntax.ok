@@ -1,0 +1,185 @@
+module syntax/tour v1.2.3;
+
+// Every syntactic construct of the language, at least once. The program is
+// syntactically valid (both implementations parse it); it is not meant to
+// pass semantic analysis or to run.
+
+import "io/stdout" take Stdout;
+import "async/channel" as channels take Channel, Sending;
+import "runtime/time";
+
+enum Color = (red, green, blue);
+enum Nothing = ();
+
+native async sleep_ms(duration is int) is void;
+native clock_ticks() is int;
+native object Handle;
+
+role Comparing<T> {
+    order(other is T) is int;
+    async refresh() is ^Comparing<T>;
+    has(expected is T) is bool;
+    fake {
+        has calls is int = 0;
+        Comparing();
+        order(other is T) is int { 0; }
+        async refresh() is ^Comparing<T> { ^calls = calls + 1; }
+        has(expected is T) is bool { false; }
+        destroy { calls; }
+    }
+    test "role test" { test.ok(true); }
+}
+
+object Account<T: Comparing<T>, U> does Comparing<T>, io.Printable {
+    has owner, nickname is string;
+    has balance is int = 0;
+    has callback is (int, string) is void;
+    has loader is async (Request) is Response;
+    has pairs is %string:@int;
+    has nested is Box<Box<int>>;
+    has untyped = "default";
+
+    Account(:owner, :nickname);
+    Account();
+    Account(owner is string, rest is ...string) {
+        self.owner = owner;
+        nickname = rest[0] else "none";
+    }
+    Account(:balance) {
+        confirm balance >= 0 else throw Negative(balance);
+    }
+
+    destroy {
+        owner;
+    }
+
+    cap Summary {
+        label is string { owner + " " + nickname; }
+        public_balance is int { balance; }
+    }
+
+    #projected
+    total() is int { balance; }
+
+    #projected(described)
+    describe() is string { self.owner; }
+
+    async load(id is int) is @T { await fetch(id); }
+    order(other is T) is int { 0; }
+    is(actual is any, expected is any) is void {}
+    has(expected is T) is bool { true; }
+    deposit(amount is int) is ^Account<T, U> { ^balance = balance + amount; }
+
+    test "object test" { test.is(1, 1); }
+    async test "async object test" { await nothing(); }
+
+    private:
+    helper() is void {}
+    #projected(secret) hidden() is string { "x"; }
+}
+
+cap Account::Audit {
+    trail is @string { [Account::owner]; }
+}
+
+test "module test" {
+    test.ok(Comparing.fake().has(1) == false);
+}
+
+async test "module async test" {
+    let value = await Account().load(1);
+}
+
+async main() is int {
+    let out = Stdout();
+    let count is int = 0x1F + 0b1010 + 1_000 - 7 * 3 / 2 % 4;
+    let ratio = 3.14;
+    let letter = 'x';
+    let escaped = "tab\there \"quoted\" \\ end";
+    let raw = ```raw "text" \n stays```;
+    let flags = !true || false && !(1 != 2);
+    let bits = ~1 & 3 | 4 ^ 5 << 1 >> 1 >>> 1;
+    let compare = 1 < 2 == 3 > 4 && 5 <= 6 != 7 >= 8;
+    let range = 1..10;
+    let inclusive = 1..=10;
+    let list is @int = [1, 2, 3,];
+    let empty_list = [];
+    let table = ["a": 1, "b": 2,];
+    let empty_table = [:];
+    let first = list[0] else -1;
+    let picked = table["a"];
+    let cast = @byte(104, 105) ;
+    let spread = @string(list..., 4);
+    let single = byte(112);
+    let projected = described Account(owner: "ada", nickname: "a");
+    let qualified = total channels.Channel(capacity: 1);
+    let doubled = list.map() -> item { item * 2; };
+    let evens = list.filter() -> item { item % 2 == 0; };
+    let sum = list.reduce(0) -> acc, item { acc + item; };
+    let callback = (value is int, label is string) is void { out <- label; };
+    let maker = () is (int) is int { (x is int) is int { x; }; };
+    let chosen = if flags { 1; } else { 2; };
+    let named = match letter {
+        case 'x', 'y' { "near"; }
+        else { "far"; }
+    };
+    let found = loop {
+        last 42 if true;
+        next if false;
+        last;
+    };
+    let caught = try {
+        throw Problem("bad");
+    } catch problem is Problem {
+        problem.text();
+    } catch other is @string {
+        "list";
+    };
+    let summary is Account::Summary = Account()::Summary;
+    let label = summary::label;
+    let pending = Account().load(1);
+    let result = await pending;
+    let task = spawn Worker(id: 1).run(count);
+    let process = spawn(1, 2);
+
+    out <- "count: " + count.string() <- endl;
+    out <- spread... <- endl;
+    defer out.flush();
+    log(count) if count > 0;
+    {
+        let inner = 1;
+    }
+    if count > 10 {
+        out <- "big";
+    } else if count > 5 {
+        out <- "medium";
+    } else {
+        out <- "small";
+    }
+    match count {
+        case 1 { out <- "one"; }
+    }
+    for list -> item {
+        next if item == 2;
+    }
+    for table -> key, value {
+        key;
+    }
+    for list -> chunk[2] {
+        chunk;
+    }
+    loop {
+        last;
+    }
+    try {
+        panic Problem("fatal");
+    } catch error is Problem {
+        throw;
+    }
+    confirm count > 0;
+    confirm count < 100 else panic "too many";
+    count = count + 1;
+    self.field = 1;
+    ^balance = 2;
+    return 0;
+}

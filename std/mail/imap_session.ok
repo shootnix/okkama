@@ -1,0 +1,374 @@
+module mail/imap_session v1.0.0;
+
+
+import "mail/imap" take ImapCapabilities, ImapFeature;
+import "mail/imap_exchange" take ImapCommandChannel, ImapChannelClosed;
+import "mail/imap_command" take ImapCommand, ImapMailboxCommand, ImapDatum, FlagChange;
+import "mail/imap_command_reading" take ImapCommandRead, ImapTag, ImapResponseObserving;
+import "mail/imap_response" take ImapResponse;
+import "mail/imap_name" take ImapMailboxName;
+import "mail/imap_state" take ImapMailboxState;
+import "mail/imap_metadata" take ImapMailbox, ImapSearchResult, ImapUnsigned;
+import "mail/imap_data" take ParsedImapData;
+import "mail/imap_message" take ImapFetch, ImapMessage, MissingImapDatum;
+import "mail/imap_search" take MailMatching;
+import "mail/imap_uid" take ImapUidSet, ImapUidSetLimits, ImapUidValidity, ImapUid, ImapSequence, MailboxUids, StaleImapUids;
+import "mail/mailbox" take MailFlags;
+import "collections/sequence" take Sequencing;
+import "mime/media_type" take MimeItems;
+import "numbers/bigint" take BigInt, BigSum;
+import "compare" take Order;
+import "async/lock" take Lock, LockGuard;
+import "async/channel" take Channel, Sending, ChannelClosed;
+import "async/scope" take FutureGroup;
+import "async/event" take Event;
+import "io/stream" take Closing;
+import "error" take InvalidState, InvalidArgument, UnsupportedOperation;
+
+// Session state above an already authenticated owned command channel.
+// This constructor is protocol infrastructure; it performs no authentication
+// and does not assert that the supplied transport has verified TLS.
+// Selection and observation updates share one lock with each whole operation.
+object ImapSession does Closing {
+    has origin is ImapCommandChannel;has capabilities is ImapCapabilities;has account is string;
+    has lock is Lock;has states is Channel<ImapSessionState>;has initial is Future<Sending<ImapSessionState>>;
+    has idle_control is Lock;has idle_slots is Channel<ImapIdleSlot>;has idle_initial is Future<Sending<ImapIdleSlot>>;
+    ImapSession(origin is ImapCommandChannel, capabilities is ImapCapabilities, account is string) {
+        confirm account.length()>0 && account.length()<=4096 else throw InvalidArgument("IMAP account scope must contain 1..4096 characters");
+        confirm capabilities.features().membership(ImapFeature.imap4rev1)
+            && !capabilities.features().membership(ImapFeature.utf8_only)
+            else throw UnsupportedOperation("this session requires the IMAP4rev1 modified UTF-7 wire mode");
+        self.origin=origin;self.capabilities=capabilities;self.account=account;lock=Lock();
+        let channel is Channel<ImapSessionState>=Channel(1);states=channel;initial=channel.sending().send(ImapSessionState());
+        idle_control=Lock();let slots is Channel<ImapIdleSlot>=Channel(1);idle_slots=slots;idle_initial=slots.sending().send(ImapIdleSlot());
+    }
+    capabilities() is ImapCapabilities {capabilities;}
+    account() is string {account;}
+    event_capacity() is int {origin.limits().responses();}
+    closed() is bool {origin.closed();}
+    close() is void {states.sending().close();idle_slots.sending().close();origin.close();}
+    abort() is void {try {self.close();} catch failure is Error {} catch failure is NativeFailure {}}
+    async mailboxes() is Sequencing<ImapMailbox> {
+        let reply=await self.run(ImapCommand(reference:ImapMailboxName(""),pattern:ImapMailboxName("*"),subscribed:false),[],[],false);
+        let read=reply.result();read.require_success();let source=read.responses();let boxes is MimeItems<ImapMailbox>=MimeItems();
+        for (0..source.size()) -> index {
+            let response=source.item(index);if response.name()=="LIST" {boxes=boxes.following(ImapMailbox(response));}
+        }boxes.entries();
+    }
+    async mailbox(name is ImapMailboxName) is SelectedMailbox {await self.select(name,false);}
+    async examine(name is ImapMailboxName) is SelectedMailbox {await self.select(name,true);}
+    async select(name is ImapMailboxName, read_only is bool) is SelectedMailbox {
+        confirm !self.closed() else throw ImapChannelClosed();await initial;
+        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
+        let state=await states.receiving().item();state=state.cleared();
+        let action=if read_only {ImapMailboxCommand.examine;} else {ImapMailboxCommand.select;};
+        let result=await origin.request(ImapCommand(operation:action,mailbox:name)).result();
+        if !result.successful() {await states.sending().send(state);completed.set();result.require_success();}
+        let snapshot=ImapMailboxState(result,read_only);
+        state=state.selected(name,snapshot);let token=state.selection().token();
+        await states.sending().send(state);completed.set();SelectedMailbox(self,token);
+    }
+    async observation(token is ImapSelectionToken) is ImapMailboxState {
+        confirm !self.closed() else throw ImapChannelClosed();await initial;
+        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
+        let state=await states.receiving().item();
+        try {state.require_selection(token);}
+        catch failure is Error {await states.sending().send(state);completed.set();throw;}
+        let result=state.selection().state();await states.sending().send(state);completed.set();result;
+    }
+    async run(command is ImapCommand, selected is @ImapSelectionToken, validity is @ImapUidValidity, writable is bool) is ImapSessionReply {
+        confirm !self.closed() else throw ImapChannelClosed();await initial;
+        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
+        let state=await states.receiving().item();
+        try {
+            confirm selected.size()<=1 && validity.size()<=1 else throw InvalidState("invalid selected operation context");
+            if selected.size()>0 {
+                state.require_selection(selected[0]);
+                let current=state.selection().state();
+                if validity.size()>0 {confirm current.uid_validity().order(validity[0])==Order.equal else throw StaleImapUids();}
+                confirm !writable || !current.read_only() else throw InvalidState("selected mailbox is read-only");
+            } else {confirm !writable && validity.size()==0 else throw InvalidState("operation requires a selected mailbox");}
+            if command.name()=="UID" {
+                let operation=command.uid_operation();let features=capabilities.features();
+                if operation=="MOVE" {confirm features.membership(ImapFeature.move)
+                    else throw UnsupportedOperation("IMAP MOVE is not supported; no implicit copy/delete fallback");}
+                if operation=="EXPUNGE" {confirm features.membership(ImapFeature.uid_plus)
+                    else throw UnsupportedOperation("targeted IMAP EXPUNGE requires UIDPLUS in this wire mode");}
+            }
+        } catch failure is Error {await states.sending().send(state);completed.set();throw;}
+        let result=await origin.request(command).result();let responses=result.responses();
+        for (0..responses.size()) -> index {state=state.observed(responses.item(index));}
+        state=state.observed(result.completion());
+        if result.successful() && (command.name()=="RENAME" || command.name()=="DELETE") {state=state.cleared();}
+        let selections=state.selections();await states.sending().send(state);completed.set();
+        ImapSessionReply(result,selections);
+    }
+    async entry() is LockGuard {
+        confirm !self.closed() else throw ImapChannelClosed();await idle_initial;
+        let control=await idle_control.guard();defer control.close();
+        let complete=Event();let cleanup=ImapSessionCleanup(self,complete);defer cleanup.close();
+        let slot=await idle_slots.receiving().item();
+        if slot.active() {
+            slot.task().stop();
+            try {await slot.task().result();} catch failure is Error {if self.closed() {throw;}}
+        }
+        await idle_slots.sending().send(ImapIdleSlot());complete.set();
+        // Keep the control lock until this acquisition, preventing an IDLE
+        // registration from slipping between stop and the next command.
+        await lock.guard();
+    }
+    async activate_idle(token is ImapSelectionToken, events is Sending<MailboxEvent>, stop is Event, finished is Event) is ImapIdleTask {
+        confirm !self.closed() else throw ImapChannelClosed();
+        confirm capabilities.features().membership(ImapFeature.idle)
+            else throw UnsupportedOperation("IMAP IDLE is not advertised");
+        await idle_initial;let control=await idle_control.guard();defer control.close();
+        let complete=Event();let cleanup=ImapSessionCleanup(self,complete);defer cleanup.close();
+        let slot=await idle_slots.receiving().item();
+        if slot.active() {
+            slot.task().stop();
+            try {await slot.task().result();} catch failure is Error {if self.closed() {throw;}}
+        }
+        let task=ImapIdleTask(self,token,events,stop,finished);
+        await idle_slots.sending().send(ImapIdleSlot(task));task.start();complete.set();task;
+    }
+    async idle_run(token is ImapSelectionToken, events is Sending<MailboxEvent>, stop is Event, finished is Event) is int {
+        let ending=ImapIdleEnding(events,finished);defer ending.close();
+        if stop.ready() {return 0;}
+        confirm !self.closed() else throw ImapChannelClosed();await initial;
+        let guard=await lock.guard();defer guard.close();
+        if stop.ready() {return 0;}
+        confirm !self.closed() else throw ImapChannelClosed();
+        let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
+        let state=await states.receiving().item();
+        try {state.require_selection(token);}
+        catch failure is Error {await states.sending().send(state);completed.set();throw;}
+        let observer=ImapEventObservation(state.selection().state(),events);
+        let replies=await origin.idle(stop,observer);
+        if replies.size()>0 {
+            let result=replies[0];let responses=result.responses();
+            for (0..responses.size()) -> index {state=state.observed(responses.item(index));}
+            state=state.observed(result.completion());
+        }
+        await states.sending().send(state);completed.set();
+        if replies.size()>0 {replies[0].require_success();}
+        1;
+    }
+    destroy {self.abort();}
+}
+object SelectedMailbox does Closing {
+    has origin is ImapSession;has token is ImapSelectionToken;
+    SelectedMailbox(origin is ImapSession, token is ImapSelectionToken) {self.origin=origin;self.token=token;}
+    name() is ImapMailboxName {token.name();}
+    closed() is bool {origin.closed() || token.closed();}
+    // Synchronous close aborts transport; it never sends expunging CLOSE.
+    close() is void {origin.close();}
+    async state() is ImapMailboxState {await origin.observation(token);}
+    session() is ImapSession {origin;}
+    context() is ImapSelectionToken {token;}
+}
+object ImapSelectionToken {
+    has name is ImapMailboxName;has generation is BigInt;has stopped is Event;
+    ImapSelectionToken(name is ImapMailboxName, generation is BigInt) {self.name=name;self.generation=generation;stopped=Event();}
+    name() is ImapMailboxName {name;}
+    generation() is BigInt {generation;}
+    closed() is bool {stopped.ready();}
+    expire() is void {stopped.set();}
+}
+object ImapSelectedState {
+    has token is ImapSelectionToken;has value is ImapMailboxState;
+    ImapSelectedState(token is ImapSelectionToken, value is ImapMailboxState) {self.token=token;self.value=value;}
+    token() is ImapSelectionToken {token;}
+    state() is ImapMailboxState {value;}
+    observed(response is ImapResponse) is ^ImapSelectedState {let updated=value.observed(response);^value=updated;}
+}
+object ImapSessionState {
+    has serial is BigInt;has selection is @ImapSelectedState;
+    ImapSessionState() {serial=BigInt("0");selection=[];}
+    selections() is @ImapSelectedState {selection;}
+    selection() is ImapSelectedState {confirm selection.size()==1 else throw InvalidState("no IMAP mailbox selected");selection[0];}
+    require_selection(token is ImapSelectionToken) is void {
+        confirm !token.closed() && selection.size()==1 && selection[0].token().generation().order(token.generation())==Order.equal
+            else throw InvalidState("IMAP selection is no longer active");
+    }
+    cleared() is ^ImapSessionState {
+        if selection.size()>0 {selection[0].token().expire();}
+        ^selection=[];
+    }
+    selected(name is ImapMailboxName, value is ImapMailboxState) is ^ImapSessionState {
+        let following=BigSum(left:serial,right:BigInt("1")).value();let token=ImapSelectionToken(name,following);
+        ^serial=following;^selection=[ImapSelectedState(token,value)];
+    }
+    observed(response is ImapResponse) is ^ImapSessionState {
+        if selection.size()>0 {let updated=selection[0].observed(response);^selection=[updated];}
+    }
+}
+object ImapSessionReply {
+    has result is ImapCommandRead;has selection is @ImapSelectedState;
+    ImapSessionReply(result is ImapCommandRead, selection is @ImapSelectedState) {self.result=result;self.selection=selection;}
+    result() is ImapCommandRead {result;}
+    state() is ImapMailboxState {confirm selection.size()==1 else throw InvalidState("no IMAP mailbox selected");selection[0].state();}
+}
+object ImapSessionCleanup {
+    has origin is ImapSession;has completed is Event;
+    ImapSessionCleanup(origin is ImapSession, completed is Event) {self.origin=origin;self.completed=completed;}
+    close() is void {if !completed.ready() {origin.abort();}}
+}
+object SearchedMail {
+    has pending is Future<MailboxUids>;
+    SearchedMail(origin is SelectedMailbox, matching is MailMatching) {pending=ImapSearching(origin,ImapCommand(matching:matching)).read();}
+    uids() is Future<MailboxUids> {pending;}
+}
+object ImapSearching {
+    has origin is SelectedMailbox;has command is ImapCommand;
+    ImapSearching(origin is SelectedMailbox, command is ImapCommand) {self.origin=origin;self.command=command;}
+    async read() is MailboxUids {
+        let before=await origin.state();let epoch=before.uid_validity();
+        let reply=await origin.session().run(command,[origin.context()],[epoch],false);let result=reply.result();result.require_success();
+        // Do not relabel identifiers with a new epoch if UIDVALIDITY changed
+        // while the server was producing this SEARCH result.
+        confirm reply.state().uid_validity().order(epoch)==Order.equal else throw StaleImapUids();
+        let responses=result.responses();let matches is MimeItems<ImapUidSet>=MimeItems();
+        for (0..responses.size()) -> index {
+            let response=responses.item(index);
+            if response.name()=="SEARCH" || response.name()=="ESEARCH" {
+                matches=matches.following(ImapSearchResult(response,ImapTag(result.completion().tag()),ImapUidSetLimits()).uids());
+            }
+        }
+        let values=matches.entries();confirm values.size()==1 else throw InvalidState("UID SEARCH requires exactly one result");
+        confirm reply.state().persistent_uids() else throw UnsupportedOperation("UIDNOTSTICKY cannot produce reusable mailbox UID snapshots");
+        MailboxUids(origin.name(),reply.state().uid_validity(),values[0],origin.session().account());
+    }
+}
+object FetchedMail {
+    has pending is Future<Sequencing<ImapMessage>>;
+    FetchedMail(origin is SelectedMailbox, uids is MailboxUids, data is Sequencing<ImapDatum>) {
+        let ids=uids.checked(origin.name(),uids.validity(),origin.session().account());pending=ImapFetching(origin,uids,ImapCommand(uids:ids,data:data),false).read();
+    }
+    messages() is Future<Sequencing<ImapMessage>> {pending;}
+}
+object ChangedMailFlags {
+    has pending is Future<Sequencing<ImapMessage>>;
+    ChangedMailFlags(origin is SelectedMailbox, uids is MailboxUids, flags is MailFlags, change is FlagChange) {
+        let ids=uids.checked(origin.name(),uids.validity(),origin.session().account());pending=ImapFetching(origin,uids,ImapCommand(uids:ids,flags:flags,change:change),true).read();
+    }
+    messages() is Future<Sequencing<ImapMessage>> {pending;}
+}
+object ImapFetching {
+    has origin is SelectedMailbox;has uids is MailboxUids;has command is ImapCommand;has writable is bool;
+    ImapFetching(origin is SelectedMailbox, uids is MailboxUids, command is ImapCommand, writable is bool) {
+        self.origin=origin;self.uids=uids;self.command=command;self.writable=writable;
+    }
+    async read() is Sequencing<ImapMessage> {
+        let reply=await origin.session().run(command,[origin.context()],[uids.validity()],writable);
+        let result=reply.result();result.require_success();
+        uids.checked(origin.name(),reply.state().uid_validity(),origin.session().account());
+        let responses=result.responses();let messages is MimeItems<ImapMessage>=MimeItems();let wanted=uids.uids().entries();
+        for (0..responses.size()) -> index {
+            let response=responses.item(index);if response.name()=="FETCH" {
+                let fetch=ImapFetch(response);
+                if fetch.has_uid() {
+                    let present=(0..wanted.size()).reduce(false) -> found,position {found || wanted.item(position).order(fetch.uid())==Order.equal;};
+                    if present {messages=messages.following(ImapMessage(response));}
+                }
+            }
+        }
+        messages.entries();
+    }
+}
+enum MailboxEventKind = (exists, recent, expunge, flags, fetch, status, other);
+object MailboxEvent {
+    has response is ImapResponse;has state is ImapMailboxState;
+    MailboxEvent(response is ImapResponse, state is ImapMailboxState) {self.response=response;self.state=state;}
+    response() is ImapResponse {response;}
+    state() is ImapMailboxState {state;}
+    sequence() is ImapSequence {
+        if response.name()=="FETCH" {return ImapFetch(response).sequence();}
+        if response.name()=="EXPUNGE" {
+            let values=ParsedImapData(response).entries();return ImapSequence(ImapUnsigned(values.item(1).string(),true).value());
+        }
+        throw MissingImapDatum("sequence");
+    }
+    uid() is ImapUid {confirm response.name()=="FETCH" else throw MissingImapDatum("UID");ImapFetch(response).uid();}
+    flags() is MailFlags {confirm response.name()=="FETCH" else throw MissingImapDatum("FLAGS");ImapFetch(response).flags();}
+    kind() is MailboxEventKind {
+        match response.name() {
+            case "EXISTS" {MailboxEventKind.exists;} case "RECENT" {MailboxEventKind.recent;}
+            case "EXPUNGE" {MailboxEventKind.expunge;} case "FLAGS" {MailboxEventKind.flags;} case "FETCH" {MailboxEventKind.fetch;}
+            case "OK","NO","BAD" {MailboxEventKind.status;} else {MailboxEventKind.other;}
+        }
+    }
+}
+object MailboxEvents {
+    has origin is SelectedMailbox;has stop,finished,begun is Event;has events is Channel<MailboxEvent>;
+    has activation is Future<ImapIdleTask>;
+    MailboxEvents(origin is SelectedMailbox) {
+        self.origin=origin;let stopped=Event();stop=stopped;let done=Event();finished=done;begun=Event();
+        let channel is Channel<MailboxEvent>=Channel(origin.session().event_capacity());events=channel;
+        activation=origin.session().activate_idle(origin.context(),channel.sending(),stopped,done);
+    }
+    closed() is bool {finished.ready() || origin.closed();}
+    async event() is MailboxEvent {
+        if self.closed() {
+            if begun.ready() {let task=await activation;await task.result();}
+            throw MailboxEventsClosed();
+        }
+        begun.set();
+        let task=try {await activation;} catch failure is Error {finished.set();events.sending().close();throw;};
+        try {await events.receiving().item();}
+        catch failure is ChannelClosed {await task.result();throw MailboxEventsClosed();}
+    }
+    async next() is MailboxEvent {await self.event();}
+    async close() is MailboxEvents {
+        stop.set();
+        if !begun.ready() {finished.set();activation.cancel();events.sending().close();return self;}
+        let task=await activation;await task.result();self;
+    }
+    destroy {
+        stop.set();
+        if begun.ready() && !finished.ready() {origin.session().abort();}
+    }
+}
+object MailboxEventsClosed does Error {
+    MailboxEventsClosed();
+    text() is string {"IMAP mailbox event stream is closed";}
+}
+object ImapIdleTask {
+    has stop is Event;has started is Event;has pending is Future<int>;has group is FutureGroup<int>;
+    ImapIdleTask(origin is ImapSession, token is ImapSelectionToken, events is Sending<MailboxEvent>, stop is Event, finished is Event) {
+        self.stop=stop;started=Event();let children is FutureGroup<int>=FutureGroup();group=children;
+        pending=origin.idle_run(token,events,stop,finished);
+    }
+    start() is void {if !started.ready() {started.set();group.start(pending);}}
+    stop() is void {stop.set();}
+    result() is Future<int> {pending;}
+}
+object ImapIdleSlot {
+    has values is @ImapIdleTask;
+    ImapIdleSlot() {values=[];}
+    ImapIdleSlot(task is ImapIdleTask) {values=[task];}
+    active() is bool {values.size()>0;}
+    task() is ImapIdleTask {confirm self.active() else throw InvalidState("no active IDLE operation");values[0];}
+}
+object ImapIdleEnding {
+    has events is Sending<MailboxEvent>;has finished is Event;
+    ImapIdleEnding(events is Sending<MailboxEvent>, finished is Event) {self.events=events;self.finished=finished;}
+    close() is void {events.close();finished.set();}
+}
+object ImapEventObservation does ImapResponseObserving {
+    has states is Channel<ImapMailboxState>;has initial is Future<Sending<ImapMailboxState>>;has events is Sending<MailboxEvent>;
+    ImapEventObservation(state is ImapMailboxState, events is Sending<MailboxEvent>) {
+        let channel is Channel<ImapMailboxState>=Channel(1);states=channel;initial=channel.sending().send(state);self.events=events;
+    }
+    async observed(response is ImapResponse) is int {
+        await initial;let state=await states.receiving().item();state=state.observed(response);
+        await states.sending().send(state);await events.send(MailboxEvent(response,state));1;
+    }
+}
+
+test "fresh session state has no selection and zero generation" {
+    let state=ImapSessionState();test.is(state.selections().size(),0);
+    let cleared=state.cleared();test.is(cleared.selections().size(),0);
+}

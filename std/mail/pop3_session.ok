@@ -1,0 +1,154 @@
+module mail/pop3_session v1.0.0;
+
+import "mail/pop3" take PopCapabilities, PopFeature, PopNumber, PopMessage, PopListingLimits, PopListing, PopMailboxState;
+import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyLimits;
+import "mail/pop3_reading" take PopReplyReading;
+import "mail/message" take MailMessage, ParsedMail;
+import "net/stream" take AsyncReading, AsyncWriting;
+import "io/stream" take Closing;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "collections/sequence" take Sequencing;
+import "async/atomic" take Atomic;
+import "async/lock" take Lock;
+import "async/event" take Event;
+import "error" take InvalidArgument, UnsupportedOperation;
+
+// Transaction-state infrastructure. The caller has already authenticated and
+// transfers exclusive transport ownership. No constructor sends credentials.
+// Whole operations (including LIST + UIDL) serialize under one lock. A live
+// mailbox retains this owner; dropping an unrelated observation does not close it.
+object PopSession does Closing {
+    has wire is PopWire;has capabilities is PopCapabilities;has limits is PopListingLimits;has lock is Lock;
+    PopSession(input is AsyncReading, output is AsyncWriting, owner is Closing, capabilities is PopCapabilities,
+        prefix is @byte, reply_limits is PopReplyLimits, listing_limits is PopListingLimits) {
+        wire=PopWire(input,output,owner,prefix,reply_limits);self.capabilities=capabilities;limits=listing_limits;lock=Lock();
+    }
+    capabilities() is PopCapabilities {capabilities;}
+    mailbox() is PopMailbox {PopMailbox(self);}
+    closed() is bool {wire.closed();}
+    close() is void {wire.close();}
+    abort() is void {try{self.close();}catch failure is Error{}catch failure is NativeFailure{}}
+    async state() is PopMailboxState {
+        confirm !self.closed() else throw PopSessionClosed();let guard=await lock.guard();defer guard.close();
+        confirm !self.closed() else throw PopSessionClosed();
+        let complete=Event();let cleanup=PopSessionCleanup(self,complete);defer cleanup.close();
+        let command=PopCommand(PopSimpleCommand.stat);let reply=await wire.read(command);
+        if !reply.successful(){complete.set();throw PopCommandRejected(command.name(),reply.text());}
+        let state=PopMailboxState(reply,limits);complete.set();state;
+    }
+    async messages() is Sequencing<PopMessage> {
+        confirm !self.closed() else throw PopSessionClosed();let guard=await lock.guard();defer guard.close();
+        confirm !self.closed() else throw PopSessionClosed();
+        let complete=Event();let cleanup=PopSessionCleanup(self,complete);defer cleanup.close();
+        let reply=await wire.read(PopCommand(PopSimpleCommand.list));
+        if !reply.successful(){complete.set();throw PopCommandRejected("LIST",reply.text());}
+        // Validate LIST before sending another command or holding another body.
+        let listed=PopListing(reply,[],limits);let entries=listed.messages();
+        let result=if capabilities.features().membership(PopFeature.uidl) {
+            let ids=await wire.read(PopCommand(PopSimpleCommand.uidl));
+            if !ids.successful(){complete.set();throw PopCommandRejected("UIDL",ids.text());}
+            let joined=PopListing(reply,[ids],limits);joined.messages();
+        } else {entries;};
+        complete.set();result;
+    }
+    async run(command is PopCommand) is PopReply {
+        // Typed command only: there is no arbitrary text constructor.
+        confirm !self.closed() else throw PopSessionClosed();
+        if command.name()=="TOP" {confirm capabilities.features().membership(PopFeature.top)
+            else throw UnsupportedOperation("POP3 TOP is not advertised");}
+        if command.name()=="UIDL" {confirm capabilities.features().membership(PopFeature.uidl)
+            else throw UnsupportedOperation("POP3 UIDL is not advertised");}
+        let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw PopSessionClosed();
+        let complete=Event();let cleanup=PopSessionCleanup(self,complete);defer cleanup.close();
+        let reply=await wire.read(command);
+        if command.name()=="QUIT" {self.close();}
+        complete.set();confirm reply.successful() else throw PopCommandRejected(command.name(),reply.text());reply;
+    }
+    async quit() is void {await self.run(PopCommand(PopSimpleCommand.quit));}
+    async reset() is void {await self.run(PopCommand(PopSimpleCommand.reset));}
+    destroy {self.abort();}
+}
+object PopMailbox {
+    has origin is PopSession;PopMailbox(origin is PopSession){self.origin=origin;}
+    async state() is PopMailboxState {await origin.state();}
+    async messages() is Sequencing<PopMessage> {await origin.messages();}
+    async bytes(number is PopNumber) is @byte {
+        let reply=await origin.run(PopCommand(operation:PopMessageCommand.retrieve,number:number));reply.body();
+    }
+    async message(number is PopNumber) is MailMessage {let bytes=await self.bytes(number);ParsedMail(bytes).message();}
+    async delete(number is PopNumber) is void {await origin.run(PopCommand(operation:PopMessageCommand.delete,number:number));}
+    async preview(number is PopNumber, lines is int) is @byte {let reply=await origin.run(PopCommand(number:number,lines:lines));reply.body();}
+}
+object PreviewedPopMail {
+    has pending is Future<@byte>;
+    PreviewedPopMail(origin is PopMailbox, number is PopNumber, lines is int) {
+        confirm lines>=0 else throw InvalidArgument("POP3 TOP line count must be nonnegative");
+        pending=origin.preview(number,lines);
+    }
+    bytes() is Future<@byte> {pending;}
+}
+object PopDeleteReset {
+    has origin is PopSession;PopDeleteReset(origin is PopSession){self.origin=origin;}
+    async reset() is void {await origin.reset();}
+}
+// Closed command family for trusted protocol infrastructure. Building one only
+// validates/encodes a value. Sending belongs to the session, never to projection.
+enum PopSimpleCommand = (stat, list, uidl, reset, quit);
+enum PopMessageCommand = (retrieve, delete);
+object PopCommand {
+    has name,line is string;has multiple is bool;
+    PopCommand(operation is PopSimpleCommand) {
+        let name=match operation {case PopSimpleCommand.stat{"STAT";}case PopSimpleCommand.list{"LIST";}
+            case PopSimpleCommand.uidl{"UIDL";}case PopSimpleCommand.reset{"RSET";}case PopSimpleCommand.quit{"QUIT";}};
+        self.name=name;line=name+"\r\n";multiple=operation==PopSimpleCommand.list || operation==PopSimpleCommand.uidl;
+    }
+    PopCommand(operation is PopMessageCommand, number is PopNumber) {
+        let name=if operation==PopMessageCommand.retrieve{"RETR";}else{"DELE";};
+        self.name=name;line=name+" "+number.string()+"\r\n";multiple=operation==PopMessageCommand.retrieve;
+    }
+    PopCommand(number is PopNumber, lines is int) {
+        confirm lines>=0 else throw InvalidArgument("POP3 TOP line count must be nonnegative");
+        let encoded="TOP "+number.string()+" "+lines.string()+"\r\n";
+        name="TOP";line=encoded;multiple=true;
+        confirm encoded.length()<=47 else throw InvalidArgument("POP3 command exceeds base command budget");
+    }
+    name() is string {name;}
+    bytes() is @byte {Utf8Encoded(line).bytes();}
+    mode() is PopReplyMode {if multiple{PopReplyMode.multiline;}else{PopReplyMode.single;}}
+}
+// Exclusively owned wire state, used only under its session's lock. Atomic
+// stores immutable unread bytes; no Okkama field becomes mutable.
+object PopWire does Closing {
+    has input is AsyncReading;has output is AsyncWriting;has owner is Closing;
+    has prefix is Atomic<@byte>;has limits is PopReplyLimits;has stopped is Event;
+    PopWire(input is AsyncReading, output is AsyncWriting, owner is Closing, prefix is @byte, limits is PopReplyLimits) {
+        confirm prefix.size()<=limits.wire_bytes() && limits.wire_bytes()>0 else throw InvalidArgument("invalid POP3 wire prefix/budget");
+        self.input=input;self.output=output;self.owner=owner;self.limits=limits;self.prefix=Atomic(prefix);stopped=Event();
+    }
+    closed() is bool {stopped.ready() || owner.closed();}
+    close() is void {if !stopped.ready(){stopped.set();owner.close();}}
+    async read(command is PopCommand) is PopReply {
+        confirm !self.closed() else throw PopSessionClosed();
+        await output.write(ByteSnapshot(command.bytes()));
+        let result=await PopReplyReading(input,command.mode(),prefix.value(),limits,4096).result();
+        confirm !self.closed() else throw PopSessionClosed();
+        prefix.replace(result.remainder());result.reply();
+    }
+}
+object PopSessionCleanup {
+    has origin is PopSession;has complete is Event;
+    PopSessionCleanup(origin is PopSession, complete is Event){self.origin=origin;self.complete=complete;}
+    close() is void {if !complete.ready(){origin.abort();}}
+}
+object PopCommandRejected does Error {
+    has operation,reason is string;
+    PopCommandRejected(operation is string, reason is string){self.operation=operation;self.reason=reason;}
+    operation() is string {operation;}text() is string {"POP3 "+operation+" rejected: "+reason;}
+}
+object PopSessionClosed does Error {PopSessionClosed();text() is string {"POP3 session is closed";}}
+
+test "POP3 commands encode only typed operands" {
+    test.is(PopCommand(PopSimpleCommand.quit).bytes(),Utf8Encoded("QUIT\r\n").bytes());
+    test.is(PopCommand(number:PopNumber(1),lines:0).bytes(),Utf8Encoded("TOP 1 0\r\n").bytes());
+}

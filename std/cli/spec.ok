@@ -1,0 +1,284 @@
+module cli/spec v1.0.0;
+import "collections/sequence" take Sequencing;
+import "config/key" take SettingKey;
+import "compare" take Comparing, Order;
+import "collections/list" take List, EmptyList;
+import "collections/iteration" take CursorItems;
+import "collections/ordering" take LowerBound, Ranked;
+import "config/source" take SettingKeyIndex;
+import "encoding/utf" take Utf8Encoded;
+
+enum OperandCardinality=(required,optional,repeated);
+// Specification objects describe syntax, never callbacks or process exits.
+object OptionValue{
+    has stored_name is string;
+    has stored_repeated is bool;
+    OptionValue(name is string,repeated is bool){
+        confirm name!="" else throw InvalidCommandSyntax("empty placeholder");
+        stored_name=name;
+        stored_repeated=repeated;
+    }
+    name() is string{stored_name;}
+    repeated() is bool{stored_repeated;}
+}
+object Option{
+    has stored_key is SettingKey;
+    has stored_names is @string;
+    has stored_value is OptionValue;
+    has stored_help is string;
+    Option(key is SettingKey,names is Sequencing<string>,value is OptionValue,help is string){
+        stored_key=key;
+        let size=names.size();
+        confirm size>0 && size<=32 else throw InvalidCommandSyntax("option must have 1..32 aliases");
+        let snapshot is @string=(0..size).map()->index{let name=names.item(index);CliOptionName(name);name;};
+        stored_names=snapshot;
+        stored_value=value;
+        stored_help=help;
+    }
+    key() is SettingKey{stored_key;}
+    names() is Sequencing<string>{stored_names;}
+    value() is OptionValue{stored_value;}
+    help() is string{stored_help;}
+}
+object Flag{
+    has stored_key is SettingKey;
+    has stored_names is @string;
+    has stored_present is string;
+    has stored_help is string;
+    Flag(key is SettingKey,names is Sequencing<string>,present is string,help is string){
+        stored_key=key;
+        let size=names.size();
+        confirm size>0 && size<=32 else throw InvalidCommandSyntax("option must have 1..32 aliases");
+        let snapshot is @string=(0..size).map()->index{let name=names.item(index);CliOptionName(name);name;};
+        stored_names=snapshot;
+        stored_present=present;
+        stored_help=help;
+    }
+    key() is SettingKey{stored_key;}
+    names() is Sequencing<string>{stored_names;}
+    present() is string{stored_present;}
+    help() is string{stored_help;}
+}
+object Operand{
+    has stored_key is SettingKey;
+    has stored_name is string;
+    has stored_cardinality is OperandCardinality;
+    has stored_help is string;
+    Operand(key is SettingKey,name is string,cardinality is OperandCardinality,help is string){
+        stored_key=key;
+        confirm name!="" else throw InvalidCommandSyntax("empty placeholder");
+        stored_name=name;
+        stored_cardinality=cardinality;
+        stored_help=help;
+    }
+    key() is SettingKey{stored_key;}
+    name() is string{stored_name;}
+    cardinality() is OperandCardinality{stored_cardinality;}
+    help() is string{stored_help;}
+}
+object CliOptionName{
+    CliOptionName(name is string){
+        let bytes=Utf8Encoded(name).bytes();
+        confirm bytes.size()>=2 && bytes.size()<=128 && bytes[0].int()==45
+            else throw InvalidCommandSyntax("option name must start with a dash");
+        if bytes[1].int()==45{
+            confirm bytes.size()>2 else throw InvalidCommandSyntax("-- is reserved");
+            for (2..bytes.size())->index{
+                let code=bytes[index].int();
+                confirm (code>=97 && code<=122) || (code>=48 && code<=57) || (index>2 && code==45)
+                    else throw InvalidCommandSyntax("invalid long option name");
+            }
+        }else{
+            confirm bytes.size()==2 && bytes[1].int()>=33 && bytes[1].int()<=126
+                else throw InvalidCommandSyntax("short name must be one visible ASCII character");
+        }
+    }
+}
+object CommandSyntax{
+    has options is @Option;
+    has flags is @Flag;
+    has operands is @Operand;
+    has aliases is CliAliasIndex;
+    CommandSyntax(options is Sequencing<Option>,flags is Sequencing<Flag>,operands is Sequencing<Operand>){
+        let option_count=options.size();let flag_count=flags.size();let operand_count=operands.size();
+        confirm option_count>=0 && flag_count>=0 && operand_count>=0 && option_count+flag_count+operand_count<=1024
+            else throw InvalidCommandSyntax("syntax declaration budget");
+        let options_copy is @Option=(0..option_count).map()->index{options.item(index);};
+        let flags_copy is @Flag=(0..flag_count).map()->index{flags.item(index);};
+        let operands_copy is @Operand=(0..operand_count).map()->index{operands.item(index);};
+        self.options=options_copy;self.flags=flags_copy;self.operands=operands_copy;
+        let validation=CliSyntaxValidation(options_copy,flags_copy,operands_copy);
+        validation.validate();aliases=validation.aliases();
+    }
+    options() is Sequencing<Option>{options;}
+    flags() is Sequencing<Flag>{flags;}
+    operands() is Sequencing<Operand>{operands;}
+    option_index(name is string) is int{
+        let index=aliases.position(name);if index>=0 && index<options.size(){index;}else{-1;}
+    }
+    flag_index(name is string) is int{
+        let index=aliases.position(name);if index>=options.size(){index-options.size();}else{-1;}
+    }
+}
+// Validation is a separate collaborator, including constructor-time checks.
+object CliSyntaxValidation{
+    has options is @Option;
+    has flags is @Flag;
+    has operands is @Operand;
+    has lookup is CliAliasIndex;
+    CliSyntaxValidation(options is @Option,flags is @Flag,operands is @Operand){
+        self.options=options;self.flags=flags;self.operands=operands;
+        lookup=CliAliasIndex(options,flags);
+    }
+    aliases() is CliAliasIndex{lookup;}
+    validate() is void{
+        let declarations=options.size()+flags.size();
+        let keys is @SettingKey=(0..declarations).map()->index{self.key(index);};
+        let ranked is @Ranked<int,SettingKey>=(0..declarations).map()->index{Ranked(index,keys[index]);};
+        let sorted=ranked.ordering();
+        let incompatible=(0..sorted.size()).reduce(CliKeyFailure(declarations,""))->old,index{
+            if index>0 && sorted[index-1].key().order(sorted[index].key())==Order.equal && sorted[index-1].item()<options.size(){
+                old.earlier(sorted[index].item(),"incompatible declarations share a key");
+            }else{old;}
+        };
+        let alternatives is @CliFlagAlternative=(0..flags.size()).map()->index{
+            CliFlagAlternative(keys[index+options.size()],flags[index].present(),index+options.size());
+        };
+        let ordered=alternatives.ordering();
+        let conflict=(0..ordered.size()).reduce(incompatible)->old,index{
+            if index>0 && ordered[index-1].key().order(ordered[index].key())==Order.equal && ordered[index-1].present()==ordered[index].present(){
+                old.earlier(ordered[index].index(),"flag alternatives must declare distinct values");
+            }else{old;}
+        };
+        for (0..declarations)->index{
+            confirm index!=lookup.duplicate_index() else throw InvalidCommandSyntax("duplicate option name");
+            confirm index!=conflict.index() else throw InvalidCommandSyntax(conflict.reason());
+        }
+        let declared=SettingKeyIndex(keys);
+        let operand_keys is @SettingKey=operands.map()->operand{operand.key();};
+        let operand_index=SettingKeyIndex(operand_keys);
+        let prefix=(0..operands.size()).reduce(CliOperandPrefix(operands.size(),operands.size()))->prior,index{
+            confirm declared.position(operand_keys[index])<0 else throw InvalidCommandSyntax("operand key is already declared");
+            let duplicate=operand_index.position(operand_keys[index]);
+            let same=if duplicate<index{duplicate;}else{operands.size();};
+            let repeated=prior.repeated();let optional=prior.optional();
+            let required=operands[index].cardinality()==OperandCardinality.required;
+            // The first previous operand decides; checks at that position keep
+            // their legacy order: duplicate, repeated, required-after-optional.
+            confirm !(same<index && same<=repeated && (!required || same<=optional))
+                else throw InvalidCommandSyntax("duplicate operand key");
+            confirm !(repeated<index && (!required || repeated<=optional))
+                else throw InvalidCommandSyntax("repeated operand must be last");
+            confirm !(required && optional<index)
+                else throw InvalidCommandSyntax("required operand follows optional operand");
+            CliOperandPrefix(
+                if repeated>index && operands[index].cardinality()==OperandCardinality.repeated{index;}else{repeated;},
+                if optional>index && !required{index;}else{optional;},
+            );
+        };
+    }
+    private:
+    key(index is int) is SettingKey{if index<options.size(){options[index].key();}else{flags[index-options.size()].key();}}
+}
+object CliKeyFailure{
+    has position is int;has message is string;
+    CliKeyFailure(position is int,message is string){self.position=position;self.message=message;}
+    index() is int{position;}reason() is string{message;}
+    earlier(index is int,reason is string) is CliKeyFailure{
+        if index<position{CliKeyFailure(index,reason);}else{self;}
+    }
+}
+object CliFlagAlternative does Comparing<CliFlagAlternative>{
+    has identity is SettingKey;has value is string;has position is int;
+    CliFlagAlternative(identity is SettingKey,value is string,position is int){self.identity=identity;self.value=value;self.position=position;}
+    key() is SettingKey{identity;}present() is string{value;}index() is int{position;}
+    order(other is CliFlagAlternative) is Order{
+        let key=identity.order(other.key());let present=value.order(other.present());
+        if key!=Order.equal{key;}else{if present!=Order.equal{present;}else{position.order(other.index());}}
+    }
+}
+object CliOperandPrefix{
+    has repeated,optional is int;
+    CliOperandPrefix(repeated is int,optional is int){self.repeated=repeated;self.optional=optional;}
+    repeated() is int{repeated;}optional() is int{optional;}
+}
+// Cached immutable aliases. Explicit ordinal preserves declaration order even
+// though linked-list prefix builds the materialization in reverse order.
+object CliAliasSlot does Comparing<CliAliasSlot>{
+    has spelling is string;has ordinal is int;
+    CliAliasSlot(spelling is string,ordinal is int){self.spelling=spelling;self.ordinal=ordinal;}
+    name() is string{spelling;}ordinal() is int{ordinal;}
+    order(other is CliAliasSlot) is Order{
+        let result=spelling.order(other.name());
+        if result==Order.equal{ordinal.order(other.ordinal());}else{result;}
+    }
+}
+object CliAliasIndex{
+    has names is @string;has positions is @int;has duplicate is int;
+    CliAliasIndex(options is @Option,flags is @Flag){
+        let count=options.size()+flags.size();
+        let empty is List<CliAliasSlot>=EmptyList();
+        let slots is List<CliAliasSlot>=(0..count).reduce(empty)->items,index{
+            let aliases=if index<options.size(){options[index].names();}else{flags[index-options.size()].names();};
+            (0..aliases.size()).reduce(items)->prior,alias{prior.prefix(CliAliasSlot(aliases.item(alias),index*32+alias));};
+        };
+        let materialized is @CliAliasSlot=CursorItems(slots.cursor()).map()->slot{slot;};
+        let sorted=materialized.ordering();
+        let spellings is @string=sorted.map()->slot{slot.name();};
+        let indices is @int=sorted.map()->slot{(slot.ordinal()/32).int();};
+        names=spellings;positions=indices;
+        duplicate=(0..spellings.size()).reduce(count)->earliest,index{
+            if index>0 && spellings[index-1]==spellings[index] && indices[index]<earliest{indices[index];}else{earliest;}
+        };
+    }
+    duplicate_index() is int{duplicate;}
+    position(name is string) is int{
+        let index=LowerBound(names,name).value();
+        if index<names.size() && names[index]==name{positions[index];}else{-1;}
+    }
+}
+object CliCommand{
+    has name,summary is string;
+    has syntax is CommandSyntax;
+    has children is @CliCommand;
+    CliCommand(name is string,summary is string,syntax is CommandSyntax,children is Sequencing<CliCommand>){
+        confirm name!="" && name.length()<=128 else throw InvalidCommandSyntax("invalid command name");
+        confirm name.slice(0,1)!="-" else throw InvalidCommandSyntax("command name starts with a dash");
+        for Utf8Encoded(name).bytes()->octet{
+            confirm octet.int()>32 && octet.int()!=127
+                else throw InvalidCommandSyntax("command names exclude whitespace, controls and dashes");
+        }
+        let size=children.size();
+        confirm size>=0 && size<=1024 else throw InvalidCommandSyntax("child command budget");
+        confirm size==0 || syntax.operands().size()==0 else throw InvalidCommandSyntax("branch commands cannot have operands");
+        let snapshot is @CliCommand=(0..size).map()->index{children.item(index);};
+        // Uniqueness sorts only cached names; the published children keep order.
+        let names is @string=snapshot.map()->child{child.name();};let ordered=names.ordering();
+        for (0..ordered.size())->index{
+            if index>0{confirm (ordered[index-1]!=ordered[index]) else throw InvalidCommandSyntax("duplicate child command");}
+        }
+        self.name=name;self.summary=summary;self.syntax=syntax;self.children=snapshot;
+        confirm CliTreeBudget(snapshot,31).size()<=4095 else throw InvalidCommandSyntax("command tree exceeds 4096 nodes");
+    }
+    name() is string{name;}
+    summary() is string{summary;}
+    syntax() is CommandSyntax{syntax;}
+    children() is Sequencing<CliCommand>{children;}
+}
+object CliTreeBudget{
+    has count is int;
+    CliTreeBudget(children is Sequencing<CliCommand>,remaining is int){
+        confirm remaining>=0 || children.size()==0 else throw InvalidCommandSyntax("command tree exceeds 32 levels");
+        count=children.reduce(0)->used,child{
+            let added=1+CliTreeBudget(child.children(),remaining-1).size();
+            confirm added<=4096-used else throw InvalidCommandSyntax("command tree exceeds 4096 nodes");
+            used+added;
+        };
+    }
+    size() is int{count;}
+}
+object InvalidCommandSyntax does Error{
+    has reason is string;
+    InvalidCommandSyntax(reason is string){self.reason=reason;}
+    text() is string{reason;}
+}

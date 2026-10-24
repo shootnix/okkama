@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Exploding {
+    Exploding();
+    destroy {
+        confirm false;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    {
+        let x = Exploding();
+        out.writeln("inside");
+    }
+    out.writeln("unreachable");
+    0;
+}

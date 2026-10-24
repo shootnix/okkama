@@ -1,0 +1,156 @@
+module encoding/pem v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "io/stream" take ByteSource;
+import "encoding/base64" take Base64Encoded, Base64Decoded;
+import "runtime/pem" take
+    pem_kind_invalid_offset,
+    pem_encode,
+    pem_invalid_offset,
+    pem_block_count,
+    pem_block_sources,
+    pem_block_source,
+    pem_block_kind,
+    pem_block_base64;
+
+// Strict textual PEM containers.
+//
+//     let text is string = PemEncoded(
+//         kind: "PUBLIC KEY",
+//         data: key_bytes,
+//     ).string();
+//
+//     let block = PemBlock(origin: text);
+//     block.kind(); // "PUBLIC KEY"
+//     block.bytes(); // original key_bytes
+//
+// PemEncoded uses uppercase labels, standard padded Base64, 64-character body
+// lines and LF. Labels contain uppercase ASCII letters/digits separated by
+// single spaces or hyphens.
+//
+// Parsing accepts LF and CRLF without normalizing returned data. Empty lines
+// may surround or separate blocks; arbitrary prose and whitespace-only lines
+// are rejected. BEGIN and END labels must match. Body lines contain strict
+// standard Base64, are at most 64 characters, and every nonfinal body line is
+// exactly 64 characters. Bare CR, mixed alphabets, missing padding and junk
+// after a block are errors.
+//
+// PemBlock requires exactly one block. PemBlocks iterates over zero or more
+// blocks with immutable cursors. InvalidPem.offset() is a Unicode-scalar
+// offset in the original text (or in kind for an invalid encoding label).
+
+object PemEncoded {
+    has kind is string;
+    has origin is @byte;
+
+    PemEncoded(kind is string, data is @byte) {
+        self.kind = kind;
+        origin = data;
+    }
+
+    string() is string {
+        let offset is int = pem_kind_invalid_offset(kind);
+        confirm offset == -1 else throw InvalidPem(offset);
+        pem_encode(kind, Base64Encoded(origin: origin).string());
+    }
+}
+
+object PemBlock does ByteSource {
+    has origin is string;
+
+    PemBlock(origin is string) {
+        self.origin = origin;
+    }
+
+    kind() is string {
+        self.validation();
+        pem_block_kind(origin, 0);
+    }
+
+    bytes() is @byte {
+        self.validation();
+        Base64Decoded(origin: pem_block_base64(origin, 0)).bytes();
+    }
+
+    private:
+
+    validation() is void {
+        let offset is int = pem_invalid_offset(origin);
+        confirm offset == -1 else throw InvalidPem(offset);
+        confirm pem_block_count(origin) == 1
+            else throw InvalidPem(origin.length());
+    }
+}
+
+object PemBlocks does Iterating<PemBlock> {
+    has origin is string;
+
+    PemBlocks(origin is string) {
+        self.origin = origin;
+    }
+
+    cursor() is Cursor<PemBlock> {
+        let offset is int = pem_invalid_offset(origin);
+        confirm offset == -1 else throw InvalidPem(offset);
+        PemSourcesCursor(origin: pem_block_sources(origin), position: 0);
+    }
+}
+
+// One immutable source snapshot per cursor acquisition. Successor branches
+// share those sources and never reparse the enclosing PEM document.
+object PemSourcesCursor does Cursor<PemBlock> {
+    has origin is @string;has position is int;
+    PemSourcesCursor(origin is @string,position is int){self.origin=origin;self.position=position;}
+    available() is bool{position<origin.size();}
+    item() is PemBlock{confirm self.available() else throw IterationEnded();PemBlock(origin[position]);}
+    successor() is Cursor<PemBlock>{confirm self.available() else throw IterationEnded();PemSourcesCursor(origin,position+1);}
+}
+// Existing explicit cursor constructor retained for compatibility.
+object PemBlockCursor does Cursor<PemBlock> {
+    has origin is string;
+    has position is int;
+    has size is int;
+
+    PemBlockCursor(origin is string, position is int, size is int) {
+        self.origin = origin;
+        self.position = position;
+        self.size = size;
+    }
+
+    available() is bool {
+        position < size;
+    }
+
+    item() is PemBlock {
+        confirm self.available() else throw IterationEnded();
+        PemBlock(origin: pem_block_source(origin, position));
+    }
+
+    successor() is Cursor<PemBlock> {
+        confirm self.available() else throw IterationEnded();
+        PemBlockCursor(origin: origin, position: position + 1, size: size);
+    }
+}
+
+object InvalidPem does Error {
+    has invalid_offset is int;
+
+    InvalidPem(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid PEM at scalar offset " + invalid_offset.string();
+    }
+}
+test "PEM snapshot cursors keep independent ordered branches" {
+    let text=PemEncoded("ONE",[65.byte()]).string()+PemEncoded("TWO",[66.byte()]).string();
+    let first=PemBlocks(text).cursor();let second=first.successor();
+    test.is(first.item().kind(),"ONE");test.is(second.item().kind(),"TWO");
+    test.is(first.item().bytes(),[65.byte()]);test.ok(!second.successor().available());
+}

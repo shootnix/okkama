@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Plain {
+    has value is int;
+    Plain(:value);
+    next() is Plain { Plain(value: value + 1); }
+}
+
+main() is int {
+    let out = Stdout();
+    let p = Plain(value: 1);
+    p = p.next();
+    out.writeln("unreachable");
+    0;
+}

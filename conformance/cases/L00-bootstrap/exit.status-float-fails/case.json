@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.exit.status-float-fails",
+  "title": "main whose result is a float fails",
+  "purpose": "An entry result that is not an actual int must be rejected or fail.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "ENTRY.STATUS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract requires failure but does not fix the detection stage: spec 6.3 allows a static pass to diagnose result-type mismatches before execution, otherwise the runtime boundary check fails."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#3",
+    "docs/okkama-grammar-1.0.md#context-sensitive-restrictions",
+    "docs/okkama-spec-11072026.md#6.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 3 + 8.4: float is a distinct category; 42.0 is not an int and is never converted."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.failure.rethrown-at-every-await",
+  "title": "a typed failure is cached and rethrown at each await",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.FAILURE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "failing body\n-1 -2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18",
+    "docs/async-guide.md#7.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 18: a typed error completes the future exceptionally and is rethrown at await, where ordinary try/catch applies; the body runs once."
+  },
+  "status": "mandatory"
+}

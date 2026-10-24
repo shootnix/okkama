@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, ChannelClosed, InvalidChannelCapacity;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/collect" take AllFutures, Raced, NoFutures;
+import "async/cancellation" take Cancellation, Cancelling;
+import "async/atomic" take Atomic;
+
+object Producer {
+    has output is Sending<int>;
+    Producer(:output);
+    async run() is int {
+        await output.send(42);
+        0;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let channel is Channel<int> = Channel(capacity: 0);
+    let producer = spawn Producer(output: channel.sending()).run();
+    let value = await channel.receiving().item();
+    let done = await producer;
+    out.writeln(value.string() + " " + done.string());
+    0;
+}

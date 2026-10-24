@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.rethrow.preserves-identity",
+  "title": "bare throw rethrows the same error value",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.RETHROW",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "not found: same\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.5: throw; rethrows the handled error without replacing its identity."
+  },
+  "status": "mandatory"
+}

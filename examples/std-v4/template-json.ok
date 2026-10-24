@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "template/compile" take TextTemplate;
+import "template/json" take JsonTemplateStrings;
+import "json/parse" take ParsedJson;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}"));
+    Stdout().writeln(TextTemplate("Hello {{user.name}}! Active: {{active}}").string(data));
+    0;
+}

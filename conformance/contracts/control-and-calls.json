@@ -1,0 +1,300 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Control flow and calls",
+  "description": "Scope, control flow and call semantics (spec sections 8.10-8.13, 9, 10, 11.6, 11.8).",
+  "contracts": [
+    {
+      "id": "CTRL.SCOPE",
+      "title": "Blocks create lexical scopes; nested shadowing allowed; same-scope redeclaration rejected",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.2",
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.IF",
+      "title": "if/else if/else select by strict bool; complete if is an expression",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.7",
+        "docs/okkama-spec-11072026.md#8.11"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.MATCH",
+      "title": "match compares cases with strict equality; multi-value cases; else branch",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.8",
+        "docs/okkama-spec-11072026.md#8.12"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.MATCH-EXHAUSTIVENESS",
+      "title": "Match exhaustiveness and branch type compatibility",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.12"
+      ],
+      "status": "deferred",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-024"
+      ],
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.FOR",
+      "title": "for over arrays, ranges and nominal Iterable sources with one binding",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.9"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.LOOP",
+      "title": "loop is an unbounded expression; only `last value` supplies its value",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.13"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.NEXT-LAST",
+      "title": "next/last target the nearest loop; conditional forms evaluate the condition first and the payload lazily",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.RETURN",
+      "title": "return exits the current action from nested constructs; anonymous actions are boundaries",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.SHORT-CIRCUIT",
+      "title": "&& and || evaluate the right operand only when needed",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CTRL.RECURSION",
+      "title": "Actions may call themselves recursively; depth is memory-bound, self tail calls run in constant stack, recursion that cannot complete is rejected",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.6",
+        "docs/okkama-spec-11072026.md#11.6.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.ARGUMENTS",
+      "title": "Positional or named arguments, never mixed; duplicate names, wrong arity and unknown actions fail",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.LEXICAL-ISOLATION",
+      "title": "A callee never sees caller locals; declaration bodies resolve names lexically",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.ANON-ACTIONS",
+      "title": "Anonymous actions capture lexical values, can be stored, passed, returned and called later",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.10.2",
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.ACTION-TYPES",
+      "title": "Action-value types are exact at typed boundaries; no variance",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.BOUND-ACTIONS",
+      "title": "`receiver.action` without parentheses is a bound action value; private actions cannot escape",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.10.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.FUNCTIONAL-OPS",
+      "title": "Eager map/filter/reduce on arrays, ranges, typed maps and Iterable objects",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.8"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.VOID",
+      "title": "void is a result marker; using a void call as a value is rejected",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.OVERLOADS",
+      "title": "Typed overload selection by arity, names, runtime types and specificity; ambiguity fails",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.8"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Control flow and calls"
+    },
+    {
+      "id": "CALL.VARIADIC",
+      "title": "Variadic tails: positional-only, checked elements, opaque binding, unpack forwarding",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.8.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Control flow and calls"
+    }
+  ]
+}

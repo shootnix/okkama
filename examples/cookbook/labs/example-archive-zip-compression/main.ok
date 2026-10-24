@@ -1,0 +1,24 @@
+// Выбрать метод и уровень ZIP-представления
+//
+// Выбрать параметры ZIP-записи: ZipCompression связывает метод с уровнем, ZipArchiveEntry удерживает выбор элемента.
+//
+// Запуск: ./examples/cookbook/run lab example-archive-zip-compression
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-archive-zip-compression
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "archive/zip" take ZipMethod, ZipCompression;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let stored=ZipCompression(ZipMethod.stored);
+    let deflate=ZipCompression(ZipMethod.deflated);
+    let fast=ZipCompression(ZipMethod.zstandard,-1);
+    Stdout().writeln("stored level: "+stored.level().string());
+    Stdout().writeln("deflate default: "+deflate.level().string());
+    Stdout().writeln("zstandard choice: "+fast.level().string());
+    confirm ZipCompression(ZipMethod.zstandard,0)==ZipCompression(ZipMethod.zstandard)
+        else panic "default alias did not resolve";
+    0;
+}

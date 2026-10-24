@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.void.as-argument",
+  "title": "a void result cannot be used as an operator operand",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.VOID",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: using an absent void result as a value (an operator operand) is a semantic error when statically known and guarded at runtime."
+  },
+  "status": "mandatory"
+}

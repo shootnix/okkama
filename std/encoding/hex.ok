@@ -1,0 +1,62 @@
+module encoding/hex v1.0.0;
+
+import "runtime/hex" take hex_encode, hex_valid_prefix, hex_decode;
+
+// Strict hexadecimal encoding.
+//
+//     HexEncoded(origin: [byte(0), byte(171), byte(255)]).string();
+//     // "00abff"
+//
+//     HexDecoded(origin: "00ABff").bytes();
+//     // [0, 171, 255]
+//
+// Encoding always uses lowercase ASCII without a prefix. Decoding accepts
+// lowercase and uppercase ASCII digits, but rejects `0x`, whitespace,
+// separators, underscores and every non-ASCII lookalike. Input length must be
+// even. InvalidHex.offset() is a Unicode-scalar offset in the source string;
+// an unmatched final nibble reports origin.length().
+
+object HexEncoded {
+    has origin is @byte;
+
+    HexEncoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        hex_encode(origin);
+    }
+}
+
+object HexDecoded {
+    has origin is string;
+
+    HexDecoded(origin is string) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        let offset is int = hex_valid_prefix(origin);
+        confirm offset == origin.length() else throw InvalidHex(offset);
+        confirm origin.length() % 2 == 0
+            else throw InvalidHex(origin.length());
+        hex_decode(origin);
+    }
+}
+
+object InvalidHex does Error {
+    has invalid_offset is int;
+
+    InvalidHex(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid hexadecimal at scalar offset " + invalid_offset.string();
+    }
+}

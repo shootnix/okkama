@@ -1,0 +1,53 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "net/ip" take IpAddress,IpNetwork;
+import "net/endpoint" take HostName;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/client" take HttpClient,Exchanging;
+import "http/auth" take BasicCredentials,BasicExchanging,BearerAuthorization,BearerExchanging;
+import "crypto/secret" take SecretBytes;
+import "encoding/utf" take Utf8Encoded;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take ListedNetworks;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/header" take Headers;
+import "http/target" take AbsoluteTarget;
+import "http/version" take HttpVersion;
+import "url/value" take ParsedUrl,Url,UrlParts,UrlQuery,UrlFragment;
+import "net/dns" take FixedResolution,HostAddresses;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+
+// Explicit local DNS, endpoint rights and DER root; no ambient trust or client features.
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let tls=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let protocols is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);
+    let policy=ClientPolicy(protocols,HttpLimits(),ClientTimeouts(),2,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let resolver=FixedResolution([HostAddresses(HostName("example.test"),[IpAddress("127.0.0.1")]),HostAddresses(HostName("wrong.test"),[IpAddress("127.0.0.1")])]);
+    let client=HttpClient(resolver,tls,policy,SystemClock());defer client.close();
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value()),Headers([]));
+    let parts=request.target().url().parts();let scope=Url(UrlParts(parts.scheme(),parts.authority(),"/",UrlQuery(),UrlFragment()));
+    let exchanging is Exchanging=if environment.variable("OKKAMA_HTTP_AUTH")=="basic"{
+        let password=SecretBytes(Utf8Encoded(environment.variable("OKKAMA_HTTP_PASSWORD")).bytes());
+        BasicExchanging(client,scope,BasicCredentials(environment.variable("OKKAMA_HTTP_USER"),password));
+    }else{
+        let token=SecretBytes(Utf8Encoded(environment.variable("OKKAMA_HTTP_TOKEN")).bytes());
+        BearerExchanging(client,scope,BearerAuthorization(token));
+    };
+    let result=await exchanging.response(request);
+    confirm result.details().secure() && result.details().version()==HttpVersion.http_1_1;
+    confirm result.details().endpoints().remote_endpoint().port()==request.target().url().parts().authority().port();
+    confirm result.response().status().code()==204 && result.history().size()==0;
+    client.close();let reader=result.response().body().reading();confirm (await reader.bytes(1)).size()==0;
+    Stdout().writeln("verified HTTPS auth returned 204");0;
+}

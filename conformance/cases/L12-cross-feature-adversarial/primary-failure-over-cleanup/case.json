@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.primary-failure-over-cleanup",
+  "title": "a body failure stays primary when cleanup also fails",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.PRIMARY-FAILURE",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    },
+    {
+      "contract": "DEFER.FAILURES",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "cleanup ran\nprimary database failure\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/resource-lifetimes.md",
+    "improvements-roadmap/results/IMP-09/RESULT.md"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 19: an existing body failure wins over a defer failure; the defer still runs. IMP-09: BEGIN/statement failure stays primary when cleanup also throws."
+  },
+  "status": "mandatory"
+}

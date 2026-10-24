@@ -1,0 +1,26 @@
+// Прочитать id, имя и флаг из SQL
+//
+// После SELECT нужно получить проверенные скалярные значения и передать их предметному конструктору.
+//
+// Запуск: ./examples/cookbook/run lab recipe-db-row-read
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-db-row-read
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/db_row_read v1.0.0;
+import "db/read" take RowReader;
+import "db/row" take Row,Column;
+import "db/value" take DbInteger,DbText;
+import "numbers/bigint" take BigInt;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let row = Row(
+        [Column(0,"id","INTEGER"),Column(1,"name","TEXT"),Column(2,"verified","INTEGER")],
+        [DbInteger(BigInt("7")),DbText("Ада"),DbInteger(BigInt("1"))]
+    );
+    let fields = RowReader(row);
+    confirm fields.int("id") == 7 && fields.flag("verified");
+    Stdout().writeln(fields.text("name"));
+    0;
+}

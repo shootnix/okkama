@@ -1,0 +1,41 @@
+module locale/collation v1.0.0;
+import "locale/tag" take Locale,LocaleExtensions;
+import "compare" take Comparing,Order;
+import "runtime/collation" take collation_key;
+enum CollationStrength=(primary,secondary,tertiary,quaternary,identical);
+enum CollationCaseFirst=(locale_default,lower,upper);
+object CollationOptions {
+    has strength is CollationStrength;has case_first is CollationCaseFirst;has numeric,normalization is bool;
+    CollationOptions(strength is CollationStrength,case_first is CollationCaseFirst,numeric is bool,normalization is bool){self.strength=strength;self.case_first=case_first;self.numeric=numeric;self.normalization=normalization;}
+    strength() is CollationStrength{strength;}case_first() is CollationCaseFirst{case_first;}numeric() is bool{numeric;}normalization() is bool{normalization;}
+    strength_code() is int{match strength{case CollationStrength.primary{0;}case CollationStrength.secondary{1;}case CollationStrength.tertiary{2;}case CollationStrength.quaternary{3;}else{15;}}}
+    case_first_code() is int{match case_first{case CollationCaseFirst.lower{24;}case CollationCaseFirst.upper{25;}else{-1;}}}
+}
+object CollationDataVersion {
+    CollationDataVersion();icu() is string{"76.1";}unicode() is string{"16.0.0";}uca() is string{"16.0.0";}cldr() is string{"46.0";}
+    string() is string{"ICU76.1/UCA16.0.0/CLDR46.0";}
+}
+object CollatedString does Comparing<CollatedString> {
+    has origin is string;has locale is Locale;has options is CollationOptions;has key is @byte;
+    CollatedString(origin is string,locale is Locale,options is CollationOptions){
+        self.origin=origin;self.locale=locale;self.options=options;
+        let keywords=LocaleExtensions(locale).unicode();let collation=(0..keywords.size()).reduce("")->value,index{let keyword=keywords.item(index);if keyword.key()=="co"{let parts=keyword.values();confirm parts.size()>0 else throw InvalidCollation("co keyword requires a value");let texts is @string=(0..parts.size()).map()->i{parts.item(i);};texts.join("-");}else{value;}};
+        key=try{collation_key(origin,locale.base_tag(),collation,options.strength_code(),options.case_first_code(),options.numeric(),options.normalization());}catch error is NativeFailure{
+            if error.code()=="invalid_data" || error.code()=="resource_exhausted"{throw InvalidCollation(error.message());}throw UnavailableCollation(error.message());
+        };
+    }
+    string() is string{origin;}locale() is Locale{locale;}options() is CollationOptions{options;}key() is @byte{key;}
+    data_version() is CollationDataVersion{CollationDataVersion();}
+    order(other is CollatedString) is Order{
+        let policy=other.options();
+        confirm locale.string()==other.locale().string() && options.strength()==policy.strength() && options.case_first()==policy.case_first() && options.numeric()==policy.numeric() && options.normalization()==policy.normalization() && self.data_version().string()==other.data_version().string() else throw IncompatibleCollation();
+        let right=other.key();let shared=if key.size()<right.size(){key.size();}else{right.size();};
+        for (0..shared)->index{let result=key[index].order(right[index]);if result!=Order.equal{return result;}}
+        key.size().order(right.size());
+    }
+}
+object InvalidCollation does Error {has reason is string;InvalidCollation(reason is string){self.reason=reason;}text() is string{"invalid collation: "+reason;}}
+object UnavailableCollation does Error {has reason is string;UnavailableCollation(reason is string){self.reason=reason;}text() is string{"unavailable pinned collation: "+reason;}}
+object IncompatibleCollation does Error {IncompatibleCollation();text() is string{"incompatible collation locale, policy or data version";}}
+
+test "numeric collation is explicit" {let options=CollationOptions(CollationStrength.tertiary,CollationCaseFirst.locale_default,true,true);test.is(CollatedString("file2",Locale("en"),options).order(CollatedString("file10",Locale("en"),options)),Order.less);}

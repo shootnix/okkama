@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.inference",
+  "title": "generic construction infers one exact type",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.INFERENCE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "7\n2\ninner\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: Box(value: 7) infers Box<int> (accepted by a Box<int> parameter); collections and nested generics infer exact types."
+  },
+  "status": "mandatory"
+}

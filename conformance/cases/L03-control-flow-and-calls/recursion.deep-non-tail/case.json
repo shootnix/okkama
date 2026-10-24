@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.recursion.deep-non-tail",
+  "title": "non-tail recursion is limited by memory, not by a native stack",
+  "purpose": "One million nested non-tail calls complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.RECURSION",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "500000500000\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6.1"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS from the cited contract text",
+    "expected_basis": "§11.6.1: depth is limited only by memory; 1 + 2 + … + 1000000 = 1000000·1000001/2 = 500000500000."
+  },
+  "status": "mandatory"
+}

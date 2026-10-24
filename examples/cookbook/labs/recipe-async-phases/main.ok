@@ -1,0 +1,32 @@
+// Дождаться готовности двух обработчиков
+//
+// Две операции готовят свои части, затем одновременно переходят к общему этапу.
+//
+// Запуск: ./examples/cookbook/run lab recipe-async-phases
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-async-phases
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/async_phases v1.0.0;
+import "async/barrier" take Barrier;
+import "async/collect" take AllFutures;
+import "async/lock" take Lock;
+import "async/semaphore" take Semaphore;
+import "io/stdout" take Stdout;
+
+object Worker {
+    has phase is Barrier;
+    Worker(phase is Barrier) { self.phase = phase; }
+    async run() is int { await phase.wait(); }
+}
+
+async main() is int {
+    let phase = Barrier(parties: 2);
+    let first = Worker(phase).run();
+    let second = Worker(phase).run();
+    let pending is @Future<int> = [first, second];
+    let results = await AllFutures(origins: pending).results();
+    confirm results.size() == 2;
+    Stdout().writeln("оба обработчика готовы");
+    0;
+}

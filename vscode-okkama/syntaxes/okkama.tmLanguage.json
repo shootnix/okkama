@@ -1,0 +1,670 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Okkama",
+  "scopeName": "source.okkama",
+  "patterns": [
+    {
+      "include": "#rawStrings"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#contextualCapabilities"
+    },
+    {
+      "include": "#typeAnnotations"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#capAccess"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#invalidSyntax"
+    },
+    {
+      "include": "#namedConstructorProjections"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#blocks"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "rawStrings": {
+      "patterns": [
+        {
+          "name": "string.quoted.other.raw.fenced.okkama",
+          "begin": "```",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.okkama"
+            }
+          },
+          "end": "```",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.okkama"
+            }
+          }
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.okkama",
+          "begin": "//",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.okkama"
+            }
+          },
+          "end": "$"
+        },
+        {
+          "name": "comment.block.okkama",
+          "begin": "/\\*",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.okkama"
+            }
+          },
+          "end": "\\*/",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.okkama"
+            }
+          }
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.annotation.projection.okkama",
+          "match": "(#)([ \\t]*)(projected)(?:([ \\t]*)(\\()([ \\t]*)([a-z_][a-zA-Z0-9_]*)([ \\t]*)(\\)))?",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.annotation.okkama"
+            },
+            "3": {
+              "name": "storage.modifier.projection.okkama"
+            },
+            "5": {
+              "name": "punctuation.section.parens.begin.okkama"
+            },
+            "7": {
+              "name": "entity.name.function.projection.okkama"
+            },
+            "9": {
+              "name": "punctuation.section.parens.end.okkama"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.okkama",
+          "begin": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.okkama"
+            }
+          },
+          "end": "\"",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.okkama"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.okkama",
+              "match": "\\\\[nrt\"\\\\]"
+            },
+            {
+              "name": "invalid.illegal.escape.okkama",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.okkama",
+          "begin": "'",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.okkama"
+            }
+          },
+          "end": "'",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.okkama"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.okkama",
+              "match": "\\\\[nrt'\\\\]"
+            },
+            {
+              "name": "invalid.illegal.escape.okkama",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.okkama",
+          "match": "\\b(?:0[bB][01]+(?:_[01]+)*|0[xX][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*)\\b"
+        },
+        {
+          "name": "constant.other.version.okkama",
+          "match": "\\bv[0-9]+\\.[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.okkama",
+          "match": "\\b[0-9]+(?:_[0-9]+)*\\.[0-9]+(?:_[0-9]+)*\\b"
+        },
+        {
+          "name": "constant.numeric.integer.okkama",
+          "match": "\\b[0-9]+(?:_[0-9]+)*\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "meta.declaration.cap.okkama",
+          "begin": "\\b(cap)(?=[ \\t]+(?:[A-Za-z_][A-Za-z0-9_]*[ \\t]*::[ \\t]*)?[A-Za-z_][A-Za-z0-9_]*[ \\t]*(?:\\{|$)|[ \\t]*$)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.declaration.cap.okkama"
+            }
+          },
+          "end": "(?<=\\})",
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "begin": "\\{",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.section.braces.okkama"
+                }
+              },
+              "end": "\\}",
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.section.braces.okkama"
+                }
+              },
+              "patterns": [
+                {
+                  "include": "#comments"
+                },
+                {
+                  "include": "#computedFields"
+                }
+              ]
+            },
+            {
+              "match": "(?:([A-Za-z_][A-Za-z0-9_]*)([ \\t]*::[ \\t]*))?([A-Za-z_][A-Za-z0-9_]*)",
+              "captures": {
+                "1": {
+                  "name": "entity.name.type.okkama"
+                },
+                "2": {
+                  "name": "punctuation.accessor.cap.okkama"
+                },
+                "3": {
+                  "name": "entity.name.type.cap.okkama"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "meta.declaration.module.okkama",
+          "match": "\\b(module)(\\s+)([a-z_][a-zA-Z0-9_]*(?:/[a-z_][a-zA-Z0-9_]*)*)(\\s+)(v[0-9]+\\.[0-9]+\\.[0-9]+)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.module.okkama"
+            },
+            "3": {
+              "name": "entity.name.namespace.okkama"
+            },
+            "5": {
+              "name": "constant.other.version.okkama"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.type.okkama",
+          "match": "\\b(object|role)(\\s+)([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.type.okkama"
+            },
+            "3": {
+              "name": "entity.name.type.okkama"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.enum.okkama",
+          "match": "\\b(enum)(\\s+)([A-Z][a-zA-Z0-9_]*|[a-z_][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.enum.okkama"
+            },
+            "3": {
+              "name": "entity.name.type.enum.okkama"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.native-function.okkama",
+          "match": "\\b(native)(\\s+)([a-z_][a-zA-Z0-9_]*)(?=\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.native.okkama"
+            },
+            "3": {
+              "name": "entity.name.function.okkama"
+            }
+          }
+        }
+      ]
+    },
+    "namedConstructorProjections": {
+      "patterns": [
+        {
+          "name": "support.function.projection.okkama",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\s+(?:[a-z_][a-zA-Z0-9_]*\\.)?[A-Z][a-zA-Z0-9_]*\\s*\\()"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.declaration.cap.okkama",
+          "match": "\\bcap\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*(?:\\s*::\\s*[A-Za-z_][A-Za-z0-9_]*)?\\s*\\{)"
+        },
+        {
+          "name": "keyword.control.conditional.okkama",
+          "match": "\\b(if|else|match|case)\\b"
+        },
+        {
+          "name": "keyword.control.loop.okkama",
+          "match": "\\b(for|loop|next|last)\\b"
+        },
+        {
+          "name": "keyword.control.exception.okkama",
+          "match": "\\b(try|catch|confirm|throw|panic|defer|return)\\b"
+        },
+        {
+          "name": "keyword.control.async.okkama",
+          "match": "\\b(await|spawn)\\b"
+        },
+        {
+          "name": "keyword.declaration.okkama",
+          "match": "\\b(module|import|take|as|native|object|role|does|enum|has|is|private|test|fake|destroy|let)\\b"
+        },
+        {
+          "name": "storage.modifier.async.okkama",
+          "match": "\\basync\\b"
+        },
+        {
+          "name": "variable.language.self.okkama",
+          "match": "\\bself\\b"
+        },
+        {
+          "name": "constant.language.boolean.okkama",
+          "match": "\\b(true|false)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.okkama",
+          "match": "\\b(int|float|rat|decimal|string|char|bool|byte|number|any|void)\\b"
+        },
+        {
+          "name": "support.type.native-failure.okkama",
+          "match": "\\bNativeFailure\\b"
+        },
+        {
+          "name": "entity.name.type.okkama",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        },
+        {
+          "name": "storage.modifier.collection.okkama",
+          "match": "[@%](?=(?:[a-z_][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]*|[@%]))"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.entrypoint.okkama",
+          "match": "\\bmain(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.okkama",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "invalidSyntax": {
+      "patterns": [
+        {
+          "name": "invalid.illegal.reserved-word.okkama",
+          "match": "\\b(isa|super|abstract|protected|null|none|nil|with|finally)\\b"
+        },
+        {
+          "name": "invalid.illegal.removed-operator.okkama",
+          "match": "\\?\\.|\\?|\\*\\*"
+        },
+        {
+          "name": "invalid.illegal.unknown-character.okkama",
+          "match": "[$`]|(?!#[ \\t]*projected\\b)#"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.successor.okkama",
+          "match": "\\^(?=\\s*[A-Za-z_][A-Za-z0-9_]*\\s*=)"
+        },
+        {
+          "name": "keyword.operator.bitwise.okkama",
+          "match": "\\^|>>>|>>|<<|<-|(?<!&)&(?!&)|(?<!\\|)\\|(?!\\|)|~"
+        },
+        {
+          "name": "keyword.operator.variadic.okkama",
+          "match": "\\.\\.\\."
+        },
+        {
+          "name": "keyword.operator.range.okkama",
+          "match": "\\.\\.=|\\.\\."
+        },
+        {
+          "name": "keyword.operator.arrow.okkama",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.logical.okkama",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.comparison.okkama",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.arithmetic.okkama",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.assignment.okkama",
+          "match": "="
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.accessor.cap.okkama",
+          "match": "::"
+        },
+        {
+          "name": "punctuation.section.braces.okkama",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.brackets.okkama",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.parens.okkama",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.separator.okkama",
+          "match": "[,;:]"
+        },
+        {
+          "name": "punctuation.accessor.okkama",
+          "match": "\\."
+        }
+      ]
+    },
+    "contextualCapabilities": {
+      "patterns": [
+        {
+          "match": "\\b(test)\\s*(\\.)\\s*(ok|is|isnt|fail|skip)\\b",
+          "captures": {
+            "1": {
+              "name": "variable.language.test.okkama"
+            },
+            "2": {
+              "name": "punctuation.accessor.okkama"
+            },
+            "3": {
+              "name": "support.function.assertion.okkama"
+            }
+          }
+        },
+        {
+          "match": "\\b(fake)\\s*(\\.)\\s*(reading|writing)\\s*(\\.)\\s*(get|has|size|set|remove|clear)\\b",
+          "captures": {
+            "1": {
+              "name": "variable.language.fake.okkama"
+            },
+            "2": {
+              "name": "punctuation.accessor.okkama"
+            },
+            "3": {
+              "name": "support.type.capability.okkama"
+            },
+            "4": {
+              "name": "punctuation.accessor.okkama"
+            },
+            "5": {
+              "name": "support.function.fake-state.okkama"
+            }
+          }
+        }
+      ]
+    },
+    "capAccess": {
+      "patterns": [
+        {
+          "name": "meta.access.cap.okkama",
+          "match": "(::)(\\s*)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.cap.okkama"
+            },
+            "3": {
+              "name": "variable.other.member.cap.okkama"
+            }
+          }
+        }
+      ]
+    },
+    "computedFields": {
+      "patterns": [
+        {
+          "name": "meta.declaration.computed-field.okkama",
+          "begin": "\\b([A-Za-z_][A-Za-z0-9_]*)(\\s+)(is)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "variable.other.property.cap.okkama"
+            },
+            "3": {
+              "name": "keyword.declaration.okkama"
+            }
+          },
+          "end": "(?<=\\})",
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#blocks"
+            },
+            {
+              "include": "#typeComponents"
+            }
+          ]
+        }
+      ]
+    },
+    "blocks": {
+      "patterns": [
+        {
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.braces.okkama"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.braces.okkama"
+            }
+          },
+          "patterns": [
+            {
+              "include": "$self"
+            }
+          ]
+        }
+      ]
+    },
+    "typeAnnotations": {
+      "patterns": [
+        {
+          "name": "meta.type.annotation.okkama",
+          "begin": "\\b(is)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.declaration.okkama"
+            }
+          },
+          "end": "(?=[,;={}\\)])",
+          "patterns": [
+            {
+              "include": "#typeComponents"
+            }
+          ]
+        }
+      ]
+    },
+    "typeComponents": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "name": "keyword.operator.successor.okkama",
+          "match": "\\^"
+        },
+        {
+          "begin": "<",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.typeparameters.begin.okkama"
+            }
+          },
+          "end": ">",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.typeparameters.end.okkama"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#typeComponents"
+            }
+          ]
+        },
+        {
+          "begin": "\\(",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.okkama"
+            }
+          },
+          "end": "\\)",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.okkama"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#typeComponents"
+            }
+          ]
+        },
+        {
+          "match": "(::)(\\s*)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.cap.okkama"
+            },
+            "3": {
+              "name": "entity.name.type.cap.okkama"
+            }
+          }
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    }
+  }
+}

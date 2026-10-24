@@ -1,0 +1,17 @@
+module app v1.0.0;
+import "url/value" take UrlQuery, UrlFragment;
+import "url/query" take ParsedQueryParameters;
+import "url/form" take FormUrlEncoded, ParsedForm;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let query=UrlQuery("flag&name=чай&name=a+b");
+    let entries=ParsedQueryParameters(query).value();
+    Stdout().writeln(query.string());
+    Stdout().writeln(entries.values("name").item(1));
+    let form=FormUrlEncoded(entries);
+    Stdout().writeln(form.string());
+    Stdout().writeln(ParsedForm(form.bytes()).parameters().first("name"));
+    Stdout().writeln(UrlFragment("%7e/часть").string());
+    0;
+}

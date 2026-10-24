@@ -1,0 +1,26 @@
+module http/handler v1.0.0;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/websocket" take WebSocketConnection;
+import "http/websocket_server" take WebSocketUpgrade;
+
+enum HandlingKind=(response,websocket);
+role HandlingResult {
+    kind() is HandlingKind;response() is Response;websocket() is WebSocketUpgrade;application() is WebSocketHandling;
+}
+role Handling {async handling(request is Request,context is HttpRequestContext) is HandlingResult;}
+role WebSocketHandling {async handle(connection is WebSocketConnection,request is Request,context is HttpRequestContext) is WebSocketHandling;}
+object ResponseHandling does HandlingResult {
+    has origin is Response;ResponseHandling(origin is Response){self.origin=origin;}
+    kind() is HandlingKind{HandlingKind.response;}response() is Response{origin;}
+    websocket() is WebSocketUpgrade{throw WrongHandlingKind();}application() is WebSocketHandling{throw WrongHandlingKind();}
+}
+// Protocol approval/policy and application work are separate capabilities. The
+// ordinary HTTP handler returns them; the server owns the upgraded task scope.
+object WebSocketHandlingResult does HandlingResult {
+    has origin is WebSocketUpgrade;has application is WebSocketHandling;
+    WebSocketHandlingResult(origin is WebSocketUpgrade,application is WebSocketHandling){self.origin=origin;self.application=application;}
+    kind() is HandlingKind{HandlingKind.websocket;}response() is Response{throw WrongHandlingKind();}
+    websocket() is WebSocketUpgrade{origin;}application() is WebSocketHandling{application;}
+}
+object WrongHandlingKind does Error{WrongHandlingKind();text() is string{"wrong HTTP handling result projection";}}

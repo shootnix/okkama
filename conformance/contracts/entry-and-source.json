@@ -1,0 +1,99 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Entry point and source shape",
+  "description": "Entry-point and file-shape contracts (spec sections 3 and 5.1).",
+  "contracts": [
+    {
+      "id": "ENTRY.SIGNATURE",
+      "title": "Only `main() is int` and `async main() is int` are entry points; other forms are rejected before the body runs",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#3",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the signature set is discrete; the async form is covered as normal",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Entry point and source shape"
+    },
+    {
+      "id": "ENTRY.STATUS",
+      "title": "The entry result is an actual int in 0..255 used as the exit status; other values, types and missing results fail without wrapping or defaulting",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Entry point and source shape"
+    },
+    {
+      "id": "ENTRY.REQUIRED",
+      "title": "Running a module requires an entry point",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: every successful L00 program exercises a present main",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: imported mains are covered by MOD.IMPORT-MAIN-NOT-RUN"
+      },
+      "family": "Entry point and source shape"
+    },
+    {
+      "id": "SRC.MODULE-DECL",
+      "title": "Every file starts with `module name vMAJOR.MINOR.PATCH;` with lowercase /-separated names",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.1",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Entry point and source shape"
+    },
+    {
+      "id": "SRC.DECLARATIONS-ONLY",
+      "title": "Module scope holds declarations only; top-level statements are syntax errors",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Entry point and source shape"
+    },
+    {
+      "id": "SRC.IMPORT-PLACEMENT",
+      "title": "Imports follow the module declaration and precede other declarations",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#5.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Entry point and source shape"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.native.missing-provider",
+  "title": "a native declaration without a provider fails without fallback",
+  "purpose": "Calling an unlinked native never runs an Okkama body.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "NATIVE.LINK",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "resolution",
+        "runtime"
+      ],
+      "justification": "The grammar makes a missing provider a runtime error; no logical category beyond resolution/runtime is fixed."
+    },
+    "stdout": {
+      "text": "before\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.3",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: native calls resolve a mandatory provider by owner module, ABI major, name and arity; missing providers are runtime errors and never fall back to an Okkama body."
+  },
+  "status": "mandatory"
+}

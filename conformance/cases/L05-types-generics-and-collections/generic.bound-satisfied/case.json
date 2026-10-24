@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.bound-satisfied",
+  "title": "a role-bounded type parameter accepts implementing types",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.BOUNDS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: `object Heap<T: Comparing<T>>` declares one nominal role bound checked after inference."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,20 @@
+// Настроить параметры TCP-подключения
+//
+// Открыть TCP-соединение или слушающий порт: TcpConnecting и TcpListening возвращают владельцев асинхронного транспорта.
+//
+// Запуск: ./examples/cookbook/run lab example-tcp-options
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-tcp-options
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/tcp" take TcpOptions, TcpListeningOptions;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let connection=TcpOptions(true,true);
+    let listener=TcpListeningOptions(false,false,128);
+    Stdout().writeln(if connection.no_delay() {"no-delay requested";} else {"normal packet delay";});
+    Stdout().writeln("requested backlog: "+listener.backlog().string());
+    0;
+}

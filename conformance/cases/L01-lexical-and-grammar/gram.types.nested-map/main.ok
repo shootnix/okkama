@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let m is %string:%string:int = ["a": ["b": 3]];
+    let n is @%string:int = [["x": 1], ["y": 2]];
+    out.writeln((m["a"]["b"] + n[1]["y"]).string());
+    0;
+}

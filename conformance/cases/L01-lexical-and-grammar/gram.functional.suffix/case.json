@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.functional.suffix",
+  "title": "functional suffixes on map/filter/reduce",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.FUNCTIONAL-SUFFIX",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    },
+    {
+      "contract": "CALL.FUNCTIONAL-OPS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "60\n2\n3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.8",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.8: filter keeps 2,4; map gives 20,40; reduce sums 60; a grouped functional for source."
+  },
+  "status": "mandatory"
+}

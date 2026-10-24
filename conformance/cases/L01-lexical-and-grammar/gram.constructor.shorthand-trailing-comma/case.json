@@ -1,0 +1,37 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.constructor.shorthand-trailing-comma",
+  "title": "field shorthand lists accept a trailing comma",
+  "purpose": "Syntax acceptance of the construct.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.CONSTRUCTOR-DECL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success"
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: field_param_list = field_param (\",\" field_param)* trailing_comma?."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-001"
+  ]
+}

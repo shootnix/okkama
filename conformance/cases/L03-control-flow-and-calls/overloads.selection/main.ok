@@ -1,0 +1,36 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Shape {
+    area() is int;
+}
+
+object Square does Shape {
+    has side is int;
+    Square(:side);
+    area() is int { side * side; }
+}
+
+object Describer {
+    Describer();
+    describe(value is int) is string { "int"; }
+    describe(value is string) is string { "string"; }
+    describe(left is int, right is int) is string { "pair"; }
+    describe(shape is Shape) is string { "role"; }
+    describe(square is Square) is string { "square"; }
+    describe(value is any) is string { "any"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let d = Describer();
+    out.writeln(d.describe(1));
+    out.writeln(d.describe("x"));
+    out.writeln(d.describe(1, 2));
+    out.writeln(d.describe(Square(side: 2)));
+    let s is Shape = Square(side: 3);
+    out.writeln(d.describe(s));
+    out.writeln(d.describe(true));
+    0;
+}

@@ -1,0 +1,65 @@
+// Интерпретатор Brainfuck
+// Задача: Выполнить восемь команд на байтовой ленте и напечатать Hello World.
+// Запуск из корня: ./examples/gallery/run brainfuck [PROGRAM] [INPUT]
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: снимок машины, таблица переходов, wrap байта, ограничение числа шагов.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/brainfuck.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/brainfuck v1.0.0;
+import "encoding/single_byte" take AsciiEncoded,AsciiDecoded;
+import "cli/arguments" take Utf8Arguments,ProcessArguments;
+import "io/stdout" take Stdout;
+object BracketSearch {
+    has position,depth is int;
+    BracketSearch(position is int){self.position=position;depth=1;}
+    position() is int{position;}finished() is bool{depth==0;}
+    following(code is string,direction is int) is ^BracketSearch {
+        let following=position+direction;confirm following>=0 && following<code.length();
+        let symbol=code.slice(following,following+1);
+        ^position=following;
+        ^depth=depth+if symbol=="["{direction;}else{if symbol=="]"{-direction;}else{0;}};
+    }
+}
+object Brainfuck {
+    has code is string;has jumps,tape is @int;has input is @byte;
+    has pc,pointer,read,steps is int;has output is @byte;
+    Brainfuck(code is string,input is string){
+        confirm code.length()<=4096;self.code=code;self.input=AsciiEncoded(input).bytes();
+        jumps=(0..code.length()).map()->index{
+            let symbol=code.slice(index,index+1);
+            if symbol!="[" && symbol!="]"{index;}else{
+                let search=BracketSearch(index);let direction=if symbol=="["{1;}else{-1;};
+                loop{last if search.finished();search=search.following(code,direction);}search.position();
+            }
+        };
+        tape=(0..64).map()->i{0;};pc=0;pointer=0;read=0;steps=0;let empty is @byte=[];output=empty;
+    }
+    finished() is bool{pc>=code.length();}
+    following() is ^Brainfuck {
+        confirm !self.finished() && steps<100000;
+        let command=code.slice(pc,pc+1);let cell=tape[pointer];
+        let value=match command{case "+"{(cell+1)%256;}case "-"{(cell+255)%256;}case ","{if read<input.size(){input[read].int();}else{0;}}else{cell;}};
+        ^tape=(0..tape.size()).map()->i{if i==pointer{value;}else{tape[i];}};
+        let destination=pointer+if command==">"{1;}else{if command=="<"{-1;}else{0;}};
+        confirm destination>=0 && destination<tape.size();^pointer=destination;
+        ^pc=if (command=="[" && cell==0) || (command=="]" && cell!=0){jumps[pc]+1;}else{pc+1;};
+        if command=="."{^output=(0..output.size()+1).map()->i{if i<output.size(){output[i];}else{cell.byte();}};}
+        if command==","{^read=read+1;}^steps=steps+1;
+    }
+    bytes() is @byte{output;}
+}
+object BrainfuckRun {
+    BrainfuckRun();
+    text(code is string,input is string) is string {
+        let machine=Brainfuck(code,input);loop{last if machine.finished();machine=machine.following();}
+        AsciiDecoded(machine.bytes()).string();
+    }
+}
+main() is int {
+    let args=Utf8Arguments(ProcessArguments());let runner=BrainfuckRun();
+    let code=if args.size()>0{args.item(0);}else{"++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.";};
+    let result=runner.text(code,if args.size()>1{args.item(1);}else{"";});Stdout().write(result);
+    if args.size()==0{confirm result=="Hello World!\n";}
+    confirm runner.text(",.","X")=="X";0;
+}

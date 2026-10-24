@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fakes.storage-and-isolation",
+  "title": "role fakes provide isolated storage in test mode",
+  "purpose": "Run embedded tests and observe the exit status.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "ROLE.FAKES",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": "ignore",
+    "justification": "The embedded test runner's report format is not normative (spec 14 fixes only the exit status)."
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#13",
+    "docs/okkama-spec-11072026.md#14"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 13: each Role.fake() owns isolated storage; fields need defaults; spec 14: -t runs tests, not main; all assertions hold so the exit status is 0."
+  },
+  "status": "mandatory"
+}

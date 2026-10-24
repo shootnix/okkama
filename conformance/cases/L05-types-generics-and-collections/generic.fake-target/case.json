@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.fake-target",
+  "title": "generic role fakes take their specialization from a declared target",
+  "purpose": "Run embedded tests and observe the exit status.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.ROLES",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "ROLE.FAKES",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": "ignore",
+    "justification": "The embedded test report format is not normative; spec 14 fixes the exit status."
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5",
+    "docs/okkama-spec-11072026.md#13"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: `let echo is Echo<int> = Echo.fake();` supplies the fake's specialization."
+  },
+  "status": "mandatory"
+}

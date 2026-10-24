@@ -1,0 +1,173 @@
+module os/command v1.0.0;
+
+import "fs/directory" take DirectoryLocating;
+import "fs/path" take Path;
+import "os/directory" take WorkingDirectory;
+import "os/environment" take Environment;
+
+// Commanding is the immutable description accepted by process consumers. It
+// never invokes a shell: every argument remains one exact string.
+//
+// Command retains a completely explicit execution context. A Path containing
+// a directory component selects that executable directly. A bare Path such as
+// Path("git") asks the runtime to search PATH from this command's Environment:
+//
+//     let status is Commanding = Command(
+//         program: Path("/usr/bin/git"),
+//         arguments: ["status", "--short"],
+//         environment: environment,
+//         directory: repository,
+//     );
+//
+// InheritedCommand deliberately observes the process environment and working
+// directory through its corresponding actions. Its constructor only retains
+// the program and arguments:
+//
+//     let version is Commanding = InheritedCommand(
+//         program: Path("/usr/bin/git"),
+//         arguments: ["--version"],
+//     );
+//
+// Use Path("git") to search PATH from the command's own Environment. The
+// runtime performs direct process lookup; no shell parses the name or args.
+//
+// string() is diagnostic and never shell-round-trippable. It omits the
+// environment, but arguments themselves can still contain secrets.
+
+role Commanding {
+    program() is Path;
+    arguments() is @string;
+    environment() is Environment;
+    directory() is DirectoryLocating;
+    string() is string;
+}
+
+object Command does Commanding {
+    has command_program is Path;
+    has command_arguments is @string;
+    has command_environment is Environment;
+    has command_directory is DirectoryLocating;
+
+    Command(
+        program is Path,
+        arguments is @string,
+        environment is Environment,
+        directory is DirectoryLocating,
+    ) {
+        command_program = program;
+        command_arguments = arguments;
+        command_environment = environment;
+        command_directory = directory;
+    }
+
+    program() is Path { command_program; }
+
+    arguments() is @string { command_arguments; }
+
+    environment() is Environment { command_environment; }
+
+    directory() is DirectoryLocating { command_directory; }
+
+    string() is string {
+        "Command(program: "
+            + self.quoted(command_program.string())
+            + ", arguments: ["
+            + self.rendered_arguments()
+            + "], directory: "
+            + self.quoted(command_directory.path().string())
+            + ")";
+    }
+
+    private:
+    rendered_arguments() is string {
+        self.rendered_arguments_from(0);
+    }
+
+    rendered_arguments_from(index is int) is string {
+        if index >= command_arguments.size() {
+            "";
+        }
+        else {
+            self.quoted(command_arguments[index])
+                + if index + 1 < command_arguments.size() {
+                    ", " + self.rendered_arguments_from(index + 1);
+                }
+                else {
+                    "";
+                };
+        }
+    }
+
+    quoted(origin is string) is string {
+        "\""
+            + origin
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            + "\"";
+    }
+}
+
+object InheritedCommand does Commanding {
+    has command_program is Path;
+    has command_arguments is @string;
+
+    InheritedCommand(
+        program is Path,
+        arguments is @string,
+    ) {
+        command_program = program;
+        command_arguments = arguments;
+    }
+
+    program() is Path { command_program; }
+
+    arguments() is @string { command_arguments; }
+
+    environment() is Environment { Environment(); }
+
+    directory() is DirectoryLocating { WorkingDirectory(); }
+
+    string() is string {
+        "Command(program: "
+            + self.quoted(command_program.string())
+            + ", arguments: ["
+            + self.rendered_arguments()
+            + "], directory: "
+            + self.quoted(self.directory().path().string())
+            + ")";
+    }
+
+    private:
+    rendered_arguments() is string {
+        self.rendered_arguments_from(0);
+    }
+
+    rendered_arguments_from(index is int) is string {
+        if index >= command_arguments.size() {
+            "";
+        }
+        else {
+            self.quoted(command_arguments[index])
+                + if index + 1 < command_arguments.size() {
+                    ", " + self.rendered_arguments_from(index + 1);
+                }
+                else {
+                    "";
+                };
+        }
+    }
+
+    quoted(origin is string) is string {
+        "\""
+            + origin
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+            + "\"";
+    }
+}

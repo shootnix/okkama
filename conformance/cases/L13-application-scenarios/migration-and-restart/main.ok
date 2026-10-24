@@ -1,0 +1,71 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+import "db/sqlite" take SqliteMemory, SqliteDatabase, SqliteOptions, SqliteConnection;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbInteger, DbText, ObservedDbValue;
+import "db/read" take RowReader;
+import "db/row" take RowsEnded;
+import "numbers/bigint" take BigInt;
+import "fs/path" take Path;
+
+object Migrator {
+    has connection is SqliteConnection;
+    Migrator(:connection);
+    async version() is int {
+        await connection.execution(Statement("CREATE TABLE IF NOT EXISTS schema_version(v INTEGER)"));
+        let rows = await connection.rows(Statement("SELECT COALESCE(MAX(v), 0) AS v FROM schema_version"));
+        let row = await rows.row();
+        rows.close();
+        RowReader(origin: row).int("v");
+    }
+    async migrate() is int {
+        let current = await self.version();
+        if current < 1 {
+            await connection.execution(Statement("CREATE TABLE invoices(id TEXT PRIMARY KEY, cents INTEGER)"));
+            await connection.execution(Statement("INSERT INTO schema_version VALUES(1)"));
+        }
+        if current < 2 {
+            await connection.execution(Statement("ALTER TABLE invoices ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'"));
+            await connection.execution(Statement("INSERT INTO schema_version VALUES(2)"));
+        }
+        await self.version();
+    }
+}
+
+object Start {
+    Start();
+    async run(path is Path) is int {
+        let connection = await SqliteDatabase(path, SqliteOptions()).connection();
+        defer await connection.settled();
+        defer connection.close();
+        await Migrator(connection: connection).migrate();
+    }
+    async insert(path is Path) is void {
+        let connection = await SqliteDatabase(path, SqliteOptions()).connection();
+        defer await connection.settled();
+        defer connection.close();
+        await connection.execution(Statement("INSERT INTO invoices(id, cents) VALUES(?, ?)", [DbText("inv-1"), DbInteger(BigInt("2970"))]));
+    }
+    async read(path is Path) is string {
+        let connection = await SqliteDatabase(path, SqliteOptions()).connection();
+        defer await connection.settled();
+        defer connection.close();
+        let rows = await connection.rows(Statement("SELECT id, cents, currency FROM invoices"));
+        let row = await rows.row();
+        rows.close();
+        let r = RowReader(origin: row);
+        r.text("id") + " " + r.int("cents").string() + " " + r.text("currency");
+    }
+}
+
+async main() is int {
+    let path = Path("billing.sqlite");
+    let c = Checks();
+    c = c.same_int("first start migrates to v2", await Start().run(path), 2);
+    await Start().insert(path);
+    c = c.same_int("restart is idempotent", await Start().run(path), 2);
+    c = c.same_text("data survives restart", await Start().read(path), "inv-1 2970 USD");
+    c.done();
+}

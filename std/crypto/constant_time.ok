@@ -1,0 +1,25 @@
+module crypto/constant_time v1.0.0;
+
+import "crypto/error" take HostOperation;
+
+// Equality of two byte strings whose running time does not depend on where
+// they differ (host `subtle`). Different lengths are unequal; the length
+// itself is not secret. Use it for MAC tags, tokens and password digests.
+//
+//     ConstantTimeEqual(expected, supplied).value();
+object ConstantTimeEqual {
+    has left is @byte;
+    has right is @byte;
+    ConstantTimeEqual(left is @byte, right is @byte) {
+        self.left = left;
+        self.right = right;
+    }
+    value() is bool { HostOperation("ct-equal", [left, right]).truth(); }
+}
+
+test "constant-time equality compares whole byte strings" {
+    test.ok(ConstantTimeEqual([1.byte(), 2.byte()], [1.byte(), 2.byte()]).value());
+    test.ok(!ConstantTimeEqual([1.byte(), 2.byte()], [1.byte(), 3.byte()]).value());
+    test.ok(!ConstantTimeEqual([1.byte()], [1.byte(), 0.byte()]).value());
+    test.ok(ConstantTimeEqual([], []).value());
+}

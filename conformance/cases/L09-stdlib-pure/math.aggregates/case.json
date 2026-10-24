@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.math.aggregates",
+  "title": "one-pass aggregates",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.MATH.AGGREGATE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - minimum\nok 2 - maximum\nok 3 - sum\nok 4 - product\nok 5 - hypotenuse\nok 6 - empty sum\nok 7 - empty minimum\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/math/aggregate.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "math/aggregate header: Minimum/Maximum use intrinsic order and throw EmptySequence when empty; Sum of no values is 0.0; exact binary values give 0.75, 8 and the 3-4-5 hypotenuse 5."
+  },
+  "status": "mandatory"
+}

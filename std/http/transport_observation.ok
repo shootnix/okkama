@@ -1,0 +1,40 @@
+module http/transport_observation v1.0.0;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "net/failure" take NetworkFailure,NetworkFailureKind,NetworkClosed;
+import "io/stream" take ByteSource;
+import "http/message" take InvalidHttpMessage;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+// Used only by an exclusive HTTP1 conversation. Includes partial and 1xx
+// bytes; absence of a parsed final head is insufficient evidence for replay.
+object HttpResponseObservation {
+    has observed is Atomic<Event>;has armed is Event;HttpResponseObservation(){observed=Atomic(Event());armed=Event();}
+    begin() is void{observed.replace(Event());armed.set();}active() is bool{armed.ready();}received() is bool{observed.value().ready();}receive() is void{observed.value().set();}
+    reading(origin is AsyncReading) is AsyncReading{HttpObservedReading(origin,self);}
+    writing(origin is AsyncWriting) is AsyncWriting{HttpObservedWriting(origin,self);}
+}
+object HttpPeerGoneBeforeResponse does Error{
+    has origin is Error;HttpPeerGoneBeforeResponse(origin is Error){self.origin=origin;}origin() is Error{origin;}text() is string{origin.text();}
+}
+object HttpObservedReading does AsyncReading{
+    has origin is AsyncReading;has observation is HttpResponseObservation;
+    HttpObservedReading(origin is AsyncReading,observation is HttpResponseObservation){self.origin=origin;self.observation=observation;}
+    async bytes(limit is int) is @byte{
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=HttpObservationSettlement(group);defer await cleanup.close();
+        try{let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;if bytes.size()>0{observation.receive();}else{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse(InvalidHttpMessage("EOF before complete HTTP1 head"));}}bytes;}
+        catch e is NetworkFailure{if observation.active() && !observation.received() && (e.kind()==NetworkFailureKind.reset || e.kind()==NetworkFailureKind.aborted){throw HttpPeerGoneBeforeResponse(e);}throw;}
+        catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse(e);}throw;}
+    }
+}
+object HttpObservedWriting does AsyncWriting{
+    has origin is AsyncWriting;has observation is HttpResponseObservation;
+    HttpObservedWriting(origin is AsyncWriting,observation is HttpResponseObservation){self.origin=origin;self.observation=observation;}
+    async write(source is ByteSource) is AsyncWriting{
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=HttpObservationSettlement(group);defer await cleanup.close();
+        try{let pending=origin.write(source);group.start(pending);await pending;self;}
+        catch e is NetworkFailure{if observation.active() && !observation.received() && (e.kind()==NetworkFailureKind.reset || e.kind()==NetworkFailureKind.aborted){throw HttpPeerGoneBeforeResponse(e);}throw;}
+        catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse(e);}throw;}
+    }
+}
+object HttpObservationSettlement<T>{has group is FutureGroup<T>;HttpObservationSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

@@ -1,0 +1,64 @@
+module crypto/hmac v1.0.0;
+
+import "digest/state" take Digesting;
+import "digest/host" take HostDigest;
+import "crypto/secret" take SecretBytes;
+import "crypto/constant_time" take ConstantTimeEqual;
+import "encoding/hex" take HexEncoded;
+
+// HMAC (RFC 2104) with an explicit hash. The key is a SecretBytes capability
+// exported once to the host at construction; any length is accepted (longer
+// than the block size is hashed, as the RFC specifies). Hmac is a Digesting
+// over the message: successors append, bytes() is the raw tag. matches()
+// compares a supplied tag in constant time; never compare tags with ==.
+//
+//     let tag = Hmac(HmacHash.sha256, key, message).bytes();
+//     Hmac(HmacHash.sha256, key, message).matches(tag); // true
+enum HmacHash = (sha224, sha256, sha384, sha512, sha3_256, sha3_512);
+
+object HmacAlgorithm {
+    has hash is HmacHash;
+    HmacAlgorithm(hash is HmacHash) { self.hash = hash; }
+    name() is string {
+        match hash {
+            case HmacHash.sha224 { "hmac-sha224"; }
+            case HmacHash.sha256 { "hmac-sha256"; }
+            case HmacHash.sha384 { "hmac-sha384"; }
+            case HmacHash.sha512 { "hmac-sha512"; }
+            case HmacHash.sha3_256 { "hmac-sha3-256"; }
+            case HmacHash.sha3_512 { "hmac-sha3-512"; }
+        }
+    }
+}
+
+object Hmac does Digesting {
+    has digest is HostDigest;
+    Hmac(hash is HmacHash, key is SecretBytes) {
+        digest = HostDigest(HmacAlgorithm(hash).name(), key.export_bytes(), 0);
+    }
+    Hmac(hash is HmacHash, key is SecretBytes, origin is @byte) {
+        digest = HostDigest(HmacAlgorithm(hash).name(), key.export_bytes(), 0).appended(origin);
+    }
+    bytes() is @byte { digest.bytes(); }
+    state(origin is @byte) is ^Hmac {
+        let continued = digest.appended(origin);
+        ^digest = continued;
+    }
+    matches(tag is @byte) is bool { ConstantTimeEqual(digest.bytes(), tag).value(); }
+}
+
+test "HMAC matches RFC 4231 test case 2" {
+    let key = SecretBytes([74.byte(), 101.byte(), 102.byte(), 101.byte()]);
+    let message is @byte = [119,104,97,116,32,100,111,32,121,97,32,119,97,110,116,32,102,111,114,32,110,111,116,104,105,110,103,63].map() -> value { value.byte(); };
+    test.is(HexEncoded(Hmac(HmacHash.sha256, key, message).bytes()).string(), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+    test.is(HexEncoded(Hmac(HmacHash.sha512, key, message).bytes()).string(), "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737");
+}
+
+test "HMAC successors and constant-time matching" {
+    let key = SecretBytes([1.byte(), 2.byte(), 3.byte()]);
+    let whole = Hmac(HmacHash.sha3_256, key, [1.byte(), 2.byte()]);
+    test.is(Hmac(HmacHash.sha3_256, key).state([1.byte()]).state([2.byte()]).bytes(), whole.bytes());
+    test.ok(whole.matches(whole.bytes()));
+    test.ok(!whole.matches(Hmac(HmacHash.sha3_256, SecretBytes([9.byte()]), [1.byte(), 2.byte()]).bytes()));
+    test.ok(!whole.matches([]));
+}

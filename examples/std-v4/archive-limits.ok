@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "archive/limits" take ArchiveLimits, ArchiveLimitExceeded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let initial = ArchiveLimits(2, 4, 6, 64).budget();
+    let first = initial.entered("a.bin", 4).expanded(2).expanded(2).completed();
+    let second = first.entered("b.bin", 0).expanded(2);
+    Stdout().writeln(second.path().string());
+    Stdout().writeln(second.total_remaining().string());
+    try { second = second.expanded(1); }
+    catch error is ArchiveLimitExceeded { Stdout().writeln(error.text()); }
+    let ready = second.completed();
+    Stdout().writeln(ready.entries_remaining().string());
+    0;
+}

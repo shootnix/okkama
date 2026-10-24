@@ -1,0 +1,174 @@
+module testing/check v1.0.0;
+import "collections/sequence" take Sequencing;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+import "time/clock" take Timing;
+import "time/duration" take Duration;
+import "compare" take Order;
+import "diff" take UnifiedDiff,DiffLimitExceeded,InvalidDiff;
+import "async/atomic" take Atomic;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/hex" take HexEncoded;
+import "runtime/debug" take data_dump;
+import "testing/context" take TestContext;
+role Checking {check() is void;}
+role AsyncChecking {async check() is void;}
+// Current runtime contextual test capability: even a passing check requires it.
+object CheckContext {CheckContext();verify() is void {TestContext().require();}}
+object InvalidCheck does Error {
+    has reason is string;InvalidCheck(reason is string){self.reason=reason;}text() is string {"invalid check: "+reason;}
+}
+object CloseTo does Checking {
+    has actual,expected,relative,absolute is float;
+    CloseTo(actual is float,expected is float,relative is float,absolute is float){
+        confirm relative>=0.0 && absolute>=0.0 else throw InvalidCheck("negative tolerance");
+        self.actual=actual;self.expected=expected;self.relative=relative;self.absolute=absolute;
+    }
+    check() is void {CheckContext().verify();if !self.close(){test.fail("values are not close: expected "+expected.string()+", got "+actual.string());}}
+    private:
+    close() is bool {
+        if actual==expected {return true;}
+        let left=if actual<0.0 {-actual;}else{actual;};let right=if expected<0.0 {-expected;}else{expected;};
+        let scale=if left>right {left;}else{right;};
+        // Compute the same max(abs, rel*scale) criterion without overflowing
+        // subtraction/addition of opposite extreme finite operands.
+        if (actual<0.0 && expected>0.0) || (actual>0.0 && expected<0.0) {
+            (absolute>=left && absolute-left>=right) || left/scale+right/scale<=relative;
+        }else{
+            let distance=if actual>expected {actual-expected;}else{expected-actual;};
+            distance<=absolute || (relative>0.0 && distance/scale<=relative);
+        }
+    }
+}
+object CheckWindow {
+    has origin is int;CheckWindow(origin is int){confirm origin>0 && origin<=64 else throw InvalidCheck("diff context must be 1..64");self.origin=origin;}
+    start(at is int) is int {if at>origin {at-origin;}else{0;}}
+    stop(at is int,length is int) is int {if at+origin+1<length {at+origin+1;}else{length;}}
+    size() is int{origin;}
+}
+object CheckValueText {
+    has origin is string;CheckValueText(origin is string){self.origin=origin;}
+    string() is string{
+        let limit=if origin.length()<256{origin.length();}else{256;};let text=origin.slice(0,limit);
+        let unsafe=RegexMatches(text,Regex("[\\x{0}-\\x{8}\\x{b}\\x{c}\\x{e}-\\x{1f}\\x{7f}]")).found();
+        let rendered=if unsafe{"UTF-8 bytes "+HexEncoded(Utf8Encoded(text).bytes()).string();}else{data_dump(text);};rendered+(if origin.length()>limit{"...";}else{"";});
+    }
+}
+object CheckMessageText {
+    has origin is string;CheckMessageText(origin is string){self.origin=origin;}
+    string() is string{if origin.length()<=8192{origin;}else{origin.slice(0,8192)+"\n... diagnostic truncated";}}
+}
+object CheckTextDiff {
+    has actual,expected is string;has position,context is int;
+    CheckTextDiff(actual is string,expected is string,position is int,context is int){self.actual=actual;self.expected=expected;self.position=position;self.context=context;}
+    string() is string{
+        if actual.length()<=4096 && expected.length()<=4096{
+            let first=expected.split("\n");let second=actual.split("\n");
+            if first.size()<=512 && second.size()<=512{
+                let left is @string=first.map()->line{CheckValueText(line).string();};let right is @string=second.map()->line{CheckValueText(line).string();};
+                let rendered=try{UnifiedDiff(left,right,context).string();}catch e is DiffLimitExceeded{"";};
+                if rendered!=""{return CheckMessageText(rendered).string();}
+            }
+        }
+        let first=self.window(expected);let second=self.window(actual);
+        let rendered=try{UnifiedDiff(first,second,context).string();}catch e is DiffLimitExceeded{"bounded diff exceeds work budget";};
+        CheckMessageText("bounded window around scalar "+position.string()+"\n"+rendered).string();
+    }
+    private:
+    window(origin is string) is @string{
+        let start=if position>64{position-64;}else{0;};let end=if position+65<origin.length(){position+65;}else{origin.length();};
+        let prefix=origin.slice(start,position);let lines=origin.slice(start,end).split("\n");let center=prefix.split("\n").size()-1;
+        let first=if center>context{center-context;}else{0;};let last_index=if center+context+1<lines.size(){center+context+1;}else{lines.size();};
+        let values is @string=(first..last_index).map()->index{CheckValueText(lines[index]).string();};values;
+    }
+}
+object TextEquals does Checking {
+    has actual,expected is string;has window is CheckWindow;
+    TextEquals(actual is string,expected is string){self.actual=actual;self.expected=expected;window=CheckWindow(8);}
+    TextEquals(actual is string,expected is string,context is int){self.actual=actual;self.expected=expected;window=CheckWindow(context);}
+    check() is void {
+        CheckContext().verify();if actual==expected {return;}
+        let limit=if actual.length()<expected.length(){actual.length();}else{expected.length();};
+        let mismatch=self.mismatch(limit);let start=window.start(mismatch);
+        test.fail(CheckMessageText("text differs at scalar "+mismatch.string()+": expected "+CheckValueText(expected.slice(start,window.stop(mismatch,expected.length()))).string()+", got "+CheckValueText(actual.slice(start,window.stop(mismatch,actual.length()))).string()+"\n"+CheckTextDiff(actual,expected,mismatch,window.size()).string()).string());
+    }
+    private:
+    mismatch(limit is int) is int {
+        let low=Atomic(0);let high=Atomic(limit+1);defer low.close();defer high.close();
+        loop{if high.value()-low.value()<=1{last;}let middle=low.value()+((high.value()-low.value())/2).int();if actual.slice(0,middle)==expected.slice(0,middle){low.replace(middle);}else{high.replace(middle);}}
+        low.value();
+    }
+}
+object BytesEqual does Checking {
+    has actual,expected is @byte;has window is CheckWindow;
+    BytesEqual(actual is @byte,expected is @byte){self.actual=actual;self.expected=expected;window=CheckWindow(8);}
+    BytesEqual(actual is @byte,expected is @byte,context is int){self.actual=actual;self.expected=expected;window=CheckWindow(context);}
+    check() is void {
+        CheckContext().verify();if actual==expected{return;}
+        let limit=if actual.size()<expected.size(){actual.size();}else{expected.size();};let mismatch=self.mismatch(limit);let start=window.start(mismatch);
+        let first is @byte=(start..window.stop(mismatch,expected.size())).map()->index{expected[index];};
+        let second is @byte=(start..window.stop(mismatch,actual.size())).map()->index{actual[index];};
+        test.fail("bytes differ at byte "+mismatch.string()+": expected "+data_dump(first)+", got "+data_dump(second));
+    }
+    private:
+    mismatch(limit is int) is int {for (0..limit)->index{if actual[index]!=expected[index]{return index;}}limit;}
+}
+object SequenceEquals<T> does Checking {
+    has actual,expected is Sequencing<T>;has window is CheckWindow;
+    has printing is @CheckItemRendering<T>;
+    SequenceEquals(actual is Sequencing<T>,expected is Sequencing<T>){self.actual=actual;self.expected=expected;window=CheckWindow(8);printing=[];}
+    SequenceEquals(actual is Sequencing<T>,expected is Sequencing<T>,context is int){self.actual=actual;self.expected=expected;window=CheckWindow(context);printing=[];}
+    SequenceEquals(actual is Sequencing<T>,expected is Sequencing<T>,context is int,rendering is (T) is string){self.actual=actual;self.expected=expected;window=CheckWindow(context);printing=[CheckItemRendering(rendering)];}
+    check() is void {
+        CheckContext().verify();let left=actual.size();let right=expected.size();
+        confirm left>=0 && right>=0 && left<=1048576 && right<=1048576 else throw InvalidCheck("sequence size");
+        let limit=if left<right {left;}else{right;};
+        for (0..limit)->index {let first=actual.item(index);let second=expected.item(index);if first!=second{self.difference(index,left,right,[first],[second]);return;}}
+        if left!=right{let empty is @T=[];self.difference(limit,left,right,empty,empty);}
+    }
+    private:
+    difference(index is int,left is int,right is int,known_actual is @T,known_expected is @T) is void{
+        let start=window.start(index);let first_stop=window.stop(index,left);let second_stop=window.stop(index,right);
+        let first is @string=(start..first_stop).map()->at{if printing.size()==0{"item "+at.string();}else{CheckValueText(printing[0].string(if at==index && known_actual.size()==1{known_actual[0];}else{actual.item(at);})).string();}};
+        let second is @string=(start..second_stop).map()->at{if printing.size()==0{"item "+at.string();}else{CheckValueText(printing[0].string(if at==index && known_expected.size()==1{known_expected[0];}else{expected.item(at);})).string();}};
+        test.fail(CheckMessageText("sequence differs at item "+index.string()+": lengths "+left.string()+" and "+right.string()+"; window starts at "+start.string()+"; expected ["+second.join(", ")+"], got ["+first.join(", ")+"]").string());
+    }
+}
+object CheckItemRendering<T> {has rendering is (T) is string;CheckItemRendering(rendering is (T) is string){self.rendering=rendering;}string(value is T) is string{rendering(value);}}
+object MatchingRegex does Checking {
+    has origin is string;has pattern is Regex;
+    MatchingRegex(origin is string,pattern is Regex){self.origin=origin;self.pattern=pattern;}
+    check() is void {CheckContext().verify();if !RegexMatches(origin,pattern).found(){test.fail("text does not match regex "+data_dump(pattern.expression()));}}
+}
+object Eventually does AsyncChecking {
+    has condition is () is bool;has clock is Timing;has timeout,interval is Duration;
+    Eventually(condition is () is bool,clock is Timing,timeout is Duration,interval is Duration){
+        confirm timeout.seconds()>=0.rat() && interval.seconds()>0.rat() else throw InvalidCheck("timeout must be nonnegative and interval positive");
+        self.condition=condition;self.clock=clock;self.timeout=timeout;self.interval=interval;
+    }
+    async check() is void {
+        CheckContext().verify();let deadline=clock.monotonic_instant().plus(timeout);
+        loop {
+            if condition(){return;}let now=clock.monotonic_instant();
+            if now.order(deadline)!=Order.less{test.fail("eventually timed out");return;}
+            let remaining=deadline.minus(now);await clock.wait(if interval.order(remaining)==Order.less{interval;}else{remaining;});
+        }
+    }
+}
+object AsyncEventually does AsyncChecking {
+    has condition is async () is bool;has clock is Timing;has timeout,interval is Duration;
+    AsyncEventually(condition is async () is bool,clock is Timing,timeout is Duration,interval is Duration){
+        confirm timeout.seconds()>=0.rat() && interval.seconds()>0.rat() else throw InvalidCheck("timeout must be nonnegative and interval positive");
+        self.condition=condition;self.clock=clock;self.timeout=timeout;self.interval=interval;
+    }
+    async check() is void {
+        CheckContext().verify();let deadline=clock.monotonic_instant().plus(timeout);
+        loop {
+            if await condition(){return;}let now=clock.monotonic_instant();
+            if now.order(deadline)!=Order.less{test.fail("eventually timed out");return;}
+            let remaining=deadline.minus(now);await clock.wait(if interval.order(remaining)==Order.less{interval;}else{remaining;});
+        }
+    }
+}
+
+test "reusable comparisons pass through the current test context" {TextEquals("same","same").check();BytesEqual([byte(0)],[byte(0)]).check();CloseTo(1.0,1.001,0.01,0.0).check();}

@@ -1,0 +1,418 @@
+{
+  "reference": {
+    "repository": "https://github.com/ash/rakupp",
+    "commit": "32d904e314274191008910aa1ef402cdf5acb888",
+    "files": [
+      "examples/README.md",
+      "examples/anagrams.raku",
+      "examples/brainfuck.raku",
+      "examples/calculator.raku",
+      "examples/cipher.raku",
+      "examples/dirstat/dirstat.raku",
+      "examples/dirstat/lib/DirStat/Scan.rakumod",
+      "examples/dirstat/lib/DirStat/Tally.rakumod",
+      "examples/echo-server.raku",
+      "examples/factorize.raku",
+      "examples/fibonacci.raku",
+      "examples/hanoi.raku",
+      "examples/json.raku",
+      "examples/life.raku",
+      "examples/lint/README.md",
+      "examples/lint/clean.raku",
+      "examples/lint/constant-condition.raku",
+      "examples/lint/exact-power.raku",
+      "examples/lint/kitchen-sink.raku",
+      "examples/lint/new-arg-matches-no-attribute.raku",
+      "examples/lint/numeric-cmp-of-string.raku",
+      "examples/lint/redeclaration.raku",
+      "examples/lint/redundant-return.raku",
+      "examples/lint/self-assignment.raku",
+      "examples/lint/unreachable-code.raku",
+      "examples/lint/unused-parameter.raku",
+      "examples/lint/unused-routine.raku",
+      "examples/lint/unused-variable.raku",
+      "examples/mandel.raku",
+      "examples/matrix.raku",
+      "examples/modules/cro/.cro.yml",
+      "examples/modules/cro/META6.json",
+      "examples/modules/cro/README.md",
+      "examples/modules/cro/service.raku",
+      "examples/modules/cro/use-cases/README.md",
+      "examples/modules/cro/use-cases/check.raku",
+      "examples/modules/cro/use-cases/expected/forms.out",
+      "examples/modules/cro/use-cases/expected/rest-api.out",
+      "examples/modules/cro/use-cases/expected/web-features.out",
+      "examples/modules/cro/use-cases/expected/websocket-chat.out",
+      "examples/modules/cro/use-cases/forms.raku",
+      "examples/modules/cro/use-cases/rest-api.raku",
+      "examples/modules/cro/use-cases/static/site.css",
+      "examples/modules/cro/use-cases/templates/page.crotmp",
+      "examples/modules/cro/use-cases/web-features.raku",
+      "examples/modules/cro/use-cases/websocket-chat.raku",
+      "examples/nqueens.raku",
+      "examples/parallel.raku",
+      "examples/pascal.raku",
+      "examples/primes.raku",
+      "examples/quicksort.raku",
+      "examples/quine.raku",
+      "examples/rationals.raku",
+      "examples/roman.raku",
+      "examples/rpn.raku",
+      "examples/sierpinski.raku",
+      "examples/sleep-sort.raku",
+      "examples/wordcount.raku"
+    ]
+  },
+  "examples": [
+    {
+      "id": "anagrams",
+      "title": "Классы анаграмм",
+      "task": "Сгруппировать слова по набору букв и стабильно упорядочить группы.",
+      "features": "Sorted, OrderedSet, filter и предметный порядок Comparing.",
+      "entry": "anagrams.ok",
+      "source": "examples/anagrams.raku",
+      "mode": "run"
+    },
+    {
+      "id": "analysis/discarded-successor",
+      "entry": "analysis/discarded-successor.ok",
+      "title": "Потерянный результат действия-преемника",
+      "mode": "reject",
+      "error": "Successor action result must be used",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/duplicate-action",
+      "entry": "analysis/duplicate-action.ok",
+      "title": "Два действия с одинаковыми параметрами",
+      "mode": "reject",
+      "error": "overloads must declare the same return type",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/duplicate-field",
+      "entry": "analysis/duplicate-field.ok",
+      "title": "Повторное объявление поля",
+      "mode": "reject",
+      "error": "already declared",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/duplicate-object",
+      "entry": "analysis/duplicate-object.ok",
+      "title": "Повторное объявление объекта",
+      "mode": "reject",
+      "error": "already declared",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/duplicate-role",
+      "entry": "analysis/duplicate-role.ok",
+      "title": "Повторное объявление роли",
+      "mode": "reject",
+      "error": "already declared",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/generic-arity",
+      "entry": "analysis/generic-arity.ok",
+      "title": "Неверное число аргументов generic-типа",
+      "mode": "reject",
+      "error": "expects 1 type argument",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/invalid-main",
+      "entry": "analysis/invalid-main.ok",
+      "title": "Неверная сигнатура точки входа",
+      "mode": "reject",
+      "error": "Entry point",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/role-conformance",
+      "entry": "analysis/role-conformance.ok",
+      "title": "Неполная реализация роли",
+      "mode": "reject",
+      "error": "does not implement action",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/role-signature",
+      "entry": "analysis/role-signature.ok",
+      "title": "Несовместимая сигнатура реализации роли",
+      "mode": "reject",
+      "error": "must return int",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "analysis/unknown-type",
+      "entry": "analysis/unknown-type.ok",
+      "title": "Необъявленный тип поля",
+      "mode": "reject",
+      "error": "undeclared type",
+      "source": "examples/lint/"
+    },
+    {
+      "id": "brainfuck",
+      "title": "Интерпретатор Brainfuck",
+      "task": "Выполнить восемь команд на байтовой ленте и напечатать Hello World.",
+      "features": "снимок машины, таблица переходов, wrap байта, ограничение числа шагов.",
+      "entry": "brainfuck.ok",
+      "source": "examples/brainfuck.raku",
+      "mode": "run"
+    },
+    {
+      "id": "calculator",
+      "title": "Калькулятор с приоритетами и скобками",
+      "task": "Разобрать выражение с +, -, *, / и унарными знаками.",
+      "features": "recursive descent; результат разбора содержит значение rat и новую позицию.",
+      "entry": "calculator.ok",
+      "source": "examples/calculator.raku",
+      "mode": "run"
+    },
+    {
+      "id": "cipher",
+      "title": "ROT13, Цезарь и Виженер",
+      "task": "Преобразовать латинский текст и проверить обратимость трёх шифров.",
+      "features": "неизменяемый курсор ключа, явная обработка регистра и знаков.",
+      "entry": "cipher.ok",
+      "source": "examples/cipher.raku",
+      "mode": "run"
+    },
+    {
+      "id": "dirstat/dirstat",
+      "title": "Что занимает место в каталоге",
+      "task": "Посчитать число файлов и байты по расширениям.",
+      "features": "модули Scan/Tally, снимки метаданных, строгие аргументы и JSON.",
+      "entry": "dirstat/dirstat.ok",
+      "source": "examples/dirstat/dirstat.raku",
+      "mode": "run"
+    },
+    {
+      "id": "echo-server",
+      "title": "TCP echo-сервер и клиент",
+      "task": "Обменяться сообщениями по loopback и дождаться остановки сервера.",
+      "features": "владеющий listener, порт 0, ограниченное чтение и явный протокол строк.",
+      "entry": "echo-server.ok",
+      "source": "examples/echo-server.raku",
+      "mode": "network"
+    },
+    {
+      "id": "factorize",
+      "title": "Разложение на множители, НОД и НОК",
+      "task": "Разложить целые числа, посчитать делители и сверить алгоритм Евклида.",
+      "features": "переход состояния факторизации, Frequencies и BigInt gcd/lcm.",
+      "entry": "factorize.ok",
+      "source": "examples/factorize.raku",
+      "mode": "run"
+    },
+    {
+      "id": "fibonacci",
+      "title": "Фибоначчи: последовательность и быстрое удвоение",
+      "task": "Получить большие числа Фибоначчи и сверить два алгоритма.",
+      "features": "BigInt, рекурсивная пара и persistent-переход.",
+      "entry": "fibonacci.ok",
+      "source": "examples/fibonacci.raku",
+      "mode": "run"
+    },
+    {
+      "id": "hanoi",
+      "title": "Ханойская башня",
+      "task": "Перенести четыре диска и проверить минимальное число ходов.",
+      "features": "рекурсия возвращает план; move — отдельное неизменяемое значение.",
+      "entry": "hanoi.ok",
+      "source": "examples/hanoi.raku",
+      "mode": "run"
+    },
+    {
+      "id": "json",
+      "title": "JSON как типизированное дерево",
+      "task": "Разобрать данные космической миссии, пройти дерево и сохранить точное число.",
+      "features": "ParsedJson, JsonView, JsonKind, Decimal; обход объектов и массивов.",
+      "entry": "json.ok",
+      "source": "examples/json.raku",
+      "mode": "run"
+    },
+    {
+      "id": "life",
+      "title": "Жизнь Конвея на торе",
+      "task": "Проследить эволюцию клеточного поля с замкнутыми границами.",
+      "features": "неизменяемая двумерная сетка, новый снимок на каждом шаге.",
+      "entry": "life.ok",
+      "source": "examples/life.raku",
+      "mode": "run"
+    },
+    {
+      "id": "mandel",
+      "title": "Множество Мандельброта в ASCII",
+      "task": "Построить изображение комплексной плоскости из текстовых символов.",
+      "features": "float, неизменяемая орбита и ограничение итераций.",
+      "entry": "mandel.ok",
+      "source": "examples/mandel.raku",
+      "mode": "run"
+    },
+    {
+      "id": "matrix",
+      "title": "Матрицы без изменения ячеек",
+      "task": "Умножить матрицы, транспонировать и проверить определитель.",
+      "features": "вложенные map/reduce, проверка размеров, чистые значения.",
+      "entry": "matrix.ok",
+      "source": "examples/matrix.raku",
+      "mode": "run"
+    },
+    {
+      "id": "modules/web/forms",
+      "title": "Формы браузера и загрузка файла",
+      "task": "Принять urlencoded, multipart-поля и файловую часть.",
+      "features": "WebRequest.form, ParsedMultipartForm, FormText, ограничения тела.",
+      "entry": "modules/web/forms.ok",
+      "source": "examples/modules/cro/use-cases/forms.raku",
+      "mode": "network"
+    },
+    {
+      "id": "modules/web/rest-api",
+      "title": "REST API: книги и HTTP-семантика",
+      "task": "Пройти создание, чтение, удаление, пути, query, cookies, redirect и ошибки.",
+      "features": "SqliteMemory за узким DbExecuting; Created/Redirect/Exception и HTTP-клиент.",
+      "entry": "modules/web/rest-api.ok",
+      "source": "examples/modules/cro/use-cases/rest-api.raku",
+      "mode": "network"
+    },
+    {
+      "id": "modules/web/service",
+      "title": "Минимальный HTTP-сервис",
+      "task": "Показать корневой маршрут и параметр пути /greet/:name.",
+      "features": "WebRoutes, Text, native HTTP-клиент и явное владение сервером.",
+      "entry": "modules/web/service.ok",
+      "source": "examples/modules/cro/service.raku",
+      "mode": "network"
+    },
+    {
+      "id": "modules/web/web-features",
+      "title": "Middleware, статика, шаблоны, streaming и SSE",
+      "task": "Выполнить запросы к составному приложению и передать двоичные данные.",
+      "features": "Scope, Handling-обёртка, FileRoot, HtmlTemplate, каналы потоков и AllFutures.",
+      "entry": "modules/web/web-features.ok",
+      "source": "examples/modules/cro/use-cases/web-features.raku",
+      "mode": "network"
+    },
+    {
+      "id": "modules/web/websocket-chat",
+      "title": "WebSocket: JSON-комната и двоичное эхо",
+      "task": "Подключить трёх клиентов, проверить общую нумерацию событий и выход участника.",
+      "features": "актор с immutable RoomState, same-origin Upgrade, FutureGroup и native WebSocket-клиенты.",
+      "entry": "modules/web/websocket-chat.ok",
+      "source": "examples/modules/cro/use-cases/websocket-chat.raku",
+      "mode": "network"
+    },
+    {
+      "id": "nqueens",
+      "title": "Восемь ферзей",
+      "task": "Найти все расстановки без общих вертикалей и диагоналей.",
+      "features": "backtracking, отдельные неизменяемые ветви поиска, reduce.",
+      "entry": "nqueens.ok",
+      "source": "examples/nqueens.raku",
+      "mode": "run"
+    },
+    {
+      "id": "parallel",
+      "title": "Параллельный подсчёт простых чисел",
+      "task": "Распределить диапазон между процессами и получить квадраты через канал.",
+      "features": "ParallelMapped с ограничением workers, упорядоченный результат, Channel.",
+      "entry": "parallel.ok",
+      "source": "examples/parallel.raku",
+      "mode": "run"
+    },
+    {
+      "id": "pascal",
+      "title": "Треугольник Паскаля",
+      "task": "Построить двенадцать строк и проверить биномиальные коэффициенты.",
+      "features": "новая строка через map; преемник хранит следующую версию треугольника.",
+      "entry": "pascal.ok",
+      "source": "examples/pascal.raku",
+      "mode": "run"
+    },
+    {
+      "id": "primes",
+      "title": "Простые числа и большие факториалы",
+      "task": "Найти простые числа, факториалы и времена остановки Коллатца.",
+      "features": "проверка делителей, BigInt, fold и преемник для последовательности.",
+      "entry": "primes.ok",
+      "source": "examples/primes.raku",
+      "mode": "run"
+    },
+    {
+      "id": "quicksort",
+      "title": "Три способа проверить сортировку",
+      "task": "Отсортировать числа, сохранив исходную последовательность.",
+      "features": "рекурсия, filter, map, Sorted и неизменяемые части списка.",
+      "entry": "quicksort.ok",
+      "source": "examples/quicksort.raku",
+      "mode": "run"
+    },
+    {
+      "id": "quine",
+      "title": "Программа, печатающая саму себя",
+      "task": "Воспроизвести полный собственный исходник без чтения файлов.",
+      "features": "строковое самоприменение, JsonText, ASCII-маркер.",
+      "entry": "quine.ok",
+      "source": "examples/quine.raku",
+      "mode": "run"
+    },
+    {
+      "id": "rationals",
+      "title": "Точные дроби и цепная дробь π",
+      "task": "Сложить дроби без потери точности и построить приближения π.",
+      "features": "rat, reduce, точные числитель и знаменатель.",
+      "entry": "rationals.ok",
+      "source": "examples/rationals.raku",
+      "mode": "run"
+    },
+    {
+      "id": "roman",
+      "title": "Римские числа туда и обратно",
+      "task": "Преобразовать числа 1..3999 и отвергнуть неканоническую запись.",
+      "features": "таблица правил, fold, предметный инвариант.",
+      "entry": "roman.ok",
+      "source": "examples/roman.raku",
+      "mode": "run"
+    },
+    {
+      "id": "rpn",
+      "title": "Постфиксный калькулятор",
+      "task": "Вычислить выражение стековой машины с точными дробями.",
+      "features": "persistent-стек возвращает следующую версию; ошибки проверяются до обращения к вершине.",
+      "entry": "rpn.ok",
+      "source": "examples/rpn.raku",
+      "mode": "run"
+    },
+    {
+      "id": "sierpinski",
+      "title": "Треугольник Серпинского",
+      "task": "Нарисовать фрактал клеточным автоматом Rule 90.",
+      "features": "поле — значение; шаг вычисляет новую строку через map и XOR.",
+      "entry": "sierpinski.ok",
+      "source": "examples/sierpinski.raku",
+      "mode": "run"
+    },
+    {
+      "id": "sleep-sort",
+      "title": "Sleep sort и общий старт задач",
+      "task": "Получить числа в порядке срабатывания таймеров.",
+      "features": "Event как стартовый барьер, FutureGroup и типизированный канал.",
+      "entry": "sleep-sort.ok",
+      "source": "examples/sleep-sort.raku",
+      "mode": "run"
+    },
+    {
+      "id": "wordcount",
+      "title": "Частоты слов и текстовая диаграмма",
+      "task": "Посчитать слова в тексте и вывести десять самых частых.",
+      "features": "RegexMatches, Frequencies, Comparing и стабильный порядок.",
+      "entry": "wordcount.ok",
+      "source": "examples/wordcount.raku",
+      "mode": "run"
+    }
+  ]
+}

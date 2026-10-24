@@ -1,0 +1,56 @@
+module regex/range v1.0.0;
+
+// RegexRange describes a half-open interval [start, end) inside regex input.
+// Every position counts Unicode scalar values from zero, never UTF-8 bytes or
+// UTF-16 code units. The end position is excluded, so length is end - start.
+//
+// A non-empty match over scalar positions 2, 3 and 4:
+//
+//     let range = RegexRange(start: 2, end: 5);
+//     range.start();  // 2
+//     range.end();    // 5
+//     range.length(); // 3
+//
+// Empty matches have equal boundaries and are valid:
+//
+//     RegexRange(start: 4, end: 4).length(); // 0
+//
+// For example, in "a😀я" the range [1, 3) covers two Unicode scalar values.
+// Their encoded byte widths do not affect either boundary.
+
+object RegexRange {
+    has first is int;
+    has limit is int;
+
+    RegexRange(start is int, end is int) {
+        confirm start >= 0 else throw InvalidRegexRange(start, end);
+        confirm end >= start else throw InvalidRegexRange(start, end);
+        first = start;
+        limit = end;
+    }
+
+    start() is int { first; }
+
+    end() is int { limit; }
+
+    length() is int { limit - first; }
+}
+
+object InvalidRegexRange does Error {
+    has first is int;
+    has limit is int;
+
+    InvalidRegexRange(start is int, end is int) {
+        first = start;
+        limit = end;
+    }
+
+    start() is int { first; }
+
+    end() is int { limit; }
+
+    #projected
+    text() is string {
+        "invalid regex range [" + first.string() + ", " + limit.string() + ")";
+    }
+}

@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.csv.rows-and-round-trip",
+  "title": "CSV parsing, quoting and round trip",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.CSV",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - quoted field with delimiter\nok 2 - doubled quote\nok 3 - missing final terminator\nok 4 - empty input has no rows\nok 5 - terminator alone is one empty field\nok 6 - round trip\nok 7 - unterminated quote at EOF\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/csv.ok",
+    "RFC 4180"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 4180 rules as documented in std/csv: comma/double-quote/CRLF defaults, doubling is the only quote escape, a missing final terminator is accepted, empty input has zero rows, a lone terminator is one empty field; InvalidCsv offsets include EOF at length()."
+  },
+  "status": "mandatory"
+}

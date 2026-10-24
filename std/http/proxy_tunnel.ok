@@ -1,0 +1,32 @@
+module http/proxy_tunnel v1.0.0;
+import "http/proxy_request" take HttpConnectRequest;
+import "http/proxy_policy" take ProxyConnectRejected;
+import "http/http1_message_writing" take Http1RequestWriting;
+import "http/http1_reading" take Http1ResponseHeadReading,Http1HeadRead;
+import "http/http1_head" take Http1ResponseHead,Http1Limits;
+import "http/header" take Header;
+import "http/message" take InvalidHttpMessage;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "url/value" take Url;
+import "async/scope" take FutureGroup;
+import "http/media_type" take HttpMediaPosition;
+// Borrowed raw halves. Reading one byte at a time avoids consuming a tunnel
+// prefix that the native TLS handshake must receive from the same TCP stream.
+object HttpProxyTunnel {
+    has input is AsyncReading;has output is AsyncWriting;has target is Url;has fields is @Header;has limits is Http1Limits;
+    HttpProxyTunnel(input is AsyncReading,output is AsyncWriting,target is Url,fields is @Header){self.input=input;self.output=output;self.target=target;self.fields=fields;limits=Http1Limits();}
+    HttpProxyTunnel(input is AsyncReading,output is AsyncWriting,target is Url,fields is @Header,limits is Http1Limits){self.input=input;self.output=output;self.target=target;self.fields=fields;self.limits=limits;}
+    async ready() is bool{
+        let request=HttpConnectRequest(target,fields).request();let writing is FutureGroup<AsyncWriting>=FutureGroup();let write_cleanup=HttpProxySettlement(writing);defer await write_cleanup.close();
+        let sending=Http1RequestWriting(output,request,limits).result();writing.start(sending);await sending;
+        let information=HttpMediaPosition(0,0);
+        loop{
+            let group is FutureGroup<Http1HeadRead<Http1ResponseHead>>=FutureGroup();let cleanup=HttpProxySettlement(group);defer await cleanup.close();
+            let pending=Http1ResponseHeadReading(input,[],limits,1).result();group.start(pending);let received=await pending;let status=received.head().status().code();
+            if status>=200 && status<300{return true;}
+            if status<200 && status!=101{confirm information.slots()<16 else throw InvalidHttpMessage("proxy informational response limit");information=information.separator(0);next;}
+            throw ProxyConnectRejected(status);
+        }
+    }
+}
+object HttpProxySettlement<T>{has group is FutureGroup<T>;HttpProxySettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

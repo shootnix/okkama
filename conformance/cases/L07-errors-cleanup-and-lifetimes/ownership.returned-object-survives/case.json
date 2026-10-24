@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.ownership.returned-object-survives",
+  "title": "returned objects outlive the callee scope",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "made\ncaller has made-res\ndestroy made-res\nafter\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: returned objects stay alive for the caller and are destroyed at the caller's scope exit."
+  },
+  "status": "mandatory"
+}

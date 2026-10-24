@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "fs/file" take File, FileMode, FileEntry, FileContent;
+import "fs/path" take Path;
+import "encoding/utf" take Utf8Decoded, InvalidUtf8;
+import "json/parse" take ParsedJson, InvalidJson;
+import "json/read" take JsonView;
+import "io/decorators" take ByteSnapshot;
+
+main() is int {
+    let out = Stdout();
+    {
+        let f = File(mode: FileMode.writing, path: Path("blob.bin"), binary: true);
+        defer f.close();
+        f.binary().write(ByteSnapshot([byte(104), byte(105), byte(255), byte(10)]));
+    }
+    let raw = FileContent(origin: FileEntry(path: Path("blob.bin"))).bytes();
+    out.writeln(raw.size().string());
+    let decoded = try { Utf8Decoded(origin: raw).string(); } catch e is InvalidUtf8 { "invalid utf-8 at " + e.offset().string(); };
+    out.writeln(decoded);
+    let deep = try {
+        JsonView(origin: ParsedJson(origin: "[[[1]]]", maximum_depth: 2)).items().size().string();
+    } catch e is InvalidJson {
+        "too deep";
+    };
+    out.writeln(deep);
+    0;
+}

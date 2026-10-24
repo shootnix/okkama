@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.projected.directive",
+  "title": "#projected and #projected(alias) prefixes",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.PROJECTED-DIRECTIVE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "OBJ.PROJECTIONS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "42\nn=5\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.3: `#projected` registers the action name as prefix; `#projected(alias)` registers the alias; `p Obj(args)` = Obj(args).action()."
+  },
+  "status": "mandatory"
+}

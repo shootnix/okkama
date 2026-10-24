@@ -1,0 +1,23 @@
+// Связать потоковый codec с бюджетом
+//
+// Подставить потоковый кодек в обработку данных: Compressing, Decompressing и DecompressionBudget описывают взаимодействие.
+//
+// Запуск: ./examples/cookbook/run lab example-compression-state
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-compression-state
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "compression/state" take CompressionOutput, DecompressionBudget;
+import "encoding/hex" take HexEncoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let budget = DecompressionBudget(3).spent(3);
+    let output = CompressionOutput([byte(1), byte(2), byte(255)]);
+    Stdout().writeln(HexEncoded(output.bytes(2)).string());
+    Stdout().writeln(HexEncoded(output.bytes(2)).string());
+    Stdout().writeln(budget.remaining().string());
+    output.close();
+    0;
+}

@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+object Bucket<T> {
+    has values is @T;
+    Bucket(:values);
+    size() is int { values.size(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let bucket is Bucket<int> = Bucket(values: []);
+    out.writeln(bucket.size().string());
+    let boxed is Box<@int> = Box(value: []);
+    out.writeln(boxed.get().size().string());
+    0;
+}

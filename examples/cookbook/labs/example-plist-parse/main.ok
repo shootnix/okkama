@@ -1,0 +1,24 @@
+// Импортировать настройки property list
+//
+// Прочитать XML или binary plist: ParsedPlist получает байты и возвращает типизированное дерево.
+//
+// Запуск: ./examples/cookbook/run lab example-plist-parse
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-plist-parse
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "plist/parse" take ParsedPlist;
+import "plist/value" take PlistKind;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+main() is int {
+    let source="<plist version=\"1.0\"><dict><key>enabled</key><true/></dict></plist>";
+    let xml=ParsedPlist(Utf8Encoded(source).bytes()).value();
+    confirm xml.kind()==PlistKind.dictionary_value;
+    Stdout().writeln("XML dictionary parsed");
+    let binary=ParsedPlist([byte(98),byte(112),byte(108),byte(105),byte(115),byte(116),byte(48),byte(48),byte(9),byte(8),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(1),byte(1),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(1),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(9)]).value();
+    confirm binary.kind()==PlistKind.boolean_value;
+    Stdout().writeln("binary boolean parsed");
+    0;
+}

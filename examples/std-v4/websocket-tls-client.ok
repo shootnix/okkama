@@ -1,0 +1,32 @@
+module app v1.0.0;
+import "http/websocket_client" take WebSocketConnecting,WebSocketPolicy;
+import "http/websocket" take WebSocketLimits,TextWebSocketMessage;
+import "http/header" take Headers;
+import "fs/file" take File,FileMode;
+import "fs/path" take Path;
+import "crypto/x509/certificate" take Certificate;
+import "net/endpoint" take HostName;
+import "net/ip" take IpAddress;
+import "collections/set" take Set,OrderedSet;
+import "http/endpoint" take AllEndpoints;
+import "url/value" take ParsedUrl;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/trust" take TrustedCertificates;
+import "os/environment" take Environment;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+// Explicit local TLS trust and deterministic fixture resolution. The URL host
+// remains the certificate reference identity and SNI, not the mapped IP.
+async main() is int{
+    let url=ParsedUrl(Environment().variable("OKKAMA_WEBSOCKET_URL")).value();let clock=SystemClock();
+    let policy=WebSocketPolicy(WebSocketLimits(),Duration(10.rat(),DurationUnit.second),Duration(2.rat(),DurationUnit.second),AllEndpoints());
+    let roots_file=File(mode:FileMode.reading,path:Path(Environment().variable("OKKAMA_TLS_ROOT")),binary:true);defer roots_file.close();
+    let roots=TrustedCertificates([Certificate(roots_file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_3]);let tls=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let resolver=FixedResolution([HostAddresses(HostName("example.test"),[IpAddress("127.0.0.1")]),HostAddresses(HostName("wrong.test"),[IpAddress("127.0.0.1")])]);
+    let connecting=WebSocketConnecting(url,[],Headers([]),resolver,tls,policy,clock);
+    let connection=await connecting.connection();let message=await connection.message();confirm message.text()=="Hi";
+    await connection.send(TextWebSocketMessage("bye"));await connection.close(1000,"done");confirm connection.closed();Stdout().writeln("WebSocket passed");0;
+}

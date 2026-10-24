@@ -1,0 +1,8 @@
+module app v1.0.0;
+import "http/media_type" take HttpMediaType;
+import "io/stdout" take Stdout;
+main() is int {
+    let type=HttpMediaType("Text/PLAIN; format=flowed; Charset=\"UTF-8\"");
+    Stdout().writeln(type.string());Stdout().writeln(type.parameters().first("charset"));
+    0;
+}

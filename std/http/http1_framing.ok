@@ -1,0 +1,124 @@
+module http/http1_framing v1.0.0;
+import "http/http1_head" take Http1RequestHead,Http1ResponseHead,Http1Limits,Http1LimitExceeded,ParsedHttp1RequestHead;
+import "http/message" take InvalidHttpMessage;
+import "http/header" take Headers,Header,HeaderName,HttpAsciiLowercase;
+import "http/method" take Method,InvalidMethod;
+import "http/version" take HttpVersion;
+import "http/body" take UnknownBodyLength;
+import "numbers/bigint" take BigInt,InvalidBigInt;
+import "compare" take Order;
+
+enum Http1BodyKind=(empty,fixed,chunked,close_delimited,tunnel,upgrade);
+// Immutable decision only. Eligibility requires actual clean body completion;
+// this value neither reads bytes nor grants a connection lease.
+object Http1BodyPlan {
+    has kind is Http1BodyKind;has count is BigInt;has reusable is bool;
+    Http1BodyPlan(kind is Http1BodyKind,count is BigInt,reusable is bool){
+        confirm count.sign()>=0 else throw InvalidHttpMessage("negative body plan length");
+        confirm kind==Http1BodyKind.fixed || count.sign()==0 else throw InvalidHttpMessage("nonfixed body plan length");
+        self.kind=kind;self.count=count;
+        self.reusable=reusable && kind!=Http1BodyKind.close_delimited && kind!=Http1BodyKind.tunnel && kind!=Http1BodyKind.upgrade;
+    }
+    kind() is Http1BodyKind{kind;}
+    length() is BigInt{confirm kind==Http1BodyKind.empty || kind==Http1BodyKind.fixed else throw UnknownBodyLength();count;}
+    reuse_after_eof() is bool{reusable;}
+}
+object Http1RequestFraming {
+    has head is Http1RequestHead;has limits is Http1Limits;
+    Http1RequestFraming(head is Http1RequestHead){self.head=head;limits=Http1Limits();}
+    Http1RequestFraming(head is Http1RequestHead,limits is Http1Limits){self.head=head;self.limits=limits;}
+    plan() is Http1BodyPlan {
+        let fields=Http1FramingFields(head.headers(),head.version(),limits);
+        let reuse=fields.reusable();let length=fields.length();let codings=fields.codings();
+        confirm length.size()==0 || codings.size()==0 else throw InvalidHttpMessage("Transfer-Encoding with Content-Length");
+        if codings.size()>0 {fields.supported(codings);return Http1BodyPlan(Http1BodyKind.chunked,BigInt("0"),reuse);}
+        if length.size()>0 {return fields.fixed(length[0],reuse);}
+        Http1BodyPlan(Http1BodyKind.empty,BigInt("0"),reuse);
+    }
+}
+object Http1ResponseFraming {
+    has head is Http1ResponseHead;has method is Method;has limits is Http1Limits;
+    Http1ResponseFraming(head is Http1ResponseHead,method is Method){self.head=head;self.method=method;limits=Http1Limits();}
+    Http1ResponseFraming(head is Http1ResponseHead,method is Method,limits is Http1Limits){self.head=head;self.method=method;self.limits=limits;}
+    plan() is Http1BodyPlan {
+        let status=head.status().code();
+        if method.string()=="CONNECT" && status>=200 && status<300 {return Http1BodyPlan(Http1BodyKind.tunnel,BigInt("0"),false);}
+        let fields=Http1FramingFields(head.headers(),head.version(),limits);
+        let length=fields.length();let codings=fields.codings();
+        confirm length.size()==0 || codings.size()==0 else throw InvalidHttpMessage("Transfer-Encoding with Content-Length");
+        if status<200 || status==204 {
+            confirm length.size()==0 && codings.size()==0 else throw InvalidHttpMessage("framing field on body-forbidden status");
+            if status==101 {return Http1BodyPlan(Http1BodyKind.upgrade,BigInt("0"),false);}
+            return Http1BodyPlan(Http1BodyKind.empty,BigInt("0"),fields.reusable());
+        }
+        if method.string()=="HEAD" || status==304 {return Http1BodyPlan(Http1BodyKind.empty,BigInt("0"),fields.reusable());}
+        if codings.size()>0 {fields.supported(codings);return Http1BodyPlan(Http1BodyKind.chunked,BigInt("0"),fields.reusable());}
+        if length.size()>0 {return fields.fixed(length[0],fields.reusable());}
+        Http1BodyPlan(Http1BodyKind.close_delimited,BigInt("0"),false);
+    }
+}
+object Http1FramingFields {
+    has origin is Headers;has version is HttpVersion;has limits is Http1Limits;
+    Http1FramingFields(origin is Headers,version is HttpVersion,limits is Http1Limits) {
+        confirm version!=HttpVersion.http_2 else throw InvalidHttpMessage("HTTP1 body plan requires HTTP1 version");
+        let entries=origin.entries();confirm entries.size()<=limits.fields() else throw Http1LimitExceeded("fields");
+        let size=(0..entries.size()).reduce(0)->used,index {
+            let entry=entries.item(index);let width=entry.name().string().length()+entry.value().length()+3;
+            confirm width-2<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+            confirm width<=limits.head_bytes()-used else throw Http1LimitExceeded("head_bytes");used+width;
+        };
+        self.origin=origin;self.version=version;self.limits=limits;
+    }
+    list(name is string) is @string {
+        let values=origin.values(HeaderName(name));
+        if values.size()==0 {let empty is @string=[];return empty;}
+        let count=(0..values.size()).reduce(0)->used,index {
+            let amount=values.item(index).split(",").size();confirm amount<=16-used else throw Http1LimitExceeded("framing_items");used+amount;
+        };
+        let joined=(0..values.size()).reduce("")->all,index{if index==0 {values.item(index);}else{all+","+values.item(index);}};
+        let items=joined.split(",");
+        let clean is @string=items.map()->value {let part=Header(HeaderName(name),value).value();confirm part!="" else throw InvalidHttpMessage("empty framing list member");part;};clean;
+    }
+    length() is @BigInt {
+        let values=self.list("Content-Length");
+        if values.size()==0 {let empty is @BigInt=[];return empty;}
+        let original=values[0];confirm original.length()<=1024 else throw Http1LimitExceeded("length_digits");
+        confirm original.slice(0,1)!="-" else throw InvalidHttpMessage("unsigned Content-Length required");
+        let parsed=try{BigInt(original);}catch e is InvalidBigInt{throw InvalidHttpMessage("decimal Content-Length required");};
+        for values -> value {confirm value==original else throw InvalidHttpMessage("conflicting Content-Length lexemes");}
+        [parsed];
+    }
+    codings() is @string {
+        let values=self.list("Transfer-Encoding");
+        confirm values.size()==0 || version!=HttpVersion.http_1_0 else throw InvalidHttpMessage("Transfer-Encoding on HTTP1.0");
+        let canonical is @string=values.map()->value {
+            let token=try{Method(value).string();}catch e is InvalidMethod{throw InvalidHttpMessage("transfer coding token required");};
+            HttpAsciiLowercase(token).string();
+        };
+        for (0..canonical.size()) -> index {if canonical[index]=="chunked" {
+            confirm index==canonical.size()-1 else throw InvalidHttpMessage("chunked must occur once and last");
+        }}
+        canonical;
+    }
+    supported(codings is @string) is void {
+        confirm codings.size()>0 && codings[codings.size()-1]=="chunked" else throw InvalidHttpMessage("final chunked transfer coding required");
+        for codings -> coding {confirm coding=="chunked" else throw UnsupportedTransferCoding();}
+    }
+    fixed(length is BigInt,reuse is bool) is Http1BodyPlan {
+        confirm length.order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded("body_bytes");
+        Http1BodyPlan(Http1BodyKind.fixed,length,reuse);
+    }
+    reusable() is bool {
+        let values=self.list("Connection");let canonical is @string=values.map()->value {
+            let token=try{Method(value).string();}catch e is InvalidMethod{throw InvalidHttpMessage("Connection token required");};HttpAsciiLowercase(token).string();
+        };
+        let closing=canonical.reduce(false)->found,value{found || value=="close";};
+        let keeping=canonical.reduce(false)->found,value{found || value=="keep-alive";};
+        !closing && (version==HttpVersion.http_1_1 || keeping);
+    }
+}
+object UnsupportedTransferCoding does Error {UnsupportedTransferCoding();text() is string{"unsupported HTTP1 transfer coding";}}
+test "request body boundaries are decided before reading" {
+    let head=ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n").value();
+    let plan=Http1RequestFraming(head).plan();test.ok(plan.kind()==Http1BodyKind.fixed && plan.length().string()=="0");
+}

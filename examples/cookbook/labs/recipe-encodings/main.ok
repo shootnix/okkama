@@ -1,0 +1,27 @@
+// Перенести двоичный идентификатор в текст
+//
+// Пакет содержит двухбайтовое поле и байтовый идентификатор, который нужно передать текстом.
+//
+// Запуск: ./examples/cookbook/run lab recipe-encodings
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-encodings
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/encodings v1.0.0;
+import "encoding/binary" take IntegerBytes,IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+import "encoding/base32" take Base32Encoded,Base32Decoded;
+import "encoding/base85" take Base85Encoded,Base85Decoded,Base85Alphabet;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let packet = IntegerBytes(value: 513, size: 2, signedness: Signedness.unsigned, order: ByteOrder.big).bytes();
+    confirm packet == [2.byte(), 1.byte()];
+    confirm IntegerFromBytes(packet, Signedness.unsigned, ByteOrder.big).value() == 513;
+    let token = Base32Encoded(packet).string();
+    confirm Base32Decoded(token).bytes() == packet;
+    let compact = Base85Encoded(packet, Base85Alphabet.ascii85).string();
+    confirm Base85Decoded(compact, Base85Alphabet.ascii85).bytes() == packet;
+    Stdout().writeln(token);
+    0;
+}

@@ -1,0 +1,85 @@
+{
+  "claim": {
+    "counts": {
+      "UNSUPPORTED": 136
+    },
+    "environment": [
+      "macOS-26.5.2-arm64-arm-64bit"
+    ],
+    "gate_profile": "frontend",
+    "implementation": [
+      {
+        "config": "adapters/rust/adapter.json",
+        "config_sha256": "eeb3d43e08bc9c163954d51e84d61002d2275cde98d0499d1dc0fc8719443b61",
+        "info": {
+          "adapter": {
+            "name": "okkama-rust",
+            "version": "1"
+          },
+          "command": [
+            "python3",
+            "-I",
+            "/Volumes/SamsungSSD/stuff/okkama/conformance/adapters/rust/okkama_rust_adapter.py",
+            "--info"
+          ],
+          "configuration": {
+            "binary": "/Volumes/SamsungSSD/stuff/okkama/conformance/adapters/rust/.target/debug/okkama-rs",
+            "build_exit": 0,
+            "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+            "root": "/Volumes/SamsungSSD/stuff/okkama-rs",
+            "rust_sources": [
+              "src/lexer.rs",
+              "src/lib.rs",
+              "src/main.rs",
+              "src/token.rs"
+            ]
+          },
+          "implementation": "okkama-rs (Rust implementation, in development)",
+          "modes": [],
+          "protocol": "ocs-adapter/1",
+          "revision": {
+            "git_head": null,
+            "status_entries": 4
+          },
+          "unsupported_reason": "binary does not implement the ocs-adapter/1 capability query (`--ocs-capabilities` printed 'Hello, world!', exit 0); no parse/check/run/test contract is available"
+        },
+        "name": "okkama-rust",
+        "overrides": {}
+      }
+    ],
+    "language_contract": {
+      "document": "docs/okkama-spec-11072026.md",
+      "document_last_updated": "2026-10-18",
+      "grammar": "docs/okkama-grammar-1.0.md",
+      "name": "Okkama 1.0 implementation line",
+      "precedence_of_sources": "contracts/README.md",
+      "snapshot": "2026-07-11"
+    },
+    "mandatory_cases": 136,
+    "member_profiles": [
+      "frontend"
+    ],
+    "stdlib": [
+      {
+        "git": {
+          "dirty_paths": 0,
+          "git_head": "f1ad6d43097f761043b26507a8296bf9f59df87b"
+        },
+        "root": "/Volumes/SamsungSSD/stuff/okkama/std",
+        "tree": {
+          "files": 506,
+          "sha256": "350257eadeefcbdbdb05020b9102dbed7b9c7aa10ae33141d9f6e1525c97631f"
+        }
+      }
+    ],
+    "suite_tree_sha256": "3e23ac88e14dbaf59ac2ceee5d9db4339fa5bab7154b2286b38e18f7473c1df0",
+    "suite_version": "0.1.0"
+  },
+  "gate": "frontend",
+  "kind": "milestone",
+  "reasons": [
+    "mandatory cases: 0/136 PASS (136 UNSUPPORTED)"
+  ],
+  "schema": "ocs-gate/1",
+  "verdict": "NOT PASSED"
+}

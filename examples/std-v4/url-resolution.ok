@@ -1,0 +1,9 @@
+module app v1.0.0;
+import "url/value" take ParsedUrl, ParsedUrlReference;
+import "io/stdout" take Stdout;
+main() is int {
+    let base=ParsedUrl("https://BÜCHER.example/a/b?old").value();
+    Stdout().writeln(base.string());
+    Stdout().writeln(base.url(ParsedUrlReference("../c?new#section").value()).string());
+    0;
+}

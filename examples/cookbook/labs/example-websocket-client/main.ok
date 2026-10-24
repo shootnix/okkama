@@ -1,0 +1,30 @@
+// Получать события через WebSocket
+//
+// Подключить клиента к каналу обновлений: WebSocketConnecting открывает HTTP/1 Upgrade с явной политикой.
+//
+// Запуск: ./examples/cookbook/run lab example-websocket-client
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-websocket-client
+// Входы стенда, передаваемые через окружение: OKKAMA_WEBSOCKET_URL.
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/websocket_client" take WebSocketConnecting,WebSocketPolicy;
+import "http/websocket" take WebSocketLimits,TextWebSocketMessage;
+import "http/header" take Headers;
+import "http/endpoint" take AllEndpoints;
+import "url/value" take ParsedUrl;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "os/environment" take Environment;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+async main() is int{
+    let url=ParsedUrl(Environment().variable("OKKAMA_WEBSOCKET_URL")).value();let clock=SystemClock();
+    let policy=WebSocketPolicy(WebSocketLimits(),Duration(10.rat(),DurationUnit.second),Duration(2.rat(),DurationUnit.second),AllEndpoints());
+    let connecting=WebSocketConnecting(url,[],Headers([]),FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,clock);
+    let connection=await connecting.connection();let message=await connection.message();confirm message.text()=="Hi";
+    await connection.send(TextWebSocketMessage("bye"));await connection.close(1000,"done");confirm connection.closed();Stdout().writeln("WebSocket passed");0;
+}

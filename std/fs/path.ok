@@ -1,0 +1,142 @@
+module fs/path v1.0.0;
+
+import "compare" take Comparing, Order;
+import "runtime/fs" take
+    path_join,
+    path_parent,
+    path_child,
+    path_absolute;
+import "runtime/system" take system_platform;
+
+// Purely lexical paths for native and foreign path grammars.
+//
+// Path(text) interprets text using the current platform. Pass PathStyle only
+// when working with a path belonging to another platform:
+//
+//     let native = Path("var").child("log").child("app.log");
+//     let foreign = Path("C:\\Users\\alice", PathStyle.windows);
+//
+// JoinedPath is the portable application-facing join. It asks the runtime for
+// the current platform and never makes callers choose a separator:
+//
+//     let config = value JoinedPath("etc", "okkama", "config.toml");
+//
+// A later absolute part replaces everything accumulated before it. Joining,
+// parent lookup and absolute detection never consult the filesystem and do not
+// resolve symlinks or normalize `.` and `..`.
+
+enum PathStyle = (posix, windows);
+
+object Path does Comparing<Path> {
+    has origin is string;
+    has path_style is PathStyle;
+
+    Path(origin is string) {
+        confirm !origin.empty() else throw InvalidPath("path cannot be empty");
+        self.origin = origin;
+        path_style = value NativePathStyle();
+    }
+
+    Path(origin is string, style is PathStyle) {
+        confirm !origin.empty() else throw InvalidPath("path cannot be empty");
+        self.origin = origin;
+        path_style = style;
+    }
+
+    parent() is Path {
+        Path(
+            path_parent(origin, value PathStyleCode(origin: path_style)),
+            path_style,
+        );
+    }
+
+    child(part is string) is Path {
+        confirm !part.empty() else throw InvalidPath("path part cannot be empty");
+        Path(
+            path_child(
+                origin,
+                part,
+                value PathStyleCode(origin: path_style),
+            ),
+            path_style,
+        );
+    }
+
+    absolute() is bool {
+        path_absolute(origin, value PathStyleCode(origin: path_style));
+    }
+
+    order(other is Path) is Order {
+        origin.order(other.string());
+    }
+
+    string() is string {
+        origin;
+    }
+
+    // Expose the lexical grammar without probing the host filesystem.
+    style() is PathStyle { path_style; }
+
+}
+
+object JoinedPath {
+    has origin is @string;
+
+    JoinedPath(parts is ...string) {
+        let values is @string = parts...;
+        confirm values.size() > 0
+            else throw InvalidPath("path join requires at least one part");
+        for values -> part {
+            confirm !part.empty()
+                else throw InvalidPath("path join rejects empty parts");
+        }
+        origin = values;
+    }
+
+    #projected
+    value() is Path {
+        let style is PathStyle = value NativePathStyle();
+        Path(
+            path_join(origin, value PathStyleCode(origin: style)),
+            style,
+        );
+    }
+}
+
+object NativePathStyle {
+    NativePathStyle();
+
+    #projected
+    value() is PathStyle {
+        if system_platform() == "windows" {
+            PathStyle.windows;
+        }
+        else {
+            PathStyle.posix;
+        }
+    }
+}
+
+object PathStyleCode {
+    has origin is PathStyle;
+
+    PathStyleCode(:origin);
+
+    #projected
+    value() is int {
+        if origin == PathStyle.posix { 0; } else { 1; }
+    }
+}
+
+object InvalidPath does Error {
+    has message is string;
+
+    InvalidPath(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

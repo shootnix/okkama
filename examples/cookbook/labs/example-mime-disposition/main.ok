@@ -1,0 +1,19 @@
+// Задать имя файла во вложении
+//
+// Указать имя скачиваемого файла: ContentDisposition представляет inline либо attachment с параметрами.
+//
+// Запуск: ./examples/cookbook/run lab example-mime-disposition
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-mime-disposition
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mime/disposition" take ContentDisposition;
+import "mime/media_type" take MimeParameters, MimeParameter;
+import "io/stdout" take Stdout;
+main() is int {
+    let value=ContentDisposition("attachment",MimeParameters([MimeParameter("filename","отчёт.txt")]));
+    Stdout().writeln(value.string());
+    Stdout().writeln(ContentDisposition(value.string()).parameters().first("filename"));
+    0;
+}

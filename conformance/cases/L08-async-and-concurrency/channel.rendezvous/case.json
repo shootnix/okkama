@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.channel.rendezvous",
+  "title": "capacity zero is an unbuffered rendezvous",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.CHANNEL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "42 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/channel.ok",
+    "docs/okkama-spec-11072026.md#18.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async/channel documents capacity zero as an unbuffered rendezvous; spec 18.2 still says capacity must be positive (D-040, resolved by the active std module)."
+  },
+  "status": "mandatory",
+  "notes": "D-040"
+}

@@ -1,0 +1,177 @@
+module mail/mbox_store v1.0.0;
+
+import "mail/mbox" take MboxRecord, MboxArchive, ParsedMbox, MboxLimits, MboxLimitExceeded;
+import "mail/mailbox" take StoredMail, MailFlag, MailFlags, MissingStoredMail, InvalidMailbox;
+import "collections/sequence" take Sequencing;
+import "fs/path" take Path;
+import "fs/file" take File, FileMode, FileEntry, FileSystemFailure;
+import "fs/directory" take Directory, DirectoryEntry;
+import "fs/stat" take FileKind;
+import "fs/lock" take FileLock, FileLockMode, FileLockWaiting;
+import "fs/temp" take TemporaryFile, TemporaryFilePath;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "io/stream" take Closing;
+import "random/source" take SecureRandom;
+import "encoding/hex" take HexEncoded;
+import "error" take InvalidArgument, InvalidState;
+
+// Trusted local mboxrd archives. Mbox is a pure coordinate for an EXISTING
+// regular file; session() exclusively locks path + ".okkama-mbox.lock" before
+// reading. Contention fails immediately; the permanent lock inode is retained.
+//
+//     let session=Mbox(path).session();defer session.close();
+//     session=session.add(record); // explicit MboxRecord envelope metadata
+//     session=session.remove(session.messages().first().identifier());
+//
+// Commands return successors: surviving IDs remain stable within that session
+// lineage, never across reopen. Copies share the lease; closing any closes all.
+// messages()/records() are eager snapshots and survive later mutations/close.
+// Each mutation checks the exact current archive against its original bytes,
+// prepares bounded output/snapshots, and atomically renames a private temporary
+// file. All fallible message work precedes commit. Stale content is MboxConflict.
+// No automatic retries, compatibility with other clients' locks, persistent
+// UID/flag-header inference, metadata preservation or fsync durability claim.
+// Replacement is owner-only (0600); trusted path ownership is required.
+// See docs/std/mbox-session.md for failure and ownership details.
+object Mbox {
+    has origin is Path;has bounds is MboxLimits;
+    Mbox(path is Path) {origin=path;bounds=MboxLimits();}
+    Mbox(path is Path, limits is MboxLimits) {origin=path;bounds=limits;}
+    path() is Path {origin;}
+    limits() is MboxLimits {bounds;}
+    session() is MboxSession {MboxSession(self);}
+}
+object MboxSession does Closing {
+    has origin is Mbox;has lease is MboxLease;has view is MboxSnapshot;
+    has nonce is string;has serial is int;
+    MboxSession(origin is Mbox) {
+        let access=MboxLease(origin.path());
+        let token=try {HexEncoded(SecureRandom().bytes(24)).string();}
+            catch failure is Error {try {access.close();} catch cleanup is Error {} throw failure;};
+        let initial=try {
+            let wire=MboxFileBytes(origin.path(),origin.limits().wire_bytes()).bytes();
+            let records=ParsedMbox(wire,origin.limits()).records();
+            let identifiers is @string=(0..records.size()).map() -> index {token+"."+index.string();};
+            MboxSnapshot(wire,records,identifiers,origin.limits());
+        } catch failure is Error {try {access.close();} catch cleanup is Error {} throw failure;};
+        self.origin=origin;lease=access;view=initial;nonce=token;serial=initial.messages().size();
+    }
+    messages() is Sequencing<StoredMail> {lease.check();view.messages();}
+    records() is Sequencing<MboxRecord> {lease.check();view.records();}
+    closed() is bool {lease.closed();}
+    close() is void {lease.close();}
+    // The shared lease owns destruction. A session version must not close the
+    // lease merely because another successor outlives that particular version.
+    add(record is MboxRecord) is ^MboxSession {
+        self.current();let records=view.records();let count=records.size();
+        confirm count<origin.limits().messages() else throw MboxLimitExceeded("messages");
+        confirm serial<9223372036854775807 else throw MboxLimitExceeded("identifiers");
+        let added is @MboxRecord=(0..count+1).map() -> index {if index<count {records.item(index);} else {record;}};
+        let before=view.identifiers();let identifiers is @string=(0..count+1).map() -> index {
+            if index<count {before[index];} else {nonce+"."+serial.string();}
+        };
+        let wire=MboxArchive(added,origin.limits()).bytes();
+        let prepared=MboxSnapshot(wire,ParsedMbox(wire,origin.limits()).records(),identifiers,origin.limits());
+        self.current();MboxReplacement(origin.path(),wire,lease).commit();
+        ^view=prepared;^serial=serial+1;
+    }
+    remove(identifier is string) is ^MboxSession {
+        self.current();let before=view.identifiers();
+        let kept=(0..before.size()).filter() -> index {before[index]!=identifier;};
+        confirm kept.size()<before.size() else throw MissingStoredMail(identifier);
+        let records=view.records();let retained is @MboxRecord=kept.map() -> index {records.item(index);};
+        let identifiers is @string=kept.map() -> index {before[index];};
+        let wire=MboxArchive(retained,origin.limits()).bytes();
+        let prepared=MboxSnapshot(wire,ParsedMbox(wire,origin.limits()).records(),identifiers,origin.limits());
+        self.current();MboxReplacement(origin.path(),wire,lease).commit();
+        ^view=prepared;
+    }
+    private:
+    current() is void {
+        lease.check();let present=MboxFileBytes(origin.path(),origin.limits().wire_bytes()).bytes();
+        confirm present==view.bytes() else throw MboxConflict();
+    }
+}
+object MboxConflict does Error {
+    MboxConflict();
+    text() is string {"mbox content differs from this session snapshot";}
+}
+object CommittedMboxFailure does Error {
+    has code, reason is string;
+    CommittedMboxFailure(code is string, reason is string) {self.code=code;self.reason=reason;}
+    code() is string {code;}
+    reason() is string {reason;}
+    text() is string {"mbox replacement committed; session closed after cleanup failure: "+reason;}
+}
+object MboxLease does Closing {
+    has owner is File;has guard is FileLock;
+    MboxLease(path is Path) {
+        let coordinate=Path(path.string()+".okkama-mbox.lock",path.style());
+        try {
+            confirm DirectoryEntry(coordinate).kind()==FileKind.file else throw InvalidMailbox(0,"mbox lock is not a regular file");
+        } catch failure is FileSystemFailure {if failure.code()!="not_found" {throw failure;}}
+        let file=File(mode:FileMode.reading_and_appending,path:coordinate,binary:true);
+        let lock=try {FileLock(file,FileLockMode.exclusive,FileLockWaiting.immediate);}
+            catch failure is Error {try {file.close();} catch cleanup is Error {} throw failure;};
+        owner=file;guard=lock;
+    }
+    check() is void {confirm !self.closed() else throw InvalidState("mbox session is closed");}
+    closed() is bool {guard.closed();}
+    close() is void {
+        try {guard.close();} catch failure is Error {try {owner.close();} catch cleanup is Error {} throw failure;}
+        owner.close();
+    }
+    destroy {self.close();}
+}
+object MboxFileBytes {
+    has path is Path;has maximum is int;
+    MboxFileBytes(path is Path, maximum is int) {self.path=path;self.maximum=maximum;}
+    bytes() is @byte {
+        confirm DirectoryEntry(path).kind()==FileKind.file else throw InvalidMailbox(0,"mbox is not a regular file");
+        let file=File(mode:FileMode.reading,path:path,binary:true);defer file.close();
+        let buffer=ByteBuffer();defer buffer.closing().close();let reader=file.binary();
+        loop {
+            let remaining=maximum-buffer.content().size();let amount=if remaining<65536 {remaining+1;} else {65536;};
+            let bytes=reader.bytes(amount);last if bytes.size()==0;
+            confirm bytes.size()<=remaining else throw MboxLimitExceeded("wire_bytes");
+            buffer.writing().write(ByteSnapshot(bytes));
+        }
+        buffer.content().bytes();
+    }
+}
+object MboxSnapshot {
+    has wire is @byte;has records is @MboxRecord;has identifiers is @string;has messages is @StoredMail;
+    MboxSnapshot(wire is @byte, records is Sequencing<MboxRecord>, identifiers is @string, limits is MboxLimits) {
+        let count=records.size();confirm count==identifiers.size() else throw InvalidArgument("mbox identity count mismatch");
+        confirm count<=limits.messages() else throw MboxLimitExceeded("messages");
+        let values is @MboxRecord=(0..count).map() -> index {records.item(index);};
+        let empty is @MailFlag=[];let flags=MailFlags(empty);
+        let saved is @StoredMail=(0..count).map() -> index {StoredMail(identifiers[index],values[index].message(),flags,limits.mime());};
+        self.wire=wire;self.records=values;self.identifiers=identifiers;messages=saved;
+    }
+    bytes() is @byte {wire;}
+    records() is Sequencing<MboxRecord> {records;}
+    identifiers() is @string {identifiers;}
+    messages() is Sequencing<StoredMail> {messages;}
+}
+object MboxReplacement {
+    has path is Path;has wire is @byte;has lease is MboxLease;
+    MboxReplacement(path is Path, wire is @byte, lease is MboxLease) {self.path=path;self.wire=wire;self.lease=lease;}
+    commit() is void {
+        lease.check();let temporary=TemporaryFile(Directory(path.parent()),".okkama-mbox-");
+        try {
+            temporary.write(ByteSnapshot(wire));temporary.flush();
+            FileEntry(value TemporaryFilePath(temporary)).move(path);
+        } catch failure is Error {try {temporary.close();} catch cleanup is Error {} throw failure;}
+        try {temporary.close();} catch failure is FileSystemFailure {
+            try {lease.close();} catch cleanup is Error {}
+            throw CommittedMboxFailure(failure.code(),failure.text());
+        }
+    }
+}
+
+test "mbox coordinates do not observe a filesystem" {
+    let mailbox=Mbox(Path("missing/archive"),MboxLimits());
+    test.is(mailbox.path().string(),"missing/archive");test.is(mailbox.limits().messages(),1000);
+}

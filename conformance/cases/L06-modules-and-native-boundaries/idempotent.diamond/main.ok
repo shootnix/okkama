@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "lib/maker" take Maker;
+import "lib/user" take User;
+import "lib/maker";
+
+main() is int {
+    let out = Stdout();
+    let token = Maker().make();
+    out.writeln(User().use(token).string());
+    out.writeln(Maker().make().n().string());
+    0;
+}

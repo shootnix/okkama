@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "net/udp" take DatagramTooLarge;
+import "io/stdout" take Stdout;
+
+// Diagnostic fixture: constructing and handling the value performs no send.
+main() is int {
+    let failure=DatagramTooLarge(65508);
+    let attempted=try {throw failure;}
+        catch rejected is DatagramTooLarge {rejected.size();};
+    Stdout().writeln(failure.text());
+    Stdout().writeln(attempted.string());
+    0;
+}

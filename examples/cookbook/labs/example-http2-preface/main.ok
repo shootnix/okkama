@@ -1,0 +1,50 @@
+// Согласовать начало HTTP/2-разговора
+//
+// Задать локальные лимиты HTTP/2: Http2Settings описывает receive-окна, таблицу и параллельные потоки.
+//
+// Запуск: ./examples/cookbook/run lab example-http2-preface
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http2-preface
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/http2_settings" take Http2Settings,Http2SettingsWire;
+import "http/internal/http2_preface" take Http2ClientPreface;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader;
+import "http/internal/http2_reading" take Http2FrameReading;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+
+object Peer {
+    has listener is TcpAcceptance;Peer(listener is TcpAcceptance){self.listener=listener;}
+    async run() is bool{
+        let connection=await listener.connection();defer connection.close();
+        let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();let offset=Atomic(0);
+        loop{
+            if offset.value()==magic.size(){last;}
+            let chunk=await connection.input().bytes(magic.size()-offset.value());
+            confirm chunk.size()>0;
+            for chunk -> octet{confirm octet==magic[offset.value()];offset.replace(offset.value()+1);}
+        }
+        let client=await Http2FrameReading(connection.input()).result();
+        confirm client.header().kind().int()==4 && client.header().flags().int()==0;
+        let payload=Http2SettingsWire(Http2Settings(0,0,32768,0),false).bytes();
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),0.byte(),0,payload.size()),payload).bytes()));
+        let acknowledgment=await Http2FrameReading(connection.input()).result();
+        acknowledgment.header().kind().int()==4 && acknowledgment.header().flags().int()==1 && acknowledgment.payload().size()==0;
+    }
+}
+async main() is int{
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let peer=Peer(listener);let action is async () is bool=peer.run;let serving=spawn action();
+    let connection=await TcpConnecting(listener.local_endpoint()).connection();defer connection.close();
+    let settings=try{await Http2ClientPreface(connection.input(),connection.output(),Http2Settings()).result();}
+        catch failure is Error{await serving;throw;};
+    confirm settings.frame_size()==32768 && settings.initial_window()==0 && settings.streams()==0;
+    confirm await serving;Stdout().writeln("HTTP2 preface and SETTINGS ACK over one loopback connection");0;
+}

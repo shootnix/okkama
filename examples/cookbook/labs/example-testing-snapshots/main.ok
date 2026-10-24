@@ -1,0 +1,26 @@
+// Проверить JSON-снимок отчёта
+//
+// Сравнить JSON-отчёт с эталоном: SnapshotFile, JsonSnapshot и Snapshot разделяют проверку и явное обновление.
+//
+// Запуск: ./examples/cookbook/run lab example-testing-snapshots
+// Режим: тестовый (-t); результат отражён в assertions и коде завершения.
+// Книга: docs/Okkama-Stdlib-RU.md#example-testing-snapshots
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "testing/snapshot" take SnapshotFile,TextSnapshot,JsonSnapshot,Snapshot,SnapshotUpdate;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "json/value" take JsonObject,JsonMember,JsonText;
+main() is int {0;}
+test "explicit snapshot update and ordinary check" {
+    let scratch=TemporaryDirectory(Directory(Path(".")),"okkama-snapshots-");
+    defer scratch.close();
+    let directory=Directory(scratch.path());
+    let expected=SnapshotFile(directory,"invoice.json");
+    let actual=JsonSnapshot(JsonObject([JsonMember("customer",JsonText("Ada"))]));
+    SnapshotUpdate(actual,expected,4096).update();
+    Snapshot(actual,expected,4096).check();
+    test.is(TextSnapshot("first\r\nsecond\r").bytes(),TextSnapshot("first\nsecond\n").bytes());
+}

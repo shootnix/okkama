@@ -1,0 +1,31 @@
+module app v1.0.0;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint;
+import "net/udp" take UdpBinding, UdpConnecting, UdpOptions, Datagram;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+import "async/timeout" take Within;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+// A fixed-peer packet exchange entirely on loopback, with bounded receive waits.
+async main() is int {
+    let local=IpEndpoint(IpAddress("127.0.0.1"),0);
+    let peer=await UdpBinding(local,UdpOptions()).socket();
+    let connection=await UdpConnecting(local,peer.local_endpoint(),UdpOptions()).connection();
+    let endpoints=connection.endpoints();
+    let count=await connection.send(ByteSnapshot([byte(0),byte(255),byte(42)]));
+    let incoming is Within<Datagram>=Within(peer.datagram(8),
+        Duration(2.rat(),DurationUnit.second),SystemClock());
+    let request=await incoming.result();
+    await peer.send(request.source(),request);
+    let returning is Within<Datagram>=Within(connection.datagram(8),
+        Duration(2.rat(),DurationUnit.second),SystemClock());
+    let reply=await returning.result();
+    let fixed=reply.source()==endpoints.remote_endpoint();
+    connection.close();peer.close();
+    Stdout().writeln("accepted: "+count.string());
+    Stdout().writeln(if fixed {"fixed peer";} else {"peer mismatch";});
+    Stdout().writeln(if reply.bytes()==[byte(0),byte(255),byte(42)] {"binary intact";} else {"mismatch";});
+    0;
+}

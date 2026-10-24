@@ -1,0 +1,33 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object AlreadyOpen does Error {
+    AlreadyOpen();
+    text() is string { "already open"; }
+}
+
+object Bottle {
+    has opened is bool = false;
+    has sips is int = 0;
+    Bottle() {}
+    open() is ^Bottle {
+        confirm !opened else throw AlreadyOpen();
+        ^opened = true;
+    }
+    sip() is ^Bottle {
+        ^sips = sips + 1;
+    }
+    state() is string { (if opened { "open"; } else { "closed"; }) + "/" + sips.string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let bottle = Bottle();
+    let flag = true;
+    if flag {
+        bottle.open();
+    }
+    out.writeln("unreachable");
+    0;
+}

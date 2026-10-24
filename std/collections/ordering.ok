@@ -1,0 +1,353 @@
+module collections/ordering v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing, EmptySequence;
+import "compare" take Comparing, Order;
+import "error" take InvalidArgument, OutOfRange;
+import "runtime/ordering" take BulkOrdering;
+import "size" take Sizing;
+
+// Stable ordered sequences and binary-search projections.
+//
+// Sorted materializes an Iterating source and orders it by the value's own
+// Comparing<T> implementation:
+//
+//     let empty is List<int> = EmptyList();
+//     let numbers = Sorted(origin: empty.prefix(2).prefix(1).prefix(3));
+//     numbers.first();               // 1
+//     numbers.last();                // 3
+//     numbers.item(1);               // 2
+//
+// SortedBy applies a key once per input value, decorates the value with
+// Ranked, and routes the complete decorated array through the same host bulk
+// sort. Equal keys retain their input order:
+//
+//     let by_priority is SortedBy<Job,int> = SortedBy(
+//         origin: jobs,
+//         key: (job is Job) is int { job.priority(); },
+//     );
+//
+// The explicit result type supplies K because anonymous actions do not yet
+// declare return types. A named bound action with an exact (T) is K type can
+// infer K without this contextual annotation.
+//
+// Ranked is also useful directly when a domain ordering must differ from a
+// value's intrinsic ordering. Its order() delegates only to key.order().
+//
+// LowerBound and UpperBound return insertion positions in O(log n).
+// PositionOf returns the first matching position and throws MissingItem when
+// the value is absent:
+//
+//     let first_two = value LowerBound(origin: numbers, item: 2);
+//     let after_twos = value UpperBound(origin: numbers, item: 2);
+//     let exact = value PositionOf(origin: numbers, item: 2);
+//
+// Binary-search objects require an ascending Sequencing value produced under
+// the same Comparing policy. They deliberately do not spend O(n) validating
+// that precondition on every O(log n) query.
+
+object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
+    has origin is @T;
+
+    Sorted(origin is Iterating<T>) {
+        let materialized is @T = origin.map() -> value { value; };
+        let ordered is BulkOrdering<T> = BulkOrdering(values: materialized);
+        self.origin = ordered.items();
+    }
+
+    cursor() is Cursor<T> {
+        OrderedCursor(values: origin, position: 0);
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    item(index is int) is T {
+        confirm index >= 0 && index < self.size()
+            else throw OutOfRange("ordered index is outside the sequence");
+        origin[index];
+    }
+
+    first() is T {
+        confirm self.size() > 0 else throw EmptySequence();
+        origin[0];
+    }
+
+    last() is T {
+        confirm self.size() > 0 else throw EmptySequence();
+        origin[self.size() - 1];
+    }
+}
+
+object SortedBy<T,K: Comparing<K>>
+    does Sequencing<T>, Iterating<T>, Sizing {
+    has origin is @Ranked<T,K>;
+
+    SortedBy(origin is Iterating<T>, key is (T) is K) {
+        let ranked is @Ranked<T,K> = origin.map() -> value {
+            Ranked(item: value, key: key(value));
+        };
+        let ordered is BulkOrdering<Ranked<T,K>> = BulkOrdering(values: ranked);
+        self.origin = ordered.items();
+    }
+
+    cursor() is Cursor<T> {
+        RankedCursor(values: origin, position: 0);
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    item(index is int) is T {
+        confirm index >= 0 && index < self.size()
+            else throw OutOfRange("ordered index is outside the sequence");
+        origin[index].item();
+    }
+
+    first() is T {
+        confirm self.size() > 0 else throw EmptySequence();
+        origin[0].item();
+    }
+
+    last() is T {
+        confirm self.size() > 0 else throw EmptySequence();
+        origin[self.size() - 1].item();
+    }
+}
+
+object Ranked<T,K: Comparing<K>> does Comparing<Ranked<T,K>> {
+    has origin is T;
+    has ranking is K;
+
+    Ranked(item is T, key is K) {
+        origin = item;
+        ranking = key;
+    }
+
+    item() is T {
+        origin;
+    }
+
+    key() is K {
+        ranking;
+    }
+
+    order(other is Ranked<T,K>) is Order {
+        ranking.order(other.key());
+    }
+}
+
+object PositionOf<T: Comparing<T>> {
+    has origin is Sequencing<T>;
+    has sought is T;
+
+    PositionOf(origin is Sequencing<T>, item is T) {
+        self.origin = origin;
+        sought = item;
+    }
+
+    #projected
+    value() is int {
+        let position = value LowerBound(origin: origin, item: sought);
+        confirm position < origin.size()
+            && origin.item(position).order(sought) == Order.equal
+            else throw MissingItem();
+        position;
+    }
+}
+
+object LowerBound<T: Comparing<T>> {
+    has origin is Sequencing<T>;
+    has sought is T;
+
+    LowerBound(origin is Sequencing<T>, item is T) {
+        self.origin = origin;
+        sought = item;
+    }
+
+    #projected
+    value() is int {
+        value LowerSearching(
+            origin: origin,
+            item: sought,
+            start: 0,
+            stop: origin.size(),
+        );
+    }
+}
+
+object UpperBound<T: Comparing<T>> {
+    has origin is Sequencing<T>;
+    has sought is T;
+
+    UpperBound(origin is Sequencing<T>, item is T) {
+        self.origin = origin;
+        sought = item;
+    }
+
+    #projected
+    value() is int {
+        value UpperSearching(
+            origin: origin,
+            item: sought,
+            start: 0,
+            stop: origin.size(),
+        );
+    }
+}
+
+object LowerSearching<T: Comparing<T>> {
+    has origin is Sequencing<T>;
+    has sought is T;
+    has beginning is int;
+    has ending is int;
+
+    LowerSearching(
+        origin is Sequencing<T>,
+        item is T,
+        start is int,
+        stop is int,
+    ) {
+        confirm start >= 0 && start <= stop && stop <= origin.size()
+            else throw InvalidArgument("lower-bound search range is invalid");
+        self.origin = origin;
+        sought = item;
+        beginning = start;
+        ending = stop;
+    }
+
+    #projected
+    value() is int {
+        if beginning >= ending {
+            beginning;
+        }
+        else {
+            let middle = beginning + ((ending - beginning) / 2).int();
+            if origin.item(middle).order(sought) == Order.less {
+                value LowerSearching(
+                    origin: origin,
+                    item: sought,
+                    start: middle + 1,
+                    stop: ending,
+                );
+            }
+            else {
+                value LowerSearching(
+                    origin: origin,
+                    item: sought,
+                    start: beginning,
+                    stop: middle,
+                );
+            }
+        }
+    }
+}
+
+object UpperSearching<T: Comparing<T>> {
+    has origin is Sequencing<T>;
+    has sought is T;
+    has beginning is int;
+    has ending is int;
+
+    UpperSearching(
+        origin is Sequencing<T>,
+        item is T,
+        start is int,
+        stop is int,
+    ) {
+        confirm start >= 0 && start <= stop && stop <= origin.size()
+            else throw InvalidArgument("upper-bound search range is invalid");
+        self.origin = origin;
+        sought = item;
+        beginning = start;
+        ending = stop;
+    }
+
+    #projected
+    value() is int {
+        if beginning >= ending {
+            beginning;
+        }
+        else {
+            let middle = beginning + ((ending - beginning) / 2).int();
+            if origin.item(middle).order(sought) == Order.greater {
+                value UpperSearching(
+                    origin: origin,
+                    item: sought,
+                    start: beginning,
+                    stop: middle,
+                );
+            }
+            else {
+                value UpperSearching(
+                    origin: origin,
+                    item: sought,
+                    start: middle + 1,
+                    stop: ending,
+                );
+            }
+        }
+    }
+}
+
+object OrderedCursor<T> does Cursor<T> {
+    has origin is @T;
+    has position is int;
+
+    OrderedCursor(values is @T, position is int) {
+        confirm position >= 0 && position <= values.size()
+            else throw InvalidArgument("ordered cursor position is invalid");
+        origin = values;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        origin[position];
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        OrderedCursor(values: origin, position: position + 1);
+    }
+}
+
+object RankedCursor<T,K: Comparing<K>> does Cursor<T> {
+    has origin is @Ranked<T,K>;
+    has position is int;
+
+    RankedCursor(values is @Ranked<T,K>, position is int) {
+        confirm position >= 0 && position <= values.size()
+            else throw InvalidArgument("ranked cursor position is invalid");
+        origin = values;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        origin[position].item();
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        RankedCursor(values: origin, position: position + 1);
+    }
+}
+
+object MissingItem does Error {
+    MissingItem();
+
+    text() is string {
+        "item is absent from the ordered sequence";
+    }
+}

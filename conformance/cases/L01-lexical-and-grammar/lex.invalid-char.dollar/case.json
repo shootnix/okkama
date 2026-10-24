@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.invalid-char.dollar",
+  "title": "invalid character: `$`",
+  "purpose": "Malformed source is rejected by the lexer/parser.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.INVALID-CHARACTERS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "`$` is not part of any Okkama token or production."
+  },
+  "status": "mandatory"
+}

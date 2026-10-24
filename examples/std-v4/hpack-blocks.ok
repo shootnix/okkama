@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "http/internal/hpack" take HpackEncoded,HpackDecoder,HpackBudget;
+import "http/internal/hpack_tables" take HpackField;
+import "encoding/hex" take HexDecoded;
+import "io/stdout" take Stdout;
+// Internal compression example. It does not perform an HTTP exchange.
+main() is int{
+    let first=HpackDecoder().decoded(HexDecoded("828684418cf1e3c2e5f23a6ba0ab90f4ff").bytes(),HpackBudget());
+    let second=first.context().decoded(HexDecoded("828684be5886a8eb10649cbf").bytes(),HpackBudget());
+    confirm second.fields()[4].value()=="no-cache";
+    let fields is @HpackField=[HpackField(":method","GET"),HpackField("authorization","Bearer sample")];
+    let roundtrip=HpackDecoder().decoded(HpackEncoded(fields,HpackBudget()).bytes(),HpackBudget());
+    confirm roundtrip.fields()[1].sensitive() && roundtrip.context().table().size()==0;
+    Stdout().writeln("HPACK compression context and never-indexed fields verified");0;
+}

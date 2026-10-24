@@ -1,0 +1,18 @@
+// Задать окна и лимиты HTTP/2
+//
+// Задать локальные лимиты HTTP/2: Http2Settings описывает receive-окна, таблицу и параллельные потоки.
+//
+// Запуск: ./examples/cookbook/run lab example-http2-settings
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http2-settings
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/http2_settings" take Http2Settings;
+import "io/stdout" take Stdout;
+
+main() is int{
+    let settings=Http2Settings(4096,65535,16384,100);
+    confirm settings.frame_size()==16384 && settings.streams()==100;
+    Stdout().writeln("HTTP2 receive frame limit: ",settings.frame_size().string());0;
+}

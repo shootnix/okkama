@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "regex/pattern" take Regex, InvalidRegex;
+import "regex/search" take FirstRegexMatch, EntireRegexMatch, RegexMatches;
+import "regex/replace" take RegexSubstitution, LiteralRegexReplacement, ExpandedRegexReplacement;
+import "regex/split" take RegexParts;
+import "regex/escape" take EscapedRegex;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("first match", FirstRegexMatch("one 22 three", Regex("\\d+")).text(), "22");
+    c = c.same_bool("absent match", RegexMatches("abc", Regex("\\d")).found(), false);
+    c = c.same_text("literal substitution", RegexSubstitution("a1 b22", Regex("\\d+"), LiteralRegexReplacement("N")).string(), "aN bN");
+    c = c.same_int("substitution count", RegexSubstitution("a1 b22", Regex("\\d+"), LiteralRegexReplacement("N")).amount(), 2);
+    c = c.same_text("named groups", RegexSubstitution("Ada Lovelace", Regex("(?<first>\\w+) (?<last>\\w+)"), ExpandedRegexReplacement("${last}, ${first}")).string(), "Lovelace, Ada");
+    c = c.same_text("literal dollar", RegexSubstitution("x", Regex("x"), LiteralRegexReplacement("$1")).string(), "$1");
+    c = c.same_texts("split keeps empty", (RegexParts("a,,b", Regex(","))).map() -> p { p; }, ["a", "", "b"]);
+    c = c.same_text("escaped literal", EntireRegexMatch("price: $5.00", Regex(EscapedRegex("price: $5.00").string())).text(), "price: $5.00");
+    c.done();
+}

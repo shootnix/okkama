@@ -1,0 +1,21 @@
+module http/retry v1.0.0;
+import "http/client" take Exchanging,HttpStaleConnection;
+import "http/message" take Request;
+import "http/method" take MethodSemantics;
+import "http/exchange" take ClientResponse;
+import "async/scope" take FutureGroup;
+// Optional one-shot retry. Only the client transport can establish the stale
+// before-response condition; ordinary errors and response failures propagate.
+object Retrying does Exchanging {
+    has origin is Exchanging;Retrying(origin is Exchanging){self.origin=origin;}
+    async response(request is Request) is ClientResponse{
+        let outcome is @ClientResponse=try{[await self.once(request)];}catch e is HttpStaleConnection{
+            if !MethodSemantics(request.method()).idempotent() || !request.body().replayable(){throw;}let empty is @ClientResponse=[];empty;
+        };
+        if outcome.size()==1{return outcome[0];}await self.once(request);
+    }
+    async once(request is Request) is ClientResponse{
+        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=HttpRetrySettlement(group);defer await cleanup.close();let pending=origin.response(request);group.start(pending);await pending;
+    }
+}
+object HttpRetrySettlement<T>{has group is FutureGroup<T>;HttpRetrySettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

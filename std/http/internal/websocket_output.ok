@@ -1,0 +1,83 @@
+module http/internal/websocket_output v1.0.0;
+import "http/internal/websocket_frame" take WebSocketFrame;
+import "http/websocket" take WebSocketMessage,WebSocketMessageKind,WebSocketLimits,WebSocketFailure,WebSocketClosed;
+import "encoding/utf" take Utf8Encoded;
+import "random/source" take Randomizing;
+import "net/stream" take AsyncWriting;
+import "io/decorators" take ByteSnapshot;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "strings/parse" take ParsedInt;
+import "error" take InvalidState;
+
+// Exactly one writer owns the wire. Started messages finish all fragments even
+// when a caller abandons its ticket; connection abort cancels physical writing.
+object WebSocketOutput {
+    has origin is AsyncWriting;has masked is bool;has random is Randomizing;
+    has frame_maximum,maximum,message_maximum is int;
+    has jobs,current is Atomic<@WebSocketOutputTicket>;has changed,space is Atomic<Event>;has stopped,started,quiescing is Event;
+    WebSocketOutput(origin is AsyncWriting,masked is bool,random is Randomizing,limits is WebSocketLimits){
+        self.origin=origin;self.masked=masked;self.random=random;frame_maximum=limits.frame_bytes();maximum=limits.queue();message_maximum=ParsedInt(limits.message_bytes().string()).value();
+        let empty is @WebSocketOutputTicket=[];jobs=Atomic(empty);current=Atomic(empty);changed=Atomic(Event());space=Atomic(Event());stopped=Event();started=Event();quiescing=Event();
+    }
+    message(value is WebSocketMessage) is WebSocketOutputTicket{
+        let text=value.kind()==WebSocketMessageKind.text;let payload=if text{Utf8Encoded(value.text()).bytes();}else{value.bytes();};
+        confirm payload.size()<=message_maximum else throw WebSocketFailure("outgoing message byte limit");WebSocketOutputTicket(self,if text{1;}else{2;},payload);
+    }
+    control(opcode is int,payload is @byte) is WebSocketOutputTicket{confirm opcode==8 || opcode==9 || opcode==10 else throw WebSocketFailure("outgoing control opcode");WebSocketFrame(opcode,true,payload);WebSocketOutputTicket(self,opcode,payload);}
+    async submit(ticket is WebSocketOutputTicket) is bool{
+        loop{
+            confirm !stopped.ready() else throw WebSocketClosed(1006,"");if ticket.cancelled(){throw WebSocketOutputCancelled();}
+            confirm !quiescing.ready() || ticket.opcode()==8 || ticket.opcode()==10 else throw WebSocketClosed(1000,"");
+            if jobs.value().size()+current.value().size()<maximum{
+                let old=jobs.value();let following is @WebSocketOutputTicket=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{ticket;}};jobs.replace(following);changed.value().set();return true;
+            }
+            let signal=space.value();await signal.wait();
+        }
+    }
+    finish() is void{stopped.set();changed.value().set();space.value().set();}
+    closing() is void{
+        if !quiescing.ready(){quiescing.set();for jobs.value() -> ticket{if ticket.opcode()<8 || ticket.opcode()==9{ticket.cancel();}}
+            jobs.replace(jobs.value().filter()->ticket{!ticket.cancelled();});for current.value() -> ticket{if ticket.opcode()<8 || ticket.opcode()==9{ticket.cancel();}}
+            space.value().set();space.replace(Event());changed.value().set();}
+    }
+    abort() is void{self.finish();for [jobs.value(),current.value()] -> batch{for batch -> ticket{ticket.failed();}}jobs.replace([]);current.replace([]);}
+    take() is @WebSocketOutputTicket{let queue=jobs.value();if queue.size()==0{return [];}
+        let first=queue[0];jobs.replace(queue.slice(1,queue.size()));current.replace([first]);[first];}
+    release() is void{current.replace([]);space.value().set();space.replace(Event());}
+    async frame(frame is WebSocketFrame) is bool{
+        let mask is @byte=if masked{random.bytes(4);}else{let empty is @byte=[];empty;};let wire=frame.bytes(mask);
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let writing=origin.write(ByteSnapshot(wire));group.start(writing);await writing;true;
+    }
+    async emit(ticket is WebSocketOutputTicket) is bool{
+        let payload=ticket.payload();let kind=ticket.opcode();
+        if kind>=8{await self.frame(WebSocketFrame(kind,true,payload));return true;}
+        let offset=Atomic(0);loop{
+            let start=offset.value();let end=if payload.size()-start>frame_maximum{start+frame_maximum;}else{payload.size();};
+            await self.frame(WebSocketFrame(if start==0{kind;}else{0;},end==payload.size(),payload.slice(start,end)));
+            if end==payload.size(){return true;}offset.replace(end);
+        }
+    }
+    async run() is bool{
+        confirm !started.ready() else throw InvalidState("WebSocket writer is single-use");started.set();defer self.abort();
+        loop{
+            let available=self.take();if available.size()==0{if stopped.ready(){return true;}let signal=Event();changed.replace(signal);await signal.wait();next;}
+            let ticket=available[0];if !ticket.cancelled(){let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=self.emit(ticket);group.start(pending);await pending;ticket.completed();}self.release();
+        }
+    }
+}
+object WebSocketOutputTicket {
+    has owner is WebSocketOutput;has opcode is int;has payload is @byte;has finished,cancellation,stopped is Event;has waiting is Atomic<@Future<bool>>;
+    WebSocketOutputTicket(owner is WebSocketOutput,opcode is int,payload is @byte){self.owner=owner;self.opcode=opcode;self.payload=payload;finished=Event();cancellation=Event();stopped=Event();let empty is @Future<bool>=[];waiting=Atomic(empty);}
+    opcode() is int{opcode;}payload() is @byte{payload;}cancelled() is bool{cancellation.ready();}
+    cancel() is void{if !finished.ready(){cancellation.set();finished.set();}}
+    completed() is void{finished.set();}failed() is void{if !finished.ready(){stopped.set();finished.set();}}
+    async waiting() is bool{defer self.cancel();if self.cancelled(){throw WebSocketOutputCancelled();}let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let submitting=owner.submit(self);group.start(submitting);await submitting;await finished.wait();confirm !stopped.ready() else throw WebSocketClosed(1006,"");if self.cancelled(){throw WebSocketOutputCancelled();}true;}
+    async result() is bool{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
+    private:
+    operation() is Future<bool>{let known=waiting.value();if known.size()>0{known[0];}else{let task=self.waiting();waiting.replace([task]);task;}}
+}
+object WebSocketOutputSettlement<T>{has group is FutureGroup<T>;WebSocketOutputSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+
+object WebSocketOutputCancelled does Error{WebSocketOutputCancelled();text() is string{"WebSocket output ticket cancelled";}}

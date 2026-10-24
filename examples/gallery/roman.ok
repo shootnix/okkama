@@ -1,0 +1,82 @@
+// Римские числа туда и обратно
+// Задача: Преобразовать числа 1..3999 и отвергнуть неканоническую запись.
+// Запуск из корня: ./examples/gallery/run roman
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: таблица правил, fold, предметный инвариант.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/roman.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/roman v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object RomanState {
+    has remaining is int;
+    has text is string;
+    
+    RomanState(number is int){
+        remaining = number;
+        text = "";
+    }
+    
+    remaining() is int {remaining;}
+    string() is string {text;}
+    consumed(value is int, symbol is string) is ^RomanState {
+        ^remaining = remaining - value;
+        ^text = text + symbol;
+    }
+}
+
+object Roman {
+    Roman();
+
+    text(number is int) is string {
+        confirm number > 0 && number < 4000;
+        let values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+        let symbols=["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"];
+        let state = RomanState(number);
+        for (0..values.size()) -> i {
+            loop {
+                last if state.remaining() < values[i];
+                state = state.consumed(values[i], symbols[i]);
+            }
+        }
+        state.string();
+    }
+
+    digit(letter is string) is int {
+        match letter{
+            case "M" { 1000; }
+            case "D" {  500; }
+            case "C" {  100; }
+            case "L" {   50; }
+            case "X" {   10; }
+            case "V" {    5; }
+            case "I" {    1; }
+            else {
+                panic "invalid Roman digit";
+            }
+        }
+    }
+
+    number(text is string) is int {
+        confirm text.length() > 0 && text.length() <= 15;
+        let result = (0..text.length()).reduce(0)-> sum, i {
+            let value = self.digit(text.slice(i, i+1));
+            sum + if i+1 < text.length() && value < self.digit(text.slice(i+1, i+2)) { -value; } else { value; };
+        };
+        confirm self.text(result) == text;
+        result;
+    }
+}
+main() is int {
+    let roman = Roman();
+    for [4, 9, 14, 40, 90, 444, 1984, 2026, 3888] ->n {
+        let text = roman.text(n);
+        let back = roman.number(text);
+        confirm back == n;
+        Stdout().writeln(n.string()+" "+text+" "+back.string());
+    }
+    
+    0;
+}

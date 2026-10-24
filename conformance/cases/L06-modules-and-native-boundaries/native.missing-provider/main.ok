@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+native conformance_unlinked_symbol(x is int) is int;
+
+main() is int {
+    Stdout().writeln("before");
+    let v = conformance_unlinked_symbol(1);
+    Stdout().writeln("unreachable");
+    0;
+}

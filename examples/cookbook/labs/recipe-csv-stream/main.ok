@@ -1,0 +1,29 @@
+// Импортировать CSV по одной записи
+//
+// Каталог товаров поступает байтовым потоком; строки нужно обрабатывать по мере чтения.
+//
+// Запуск: ./examples/cookbook/run lab recipe-csv-stream
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-csv-stream
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/csv_stream v1.0.0;
+import "csv/stream" take CsvStream,EndOfCsv;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let buffer = ByteBuffer(Utf8Encoded("sku,name\r\nA1,Чай\r\nB2,Кофе\r\n").bytes());
+    defer buffer.closing().close();
+    let csv = CsvStream(buffer.reading());
+    defer csv.close();
+    loop {
+        try {
+            let row = csv.row();
+            Stdout().writeln(row[0] + ": " + row[1]);
+        }
+        catch ended is EndOfCsv { last; }
+    }
+    0;
+}

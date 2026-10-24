@@ -1,0 +1,43 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object InvalidCash does Error {
+    has digit is int;
+    InvalidCash(:digit);
+    text() is string { "invalid cash " + digit.string(); }
+}
+
+object Cash {
+    has digit is int;
+    has cents is int = 0;
+
+    Cash(digit is int, cents is int) {
+        digit = digit;
+        cents = cents;
+        confirm self.digit >= 0 else throw InvalidCash(digit: self.digit);
+    }
+
+    Cash(:digit) {
+        confirm self.digit >= 0 else throw InvalidCash(digit: self.digit);
+    }
+
+    total() is int { digit * 100 + cents; }
+    touch() is Cash { self; }
+    same_as(other is Cash) is bool { self == other; }
+}
+
+object Shadow {
+    has value is int;
+    Shadow(:value);
+    both(value is int) is int { value + self.value; }
+}
+
+main() is int {
+    let out = Stdout();
+    let c = Cash(3, 25);
+    out.writeln(c.total().string());
+    let shadow = Shadow(value: 5);
+    out.writeln(shadow.both(100).string());
+    0;
+}

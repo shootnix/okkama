@@ -1,0 +1,25 @@
+// Собрать список адресатов через разделитель
+//
+// Собрать строку адресатов через запятую: Joined фиксирует строки, разделитель и бюджет результата.
+//
+// Запуск: ./examples/cookbook/run lab example-joined
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-joined
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "strings/join" take Joined;
+import "collections/list" take List, EmptyList;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let empty is List<string> = EmptyList();
+        let names = empty.prefix("Grace").prefix("Ada");
+        string Joined(separator: " / ", values: names, maximum_items: 2, maximum_length: 11);
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

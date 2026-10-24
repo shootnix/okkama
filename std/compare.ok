@@ -1,0 +1,30 @@
+module compare v1.0.0;
+
+// A three-way intrinsic ordering contract.
+//
+// Naturally ordered builtin values implement Comparing<Self>:
+//
+//     1.order(2) == Order.less
+//     "z".order("aa") == Order.greater
+//     let numbers is Comparing<int> = 42;
+//
+// The builtin implementations are exact: int compares with int, byte with
+// byte, and so on. There is no numeric widening at a Comparing boundary.
+// The naturally ordered builtin types are int, float, rat, byte, string and
+// char. bool deliberately has no natural order.
+//
+// Domain objects define order on the value itself:
+//
+//     object Priority does Comparing<Priority> {
+//         order(other is Priority) is Order { ... }
+//     }
+//
+// When a domain needs another ordering, wrap the value in an explicit value
+// decorator whose order() expresses that policy. Do not introduce a
+// stateless binary comparator service.
+
+enum Order = (less, equal, greater);
+
+role Comparing<T> {
+    order(other is T) is Order;
+}

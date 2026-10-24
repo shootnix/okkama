@@ -1,0 +1,32 @@
+module db/prepared v1.0.0;
+import "db/value" take DbValue;
+import "db/statement" take Statement,Execution;
+import "db/row" take RowReading;
+import "collections/sequence" take Sequencing;
+import "db/transaction" take Transaction,TransactionOptions;
+role DbPreparing{async prepared(text is string) is PreparedStatement;}
+role DbPreparedOpening{
+    async prepared(text is string) is PreparedStatement;
+    async prepared_transaction(options is TransactionOptions) is DbPreparedTransaction;
+}
+role PreparedStatement{
+    async execution(values is Sequencing<DbValue>) is Execution;
+    async rows(values is Sequencing<DbValue>) is RowReading;
+    closed() is bool;
+    close() is void;
+}
+object Prepared{
+    has origin is DbPreparing;has text is string;
+    Prepared(origin is DbPreparing,text is string){self.origin=origin;self.text=Statement(text).text();}
+    async statement() is PreparedStatement{await origin.prepared(text);}
+}
+object DbPreparedTransaction does Transaction,DbPreparing{
+    has origin is Transaction;has preparation is DbPreparing;
+    DbPreparedTransaction(origin is Transaction,preparation is DbPreparing){self.origin=origin;self.preparation=preparation;}
+    active() is bool{origin.active();}
+    async execution(statement is Statement) is Execution{await origin.execution(statement);}
+    async rows(statement is Statement) is RowReading{await origin.rows(statement);}
+    async prepared(text is string) is PreparedStatement{await preparation.prepared(text);}
+    async commit() is Transaction{await origin.commit();self;}
+    async rollback() is Transaction{await origin.rollback();self;}
+}

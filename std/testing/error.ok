@@ -1,0 +1,34 @@
+module testing/error v1.0.0;
+import "testing/check" take Checking,AsyncChecking,CheckContext,InvalidCheck;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+role ErrorMatching {match(origin is Error) is bool;description() is string;}
+object AnyErrorMatching does ErrorMatching {AnyErrorMatching();match(origin is Error) is bool {true;}description() is string {"any typed Error";}}
+object ErrorTextMatching does ErrorMatching {
+    has expected is string;ErrorTextMatching(expected is string){self.expected=expected;}
+    match(origin is Error) is bool {origin.text()==expected;}description() is string {"error text "+expected;}
+}
+object ErrorRegexMatching does ErrorMatching {
+    has pattern is Regex;ErrorRegexMatching(pattern is Regex){self.pattern=pattern;}
+    match(origin is Error) is bool {RegexMatches(origin.text(),pattern).found();}description() is string {"error matching "+pattern.expression();}
+}
+object Throwing<R> does Checking {
+    has action is () is R;has matching is ErrorMatching;
+    Throwing(action is () is R,matching is ErrorMatching){self.action=action;self.matching=matching;}
+    check() is void {
+        CheckContext().verify();
+        try{action();test.fail("expected "+matching.description()+", action returned normally");}
+        catch error is Error {if !matching.match(error){test.fail("expected "+matching.description()+", got "+error.text());}}
+    }
+}
+object AsyncThrowing<R> does AsyncChecking {
+    has action is async () is R;has matching is ErrorMatching;
+    AsyncThrowing(action is async () is R,matching is ErrorMatching){self.action=action;self.matching=matching;}
+    async check() is void {
+        CheckContext().verify();
+        try{await action();test.fail("expected "+matching.description()+", action returned normally");}
+        catch error is Error {if !matching.match(error){test.fail("expected "+matching.description()+", got "+error.text());}}
+    }
+}
+
+test "exact error matcher does not require runtime type reflection" {test.ok(ErrorTextMatching("invalid check: sample").match(InvalidCheck("sample")));}

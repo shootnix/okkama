@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "unicode/normalization" take Normalized, NormalizationForm;
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("nfd decomposes", (string Normalized(origin: "é", form: NormalizationForm.nfd)).length(), 2);
+    c = c.same_text("nfc composes", string Normalized(origin: "é", form: NormalizationForm.nfc), "é");
+    c = c.same_text("nfkc compatibility", string Normalized(origin: "ﬃ", form: NormalizationForm.nfkc), "ffi");
+    c = c.same_text("nfc keeps ligature", string Normalized(origin: "ﬃ", form: NormalizationForm.nfc), "ﬃ");
+    c.done();
+}

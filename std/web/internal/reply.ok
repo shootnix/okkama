@@ -1,0 +1,116 @@
+module web/internal/reply v1.0.0;
+import "http/message" take Response;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName,HttpAsciiLowercase;
+import "http/body" take ByteBody,EmptyBody;
+
+// Shared response assembly for web/reply and web/exception. Replies own their
+// representation and framing metadata: callers may add other fields, but never
+// Content-Type, Content-Length or Transfer-Encoding.
+
+object ReplyHeaders {
+    has origin is @Header;
+
+    ReplyHeaders() {
+        let empty is @Header = [];
+        origin = empty;
+    }
+
+    ReplyHeaders(origin is @Header) { self.origin = origin; }
+
+    added(name is string, value is string) is ReplyHeaders {
+        let lowered = HttpAsciiLowercase(name).string();
+        confirm lowered != "content-type" && lowered != "content-length" && lowered != "transfer-encoding"
+            else throw InvalidReply(name + " is owned by the reply itself");
+        let header = Header(HeaderName(name), value);
+        let following is @Header = (0..origin.size() + 1).map() -> index {
+            if index < origin.size() { origin[index]; } else { header; }
+        };
+        ReplyHeaders(following);
+    }
+
+    entries() is @Header { origin; }
+}
+
+object ReplyResponse {
+    has code is int;
+    has media is string;
+    has content is @byte;
+    has extra is ReplyHeaders;
+
+    ReplyResponse(status is int, media is string, content is @byte, extra is ReplyHeaders) {
+        code = status;
+        self.media = media;
+        self.content = content;
+        self.extra = extra;
+    }
+
+    response() is Response {
+        let fixed is @Header = [
+            Header(HeaderName("Content-Type"), media),
+            Header(HeaderName("Content-Length"), content.size().string())
+        ];
+        Response(Status(code), Headers(ReplyFields(fixed, extra).entries()), ByteBody(content));
+    }
+}
+
+// Bodiless replies: 204 carries no framing field at all; redirects declare length 0
+// so the connection stays reusable.
+object EmptyReplyResponse {
+    has code is int;
+    has extra is ReplyHeaders;
+
+    EmptyReplyResponse(status is int, extra is ReplyHeaders) {
+        code = status;
+        self.extra = extra;
+    }
+
+    response() is Response {
+        let fixed is @Header = if code == 204 { let bare is @Header = []; bare; } else { [Header(HeaderName("Content-Length"), "0")]; };
+        Response(Status(code), Headers(ReplyFields(fixed, extra).entries()), EmptyBody());
+    }
+}
+
+object ReplyFields {
+    has fixed is @Header;
+    has extra is ReplyHeaders;
+    ReplyFields(fixed is @Header, extra is ReplyHeaders) { self.fixed = fixed; self.extra = extra; }
+    entries() is @Header {
+        let more = extra.entries();
+        let all is @Header = (0..fixed.size() + more.size()).map() -> index {
+            if index < fixed.size() { fixed[index]; } else { more[index - fixed.size()]; }
+        };
+        all;
+    }
+}
+
+// Status codes that carry a representation body.
+object BodyStatus {
+    has code is int;
+    BodyStatus(status is int) {
+        confirm status >= 200 && status <= 599 && status != 204 && status != 205 && status != 304
+            else throw InvalidReply("status " + status.string() + " cannot carry a body");
+        code = status;
+    }
+    code() is int { code; }
+}
+
+object InvalidReply does Error {
+    has reason is string;
+    InvalidReply(reason is string) { self.reason = reason; }
+    reason() is string { reason; }
+    text() is string { "invalid web reply: " + reason; }
+}
+
+test "framing headers are owned by the reply" {
+    let rejected = try { ReplyHeaders().added("content-length", "1"); false; } catch failure is InvalidReply { true; };
+    test.ok(rejected);
+    test.is(ReplyHeaders().added("X-Trace", "a").added("Cache-Control", "no-store").entries().size(), 2);
+}
+
+test "only representation statuses carry bodies" {
+    test.is(BodyStatus(200).code(), 200);
+    test.ok(try { BodyStatus(204); false; } catch failure is InvalidReply { true; });
+    test.ok(try { BodyStatus(304); false; } catch failure is InvalidReply { true; });
+    test.ok(try { BodyStatus(101); false; } catch failure is InvalidReply { true; });
+}

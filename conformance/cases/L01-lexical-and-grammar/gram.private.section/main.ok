@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box {
+    Box();
+    reveal() is int { self.secret() + self.other(); }
+
+    private:
+    secret() is int { 40; }
+    other() is int { 2; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Box().reveal().string());
+    0;
+}

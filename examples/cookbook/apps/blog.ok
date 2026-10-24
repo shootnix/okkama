@@ -1,0 +1,35 @@
+// Блог с постоянным хранилищем
+//
+// Публикует записи через CLI либо форму браузера, выдаёт JSON-ленту и отдельные страницы.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run blog init /tmp/blog.sqlite
+//     ./examples/cookbook/run blog publish /tmp/blog.sqlite "Первая запись" "Привет, Okkama!"
+//     ./examples/cookbook/run blog list /tmp/blog.sqlite
+//     ./examples/cookbook/run blog serve /tmp/blog.sqlite 8082
+//     Открыть http://127.0.0.1:8082/
+//
+// API: GET/POST /api/posts; тело POST {"title":"Заголовок","body":"Текст"}. HTML пользовательских полей экранируется.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/blog v1.0.0;
+import "../support/arguments" take Arguments,Usage;
+import "../support/http" take LocalWeb;
+import "../web/blog/model" take Draft,BlogPosts;
+import "../web/blog/pages" take BlogPages;
+import "web/routing" take WebRoutes,Get,Post;
+import "json/write" take PrettyJson;
+import "io/stdout" take Stdout;
+
+async main() is int{
+    let args=Arguments();let command=args.text(0,"help");
+    if command=="help"{Stdout().writeln("blog init DB | publish DB TITLE BODY | list DB | serve DB [PORT]");return 0;}
+    let posts=BlogPosts(args.text(1));
+    match command{
+        case "init"{await posts.initialize();}
+        case "publish"{await posts.publish(Draft(args.text(2),args.text(3)));}
+        case "list"{Stdout().writeln(PrettyJson(indentation:2,origin:await posts.list()).string());}
+        case "serve"{let pages=BlogPages(posts);await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/posts/:id",pages.article),Get("/api/posts",pages.api),Post("/api/posts",pages.publish)],pages.missing),args.integer(2,8082));}
+        else{throw Usage("unknown blog command");}
+    }0;
+}

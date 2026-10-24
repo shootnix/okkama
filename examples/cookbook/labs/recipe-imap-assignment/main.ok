@@ -1,0 +1,22 @@
+// Проверить наличие назначенных IMAP UID
+//
+// После APPEND либо COPY приложение сохраняет полученные идентификаторы, когда сервер их сообщил.
+//
+// Запуск: ./examples/cookbook/run lab recipe-imap-assignment
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-imap-assignment
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/imap_assignment v1.0.0;
+import "mail/imap_changes" take ImapAssignedUids;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let assignment = ImapAssignedUids();
+    if assignment.known() {
+        Stdout().writeln("Сервер сообщил назначенные UID");
+    } else {
+        Stdout().writeln("Сохранить результат операции без назначения UID");
+    }
+    0;
+}

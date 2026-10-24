@@ -1,0 +1,81 @@
+// Конвертер складских записей JSON, CSV и TOML
+//
+// Проверяет предметные записи name/quantity и сериализует их в выбранный формат.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run formats demo toml
+//     ./examples/cookbook/run formats convert json csv examples/cookbook/data/stock.json
+//     ./examples/cookbook/run formats convert csv toml examples/cookbook/data/stock.csv
+//     ./examples/cookbook/run formats convert toml json examples/cookbook/data/stock.toml
+//
+// JSON: массив {name,quantity}; CSV: name,quantity; TOML: согласованные массивы names и quantities. Вывод — stdout; перенаправьте его в нужный файл.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/formats v1.0.0;
+import "../support/arguments" take Arguments,Usage;
+import "../support/files" take LocalFiles;
+import "json/value" take JsonValue,JsonArray,JsonObject,JsonMember,JsonText,JsonNumber;
+import "json/read" take JsonView;
+import "json/parse" take ParsedJson;
+import "json/write" take CompactJson,PrettyJson;
+import "csv" take CsvRows,CsvString,CsvDialect;
+import "toml/parse" take ParsedToml;
+import "config/document" take TomlSettings;
+import "config/source" take SettingSource,SettingSourceKind;
+import "config/key" take SettingKey;
+import "strings/parse" take ParsedInt;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+object StockItem {
+    has name is string;has quantity is int;
+    StockItem(name is string,quantity is int){confirm name.length()>0 && name.length()<=100 && quantity>=0 && quantity<=1000000 else throw Usage("invalid stock item");self.name=name;self.quantity=quantity;}
+    name() is string{name;}quantity() is int{quantity;}
+    json() is JsonObject{JsonObject([JsonMember("name",JsonText(name)),JsonMember("quantity",JsonNumber(Decimal(quantity.string())))]);}
+}
+object Quantity {
+    has origin is string;Quantity(origin is string){self.origin=origin;}
+    value() is int{let value=BigInt(origin);confirm value.sign()>=0 && value.order(BigInt("1000000"))!=Order.greater else throw Usage("quantity must be 0..1000000");ParsedInt(value.string()).value();}
+}
+object StockDocument {
+    has items is @StockItem;
+    StockDocument(format is string,text is string){
+        let values is @StockItem=match format{
+            case "json"{JsonView(ParsedJson(text)).items().map()->row{StockItem(row.text("name"),row.int("quantity"));};}
+            case "csv"{
+                let ending=if text.split("\r\n").size()>1{"\r\n";}else{"\n";};
+                let rows=CsvRows(text,CsvDialect(",","\"",ending)).map()->row{row;};
+                confirm rows.size()>0 && rows[0]==["name","quantity"] else throw Usage("expected name,quantity CSV header");
+                (1..rows.size()).map()->index{let row=rows[index];confirm row.size()==2 else throw Usage("two stock columns required");StockItem(row[0],Quantity(row[1]).value());};
+            }
+            case "toml"{
+                let settings=TomlSettings(ParsedToml(text).value(),SettingSource(SettingSourceKind.document,"stock.toml"));
+                let names=settings.entry(SettingKey(["names"])).values();let quantities=settings.entry(SettingKey(["quantities"])).values();
+                confirm names.size()==quantities.size() else throw Usage("TOML names and quantities must align");
+                (0..names.size()).map()->index{StockItem(names.item(index),Quantity(quantities.item(index)).value());};
+            }
+            else{throw Usage("format must be json, csv or toml");}
+        };confirm values.size()<=10000 else throw Usage("too many stock items");items=values;
+    }
+    string(format is string) is string{
+        match format{
+            case "json"{let values is @JsonValue=items.map()->item{item.json();};PrettyJson(indentation:2,origin:JsonArray(values)).string();}
+            case "csv"{
+                let rows is @@string=(0..items.size()+1).map()->index{if index==0{["name","quantity"];}else{let item=items[index-1];[item.name(),item.quantity().string()];}};
+                CsvString(rows,CsvDialect(",","\"","\n")).string();
+            }
+            case "toml"{
+                let names=items.map()->item{CompactJson(origin:JsonText(item.name())).string();};let quantities=items.map()->item{item.quantity().string();};
+                "names = ["+names.join(", ")+"]\nquantities = ["+quantities.join(", ")+"]\n";
+            }
+            else{throw Usage("format must be json, csv or toml");}
+        }
+    }
+}
+main() is int{
+    let args=Arguments();let command=args.text(0,"help");
+    if command=="convert"{let document=StockDocument(args.text(1),LocalFiles().text(args.text(3)));Stdout().write(document.string(args.text(2)));return 0;}
+    if command=="demo"{Stdout().write(StockDocument("json",LocalFiles().text("examples/cookbook/data/stock.json")).string(args.text(1,"toml")));return 0;}
+    Stdout().writeln("formats convert FROM TO FILE | demo [json|csv|toml]");0;
+}

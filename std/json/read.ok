@@ -1,0 +1,285 @@
+module json/read v1.0.0;
+
+import "json/value" take JsonKind,JsonValue,JsonMember,JsonWriting;
+import "collections/sequence" take Sequencing;
+import "math/decimal" take Decimal;
+import "numbers/bigint" take BigInt,BigProduct,BigPower,BigPowerLimitExceeded;
+import "strings/parse" take ParsedInt;
+import "async/atomic" take Atomic;
+import "compare" take Order;
+
+// Typed reading of any JsonValue without casts.
+//
+//     let body = JsonView(ParsedJson("{\"name\":\"Ada\",\"age\":36}"));
+//     body.text("name");          // "Ada"
+//     body.int("age");            // 36
+//     body.member("tags").items() // @JsonView
+//
+// A view observes its value through the same print() protocol that printers
+// use, one level at a time: reading a member does not materialize siblings'
+// subtrees. Each view carries its RFC 6901 JSON Pointer ("" is the root), so
+// failures name the exact location: WrongJsonKind, MissingJsonValue and
+// InvalidJsonNumber all expose pointer(). A JsonValue whose print() does not
+// issue exactly one command matching its kind() raises InvalidJsonProtocol.
+
+object JsonView {
+    has origin is JsonValue;
+    has location is string;
+
+    JsonView(origin is JsonValue) {
+        self.origin = origin;
+        location = "";
+    }
+
+    JsonView(origin is JsonValue, pointer is string) {
+        confirm pointer == "" || pointer.slice(0, 1) == "/" else throw InvalidJsonProtocol(pointer, "JSON pointer must be empty or start with /");
+        self.origin = origin;
+        location = pointer;
+    }
+
+    kind() is JsonKind { origin.kind(); }
+    pointer() is string { location; }
+    value() is JsonValue { origin; }
+
+    text() is string { self.payload(JsonKind.string_value).text(); }
+    number() is Decimal { self.payload(JsonKind.number_value).number(); }
+    boolean() is bool { self.payload(JsonKind.boolean_value).boolean(); }
+
+    // Exact integer of any size; fractions and exponent overflow are InvalidJsonNumber.
+    integer() is BigInt {
+        let exact = self.number();
+        confirm exact.exponent() >= 0 else throw InvalidJsonNumber(location, exact.string(), "integer required");
+        if exact.exponent() == 0 {
+            exact.coefficient();
+        }
+        else {
+            let scale = try {
+                BigPower(BigInt("10"), exact.exponent(), 4096).value();
+            }
+            catch failure is BigPowerLimitExceeded {
+                throw InvalidJsonNumber(location, exact.string(), "integer exceeds 4096 bits");
+            };
+            BigProduct(left: exact.coefficient(), right: scale).value();
+        }
+    }
+
+    // Builtin int: the integer must fit the signed 64-bit range.
+    int() is int {
+        let exact = self.integer();
+        confirm exact.order(BigInt("9223372036854775807")) != Order.greater && exact.order(BigInt("-9223372036854775808")) != Order.less
+            else throw InvalidJsonNumber(location, exact.string(), "integer outside int range");
+        ParsedInt(exact.string()).value();
+    }
+
+    size() is int {
+        match origin.kind() {
+            case JsonKind.array_value { self.items().size(); }
+            case JsonKind.object_value { self.members().size(); }
+            else { throw WrongJsonKind(location, JsonKind.array_value, origin.kind()); }
+        }
+    }
+
+    items() is @JsonView {
+        let values = self.payload(JsonKind.array_value).elements();
+        let views is @JsonView = (0..values.size()).map() -> index {
+            JsonView(values[index], location + "/" + index.string());
+        };
+        views;
+    }
+
+    item(index is int) is JsonView {
+        let values = self.payload(JsonKind.array_value).elements();
+        confirm index >= 0 && index < values.size() else throw MissingJsonValue(location + "/" + index.string());
+        JsonView(values[index], location + "/" + index.string());
+    }
+
+    members() is @JsonMember { self.payload(JsonKind.object_value).members(); }
+
+    names() is @string {
+        let names is @string = self.members().map() -> member { member.name(); };
+        names;
+    }
+
+    membership(name is string) is bool {
+        self.members().reduce(false) -> found, member { found || member.name() == name; };
+    }
+
+    member(name is string) is JsonView {
+        let members = self.members();
+        let path = location + "/" + JsonPointerToken(name).string();
+        let index = if members.size() == 0 { -1; } else {
+            for (0..members.size()) -> index { last index if members[index].name() == name; -1; }
+        };
+        confirm index >= 0 else throw MissingJsonValue(path);
+        JsonView(members[index].value(), path);
+    }
+
+    // Member shortcuts for flat request documents: view.text("name") == view.member("name").text().
+    text(name is string) is string { self.member(name).text(); }
+    number(name is string) is Decimal { self.member(name).number(); }
+    integer(name is string) is BigInt { self.member(name).integer(); }
+    int(name is string) is int { self.member(name).int(); }
+    boolean(name is string) is bool { self.member(name).boolean(); }
+
+    private:
+    payload(expected is JsonKind) is JsonPayload {
+        let actual = origin.kind();
+        confirm actual == expected else throw WrongJsonKind(location, expected, actual);
+        let payload = JsonPayload(expected, location);
+        origin.print(payload);
+        payload.complete();
+        payload;
+    }
+}
+
+// RFC 6901 reference token: "~" becomes "~0" and "/" becomes "~1".
+object JsonPointerToken {
+    has origin is string;
+    JsonPointerToken(origin is string) { self.origin = origin; }
+    string() is string { origin.split("~").join("~0").split("/").join("~1"); }
+}
+
+// One-shot JsonWriting receiver that accepts exactly one command of the expected kind.
+object JsonPayload does JsonWriting {
+    has expected is JsonKind;
+    has location is string;
+    has calls is Atomic<int>;
+    has text_value is Atomic<string>;
+    has number_value is Atomic<@Decimal>;
+    has boolean_value is Atomic<bool>;
+    has element_values is Atomic<@JsonValue>;
+    has member_values is Atomic<@JsonMember>;
+
+    JsonPayload(expected is JsonKind, location is string) {
+        self.expected = expected;
+        self.location = location;
+        calls = Atomic(0);
+        text_value = Atomic("");
+        let no_number is @Decimal = [];
+        number_value = Atomic(no_number);
+        boolean_value = Atomic(false);
+        let no_elements is @JsonValue = [];
+        element_values = Atomic(no_elements);
+        let no_members is @JsonMember = [];
+        member_values = Atomic(no_members);
+    }
+
+    null_value() is void { self.called(JsonKind.null_value); }
+    boolean(value is bool) is void { self.called(JsonKind.boolean_value); boolean_value.replace(value); }
+    number(value is Decimal) is void { self.called(JsonKind.number_value); let single is @Decimal = [value]; number_value.replace(single); }
+    text(value is string) is void { self.called(JsonKind.string_value); text_value.replace(value); }
+
+    elements(values is Sequencing<JsonValue>) is void {
+        self.called(JsonKind.array_value);
+        let snapshot is @JsonValue = (0..values.size()).map() -> index {
+            let value is JsonValue = values.item(index);
+            value;
+        };
+        element_values.replace(snapshot);
+    }
+
+    members(members is Sequencing<JsonMember>) is void {
+        self.called(JsonKind.object_value);
+        let snapshot is @JsonMember = (0..members.size()).map() -> index { members.item(index); };
+        member_values.replace(snapshot);
+    }
+
+    complete() is void {
+        confirm calls.value() == 1 else throw InvalidJsonProtocol(location, "print() must issue exactly one JsonWriting command");
+    }
+
+    text() is string { text_value.value(); }
+    number() is Decimal { number_value.value()[0]; }
+    boolean() is bool { boolean_value.value(); }
+    elements() is @JsonValue { element_values.value(); }
+    members() is @JsonMember { member_values.value(); }
+
+    private:
+    called(kind is JsonKind) is void {
+        confirm calls.value() == 0 else throw InvalidJsonProtocol(location, "print() must issue exactly one JsonWriting command");
+        confirm kind == expected else throw InvalidJsonProtocol(location, "print() command does not match kind()");
+        calls.replace(1);
+    }
+}
+
+object JsonKindName {
+    has origin is JsonKind;
+    JsonKindName(origin is JsonKind) { self.origin = origin; }
+    string() is string {
+        match origin {
+            case JsonKind.null_value { "null"; }
+            case JsonKind.boolean_value { "boolean"; }
+            case JsonKind.number_value { "number"; }
+            case JsonKind.string_value { "string"; }
+            case JsonKind.array_value { "array"; }
+            else { "object"; }
+        }
+    }
+}
+
+object JsonLocation {
+    has origin is string;
+    JsonLocation(origin is string) { self.origin = origin; }
+    string() is string { if origin == "" { "the document root"; } else { origin; } }
+}
+
+object WrongJsonKind does Error {
+    has location is string;
+    has wanted is JsonKind;
+    has found is JsonKind;
+
+    WrongJsonKind(pointer is string, expected is JsonKind, actual is JsonKind) {
+        location = pointer;
+        wanted = expected;
+        found = actual;
+    }
+
+    pointer() is string { location; }
+    expected() is JsonKind { wanted; }
+    actual() is JsonKind { found; }
+    text() is string { "JSON value at " + JsonLocation(location).string() + " must be " + JsonKindName(wanted).string() + ", found " + JsonKindName(found).string(); }
+}
+
+object MissingJsonValue does Error {
+    has location is string;
+    MissingJsonValue(pointer is string) { location = pointer; }
+    pointer() is string { location; }
+    text() is string { "JSON value at " + JsonLocation(location).string() + " is missing"; }
+}
+
+object InvalidJsonNumber does Error {
+    has location is string;
+    has spelling is string;
+    has reason is string;
+
+    InvalidJsonNumber(pointer is string, number is string, reason is string) {
+        location = pointer;
+        spelling = number;
+        self.reason = reason;
+    }
+
+    pointer() is string { location; }
+    number() is string { spelling; }
+    reason() is string { reason; }
+    text() is string { "JSON number " + spelling + " at " + JsonLocation(location).string() + ": " + reason; }
+}
+
+object InvalidJsonProtocol does Error {
+    has location is string;
+    has reason is string;
+    InvalidJsonProtocol(pointer is string, reason is string) { location = pointer; self.reason = reason; }
+    pointer() is string { location; }
+    reason() is string { reason; }
+    text() is string { "invalid JSON value at " + JsonLocation(location).string() + ": " + reason; }
+}
+
+test "pointer tokens escape tilde before slash" {
+    test.is(JsonPointerToken("a/b~c").string(), "a~1b~0c");
+    test.is(JsonPointerToken("").string(), "");
+}
+
+test "kind names and root location are readable" {
+    test.is(JsonKindName(JsonKind.string_value).string(), "string");
+    test.is(JsonLocation("").string(), "the document root");
+    test.is(WrongJsonKind("/age", JsonKind.number_value, JsonKind.string_value).text(), "JSON value at /age must be number, found string");
+}

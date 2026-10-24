@@ -1,0 +1,61 @@
+module http/cache_freshness v1.0.0;
+import "http/header" take Headers,HeaderName;
+import "http/cache_control" take CacheControl,CacheDeltaSeconds;
+import "http/date" take ParsedHttpDate;
+import "time/clock" take Instant,MonotonicInstant;
+import "time/duration" take Duration,DurationUnit;
+// Wall time supplies Date comparison only; elapsed delay/residence is monotonic.
+object CacheResponseTiming {
+    has received is Instant;has started,finished is MonotonicInstant;
+    CacheResponseTiming(received is Instant,started is MonotonicInstant,finished is MonotonicInstant){
+        confirm finished.minus(started).seconds()>=0.rat() else throw InvalidCacheTiming();
+        self.received=received;self.started=started;self.finished=finished;
+    }
+    received() is Instant{received;}finished() is MonotonicInstant{finished;}
+    delay() is Duration{finished.minus(started);}
+}
+object CacheFreshness {
+    has timing is CacheResponseTiming;has initial,lifetime is Duration;has reusable is bool;
+    CacheFreshness(headers is Headers,timing is CacheResponseTiming){
+        self.timing=timing;let metadata=CacheFreshnessMetadata(headers,timing.received());
+        let apparent=timing.received().minus(metadata.date()).seconds();let nonnegative=if apparent>0.rat(){apparent;}else{0.rat();};
+        let corrected=metadata.age().rat()+timing.delay().seconds();initial=Duration(if nonnegative>corrected{nonnegative;}else{corrected;},DurationUnit.second);
+        lifetime=metadata.lifetime();reusable=metadata.reusable();
+    }
+    age(now is MonotonicInstant) is Duration{let resident=now.minus(timing.finished());confirm resident.seconds()>=0.rat() else throw InvalidCacheTiming();initial.plus(resident);}
+    lifetime() is Duration{lifetime;}
+    reusable() is bool{reusable;}
+    fresh(now is MonotonicInstant) is bool{let current=self.age(now);reusable && current.seconds()<lifetime.seconds();}
+}
+object CacheFreshnessMetadata {
+    has date is Instant;has age is int;has lifetime is Duration;has reusable is bool;
+    CacheFreshnessMetadata(headers is Headers,received is Instant){
+        let observed=try{CacheFreshnessObservations(headers,received);}catch e is Error{CacheFreshnessObservations(received);};
+        date=observed.date();age=observed.age();lifetime=observed.lifetime();reusable=observed.reusable();
+    }
+    date() is Instant{date;}age() is int{age;}lifetime() is Duration{lifetime;}reusable() is bool{reusable;}
+}
+object CacheFreshnessObservations {
+    has date is Instant;has age is int;has lifetime is Duration;has reusable is bool;
+    // Invalid received cache metadata remains an unusable observation, not an
+    // error in the application response or permission to try a weaker fallback.
+    CacheFreshnessObservations(received is Instant){date=received;age=0;lifetime=Duration(0.rat(),DurationUnit.second);reusable=false;}
+    CacheFreshnessObservations(headers is Headers,received is Instant){
+        let dates=headers.values(HeaderName("Date"));confirm dates.size()<=1 else throw InvalidCacheMetadata();
+        let observed=if dates.size()==1{ParsedHttpDate(dates.item(0),received).value();}else{received;};date=observed;
+        let ages=headers.values(HeaderName("Age"));confirm ages.size()<=1 else throw InvalidCacheMetadata();age=if ages.size()==1{CacheDeltaSeconds(ages.item(0)).value();}else{0;};
+        let control=CacheControl(headers);let max_age=control.count("max-age");
+        let duration=if max_age>0{control.seconds("max-age").rat();}else{
+            let expires=headers.values(HeaderName("Expires"));confirm expires.size()<=1 else throw InvalidCacheMetadata();
+            if expires.size()==1{let difference=ParsedHttpDate(expires.item(0),received).value().minus(observed).seconds();if difference>0.rat(){difference;}else{0.rat();}}else{0.rat();}
+        };lifetime=Duration(duration,DurationUnit.second);reusable=!control.present("no-cache") && !control.present("no-store");
+    }
+    date() is Instant{date;}age() is int{age;}lifetime() is Duration{lifetime;}reusable() is bool{reusable;}
+}
+object InvalidCacheMetadata does Error{InvalidCacheMetadata();text() is string{"invalid HTTP cache metadata";}}
+object InvalidCacheTiming does Error{InvalidCacheTiming();text() is string{"HTTP cache elapsed clock moved backward";}}
+
+test "cache age includes monotonic response delay" {
+    let received=Instant(Duration(100.rat(),DurationUnit.second));let began=MonotonicInstant(Duration(0.rat(),DurationUnit.second));let ended=began.plus(Duration(2.rat(),DurationUnit.second));
+    let value=CacheFreshness(Headers([]),CacheResponseTiming(received,began,ended));test.is(value.age(ended).seconds(),2.rat());
+}

@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.generic-successor-wrong-argument",
+  "title": "a successor cannot stage a value of another specialization",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.GENERIC-ROLE-SUCCESSOR",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The specialization mismatch is statically visible but may also be caught at the successor's parameter boundary."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: one T denotes one concrete type throughout one specialization; Cell<int>.revised(\"two\") violates it."
+  },
+  "status": "mandatory"
+}

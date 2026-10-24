@@ -1,0 +1,62 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, ChannelClosed, InvalidChannelCapacity;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/collect" take AllFutures, Raced, NoFutures;
+import "async/cancellation" take Cancellation, Cancelling;
+import "async/atomic" take Atomic;
+
+object Job {
+    has name is string;
+    has result is int;
+    Job(:name, :result);
+    async run() is int {
+        Stdout().writeln("running " + name);
+        result;
+    }
+}
+
+object Quiet {
+    has result is int;
+    Quiet(:result);
+    async run() is int { result; }
+}
+
+object Broken does Error {
+    Broken();
+    text() is string { "broken"; }
+}
+
+object Failing {
+    Failing();
+    async run() is int {
+        Stdout().writeln("failing body");
+        throw Broken();
+    }
+}
+
+object Values {
+    Values();
+    async v(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    async flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+    async log(text is string) is void {
+        Stdout().writeln(text);
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let pending is @Future<int> = [Quiet(result: 3).run(), Quiet(result: 1).run(), Quiet(result: 2).run()];
+    let collected is AllFutures<int> = AllFutures(origins: pending);
+    let values = await collected.results();
+    out.writeln(values.item(0).string() + "," + values.item(1).string() + "," + values.item(2).string());
+    0;
+}

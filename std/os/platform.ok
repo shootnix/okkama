@@ -1,0 +1,136 @@
+module os/platform v1.0.0;
+
+import "encoding/utf" take ByteOrder;
+import "runtime/system" take
+    system_platform,
+    system_architecture,
+    system_byte_order,
+    system_host_name,
+    system_cpu_count;
+
+// Platform is an immutable snapshot of portable runtime identity. Consumers
+// branch only on the deliberately small OperatingSystem enum; less common
+// systems remain usable through OperatingSystem.other and architecture().
+//
+//     let platform = Platform();
+//     match platform.operating_system() {
+//         case OperatingSystem.windows { configure_windows(); }
+//         case OperatingSystem.macos { configure_macos(); }
+//         case OperatingSystem.linux { configure_linux(); }
+//         else { configure_portable(); }
+//     }
+//
+// Byte order describes the running machine. Serialized formats must still
+// choose their byte order explicitly instead of inheriting this value:
+//
+//     output.writeln(platform.architecture());
+//     if platform.byte_order() == ByteOrder.little {
+//         output.writeln("little-endian host");
+//     }
+
+enum OperatingSystem = (linux, macos, windows, freebsd, other);
+
+object Platform {
+    has system is OperatingSystem;
+    has machine is string;
+    has order is ByteOrder;
+
+    Platform() {
+        let platform is string = try {
+            system_platform();
+        }
+        catch failure is NativeFailure {
+            panic "System provider could not identify the operating system";
+        };
+        system = match platform {
+            case "linux" { OperatingSystem.linux; }
+            case "macos" { OperatingSystem.macos; }
+            case "windows" { OperatingSystem.windows; }
+            case "freebsd" { OperatingSystem.freebsd; }
+            else { OperatingSystem.other; }
+        };
+        machine = try {
+            system_architecture();
+        }
+        catch failure is NativeFailure {
+            panic "System provider could not identify the architecture";
+        };
+        let byte_order is string = try {
+            system_byte_order();
+        }
+        catch failure is NativeFailure {
+            panic "System provider could not identify native byte order";
+        };
+        order = match byte_order {
+            case "big" { ByteOrder.big; }
+            case "little" { ByteOrder.little; }
+            else {
+                panic "System provider returned an invalid native byte order";
+            }
+        };
+    }
+
+    operating_system() is OperatingSystem {
+        system;
+    }
+
+    architecture() is string {
+        machine;
+    }
+
+    byte_order() is ByteOrder {
+        order;
+    }
+}
+
+// Host captures runtime-local machine capacity separately from Platform:
+//
+//     let host = Host();
+//     output.writeln(host.name());
+//     output.writeln("available CPUs: ", host.cpu_count().string());
+//
+// cpu_count() is always positive and means processors currently available to
+// the runtime, not a promise about physical sockets or permanently available
+// parallelism.
+
+object Host {
+    has host_name is string;
+    has processors is int;
+
+    Host() {
+        host_name = try {
+            system_host_name();
+        }
+        catch failure is NativeFailure {
+            throw UnavailableHostInformation("host name is unavailable");
+        };
+        processors = try {
+            system_cpu_count();
+        }
+        catch failure is NativeFailure {
+            throw UnavailableHostInformation("CPU count is unavailable");
+        };
+        confirm self.processors > 0 else panic "System provider returned no CPUs";
+    }
+
+    name() is string {
+        host_name;
+    }
+
+    cpu_count() is int {
+        processors;
+    }
+}
+
+object UnavailableHostInformation does Error {
+    has message is string;
+
+    UnavailableHostInformation(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

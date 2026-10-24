@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.invariant.typed-failure",
+  "title": "a failed constructor invariant throws a catchable typed error",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTOR-INVARIANTS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0\ninvalid cash -1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.4: confirm ... else throw raises the Error; digit 0 is the inclusive boundary; a failed constructor returns no object."
+  },
+  "status": "mandatory"
+}

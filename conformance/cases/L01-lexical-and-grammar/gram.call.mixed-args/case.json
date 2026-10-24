@@ -1,0 +1,56 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.call.mixed-args",
+  "title": "positional and named arguments cannot be mixed",
+  "purpose": "Mixed argument styles never execute the call.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.CALL-ARGS",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "CALL.ARGUMENTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "spec 8.10 forbids mixing but the grammar's arg_list accepts both forms and no stage is specified; the call must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.10: positional and named arguments MUST NOT be mixed in one call."
+  },
+  "status": "mandatory"
+}

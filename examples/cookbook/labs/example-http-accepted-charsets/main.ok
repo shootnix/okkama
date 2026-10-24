@@ -1,0 +1,18 @@
+// Выбрать кодировку по Accept-Charset
+//
+// Выбрать язык и тип ответа по Accept: качества и Accepted-представления сохраняют точные предпочтения клиента.
+//
+// Запуск: ./examples/cookbook/run lab example-http-accepted-charsets
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-accepted-charsets
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/negotiation" take AcceptedCharsets, CharsetName;
+import "io/stdout" take Stdout;
+main() is int {
+    let accepted=AcceptedCharsets("utf-8;q=0,*;q=0.5,us-ascii;q=0.8");
+    Stdout().writeln(accepted.string());
+    Stdout().writeln(accepted.preference([CharsetName("UTF-8"),CharsetName("US-ASCII")]).string());
+    0;
+}

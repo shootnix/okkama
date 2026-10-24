@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Status = (ready, failed, done);
+enum Single = (one);
+
+main() is int {
+    let out = Stdout();
+    let s = Status.failed;
+    out.writeln(if s == Status.failed { "failed"; } else { "other"; });
+    let only = Single.one;
+    out.writeln(if only == Single.one { "one"; } else { "?"; });
+    0;
+}

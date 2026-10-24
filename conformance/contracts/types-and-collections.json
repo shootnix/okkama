@@ -1,0 +1,243 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Types, generics and collections",
+  "description": "Type boundaries, generics and builtin collections (spec sections 6, 8.7-8.9).",
+  "contracts": [
+    {
+      "id": "TYPE.BOUNDARIES",
+      "title": "Typed boundaries (let, fields, parameters, results) validate values deeply",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "TYPE.NOMINAL",
+      "title": "Object, role and enum types are nominal; same shape is not same type",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#12",
+        "docs/okkama-spec-11072026.md#15"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "TYPE.ANY",
+      "title": "any boxes values opaquely; no inspection or implicit unboxing; actions cannot cross any",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "GEN.INFERENCE",
+      "title": "Generic construction infers one exact type per parameter; mixed evidence fails",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "GEN.IDENTITY",
+      "title": "Applied generic types are distinct identities (Box<int> vs Box<float>)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "GEN.ARITY",
+      "title": "Applied types supply exactly the declared number of arguments; no explicit call-site specialization",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "GEN.EXPECTED-TYPE",
+      "title": "A declared target supplies missing evidence (e.g. empty collections) one-way",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "GEN.ROLES",
+      "title": "Generic roles and exact applied role conformance",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "GEN.BOUNDS",
+      "title": "One nominal role bound per object type parameter, checked after inference",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "COLL.ARRAY",
+      "title": "Arrays: immutable, indexed by int (byte only after .int()), out-of-bounds fails unless `else`",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.7",
+        "docs/okkama-spec-11072026.md#8.9"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "COLL.MAP",
+      "title": "Maps: expression keys, scalar key types with exact key identity, missing keys fail unless `else`, keys()/values() sorted by key",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.8",
+        "docs/okkama-spec-11072026.md#6.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "notes": "Int keys sort by numeric value (D-037).",
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "COLL.MAP-BYTE-KEYS",
+      "title": "byte values are not valid map keys (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.3",
+        "docs/OkkamaBook.md#5.3",
+        "docs/okkama-llm-context-1.0.md#11",
+        "contracts/DISCREPANCY-LEDGER.md#d-007"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is a rejection rule",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-007"
+      ],
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "COLL.LITERAL-IDENTITY",
+      "title": "Homogeneous literals infer exact element types; empty and heterogeneous literals stay untagged",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "COLL.TYPED-IDENTITY",
+      "title": "Typed collections retain element type tags even when empty",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Types, generics and collections"
+    },
+    {
+      "id": "COLL.ITERABLE",
+      "title": "User iteration is nominal through collections/iteration Iterable<T> and Cursor<T>",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.9",
+        "docs/okkama-spec-11072026.md#6.8"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Types, generics and collections"
+    }
+  ]
+}

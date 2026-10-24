@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+object Taker {
+    Taker();
+    ints(values is @int) is int { values.size(); }
+    boxed(box is Box<int>) is int { box.get(); }
+    anything(values is @any) is int { values.size(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let matrix is @@int = [[1, 2], [3]];
+    let index is %string:@int = ["a": [1], "b": []];
+    let empty is @string = [];
+    out.writeln(matrix[0].size().string());
+    out.writeln(index["b"].size().string());
+    out.writeln(empty.size().string());
+    out.writeln(Taker().ints([4, 5, 6]).string());
+    0;
+}

@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "checksum/adler32" take Adler32;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let prefix = Adler32(Utf8Encoded("Wiki").bytes());
+    let whole = prefix.state(Utf8Encoded("pedia").bytes());
+    Stdout().writeln(whole.value().string());
+    Stdout().writeln(prefix.value().string());
+    0;
+}

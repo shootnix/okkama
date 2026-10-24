@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let a = [1, 2, 3,];
+    let m = ["x": 1, "y": 2,];
+    let empty is @int = [];
+    let empty_map is %string:int = [:];
+    let spaced is %string:int = [ : ];
+    out.writeln(a.size().string());
+    out.writeln(m.size().string());
+    out.writeln(empty.size().string());
+    out.writeln(empty_map.size().string());
+    out.writeln(if empty_map == spaced { "same"; } else { "different"; });
+    0;
+}

@@ -1,0 +1,85 @@
+module http/internal/http2_frame v1.0.0;
+import "encoding/binary" take IntegerBytes,IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+import "http/internal/wire_bytes" take HttpWireBytes;
+
+// Internal wire values; these do not publish a session or stable public frame API.
+enum Http2FaultScope=(connection,stream);
+object Http2Fault does Error {
+    has scope is Http2FaultScope;has code,stream is int;has reason is string;
+    Http2Fault(scope is Http2FaultScope,code is int,stream is int,reason is string){self.scope=scope;self.code=code;self.stream=stream;self.reason=reason;}
+    scope() is Http2FaultScope{scope;}code() is int{code;}stream() is int{stream;}reason() is string{reason;}
+    text() is string{"HTTP2 protocol fault: "+reason;}
+}
+object Http2FrameHeader {
+    has kind,flags is byte;has stream,length is int;
+    Http2FrameHeader(kind is byte,flags is byte,stream is int,length is int){
+        confirm stream>=0 && stream<=2147483647 && length>=0 && length<=16777215 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid frame coordinates");
+        self.kind=kind;self.flags=flags;self.stream=stream;self.length=length;
+    }
+    kind() is byte{kind;}flags() is byte{flags;}stream() is int{stream;}length() is int{length;}
+    bytes() is @byte{
+        let size=IntegerBytes(length,3,Signedness.unsigned,ByteOrder.big).bytes();let id=IntegerBytes(stream,4,Signedness.unsigned,ByteOrder.big).bytes();
+        [size[0],size[1],size[2],kind,flags,id[0],id[1],id[2],id[3]];
+    }
+}
+object ParsedHttp2FrameHeader {
+    has origin is @byte;has maximum is int;
+    ParsedHttp2FrameHeader(origin is @byte){self.origin=origin;maximum=16384;}
+    ParsedHttp2FrameHeader(origin is @byte,maximum is int){
+        confirm maximum>=16384 && maximum<=16777215 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid receive frame limit");self.origin=origin;self.maximum=maximum;
+    }
+    value() is Http2FrameHeader{
+        confirm origin.size()==9 else throw Http2Fault(Http2FaultScope.connection,6,0,"exact frame header required");
+        let length=IntegerFromBytes(origin.slice(0,3),Signedness.unsigned,ByteOrder.big).value();
+        confirm length<=maximum else throw Http2Fault(Http2FaultScope.connection,6,0,"receive frame limit");
+        let stream=IntegerFromBytes(origin.slice(5,9),Signedness.unsigned,ByteOrder.big).value() & 2147483647;
+        Http2FrameHeader(origin[3],origin[4],stream,length);
+    }
+}
+object Http2Frame {
+    has header is Http2FrameHeader;has payload is @byte;
+    Http2Frame(header is Http2FrameHeader,payload is @byte){confirm payload.size()==header.length() else throw Http2Fault(Http2FaultScope.connection,6,0,"frame payload length");self.header=header;self.payload=payload;}
+    header() is Http2FrameHeader{header;}payload() is @byte{payload;}
+    bytes() is @byte{HttpWireBytes([header.bytes(),payload],9+payload.size()).bytes();}
+}
+object Http2HeaderRules {
+    has origin is Http2FrameHeader;Http2HeaderRules(origin is Http2FrameHeader){self.origin=origin;}
+    check() is void{
+        let kind=origin.kind().int();let stream=origin.stream();let flags=origin.flags().int();let length=origin.length();
+        if kind==0 || kind==1 || kind==2 || kind==3 || kind==9{
+            confirm stream>0 else throw Http2Fault(Http2FaultScope.connection,1,0,"stream frame on stream zero");
+        }
+        if kind==4 || kind==6 || kind==7{confirm stream==0 else throw Http2Fault(Http2FaultScope.connection,1,0,"connection frame on a stream");}
+        if kind==5{throw Http2Fault(Http2FaultScope.connection,1,0,"server push disabled");}
+        if kind==2{confirm length==5 else throw Http2Fault(Http2FaultScope.stream,6,stream,"priority length");}
+        if kind==3 || kind==8{confirm length==4 else throw Http2Fault(Http2FaultScope.connection,6,0,"fixed frame length");}
+        if kind==6{confirm length==8 else throw Http2Fault(Http2FaultScope.connection,6,0,"ping length");}
+        if kind==7{confirm length>=8 else throw Http2Fault(Http2FaultScope.connection,6,0,"goaway length");}
+        if kind==4{confirm length%6==0 && ((flags & 1)==0 || length==0) else throw Http2Fault(Http2FaultScope.connection,6,0,"settings length");}
+        if (kind==0 || kind==1) && (flags & 8)!=0{confirm length>0 else throw Http2Fault(Http2FaultScope.connection,1,0,"missing padding length");}
+        if kind==1 && (flags & 32)!=0{
+            let minimum=if (flags & 8)!=0{6;}else{5;};confirm length>=minimum else throw Http2Fault(Http2FaultScope.connection,6,0,"headers priority length");
+        }
+    }
+}
+object Http2FrameRules {
+    has origin is Http2Frame;Http2FrameRules(origin is Http2Frame){self.origin=origin;}
+    check() is void{
+        let header=origin.header();Http2HeaderRules(header).check();
+        let kind=header.kind().int();let stream=header.stream();let flags=header.flags().int();let data=origin.payload();let length=data.size();
+        if kind==8{
+            let increment=IntegerFromBytes(data,Signedness.unsigned,ByteOrder.big).value() & 2147483647;
+            let scope=if stream==0{Http2FaultScope.connection;}else{Http2FaultScope.stream;};
+            confirm increment>0 else throw Http2Fault(scope,1,stream,"zero window increment");
+        }
+        if kind==0 || kind==1{
+            let padded=(flags & 8)!=0;
+            if padded{confirm length>0 && data[0].int()<length else throw Http2Fault(Http2FaultScope.connection,1,0,"padding length");}
+            if kind==1 && (flags & 32)!=0{
+                let offset=if padded{1;}else{0;};let padding=if padded{data[0].int();}else{0;};
+                confirm length>=offset+5+padding else throw Http2Fault(Http2FaultScope.connection,6,0,"headers priority length");
+            }
+        }
+    }
+}

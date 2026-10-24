@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+object Cell<T> {
+    has value is T;
+    Cell(:value);
+    revised(value is T) is ^Cell<T> {
+        ^value = value;
+    }
+    size() is int { 1; }
+}
+
+main() is int {
+    let cell = Cell(value: 1);
+    let updated = cell.revised("two");
+    updated.size();
+}

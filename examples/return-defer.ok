@@ -1,0 +1,27 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama examples/return-defer.ok
+// Output: inner cleanup, action cleanup, 7, main cleanup (one per line).
+object Search {
+    Search();
+    first_positive(values is @int) is int {
+        let output = Stdout();
+        defer output.writeln("action cleanup");
+        for values -> value {
+            if value > 0 {
+                defer output.writeln("inner cleanup");
+                return value;
+            }
+        }
+        return 0;
+    }
+}
+
+main() is int {
+    let output = Stdout();
+    defer output.writeln("main cleanup");
+    let value = Search().first_positive([-2, 0, 7, 9]);
+    output.writeln(value.string());
+    return 0;
+}

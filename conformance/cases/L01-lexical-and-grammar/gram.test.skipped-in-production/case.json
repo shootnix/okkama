@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.test.skipped-in-production",
+  "title": "test blocks do not run in production",
+  "purpose": "Accept the construct and observe the exit status.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.TEST-BLOCK",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 3,
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#14"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 14: production parsing omits test bodies and the runner only executes them under -t; main returns 3."
+  },
+  "status": "mandatory"
+}

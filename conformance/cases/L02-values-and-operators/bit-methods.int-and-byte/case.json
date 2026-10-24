@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.bit-methods.int-and-byte",
+  "title": "bit methods on int and byte",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.BIT-METHODS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3\n63\n64\n3\n64\n7\n8\n1\n-9223372036854775808\n128\n-9223372036854775808\n578437695752307201\n5\n"
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md",
+    "docs/okkama-llm-context-1.0.md#6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "LLM context 6: bit_count/leading_zeros/trailing_zeros return int and zero has W leading/trailing zeros; rotate/reverse/swap preserve type on W-bit words."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,17 @@
+module collections/sequence v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating;
+import "size" take Sizing;
+
+role Sequencing<T> {
+    cursor() is Cursor<T>;
+    size() is int;
+    item(index is int) is T;
+    first() is T;
+    last() is T;
+}
+
+object EmptySequence does Error {
+    EmptySequence();
+    text() is string { "empty sequence"; }
+}

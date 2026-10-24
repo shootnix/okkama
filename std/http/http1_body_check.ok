@@ -1,0 +1,31 @@
+module http/http1_body_check v1.0.0;
+import "http/body" take BodyOpening,UnknownBodyLength,ByteBody;
+import "http/http1_framing" take Http1BodyPlan,Http1BodyKind;
+import "http/http1_head" take Http1Limits,Http1LimitExceeded;
+import "http/message" take InvalidHttpMessage;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
+
+// Shared lazy pre-head validation. Construction only captures capabilities.
+object Http1BodyCheck {
+    has body is BodyOpening;has plan is Http1BodyPlan;has limits is Http1Limits;has request is bool;
+    Http1BodyCheck(body is BodyOpening,plan is Http1BodyPlan,limits is Http1Limits,request is bool){self.body=body;self.plan=plan;self.limits=limits;self.request=request;}
+    known() is @BigInt {
+        if !request && plan.kind()==Http1BodyKind.empty{let empty is @BigInt=[];return empty;}
+        let known is @BigInt=try{[body.length()];}catch e is UnknownBodyLength{let empty is @BigInt=[];empty;};
+        if plan.kind()==Http1BodyKind.empty {
+            confirm known.size()==1 && known[0].sign()==0 else throw InvalidHttpMessage("unframed request requires known empty body");
+        }else{
+            if known.size()>0 {
+                confirm known[0].sign()>=0 else throw InvalidHttpMessage("negative body source length");
+                confirm known[0].order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded("body_bytes");
+                if plan.kind()==Http1BodyKind.fixed{confirm known[0].order(plan.length())==Order.equal else throw InvalidHttpMessage("body source length contradicts framing");}
+            }
+        }
+        known;
+    }
+}
+test "body contradiction is rejected by shared pre-head validation" {
+    let check=Http1BodyCheck(ByteBody([1.byte()]),Http1BodyPlan(Http1BodyKind.fixed,BigInt("2"),true),Http1Limits(),true);
+    test.ok(try{check.known();false;}catch e is InvalidHttpMessage{true;});
+}

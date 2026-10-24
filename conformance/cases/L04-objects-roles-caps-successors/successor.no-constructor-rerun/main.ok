@@ -1,0 +1,38 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NegativeScore does Error {
+    NegativeScore();
+    text() is string { "negative"; }
+}
+
+object Score {
+    has value is int;
+    Score(value is int) {
+        self.value = value;
+        confirm value >= 0 else throw NegativeScore();
+    }
+    value() is int { value; }
+    penalized(points is int) is ^Score {
+        ^value = value - points;
+    }
+    checked_penalty(points is int) is ^Score {
+        confirm value - points >= 0 else throw NegativeScore();
+        ^value = value - points;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let score = Score(10);
+    let penalized = score.penalized(25);
+    out.writeln(penalized.value().string());
+    let checked = try {
+        score.checked_penalty(25).value();
+    } catch e is NegativeScore {
+        -999;
+    };
+    out.writeln(checked.string());
+    0;
+}

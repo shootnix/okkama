@@ -1,0 +1,55 @@
+module math/decimal v1.0.0;
+
+import "compare" take Comparing, Order;
+import "numbers/bigint" take BigInt;
+import "runtime/decimal" take
+    decimal_valid,
+    decimal_canonical,
+    decimal_coefficient,
+    decimal_exponent,
+    decimal_order;
+
+// Exact immutable decimal value. Construction never trims whitespace and
+// never passes through float. Equivalent spellings share one canonical form:
+//
+//     Decimal("001.2000").string(); // "1.2"
+//     Decimal("1000").string();     // "1e3"
+
+object Decimal does Comparing<Decimal> {
+    has origin is string;
+
+    Decimal(origin is string) {
+        confirm decimal_valid(origin) else throw InvalidDecimal(origin);
+        self.origin = decimal_canonical(origin);
+    }
+
+    coefficient() is BigInt {
+        BigInt(decimal_coefficient(origin));
+    }
+
+    exponent() is int {
+        decimal_exponent(origin);
+    }
+
+    order(other is Decimal) is Order {
+        let result = decimal_order(origin, other.string());
+        if result < 0 {
+            Order.less;
+        }
+        else {
+            if result > 0 { Order.greater; } else { Order.equal; }
+        }
+    }
+
+    string() is string {
+        origin;
+    }
+}
+
+object InvalidDecimal does Error {
+    has origin is string;
+
+    InvalidDecimal(origin is string) { self.origin = origin; }
+
+    text() is string { "invalid decimal \"" + origin + "\""; }
+}

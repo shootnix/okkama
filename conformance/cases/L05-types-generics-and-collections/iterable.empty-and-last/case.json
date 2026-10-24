@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.iterable.empty-and-last",
+  "title": "empty iterables and last",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ITERABLE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "available 0\navailable 3\nitem 3\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.9: an empty cursor ends at the first available(); last exits without advancing."
+  },
+  "status": "mandatory",
+  "notes": "D-036"
+}

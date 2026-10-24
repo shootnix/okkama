@@ -1,0 +1,58 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "net/ip" take IpAddress;
+import "net/endpoint" take HostName;
+import "net/tls" take TlsClientPolicy,TlsVersion,TlsFailure,TlsPhase;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates,CertificateVerificationFailed,CertificateFailure;
+import "collections/set" take Set,OrderedSet;
+import "http/proxy" take Proxied;
+import "http/proxy_policy" take ProxyPolicy,ProxyConnectRejected;
+import "http/auth" take BasicCredentials;
+import "crypto/secret" take SecretBytes;
+import "encoding/single_byte" take AsciiEncoded;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "time/clock" take SystemClock;
+import "http/endpoint" take ListedNetworks;
+import "url/value" take ParsedUrl,Url,UrlParts,UrlFragment;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/ip" take IpNetwork;
+import "http/body" take EmptyBody;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/target" take AbsoluteTarget;
+import "http/header" take Headers,Header,HeaderName;
+import "http/version" take HttpVersion;
+import "io/stdout" take Stdout;
+
+// OKKAMA_HTTP_URL selects an absolute HTTPS URL for the local fixture.
+// OKKAMA_TLS_ROOT selects its explicit DER trust anchor. DNS names are mapped
+// explicitly below; the connection uses only checked loopback endpoints.
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();
+    let scenario=environment.variable("OKKAMA_PROXY_CASE");let proxy_url=ParsedUrl(environment.variable("OKKAMA_PROXY_URL")).value();
+    let password=SecretBytes(AsciiEncoded("proxy-pass").bytes());defer password.close();
+    let proxy=if scenario=="auth"{ProxyPolicy(proxy_url,BasicCredentials("proxy-user",password));}else{ProxyPolicy(proxy_url);};
+    let resolver=FixedResolution([HostAddresses(HostName("proxy.test"),[IpAddress("127.0.0.1")])]);
+    let http_versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);
+    let client_policy=ClientPolicy(http_versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let client=Proxied(proxy,resolver,policy,client_policy,SystemClock());defer client.close();
+    let parts=url.parts();let target=Url(UrlParts(parts.scheme(),parts.authority(),parts.path(),parts.query(),UrlFragment()));
+    let request=Request(Method("GET"),AbsoluteTarget(target),Headers([Header(HeaderName("Authorization"),"Bearer origin")]),EmptyBody(),HttpVersion.http_1_1);
+    if scenario=="name" || scenario=="rejected"{
+        let rejected=try{await client.response(request);false;}catch e is CertificateVerificationFailed{scenario=="name" && e.reason()==CertificateFailure.invalid_name;}catch e is ProxyConnectRejected{scenario=="rejected" && e.status()==407;};confirm rejected;
+    }else{
+        let first=await client.response(request);confirm first.response().status().code()==204;
+        let result=await client.response(request);confirm result.response().status().code()==200 && result.details().secure();
+        confirm result.details().endpoints().remote_endpoint().port()==proxy_url.parts().authority().port();
+        let reader=result.response().body().reading();defer reader.close();confirm await reader.bytes(8)==[66.byte()];confirm (await reader.bytes(8)).size()==0;
+    }
+    Stdout().writeln("HTTPS proxy "+scenario+" passed");0;
+}

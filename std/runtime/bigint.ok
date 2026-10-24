@@ -1,0 +1,18 @@
+module runtime/bigint v1.0.0;
+
+// Portable arbitrary-precision integer value boundary.
+native bigint_valid(origin is string) is bool;
+native bigint_canonical(origin is string) is string;
+native bigint_sign(origin is string) is int;
+native bigint_bits(origin is string) is int;
+native bigint_difference(left is string, right is string) is string;
+native bigint_order(left is string, right is string) is int;
+
+native bigint_sum(left is string, right is string) is string;
+native bigint_product(left is string, right is string) is string;
+native bigint_quotient(left is string, right is string) is string;
+native bigint_remainder(left is string, right is string) is string;
+native bigint_gcd(left is string, right is string) is string;
+native bigint_lcm(left is string, right is string) is string;
+// maximum_bits is positive; expected limit failure is resource_exhausted.
+native bigint_power(base is string, exponent is int, maximum_bits is int) is string;

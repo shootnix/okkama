@@ -1,0 +1,74 @@
+// Завершить HTTP-сервер после обслуженного запроса
+//
+// Обслужить API на слушающем TCP-порту: HttpServer владеет listener, вызовами обработчика и завершением работы.
+//
+// Запуск: ./examples/cookbook/run lab example-http-server
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-server
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/server" take HttpServer,ServerDrain;
+import "http/server_policy" take ServerPolicy;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+object Application does Handling {
+    has entered is Event;
+
+    Application(entered is Event) {
+        self.entered = entered;
+    }
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        entered.set();
+
+        ResponseHandling(
+            Response(
+                Status(204),
+                Headers(
+                    [
+                        Header(
+                            HeaderName("X-Peer"),
+                            context.endpoints().remote_endpoint().address().string()
+                        )
+                    ]
+                )
+            )
+        );
+    }
+}
+async main() is int{
+    let listener = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"), 0)).acceptance();
+    let entered = Event();
+    let clock = SystemClock();
+    let server = HttpServer(
+        listener,
+        Application(entered),
+        ServerPolicy(),
+        clock
+    );
+    let workers is FutureGroup<HttpServer> = FutureGroup();
+    workers.start(server.serve());
+    Stdout().writeln(server.local_endpoint().port().string());
+    await entered.wait();
+    await ServerDrain(
+        server,
+        Duration(5.rat(), DurationUnit.second),
+        clock
+    ).drain();
+    await workers.wait();
+    Stdout().writeln("HTTP server drained");
+
+    0;
+}

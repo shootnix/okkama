@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "math/decimal" take Decimal, InvalidDecimal;
+import "compare" take Order;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("trailing zeros", Decimal("001.2000").string(), "1.2");
+    c = c.same_text("scientific canonical", Decimal("1000").string(), "1e3");
+    c = c.same_text("negative coefficient", Decimal("-0.50").coefficient().string(), "-5");
+    c = c.same_int("negative exponent", Decimal("-0.50").exponent(), -1);
+    c = c.same_int("1000 exponent", Decimal("1000").exponent(), 3);
+    c = c.same_bool("equal values", Decimal("1.10").order(Decimal("1.1")) == Order.equal, true);
+    c = c.same_text("whitespace rejected", try { let probe = Decimal(" 1").string(); "no error"; } catch e is InvalidDecimal { "InvalidDecimal"; }, "InvalidDecimal");
+    c.done();
+}

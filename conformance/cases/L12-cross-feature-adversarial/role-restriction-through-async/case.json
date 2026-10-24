@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.role-restriction-through-async",
+  "title": "a role reference returned from an async action stays restricted",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.ROLE-ASYNC",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "acct\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 12.1: restrictions survive aliases, returns and local async results."
+  },
+  "status": "mandatory"
+}

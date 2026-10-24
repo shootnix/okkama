@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.entry.duplicate-main-multifile-rejected",
+  "title": "two files of one module may not both declare main",
+  "purpose": "Multi-file modules share one declaration space with at most one main.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "ENTRY.SIGNATURE",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "MOD.MULTI-FILE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok",
+    "second.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "spec 5.1: the combined module MUST NOT declare more than one main; the stage is not fixed."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1",
+    "docs/okkama-spec-11072026.md#3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.1: every file declares the same module and the combined module MUST NOT declare more than one main."
+  },
+  "status": "mandatory"
+}

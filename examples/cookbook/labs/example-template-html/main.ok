@@ -1,0 +1,17 @@
+// Сформировать HTML-карточку заказа
+//
+// Сформировать HTML-карточку клиента: HtmlTemplate применяет экранирование по контексту подстановки.
+//
+// Запуск: ./examples/cookbook/run lab example-template-html
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-template-html
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "template/html" take HtmlTemplate;
+import "json/value" take JsonText;
+import "io/stdout" take Stdout;
+main() is int {
+    HtmlTemplate("<p title=\"{{.}}\">Hello {{.}}</p>\n").write(JsonText("Ada & <friends>"),Stdout());
+    0;
+}

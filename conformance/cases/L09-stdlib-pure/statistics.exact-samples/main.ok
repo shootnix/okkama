@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "statistics" take Mean, Median, PopulationVariance, SampleVariance, Quantiles, QuantileMethod, StatisticsError;
+
+object Floats {
+    Floats();
+    none_left() is @float {
+        let empty is @float = [];
+        empty;
+    }
+}
+
+main() is int {
+    let c = Checks();
+    c = c.same_float("mean", value Mean(values: [1.0, 2.0, 3.0, 4.0, 5.0]), 3.0);
+    c = c.same_float("median even", value Median(values: [4.0, 1.0, 3.0, 2.0]), 2.5);
+    c = c.same_float("population variance", value PopulationVariance(values: [1.0, 2.0, 3.0, 4.0, 5.0]), 2.0);
+    c = c.same_float("sample variance", value SampleVariance(values: [1.0, 2.0, 3.0, 4.0, 5.0]), 2.5);
+    c = c.same_texts("exclusive quartiles", Quantiles(values: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], count: 4).values().map() -> q { q.string(); }, ["2.25", "4.5", "6.75"]);
+    c = c.same_texts("inclusive quartiles", Quantiles(values: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], count: 4, method: QuantileMethod.inclusive).values().map() -> q { q.string(); }, ["2.75", "4.5", "6.25"]);
+    c = c.same_text("empty sample", try { let probe = value Mean(values: Floats().none_left()); "no error"; } catch e is StatisticsError { "StatisticsError"; }, "StatisticsError");
+    c.done();
+}

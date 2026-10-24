@@ -1,0 +1,80 @@
+module http/internal/websocket_frame v1.0.0;
+import "http/websocket" take WebSocketFailure;
+import "encoding/binary" take IntegerBytes,IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+import "http/internal/wire_bytes" take HttpWireBytes;
+import "runtime/binary" take binary_masked_slice;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+
+object WebSocketFrameHeader {
+    has opcode,length is int;has final,masked is bool;
+    WebSocketFrameHeader(opcode is int,final is bool,length is int,masked is bool){
+        confirm opcode==0 || opcode==1 || opcode==2 || opcode==8 || opcode==9 || opcode==10 else throw WebSocketFailure("unknown opcode");
+        confirm length>=0 else throw WebSocketFailure("negative frame length");
+        if opcode>=8{confirm final && length<=125 else throw WebSocketFailure("control frame finality or length");}
+        self.opcode=opcode;self.final=final;self.length=length;self.masked=masked;
+    }
+    opcode() is int{opcode;}length() is int{length;}final() is bool{final;}masked() is bool{masked;}
+    bytes(mask is @byte) is @byte{
+        confirm mask.size()==if masked{4;}else{0;} else throw WebSocketFailure("mask width");
+        let first=(opcode+if final{128;}else{0;}).byte();let indicator=if length<=125{length;}else{if length<=65535{126;}else{127;}};
+        let second=(indicator+if masked{128;}else{0;}).byte();let extended is @byte=if indicator==126{IntegerBytes(length,2,Signedness.unsigned,ByteOrder.big).bytes();}else{if indicator==127{IntegerBytes(length,8,Signedness.unsigned,ByteOrder.big).bytes();}else{let empty is @byte=[];empty;}};
+        HttpWireBytes([[first,second],extended,mask],14).bytes();
+    }
+}
+// Validate everything already decidable from the first two bytes before any
+// extended-length or payload read can block on the peer.
+object WebSocketHeaderPrefix {
+    has origin is @byte;has masked is bool;
+    WebSocketHeaderPrefix(origin is @byte,masked is bool){self.origin=origin;self.masked=masked;}
+    checked() is void{
+        confirm origin.size()>=2 else throw WebSocketFailure("incomplete frame header");let first=origin[0].int();let second=origin[1].int();
+        confirm (first & 112)==0 else throw WebSocketFailure("unnegotiated reserved bits");confirm ((second & 128)!=0)==masked else throw WebSocketFailure("peer masking direction");
+        let opcode=first & 15;confirm opcode==0 || opcode==1 || opcode==2 || opcode==8 || opcode==9 || opcode==10 else throw WebSocketFailure("unknown opcode");
+        if opcode>=8{confirm (first & 128)!=0 && (second & 127)<=125 else throw WebSocketFailure("control frame finality or length");}
+    }
+}
+object ParsedWebSocketFrameHeader {
+    has origin is @byte;has masked is bool;has maximum is int;
+    ParsedWebSocketFrameHeader(origin is @byte,masked is bool,maximum is int){self.origin=origin;self.masked=masked;confirm maximum>0 && maximum<=1048576 else throw WebSocketFailure("frame budget");self.maximum=maximum;}
+    value() is WebSocketFrameHeader{
+        WebSocketHeaderPrefix(origin,masked).checked();let first=origin[0].int();let second=origin[1].int();
+        let indicator=second & 127;let width=if indicator==126{2;}else{if indicator==127{8;}else{0;}};
+        confirm origin.size()==2+width else throw WebSocketFailure("exact frame header required");
+        if width==8{confirm origin[2].int()<128 else throw WebSocketFailure("payload length sign bit");}
+        let length=if width==0{indicator;}else{IntegerFromBytes(origin.slice(2,2+width),Signedness.unsigned,ByteOrder.big).value();};
+        confirm (indicator!=126 || length>=126) && (indicator!=127 || length>=65536) else throw WebSocketFailure("nonminimal payload length");
+        let opcode=first & 15;if opcode<8{confirm length<=maximum else throw WebSocketFailure("data frame byte limit");}
+        WebSocketFrameHeader(opcode,(first & 128)!=0,length,masked);
+    }
+}
+object WebSocketMaskPosition {
+    has index is int;WebSocketMaskPosition(index is int){self.index=index;}
+    index() is int {index;}following(index is int) is ^WebSocketMaskPosition {^index=index;}
+}
+object WebSocketMaskedBytes {
+    has origin,mask is @byte;has offset is int;
+    WebSocketMaskedBytes(origin is @byte,mask is @byte,offset is int){confirm mask.size()==4 && offset>=0 && offset<4 else throw WebSocketFailure("mask coordinates");self.origin=origin;self.mask=mask;self.offset=offset;}
+    bytes() is @byte {
+        let output=ByteBuffer();defer output.closing().close();let writing=output.writing();
+        let position=WebSocketMaskPosition(0);
+        loop {
+            let start=position.index();last if start==origin.size();
+            let count=if origin.size()-start>65536 {65536;} else {origin.size()-start;};
+            writing.write(ByteSnapshot(binary_masked_slice(origin,mask,offset,start,count)));
+            position=position.following(start+count);
+        }
+        output.content().bytes();
+    }
+}
+object WebSocketFrame {
+    has opcode is int;has final is bool;has payload is @byte;
+    WebSocketFrame(opcode is int,final is bool,payload is @byte){WebSocketFrameHeader(opcode,final,payload.size(),false);self.opcode=opcode;self.final=final;self.payload=payload;}
+    opcode() is int{opcode;}final() is bool{final;}payload() is @byte{payload;}
+    bytes(mask is @byte) is @byte{confirm mask.size()==0 || mask.size()==4 else throw WebSocketFailure("mask width");let header=WebSocketFrameHeader(opcode,final,payload.size(),mask.size()==4).bytes(mask);let data=if mask.size()==4{WebSocketMaskedBytes(payload,mask,0).bytes();}else{payload;};HttpWireBytes([header,data],14+data.size()).bytes();}
+}
+
+test "WebSocket server frame contains no mask" {
+    let frame=WebSocketFrame(2,true,[0.byte(),255.byte()]);test.is(frame.bytes([]),[130.byte(),2.byte(),0.byte(),255.byte()]);
+}

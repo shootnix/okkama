@@ -1,0 +1,71 @@
+module http/internal/http2_controls v1.0.0;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2FrameRules,Http2Fault,Http2FaultScope;
+import "encoding/binary" take IntegerBytes,IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+import "http/internal/wire_bytes" take HttpWireBytes;
+
+object Http2Reset {
+    has stream,code is int;
+    Http2Reset(frame is Http2Frame){
+        confirm frame.header().kind().int()==3 else throw Http2Fault(Http2FaultScope.connection,1,0,"RST_STREAM required");Http2FrameRules(frame).check();
+        stream=frame.header().stream();code=IntegerFromBytes(frame.payload(),Signedness.unsigned,ByteOrder.big).value();
+    }
+    stream() is int{stream;}code() is int{code;}
+}
+object Http2ResetFrame {
+    has stream,code is int;
+    Http2ResetFrame(stream is int,code is int){
+        Http2ControlCode(code);confirm stream>0 && stream<=2147483647 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid reset coordinates");self.stream=stream;self.code=code;
+    }
+    frame() is Http2Frame{Http2Frame(Http2FrameHeader(3.byte(),0.byte(),stream,4),IntegerBytes(code,4,Signedness.unsigned,ByteOrder.big).bytes());}
+}
+object Http2PingReply {
+    has origin is Http2Frame;
+    Http2PingReply(origin is Http2Frame){
+        confirm origin.header().kind().int()==6 else throw Http2Fault(Http2FaultScope.connection,1,0,"PING required");Http2FrameRules(origin).check();self.origin=origin;
+    }
+    frames() is @Http2Frame{
+        if (origin.header().flags().int() & 1)!=0{let empty is @Http2Frame=[];empty;}
+        else{[Http2Frame(Http2FrameHeader(6.byte(),1.byte(),0,8),origin.payload())];}
+    }
+}
+object Http2GoAway {
+    has last_stream,code is int;has debug is @byte;
+    Http2GoAway(frame is Http2Frame){
+        confirm frame.header().kind().int()==7 else throw Http2Fault(Http2FaultScope.connection,1,0,"GOAWAY required");Http2FrameRules(frame).check();
+        let payload=frame.payload();last_stream=IntegerFromBytes(payload.slice(0,4),Signedness.unsigned,ByteOrder.big).value() & 2147483647;
+        code=IntegerFromBytes(payload.slice(4,8),Signedness.unsigned,ByteOrder.big).value();debug=payload.slice(8,payload.size());
+    }
+    last_stream() is int{last_stream;}code() is int{code;}
+    // Debug data is explicit opaque observation, never an error text/log field.
+    debug() is @byte{debug;}
+}
+object Http2GoAwayFrame {
+    has last_stream,code is int;has debug is @byte;
+    Http2GoAwayFrame(last_stream is int,code is int,debug is @byte){
+        Http2ControlCode(code);confirm last_stream>=0 && last_stream<=2147483647
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid GOAWAY coordinates");
+        confirm debug.size()<=1024 else throw Http2Fault(Http2FaultScope.connection,11,0,"outgoing GOAWAY debug budget");
+        self.last_stream=last_stream;self.code=code;self.debug=debug;
+    }
+    frame() is Http2Frame{
+        let id=IntegerBytes(last_stream,4,Signedness.unsigned,ByteOrder.big).bytes();let status=IntegerBytes(code,4,Signedness.unsigned,ByteOrder.big).bytes();
+        let payload=HttpWireBytes([id,status,debug],8+debug.size()).bytes();
+        Http2Frame(Http2FrameHeader(7.byte(),0.byte(),0,payload.size()),payload);
+    }
+}
+object Http2ControlCode {
+    Http2ControlCode(code is int){confirm code>=0 && code<=4294967295 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid control error code");}
+}
+object Http2GoAwayProgress {
+    has last_stream is int;has stopping is bool;Http2GoAwayProgress(){last_stream=2147483647;stopping=false;}
+    last_stream() is int{last_stream;}stopping() is bool{stopping;}
+    received(frame is Http2GoAway) is ^Http2GoAwayProgress{
+        confirm frame.last_stream()<=last_stream else throw Http2Fault(Http2FaultScope.connection,1,0,"GOAWAY last stream increased");
+        ^last_stream=frame.last_stream();^stopping=true;
+    }
+}
+test "GOAWAY observation permanently stops new streams" {
+    let progress=Http2GoAwayProgress();progress=progress.received(Http2GoAway(Http2GoAwayFrame(1,0,[]).frame()));
+    test.ok(progress.stopping());test.is(progress.last_stream(),1);
+}

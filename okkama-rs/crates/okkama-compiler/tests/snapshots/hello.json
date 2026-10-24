@@ -1,0 +1,97 @@
+{
+  "node": "Program",
+  "module": {
+    "node": "ModuleDecl",
+    "path": [
+      "app"
+    ],
+    "version": "v1.0.0"
+  },
+  "imports": [
+    {
+      "node": "ImportDecl",
+      "path": "io/stdout",
+      "alias": null,
+      "take": [
+        "Stdout"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "node": "ActionDecl",
+      "async": false,
+      "visibility": "public",
+      "projection": null,
+      "name": "main",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      },
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "LetStatement",
+            "name": "out",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "Stdout"
+              },
+              "arguments": []
+            }
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "StreamWrite",
+              "sink": {
+                "node": "StreamWrite",
+                "sink": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "source": {
+                  "node": "Binary",
+                  "operator": "+",
+                  "left": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "Hello, "
+                  },
+                  "right": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "Okkama!"
+                  }
+                }
+              },
+              "source": {
+                "node": "StringLiteral",
+                "form": "endl",
+                "value": "\n"
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "0"
+            },
+            "condition": null
+          }
+        ]
+      }
+    }
+  ]
+}

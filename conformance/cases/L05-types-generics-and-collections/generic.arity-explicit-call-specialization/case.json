@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.arity-explicit-call-specialization",
+  "title": "generic arity rule: explicit call-site specialization is not valid source",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.ARITY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "spec 6.5 states the arity rule without fixing whether the parser or the type resolver reports it; the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: explicit call-site specialization is not valid source."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    for [1, 2, 5] -> n {
+        let word = match n {
+            case 1, 2 { "small"; }
+            case 3 { "three"; }
+            else { "large"; }
+        };
+        out.writeln(word);
+    }
+    0;
+}

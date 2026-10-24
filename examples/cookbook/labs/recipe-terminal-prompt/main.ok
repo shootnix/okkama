@@ -1,0 +1,23 @@
+// Запросить имя и секрет в интерактивной команде
+//
+// Утилита входа должна показать приглашение и временно отключить отображение секрета.
+//
+// Запуск: ./examples/cookbook/run lab recipe-terminal-prompt
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-terminal-prompt
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/terminal_prompt v1.0.0;
+import "terminal/session" take OpenedControllingTerminal;
+import "terminal/capability" take ColorPolicy;
+import "terminal/prompt" take PromptedLine,PromptedSecret;
+
+async main() is int {
+    let session = await OpenedControllingTerminal(ColorPolicy.automatic).session();
+    defer session.close();
+    let name = await PromptedLine(session, "Имя: ", 256).string();
+    let password = await PromptedSecret(session, "Пароль: ", 4096).string();
+    session.output().writeln("
+Здравствуйте, " + name);
+    0;
+}

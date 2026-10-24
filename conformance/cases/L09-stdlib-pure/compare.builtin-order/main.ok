@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "compare" take Order;
+
+main() is int {
+    let c = Checks();
+    c = c.same_bool("int less", 1.order(2) == Order.less, true);
+    c = c.same_bool("string code points", "z".order("aa") == Order.greater, true);
+    c = c.same_bool("equal floats", 2.5.order(2.5) == Order.equal, true);
+    c.done();
+}

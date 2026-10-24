@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.panic.not-catchable",
+  "title": "panic passes through every catch",
+  "purpose": "The program terminates unsuccessfully after the observable effects listed.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.PANIC",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "ERR.CATCH",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "panic"
+      ]
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5",
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.6: panic and programming errors pass through catch."
+  },
+  "status": "mandatory"
+}

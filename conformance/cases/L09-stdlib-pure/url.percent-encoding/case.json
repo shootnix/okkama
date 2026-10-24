@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.url.percent-encoding",
+  "title": "percent encoding of URL components",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.URL.PERCENT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - data component\nok 2 - space and utf8\nok 3 - unreserved kept\nok 4 - decode once\nok 5 - invalid escape\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/url/percent.ok",
+    "RFC 3986 sections 2.1-2.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 3986: unreserved characters are never encoded, other octets become uppercase %HH of their UTF-8 bytes; decoding happens exactly once."
+  },
+  "status": "mandatory"
+}

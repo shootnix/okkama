@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.action-types.parameter-variance",
+  "title": "action type boundary rejects: parameter types must match exactly (no variance)",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ACTION-TYPES",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5.1",
+    "docs/okkama-spec-11072026.md#6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5.1/6.2: parameter types must match exactly (no variance)."
+  },
+  "status": "mandatory"
+}

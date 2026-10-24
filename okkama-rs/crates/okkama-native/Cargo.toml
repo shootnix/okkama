@@ -1,0 +1,46 @@
+[package]
+name = "okkama-native"
+description = "Host cryptography for Okkama runtimes (C ABI over RustCrypto)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aes-gcm = "0.11.1"
+argon2 = "0.6.0"
+blake2 = "0.11.0"
+chacha20poly1305 = "0.11.0"
+ed25519-dalek = { version = "3.0.0", features = ["pkcs8", "alloc"] }
+getrandom = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+p256 = { version = "0.14.0", features = ["ecdsa", "pkcs8"] }
+p384 = { version = "0.14.0", features = ["ecdsa", "pkcs8"] }
+p521 = { version = "0.14.0", features = ["ecdsa", "pkcs8"] }
+pbkdf2 = "0.13.0"
+pkcs8 = "0.11"
+rand_chacha = "0.10.0"
+rand_core = "0.10.1"
+rsa = { version = "0.10.0-rc.19", features = ["sha2"] }
+sha1 = { version = "0.11.0", features = ["oid"] }
+sha2 = "0.11.0"
+sha3 = "0.12.0"
+shake = "0.1.0"
+spki = "0.8"
+subtle = "2.6.1"
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+
+# C ABI для рантаймов (FFM JVM): unsafe разрешён только в `ffi`.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

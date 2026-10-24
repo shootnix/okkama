@@ -1,0 +1,86 @@
+module encoding/base85 v1.0.0;
+
+import "runtime/base85" take
+    base85_encode, base85_invalid_offset, base85_decode;
+
+// Strict Base85 codecs with two genuinely implemented variants.
+//
+// ascii85 uses the contiguous `!` through `u` alphabet. It emits and accepts
+// `z` for a complete four-zero-byte group, but rejects Adobe `<~ ~>` wrappers,
+// whitespace and the nonstandard `y` abbreviation.
+//
+// rfc1924 uses this exact alphabet:
+//
+//     0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
+//     !#$%&()*+-;<=>?@^_`{|}~
+//
+// Both variants encode four bytes as five characters. A final one-, two- or
+// three-byte input group becomes two, three or four characters. A single
+// trailing encoded character is invalid. Decoding rejects values above
+// 0xFFFFFFFF and noncanonical partial groups. InvalidBase85.offset() is a
+// Unicode-scalar offset in encoded input.
+//
+// Z85 is deliberately absent: its fixed 4-byte/5-character block contract
+// would make encoding partial and deserves a separate consumer-driven API.
+
+enum Base85Alphabet = (ascii85, rfc1924);
+
+object Base85Encoded {
+    has origin is @byte;
+    has alphabet is Base85Alphabet;
+
+    Base85Encoded(origin is @byte, alphabet is Base85Alphabet) {
+        self.origin = origin;
+        self.alphabet = alphabet;
+    }
+
+    string() is string {
+        base85_encode(origin, self.alphabet_name());
+    }
+
+    private:
+
+    alphabet_name() is string {
+        if alphabet == Base85Alphabet.ascii85 { "ascii85"; } else { "rfc1924"; }
+    }
+}
+
+object Base85Decoded {
+    has origin is string;
+    has alphabet is Base85Alphabet;
+
+    Base85Decoded(origin is string, alphabet is Base85Alphabet) {
+        self.origin = origin;
+        self.alphabet = alphabet;
+    }
+
+    bytes() is @byte {
+        let name is string = self.alphabet_name();
+        let offset is int = base85_invalid_offset(origin, name);
+        confirm offset == -1 else throw InvalidBase85(offset);
+        base85_decode(origin, name);
+    }
+
+    private:
+
+    alphabet_name() is string {
+        if alphabet == Base85Alphabet.ascii85 { "ascii85"; } else { "rfc1924"; }
+    }
+}
+
+object InvalidBase85 does Error {
+    has invalid_offset is int;
+
+    InvalidBase85(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid Base85 at scalar offset " + invalid_offset.string();
+    }
+}

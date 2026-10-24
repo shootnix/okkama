@@ -1,0 +1,538 @@
+{
+  "node": "Program",
+  "module": {
+    "node": "ModuleDecl",
+    "path": [
+      "collections"
+    ],
+    "version": "v1.0.0"
+  },
+  "imports": [
+    {
+      "node": "ImportDecl",
+      "path": "io/stdout",
+      "alias": null,
+      "take": [
+        "Stdout"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "node": "ObjectDecl",
+      "name": "Stats",
+      "generics": [],
+      "roles": [],
+      "members": [
+        {
+          "node": "ShorthandConstructor",
+          "name": "Stats",
+          "fields": [],
+          "body": null
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": null,
+          "name": "sum",
+          "params": [
+            {
+              "node": "Param",
+              "name": "values",
+              "variadic": true,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "LetStatement",
+                "name": "all",
+                "type": {
+                  "node": "ArrayType",
+                  "element": {
+                    "node": "NamedType",
+                    "path": [
+                      "int"
+                    ],
+                    "args": []
+                  }
+                },
+                "value": {
+                  "node": "Unpack",
+                  "operand": {
+                    "node": "NameExpression",
+                    "name": "values"
+                  }
+                }
+              },
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Functional",
+                  "operation": "reduce",
+                  "receiver": {
+                    "node": "NameExpression",
+                    "name": "all"
+                  },
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "0"
+                      }
+                    }
+                  ],
+                  "bindings": [
+                    "total",
+                    "value"
+                  ],
+                  "body": {
+                    "node": "Block",
+                    "statements": [
+                      {
+                        "node": "ExpressionStatement",
+                        "expression": {
+                          "node": "Binary",
+                          "operator": "+",
+                          "left": {
+                            "node": "NameExpression",
+                            "name": "total"
+                          },
+                          "right": {
+                            "node": "NameExpression",
+                            "name": "value"
+                          }
+                        },
+                        "condition": null
+                      }
+                    ]
+                  }
+                },
+                "condition": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "node": "ActionDecl",
+      "async": false,
+      "visibility": "public",
+      "projection": null,
+      "name": "main",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      },
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "LetStatement",
+            "name": "out",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "Stdout"
+              },
+              "arguments": []
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "numbers",
+            "type": null,
+            "value": {
+              "node": "ArrayLiteral",
+              "elements": [
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "1"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "2"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "3"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "4"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "5"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "6"
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "squares",
+            "type": null,
+            "value": {
+              "node": "Functional",
+              "operation": "map",
+              "receiver": {
+                "node": "NameExpression",
+                "name": "numbers"
+              },
+              "arguments": [],
+              "bindings": [
+                "value"
+              ],
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "*",
+                      "left": {
+                        "node": "NameExpression",
+                        "name": "value"
+                      },
+                      "right": {
+                        "node": "NameExpression",
+                        "name": "value"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "even",
+            "type": null,
+            "value": {
+              "node": "Functional",
+              "operation": "filter",
+              "receiver": {
+                "node": "NameExpression",
+                "name": "squares"
+              },
+              "arguments": [],
+              "bindings": [
+                "value"
+              ],
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "==",
+                      "left": {
+                        "node": "Binary",
+                        "operator": "%",
+                        "left": {
+                          "node": "NameExpression",
+                          "name": "value"
+                        },
+                        "right": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "2"
+                        }
+                      },
+                      "right": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "0"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "ages",
+            "type": {
+              "node": "MapType",
+              "key": {
+                "node": "NamedType",
+                "path": [
+                  "string"
+                ],
+                "args": []
+              },
+              "value": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            },
+            "value": {
+              "node": "MapLiteral",
+              "entries": [
+                {
+                  "node": "MapEntry",
+                  "key": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "ada"
+                  },
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "36"
+                  }
+                },
+                {
+                  "node": "MapEntry",
+                  "key": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "alan"
+                  },
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "41"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "missing",
+            "type": null,
+            "value": {
+              "node": "Index",
+              "object": {
+                "node": "NameExpression",
+                "name": "ages"
+              },
+              "index": {
+                "node": "StringLiteral",
+                "form": "quoted",
+                "value": "grace"
+              },
+              "fallback": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "0"
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "total",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "NameExpression",
+                    "name": "Stats"
+                  },
+                  "arguments": []
+                },
+                "name": "sum"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "Unpack",
+                    "operand": {
+                      "node": "NameExpression",
+                      "name": "even"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "StreamWrite",
+              "sink": {
+                "node": "StreamWrite",
+                "sink": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "source": {
+                  "node": "Unpack",
+                  "operand": {
+                    "node": "ArrayCast",
+                    "target": "string",
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "NameExpression",
+                          "name": "total"
+                        }
+                      },
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "NameExpression",
+                          "name": "missing"
+                        }
+                      },
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "Index",
+                          "object": {
+                            "node": "NameExpression",
+                            "name": "ages"
+                          },
+                          "index": {
+                            "node": "StringLiteral",
+                            "form": "quoted",
+                            "value": "ada"
+                          },
+                          "fallback": {
+                            "node": "IntLiteral",
+                            "radix": "decimal",
+                            "digits": "0"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "source": {
+                "node": "StringLiteral",
+                "form": "endl",
+                "value": "\n"
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "StreamWrite",
+              "sink": {
+                "node": "StreamWrite",
+                "sink": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "source": {
+                  "node": "ArrayCast",
+                  "target": "byte",
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "104"
+                      }
+                    },
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "105"
+                      }
+                    }
+                  ]
+                }
+              },
+              "source": {
+                "node": "StringLiteral",
+                "form": "endl",
+                "value": "\n"
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "ConfirmStatement",
+            "condition": {
+              "node": "Binary",
+              "operator": "==",
+              "left": {
+                "node": "NameExpression",
+                "name": "total"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "56"
+              }
+            },
+            "fallback": null
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "0"
+            },
+            "condition": null
+          }
+        ]
+      }
+    }
+  ]
+}

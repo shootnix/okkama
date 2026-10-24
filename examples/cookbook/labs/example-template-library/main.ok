@@ -1,0 +1,26 @@
+// Выбрать текстовый шаблон по имени
+//
+// Собрать набор текстовых писем по именам: TemplateLibrary и NamedTemplate удерживают именованные шаблоны.
+//
+// Запуск: ./examples/cookbook/run lab example-template-library
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-template-library
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+
+import "template/library" take NamedTemplate, TemplateLibrary;
+import "template/compile" take TextTemplate;
+import "template/path" take TemplatePath;
+import "template/model" take TemplateBinding, TemplateBindings;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let library = TemplateLibrary([
+        NamedTemplate("greeting", TextTemplate("Hello {{name}}!")),
+        NamedTemplate("footer", TextTemplate("Goodbye."))]);
+    let data = TemplateBindings([TemplateBinding(TemplatePath(["name"]), "Ada")]);
+    Stdout().writeln(library.value("greeting").string(data));
+    Stdout().writeln(library.names().item(1));
+    0;
+}

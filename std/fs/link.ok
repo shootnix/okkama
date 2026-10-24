@@ -1,0 +1,146 @@
+module fs/link v1.0.0;
+
+import "fs/file" take FileEntry, FileSystemFailure;
+import "fs/path" take Path;
+import "runtime/fs" take
+    path_encode,
+    path_decode,
+    lstat,
+    unlink,
+    link,
+    symlink,
+    readlink;
+
+// SymbolicLink is a path command object. Construction never touches the
+// filesystem; create() and remove() are explicit commands and return nothing:
+//
+//     let current = SymbolicLink(path: releases.path().child("current"));
+//     current.create(target: Path("v3.2.0"));
+//
+// target() returns exactly the target stored in the link. A relative target is
+// not silently joined to the link's parent. existence() uses lstat, so a broken
+// symbolic link still exists. remove() first verifies the entry kind and can
+// never delete a regular file or directory accidentally.
+//
+// Hard links use the same command shape:
+//
+//     let destination = backup.path().child("state.db");
+//     HardLink(source: source, destination: destination).create();
+//     let snapshot = FileEntry(path: destination);
+//
+// Both commands fail when their destination already exists. Symbolic-link
+// targets need not exist. HardLink accepts only an existing regular file and
+// rejects directories and symbolic-link source entries portably.
+
+object SymbolicLink {
+    has origin is Path;
+
+    SymbolicLink(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    existence() is bool {
+        try {
+            lstat(path_encode(origin.string()))["kind"] == 3;
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_found" {
+                false;
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    target() is Path {
+        confirm self.existence() else throw NotSymbolicLink(origin);
+        try {
+            Path(path_decode(readlink(path_encode(origin.string()))));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    create(target is Path) is void {
+        try {
+            symlink(
+                path_encode(target.string()),
+                path_encode(origin.string()),
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    remove() is void {
+        confirm self.existence() else throw NotSymbolicLink(origin);
+        try {
+            unlink(path_encode(origin.string()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object HardLink {
+    has source is FileEntry;
+    has destination is Path;
+
+    HardLink(:source, :destination);
+
+    create() is void {
+        let source_path is Path = source.path();
+        let kind is int = try {
+            lstat(path_encode(source_path.string()))["kind"];
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        };
+        confirm kind == 1 else throw InvalidHardLinkSource(source_path);
+        try {
+            link(
+                path_encode(source_path.string()),
+                path_encode(destination.string()),
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object NotSymbolicLink does Error {
+    has origin is Path;
+
+    NotSymbolicLink(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    #projected
+    text() is string {
+        "path is not a symbolic link: " + origin.string();
+    }
+}
+
+object InvalidHardLinkSource does Error {
+    has origin is Path;
+
+    InvalidHardLinkSource(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    #projected
+    text() is string {
+        "hard-link source is not a regular file: " + origin.string();
+    }
+}

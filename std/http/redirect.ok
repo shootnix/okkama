@@ -1,0 +1,113 @@
+module http/redirect v1.0.0;
+import "http/client" take Exchanging,HttpClientKey;
+import "http/exchange" take ClientResponse,ExchangeHop;
+import "http/message" take Request,Response;
+import "http/header" take HeaderName,HeadersWithout;
+import "http/target" take AbsoluteTarget,RequestTargetKind;
+import "http/method" take Method;
+import "http/body" take BodyOpening,EmptyBody;
+import "url/value" take Url,UrlParts,UrlFragment,UrlResolution,ParsedUrlReference,UrlDotSegments,InvalidUrl;
+import "async/event" take Event;
+import "error" take InvalidArgument;
+
+object RedirectPolicy {
+    has maximum is int;has https_downgrade is bool;
+    RedirectPolicy(){maximum=10;https_downgrade=false;}
+    RedirectPolicy(maximum is int,https_downgrade is bool){confirm maximum>=0 && maximum<=20 else throw InvalidArgument("redirect budget outside 0..20");self.maximum=maximum;self.https_downgrade=https_downgrade;}
+    maximum() is int{maximum;}https_downgrade() is bool{https_downgrade;}
+}
+object Redirecting does Exchanging {
+    has origin is Exchanging;has policy is RedirectPolicy;
+    Redirecting(origin is Exchanging,policy is RedirectPolicy){self.origin=origin;self.policy=policy;}
+    async response(request is Request) is ClientResponse{
+        confirm request.target().kind()==RequestTargetKind.absolute else throw UnsafeRedirect("absolute target required");
+        let state=RedirectState(request);
+        loop {
+            let result=await origin.response(state.request());let retained=Event();let cleanup=RedirectResponseCleanup(result.response(),retained);defer cleanup.close();
+            let accumulated=RedirectHistory(state.history(),result).items();let code=result.response().status().code();
+            let candidates=result.response().headers().values(HeaderName("Location"));
+            let redirects=code==301 || code==302 || code==303 || code==307 || code==308;
+            if !redirects || candidates.size()==0{
+                let final=ClientResponse(result.request(),result.response(),accumulated,result.details());retained.set();return final;
+            }
+            confirm candidates.size()==1 else throw UnsafeRedirect("duplicate Location");
+            confirm state.followed()<policy.maximum() else throw TooManyRedirects();
+            let effective=result.request();confirm effective.target().kind()==RequestTargetKind.absolute else throw UnsafeRedirect("effective absolute target required");
+            let destination=RedirectDestination(effective.target().url(),candidates.item(0),policy).url();
+            let following=RedirectRequest(effective,destination,code).request();let key=RedirectKey(following).string();
+            confirm !state.known(key) else throw RedirectLoop();
+            confirm accumulated.size()<20 else throw TooManyRedirects();
+            let extended is @ExchangeHop=(0..accumulated.size()+1).map()->index{if index<accumulated.size(){accumulated[index];}else{ExchangeHop(result.request(),result.response());}};
+            cleanup.close();state=state.following(following,extended,key);
+        }
+    }
+}
+object RedirectState {
+    has request is Request;has visited is @string;has history is @ExchangeHop;has followed is int;
+    RedirectState(request is Request){self.request=request;visited=[RedirectKey(request).string()];history=[];followed=0;}
+    request() is Request{request;}history() is @ExchangeHop{history;}followed() is int{followed;}
+    known(key is string) is bool{visited.reduce(false)->present,value{present || value==key;};}
+    following(request is Request,history is @ExchangeHop,key is string) is ^RedirectState{
+        let seen is @string=(0..visited.size()+1).map()->index{if index<visited.size(){visited[index];}else{key;}};
+        ^request=request;^history=history;^visited=seen;^followed=followed+1;
+    }
+}
+object RedirectHistory {
+    has items is @ExchangeHop;
+    RedirectHistory(previous is @ExchangeHop,result is ClientResponse){
+        let additional=result.history();let count=additional.size();confirm count>=0 && previous.size()+count<=20 else throw TooManyRedirects();
+        let snapshot is @ExchangeHop=(0..previous.size()+count).map()->index{if index<previous.size(){previous[index];}else{additional.item(index-previous.size());}};items=snapshot;
+    }
+    items() is @ExchangeHop{items;}
+}
+object RedirectDestination {
+    has url is Url;
+    RedirectDestination(base is Url,location is string,policy is RedirectPolicy){
+        let resolved=try{UrlResolution(base,ParsedUrlReference(location).value()).value();}catch e is InvalidUrl{throw UnsafeRedirect("invalid Location");};
+        let parts=resolved.parts();confirm parts.scheme()=="http" || parts.scheme()=="https" else throw UnsafeRedirect("non-HTTP Location");
+        confirm parts.authority().present() && !parts.authority().userinfo().present() else throw UnsafeRedirect("invalid Location authority");
+        confirm policy.https_downgrade() || base.parts().scheme()!="https" || parts.scheme()!="http" else throw UnsafeRedirect("HTTPS downgrade");
+        url=Url(UrlParts(parts.scheme(),parts.authority(),parts.path(),parts.query(),UrlFragment()));
+    }
+    url() is Url{url;}
+}
+object RedirectRequest {
+    has request is Request;
+    RedirectRequest(origin is Request,destination is Url,status is int){
+        let name=origin.method().string();let rewritten=(status==303 && name!="HEAD") || ((status==301 || status==302) && name=="POST");
+        let method=if rewritten{Method("GET");}else{origin.method();};
+        let body is BodyOpening=if rewritten{EmptyBody();}else{
+            confirm origin.body().replayable() else throw NonReplayableRedirect();origin.body();
+        };
+        let without_host=HeadersWithout(origin.headers(),[HeaderName("Host")]).result();
+        let payload_fields=if rewritten{HeadersWithout(without_host,[HeaderName("Content-Length"),HeaderName("Transfer-Encoding"),HeaderName("Content-Type"),HeaderName("Content-Encoding"),HeaderName("Expect")]).result();}else{without_host;};
+        let fields=if HttpClientKey(origin.target().url()).string()!=HttpClientKey(destination).string(){
+            HeadersWithout(payload_fields,[HeaderName("Authorization"),HeaderName("Cookie"),HeaderName("Proxy-Authorization")]).result();
+        }else{payload_fields;};request=Request(method,AbsoluteTarget(destination),fields,body,origin.version());
+    }
+    request() is Request{request;}
+}
+object RedirectKey {
+    has key is string;
+    RedirectKey(request is Request){
+        let url=request.target().url();let parts=url.parts();let path=if parts.path()==""{"/";}else{UrlDotSegments(parts.path()).value();};
+        key=request.method().string()+" "+HttpClientKey(url).string()+path+if parts.query().present(){"?"+parts.query().string();}else{"";};
+    }
+    string() is string{key;}
+}
+object RedirectResponseCleanup {
+    has response is Response;has retained,closed is Event;
+    RedirectResponseCleanup(response is Response,retained is Event){self.response=response;self.retained=retained;closed=Event();}
+    close() is void{if !retained.ready() && !closed.ready(){closed.set();response.body().reading().close();}}
+}
+object TooManyRedirects does Error{TooManyRedirects();text() is string{"redirect limit exceeded";}}
+object RedirectLoop does Error{RedirectLoop();text() is string{"redirect loop";}}
+object NonReplayableRedirect does Error{NonReplayableRedirect();text() is string{"redirect requires a replayable request body";}}
+object UnsafeRedirect does Error {
+    has reason is string;UnsafeRedirect(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"unsafe redirect: "+reason;}
+}
+test "redirect policy bounds history and disables downgrade by default" {
+    test.ok(RedirectPolicy().maximum()==10 && !RedirectPolicy().https_downgrade());
+    test.ok(try{RedirectPolicy(21,false);false;}catch e is InvalidArgument{true;});
+}

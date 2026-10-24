@@ -1,0 +1,14 @@
+module example v1.0.0;
+import "locale/collation" take CollatedString,CollationOptions,CollationStrength,CollationCaseFirst;
+import "locale/tag" take Locale;
+import "compare" take Order;
+import "io/stdout" take Stdout;
+main() is int {
+    let options=CollationOptions(CollationStrength.tertiary,CollationCaseFirst.locale_default,true,true);
+    let earlier=CollatedString("file2",Locale("en"),options);
+    let later=CollatedString("file10",Locale("en"),options);
+    Stdout().writeln(earlier.string());
+    confirm earlier.order(later)==Order.less else throw InvalidExample();
+    0;
+}
+object InvalidExample does Error {InvalidExample();text() is string{"unexpected numeric ordering";}}

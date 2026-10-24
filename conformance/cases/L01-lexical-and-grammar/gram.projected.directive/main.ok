@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Number {
+    has origin is int;
+    Number(origin is int) {
+        origin = origin;
+    }
+
+    #projected
+    doubled() is int { origin * 2; }
+
+    #projected(text)
+    rendered() is string { "n=" + origin.string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln((doubled Number(21)).string());
+    out.writeln(text Number(5));
+    0;
+}

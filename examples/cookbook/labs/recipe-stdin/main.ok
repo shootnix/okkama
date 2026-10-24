@@ -1,0 +1,26 @@
+// Прочитать имена из stdin и вывести приветствия
+//
+// Утилита получает по одному имени на строку из терминала либо конвейера.
+//
+// Запуск: ./examples/cookbook/run lab recipe-stdin
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-stdin
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/stdin v1.0.0;
+import "io/stdin" take Stdin,Utf8Input,EndOfInput;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let input = Utf8Input(origin: Stdin());
+    defer input.close();
+    let out = Stdout();
+    loop {
+        try {
+            let name = input.line();
+            out <- "Здравствуйте, " <- name <- endl;
+        }
+        catch ended is EndOfInput { last; }
+    }
+    0;
+}

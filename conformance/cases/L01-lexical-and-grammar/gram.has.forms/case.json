@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.has.forms",
+  "title": "has declarations with name lists and defaults",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.HAS-DECL",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "OBJ.FIELDS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "pt 3,4\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#11.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.2: `has x, y is int;` declares two fields; label defaults to \"pt\"."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,65 @@
+module shapes v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Objects, roles, generics, constructors, projections, caps, enums and
+// private actions. Prints three lines and exits with status 0.
+
+enum Kind = (square, rectangle);
+
+role Shape {
+    area() is int;
+    kind() is Kind;
+}
+
+object Square does Shape {
+    has side is int;
+    Square(:side);
+    area() is int { side * side; }
+    kind() is Kind { Kind.square; }
+}
+
+object Rectangle does Shape {
+    has width, height is int;
+    has label is string = "rectangle";
+
+    Rectangle(width is int, height is int) {
+        self.width = width;
+        self.height = height;
+    }
+
+    area() is int { width * height; }
+    kind() is Kind { Kind.rectangle; }
+
+    cap Size {
+        perimeter is int { 2 * (width + height); }
+    }
+
+    #projected(described)
+    description() is string { label + " " + self.area().string(); }
+
+    private:
+    unused() is int { 0; }
+}
+
+object Box<T> {
+    has item is T;
+    Box(:item);
+    item() is T { item; }
+}
+
+main() is int {
+    let out = Stdout();
+    let shapes is @Shape = [Square(side: 3), Rectangle(2, 5)];
+    for shapes -> shape {
+        let name = match shape.kind() {
+            case Kind.square { "square"; }
+            else { "other"; }
+        };
+        out <- name + " " + shape.area().string() <- endl;
+    }
+    let size is Rectangle::Size = Rectangle(2, 5)::Size;
+    let boxed is Box<string> = Box(item: described Rectangle(1, 4));
+    out <- boxed.item() + " / " + size::perimeter.string() <- endl;
+    0;
+}

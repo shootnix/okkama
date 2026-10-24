@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.string.empty-and-escape-only",
+  "title": "empty strings and escape-only strings",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.STRING-LITERALS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0\n1\n1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 4.2: escapes decode to one character each; length counts code points."
+  },
+  "status": "mandatory"
+}

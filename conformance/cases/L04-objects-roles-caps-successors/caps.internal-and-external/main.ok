@@ -1,0 +1,37 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Customer {
+    has given_name, family_name is string;
+    has balance is int;
+    Customer(:given_name, :family_name, :balance);
+
+    renamed(name is string) is ^Customer {
+        ^given_name = name;
+    }
+
+    cap Card {
+        full_name is string { given_name + " " + family_name; }
+        initials is string { given_name.slice(0, 1) + family_name.slice(0, 1); }
+    }
+}
+
+cap Customer::Billing {
+    owed is int { Customer::balance; }
+}
+
+object Printer {
+    Printer();
+    text(card is Customer::Card) is string { card::full_name; }
+}
+
+main() is int {
+    let out = Stdout();
+    let customer = Customer(given_name: "Ada", family_name: "Lovelace", balance: 42);
+    let card is Customer::Card = customer::Card;
+    out.writeln(Printer().text(card));
+    out.writeln(card::initials);
+    out.writeln(customer::Billing::owed.string());
+    0;
+}

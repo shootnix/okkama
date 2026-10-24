@@ -1,0 +1,58 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.json.round-trip-and-order",
+  "title": "JSON parsing, member order and compact printing",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.JSON.PARSE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.JSON.WRITE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.JSON.VALUE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - compact print\nok 2 - integer spelling\nok 3 - text round trip\nchecks: 3, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/json/parse.ok",
+    "std/json/write.ok",
+    "RFC 8259"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 8259 JSON; json/value preserves member insertion order; Decimal 2.50 is canonical 2.5; integers up to 21 digits print positionally; text survives a print/parse round trip."
+  },
+  "status": "mandatory"
+}

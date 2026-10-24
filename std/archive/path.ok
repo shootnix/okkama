@@ -1,0 +1,99 @@
+module archive/path v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Decoded;
+
+// Immutable relative archive member name, independent of fs/Path and the host.
+// The constructor rejects empty/absolute paths, any backslash or NUL, leading
+// ASCII drive prefixes (including C:relative), and empty, . or .. segments.
+// Slash is the only separator. Trailing slash is an empty segment: directory
+// kind and wire-format suffix handling belong to the archive format adapter.
+// No trimming, normalization, case folding, percent decoding or path cleanup.
+// Valid Unicode and ordinary punctuation are retained exactly. A colon outside
+// a leading drive prefix is ordinary archive text, not a portability promise.
+//
+//     let entry = ArchivePath("assets/иконка.png");
+//     entry.name();            // "иконка.png"
+//     entry.parent().string(); // "assets"
+//
+// string() reconstructs the exact validated name; segments() returns immutable
+// components. parent() of one segment throws MissingArchiveParent(self), never
+// a synthetic empty/root path. All observations are pure; no owned resources.
+// This is lexical validation only: link traversal, host-specific restrictions
+// and destination containment/races belong to the later extraction capability.
+object ArchivePath {
+    has parts is @string;
+
+    ArchivePath(origin is string) {
+        confirm origin != "" else throw UnsafeArchivePath(origin, "empty path");
+        confirm origin.slice(0, 1) != "/" else throw UnsafeArchivePath(origin, "absolute path");
+        confirm origin.split("\\").size() == 1 else throw UnsafeArchivePath(origin, "backslash");
+        let nul = Utf8Decoded([byte(0)]).string();
+        confirm origin.split(nul).size() == 1 else throw UnsafeArchivePath(origin, "NUL character");
+        if origin.length() >= 2 && origin.slice(1, 2) == ":" {
+            let first = origin.slice(0, 1);
+            confirm "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split(first).size() == 1
+                else throw UnsafeArchivePath(origin, "Windows drive prefix");
+        }
+        let segments = origin.split("/");
+        for segments -> segment {
+            confirm segment != "" else throw UnsafeArchivePath(origin, "empty segment");
+            confirm segment != "." else throw UnsafeArchivePath(origin, "dot segment");
+            confirm segment != ".." else throw UnsafeArchivePath(origin, "parent segment");
+        }
+        parts = segments;
+    }
+
+    string() is string { parts.join("/"); }
+    segments() is Sequencing<string> { parts; }
+    name() is string { parts[parts.size() - 1]; }
+    parent() is ArchivePath {
+        confirm parts.size() > 1 else throw MissingArchiveParent(self);
+        ArchivePath(parts.slice(0, parts.size() - 1).join("/"));
+    }
+}
+
+// Stable diagnostic with original input kept separately from its reason.
+// No host exceptions or filesystem observations enter these value errors.
+object UnsafeArchivePath does Error {
+    has origin, message is string;
+    UnsafeArchivePath(origin is string, message is string) {
+        self.origin = origin;
+        self.message = message;
+    }
+    path() is string { origin; }
+    text() is string { "unsafe archive path: " + message; }
+}
+
+object MissingArchiveParent does Error {
+    has origin is ArchivePath;
+    MissingArchiveParent(path is ArchivePath) { origin = path; }
+    path() is ArchivePath { origin; }
+    text() is string { "archive path has no parent"; }
+}
+
+test "archive path preserves spelling and returns immutable components" {
+    let path = ArchivePath(" каталог /é/😀.txt");
+    test.is(path.string(), " каталог /é/😀.txt");
+    test.is(path.segments().size(), 3);
+    test.is(path.segments().first(), " каталог ");
+    test.is(path.name(), "😀.txt");
+    test.is(path.parent().string(), " каталог /é");
+    test.is(path.parent().parent().name(), " каталог ");
+    test.ok(ArchivePath("é") != ArchivePath("é"));
+}
+
+test "archive path rejects traversal and malformed separators" {
+    for ["", "/", "//server/share", "a/", "a//b", ".", "a/./b", "..", "a/../b", "a\\b", "C:foo"] -> raw {
+        test.ok(try { ArchivePath(raw); false; } catch error is UnsafeArchivePath { error.path() == raw; });
+    }
+    test.is(ArchivePath("%2e%2e/%2f").string(), "%2e%2e/%2f");
+}
+
+test "archive parent absence retains the original one-segment path" {
+    let path = ArchivePath("root");
+    test.is(try { path.parent(); "bad"; } catch error is MissingArchiveParent { error.path().string(); }, "root");
+    test.is(MissingArchiveParent(path).text(), "archive path has no parent");
+    test.is(UnsafeArchivePath("../x", "parent segment").text(), "unsafe archive path: parent segment");
+    test.is(path.string(), "root");
+}

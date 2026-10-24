@@ -1,0 +1,121 @@
+module template/model v1.0.0;
+import "template/path" take TemplatePath;
+
+import "collections/sequence" take Sequencing;
+import "compare" take Order;
+
+// Explicit immutable string data for plain template interpolation. No arbitrary
+// application objects, reflection, implicit JSON traversal, HTML trust or I/O.
+// TemplateBinding(TemplatePath(["user","name"]), "Ada") binds exact coordinates.
+// Its path()/string() expose those coordinates without parsing or escaping.
+//
+// TemplateBindings snapshots a Sequencing<TemplateBinding>; optional nonnegative
+// maximum_bindings defaults to 1024. Empty/zero is valid. size() is read once;
+// negative size/excess count fails before item access; then ascending items are
+// read exactly once. Duplicate validation observes the completed snapshot.
+// Path identity compares segment sequences: ["a.b"] differs from ["a","b"].
+// Borrowed sources are never closed. Source exceptions propagate unchanged.
+//
+// string(path) returns a present value, including "", or MissingTemplateValue.
+// Repeated queries never revisit the source. Returned strings/paths outlive this
+// snapshot. Duplicate checking O(n²), lookup O(n), within the explicit item bound.
+// Values are retained strings, not copied buffers; count does not bound text
+// lengths. Compile/render objects supply independent source/output limits.
+// No native handles/external resources or destroy.
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/model.ok
+role TemplateStrings {
+    string(path is TemplatePath) is string;
+    fake {
+        string(path is TemplatePath) is string {
+            test.is(path.string(), "name");
+            "Ada";
+        }
+    }
+}
+object TemplateBinding {
+    has key is TemplatePath;
+    has value is string;
+    TemplateBinding(path is TemplatePath, value is string) {key = path;self.value = value;}
+    path() is TemplatePath {key;}
+    string() is string {value;}
+}
+object TemplateBindings does TemplateStrings {
+    has origin is @TemplateBinding;
+    TemplateBindings(values is Sequencing<TemplateBinding>) {
+        origin = TemplateBindingSnapshot(values,1024).items();
+    }
+    TemplateBindings(values is Sequencing<TemplateBinding>, maximum_bindings is int) {
+        origin = TemplateBindingSnapshot(values,maximum_bindings).items();
+    }
+    string(path is TemplatePath) is string {
+        let found = (0..origin.size()).reduce(-1) -> previous,index {
+            if origin[index].path().order(path) == Order.equal {index;} else {previous;}
+        };
+        confirm found >= 0 else throw MissingTemplateValue(path);
+        origin[found].string();
+    }
+}
+// Internal bounded snapshot collaborator; importable because module declarations
+// have no private visibility. No item is reread during duplicate validation.
+object TemplateBindingSnapshot {
+    has origin is @TemplateBinding;
+    TemplateBindingSnapshot(source is Sequencing<TemplateBinding>, maximum is int) {
+        confirm maximum >= 0 else throw InvalidTemplateBindingLimit();
+        let size = source.size();
+        confirm size >= 0 else throw InvalidTemplateBindingSize();
+        confirm size <= maximum else throw TemplateBindingLimitExceeded();
+        let snapshot is @TemplateBinding = (0..size).map() -> index {source.item(index);};
+        for (0..size) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[index].path().order(snapshot[previous].path()) != Order.equal
+                    else throw DuplicateTemplateValue(snapshot[index].path());
+            }
+        }
+        origin = snapshot;
+    }
+    items() is @TemplateBinding {origin;}
+}
+object MissingTemplateValue does Error {
+    has key is TemplatePath;
+    MissingTemplateValue(path is TemplatePath) {key = path;}
+    path() is TemplatePath {key;}
+    text() is string {"missing template value: " + key.string();}
+}
+object DuplicateTemplateValue does Error {
+    has key is TemplatePath;
+    DuplicateTemplateValue(path is TemplatePath) {key = path;}
+    path() is TemplatePath {key;}
+    text() is string {"duplicate template value: " + key.string();}
+}
+object InvalidTemplateBindingLimit does Error {
+    InvalidTemplateBindingLimit();
+    text() is string {"template binding limit must be nonnegative";}
+}
+object InvalidTemplateBindingSize does Error {
+    InvalidTemplateBindingSize();
+    text() is string {"template binding source size must be nonnegative";}
+}
+object TemplateBindingLimitExceeded does Error {
+    TemplateBindingLimitExceeded();
+    text() is string {"template binding limit exceeded";}
+}
+
+test "explicit template strings have exact nominal paths" {
+    let data is TemplateStrings = TemplateBindings([
+        TemplateBinding(TemplatePath(["user.name"]), "literal"),
+        TemplateBinding(TemplatePath(["user","name"]), "nested")
+    ]);
+    test.is(data.string(TemplatePath(["user.name"])), "literal");
+    test.is(data.string(TemplatePath(["user","name"])), "nested");
+    test.is(TemplateStrings.fake().string(TemplatePath(["name"])), "Ada");
+}
+test "template binding errors retain path and budget contracts" {
+    test.is(try {TemplateBindings([],0).string(TemplatePath(["missing"]));"";}
+        catch error is MissingTemplateValue {error.path().string();}, "missing");
+    test.ok(try {TemplateBindings([], -1);false;} catch error is InvalidTemplateBindingLimit {true;});
+    test.ok(try {TemplateBindings([TemplateBinding(TemplatePath(["a"]), "")],0);false;}
+        catch error is TemplateBindingLimitExceeded {true;});
+    test.is(try {TemplateBindings([
+        TemplateBinding(TemplatePath(["x"]),"1"),TemplateBinding(TemplatePath(["x"]),"2")]);"";}
+        catch error is DuplicateTemplateValue {error.path().string();}, "x");
+}

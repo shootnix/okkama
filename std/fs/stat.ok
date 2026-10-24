@@ -1,0 +1,222 @@
+module fs/stat v1.0.0;
+
+import "numbers/bigint" take BigInt;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
+
+// Portable metadata values. Native providers normalize their host stat shape
+// into integer fields; no host-specific mode or timestamp object crosses the
+// runtime boundary. Creation time is optional because many filesystems do not
+// expose one. Calling creation() when it is unavailable throws a typed error.
+
+enum FileKind = (
+    other,
+    file,
+    directory,
+    symbolic_link,
+    block_device,
+    character_device,
+    fifo,
+    socket
+);
+
+object FileStat {
+    has file_kind is FileKind;
+    has byte_size is int;
+    has permission_mode is PermissionMode;
+    has file_times is FileTimes;
+    has file_identity is FileIdentity;
+
+    FileStat(
+        kind is FileKind,
+        size is int,
+        mode is PermissionMode,
+        times is FileTimes,
+        identity is FileIdentity,
+    ) {
+        file_kind = kind;
+        byte_size = size;
+        permission_mode = mode;
+        file_times = times;
+        file_identity = identity;
+    }
+
+    kind() is FileKind { file_kind; }
+    size() is int { byte_size; }
+    mode() is PermissionMode { permission_mode; }
+    times() is FileTimes { file_times; }
+    identity() is FileIdentity { file_identity; }
+}
+
+object FileTimes {
+    has accessed is int;
+    has modified is int;
+    has changed is int;
+    has created is int;
+
+    FileTimes(access is int, modification is int, change is int, creation is int) {
+        accessed = access;
+        modified = modification;
+        changed = change;
+        created = creation;
+    }
+
+    access() is Instant { value EpochInstant(seconds: accessed); }
+    modification() is Instant { value EpochInstant(seconds: modified); }
+    change() is Instant { value EpochInstant(seconds: changed); }
+
+    creation() is Instant {
+        confirm created >= 0 else throw MissingCreationTime();
+        value EpochInstant(seconds: created);
+    }
+}
+
+object FileIdentity {
+    has device_number is int;
+    has inode_number is BigInt;
+
+    FileIdentity(device is int, inode is BigInt) {
+        device_number = device;
+        inode_number = inode;
+    }
+
+    same(other is FileIdentity) is bool { self == other; }
+    device() is int { device_number; }
+    inode() is BigInt { inode_number; }
+}
+
+object Permissions {
+    has read_bit is bool;
+    has write_bit is bool;
+    has execute_bit is bool;
+
+    Permissions(readable is bool, writable is bool, executable is bool) {
+        read_bit = readable;
+        write_bit = writable;
+        execute_bit = executable;
+    }
+
+    readable() is bool { read_bit; }
+    writable() is bool { write_bit; }
+    executable() is bool { execute_bit; }
+}
+
+object PermissionMode {
+    has bits is int;
+
+    PermissionMode(bits is int) {
+        confirm bits >= 0 && bits <= 4095
+            else throw InvalidPermissionMode(bits);
+        self.bits = bits;
+    }
+
+    // These are integer bit fields; division produces a rat in Okkama.
+    owner() is Permissions { value PermissionBits(bits: (bits >> 6) & 7); }
+    group() is Permissions { value PermissionBits(bits: (bits >> 3) & 7); }
+    others() is Permissions { value PermissionBits(bits: bits % 8); }
+    special() is int { bits >> 9; }
+}
+
+object FileStatFromMap {
+    has origin is %string:int;
+
+    FileStatFromMap(:origin);
+
+    #projected
+    value() is FileStat {
+        FileStat(
+            kind: value FileKindFromCode(code: origin["kind"]),
+            size: origin["size"],
+            mode: PermissionMode(bits: origin["permissions"]),
+            times: FileTimes(
+                access: origin["accessed_sec"],
+                modification: origin["modified_sec"],
+                change: origin["changed_sec"],
+                creation: origin["created_sec"],
+            ),
+            identity: FileIdentity(
+                device: origin["device"],
+                inode: BigInt(origin: origin["inode"].string()),
+            ),
+        );
+    }
+}
+
+object EpochInstant {
+    has seconds is int;
+
+    EpochInstant(:seconds);
+
+    #projected
+    value() is Instant {
+        Instant(origin: Duration(
+            value: seconds.rat(),
+            unit: DurationUnit.second,
+        ));
+    }
+}
+
+object PermissionBits {
+    has bits is int;
+
+    PermissionBits(:bits);
+
+    #projected
+    value() is Permissions {
+        Permissions(
+            readable: (bits & 4) != 0,
+            writable: (bits & 2) != 0,
+            executable: bits % 2 == 1,
+        );
+    }
+}
+
+object FileKindFromCode {
+    has code is int;
+
+    FileKindFromCode(:code);
+
+    #projected
+    value() is FileKind {
+        if code == 1 { FileKind.file; }
+        else if code == 2 { FileKind.directory; }
+        else if code == 3 { FileKind.symbolic_link; }
+        else if code == 4 { FileKind.block_device; }
+        else if code == 5 { FileKind.character_device; }
+        else if code == 6 { FileKind.fifo; }
+        else if code == 7 { FileKind.socket; }
+        else { FileKind.other; }
+    }
+}
+
+object MissingCreationTime does Error {
+    MissingCreationTime();
+
+    #projected
+    text() is string { "filesystem does not expose a creation time"; }
+}
+
+object InvalidPermissionMode does Error {
+    has bits is int;
+
+    InvalidPermissionMode(bits is int) {
+        self.bits = bits;
+    }
+
+    #projected
+    text() is string {
+        "invalid permission mode " + bits.string();
+    }
+}
+
+test "permission observations retain integer bit groups" {
+    let mode = PermissionMode(416); // 0640
+    test.ok(mode.owner().readable()); test.ok(mode.owner().writable());
+    test.ok(!mode.owner().executable()); test.ok(mode.group().readable());
+    test.ok(!mode.group().writable()); test.ok(!mode.others().readable());
+    test.is(mode.special(), 0);
+    let all = PermissionMode(4095); // 07777
+    test.ok(all.owner().executable()); test.ok(all.group().writable());
+    test.ok(all.others().executable()); test.is(all.special(), 7);
+    test.ok(try { PermissionMode(4096); false; } catch error is InvalidPermissionMode { true; });
+}

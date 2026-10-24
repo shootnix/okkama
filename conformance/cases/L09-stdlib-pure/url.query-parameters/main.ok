@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "url/value" take ParsedUrl, ParsedUrlReference, UrlResolution, UrlQuery;
+import "url/query" take ParsedQueryParameters, MissingQueryParameter;
+
+main() is int {
+    let c = Checks();
+    c = c.same_texts("repeated name", (value ParsedQueryParameters(UrlQuery("a=1&b=2&a=3"))).values("a").map() -> v { v; }, ["1", "3"]);
+    c = c.same_text("first value", (value ParsedQueryParameters(UrlQuery("a=1&b=2&a=3"))).first("b"), "2");
+    c = c.same_bool("absent name", (value ParsedQueryParameters(UrlQuery("a=1"))).membership("c"), false);
+    c = c.same_text("percent decoding", (value ParsedQueryParameters(UrlQuery("q=a%20b"))).first("q"), "a b");
+    c = c.same_text("missing parameter", try { let probe = (value ParsedQueryParameters(UrlQuery("a=1"))).first("c"); "no error"; } catch e is MissingQueryParameter { e.name(); }, "c");
+    c.done();
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.fs.write-then-read",
+  "title": "write a file and read it back",
+  "purpose": "Files written in the working directory are observable.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.FS.FILE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "first line\nsecond line\n"
+    },
+    "artifacts": [
+      {
+        "path": "out.txt",
+        "text": "first line\nsecond line\n"
+      }
+    ]
+  },
+  "spec_refs": [
+    "std/fs/file.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "fs/file: text mode writes strict UTF-8; the file content is visible after close; the runner also checks the produced artifact."
+  },
+  "status": "mandatory"
+}

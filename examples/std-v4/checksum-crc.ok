@@ -1,0 +1,14 @@
+module app v1.0.0;
+import "checksum/crc" take Crc32, Crc16Ccitt;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let first = Crc32(Utf8Encoded("1234").bytes());
+    let whole = first.state(Utf8Encoded("56789").bytes());
+    let digits = Utf8Encoded("123456789").bytes();
+    Stdout().writeln(whole.value().string());
+    Stdout().writeln(Crc16Ccitt(digits, 65535).value().string());
+    Stdout().writeln(Crc16Ccitt(digits, 0).value().string());
+    0;
+}

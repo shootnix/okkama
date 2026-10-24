@@ -1,0 +1,141 @@
+module io/buffer v1.0.0;
+
+import "io/stream" take
+    ByteSource,
+    Reading,
+    Writing,
+    Closing,
+    IncompleteWrite,
+    InvalidReadLimit;
+import "size" take Sizing;
+import "runtime/buffer" take
+    BufferState,
+    buffer_state_create,
+    buffer_state_read,
+    buffer_state_append,
+    buffer_state_bytes,
+    buffer_state_size,
+    buffer_state_closed,
+    buffer_state_close;
+
+// One byte store exposed through narrow capabilities.
+//
+//     let buffer = ByteBuffer(initial: [byte(1)]);
+//     buffer.writing() <- "hello" <- [byte(255)];
+//     let prefix is @byte = buffer.reading().bytes(2);
+//     let remaining is @byte = buffer.content().bytes();
+//     buffer.closing().close();
+//
+// Every view shares the same storage. Reading consumes a prefix; writing
+// appends exact source bytes; BufferContent observes the current unread bytes
+// without consuming them. Its bytes() result is an independent snapshot.
+// flush() is a no-op because the in-memory writer has no pending layer.
+//
+// close() is idempotent, clears retained bytes and invalidates every reading,
+// writing and content view. There is deliberately no reset() and no text
+// buffer. Use `writing() <- text` for UTF-8 output, Utf8Input over reading() for
+// line/text input, or Utf8Decoded over content().bytes() for a snapshot.
+
+object ByteBuffer {
+    has state is BufferState;
+
+    ByteBuffer() {
+        state = buffer_state_create([]);
+    }
+
+    ByteBuffer(initial is @byte) {
+        state = buffer_state_create(initial);
+    }
+
+    reading() is Reading {
+        BufferReading(state);
+    }
+
+    writing() is Writing {
+        BufferWriting(state);
+    }
+
+    content() is BufferContent {
+        BufferContent(state);
+    }
+
+    closing() is Closing {
+        BufferClosing(state);
+    }
+}
+
+object BufferReading does Reading {
+    has state is BufferState;
+
+    BufferReading(state is BufferState) {
+        self.state = state;
+    }
+
+    bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        buffer_state_read(state, limit);
+    }
+}
+
+object BufferWriting does Writing {
+    has state is BufferState;
+
+    BufferWriting(state is BufferState) {
+        self.state = state;
+    }
+
+    write(source is ByteSource) is void {
+        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        let value is @byte = source.bytes();
+        let written is int = buffer_state_append(state, value);
+        confirm written == value.size() else throw IncompleteWrite(written);
+    }
+
+    flush() is void {
+        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+    }
+}
+
+object BufferClosing does Closing {
+    has state is BufferState;
+
+    BufferClosing(state is BufferState) {
+        self.state = state;
+    }
+
+    closed() is bool {
+        buffer_state_closed(state);
+    }
+
+    close() is void {
+        buffer_state_close(state);
+    }
+}
+
+object BufferContent does Sizing {
+    has state is BufferState;
+
+    BufferContent(state is BufferState) {
+        self.state = state;
+    }
+
+    bytes() is @byte {
+        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        buffer_state_bytes(state);
+    }
+
+    size() is int {
+        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        buffer_state_size(state);
+    }
+}
+
+object ClosedBuffer does Error {
+    ClosedBuffer();
+
+    #projected
+    text() is string {
+        "buffer is closed";
+    }
+}

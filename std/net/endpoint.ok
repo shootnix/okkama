@@ -1,0 +1,110 @@
+module net/endpoint v1.0.0;
+
+import "net/ip" take IpAddress, IpVersion;
+import "compare" take Comparing, Order;
+import "runtime/idna" take hostname_ascii, hostname_unicode;
+
+object HostName does Comparing<HostName> {
+    has ascii,unicode is string;
+    HostName(origin is string) {
+        confirm origin.length()>0 && origin.length()<=1024 else throw InvalidHostName(origin);
+        let encoded=try{hostname_ascii(origin);}catch failure is NativeFailure {
+            if failure.domain()=="core.idna" && failure.code()=="invalid_input" {throw InvalidHostName(origin);}
+            throw;
+        };
+        ascii=encoded;unicode=hostname_unicode(encoded);
+    }
+    ascii() is string {ascii;}unicode() is string {unicode;}
+    order(other is HostName) is Order {ascii.order(other.ascii());}
+}
+object HostEndpoint {
+    has host is HostName;has port is int;
+    HostEndpoint(host is HostName, port is int) {
+        confirm port>=0 && port<=65535 else throw InvalidPort(port);
+        self.host=host;self.port=port;
+    }
+    host() is HostName {host;}port() is int {port;}
+    string() is string {host.ascii()+":"+port.string();}
+}
+object InvalidHostName does Error {
+    has origin is string;InvalidHostName(origin is string){self.origin=origin;}
+    origin() is string {origin;}
+    text() is string {"invalid bounded IDNA hostname: "+origin;}
+}
+
+// Immutable numeric endpoint. Construction performs no DNS, interface lookup,
+// service lookup or socket I/O. The original IpAddress stays undecorated.
+// Ports are 0..65535. Zero represents an OS-assigned bind request; a consuming
+// connect/send operation must reject it when a destination port is required.
+//
+//     IpEndpoint(IpAddress("fe80::1"),443,"eth0").string();
+//     // "[fe80::1%eth0]:443"
+//
+// Empty zone means absent. Nonempty zones require IPv6 and ASCII letters,
+// digits or -._~. This portable spelling subset preserves case/leading zeros;
+// it does not assert that the interface exists. Numeric zones stay strings.
+// string() is endpoint display text with a literal %, not a URI serializer.
+// Validation reports InvalidPort before InvalidIpv6Zone if both are invalid.
+object IpEndpoint {
+    has origin is IpAddress;
+    has number is int;
+    has scope is string;
+
+    IpEndpoint(address is IpAddress, port is int) {
+        confirm port>=0 && port<=65535 else throw InvalidPort(port);
+        origin=address;number=port;scope="";
+    }
+    IpEndpoint(address is IpAddress, port is int, zone is string) {
+        confirm port>=0 && port<=65535 else throw InvalidPort(port);
+        confirm zone=="" || address.version()==IpVersion.v6
+            else throw InvalidIpv6Zone(zone);
+        let valid=(0..zone.length()).reduce(true) -> valid,index {
+            valid && "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+                .split(zone.slice(index,index+1)).size()==2;
+        };
+        confirm valid else throw InvalidIpv6Zone(zone);
+        origin=address;number=port;scope=zone;
+    }
+    address() is IpAddress {origin;}
+    port() is int {number;}
+    zone() is string {scope;}
+    string() is string {
+        let host=origin.string();
+        let scoped=if scope=="" {host;} else {host+"%"+scope;};
+        let formatted=if origin.version()==IpVersion.v6 {"["+scoped+"]";} else {host;};
+        formatted+":"+number.string();
+    }
+}
+
+// Invalid numeric port, preserving the attempted value for structured handling.
+object InvalidPort does Error {
+    has origin is int;
+    InvalidPort(port is int) {origin=port;}
+    port() is int {origin;}
+    text() is string {"port must be in 0..65535: "+origin.string();}
+}
+
+// Zone spelling or family failure. The diagnostic preserves the input verbatim.
+object InvalidIpv6Zone does Error {
+    has origin is string;
+    InvalidIpv6Zone(zone is string) {origin=zone;}
+    text() is string {"invalid IPv6 zone: "+origin;}
+}
+
+test "invalid port preserves the rejected integer" {
+    let failure=InvalidPort(-1);
+    test.is(failure.port(),-1);
+    test.is(failure.text(),"port must be in 0..65535: -1");
+}
+test "zone diagnostic preserves exact spelling" {
+    test.is(InvalidIpv6Zone("bad%zone").text(),"invalid IPv6 zone: bad%zone");
+}
+test "IPv6 endpoint formatting keeps scope outside the bare address" {
+    let endpoint=IpEndpoint(IpAddress("fe80::1"),443,"eth0");
+    test.is(endpoint.string(),"[fe80::1%eth0]:443");
+    test.is(endpoint.address().string(),"fe80::1");
+}
+test "hostnames canonicalize through nontransitional IDNA before endpoint formatting" {
+    test.is(HostEndpoint(HostName("BÜCHER.example"),443).string(),"xn--bcher-kva.example:443");
+    test.is(HostName("faß.de").unicode(),"faß.de");
+}

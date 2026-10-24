@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.idempotent.diamond",
+  "title": "a shared dependency reached twice is one module",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.IDEMPOTENT",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "lib/core.ok",
+    "lib/maker.ok",
+    "lib/user.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "42\n6\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.2: shared transitive dependencies are registered once, so the Token made through lib/maker is the Token lib/user accepts."
+  },
+  "status": "mandatory"
+}

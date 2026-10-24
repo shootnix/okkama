@@ -1,0 +1,189 @@
+module collections/frequencies v1.0.0;
+
+import "collections/iteration" take Cursor, CursorItems, Iterating;
+import "collections/list" take List, EmptyList;
+import "error" take InvalidArgument;
+import "size" take Sizing;
+
+// Immutable frequency counts in first-occurrence order.
+//
+// Frequencies consumes any Iterating value once and stores one Frequency for
+// every distinct item:
+//
+//     let empty is List<string> = EmptyList();
+//     let words = empty
+//         .prefix("blue")
+//         .prefix("red")
+//         .prefix("blue");
+//     let counts = Frequencies(values: words);
+//
+//     counts.size();                 // 2 distinct strings
+//     counts.total();                // 3 input strings
+//     counts.amount("blue");        // 2
+//     counts.amount("missing");     // 0
+//
+// Traversal emits Frequency objects in the order in which their items first
+// appeared. In the example it emits blue:2, then red:1:
+//
+//     for counts -> frequency {
+//         Stdout().writeln(
+//             frequency.item() + ":" + frequency.amount().string()
+//         );
+//     }
+//
+// Frequency is a value: its positive amount is calculated during Frequencies
+// construction and does not rescan the original input.
+//
+// The runtime does not yet provide a generic hashing contract. Frequencies
+// therefore uses strict runtime equality and linear lookup, just like
+// OrderedSet, instead of pretending to be a hash table. Construction is
+// O(n*d), where d is the number of distinct values; amount(value) is O(d).
+// Values must support runtime equality; native opaque handles do not.
+
+object Frequency<T> {
+    has origin is T;
+    has quantity is int;
+
+    Frequency(item is T, amount is int) {
+        confirm amount > 0
+            else throw InvalidArgument("frequency amount must be positive");
+        origin = item;
+        quantity = amount;
+    }
+
+    item() is T {
+        origin;
+    }
+
+    amount() is int {
+        quantity;
+    }
+}
+
+object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
+    has origin is List<Frequency<T>>;
+    has quantity is int;
+
+    Frequencies(values is Iterating<T>) {
+        let empty is List<Frequency<T>> = EmptyList();
+        let built = values.reduce(FrequencyBuilding(
+            frequencies: empty,
+            total: 0,
+        )) -> building, value {
+            building.addition(value);
+        };
+        origin = built.frequencies();
+        quantity = built.total();
+    }
+
+    cursor() is Cursor<Frequency<T>> {
+        origin.cursor();
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    amount(value is T) is int {
+        let cursor = origin.cursor();
+        if !cursor.available() {
+            0;
+        }
+        else {
+            for CursorItems(cursor: cursor) -> frequency {
+                last frequency.amount() if frequency.item() == value;
+                0;
+            }
+        }
+    }
+
+    total() is int {
+        quantity;
+    }
+}
+
+object FrequencyBuilding<T> {
+    has origin is List<Frequency<T>>;
+    has quantity is int;
+
+    FrequencyBuilding(frequencies is List<Frequency<T>>, total is int) {
+        confirm total >= 0
+            else throw InvalidArgument("frequency total cannot be negative");
+        origin = frequencies;
+        quantity = total;
+    }
+
+    frequencies() is List<Frequency<T>> {
+        origin;
+    }
+
+    total() is int {
+        quantity;
+    }
+
+    addition(value is T) is FrequencyBuilding<T> {
+        let empty is List<Frequency<T>> = EmptyList();
+        let revised = origin.reduce(FrequencyRevision(
+            frequencies: empty,
+            value: value,
+            present: false,
+        )) -> revision, frequency {
+            revision.addition(frequency);
+        };
+        let reversed is List<Frequency<T>> = if revised.membership() {
+            revised.frequencies();
+        }
+        else {
+            revised.frequencies().prefix(Frequency(item: value, amount: 1));
+        };
+        let ordered is List<Frequency<T>> = reversed.reduce(EmptyList())
+            -> frequencies, frequency {
+                frequencies.prefix(frequency);
+            };
+        FrequencyBuilding(frequencies: ordered, total: quantity + 1);
+    }
+}
+
+object FrequencyRevision<T> {
+    has origin is List<Frequency<T>>;
+    has sought is T;
+    has present is bool;
+
+    FrequencyRevision(
+        frequencies is List<Frequency<T>>,
+        value is T,
+        present is bool,
+    ) {
+        origin = frequencies;
+        sought = value;
+        self.present = present;
+    }
+
+    frequencies() is List<Frequency<T>> {
+        origin;
+    }
+
+    membership() is bool {
+        present;
+    }
+
+    addition(frequency is Frequency<T>) is FrequencyRevision<T> {
+        if frequency.item() == sought {
+            FrequencyRevision(
+                frequencies: origin.prefix(Frequency(
+                    item: frequency.item(),
+                    amount: frequency.amount() + 1,
+                )),
+                value: sought,
+                present: true,
+            );
+        }
+        else {
+            FrequencyRevision(
+                frequencies: origin.prefix(frequency),
+                value: sought,
+                present: present,
+            );
+        }
+    }
+}

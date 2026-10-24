@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.toml.document-visit",
+  "title": "TOML documents parse into ordered nominal values",
+  "purpose": "Traverse a parsed TOML document through its visitor protocol.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TOML.PARSE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.TOML.VALUE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "table 7\nkey title\ntext Ada\nkey count\ninteger 42\nkey ratio\nreal 0.5\nkey enabled\nboolean true\nkey tags\narray 2\ntext a\ntext b\nkey born\ndate 1815-12-10\nkey server\ntable 1\nkey port\ninteger 8080\n"
+    }
+  },
+  "spec_refs": [
+    "std/toml/parse.ok",
+    "std/toml/value.ok",
+    "TOML 1.0.0"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "TOML 1.0: basic and literal strings, integers, floats, booleans, arrays, local dates and a [server] table; the module preserves insertion order and accept() issues exactly one visitor callback per value."
+  },
+  "status": "mandatory"
+}

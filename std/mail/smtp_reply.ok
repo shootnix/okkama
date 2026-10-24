@@ -1,0 +1,190 @@
+module mail/smtp_reply v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "mime/media_type" take MimeItems, MimePosition;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "encoding/single_byte" take AsciiDecoded;
+import "strings/join" take Joined;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument, InvalidState;
+
+// Bounded ASCII SMTP reply values and incremental framing (RFC 5321).
+// No network effects. Defaults: 512 octets per CRLF line, 100 lines, 64 KiB.
+// SmtpReply eagerly snapshots its source once; bytes() uses canonical framing.
+// ParsedSmtpReply requires exactly one complete reply. Decoder.fed(chunk)
+// returns a successor, stops at the first final line and retains remainder().
+// Each chunk and accumulated reply are separately bounded by wire_bytes.
+// Empty chunks do not mean EOF: finish() diagnoses truncation. Completed
+// decoders reject further feed; old versions remain independent. All scratch
+// buffers are owned/closed; replies and decoders own no external resources.
+object SmtpReplyLimits {
+    has line_bytes, lines, wire_bytes is int;
+    SmtpReplyLimits() {line_bytes=512;lines=100;wire_bytes=65536;}
+    SmtpReplyLimits(line_bytes is int, lines is int, wire_bytes is int) {
+        confirm line_bytes>=0 && lines>=0 && wire_bytes>=0 else throw InvalidArgument("SMTP reply limits must be nonnegative");
+        self.line_bytes=line_bytes;self.lines=lines;self.wire_bytes=wire_bytes;
+    }
+    line_bytes() is int {line_bytes;}
+    lines() is int {lines;}
+    wire_bytes() is int {wire_bytes;}
+}
+object SmtpReply does ByteSource {
+    has value is SmtpReplyValue;
+    SmtpReply(code is int, lines is Sequencing<string>) {value=SmtpReplyValue(code,lines,SmtpReplyLimits());}
+    SmtpReply(code is int, lines is Sequencing<string>, limits is SmtpReplyLimits) {value=SmtpReplyValue(code,lines,limits);}
+    code() is int {value.code();}
+    lines() is Sequencing<string> {value.lines();}
+    text() is string {value.text();}
+    bytes() is @byte {value.bytes();}
+}
+object ParsedSmtpReply {
+    has origin is @byte;has limits is SmtpReplyLimits;
+    ParsedSmtpReply(origin is @byte) {self.origin=origin;limits=SmtpReplyLimits();}
+    ParsedSmtpReply(origin is @byte, limits is SmtpReplyLimits) {self.origin=origin;self.limits=limits;}
+    reply() is SmtpReply {
+        confirm origin.size()<=limits.wire_bytes() else throw SmtpLimitExceeded("wire_bytes");
+        let decoder=SmtpReplyDecoder(limits);decoder=decoder.fed(origin);
+        let reply=decoder.finish();
+        confirm decoder.remainder().size()==0 else throw InvalidSmtpReply(decoder.consumed(),"trailing bytes after reply");
+        reply;
+    }
+}
+object SmtpReplyDecoder {
+    has state is SmtpReplyProgress;has limits is SmtpReplyLimits;has tail is @byte;
+    SmtpReplyDecoder() {let bounds=SmtpReplyLimits();limits=bounds;state=SmtpReplyProgress(bounds);tail=[];}
+    SmtpReplyDecoder(limits is SmtpReplyLimits) {self.limits=limits;state=SmtpReplyProgress(limits);tail=[];}
+    fed(chunk is @byte) is ^SmtpReplyDecoder {
+        confirm !state.complete() else throw InvalidState("SMTP reply decoder is complete");
+        confirm chunk.size()<=limits.wire_bytes() else throw SmtpLimitExceeded("chunk_bytes");
+        let progress=state;let end=MimePosition(chunk.size());
+        for (0..chunk.size()) -> index {
+            if progress.complete() {end=end.following(index);last;}
+            progress=progress.accepted(chunk[index]);
+        }
+        let rest is @byte=(end.index()..chunk.size()).map() -> index {chunk[index];};
+        ^state=progress;^tail=rest;
+    }
+    complete() is bool {state.complete();}
+    consumed() is int {state.consumed();}
+    reply() is SmtpReply {
+        confirm state.complete() else throw InvalidState("SMTP reply is incomplete");state.reply();
+    }
+    finish() is SmtpReply {
+        confirm state.complete() else throw InvalidSmtpReply(state.consumed(),"truncated SMTP reply");state.reply();
+    }
+    remainder() is @byte {confirm state.complete() else throw InvalidState("SMTP reply is incomplete");tail;}
+}
+object InvalidSmtpReply does Error {
+    has position is int;has reason is string;
+    InvalidSmtpReply(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid SMTP reply at byte offset "+position.string()+": "+reason;}
+}
+object SmtpLimitExceeded does Error {
+    has limit is string;
+    SmtpLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"SMTP "+limit+" limit exceeded";}
+}
+object SmtpReplyValue {
+    has status is int;has entries is @string;has summary is string;has wire is @byte;
+    SmtpReplyValue(code is int, lines is Sequencing<string>, limits is SmtpReplyLimits) {
+        SmtpReplyCode(code).validate();let count=lines.size();
+        confirm count>=0 else throw InvalidArgument("SMTP reply source size must be nonnegative");
+        confirm count>0 else throw InvalidSmtpReply(0,"reply requires at least one line");
+        confirm count<=limits.lines() else throw SmtpLimitExceeded("lines");
+        let buffer=ByteBuffer();defer buffer.closing().close();
+        let values is @string=(0..count).map() -> index {
+            let text=lines.item(index);
+            let separator=if index<count-1 {"-";} else {if text=="" {"";} else {" ";}};
+            confirm text.length()<=limits.line_bytes()-5-separator.length() else throw SmtpLimitExceeded("line_bytes");
+            SmtpReplyText(text).validate();
+            let bytes=Utf8Encoded(code.string()+separator+text+"\r\n").bytes();
+            confirm bytes.size()<=limits.line_bytes() else throw SmtpLimitExceeded("line_bytes");
+            confirm bytes.size()<=limits.wire_bytes()-buffer.content().size() else throw SmtpLimitExceeded("wire_bytes");
+            buffer.writing().write(ByteSnapshot(bytes));text;
+        };
+        status=code;entries=values;summary=Joined("\n",values,count,limits.wire_bytes()).string();wire=buffer.content().bytes();
+    }
+    code() is int {status;}
+    lines() is Sequencing<string> {entries;}
+    text() is string {summary;}
+    bytes() is @byte {wire;}
+}
+object SmtpReplyCode {
+    has origin is int;
+    SmtpReplyCode(origin is int) {self.origin=origin;}
+    validate() is void {
+        confirm origin>=200 && origin<=559 && ((origin/10).int()%10)<=5 else throw InvalidSmtpReply(0,"invalid three-digit reply code");
+    }
+}
+object SmtpReplyText {
+    has origin is string;
+    SmtpReplyText(origin is string) {self.origin=origin;}
+    validate() is void {
+        let bytes=Utf8Encoded(origin).bytes();
+        for (0..bytes.size()) -> index {
+            let value=bytes[index].int();confirm value==9 || (value>=32 && value<=126)
+                else throw InvalidSmtpReply(index,"reply text must be printable ASCII or HT");
+        }
+    }
+}
+object SmtpReplyLine {
+    has status is int;has message is string;has terminal is bool;
+    SmtpReplyLine(origin is string, offset is int) {
+        confirm origin.length()>=3 else throw InvalidSmtpReply(offset,"missing reply code");
+        let digits=Utf8Encoded(origin.slice(0,3)).bytes();
+        confirm digits[0].int()>=50 && digits[0].int()<=53 && digits[1].int()>=48 && digits[1].int()<=53
+            && digits[2].int()>=48 && digits[2].int()<=57 else throw InvalidSmtpReply(offset,"invalid reply code");
+        let code=(digits[0].int()-48)*100+(digits[1].int()-48)*10+digits[2].int()-48;
+        if origin.length()>3 {
+            let separator=origin.slice(3,4);confirm separator==" " || separator=="-" else throw InvalidSmtpReply(offset+3,"invalid code separator");
+        }
+        status=code;terminal=origin.length()==3 || origin.slice(3,4)==" ";
+        message=if origin.length()==3 {"";} else {origin.slice(4,origin.length());};
+    }
+    code() is int {status;}
+    text() is string {message;}
+    terminal() is bool {terminal;}
+}
+object SmtpReplyProgress {
+    has limits is SmtpReplyLimits;has pending is string;has lines is MimeItems<string>;
+    has status, used is int;has done is bool;
+    SmtpReplyProgress(limits is SmtpReplyLimits) {
+        self.limits=limits;pending="";let empty is MimeItems<string>=MimeItems();lines=empty;status=0;used=0;done=false;
+    }
+    complete() is bool {done;}
+    consumed() is int {used;}
+    reply() is SmtpReply {SmtpReply(status,lines.entries(),limits);}
+    accepted(octet is byte) is ^SmtpReplyProgress {
+        confirm !done else throw InvalidState("SMTP reply already complete");
+        confirm lines.size()<limits.lines() else throw SmtpLimitExceeded("lines");
+        confirm used<limits.wire_bytes() else throw SmtpLimitExceeded("wire_bytes");
+        confirm pending.length()<limits.line_bytes() else throw SmtpLimitExceeded("line_bytes");
+        let value=octet.int();let cr=pending.length()>0 && pending.slice(pending.length()-1,pending.length())=="\r";
+        if cr {confirm value==10 else throw InvalidSmtpReply(used,"CR must be followed by LF");}
+        if value==10 {
+            confirm cr else throw InvalidSmtpReply(used,"bare LF");
+            let start=used-pending.length();let line=SmtpReplyLine(pending.slice(0,pending.length()-1),start);
+            confirm status==0 || status==line.code() else throw InvalidSmtpReply(start,"multiline reply changed code");
+            let extended=lines.following(line.text());^lines=extended;^status=line.code();^done=line.terminal();^pending="";
+        } else {
+            confirm value==13 || value==9 || (value>=32 && value<=126) else throw InvalidSmtpReply(used,"invalid ASCII reply byte");
+            ^pending=pending+AsciiDecoded([octet]).string();
+        }
+        ^used=used+1;
+    }
+}
+
+test "SMTP incremental framing retains following bytes" {
+    let decoder=SmtpReplyDecoder();decoder=decoder.fed(Utf8Encoded("250 ready\r").bytes());
+    test.ok(!decoder.complete());decoder=decoder.fed(Utf8Encoded("\n220 next\r\n").bytes());
+    test.is(decoder.reply().code(),250);test.is(Utf8Decoded(decoder.remainder()).string(),"220 next\r\n");
+}
+test "SMTP reply code mismatch is rejected" {
+    let rejected=try {ParsedSmtpReply(Utf8Encoded("250-a\r\n550 b\r\n").bytes()).reply();false;}
+        catch failure is InvalidSmtpReply {true;};test.ok(rejected);
+}

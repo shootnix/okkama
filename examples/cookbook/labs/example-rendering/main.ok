@@ -1,0 +1,31 @@
+// Собрать уведомление и JSON-сумму заказа
+//
+// Собрать короткое уведомление с подстановками: Formatted связывает шаблон и значения слотов {}.
+//
+// Запуск: ./examples/cookbook/run lab example-rendering
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-rendering
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+
+import "strings/format" take Formatted;
+import "json/value" take JsonObject, JsonMember, JsonText, JsonNumber;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let greeting = Formatted(pattern: "Hello, {}!", values: ["Ada"]);
+        CompactJson(origin: JsonObject(members: [
+            JsonMember(name: "greeting", value: JsonText(greeting.string())),
+            JsonMember(name: "amount", value: JsonNumber(Decimal("12.50"))),
+        ])).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

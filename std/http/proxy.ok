@@ -1,0 +1,19 @@
+module http/proxy v1.0.0;
+import "http/proxy_policy" take ProxyPolicy,ProxyAuthorizationConflict;
+import "http/proxy_connection" take HttpProxyRouting;
+import "http/client" take HttpClient,Exchanging;
+import "http/client_policy" take ClientPolicy;
+import "http/message" take Request;
+import "http/header" take HeaderName;
+import "http/exchange" take ClientResponse;
+import "net/dns" take Resolving;
+import "net/tls" take TlsClientPolicy;
+import "time/clock" take Timing;
+import "io/stream" take Closing;
+object Proxied does Exchanging,Closing {
+    has client is HttpClient;
+    Proxied(proxy is ProxyPolicy,resolver is Resolving,tls is TlsClientPolicy,policy is ClientPolicy,clock is Timing){let routing=HttpProxyRouting(proxy,resolver,tls,policy,clock);client=HttpClient(resolver,tls,policy,clock,routing);}
+    closed() is bool{client.closed();}close() is void{client.close();}
+    async response(request is Request) is ClientResponse{confirm !request.headers().membership(HeaderName("Proxy-Authorization")) else throw ProxyAuthorizationConflict();await client.response(request);}
+    destroy{try{client.close();}catch e is Error{}catch e is NativeFailure{}}
+}

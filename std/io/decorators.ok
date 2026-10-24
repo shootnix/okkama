@@ -1,0 +1,220 @@
+module io/decorators v1.0.0;
+
+import "io/stream" take
+    ByteSource,
+    Reading,
+    Writing,
+    Closing,
+    InvalidReadLimit;
+import "collections/sequence" take Sequencing;
+import "error" take InvalidArgument;
+import "runtime/buffer" take
+    BufferState,
+    buffer_state_create,
+    buffer_state_read,
+    buffer_state_append,
+    buffer_state_size,
+    buffer_state_closed,
+    buffer_state_close;
+import "runtime/io_decorators" take
+    LimitedReadingState,
+    ChainedReadingState,
+    limited_reading_state_create,
+    limited_reading_state_remaining,
+    limited_reading_state_consume,
+    chained_reading_state_create,
+    chained_reading_state_position,
+    chained_reading_state_advance;
+
+// Focused decorators over the io/stream capability roles.
+//
+//     let buffered = BufferedReading(origin: socket, capacity: 8192);
+//     let header = buffered.bytes(32);
+//
+//     let prefix = LimitedReading(origin: file, limit: 1024);
+//     let combined = ChainedReading(origins: parts);
+//
+//     TeeWriting(destinations: outputs).write(packet);
+//     Discarding().write(packet);
+//
+// BufferedReading reads ahead only when its private cache is empty. It asks
+// origin for max(requested size, capacity), returns at most the requested size
+// and retains the excess. close() clears only this owned cache; origin is
+// non-owned and remains open.
+//
+// LimitedReading shares one remaining budget across calls and subtracts only
+// bytes actually returned. ChainedReading advances to the next origin only
+// after the current one reports EOF as []; long runs of empty origins are
+// skipped iteratively. Neither decorator owns or closes its origins.
+//
+// TeeWriting materializes one ByteSnapshot, then writes it to destinations in
+// sequence order. The first failure stops later writes/flushes; completed
+// destinations are not rolled back. Duplicate destinations receive duplicate
+// writes. Discarding consumes source.bytes() exactly once and retains nothing.
+
+object BufferedReading does Reading, Closing {
+    has origin is Reading;
+    has capacity is int;
+    has cache is BufferState;
+
+    BufferedReading(origin is Reading) {
+        self.origin = origin;
+        capacity = 8192;
+        cache = buffer_state_create([]);
+    }
+
+    BufferedReading(origin is Reading, capacity is int) {
+        confirm capacity > 0
+            else throw InvalidArgument("buffer capacity must be positive");
+        self.origin = origin;
+        self.capacity = capacity;
+        cache = buffer_state_create([]);
+    }
+
+    bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm !self.closed() else throw ClosedReading();
+        if buffer_state_size(cache) == 0 {
+            let requested is int = if limit > capacity { limit; } else { capacity; };
+            let chunk is @byte = origin.bytes(requested);
+            confirm chunk.size() <= requested else throw InvalidReading(
+                "origin returned more bytes than requested"
+            );
+            buffer_state_append(cache, chunk);
+        }
+        let available is int = buffer_state_size(cache);
+        if available == 0 {
+            [];
+        }
+        else {
+            let amount is int = if limit < available { limit; } else { available; };
+            buffer_state_read(cache, amount);
+        }
+    }
+
+    closed() is bool {
+        buffer_state_closed(cache);
+    }
+
+    close() is void {
+        buffer_state_close(cache);
+    }
+}
+
+object LimitedReading does Reading {
+    has origin is Reading;
+    has state is LimitedReadingState;
+
+    LimitedReading(origin is Reading, limit is int) {
+        confirm limit >= 0
+            else throw InvalidArgument("reading limit cannot be negative");
+        self.origin = origin;
+        state = limited_reading_state_create(limit);
+    }
+
+    bytes(size is int) is @byte {
+        confirm size > 0 else throw InvalidReadLimit(size);
+        let remaining is int = limited_reading_state_remaining(state);
+        if remaining == 0 {
+            [];
+        }
+        else {
+            let requested is int = if size < remaining { size; } else { remaining; };
+            let chunk is @byte = origin.bytes(requested);
+            confirm chunk.size() <= requested else throw InvalidReading(
+                "origin exceeded the limited-reading request"
+            );
+            limited_reading_state_consume(state, chunk.size());
+            chunk;
+        }
+    }
+}
+
+object ChainedReading does Reading {
+    has origins is Sequencing<Reading>;
+    has state is ChainedReadingState;
+
+    ChainedReading(origins is Sequencing<Reading>) {
+        self.origins = origins;
+        state = chained_reading_state_create();
+    }
+
+    bytes(size is int) is @byte {
+        confirm size > 0 else throw InvalidReadLimit(size);
+        loop {
+            let position is int = chained_reading_state_position(state);
+            last [] if position >= origins.size();
+            let chunk is @byte = origins.item(position).bytes(size);
+            confirm chunk.size() <= size else throw InvalidReading(
+                "chained origin returned more bytes than requested"
+            );
+            last chunk if chunk.size() > 0;
+            chained_reading_state_advance(state);
+        }
+    }
+}
+
+object ByteSnapshot does ByteSource {
+    has value is @byte;
+
+    ByteSnapshot(origin is @byte) {
+        value = origin;
+    }
+
+    bytes() is @byte {
+        value;
+    }
+}
+
+object TeeWriting does Writing {
+    has destinations is Sequencing<Writing>;
+
+    TeeWriting(destinations is Sequencing<Writing>) {
+        self.destinations = destinations;
+    }
+
+    write(source is ByteSource) is void {
+        let snapshot = ByteSnapshot(origin: source.bytes());
+        for (0..destinations.size()) -> index {
+            destinations.item(index).write(snapshot);
+        }
+    }
+
+    flush() is void {
+        for (0..destinations.size()) -> index {
+            destinations.item(index).flush();
+        }
+    }
+}
+
+object Discarding does Writing {
+    Discarding();
+
+    write(source is ByteSource) is void {
+        source.bytes();
+    }
+
+    flush() is void {}
+}
+
+object ClosedReading does Error {
+    ClosedReading();
+
+    #projected
+    text() is string {
+        "reading is closed";
+    }
+}
+
+object InvalidReading does Error {
+    has message is string;
+
+    InvalidReading(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

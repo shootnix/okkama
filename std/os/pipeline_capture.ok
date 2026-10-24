@@ -1,0 +1,177 @@
+module os/pipeline_capture v1.0.0;
+
+import "os/command" take Commanding;
+import "os/process" take Exit, ExitKind, ProcessFailure;
+import "runtime/process" take
+    PipelineState,
+    CapturedPipeline,
+    pipeline_state_create,
+    pipeline_state_add,
+    pipeline_state_capture,
+    captured_pipeline_statuses,
+    captured_pipeline_overflow_stream,
+    captured_pipeline_overflow_index,
+    captured_pipeline_output,
+    captured_pipeline_errors;
+
+// PipelineCapture connects commands directly without a shell. stdout from
+// each command becomes stdin for the next command. Only final stdout is
+// captured; stderr remains separate and ordered by command index.
+//
+//     let completed = await PipelineCapture(
+//         commands: [producer, consumer],
+//         limit: 16 * 1024 * 1024,
+//     ).completion();
+//
+// The limit applies independently to final stdout and every stderr stream.
+// completion() waits for every command and never returns a partial result.
+
+enum PipelineStream = (output, errors);
+
+object PipelineCapture {
+    has commands is @Commanding;
+    has input is @byte;
+    has limit is int;
+    has state is PipelineState;
+
+    PipelineCapture(commands is @Commanding, limit is int) {
+        self.commands = commands;
+        input = [];
+        self.limit = limit;
+        state = pipeline_state_create();
+    }
+
+    PipelineCapture(commands is @Commanding, input is @byte, limit is int) {
+        self.commands = commands;
+        self.input = input;
+        self.limit = limit;
+        state = pipeline_state_create();
+    }
+
+    async completion() is CompletedPipeline {
+        confirm commands.size() > 0 else throw EmptyPipeline();
+        confirm limit > 0 else throw InvalidPipelineCaptureLimit(limit);
+
+        try {
+            for commands -> command {
+                pipeline_state_add(
+                    state,
+                    command.program().string(),
+                    command.arguments(),
+                    command.directory().path().string(),
+                    command.environment().variables(),
+                );
+            }
+            let captured is CapturedPipeline = await pipeline_state_capture(
+                state,
+                input,
+                limit,
+            );
+            let overflow is int = captured_pipeline_overflow_stream(captured);
+            if overflow > 0 {
+                throw PipelineCaptureLimitExceeded(
+                    command_index: captured_pipeline_overflow_index(captured),
+                    stream: if overflow == 1 {
+                        PipelineStream.output;
+                    }
+                    else {
+                        PipelineStream.errors;
+                    },
+                    limit: limit,
+                );
+            }
+            let statuses is @%string:int = captured_pipeline_statuses(captured);
+            let exits is @Exit = statuses.map() -> status {
+                Exit(kind: self.exit_kind(status), code: status["code"]);
+            };
+            CompletedPipeline(
+                exits: exits,
+                output: captured_pipeline_output(captured),
+                errors: captured_pipeline_errors(captured),
+            );
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+
+    private:
+    exit_kind(status is %string:int) is ExitKind {
+        if status["state"] == 1 {
+            ExitKind.exited;
+        }
+        else {
+            match status["code"] {
+                case 1 { ExitKind.terminated; }
+                case 2 { ExitKind.killed; }
+                case 3 { ExitKind.interrupted; }
+                else { ExitKind.other; }
+            }
+        }
+    }
+}
+
+object CompletedPipeline {
+    has completed_exits is @Exit;
+    has captured_output is @byte;
+    has captured_errors is @@byte;
+
+    CompletedPipeline(exits is @Exit, output is @byte, errors is @@byte) {
+        completed_exits = exits;
+        captured_output = output;
+        captured_errors = errors;
+    }
+
+    exits() is @Exit { completed_exits; }
+
+    output() is @byte { captured_output; }
+
+    errors() is @@byte { captured_errors; }
+}
+
+object EmptyPipeline does Error {
+    EmptyPipeline();
+
+    #projected
+    text() is string { "pipeline must contain at least one command"; }
+}
+
+object InvalidPipelineCaptureLimit does Error {
+    has origin is int;
+
+    InvalidPipelineCaptureLimit(limit is int) {
+        origin = limit;
+    }
+
+    limit() is int { origin; }
+
+    #projected
+    text() is string {
+        "pipeline capture limit must be positive, got " + origin.string();
+    }
+}
+
+object PipelineCaptureLimitExceeded does Error {
+    has origin_index is int;
+    has origin_stream is PipelineStream;
+    has origin_limit is int;
+
+    PipelineCaptureLimitExceeded(
+        command_index is int,
+        stream is PipelineStream,
+        limit is int,
+    ) {
+        origin_index = command_index;
+        origin_stream = stream;
+        origin_limit = limit;
+    }
+
+    command_index() is int { origin_index; }
+
+    stream() is PipelineStream { origin_stream; }
+
+    limit() is int { origin_limit; }
+
+    #projected
+    text() is string { "pipeline capture limit exceeded"; }
+}

@@ -1,0 +1,17 @@
+module runtime/x509 v1.0.0;
+// Private immutable snapshot ABI. Parsing is deterministic; system_certificates
+// explicitly reads host CA sources. No live certificate/key pointers escape.
+native certificate_facts(origin is @byte) is string;
+native certificate_times(facts is string) is @string;
+native certificate_spki(facts is string) is @byte;
+native certificate_names(facts is string,issuer is bool) is @@@string;
+native certificate_san(facts is string) is @@string;
+native certificate_constraints(facts is string) is @string;
+native certificate_key_usages(facts is string) is @int;
+native certificate_purposes(facts is string) is @string;
+native certificate_extensions(facts is string) is @@string;
+native system_certificates() is @@byte;
+native verify_chain(chain is @@byte,roots is @@byte,kind is string,host is string,at is string,purpose is string) is @@byte;
+test "certificate parsing rejects trailing or incomplete envelopes" {
+    test.ok(try{certificate_facts([48.byte(),0.byte(),0.byte()]);false;}catch e is NativeFailure{e.domain()=="core.x509" && e.code()=="invalid_data";});
+}

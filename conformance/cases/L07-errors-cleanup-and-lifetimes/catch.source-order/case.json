@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.catch.source-order",
+  "title": "the first compatible catch in source order wins",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CATCH",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "specific\ngeneral\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.6: clauses are examined in source order and the first compatible declared type wins; declaration order is not specificity."
+  },
+  "status": "mandatory"
+}

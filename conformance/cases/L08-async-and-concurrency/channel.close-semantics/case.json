@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.channel.close-semantics",
+  "title": "close is idempotent; buffered values drain; later operations fail",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.CHANNEL",
+      "aspects": [
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "5 -1 -2\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/channel.ok",
+    "docs/async-guide.md#10.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async/channel: closing is idempotent; buffered values remain available; after draining item() throws ChannelClosed; new sends throw ChannelClosed."
+  },
+  "status": "mandatory",
+  "notes": "D-039"
+}

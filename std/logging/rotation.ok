@@ -1,0 +1,116 @@
+module logging/rotation v1.0.0;
+import "logging/file" take FileLogOptions,LogFileState,ClosedLogFile;
+import "fs/path" take Path,PathStyle;
+import "fs/file" take FileError;
+import "io/stream" take ByteSource,Writing,Closing;
+import "io/decorators" take ByteSnapshot;
+import "async/atomic" take Atomic;
+import "numbers/bigint" take BigInt,BigSum,InvalidBigInt;
+import "compare" take Order;
+import "collections/list" take List,EmptyList;
+import "collections/ordering" take SortedBy;
+import "time/clock" take Instant,Timing;
+import "time/duration" take Duration;
+import "time/zone" take TimeZone;
+import "time/rfc3339" take Rfc3339;
+import "runtime/fs";
+
+role Rotating{
+    needed(size is BigInt,opened is Instant,now is Instant) is bool;
+    suffix(now is Instant,index is int) is string;
+}
+object SizeRotating does Rotating{
+    has limit is BigInt;
+    SizeRotating(limit is BigInt){confirm limit.sign()>0 else throw InvalidLogRotation("size limit must be positive");self.limit=limit;}
+    needed(size is BigInt,opened is Instant,now is Instant) is bool{size.order(limit)!=Order.less;}
+    suffix(now is Instant,index is int) is string{index.string();}
+}
+object IntervalRotating does Rotating{
+    has interval is Duration;has zone is TimeZone;
+    IntervalRotating(interval is Duration,zone is TimeZone){confirm interval.seconds()>0.rat() else throw InvalidLogRotation("interval must be positive");self.interval=interval;self.zone=zone;}
+    needed(size is BigInt,opened is Instant,now is Instant) is bool{now.minus(opened).seconds()>=interval.seconds();}
+    suffix(now is Instant,index is int) is string{Rfc3339(now,zone.offset(now)).string().split(":").join("-")+"-"+index.string();}
+}
+object LogArchive{
+    has path is Path;has generation is BigInt;
+    LogArchive(path is Path,generation is BigInt){self.path=path;self.generation=generation;}
+    path() is Path{path;}generation() is BigInt{generation;}
+}
+// The prefix is reserved to this sink. Recover generation and retention after
+// restart from regular files only; never follow archive symlinks. Each rename
+// is atomic on supporting filesystems, not the entire retention transaction.
+object LogArchiveCatalog{
+    has path is Path;LogArchiveCatalog(path is Path){self.path=path;}
+    records() is @LogArchive{
+        let lexical=if path.style()==PathStyle.windows{path.string().split("\\").join("/");}else{path.string();};
+        let parts=lexical.split("/");let prefix=parts[parts.size()-1]+".archive.";
+        let names=try{fs.directory_entries(fs.path_encode(path.parent().string()));}catch failure is NativeFailure{throw value FileError(failure:failure);};
+        let empty is List<LogArchive>=EmptyList();
+        let entries is List<LogArchive>=names.reduce(empty)->old,text{
+            if text.length()>prefix.length() && text.slice(0,prefix.length())==prefix{
+                let tail=text.slice(prefix.length(),text.length());let parts=tail.split(".");
+                let valid=try{let generation=BigInt(parts[0]);generation.sign()>0 && generation.string()==parts[0] && parts.size()>1;}catch e is InvalidBigInt{false;};
+                if valid{
+                    let entry=path.parent().child(text);let kind=try{fs.lstat(fs.path_encode(entry.string()))["kind"];}catch failure is NativeFailure{throw value FileError(failure:failure);};
+                    confirm kind==1 else throw InvalidLogRotation("archive namespace contains a non-regular file");old.prefix(LogArchive(entry,BigInt(parts[0])));
+                }else{old;}
+            }else{old;}
+        };
+        let snapshot is @LogArchive=entries.map()->entry{entry;};snapshot;
+    }
+    next(records is @LogArchive) is BigInt{
+        let latest=records.reduce(BigInt("0"))->old,item{if item.generation().order(old)==Order.greater{item.generation();}else{old;}};
+        BigSum(left:latest,right:BigInt("1")).value();
+    }
+    trim(records is @LogArchive,retained is int) is void{
+        let ordered is SortedBy<LogArchive,BigInt>=SortedBy(origin:records,key:(item is LogArchive) is BigInt{item.generation();});
+        let count=if records.size()>retained{records.size()-retained;}else{0;};
+        for (0..count)->index{
+            let oldest=ordered.item(index);
+            try{fs.unlink(fs.path_encode(oldest.path().string()));}catch failure is NativeFailure{throw value FileError(failure:failure);}
+        }
+    }
+}
+object RotatingLogFile does Writing,Closing{
+    has path is Path;has file is LogFileState;has rotation is Rotating;has backups is int;has clock is Timing;
+    has opened is Atomic<@Instant>;has failures is Atomic<@Error>;
+    RotatingLogFile(path is Path,options is FileLogOptions,rotation is Rotating,backups is int,clock is Timing){
+        confirm backups>=0 && backups<=4096 else throw InvalidLogRotation("backup count must be in 0..4096");
+        self.path=path;file=LogFileState(path,options);self.rotation=rotation;self.backups=backups;self.clock=clock;
+        let times is @Instant=[];opened=Atomic(times);let errors is @Error=[];failures=Atomic(errors);
+    }
+    write(source is ByteSource) is void{
+        confirm !file.closed() else throw ClosedLogFile();if failures.value().size()>0{throw failures.value()[0];}
+        let bytes=ByteSnapshot(source.bytes());let now=clock.instant();
+        try{
+            let size=self.size();if opened.value().size()==0{opened.replace([now]);}
+            if size.sign()>0 && rotation.needed(size,opened.value()[0],now){self.rotate(now);}
+            file.write(bytes);
+        }catch error is Error{failures.replace([error]);throw;}
+    }
+    flush() is void{file.flush();}
+    reopen() is void{file.reopen();let empty is @Instant=[];opened.replace(empty);}
+    closed() is bool{file.closed();}close() is void{file.close();}
+    destroy{self.close();}
+    private:
+    size() is BigInt{
+        try{
+            let metadata=fs.lstat(fs.path_encode(path.string()));
+            confirm metadata["kind"]==1 else throw InvalidLogRotation("active log must be a regular file");BigInt(metadata["size"].string());
+        }catch failure is NativeFailure{if failure.code()=="not_found"{BigInt("0");}else{throw value FileError(failure:failure);}}
+    }
+    rotate(now is Instant) is void{
+        let catalog=LogArchiveCatalog(path);let records=catalog.records();let generation=catalog.next(records);
+        let suffix=rotation.suffix(now,records.size()+1);
+        confirm suffix.length()>0 && suffix.length()<=128 && suffix!="." && suffix!=".." && suffix.split("/").size()==1 && suffix.split("\\").size()==1 && suffix.split(":").size()==1 else throw InvalidLogRotation("invalid archive suffix");
+        let target=Path(path.string()+".archive."+generation.string()+"."+suffix,path.style());
+        file.release();
+        try{if backups==0{fs.unlink(fs.path_encode(path.string()));}else{fs.rename(fs.path_encode(path.string()),fs.path_encode(target.string()));}}catch failure is NativeFailure{throw value FileError(failure:failure);}
+        if backups>0{catalog.trim(catalog.records(),backups);}else{catalog.trim(records,0);}
+        file.reopen();opened.replace([now]);
+    }
+}
+object InvalidLogRotation does Error{
+    has reason is string;InvalidLogRotation(reason is string){self.reason=reason;}
+    text() is string{reason;}
+}

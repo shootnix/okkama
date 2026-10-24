@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.base64-strict-decoding",
+  "title": "Base64 decoding rejects malformed input",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.BASE64",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - incomplete quantum\nok 2 - whitespace\nchecks: 2, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/base64.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "encoding/base64 header: decoding rejects whitespace; an incomplete final quantum reports origin.length(); offsets are Unicode-scalar positions."
+  },
+  "status": "mandatory"
+}

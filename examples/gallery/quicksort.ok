@@ -1,0 +1,46 @@
+// Три способа проверить сортировку
+// Задача: Отсортировать числа, сохранив исходную последовательность.
+// Запуск из корня: ./examples/gallery/run quicksort
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: рекурсия, filter, map, Sorted и неизменяемые части списка.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/quicksort.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/quicksort v1.0.0;
+import "collections/ordering" take Sorted;
+import "io/stdout" take Stdout;
+object Sorting {
+    Sorting();
+    join(left is @int,right is @int) is @int {
+        (0..left.size()+right.size()).map()->i{
+            if i<left.size(){left[i];}else{right[i-left.size()];}
+        };
+    }
+    quick(values is @int) is @int {
+        if values.size()<2{return values;}
+        let pivot=values[0];let rest=(1..values.size()).map()->i{values[i];};
+        let lower=self.quick(rest.filter()->n{n<pivot;});
+        let upper=self.quick(rest.filter()->n{n>=pivot;});
+        self.join(self.join(lower,[pivot]),upper);
+    }
+    merge(left is @int,right is @int) is @int {
+        if left.size()==0{return right;}
+        if right.size()==0{return left;}
+        if left[0]<=right[0]{self.join([left[0]],self.merge((1..left.size()).map()->i{left[i];},right));}
+        else{self.join([right[0]],self.merge(left,(1..right.size()).map()->i{right[i];}));}
+    }
+    merged(values is @int) is @int {
+        if values.size()<2{return values;}
+        let middle=(values.size()/2).int();
+        self.merge(self.merged((0..middle).map()->i{values[i];}),self.merged((middle..values.size()).map()->i{values[i];}));
+    }
+}
+main() is int {
+    let original=[5,3,8,1,9,2,7,4,6,0,3];let sorting=Sorting();
+    let quick=sorting.quick(original);let merged=sorting.merged(original);
+    let ordered=Sorted(original).map()->n{n;};
+    confirm quick==ordered && merged==ordered && original[0]==5;
+    for [original,quick,merged,ordered]->row{Stdout().writeln(row.map()->n{n.string();}.join(" "));}
+    confirm sorting.quick([])==[] && sorting.merged([2,2,1])==[1,2,2];
+    0;
+}

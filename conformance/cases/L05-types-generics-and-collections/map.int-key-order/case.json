@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.map.int-key-order",
+  "title": "int keys sort by numeric value",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-1,9,10,100\nminus,nine,ten,hundred\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6",
+    "docs/okkama-spec-11072026.md#6.3",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6: keys()/values() are sorted by key and paired; for an int key type the order is the numeric order of the keys (D-037 asks the spec to name it explicitly)."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-003"
+  ]
+}

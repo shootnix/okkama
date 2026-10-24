@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.loop.value-and-tail",
+  "title": "loop values come only from `last value`",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.LOOP",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "300\nbare last discarded\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.13",
+    "docs/okkama-spec-11072026.md#9.12"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.13: the body tail is ignored and `last value` supplies the result (3*100); a bare last ends a loop whose result is discarded."
+  },
+  "status": "mandatory"
+}

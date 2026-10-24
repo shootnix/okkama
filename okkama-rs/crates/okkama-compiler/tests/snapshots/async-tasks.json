@@ -1,0 +1,468 @@
+{
+  "node": "Program",
+  "module": {
+    "node": "ModuleDecl",
+    "path": [
+      "tasks"
+    ],
+    "version": "v1.0.0"
+  },
+  "imports": [
+    {
+      "node": "ImportDecl",
+      "path": "io/stdout",
+      "alias": null,
+      "take": [
+        "Stdout"
+      ]
+    },
+    {
+      "node": "ImportDecl",
+      "path": "async/channel",
+      "alias": null,
+      "take": [
+        "Channel",
+        "Sending"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "node": "ObjectDecl",
+      "name": "Producer",
+      "generics": [],
+      "roles": [],
+      "members": [
+        {
+          "node": "HasDecl",
+          "names": [
+            "output"
+          ],
+          "type": {
+            "node": "NamedType",
+            "path": [
+              "Sending"
+            ],
+            "args": [
+              {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            ]
+          },
+          "default": null
+        },
+        {
+          "node": "ShorthandConstructor",
+          "name": "Producer",
+          "fields": [
+            "output"
+          ],
+          "body": null
+        },
+        {
+          "node": "ActionDecl",
+          "async": true,
+          "visibility": "public",
+          "projection": null,
+          "name": "run",
+          "params": [],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Await",
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "output"
+                      },
+                      "name": "send"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "1"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "condition": null
+              },
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Await",
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "output"
+                      },
+                      "name": "send"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "2"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "condition": null
+              },
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Await",
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "output"
+                      },
+                      "name": "send"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "3"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "condition": null
+              },
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "3"
+                },
+                "condition": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "node": "ActionDecl",
+      "async": true,
+      "visibility": "public",
+      "projection": null,
+      "name": "main",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      },
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "LetStatement",
+            "name": "out",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "Stdout"
+              },
+              "arguments": []
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "channel",
+            "type": {
+              "node": "NamedType",
+              "path": [
+                "Channel"
+              ],
+              "args": [
+                {
+                  "node": "NamedType",
+                  "path": [
+                    "int"
+                  ],
+                  "args": []
+                }
+              ]
+            },
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "Channel"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": "capacity",
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "3"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "task",
+            "type": null,
+            "value": {
+              "node": "Spawn",
+              "call": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "NameExpression",
+                      "name": "Producer"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": "output",
+                        "value": {
+                          "node": "Call",
+                          "callee": {
+                            "node": "Get",
+                            "object": {
+                              "node": "NameExpression",
+                              "name": "channel"
+                            },
+                            "name": "sending"
+                          },
+                          "arguments": []
+                        }
+                      }
+                    ]
+                  },
+                  "name": "run"
+                },
+                "arguments": []
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "first",
+            "type": null,
+            "value": {
+              "node": "Await",
+              "value": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "channel"
+                      },
+                      "name": "receiving"
+                    },
+                    "arguments": []
+                  },
+                  "name": "item"
+                },
+                "arguments": []
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "second",
+            "type": null,
+            "value": {
+              "node": "Await",
+              "value": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "channel"
+                      },
+                      "name": "receiving"
+                    },
+                    "arguments": []
+                  },
+                  "name": "item"
+                },
+                "arguments": []
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "third",
+            "type": null,
+            "value": {
+              "node": "Await",
+              "value": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "channel"
+                      },
+                      "name": "receiving"
+                    },
+                    "arguments": []
+                  },
+                  "name": "item"
+                },
+                "arguments": []
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "sent",
+            "type": null,
+            "value": {
+              "node": "Await",
+              "value": {
+                "node": "NameExpression",
+                "name": "task"
+              }
+            }
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "StreamWrite",
+              "sink": {
+                "node": "StreamWrite",
+                "sink": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "source": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "Get",
+                    "object": {
+                      "node": "Grouping",
+                      "expression": {
+                        "node": "Binary",
+                        "operator": "+",
+                        "left": {
+                          "node": "Binary",
+                          "operator": "+",
+                          "left": {
+                            "node": "NameExpression",
+                            "name": "first"
+                          },
+                          "right": {
+                            "node": "NameExpression",
+                            "name": "second"
+                          }
+                        },
+                        "right": {
+                          "node": "NameExpression",
+                          "name": "third"
+                        }
+                      }
+                    },
+                    "name": "string"
+                  },
+                  "arguments": []
+                }
+              },
+              "source": {
+                "node": "StringLiteral",
+                "form": "endl",
+                "value": "\n"
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "ConfirmStatement",
+            "condition": {
+              "node": "Binary",
+              "operator": "==",
+              "left": {
+                "node": "NameExpression",
+                "name": "sent"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "3"
+              }
+            },
+            "fallback": null
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "0"
+            },
+            "condition": null
+          }
+        ]
+      }
+    }
+  ]
+}

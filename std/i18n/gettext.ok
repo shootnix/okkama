@@ -1,0 +1,546 @@
+module i18n/gettext v1.0.0;
+import "locale/tag" take Locale;
+import "i18n/catalog" take MessageKey,MissingMessage,WrongMessageEntry,Translating;
+import "i18n/plural" take PluralNumber;
+import "math/decimal" take Decimal;
+import "numbers/bigint" take BigInt,BigSum,BigDifference,BigProduct,BigQuotient,BigRemainder;
+import "strings/parse" take ParsedInt;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded,AsciiEncoded,AsciiDecoded;
+import "collections/sequence" take Sequencing;
+import "collections/list" take List,EmptyList;
+import "collections/iteration" take Cursor,CursorItems;
+import "collections/ordering" take SortedBy;
+import "async/atomic" take Atomic;
+import "compare" take Order;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches,EntireRegexMatch;
+
+object InvalidCatalog does Error {
+    has position is int;has reason is string;
+    InvalidCatalog(offset is int,reason is string){position=offset;self.reason=reason;}
+    offset() is int{position;}text() is string{"invalid gettext catalog at "+position.string()+": "+reason;}
+}
+// Builders use local persistent lists, then materialize in linear traversal.
+// Their temporary cells never escape the parsing operation.
+object GettextListArray<T> {
+    has values is @T;
+    GettextListArray(origin is List<T>){
+        let cursor is Atomic<Cursor<T>>=Atomic(origin.cursor());defer cursor.close();
+        let reversed is @T=(0..origin.size()).map()->index{let current=cursor.value();let value=current.item();cursor.replace(current.successor());value;};
+        let values is @T=(0..reversed.size()).map()->index{reversed[reversed.size()-index-1];};self.values=values;
+    }
+    values() is @T{values;}
+}
+object GettextAscii {
+    has origin is string;GettextAscii(origin is string){self.origin=origin;}
+    lower() is string{let bytes is @byte=AsciiEncoded(origin).bytes().map()->value{let code=value.int();if code>=65 && code<=90{(code+32).byte();}else{value;}};AsciiDecoded(bytes).string();}
+    trim() is string{
+        let start=Atomic(0);let end=Atomic(origin.length());defer start.close();defer end.close();
+        loop{let at=start.value();if at>=end.value() || !GettextSpace(origin.slice(at,at+1)).value(){last;}start.replace(at+1);}
+        loop{let at=end.value();if at<=start.value() || !GettextSpace(origin.slice(at-1,at)).value(){last;}end.replace(at-1);}
+        origin.slice(start.value(),end.value());
+    }
+}
+object GettextSpace {has origin is string;GettextSpace(origin is string){self.origin=origin;}value() is bool{origin==" " || origin=="\t" || origin=="\r" || origin=="\n";}}
+object GettextControl {has code is int;GettextControl(code is int){self.code=code;}string() is string{Latin1Decoded([code.byte()]).string();}}
+object GettextContains {has origin,part is string;GettextContains(origin is string,part is string){self.origin=origin;self.part=part;}value() is bool{origin.split(part).size()>1;}}
+object GettextCharset {
+    has name is string;
+    GettextCharset(origin is string){
+        confirm origin.length()>=1 && origin.length()<=64 else throw InvalidCatalog(0,"charset name length must be 1..64");
+        let value=try{GettextAscii(origin).lower();}catch e is Error{throw InvalidCatalog(0,"charset name is not ASCII");};
+        name=match value{case "utf-8","utf8"{"UTF-8";}case "iso-8859-1","iso8859-1","latin1","latin-1"{"ISO-8859-1";}case "us-ascii","ascii"{"US-ASCII";}else{throw InvalidCatalog(0,"unsupported charset: "+origin);}};
+    }
+    name() is string{name;}
+    decoded(bytes is @byte,offset is int) is string{
+        try{match name{case "UTF-8"{Utf8Decoded(bytes).string();}case "ISO-8859-1"{Latin1Decoded(bytes).string();}else{AsciiDecoded(bytes).string();}}}catch e is Error{throw InvalidCatalog(offset,"malformed "+name+" text");}
+    }
+    encoded(text is string,offset is int) is @byte{
+        try{match name{case "UTF-8"{Utf8Encoded(text).bytes();}case "ISO-8859-1"{Latin1Encoded(text).bytes();}else{AsciiEncoded(text).bytes();}}}catch e is Error{throw InvalidCatalog(offset,"text cannot be represented in "+name);}
+    }
+}
+
+// GNU formulas use unsigned integer operations. This portable profile fixes
+// their width at 64 bits instead of inheriting the host's unsigned long width.
+role GettextExpression {value(count is BigInt) is BigInt;depth() is int;}
+object GettextLiteral does GettextExpression {
+    has number is BigInt;has variable is bool;
+    GettextLiteral(token is string,offset is int){variable=token=="n";number=if self.variable{BigInt("0");}else{confirm token.length()<=20 else throw InvalidCatalog(offset,"integer literal exceeds unsigned64");let value=BigInt(token);confirm value.order(BigInt("18446744073709551615"))!=Order.greater else throw InvalidCatalog(offset,"integer literal exceeds unsigned64");value;};}
+    value(count is BigInt) is BigInt{if variable{count;}else{number;}}
+    depth() is int{0;}
+}
+object GettextNot does GettextExpression {
+    has origin is GettextExpression;has height is int;GettextNot(origin is GettextExpression){self.origin=origin;height=origin.depth()+1;confirm self.height<=64 else throw InvalidCatalog(0,"plural evaluation depth exceeds 64");}
+    value(count is BigInt) is BigInt{BigInt(if origin.value(count).sign()==0{"1";}else{"0";});}
+    depth() is int{height;}
+}
+object GettextConditional does GettextExpression {
+    has condition,yes,no is GettextExpression;has height is int;
+    GettextConditional(condition is GettextExpression,yes is GettextExpression,no is GettextExpression){self.condition=condition;self.yes=yes;self.no=no;let parts is @GettextExpression=[condition,yes,no];let maximum=parts.reduce(0)->maximum,part{if part.depth()>maximum{part.depth();}else{maximum;}};height=maximum+1;confirm self.height<=64 else throw InvalidCatalog(0,"plural evaluation depth exceeds 64");}
+    value(count is BigInt) is BigInt{if condition.value(count).sign()!=0{yes.value(count);}else{no.value(count);}}
+    depth() is int{height;}
+}
+object GettextBinary does GettextExpression {
+    has left,right is GettextExpression;has operation is string;has offset,height is int;
+    GettextBinary(left is GettextExpression,operation is string,right is GettextExpression,offset is int){self.left=left;self.right=right;self.operation=operation;self.offset=offset;height=1+(if left.depth()>right.depth(){left.depth();}else{right.depth();});confirm self.height<=64 else throw InvalidCatalog(offset,"plural evaluation depth exceeds 64");}
+    depth() is int{height;}
+    value(count is BigInt) is BigInt{
+        let first=left.value(count);
+        if operation=="&&" && first.sign()==0{return BigInt("0");}
+        if operation=="||" && first.sign()!=0{return BigInt("1");}
+        let second=right.value(count);let comparison=first.order(second);
+        if operation=="&&" || operation=="||"{return BigInt(if second.sign()!=0{"1";}else{"0";});}
+        let predicate=match operation{case "=="{comparison==Order.equal;}case "!="{comparison!=Order.equal;}case "<"{comparison==Order.less;}case "<="{comparison!=Order.greater;}case ">"{comparison==Order.greater;}case ">="{comparison!=Order.less;}else{false;}};
+        if operation=="==" || operation=="!=" || operation=="<" || operation=="<=" || operation==">" || operation==">="{return BigInt(if predicate{"1";}else{"0";});}
+        if operation=="/" || operation=="%"{confirm second.sign()!=0 else throw InvalidCatalog(offset,"plural expression divides by zero");}
+        let value=match operation{case "+"{BigSum(left:first,right:second).value();}case "-"{BigDifference(left:first,right:second).value();}case "*"{BigProduct(left:first,right:second).value();}case "/"{BigQuotient(left:first,right:second).value();}else{BigRemainder(left:first,right:second).value();}};
+        let modulus=BigInt("18446744073709551616");let remainder=BigRemainder(left:value,right:modulus).value();
+        if remainder.sign()<0{BigSum(left:remainder,right:modulus).value();}else{remainder;}
+    }
+}
+object GettextToken {
+    has text is string;has offset is int;GettextToken(text is string,offset is int){self.text=text;self.offset=offset;}
+    text() is string{text;}offset() is int{offset;}
+}
+object GettextTokens {
+    has values is @GettextToken;
+    GettextTokens(origin is string){
+        confirm origin.length()>0 && origin.length()<=2048 else throw InvalidCatalog(0,"plural expression size must be 1..2048");
+        let empty is List<GettextToken>=EmptyList();let items is Atomic<List<GettextToken>>=Atomic(empty);let position=Atomic(0);defer items.close();defer position.close();
+        for RegexMatches(origin,Regex("[0-9]+|n|==|!=|<=|>=|&&|\\|\\||[!?:()+*/%<>-]"))->token{
+            let at=token.range().start();for (position.value()..at)->index{confirm GettextSpace(origin.slice(index,index+1)).value() else throw InvalidCatalog(index,"invalid plural token");}
+            confirm items.value().size()<512 else throw InvalidCatalog(at,"plural token budget 512");items.replace(items.value().prefix(GettextToken(token.text(),at)));position.replace(token.range().end());
+        }
+        for (position.value()..origin.length())->index{confirm GettextSpace(origin.slice(index,index+1)).value() else throw InvalidCatalog(index,"invalid plural token");}
+        values=GettextListArray(items.value().prefix(GettextToken("",origin.length()))).values();
+    }
+    values() is @GettextToken{values;}
+}
+object GettextExpressionParsing {
+    has tokens is @GettextToken;
+    has values is Atomic<List<GettextExpression>>;
+    has operators is Atomic<List<GettextToken>>;
+    has nesting is Atomic<int>;
+    GettextExpressionParsing(origin is string){
+        tokens=GettextTokens(origin).values();
+        let emptyValues is List<GettextExpression>=EmptyList();
+        let emptyOperators is List<GettextToken>=EmptyList();
+        values=Atomic(emptyValues);operators=Atomic(emptyOperators);nesting=Atomic(0);
+    }
+    value() is GettextExpression{
+        defer values.close();defer operators.close();defer nesting.close();
+        let expected=Atomic(true);defer expected.close();
+        for (0..tokens.size()-1)->index{
+            let token=tokens[index];let text=token.text();let at=token.offset();
+            if text=="n" || RegexMatches(text,Regex("^[0-9]+$")).found(){
+                confirm expected.value() else throw InvalidCatalog(at,"trailing plural token");
+                values.replace(values.value().prefix(GettextLiteral(text,at)));expected.replace(false);
+            }else if text=="!" || text=="("{
+                confirm expected.value() else throw InvalidCatalog(at,"trailing plural token");
+                self.push_nested(token);
+            }else if text==")"{
+                confirm !expected.value() else throw InvalidCatalog(at,"expected literal or n");
+                loop{
+                    confirm operators.value().size()>0 else throw InvalidCatalog(at,"unexpected closing parenthesis");
+                    let operation=operators.value().first().text();
+                    if operation=="("{operators.replace(operators.value().tail());nesting.replace(nesting.value()-1);last;}
+                    confirm operation!="?" else throw InvalidCatalog(at,"expected :");self.apply();
+                }
+            }else if text==":"{
+                confirm !expected.value() else throw InvalidCatalog(at,"expected literal or n");
+                loop{
+                    confirm operators.value().size()>0 else throw InvalidCatalog(at,"unexpected :");
+                    let operation=operators.value().first();
+                    if operation.text()=="?"{
+                        operators.replace(operators.value().tail().prefix(GettextToken("?:",operation.offset())));last;
+                    }
+                    confirm operation.text()!="(" else throw InvalidCatalog(at,"expected )");self.apply();
+                }
+                expected.replace(true);
+            }else{
+                confirm !expected.value() else throw InvalidCatalog(at,"expected literal or n");
+                let precedence=self.precedence(text);
+                loop{
+                    if operators.value().size()==0{last;}
+                    let operation=operators.value().first().text();
+                    if operation=="(" || operation=="?"{last;}
+                    let previous=self.precedence(operation);
+                    if previous<precedence || (text=="?" && previous==precedence){last;}
+                    self.apply();
+                }
+                if text=="?"{self.push_nested(token);}else{operators.replace(operators.value().prefix(token));}
+                expected.replace(true);
+            }
+        }
+        let end=tokens[tokens.size()-1].offset();
+        confirm !expected.value() else throw InvalidCatalog(end,"expected literal or n");
+        loop{
+            if operators.value().size()==0{last;}
+            let operation=operators.value().first().text();
+            confirm operation!="(" else throw InvalidCatalog(end,"expected )");
+            confirm operation!="?" else throw InvalidCatalog(end,"expected :");self.apply();
+        }
+        confirm values.value().size()==1 else throw InvalidCatalog(end,"trailing plural token");
+        values.value().first();
+    }
+    private:
+    push_nested(token is GettextToken) is void{
+        nesting.replace(nesting.value()+1);
+        confirm nesting.value()<=64 else throw InvalidCatalog(token.offset(),"plural nesting exceeds 64");
+        operators.replace(operators.value().prefix(token));
+    }
+    precedence(operation is string) is int{
+        match operation{
+            case "?","?:"{0;}case "||"{1;}case "&&"{2;}case "==","!="{3;}
+            case "<","<=",">",">="{4;}case "+","-"{5;}case "*","/","%"{6;}case "!"{7;}
+            else{throw InvalidCatalog(0,"invalid plural operator");}
+        }
+    }
+    pop() is GettextExpression{
+        let value=values.value().first();values.replace(values.value().tail());value;
+    }
+    apply() is void{
+        let token=operators.value().first();operators.replace(operators.value().tail());
+        let operation=token.text();
+        let result is GettextExpression=match operation{case "!"{
+            nesting.replace(nesting.value()-1);GettextNot(self.pop());
+        }case "?:"{
+            let no=self.pop();let yes=self.pop();let condition=self.pop();
+            nesting.replace(nesting.value()-1);GettextConditional(condition,yes,no);
+        }else{
+            let right=self.pop();let left=self.pop();GettextBinary(left,operation,right,token.offset());
+        }};
+        values.replace(values.value().prefix(result));
+    }
+}
+object GettextPluralRule {
+    has amount is int;has expression is GettextExpression;
+    GettextPluralRule(origin is string){
+        confirm origin.length()<=4096 && RegexMatches(origin,Regex("^nplurals[ \\t]*=[ \\t]*[0-9]{1,2}[ \\t]*;[ \\t]*plural[ \\t]*=[ \\t]*[^;]+;?[ \\t]*$")).found() else throw InvalidCatalog(0,"invalid Plural-Forms header");
+        let fields=EntireRegexMatch(origin,Regex("^nplurals[ \\t]*=[ \\t]*([0-9]{1,2})[ \\t]*;[ \\t]*plural[ \\t]*=[ \\t]*([^;]+);?[ \\t]*$"));
+        let count=ParsedInt(fields.capture(1).text()).value();confirm count>=1 && count<=16 else throw InvalidCatalog(0,"nplurals must be 1..16");amount=count;expression=GettextExpressionParsing(GettextAscii(fields.capture(2).text()).trim()).value();
+    }
+    size() is int{amount;}
+    index(count is Decimal) is int{
+        let coefficient=count.coefficient();let exponent=count.exponent();
+        confirm coefficient.sign()>=0 && exponent>=0 && exponent<=19 && coefficient.string().length()+exponent<=20 else throw InvalidCatalog(0,"plural count requires a nonnegative integral unsigned64 Decimal");
+        let zeros is @string=(0..exponent).map()->index{"0";};let integer=BigInt(coefficient.string()+zeros.join(""));confirm integer.order(BigInt("18446744073709551615"))!=Order.greater else throw InvalidCatalog(0,"plural count exceeds unsigned64");
+        let value=expression.value(integer);confirm value.order(BigInt(amount.string()))==Order.less else throw InvalidCatalog(0,"plural index outside declared nplurals");ParsedInt(value.string()).value();
+    }
+}
+
+enum PoCommentKind=(translator,extracted,reference,flag,previous);
+object PoComment {
+    has kind is PoCommentKind;has origin is string;
+    PoComment(kind is PoCommentKind,text is string){confirm text.length()<=4096 && !GettextContains(text,"\n").value() && !GettextContains(text,"\r").value() && !GettextContains(text,GettextControl(0).string()).value() else throw InvalidCatalog(0,"invalid PO comment");self.kind=kind;origin=text;}
+    kind() is PoCommentKind{kind;}text() is string{origin;}
+}
+object PoComments {
+    has records is @PoComment;
+    PoComments(origin is Sequencing<PoComment>){let size=origin.size();confirm size>=0 && size<=4096 else throw InvalidCatalog(0,"comment count");let records is @PoComment=(0..size).map()->index{let item=origin.item(index);PoComment(item.kind(),item.text());};self.records=records;}
+    PoComments(translator is Sequencing<string>,extracted is Sequencing<string>,references is Sequencing<string>,flags is Sequencing<string>,previous is Sequencing<string>){
+        let groups is @Sequencing<string>=[translator,extracted,references,flags,previous];let kinds=[PoCommentKind.translator,PoCommentKind.extracted,PoCommentKind.reference,PoCommentKind.flag,PoCommentKind.previous];
+        let empty is List<PoComment>=EmptyList();let items is Atomic<List<PoComment>>=Atomic(empty);defer items.close();
+        for (0..5)->group{let source=groups[group];let size=source.size();confirm size>=0 && items.value().size()+size<=4096 else throw InvalidCatalog(0,"comment count");for (0..size)->index{items.replace(items.value().prefix(PoComment(kinds[group],source.item(index))));}}
+        records=GettextListArray(items.value()).values();
+    }
+    records() is Sequencing<PoComment>{records;}
+    translator() is Sequencing<string>{self.selected(PoCommentKind.translator);}extraction() is Sequencing<string>{self.selected(PoCommentKind.extracted);}
+    references() is Sequencing<string>{self.selected(PoCommentKind.reference);}flags() is Sequencing<string>{self.selected(PoCommentKind.flag);}previous_comments() is Sequencing<string>{self.selected(PoCommentKind.previous);}
+    private:
+    selected(kind is PoCommentKind) is @string{let empty is List<string>=EmptyList();let chosen=records.reduce(empty)->items,record{if record.kind()==kind{items.prefix(record.text());}else{items;}};GettextListArray(chosen).values();}
+}
+object PoEntry {
+    has context,identity,plural,sorted_key is string;has translations is @string;has comments is PoComments;has present is bool;
+    PoEntry(context is string,identity is string,plural is string,translations is Sequencing<string>,comments is PoComments){
+        let value=PoEntry(context,identity,plural,translations,comments,context!="");self.context=value.context();self.identity=value.identity();self.plural=value.plural();self.translations=value.translations();self.comments=value.comments();present=value.has_context();sorted_key=value.sorting_key();
+    }
+    PoEntry(context is string,identity is string,plural is string,translations is Sequencing<string>,comments is PoComments,has_context is bool){
+        confirm context.length()<=1024 && identity.length()<=1024 && plural.length()<=1024 && (has_context || context=="") else throw InvalidCatalog(0,"PO identity/context length or presence");
+        let nul=GettextControl(0).string();let separator=GettextControl(4).string();
+        for [context,identity,plural]->text{confirm !GettextContains(text,nul).value() && !GettextContains(text,separator).value() else throw InvalidCatalog(0,"reserved separator in PO identity");}
+        let size=translations.size();confirm size>=1 && size<=16 && (plural!="" || size==1) else throw InvalidCatalog(0,"translation count");
+        confirm identity!="" || (!has_context && plural=="" && size==1) else throw InvalidCatalog(0,"empty msgid is reserved for metadata");
+        let texts is @string=(0..size).map()->index{let text=translations.item(index);confirm text.length()<=65536 && !GettextContains(text,nul).value() else throw InvalidCatalog(0,"translation length or NUL");text;};
+        self.context=context;self.identity=identity;self.plural=plural;self.translations=texts;self.comments=comments;present=has_context;sorted_key=(if has_context{"1";}else{"0";})+context+separator+identity;
+    }
+    context() is string{context;}identity() is string{identity;}plural() is string{plural;}has_context() is bool{present;}
+    translations() is @string{translations;}comments() is PoComments{comments;}
+    sorting_key() is string{sorted_key;}
+}
+object GettextHeader {
+    has name,value is string;GettextHeader(name is string,value is string){self.name=name;self.value=value;}
+    name() is string{name;}value() is string{value;}
+}
+object GettextMetadata {
+    has values is @GettextHeader;
+    GettextMetadata(origin is string){
+        let empty is List<GettextHeader>=EmptyList();let cell is Atomic<List<GettextHeader>>=Atomic(empty);defer cell.close();
+        for origin.split("\n")->line{
+            if GettextAscii(line).trim()!=""{
+                let parts=line.split(":");confirm parts.size()>=2 else throw InvalidCatalog(0,"metadata field lacks colon");
+                let name=parts[0];confirm RegexMatches(name,Regex("^[A-Za-z][A-Za-z0-9-]*$")).found() else throw InvalidCatalog(0,"invalid metadata name");let key=GettextAscii(name).lower();
+                let list=cell.value();confirm list.size()<128 else throw InvalidCatalog(0,"metadata field count");
+                for CursorItems(list.cursor())->item{confirm item.name()!=key else throw InvalidCatalog(0,"duplicate metadata field");}
+                let value=GettextAscii(line.slice(name.length()+1,line.length())).trim();cell.replace(list.prefix(GettextHeader(key,value)));
+            }
+        }
+        values=GettextListArray(cell.value()).values();
+    }
+    values() is Sequencing<GettextHeader>{values;}
+    membership(name is string) is bool{let key=GettextAscii(name).lower();values.reduce(false)->found,item{found || item.name()==key;};}
+    text(name is string) is string{let key=GettextAscii(name).lower();for values->item{if item.name()==key{return item.value();}}throw InvalidCatalog(0,"missing metadata field: "+name);}
+    charset() is GettextCharset{
+        confirm self.membership("content-type") else throw InvalidCatalog(0,"MO metadata requires Content-Type charset");let content=self.text("content-type");
+        let expression=Regex("[cC][hH][aA][rR][sS][eE][tT][ \\t]*=[ \\t]*([A-Za-z0-9._-]+)");
+        let matches=RegexMatches(content,expression);let empty is List<string>=EmptyList();let found is Atomic<List<string>>=Atomic(empty);defer found.close();
+        for matches->item{found.replace(found.value().prefix(item.capture(1).text()));}
+        confirm found.value().size()==1 else throw InvalidCatalog(0,"charset must be declared exactly once");GettextCharset(found.value().first());
+    }
+}
+object PoDocument {
+    has entries is @PoEntry;has metadata is GettextMetadata;has trailing is PoComments;has amount is int;
+    PoDocument(origin is Sequencing<PoEntry>){
+        let size=origin.size();confirm size>=0 && size<=4097 else throw InvalidCatalog(0,"PO entry count");let entries is @PoEntry=(0..size).map()->index{origin.item(index);};
+        let amount=entries.reduce(0)->total,entry{let comments=entry.comments().records();let translations=entry.translations().reduce(0)->sum,text{sum+text.length();};let notes=(0..comments.size()).reduce(0)->sum,index{sum+comments.item(index).text().length();};total+entry.context().length()+entry.identity().length()+entry.plural().length()+translations+notes;};
+        confirm amount<=1048576 else throw InvalidCatalog(0,"aggregate decoded catalog exceeds 1048576 scalars");self.amount=amount;
+        let sorted is SortedBy<PoEntry,string>=SortedBy(origin:entries,key:(entry is PoEntry) is string{entry.sorting_key();});
+        if size>1{for (1..size)->index{confirm sorted.item(index-1).sorting_key()!=sorted.item(index).sorting_key() else throw InvalidCatalog(0,"duplicate message identity/context");}}
+        let headers=entries.reduce("")->text,entry{if entry.identity()==""{entry.translations()[0];}else{text;}};self.entries=entries;metadata=GettextMetadata(headers);let empty_comments is @PoComment=[];trailing=PoComments(empty_comments);
+    }
+    PoDocument(origin is Sequencing<PoEntry>,trailing is PoComments){let document=PoDocument(origin);let records=trailing.records();let extra=(0..records.size()).reduce(0)->sum,index{sum+records.item(index).text().length();};confirm document.scalars()+extra<=1048576 else throw InvalidCatalog(0,"aggregate decoded catalog exceeds 1048576 scalars");entries=document.entries_array();metadata=document.metadata();self.trailing=trailing;amount=document.scalars()+extra;}
+    entries() is Sequencing<PoEntry>{entries;}entries_array() is @PoEntry{entries;}metadata() is GettextMetadata{metadata;}trailing_comments() is PoComments{trailing;}scalars() is int{amount;}
+}
+
+object PoQuoted {
+    has value is @byte;has charset is GettextCharset;has offset is int;
+    PoQuoted(origin is string,offset is int,charset is GettextCharset){
+        confirm origin.length()>=2 && origin.slice(0,1)=="\"" && origin.slice(origin.length()-1,origin.length())=="\"" else throw InvalidCatalog(offset,"expected quoted PO string");
+        let text=origin.slice(1,origin.length()-1);let empty is List<string>=EmptyList();let pieces is Atomic<List<string>>=Atomic(empty);let position=Atomic(0);defer pieces.close();defer position.close();
+        for RegexMatches(text,Regex("[^\\\\\"\\r\\n]+|\\\\(?:[abfnrtv\\\\\"']|[0-7]{1,3}|x[0-9A-Fa-f]+)"))->token{
+            let at=token.range().start();confirm at==position.value() else throw InvalidCatalog(offset+1+position.value(),"invalid PO escape or literal");let spelling=token.text();
+            let bytes=if spelling.slice(0,1)!="\\"{charset.encoded(spelling,offset+1+at);}else{
+                let escape=spelling.slice(1,spelling.length());let code=match escape{case "a"{7;}case "b"{8;}case "f"{12;}case "n"{10;}case "r"{13;}case "t"{9;}case "v"{11;}case "\\"{92;}case "\""{34;}case "'"{39;}else{
+                    if escape.slice(0,1)=="x"{PoNumericEscape(escape.slice(1,escape.length()),16,offset+1+at).value();}else{PoNumericEscape(escape,8,offset+1+at).value();}
+                }};confirm code<=255 else throw InvalidCatalog(offset+1+at,"numeric PO escape exceeds one byte");[code.byte()];
+            };
+            confirm pieces.value().size()<65536 else throw InvalidCatalog(offset+1+at,"PO string fragment budget");pieces.replace(pieces.value().prefix(Latin1Decoded(bytes).string()));position.replace(token.range().end());
+        }
+        confirm position.value()==text.length() else throw InvalidCatalog(offset+1+position.value(),"invalid PO string ending");let fragments=GettextListArray(pieces.value()).values();value=Latin1Encoded(fragments.join("")).bytes();self.charset=charset;self.offset=offset;
+        confirm self.value.size()<=262144 else throw InvalidCatalog(offset,"PO fragment exceeds 262144 bytes");
+    }
+    bytes() is @byte{value;}string() is string{charset.decoded(value,offset);}
+}
+object PoNumericEscape {
+    has result is int;
+    PoNumericEscape(origin is string,base is int,offset is int){
+        confirm origin.length()>0 && origin.length()<=4096 else throw InvalidCatalog(offset,"numeric escape length");let digits=GettextAscii(origin).lower();let alphabet=if base==8{"01234567";}else{"0123456789abcdef";};
+        result=(0..digits.length()).reduce(0)->value,index{let character=digits.slice(index,index+1);let parts=alphabet.split(character);confirm parts.size()==2 else throw InvalidCatalog(offset,"numeric escape digit");let raised=value*base+parts[0].length();confirm raised<=255 else throw InvalidCatalog(offset,"numeric PO escape exceeds one byte");raised;};
+    }
+    value() is int{result;}
+}
+object PoEscaped {
+    has origin is string;PoEscaped(origin is string){self.origin=origin;}
+    string() is string{
+        let empty is List<string>=EmptyList();let pieces is Atomic<List<string>>=Atomic(empty);defer pieces.close();
+        for RegexMatches(origin,Regex("[^\\\\\"\\x{0}-\\x{1f}\\x{7f}]+|[\\\\\"\\x{0}-\\x{1f}\\x{7f}]"))->part{
+            let scalar=part.text();let escaped=if scalar.length()>1{scalar;}else{
+                if scalar=="\\"{"\\\\";}else{if scalar=="\""{"\\\"";}else{if scalar=="\n"{"\\n";}else{if scalar=="\r"{"\\r";}else{if scalar=="\t"{"\\t";}else{
+                    let bytes=Utf8Encoded(scalar).bytes();if bytes.size()==1 && (bytes[0].int()<32 || bytes[0].int()==127){let value=bytes[0].int();"\\"+((value/64).int()).string()+(((value/8).int())%8).string()+(value%8).string();}else{scalar;}
+                }}}}}
+            };pieces.replace(pieces.value().prefix(escaped));
+        }
+        "\""+GettextListArray(pieces.value()).values().join("")+"\"";
+    }
+}
+object PoString {
+    has result is string;PoString(origin is PoDocument){result=PoPrinting(origin).string();}
+    string() is string{result;}
+}
+object PoPrinting {
+    has origin is PoDocument;PoPrinting(origin is PoDocument){self.origin=origin;}
+    string() is string{
+        let entries=origin.entries();let texts is @string=(0..entries.size()).map()->index{
+            let entry=entries.item(index);let records=entry.comments().records();let comments is @string=(0..records.size()).map()->at{
+                let item=records.item(at);let prefix=match item.kind(){case PoCommentKind.translator{"# ";}case PoCommentKind.extracted{"#. ";}case PoCommentKind.reference{"#: ";}case PoCommentKind.flag{"#, ";}else{"#| ";}};prefix+item.text()+"\n";
+            };
+            let context=if entry.has_context(){"msgctxt "+PoEscaped(entry.context()).string()+"\n";}else{"";};let identity="msgid "+PoEscaped(entry.identity()).string()+"\n";
+            let plural=if entry.plural()!=""{"msgid_plural "+PoEscaped(entry.plural()).string()+"\n";}else{"";};let values=entry.translations();
+            let translated is @string=(0..values.size()).map()->at{"msgstr"+(if entry.plural()==""{"";}else{"["+at.string()+"]";})+" "+PoEscaped(values[at]).string()+"\n";};
+            comments.join("")+context+identity+plural+translated.join("");
+        };
+        let trailing=origin.trailing_comments().records();let comments is @string=(0..trailing.size()).map()->at{let item=trailing.item(at);let prefix=match item.kind(){case PoCommentKind.translator{"# ";}case PoCommentKind.extracted{"#. ";}case PoCommentKind.reference{"#: ";}case PoCommentKind.flag{"#, ";}else{"#| ";}};prefix+item.text()+"\n";};
+        let result=texts.join("\n")+(if comments.size()>0 && texts.size()>0{"\n";}else{"";})+comments.join("");confirm result.length()<=4194304 else throw InvalidCatalog(0,"PO output exceeds 4194304 scalars");result;
+    }
+}
+
+object PoLineStrings {
+    has octets is string;
+    PoLineStrings(origin is string,offset is int,charset is GettextCharset){
+        let empty is List<string>=EmptyList();let pieces is Atomic<List<string>>=Atomic(empty);let position=Atomic(0);defer pieces.close();defer position.close();
+        for RegexMatches(origin,Regex("\"(?:[^\\\\\"\\r\\n]|\\\\.)*\""))->part{
+            for (position.value()..part.range().start())->index{confirm GettextSpace(origin.slice(index,index+1)).value() else throw InvalidCatalog(offset+index,"text between quoted strings");}
+            confirm pieces.value().size()<8192 else throw InvalidCatalog(offset,"quoted-fragment count");pieces.replace(pieces.value().prefix(Latin1Decoded(PoQuoted(part.text(),offset+part.range().start(),charset).bytes()).string()));position.replace(part.range().end());
+        }
+        confirm pieces.value().size()>0 else throw InvalidCatalog(offset,"expected PO quoted string");
+        for (position.value()..origin.length())->index{confirm GettextSpace(origin.slice(index,index+1)).value() else throw InvalidCatalog(offset+index,"trailing PO field text");}
+        octets=GettextListArray(pieces.value()).values().join("");confirm self.octets.length()<=262144 else throw InvalidCatalog(offset,"PO line byte budget");
+    }
+    octets() is string{octets;}
+}
+object PoField {
+    has name is string;has index,offset,amount is int;has pieces is List<string>;
+    PoField(name is string,index is int,offset is int,pieces is List<string>,amount is int){self.name=name;self.index=index;self.offset=offset;self.pieces=pieces;self.amount=amount;}
+    name() is string{name;}index() is int{index;}offset() is int{offset;}
+    following(octets is string) is PoField{confirm amount+octets.length()<=262144 && pieces.size()<8192 else throw InvalidCatalog(offset,"PO field byte/fragment budget");PoField(name,index,offset,pieces.prefix(octets),amount+octets.length());}
+    string(charset is GettextCharset) is string{let text=charset.decoded(Latin1Encoded(GettextListArray(pieces).values().join("")).bytes(),offset);confirm text.length()<=65536 else throw InvalidCatalog(offset,"PO field exceeds 65536 scalars");text;}
+}
+object PoEntryFields {
+    has fields is @PoField;has charset is GettextCharset;has comments is PoComments;
+    PoEntryFields(fields is List<PoField>,charset is GettextCharset,comments is PoComments){self.fields=GettextListArray(fields).values();self.charset=charset;self.comments=comments;}
+    value() is PoEntry{
+        confirm self.seen("msgid") && self.seen("msgstr") else throw InvalidCatalog(0,"PO entry requires msgid and msgstr");
+        let context=self.text("msgctxt");let identity=self.text("msgid");let plural=self.text("msgid_plural");let indexed=self.seen("msgid_plural");confirm !indexed || plural!="" else throw InvalidCatalog(0,"empty msgid_plural");
+        let empty is List<PoField>=EmptyList();let translated=fields.reduce(empty)->chosen,field{if field.name()=="msgstr"{chosen.prefix(field);}else{chosen;}};let translations=GettextListArray(translated).values();
+        let sorted is SortedBy<PoField,int>=SortedBy(origin:translations,key:(field is PoField) is int{field.index();});
+        let values is @string=(0..sorted.size()).map()->index{let field=sorted.item(index);confirm field.index()==(if indexed{index;}else{-1;}) else throw InvalidCatalog(field.offset(),"duplicate, missing or wrong plural translation index");field.string(charset);};
+        PoEntry(context,identity,plural,values,comments,self.seen("msgctxt"));
+    }
+    private:
+    seen(name is string) is bool{fields.reduce(false)->found,field{found || field.name()==name;};}
+    text(name is string) is string{let found=fields.reduce("")->text,field{if field.name()==name{field.string(charset);}else{text;}};found;}
+}
+object ParsedPo {
+    has result is PoDocument;
+    ParsedPo(origin is string){result=PoParsing(origin,GettextCharset("UTF-8")).value();}
+    ParsedPo(origin is string,charset is string){result=PoParsing(origin,GettextCharset(charset)).value();}
+    value() is PoDocument{result;}
+}
+object PoParsing {
+    has origin is string;has charset is GettextCharset;
+    has entries is Atomic<List<PoEntry>>;has fields is Atomic<List<PoField>>;has comments is Atomic<List<PoComment>>;has pending is Atomic<List<PoComment>>;
+    PoParsing(origin is string,charset is GettextCharset){
+        confirm origin.length()<=4194304 else throw InvalidCatalog(0,"PO input exceeds 4194304 scalars");self.origin=origin;self.charset=charset;
+        let empty_entries is List<PoEntry>=EmptyList();let empty_fields is List<PoField>=EmptyList();let empty_comments is List<PoComment>=EmptyList();
+        entries=Atomic(empty_entries);fields=Atomic(empty_fields);comments=Atomic(empty_comments);pending=Atomic(empty_comments);
+    }
+    value() is PoDocument{
+        defer entries.close();defer fields.close();defer comments.close();defer pending.close();
+        let lines=origin.split("\n");confirm lines.size()<=65536 else throw InvalidCatalog(0,"PO line count");let offset=Atomic(0);defer offset.close();
+        for lines->line{self.line(line,offset.value());offset.replace(offset.value()+line.length()+1);}
+        if fields.value().size()>0{self.finish();}
+        let tail=pending.value();for CursorItems(GettextListArray(tail).values().cursor())->item{comments.replace(comments.value().prefix(item));}
+        PoDocument(GettextListArray(entries.value()).values(),PoComments(GettextListArray(comments.value()).values()));
+    }
+    private:
+    seen(name is string) is bool{for CursorItems(fields.value().cursor())->field{if field.name()==name{return true;}}false;}
+    finish() is void{
+        confirm entries.value().size()<4097 else throw InvalidCatalog(0,"PO entry count");let entry=PoEntryFields(fields.value(),charset,PoComments(GettextListArray(comments.value()).values())).value();entries.replace(entries.value().prefix(entry));
+        let empty is List<PoField>=EmptyList();fields.replace(empty);comments.replace(pending.value());let empty_comments is List<PoComment>=EmptyList();pending.replace(empty_comments);
+    }
+    comment(kind is PoCommentKind,text is string,offset is int) is void{
+        let target=if self.seen("msgstr"){pending;}else{comments;};confirm target.value().size()<4096 else throw InvalidCatalog(offset,"PO comment count");target.replace(target.value().prefix(PoComment(kind,text)));
+    }
+    line(raw is string,offset is int) is void{
+        confirm raw.length()<=1048576 else throw InvalidCatalog(offset,"PO line length");let start=Atomic(0);defer start.close();
+        loop{let index=start.value();if index>=raw.length() || (raw.slice(index,index+1)!=" " && raw.slice(index,index+1)!="\t"){last;}start.replace(index+1);}
+        let end=raw.length()-(if raw.length()>0 && raw.slice(raw.length()-1,raw.length())=="\r"{1;}else{0;});if start.value()>=end{return;}let text=raw.slice(start.value(),end);let at=offset+start.value();
+        if text.slice(0,1)=="#"{
+            confirm text.length()<2 || text.slice(1,2)!="~" else throw InvalidCatalog(at,"obsolete PO entries belong to translation tooling");
+            let marker=if text.length()>1{text.slice(1,2);}else{"";};let from=if marker=="." || marker==":" || marker=="," || marker=="=" || marker=="|"{2;}else{1;};let gap=from<text.length() && text.slice(from,from+1)==" ";let content=text.slice(from+(if gap{1;}else{0;}),text.length());
+            if marker=="," || marker=="="{for content.split(",")->flag{let value=GettextAscii(flag).trim();confirm value!="" else throw InvalidCatalog(at,"empty PO flag");self.comment(PoCommentKind.flag,value,at);}}else{
+                let kind=match marker{case "."{PoCommentKind.extracted;}case ":"{PoCommentKind.reference;}case "|"{PoCommentKind.previous;}else{PoCommentKind.translator;}};self.comment(kind,content,at);
+            }return;
+        }
+        if text.slice(0,1)=="\""{
+            confirm fields.value().size()>0 else throw InvalidCatalog(at,"orphan PO continuation");let current=fields.value();fields.replace(current.tail().prefix(current.first().following(PoLineStrings(text,at,charset).octets())));return;
+        }
+        let expression=Regex("^(msgctxt|msgid_plural|msgid|msgstr)(?:\\[([0-9]{1,2})\\])?[ \\t]+(.*)$");confirm RegexMatches(text,expression).found() else throw InvalidCatalog(at,"unknown PO directive");let directive=EntireRegexMatch(text,expression);let name=directive.capture(1).text();
+        let indexed=directive.capture(2).matched();confirm !indexed || name=="msgstr" else throw InvalidCatalog(at,"index on nontranslation directive");let index=if indexed{ParsedInt(directive.capture(2).text()).value();}else{-1;};confirm index<16 else throw InvalidCatalog(at,"plural index exceeds 15");
+        if (name=="msgctxt" || name=="msgid") && self.seen("msgid"){confirm self.seen("msgstr") else throw InvalidCatalog(at,"previous PO entry has no translation");self.finish();}
+        if name=="msgctxt"{confirm fields.value().size()==0 else throw InvalidCatalog(at,"msgctxt must precede msgid");}
+        if name=="msgid"{confirm !self.seen("msgid") && !self.seen("msgstr") else throw InvalidCatalog(at,"duplicate msgid");}
+        if name=="msgid_plural"{confirm self.seen("msgid") && !self.seen("msgid_plural") && !self.seen("msgstr") else throw InvalidCatalog(at,"misplaced msgid_plural");}
+        if name=="msgstr"{confirm self.seen("msgid") && (indexed==self.seen("msgid_plural")) else throw InvalidCatalog(at,"wrong singular/plural msgstr");}
+        confirm fields.value().size()<19 else throw InvalidCatalog(at,"PO field count");let empty is List<string>=EmptyList();let field=PoField(name,index,at,empty,0).following(PoLineStrings(directive.capture(3).text(),at+directive.capture(3).range().start(),charset).octets());fields.replace(fields.value().prefix(field));
+    }
+}
+
+object MoText {
+    has origin is @byte;has offset,amount is int;
+    MoText(origin is @byte,offset is int,amount is int){
+        confirm amount>=0 && amount<=1048576 && offset>=0 && offset<origin.size() && amount<origin.size()-offset else throw InvalidCatalog(offset,"MO string range/budget");
+        confirm origin[offset+amount]==byte(0) else throw InvalidCatalog(offset+amount,"MO string lacks terminating NUL");self.origin=origin;self.offset=offset;self.amount=amount;
+    }
+    bytes() is @byte{origin.slice(offset,offset+amount);}size() is int{amount;}offset() is int{offset;}
+}
+object MoPair {
+    has original,translated is MoText;MoPair(original is MoText,translated is MoText){self.original=original;self.translated=translated;}
+    original() is MoText{original;}translated() is MoText{translated;}
+}
+object MoWords {
+    has origin is @byte;has little is bool;
+    MoWords(origin is @byte){
+        confirm origin.size()>=28 && origin.size()<=16777216 else throw InvalidCatalog(0,"MO input must be 28..16777216 bytes");let magic=origin.slice(0,4);
+        confirm magic==[byte(222),byte(18),byte(4),byte(149)] || magic==[byte(149),byte(4),byte(18),byte(222)] else throw InvalidCatalog(0,"invalid MO magic");self.origin=origin;little=magic[0]==byte(222);
+    }
+    word(offset is int) is int{
+        confirm offset>=0 && offset<=origin.size()-4 else throw InvalidCatalog(offset,"truncated MO word");let first=origin[offset].int();let second=origin[offset+1].int();let third=origin[offset+2].int();let fourth=origin[offset+3].int();
+        if little{first+second*256+third*65536+fourth*16777216;}else{first*16777216+second*65536+third*256+fourth;}
+    }
+    text(table is int,index is int) is MoText{let at=table+index*8;MoText(origin,self.word(at+4),self.word(at));}
+    pairs() is @MoPair{
+        confirm self.word(4)==0 else throw InvalidCatalog(4,"MO revision must be 0.0 in this complete static-string profile");let count=self.word(8);let originals=self.word(12);let translated=self.word(16);let hash_count=self.word(20);let hash_offset=self.word(24);
+        confirm count<=4097 else throw InvalidCatalog(8,"MO string count exceeds 4097");for [originals,translated]->table{confirm table>=28 && table<=origin.size() && count*8<=origin.size()-table else throw InvalidCatalog(table,"MO descriptor table outside input");}
+        confirm hash_count<=16384 else throw InvalidCatalog(20,"MO hash table budget");
+        if hash_count>0{confirm hash_offset>=28 && hash_offset<=origin.size() && hash_count*4<=origin.size()-hash_offset else throw InvalidCatalog(hash_offset,"MO hash table outside input");for (0..hash_count)->index{confirm self.word(hash_offset+index*4)<=count else throw InvalidCatalog(hash_offset+index*4,"invalid MO hash string index");}}
+        let pairs is @MoPair=(0..count).map()->index{MoPair(self.text(originals,index),self.text(translated,index));};
+        let bytes=pairs.reduce(0)->sum,pair{sum+pair.original().size()+pair.translated().size();};confirm bytes<=4194304 else throw InvalidCatalog(0,"MO referenced text exceeds 4194304 bytes");pairs;
+    }
+}
+object ParsedMo {
+    has result is PoDocument;
+    ParsedMo(origin is @byte){
+        let pairs=MoWords(origin).pairs();let headers=pairs.reduce(0)->sum,pair{sum+(if pair.original().size()==0{1;}else{0;});};confirm headers==1 else throw InvalidCatalog(0,"MO requires exactly one metadata entry");
+        let header=pairs.reduce("")->chosen,pair{if pair.original().size()==0{Latin1Decoded(pair.translated().bytes()).string();}else{chosen;}};
+        let charset=GettextMetadata(header).charset();let nul=GettextControl(0).string();let separator=GettextControl(4).string();let empty is @PoComment=[];let comments=PoComments(empty);
+        let entries is @PoEntry=pairs.map()->pair{
+            let original=charset.decoded(pair.original().bytes(),pair.original().offset());let translated=charset.decoded(pair.translated().bytes(),pair.translated().offset());
+            let forms=original.split(nul);confirm forms.size()<=2 else throw InvalidCatalog(pair.original().offset(),"MO original has multiple plural separators");let keys=forms[0].split(separator);confirm keys.size()<=2 else throw InvalidCatalog(pair.original().offset(),"MO original has multiple context separators");
+            let present=keys.size()==2;let context=if present{keys[0];}else{"";};let identity=if present{keys[1];}else{keys[0];};let plural=if forms.size()==2{forms[1];}else{"";};confirm forms.size()==1 || plural!="" else throw InvalidCatalog(pair.original().offset(),"empty MO plural identity");
+            PoEntry(context,identity,plural,translated.split(nul),comments,present);
+        };
+        result=PoDocument(entries);
+    }
+    value() is PoDocument{result;}
+}
+object GettextCatalog {
+    has locale is Locale;has document is PoDocument;has entries is SortedBy<PoEntry,string>;has rule is GettextPluralRule;
+    GettextCatalog(origin is @byte,locale is Locale){
+        let document=ParsedMo(origin).value();let source=document.entries();let empty is List<PoEntry>=EmptyList();let selected=(0..source.size()).reduce(empty)->items,index{let entry=source.item(index);if entry.identity()!=""{items.prefix(entry);}else{items;}};
+        let values=GettextListArray(selected).values();let plural=values.reduce(false)->found,entry{found || entry.plural()!="";};let metadata=document.metadata();confirm !plural || metadata.membership("plural-forms") else throw InvalidCatalog(0,"plural MO requires Plural-Forms");
+        let rule=GettextPluralRule(if metadata.membership("plural-forms"){metadata.text("plural-forms");}else{"nplurals=1; plural=0;";});
+        for values->entry{confirm entry.plural()=="" || entry.translations().size()==rule.size() else throw InvalidCatalog(0,"MO plural translation count differs from nplurals");}
+        self.locale=locale;self.document=document;self.rule=rule;entries=SortedBy(origin:values,key:(entry is PoEntry) is string{entry.sorting_key();});
+    }
+    locale() is Locale{locale;}metadata() is GettextMetadata{document.metadata();}
+    membership(key is MessageKey) is bool{self.index(self.key(key),0,entries.size())>=0;}
+    text(key is MessageKey) is string{let entry=self.entry(key);confirm entry.plural()=="" else throw WrongMessageEntry(false,true);entry.translations()[0];}
+    plural(key is MessageKey,count is Decimal) is string{let entry=self.entry(key);confirm entry.plural()!="" else throw WrongMessageEntry(true,false);entry.translations()[rule.index(count)];}
+    private:
+    key(key is MessageKey) is string{(if key.has_context(){"1";}else{"0";})+key.context()+GettextControl(4).string()+key.identity();}
+    entry(key is MessageKey) is PoEntry{let index=self.index(self.key(key),0,entries.size());confirm index>=0 else throw MissingMessage(key);entries.item(index);}
+    index(key is string,start is int,stop is int) is int{
+        if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let comparison=key.order(entries.item(middle).sorting_key());if comparison==Order.equal{return middle;}
+        if comparison==Order.less{self.index(key,start,middle);}else{self.index(key,middle+1,stop);}
+    }
+}
+object GettextTranslation does Translating {
+    has origin is GettextCatalog;GettextTranslation(origin is GettextCatalog){self.origin=origin;}
+    membership(key is MessageKey) is bool{origin.membership(key);}text(key is MessageKey) is string{origin.text(key);}
+    plural(key is MessageKey,count is PluralNumber) is string{origin.plural(key,count.number());}
+}
+
+test "GNU plural formula short circuits unused division" {test.is(GettextPluralRule("nplurals=2; plural=n==0 ? 0 : 1/n;").index(Decimal("0")),0);}
+test "PO projection preserves explicit empty context" {let document=ParsedPo("msgctxt \"\"\nmsgid \"Open\"\nmsgstr \"opened\"\n").value();test.ok(ParsedPo(PoString(document).string()).value().entries().item(0).has_context());}

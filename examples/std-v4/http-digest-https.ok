@@ -1,0 +1,60 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "net/ip" take IpAddress;
+import "net/endpoint" take HostName;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/client" take HttpClient;
+import "http/digest" take DigestCredentials,DigestExchanging;
+import "http/auth" take InvalidAuthentication;
+import "http/exchange" take ClientResponse;
+import "crypto/secret" take SecretBytes;
+import "encoding/single_byte" take AsciiEncoded;
+import "encoding/utf" take Utf8Encoded;
+import "random/source" take SecureRandom;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "time/clock" take SystemClock;
+import "http/endpoint" take ListedNetworks;
+import "url/value" take ParsedUrl,Url,UrlParts,UrlFragment,UrlQuery;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/ip" take IpNetwork;
+import "http/body" take EmptyBody;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/target" take AbsoluteTarget;
+import "http/header" take Headers,HeaderName;
+import "http/version" take HttpVersion;
+import "io/stdout" take Stdout;
+
+// OKKAMA_HTTP_URL selects an absolute HTTPS URL for the local fixture.
+// OKKAMA_TLS_ROOT selects its explicit DER trust anchor. DNS names are mapped
+// explicitly below; the connection uses only checked loopback endpoints.
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();
+    let resolver=FixedResolution([HostAddresses(HostName("example.test"),[IpAddress("127.0.0.1")]),HostAddresses(HostName("wrong.test"),[IpAddress("127.0.0.1")])]);
+    let http_versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);
+    let client_policy=ClientPolicy(http_versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let client=HttpClient(resolver,policy,client_policy,SystemClock());defer client.close();
+    let parts=url.parts();let target=Url(UrlParts(parts.scheme(),parts.authority(),parts.path(),parts.query(),UrlFragment()));
+    let request=Request(Method("GET"),AbsoluteTarget(target),Headers([]),EmptyBody(),HttpVersion.http_1_1);
+    let scenario=environment.variable("OKKAMA_DIGEST_CASE");let password=if scenario=="unicode"{Utf8Encoded("Secret, or not?").bytes();}else{AsciiEncoded("Circle of Life").bytes();};
+    let username=if scenario=="unicode"{"Jäsøn Doe";}else{"Mufasa";};
+    let secret=SecretBytes(password);defer secret.close();let credentials=DigestCredentials(username,secret);
+    let scope=Url(UrlParts("https",parts.authority(),"/",UrlQuery(),UrlFragment()));
+    let expected=if scenario=="wrong"{401;}else{200;};
+    let outcomes is @ClientResponse=try{[await DigestExchanging(client,scope,credentials,SecureRandom()).response(request)];}catch e is InvalidAuthentication{confirm scenario=="badproof";let empty is @ClientResponse=[];empty;};
+    if scenario=="badproof"{confirm outcomes.size()==0;Stdout().writeln("HTTPS Digest "+scenario+" passed");return 0;}
+    confirm outcomes.size()==1;let result=outcomes[0];
+    confirm result.response().status().code()==expected && result.details().secure();confirm !result.request().headers().membership(HeaderName("Authorization"));
+    let reader=result.response().body().reading();defer reader.close();confirm await reader.bytes(8)==[66.byte()];confirm (await reader.bytes(8)).size()==0;
+    Stdout().writeln("HTTPS Digest "+scenario+" passed");0;
+}

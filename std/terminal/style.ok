@@ -1,0 +1,127 @@
+module terminal/style v1.0.0;
+import "terminal/capability" take TerminalColorDepth;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Decoded;
+
+enum BasicColor=(black,red,green,yellow,blue,magenta,cyan,white);
+enum TextAttribute=(bold,dim,italic,underline,reverse,strike);
+role TerminalColor{code(depth is TerminalColorDepth,background is bool) is string;}
+object DefaultColor does TerminalColor{
+    DefaultColor();
+    code(depth is TerminalColorDepth,background is bool) is string{if background{"49";}else{"39";}}
+}
+object NamedColor does TerminalColor{
+    has value is BasicColor;
+    NamedColor(value is BasicColor){self.value=value;}
+    value() is BasicColor{value;}
+    code(depth is TerminalColorDepth,background is bool) is string{
+        let index=match value{
+            case BasicColor.black{0;}case BasicColor.red{1;}case BasicColor.green{2;}case BasicColor.yellow{3;}
+            case BasicColor.blue{4;}case BasicColor.magenta{5;}case BasicColor.cyan{6;}case BasicColor.white{7;}
+        };
+        (index+if background{40;}else{30;}).string();
+    }
+}
+object IndexedColor does TerminalColor{
+    has value is int;
+    IndexedColor(value is int){confirm value>=0 && value<=255 else throw InvalidTerminalStyle();self.value=value;}
+    value() is int{value;}
+    code(depth is TerminalColorDepth,background is bool) is string{
+        if depth==TerminalColorDepth.basic{
+            let rgb=IndexedRgb(value);
+            (rgb.basic()+if background{40;}else{30;}).string();
+        }else{let prefix=if background{"48;5;";}else{"38;5;";};prefix+value.string();}
+    }
+}
+object RgbColor does TerminalColor{
+    has red,green,blue is byte;
+    RgbColor(red is byte,green is byte,blue is byte){self.red=red;self.green=green;self.blue=blue;}
+    red() is byte{red;}green() is byte{green;}blue() is byte{blue;}
+    code(depth is TerminalColorDepth,background is bool) is string{
+        let color=ColorRgb(red.int(),green.int(),blue.int());
+        if depth==TerminalColorDepth.true_color{
+            let prefix=if background{"48;2;";}else{"38;2;";};
+            prefix+red.int().string()+";"+green.int().string()+";"+blue.int().string();
+        }else{if depth==TerminalColorDepth.indexed{
+            IndexedColor(color.indexed()).code(depth,background);
+        }else{(color.basic()+if background{40;}else{30;}).string();}}
+    }
+}
+object IndexedRgb{
+    has origin is ColorRgb;
+    IndexedRgb(index is int){
+        let levels=[0,95,135,175,215,255];
+        if index<16{
+            let palette=[[0,0,0],[128,0,0],[0,128,0],[128,128,0],[0,0,128],[128,0,128],[0,128,128],[192,192,192],[128,128,128],[255,0,0],[0,255,0],[255,255,0],[0,0,255],[255,0,255],[0,255,255],[255,255,255]];
+            origin=ColorRgb(palette[index][0],palette[index][1],palette[index][2]);
+        }else{if index<232{
+            let at=index-16;origin=ColorRgb(levels[(at/36).int()],levels[((at%36)/6).int()],levels[at%6]);
+        }else{let component=8+10*(index-232);origin=ColorRgb(component,component,component);}}
+    }
+    basic() is int{origin.basic();}
+}
+object ColorRgb{
+    has red,green,blue is int;
+    ColorRgb(red is int,green is int,blue is int){self.red=red;self.green=green;self.blue=blue;}
+    basic() is int{
+        let palette=[[0,0,0],[128,0,0],[0,128,0],[128,128,0],[0,0,128],[128,0,128],[0,128,128],[192,192,192]];
+        let best=(0..8).reduce(ColorDistance(0,195076))->old,index{
+            old.closer(index,self.distance(palette[index][0],palette[index][1],palette[index][2]));
+        };
+        best.index();
+    }
+    indexed() is int{
+        let r=ColorCubeIndex(red).value();let g=ColorCubeIndex(green).value();let b=ColorCubeIndex(blue).value();
+        let levels=[0,95,135,175,215,255];
+        let cube=16+36*r+6*g+b;
+        let avg=((red+green+blue)/3).int();
+        let raw=((avg-8+5)/10).int();let gray=if raw<0{0;}else{if raw>23{23;}else{raw;}};
+        let component=8+gray*10;
+        if self.distance(component,component,component)<self.distance(levels[r],levels[g],levels[b]){232+gray;}else{cube;}
+    }
+    private:
+    distance(r is int,g is int,b is int) is int{(red-r)*(red-r)+(green-g)*(green-g)+(blue-b)*(blue-b);}
+}
+object ColorCubeIndex{
+    has index is int;
+    ColorCubeIndex(component is int){index=if component<48{0;}else{if component<115{1;}else{if component<155{2;}else{if component<195{3;}else{if component<235{4;}else{5;}}}}};}
+    value() is int{index;}
+}
+object ColorDistance{
+    has at,distance is int;
+    ColorDistance(index is int,distance is int){at=index;self.distance=distance;}
+    closer(index is int,distance is int) is ^ColorDistance{if distance<self.distance{^at=index;^distance=distance;}}
+    index() is int{at;}
+}
+object TextStyle{
+    has foreground,background is TerminalColor;
+    has attributes is @TextAttribute;
+    TextStyle(foreground is TerminalColor,background is TerminalColor,attributes is Sequencing<TextAttribute>){
+        let size=attributes.size();confirm size>=0 && size<=6 else throw InvalidTerminalStyle();
+        let snapshot is @TextAttribute=(0..size).map()->index{attributes.item(index);};
+        for (0..size)->index{for (0..index)->previous{confirm (snapshot[index]!=snapshot[previous]) else throw InvalidTerminalStyle();}}
+        self.foreground=foreground;self.background=background;self.attributes=snapshot;
+    }
+    foreground() is TerminalColor{foreground;}
+    background() is TerminalColor{background;}
+    attributes() is Sequencing<TextAttribute>{attributes;}
+    code(depth is TerminalColorDepth) is string{
+        let values is @string=attributes.map()->attribute{match attribute{
+            case TextAttribute.bold{"1";}case TextAttribute.dim{"2";}case TextAttribute.italic{"3";}
+            case TextAttribute.underline{"4";}case TextAttribute.reverse{"7";}case TextAttribute.strike{"9";}
+        }};
+        let prefix=if values.size()>0{values.join(";")+";";}else{"";};
+        prefix+foreground.code(depth,false)+";"+background.code(depth,true);
+    }
+}
+object StyledText{
+    has origin is string;has style is TextStyle;
+    StyledText(origin is string,style is TextStyle){self.origin=origin;self.style=style;}
+    text() is string{origin;}style() is TextStyle{style;}
+    rendered(depth is TerminalColorDepth) is string{
+        if depth==TerminalColorDepth.disabled{origin;}else{
+            let esc=Utf8Decoded([27.byte()]).string();esc+"["+style.code(depth)+"m"+origin+esc+"[0m";
+        }
+    }
+}
+object InvalidTerminalStyle does Error{InvalidTerminalStyle();text() is string{"invalid terminal color or text attributes";}}

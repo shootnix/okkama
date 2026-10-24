@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "fs/path" take Path;
+import "net/unix" take UnixAddress;
+import "io/stdout" take Stdout;
+
+// Describes and validates the address without creating a filesystem entry.
+main() is int {
+    let path=Path("run/./service.sock");
+    let address=UnixAddress(path);
+    Stdout().writeln(address.string());
+    Stdout().writeln(if address.path()==path {"original path retained";} else {"mismatch";});
+    0;
+}

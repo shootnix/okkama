@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("int mismatch", 2 + 2, 5);
+    c = c.same_text("text mismatch", "abc", "abd");
+    c = c.same_bool("bool mismatch", 1 > 2, true);
+    c = c.ok("false condition", false);
+    c = c.same_ints("array mismatch", [1, 2], [2, 1]);
+    c = c.fail("explicit failure", "unreachable branch");
+    c = c.same_int("still counted", 1, 1);
+    c.done();
+}

@@ -1,0 +1,17 @@
+// Прочитать Content-Type с параметрами
+//
+// Прочитать Content-Type API: HttpMediaType сохраняет параметры по HTTP-грамматике.
+//
+// Запуск: ./examples/cookbook/run lab example-http-media-type
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-media-type
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/media_type" take HttpMediaType;
+import "io/stdout" take Stdout;
+main() is int {
+    let type=HttpMediaType("Text/PLAIN; format=flowed; Charset=\"UTF-8\"");
+    Stdout().writeln(type.string());Stdout().writeln(type.parameters().first("charset"));
+    0;
+}

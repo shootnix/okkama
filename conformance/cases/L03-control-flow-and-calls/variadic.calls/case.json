@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.calls",
+  "title": "variadic tails, empty tails and forwarding",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "a=6/3\nempty=0/0\nspread=10/3\nfwd=103/3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.8.1: the tail holds zero or more values; one final positional unpack may follow explicit tail arguments; forwarding supplies only the tail."
+  },
+  "status": "mandatory"
+}

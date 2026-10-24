@@ -1,0 +1,18 @@
+module app v1.0.0;
+import "plist/value" take PlistDictionary, PlistMember, PlistArray, PlistString, PlistBoolean, PlistData;
+import "io/stdout" take Stdout;
+
+// Build the value model without selecting XML or binary serialization.
+main() is int {
+    let title = PlistString("Okkama");
+    let value = PlistDictionary([
+        PlistMember("name", title),
+        PlistMember("enabled", PlistBoolean(true)),
+        PlistMember("payload", PlistData([byte(0), byte(255)])),
+        PlistMember("items", PlistArray([PlistString("first"), PlistString("second")])),
+    ]);
+    Stdout().writeln(title.value());
+    for value.members() -> member { Stdout().writeln(member.name()); }
+    Stdout().writeln(if value.membership("enabled") { "enabled is present"; } else { "enabled is absent"; });
+    0;
+}

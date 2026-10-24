@@ -1,0 +1,242 @@
+module json/value v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "collections/ordering" take Ranked;
+import "math/decimal" take Decimal;
+
+// Immutable JSON values with explicit nominal payloads.
+//
+// Arrays and objects defensively materialize their constructor sequences.
+// JsonObject therefore preserves member insertion order without depending on
+// builtin map iteration. It rejects duplicate names instead of choosing a
+// surprising first-wins or last-wins policy.
+//
+// Broad JsonValue references are processed without casts through print():
+//
+//     for document.values() -> item {
+//         item.print(handler);
+//     }
+
+
+enum JsonKind = (
+    null_value,
+    boolean_value,
+    number_value,
+    string_value,
+    array_value,
+    object_value
+);
+
+role JsonWriting {
+    null_value() is void;
+    boolean(value is bool) is void;
+    number(value is Decimal) is void;
+    text(value is string) is void;
+    elements(values is Sequencing<JsonValue>) is void;
+    members(members is Sequencing<JsonMember>) is void;
+}
+
+role JsonValue {
+    kind() is JsonKind;
+    print(to is JsonWriting) is void;
+}
+
+object JsonMember {
+    has member_name is string;
+    has member_value is JsonValue;
+
+    JsonMember(name is string, value is JsonValue) {
+        member_name = name;
+        member_value = value;
+    }
+
+    name() is string { member_name; }
+
+    value() is JsonValue { member_value; }
+}
+
+object JsonNull does JsonValue {
+    JsonNull();
+
+    kind() is JsonKind { JsonKind.null_value; }
+
+    print(to is JsonWriting) is void { to.null_value(); }
+}
+
+object JsonBoolean does JsonValue {
+    has origin is bool;
+
+    JsonBoolean(value is bool) { origin = value; }
+
+    kind() is JsonKind { JsonKind.boolean_value; }
+
+    print(to is JsonWriting) is void { to.boolean(origin); }
+}
+
+object JsonNumber does JsonValue {
+    has origin is Decimal;
+
+    JsonNumber(value is Decimal) { origin = value; }
+
+    kind() is JsonKind { JsonKind.number_value; }
+
+    print(to is JsonWriting) is void { to.number(origin); }
+}
+
+object JsonText does JsonValue {
+    has origin is string;
+
+    JsonText(value is string) { origin = value; }
+
+    kind() is JsonKind { JsonKind.string_value; }
+
+    print(to is JsonWriting) is void { to.text(origin); }
+}
+
+object JsonArray does JsonValue {
+    has origin is @JsonValue;
+
+    JsonArray(values is Sequencing<JsonValue>) {
+        let snapshot is @JsonValue = (0..values.size()).map() -> index {
+            let value is JsonValue = values.item(index);
+            value;
+        };
+        origin = snapshot;
+    }
+
+    kind() is JsonKind { JsonKind.array_value; }
+
+    values() is Sequencing<JsonValue> { origin; }
+
+    print(to is JsonWriting) is void { to.elements(self.values()); }
+}
+
+object JsonObject does JsonValue {
+    has origin is @JsonMember;
+
+    JsonObject(members is Sequencing<JsonMember>) {
+        let snapshot is @JsonMember = members.map() -> member { member; };
+        // Capture each immutable name once. Stable key ordering retains input
+        // indices within equal-name groups; their second index is a duplicate.
+        let ranked is @Ranked<int,string> = (0..snapshot.size()).map() -> index {
+            Ranked(item: index, key: snapshot[index].name());
+        };
+        let ordered = ranked.ordering();
+        let duplicate = (0..ordered.size()).reduce(snapshot.size()) -> earliest, index {
+            if index > 0 && ordered[index-1].key() == ordered[index].key()
+                && ordered[index].item() < earliest {
+                ordered[index].item();
+            }
+            else { earliest; }
+        };
+        confirm duplicate == snapshot.size()
+            else throw DuplicateJsonMember(snapshot[duplicate].name());
+        origin = snapshot;
+    }
+
+    kind() is JsonKind { JsonKind.object_value; }
+
+    membership(name is string) is bool {
+        JsonMemberIndex(members: origin, name: name).value() >= 0;
+    }
+
+    value(name is string) is JsonValue {
+        let index = JsonMemberIndex(members: origin, name: name).value();
+        confirm index >= 0 else throw MissingJsonMember(name);
+        origin[index].value();
+    }
+
+    members() is Sequencing<JsonMember> { origin; }
+
+    print(to is JsonWriting) is void { to.members(self.members()); }
+}
+
+object JsonMemberIndex {
+    has origin is @JsonMember;
+    has sought is string;
+
+    JsonMemberIndex(members is @JsonMember, name is string) {
+        origin = members;
+        sought = name;
+    }
+
+    value() is int {
+        if origin.size() == 0 {
+            -1;
+        }
+        else {
+            for (0..origin.size()) -> index {
+                last index if origin[index].name() == sought;
+                -1;
+            }
+        }
+    }
+}
+
+object MissingJsonMember does Error {
+    has origin is string;
+
+    MissingJsonMember(name is string) { origin = name; }
+
+    name() is string { origin; }
+
+    text() is string { "missing JSON member \"" + origin + "\""; }
+}
+
+object MissingJsonLocation does Error {
+    has origin is string;
+
+    MissingJsonLocation(name is string) { origin = name; }
+
+    name() is string { origin; }
+
+    text() is string { "JSON member \"" + origin + "\" has no source location"; }
+}
+
+object DuplicateJsonMember does Error {
+    has origin is string;
+    has source_offset is int;
+    has source_line is int;
+    has source_column is int;
+    has source_located is bool;
+
+    DuplicateJsonMember(name is string) {
+        origin = name;
+        source_offset = 0;
+        source_line = 1;
+        source_column = 1;
+        source_located = false;
+    }
+
+    DuplicateJsonMember(name is string, offset is int, line is int, column is int) {
+        confirm offset >= 0;
+        confirm line > 0;
+        confirm column > 0;
+        source_located = true;
+        origin = name;
+        source_offset = offset;
+        source_line = line;
+        source_column = column;
+    }
+
+    name() is string { origin; }
+
+    located() is bool { source_located; }
+
+    offset() is int {
+        if source_located { source_offset; }
+        else { throw MissingJsonLocation(origin); }
+    }
+
+    line() is int {
+        if source_located { source_line; }
+        else { throw MissingJsonLocation(origin); }
+    }
+
+    column() is int {
+        if source_located { source_column; }
+        else { throw MissingJsonLocation(origin); }
+    }
+
+    text() is string { "duplicate JSON member \"" + origin + "\""; }
+}

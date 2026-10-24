@@ -1,0 +1,28 @@
+// Связать элемент бэкапа с параметрами ZIP
+//
+// Выбрать параметры ZIP-записи: ZipCompression связывает метод с уровнем, ZipArchiveEntry удерживает выбор элемента.
+//
+// Запуск: ./examples/cookbook/run lab example-archive-zip-entry
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-archive-zip-entry
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "archive/zip" take ZipArchiveEntry, ZipCompression, ZipMethod;
+import "archive/entry" take ArchiveFile;
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let metadata=ArchiveMetadata(ArchiveModificationFromEpoch(0.rat()).value(),"");
+    let file=ArchiveFile(ArchivePath("hello.txt"),metadata,Utf8Encoded("hello\n").bytes());
+    let stored=ZipArchiveEntry(file,ZipCompression(ZipMethod.stored));
+    let deflated=ZipArchiveEntry(file,ZipCompression(ZipMethod.deflated,9));
+    confirm stored.entry()==deflated.entry() else panic "entry binding changed";
+    Stdout().writeln(stored.entry().path().string());
+    Stdout().writeln("stored level: "+stored.compression().level().string());
+    Stdout().writeln("deflate choice: "+deflated.compression().level().string());
+    0;
+}

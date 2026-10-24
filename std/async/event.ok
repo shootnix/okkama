@@ -1,0 +1,57 @@
+module async/event v1.0.0;
+
+/*
+=head1 NAME
+
+async/event - one-way cooperative readiness signalling
+
+=head1 SYNOPSIS
+
+    let started is Event = Event();
+    let workers = start_workers(signal: started);
+
+    prepare_shared_state();
+    started.set();
+    await workers.results();
+
+=head1 DESCRIPTION
+
+C<Event> is a level-triggered one-way latch. C<wait()> suspends while the event
+is not ready. The first C<set()> makes it ready permanently, releases every
+current waiter, and lets every future waiter pass immediately. Repeated
+C<set()> calls are harmless.
+
+Construct C<Event(ready: true)> when the initial state is already ready:
+
+    let available is Event = Event(ready: true);
+    await available.wait();
+
+Cancelling one pending C<wait()> removes only that waiter. It neither signals
+the event nor affects other waiters.
+
+An event does not count calls to C<set()> and deliberately has no C<reset()>.
+Create a fresh event for a fresh readiness cycle. Use C<Channel> when each
+individual signal is a message which must be consumed exactly once.
+
+=cut
+*/
+
+object Event {
+    has initial is bool;
+
+    Event() { initial = false; }
+    Event(ready is bool) { initial = ready; }
+
+    async wait() is Event {
+        panic "Event.wait is a VM intrinsic";
+        self;
+    }
+
+    set() is void {
+        panic "Event.set is a VM intrinsic";
+    }
+
+    ready() is bool {
+        panic "Event.ready is a VM intrinsic";
+    }
+}

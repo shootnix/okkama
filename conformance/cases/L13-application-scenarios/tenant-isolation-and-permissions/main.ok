@@ -1,0 +1,21 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+
+main() is int {
+    let store = InvoiceStore(owners: ["inv-1": "acme", "inv-2": "globex"], emails: ["inv-1": "ap@acme.test", "inv-2": "ap@globex.test"]);
+    let admin = Principal(tenant: "acme", access: Role.admin);
+    let viewer = Principal(tenant: "acme", access: Role.viewer);
+    let support = Principal(tenant: "acme", access: Role.support);
+    let c = Checks();
+    c = c.same_text("admin reads own", store.read(admin, "inv-1"), "200 ap@acme.test");
+    c = c.same_text("viewer reads own", store.read(viewer, "inv-1"), "200 ap@acme.test");
+    c = c.same_text("support gets redacted", store.read(support, "inv-1"), "200 [redacted]");
+    c = c.same_text("foreign tenant is not found", store.read(admin, "inv-2"), "404");
+    c = c.same_text("missing invoice", store.read(admin, "inv-9"), "404");
+    c = c.same_text("admin writes", store.write(admin, "inv-1"), "204");
+    c = c.same_text("viewer cannot write", store.write(viewer, "inv-1"), "403");
+    c = c.same_text("support cannot write", store.write(support, "inv-1"), "403");
+    c = c.same_text("foreign write is not found", store.write(admin, "inv-2"), "404");
+    c.done();
+}

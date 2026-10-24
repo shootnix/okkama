@@ -1,0 +1,26 @@
+// Параллельно преобразовать независимые записи
+//
+// Преобразовать независимые документы ограниченным числом workers: ParallelMapped сохраняет порядок результатов.
+//
+// Запуск: ./examples/cookbook/run lab example-parallel-map
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-parallel-map
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "parallel/map" take ParallelMapped;
+import "io/stdout" take Stdout;
+
+object Worker {
+    has seed is int;
+    Worker(:seed);
+    run(value is int) is int { seed + value; }
+}
+
+async main() is int {
+    let mapped is ParallelMapped<int,int> = ParallelMapped(
+        origins: [5,1,9,2,4], action: Worker(seed: 10).run, workers: 2);
+    let results = await mapped.results();
+    for results -> result { Stdout().writeln(result.string()); }
+    0;
+}

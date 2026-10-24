@@ -1,0 +1,38 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NotFound does Error {
+    has key is string;
+    NotFound(:key);
+    text() is string { "not found: " + key; }
+}
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+object Thrower {
+    Thrower();
+    fail(key is string) is void {
+        throw NotFound(key: key);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let r = try {
+        defer out.writeln("last registered runs first");
+        defer Thrower().fail("from defer");
+        defer out.writeln("defer after failing one");
+        throw Denied();
+        "none";
+    } catch e is Denied {
+        "body failure wins";
+    } catch e is NotFound {
+        "defer failure won";
+    };
+    out.writeln(r);
+    0;
+}

@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Sleeper {
+    has started is Event;
+    has never is Event;
+    Sleeper(:started, :never);
+    async run() is int {
+        defer Stdout().writeln("task cleanup");
+        started.set();
+        await never.wait();
+        1;
+    }
+}
+
+async main() is int {
+    let started is Event = Event();
+    let never is Event = Event();
+    let task = spawn Sleeper(started: started, never: never).run();
+    await started.wait();
+    task.cancel();
+    let r = try {
+        await task;
+    } catch e is Cancelled {
+        -1;
+    };
+    Stdout().writeln(r.string());
+    Stdout().writeln(if task.cancelled() { "cancelled"; } else { "?"; });
+    0;
+}

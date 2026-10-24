@@ -1,0 +1,167 @@
+module csv/input v1.0.0;
+
+import "io/stream" take Reading;
+import "io/buffer" take ByteBuffer, ClosedBuffer;
+import "io/decorators" take ByteSnapshot, InvalidReading;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded, InvalidUtf8;
+import "csv" take CsvRows, CsvDialect, InvalidCsv, InvalidCsvLimits, CsvLimitExceeded, CsvLimit;
+
+// A borrowed, bounded UTF-8 CSV document reader.
+//
+//     let input = CsvInput(file.reading(), CsvDialect(";", "'", "\n"));
+//     let rows is @@string = input.read();
+//
+// Construction binds dependencies and validates nonnegative limits; it does
+// not read. read() consumes through EOF and returns rows only after complete
+// UTF-8 and CSV validation. It is an explicit synchronous operation, never a
+// Cursor method. No newline normalization, BOM stripping or header inference.
+//
+// Default bounds: 4194304 bytes, 1048576 input scalars, 65536 decoded field
+// scalars, 10000 rows, 1024 columns. The two-argument constructor selects a
+// dialect; the seven-argument constructor also specifies those five bounds.
+// Byte collection is checked before UTF-8 decoding; scalar/field/row/column
+// limits are checked by CsvRows AFTER bounded collection. This reader does not
+// promise incremental parsing or field-limit rejection before collecting EOF.
+//
+// Each origin.bytes request is positive and <=4096. At the byte boundary we
+// probe one excess byte to distinguish exact EOF. Excess is never appended to
+// the private buffer. Short reads are accepted; oversized responses throw
+// InvalidReading. UTF-8, CRLF and doubled quotes may straddle read boundaries.
+// Source exceptions propagate unchanged. InvalidUtf8 offsets count bytes;
+// InvalidCsv offsets count original Unicode scalars. No partial rows escape.
+//
+// Repeated read() consumes remaining source data, not a cached snapshot. After
+// stable EOF it returns []. Failures do not roll back consumed bytes: callers
+// must not assume that retry restarts the document. Bounds reset per operation.
+// The returned array is independent of source lifetime. CsvInput retains origin
+// but NEVER calls its close(), including destruction and exception unwinding.
+// Its local ByteBuffer owns no external resource. External source closure is
+// observed on the next read. Shared/reentrant consumers require coordination.
+//
+// Run tests: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/csv/input.ok
+
+object CsvInput {
+    has origin is Reading;
+    has dialect is CsvDialect;
+    has maximum_bytes, maximum_input, maximum_field, maximum_rows, maximum_columns is int;
+
+    CsvInput(origin is Reading) {
+        self.origin = origin;
+        dialect = CsvDialect(",", "\"", "\r\n");
+        maximum_bytes = 4194304;
+        maximum_input = 1048576;
+        maximum_field = 65536;
+        maximum_rows = 10000;
+        maximum_columns = 1024;
+    }
+    CsvInput(origin is Reading, dialect is CsvDialect) {
+        self.origin = origin;
+        self.dialect = dialect;
+        maximum_bytes = 4194304;
+        maximum_input = 1048576;
+        maximum_field = 65536;
+        maximum_rows = 10000;
+        maximum_columns = 1024;
+    }
+    CsvInput(origin is Reading, maximum_bytes is int, maximum_input is int,
+        maximum_field is int, maximum_rows is int, maximum_columns is int,
+        dialect is CsvDialect) {
+        confirm maximum_bytes >= 0 && maximum_input >= 0 && maximum_field >= 0
+            && maximum_rows >= 0 && maximum_columns >= 0 else throw InvalidCsvLimits();
+        self.origin = origin;
+        self.dialect = dialect;
+        self.maximum_bytes = maximum_bytes;
+        self.maximum_input = maximum_input;
+        self.maximum_field = maximum_field;
+        self.maximum_rows = maximum_rows;
+        self.maximum_columns = maximum_columns;
+    }
+
+    read() is @@string {
+        let buffer = ByteBuffer();
+        loop {
+            let remaining = maximum_bytes - buffer.content().size();
+            // Add one only after bounding remaining, avoiding int overflow.
+            let requested = if remaining >= 4096 { 4096; } else { remaining + 1; };
+            let chunk = origin.bytes(requested);
+            confirm chunk.size() <= requested
+                else throw InvalidReading("CSV origin returned more bytes than requested");
+            last if chunk.size() == 0;
+            confirm chunk.size() <= remaining else throw CsvByteLimitExceeded();
+            buffer.writing().write(ByteSnapshot(chunk));
+        }
+        let text = Utf8Decoded(buffer.content().bytes()).string();
+        let rows is @@string = CsvRows(text, maximum_input, maximum_field,
+            maximum_rows, maximum_columns, dialect).map() -> row { row; };
+        rows;
+    }
+}
+
+object CsvByteLimitExceeded does Error {
+    CsvByteLimitExceeded();
+    text() is string { "CSV byte input limit exceeded"; }
+}
+
+test "resource decoding and repeated EOF" {
+    let buffer = ByteBuffer(Utf8Encoded("é,\"a,b\"\r\n").bytes());
+    let input = CsvInput(buffer.reading());
+    test.is(buffer.content().size(), 10);
+    test.is(input.read(), [["é", "a,b"]]);
+    test.is(input.read(), []);
+    test.is(input.read(), []);
+    test.ok(!buffer.closing().closed());
+}
+
+test "empty and blank documents differ" {
+    test.is(CsvInput(ByteBuffer().reading()).read(), []);
+    test.is(CsvInput(ByteBuffer([byte(13), byte(10)]).reading()).read(), [[""]]);
+    test.is(CsvInput(ByteBuffer().reading(), 0, 0, 0, 0, 0, CsvDialect(",", "\"", "\r\n")).read(), []);
+}
+
+test "custom grammar and exact byte bound" {
+    let buffer = ByteBuffer(Utf8Encoded("§§§§\n").bytes());
+    test.is(CsvInput(buffer.reading(), 9, 5, 1, 1, 1, CsvDialect("😀", "§", "\n")).read(), [["§"]]);
+    test.is(CsvInput(ByteBuffer(Utf8Encoded("a;'b;c'\n").bytes()).reading(), CsvDialect(";", "'", "\n")).read(), [["a", "b;c"]]);
+}
+
+test "byte budgets and invalid configuration" {
+    let buffer = ByteBuffer(Utf8Encoded("abcdef").bytes());
+    try { CsvInput(buffer.reading(), 2, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("byte budget ignored"); }
+    catch error is CsvByteLimitExceeded { test.is(error.text(), "CSV byte input limit exceeded"); }
+    test.is(Utf8Decoded(buffer.content().bytes()).string(), "def");
+    try { CsvInput(buffer.reading(), -1, 10, 10, 1, 1, CsvDialect(",", "\"", "\r\n")); test.fail("negative limit accepted"); }
+    catch error is InvalidCsvLimits { test.ok(true); }
+    test.is(Utf8Decoded(buffer.content().bytes()).string(), "def");
+}
+
+test "strict UTF-8 and scalar syntax coordinates" {
+    try { CsvInput(ByteBuffer([byte(195)]).reading()).read(); test.fail("truncated UTF-8 accepted"); }
+    catch error is InvalidUtf8 { test.is(error.offset(), 0); }
+    try { CsvInput(ByteBuffer(Utf8Encoded("é\n").bytes()).reading()).read(); test.fail("bare LF accepted"); }
+    catch error is InvalidCsv { test.is(error.offset(), 1); }
+    try { CsvInput(ByteBuffer(Utf8Encoded("\"é").bytes()).reading()).read(); test.fail("unfinished quote accepted"); }
+    catch error is InvalidCsv { test.is(error.offset(), 2); }
+}
+
+test "scalar and structural limits retain typed errors" {
+    try { CsvInput(ByteBuffer(Utf8Encoded("é").bytes()).reading(), 2, 0, 1, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("scalar limit ignored"); }
+    catch error is CsvLimitExceeded { test.is(error.kind(), CsvLimit.input); }
+    try { CsvInput(ByteBuffer(Utf8Encoded("ab").bytes()).reading(), 2, 2, 1, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("field limit ignored"); }
+    catch error is CsvLimitExceeded { test.is(error.kind(), CsvLimit.field); }
+    try { CsvInput(ByteBuffer(Utf8Encoded("a,b").bytes()).reading(), 3, 3, 1, 1, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("column limit ignored"); }
+    catch error is CsvLimitExceeded { test.is(error.kind(), CsvLimit.columns); }
+    try { CsvInput(ByteBuffer(Utf8Encoded("a").bytes()).reading(), 1, 1, 1, 0, 1, CsvDialect(",", "\"", "\r\n")).read(); test.fail("row limit ignored"); }
+    catch error is CsvLimitExceeded { test.is(error.kind(), CsvLimit.rows); }
+}
+
+test "borrowed source lifetime and external closure" {
+    let buffer = ByteBuffer(Utf8Encoded("a,b").bytes());
+    { let unused = CsvInput(buffer.reading()); }
+    test.ok(!buffer.closing().closed());
+    let input = CsvInput(buffer.reading());
+    let rows = input.read();
+    buffer.closing().close();
+    test.is(rows, [["a", "b"]]);
+    try { input.read(); test.fail("closed source read succeeded"); }
+    catch error is ClosedBuffer { test.ok(true); }
+}

@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.strings.formatted",
+  "title": "Formatted fills {} slots in order",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.STRINGS.FORMAT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - two slots\nok 2 - other braces literal\nok 3 - no slots\nok 4 - count mismatch\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/strings/format.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "strings/format: only {} is a slot, other braces are literal; slot count must equal value count or InvalidFormat is thrown."
+  },
+  "status": "mandatory",
+  "notes": "The LLM context describes a different (variadic any) Formatted API; the active std module governs (D-044)."
+}

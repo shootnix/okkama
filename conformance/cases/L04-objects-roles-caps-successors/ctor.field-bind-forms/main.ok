@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Range2 {
+    has low is int;
+    has high is int;
+    Range2(a is int, b is int) {
+        let smaller = if a < b { a; } else { b; };
+        low = smaller;
+        self.high = if a < b { b; } else { a; };
+    }
+    describe() is string { low.string() + ".." + high.string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Range2(10, 3).describe());
+    0;
+}

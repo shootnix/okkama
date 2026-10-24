@@ -1,0 +1,139 @@
+module mail/imap_uid v1.0.0;
+
+import "numbers/bigint" take BigInt;
+import "collections/sequence" take Sequencing;
+import "collections/set" take Set, OrderedSet;
+import "compare" take Comparing, Order;
+import "mime/media_type" take MimeItems, MimePosition;
+import "mail/imap_name" take ImapMailboxName;
+import "error" take InvalidArgument;
+
+// Protocol sequence numbers and UIDs are deliberately different nominal types.
+// UIDs and UIDVALIDITY are nonzero unsigned 32-bit protocol values, represented
+// by BigInt independently of the host integer width. No wildcard or range input.
+object ImapUid does Comparing<ImapUid> {
+    has value is BigInt;
+    ImapUid(origin is BigInt) {ImapUidNumber(origin).validate();value=origin;}
+    value() is BigInt {value;}
+    string() is string {value.string();}
+    order(other is ImapUid) is Order {value.order(other.value());}
+}
+object ImapUidValidity does Comparing<ImapUidValidity> {
+    has value is BigInt;
+    ImapUidValidity(origin is BigInt) {ImapUidNumber(origin).validate();value=origin;}
+    value() is BigInt {value;}
+    string() is string {value.string();}
+    order(other is ImapUidValidity) is Order {value.order(other.value());}
+}
+object ImapSequence does Comparing<ImapSequence> {
+    has value is int;
+    ImapSequence(origin is int) {
+        confirm origin>0 && origin<=4294967295 else throw InvalidImapIdentifier("sequence outside 1..4294967295");
+        value=origin;
+    }
+    value() is int {value;}
+    string() is string {value.string();}
+    order(other is ImapSequence) is Order {value.order(other.value());}
+}
+object ImapUidSetLimits {
+    has entries, wire_bytes is int;
+    ImapUidSetLimits() {entries=4096;wire_bytes=65536;}
+    ImapUidSetLimits(entries is int, wire_bytes is int) {
+        confirm entries>=0 && wire_bytes>=0 else throw InvalidArgument("IMAP UID set limits must be nonnegative");
+        self.entries=entries;self.wire_bytes=wire_bytes;
+    }
+    entries() is int {entries;}
+    wire_bytes() is int {wire_bytes;}
+}
+object ImapUidSet {
+    has value is ImapUidSnapshot;
+    ImapUidSet(origin is Sequencing<ImapUid>) {value=ImapUidSnapshot(origin,ImapUidSetLimits());}
+    ImapUidSet(origin is Sequencing<ImapUid>, limits is ImapUidSetLimits) {value=ImapUidSnapshot(origin,limits);}
+    entries() is Sequencing<ImapUid> {value.entries();}
+    empty() is bool {value.entries().size()==0;}
+    argument() is string {
+        confirm !self.empty() else throw InvalidImapIdentifier("empty UID set has no command argument");
+        value.string();
+    }
+}
+object MailboxUids {
+    has name is ImapMailboxName;has epoch is ImapUidValidity;has value is ImapUidSet;has account is string;
+    MailboxUids(mailbox is ImapMailboxName, validity is ImapUidValidity, uids is ImapUidSet) {
+        name=mailbox;epoch=validity;value=uids;account="";
+    }
+    MailboxUids(mailbox is ImapMailboxName, validity is ImapUidValidity, uids is ImapUidSet, account is string) {
+        confirm account.length()>0 && account.length()<=4096 else throw InvalidArgument("IMAP UID account scope must contain 1..4096 characters");
+        name=mailbox;epoch=validity;value=uids;self.account=account;
+    }
+    mailbox() is ImapMailboxName {name;}
+    validity() is ImapUidValidity {epoch;}
+    uids() is ImapUidSet {value;}
+    account() is string {account;}
+    checked(mailbox is ImapMailboxName, validity is ImapUidValidity) is ImapUidSet {
+        // Exact name identity is intentionally conservative, including INBOX.
+        confirm account=="" && name.string()==mailbox.string() && epoch.order(validity)==Order.equal
+            else throw StaleImapUids();
+        value;
+    }
+    checked(mailbox is ImapMailboxName, validity is ImapUidValidity, account is string) is ImapUidSet {
+        confirm account!="" && self.account==account && name.string()==mailbox.string() && epoch.order(validity)==Order.equal
+            else throw StaleImapUids();
+        value;
+    }
+}
+object InvalidImapIdentifier does Error {
+    has reason is string;
+    InvalidImapIdentifier(reason is string) {self.reason=reason;}
+    reason() is string {reason;}
+    text() is string {"invalid IMAP identifier: "+reason;}
+}
+object ImapUidLimitExceeded does Error {
+    has limit is string;
+    ImapUidLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"IMAP UID set "+limit+" limit exceeded";}
+}
+object StaleImapUids does Error {
+    StaleImapUids();
+    text() is string {"IMAP UIDs belong to a different mailbox or UIDVALIDITY";}
+}
+object ImapUidNumber {
+    has origin is BigInt;
+    ImapUidNumber(origin is BigInt) {self.origin=origin;}
+    validate() is void {
+        confirm origin.sign()>0 && origin.bits()<=32 else throw InvalidImapIdentifier("UID value outside 1..4294967295");
+    }
+}
+object ImapUidSnapshot {
+    has entries is @ImapUid;has wire is string;
+    ImapUidSnapshot(origin is Sequencing<ImapUid>, limits is ImapUidSetLimits) {
+        let size=origin.size();confirm size>=0 else throw InvalidArgument("IMAP UID source size must be nonnegative");
+        confirm size<=limits.entries() else throw ImapUidLimitExceeded("entries");
+        let all is MimeItems<ImapUid>=MimeItems();let texts is MimeItems<string>=MimeItems();
+        let seen=ImapUidSeen();let used=MimePosition(0);
+        for (0..size) -> index {
+            let uid=origin.item(index);let text=uid.string();
+            if !seen.membership(text) {
+                let separator=if used.index()==0 {0;} else {1;};
+                confirm separator<=limits.wire_bytes()-used.index()
+                    && text.length()<=limits.wire_bytes()-used.index()-separator else throw ImapUidLimitExceeded("wire_bytes");
+                used=used.following(used.index()+separator+text.length());
+                all=all.following(uid);texts=texts.following(text);seen=seen.addition(text);
+            }
+        }
+        entries=all.entries();wire=texts.entries().join(",");
+    }
+    entries() is @ImapUid {entries;}
+    string() is string {wire;}
+}
+object ImapUidSeen {
+    has value is Set<string>;
+    ImapUidSeen() {let empty is @string=[];value=OrderedSet(empty);}
+    membership(origin is string) is bool {value.membership(origin);}
+    addition(origin is string) is ^ImapUidSeen {let extended=value.addition(origin);^value=extended;}
+}
+
+test "UID snapshots deduplicate and preserve stable identifiers" {
+    let uids=ImapUidSet([ImapUid(BigInt("4294967295")),ImapUid(BigInt("1")),ImapUid(BigInt("1"))]);
+    test.is(uids.argument(),"4294967295,1");test.is(uids.entries().size(),2);
+}

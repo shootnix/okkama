@@ -1,0 +1,157 @@
+module digest/legacy v1.0.0;
+
+import "digest/state" take Digesting;
+import "digest/blocks" take DigestBlocks64, DigestCompression64, InvalidDigestBlock;
+
+// MD5 (RFC 1321) and SHA-1 (RFC 3174), for legacy interoperability only.
+// Neither algorithm may be used for new security decisions: collision resistance
+// is broken. These objects represent byte messages, not passwords or MACs.
+//
+//     let prefix = Md5([byte(97), byte(98)]);
+//     let whole = prefix.state([byte(99)]);
+//     whole.bytes(); // 16 raw bytes for "abc"; display with HexEncoded
+//
+// Md5()/Sha1() bind empty input; the one-argument constructor binds @byte.
+// Construction performs no compression. bytes() computes 16/20 raw bytes lazily
+// on a temporary finalized state, without changing this receiver. Encode text
+// explicitly (e.g. Utf8Encoded) and format separately (HexEncoded).
+// state(bytes) compresses old full blocks and binds the new chunk unevaluated,
+// retaining only chaining words, a <=63-byte tail, length and the new array.
+// Empty append, branches, repeat observations and append after bytes() are valid.
+// DigestInputTooLong from digest/blocks rejects total length above 2^61-1 bytes.
+// No native digest provider, I/O, mutable cache or owned resource. Work is linear
+// in pending bytes; repeated queries recompute the pending chunk.
+object Md5 does Digesting {
+    has origin is DigestBlocks64;
+    Md5() { origin = DigestBlocks64(Md5Compression(), [], true); }
+    Md5(origin is @byte) { self.origin = DigestBlocks64(Md5Compression(), origin, true); }
+    bytes() is @byte { origin.bytes(); }
+    state(origin is @byte) is ^Md5 {
+        let continued = self.origin.state(origin);
+        ^origin = continued;
+    }
+}
+
+object Sha1 does Digesting {
+    has origin is DigestBlocks64;
+    Sha1() { origin = DigestBlocks64(Sha1Compression(), [], false); }
+    Sha1(origin is @byte) { self.origin = DigestBlocks64(Sha1Compression(), origin, false); }
+    bytes() is @byte { origin.bytes(); }
+    state(origin is @byte) is ^Sha1 {
+        let continued = self.origin.state(origin);
+        ^origin = continued;
+    }
+}
+
+// Internal immutable MD5 chaining state. Application code uses Md5, not these
+// raw chaining bytes. Each block is exactly 64 bytes or InvalidDigestBlock.
+// Arithmetic uses non-negative 32-bit words in int with explicit modulo masks.
+object Md5Compression does DigestCompression64 {
+    has hash is @int;
+    Md5Compression() { hash = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]; }
+    block(origin is @byte) is ^Md5Compression {
+        confirm origin.size() == 64 else throw InvalidDigestBlock();
+        let words = (0..16).map() -> i {
+            (0..4).reduce(0) -> value, j { value | (origin[i * 4 + j].int() << (j * 8)); };
+        };
+        let constants = [
+            0xD76AA478,0xE8C7B756,0x242070DB,0xC1BDCEEE,0xF57C0FAF,0x4787C62A,0xA8304613,0xFD469501,
+            0x698098D8,0x8B44F7AF,0xFFFF5BB1,0x895CD7BE,0x6B901122,0xFD987193,0xA679438E,0x49B40821,
+            0xF61E2562,0xC040B340,0x265E5A51,0xE9B6C7AA,0xD62F105D,0x02441453,0xD8A1E681,0xE7D3FBC8,
+            0x21E1CDE6,0xC33707D6,0xF4D50D87,0x455A14ED,0xA9E3E905,0xFCEFA3F8,0x676F02D9,0x8D2A4C8A,
+            0xFFFA3942,0x8771F681,0x6D9D6122,0xFDE5380C,0xA4BEEA44,0x4BDECFA9,0xF6BB4B60,0xBEBFBC70,
+            0x289B7EC6,0xEAA127FA,0xD4EF3085,0x04881D05,0xD9D4D039,0xE6DB99E5,0x1FA27CF8,0xC4AC5665,
+            0xF4292244,0x432AFF97,0xAB9423A7,0xFC93A039,0x655B59C3,0x8F0CCC92,0xFFEFF47D,0x85845DD1,
+            0x6FA87E4F,0xFE2CE6E0,0xA3014314,0x4E0811A1,0xF7537E82,0xBD3AF235,0x2AD7D2BB,0xEB86D391
+        ];
+        let rotations = [7,12,17,22, 5,9,14,20, 4,11,16,23, 6,10,15,21];
+        let result = (0..64).reduce(hash) -> current, i {
+            let a=current[0]; let b=current[1]; let c=current[2]; let d=current[3];
+            let nonlinear = if i < 16 {(b & c) | ((~b) & d);} else {
+                if i < 32 {(d & b) | ((~d) & c);}
+                else if i < 48 {b ^ c ^ d;}
+                else {c ^ (b | (~d));}
+            };
+            let index = if i < 16 {i;} else {
+                if i < 32 {(5 * i + 1) % 16;}
+                else if i < 48 {(3 * i + 5) % 16;}
+                else {(7 * i) % 16;}
+            };
+            let sum = (a + (nonlinear & 0xFFFFFFFF) + constants[i] + words[index]) & 0xFFFFFFFF;
+            let shift = rotations[(i / 16).int() * 4 + i % 4];
+            let rotated = ((sum << shift) | (sum >> (32 - shift))) & 0xFFFFFFFF;
+            [d, (b + rotated) & 0xFFFFFFFF, b, c];
+        };
+        ^hash = (0..4).map() -> i { (hash[i] + result[i]) & 0xFFFFFFFF; };
+    }
+    bytes() is @byte {
+        (0..16).map() -> i { byte((hash[(i / 4).int()] >> ((i % 4) * 8)) & 255); };
+    }
+}
+
+// Internal SHA-1 chaining state. An immutable 16-word rolling schedule avoids
+// retaining per-block history. Serialization is big-endian, unlike MD5.
+object Sha1Compression does DigestCompression64 {
+    has hash is @int;
+    Sha1Compression() { hash = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0]; }
+    block(origin is @byte) is ^Sha1Compression {
+        confirm origin.size() == 64 else throw InvalidDigestBlock();
+        let start = (0..21).map() -> i {
+            if i < 5 { hash[i]; }
+            else {
+                (0..4).reduce(0) -> value, j { (value << 8) | origin[(i - 5) * 4 + j].int(); };
+            }
+        };
+        let result = (0..80).reduce(start) -> current, i {
+            let a=current[0]; let b=current[1]; let c=current[2]; let d=current[3]; let e=current[4];
+            let word = if i < 16 {current[5 + i];}
+                else {
+                    let value = current[5 + (i - 3) % 16] ^ current[5 + (i - 8) % 16]
+                        ^ current[5 + (i - 14) % 16] ^ current[5 + i % 16];
+                    ((value << 1) | (value >> 31)) & 0xFFFFFFFF;
+                };
+            let nonlinear = if i < 20 {(b & c) | ((~b) & d);} else {
+                if i < 40 {b ^ c ^ d;}
+                else if i < 60 {(b & c) | (b & d) | (c & d);}
+                else {b ^ c ^ d;}
+            };
+            let constant = if i < 20 {0x5A827999;} else {
+                if i < 40 {0x6ED9EBA1;}
+                else if i < 60 {0x8F1BBCDC;} else {0xCA62C1D6;}
+            };
+            let rotated_a = ((a << 5) | (a >> 27)) & 0xFFFFFFFF;
+            let rotated_b = ((b << 30) | (b >> 2)) & 0xFFFFFFFF;
+            let sum = (rotated_a + nonlinear + e + constant + word) & 0xFFFFFFFF;
+            (0..21).map() -> index {
+                if index == 0 {sum;} else if index == 1 {a;}
+                else if index == 2 {rotated_b;} else if index == 3 {c;}
+                else if index == 4 {d;} else if index == 5 + i % 16 {word;}
+                else {current[index];}
+            };
+        };
+        ^hash = (0..5).map() -> i { (hash[i] + result[i]) & 0xFFFFFFFF; };
+    }
+    bytes() is @byte {
+        (0..20).map() -> i { byte((hash[(i / 4).int()] >> ((3 - i % 4) * 8)) & 255); };
+    }
+}
+
+test "MD5 official empty and abc raw vectors" {
+    test.is(Md5([]).bytes(), [byte(212), byte(29), byte(140), byte(217), byte(143), byte(0), byte(178), byte(4), byte(233), byte(128), byte(9), byte(152), byte(236), byte(248), byte(66), byte(126)]);
+    test.is(Md5([byte(97), byte(98), byte(99)]).bytes(), [byte(144), byte(1), byte(80), byte(152), byte(60), byte(210), byte(79), byte(176), byte(214), byte(150), byte(63), byte(125), byte(40), byte(225), byte(127), byte(114)]);
+}
+
+test "SHA-1 official empty and abc raw vectors" {
+    test.is(Sha1([]).bytes(), [byte(218), byte(57), byte(163), byte(238), byte(94), byte(107), byte(75), byte(13), byte(50), byte(85), byte(191), byte(239), byte(149), byte(96), byte(24), byte(144), byte(175), byte(216), byte(7), byte(9)]);
+    test.is(Sha1([byte(97), byte(98), byte(99)]).bytes(), [byte(169), byte(153), byte(62), byte(54), byte(71), byte(6), byte(129), byte(106), byte(186), byte(62), byte(37), byte(113), byte(120), byte(80), byte(194), byte(108), byte(156), byte(208), byte(216), byte(157)]);
+}
+
+test "legacy digest observation does not finalize the original state" {
+    let m=Md5([byte(97),byte(98)]); let s=Sha1([byte(97),byte(98)]);
+    let before_m=m.bytes(); let before_s=s.bytes();
+    let mc=m.state([byte(99)]); let sc=s.state([byte(99)]);
+    test.is(mc.bytes(), Md5([byte(97),byte(98),byte(99)]).bytes());
+    test.is(sc.bytes(), Sha1([byte(97),byte(98),byte(99)]).bytes());
+    test.is(m.bytes(), before_m); test.is(s.bytes(), before_s);
+    test.is(mc.state([]).bytes(), mc.bytes()); test.is(sc.state([]).bytes(), sc.bytes());
+}

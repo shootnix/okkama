@@ -1,0 +1,8 @@
+module runtime/hex v1.0.0;
+
+// Portable hexadecimal boundary for encoding/hex. Backends must emit the
+// canonical lowercase alphabet and decode only validated ASCII hex pairs.
+
+native hex_encode(origin is @byte) is string;
+native hex_valid_prefix(origin is string) is int;
+native hex_decode(origin is string) is @byte;

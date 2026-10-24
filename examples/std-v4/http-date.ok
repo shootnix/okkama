@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/date" take HttpDate, ParsedHttpDate;
+import "time/rfc3339" take InstantFromRfc3339;
+import "io/stdout" take Stdout;
+main() is int {
+    let reference=InstantFromRfc3339("2026-10-03T00:00:00Z").value();
+    let legacy=ParsedHttpDate("Sunday, 06-Nov-94 08:49:37 GMT",reference).value();
+    Stdout().writeln(HttpDate(legacy).string());
+    Stdout().writeln(HttpDate(ParsedHttpDate("Sun Nov  6 08:49:37 1994").value()).string());0;
+}

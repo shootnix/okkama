@@ -1,0 +1,247 @@
+module config/source v1.0.0;
+import "collections/sequence" take Sequencing;
+import "compare" take Comparing,Order;
+import "collections/ordering" take LowerBound;
+import "config/key" take SettingKey;
+
+enum SettingSourceKind=(defaults,document,environment,command_line);
+object SettingSource{
+    has category is SettingSourceKind;
+    has label is string;
+    SettingSource(kind is SettingSourceKind,name is string){category=kind;label=name;}
+    kind() is SettingSourceKind{category;}
+    name() is string{label;}
+}
+object SettingEntry{
+    has identity is SettingKey;
+    has origin is @string;
+    has provenance is SettingSource;
+    SettingEntry(key is SettingKey,values is Sequencing<string>,source is SettingSource){
+        let size=values.size();
+        confirm size>=0 && size<=1024 else throw SettingLimitExceeded();
+        let snapshot is @string=(0..size).map()->index{values.item(index);};
+        let length=snapshot.reduce(0)->used,text{used+text.length();};
+        confirm length<=1048576 else throw SettingLimitExceeded();
+        identity=key;origin=snapshot;provenance=source;
+    }
+    key() is SettingKey{identity;}
+    values() is Sequencing<string>{origin;}
+    source() is SettingSource{provenance;}
+}
+role SettingReading{
+    membership(key is SettingKey) is bool;
+    entry(key is SettingKey) is SettingEntry;
+    keys() is Sequencing<SettingKey>;
+}
+object Settings does SettingReading{
+    has origin is @SettingEntry;has lookup is SettingKeyIndex;
+    Settings(entries is Sequencing<SettingEntry>){
+        let size=entries.size();
+        confirm size>=0 && size<=4096 else throw SettingLimitExceeded();
+        let snapshot is @SettingEntry=(0..size).map()->index{entries.item(index);};
+        let keys is @SettingKey=snapshot.map()->entry{entry.key();};
+        let checked=SettingKeyIndex(keys);checked.valid();
+        origin=snapshot;lookup=checked;
+    }
+    membership(key is SettingKey) is bool{self.index(key)>=0;}
+    entry(key is SettingKey) is SettingEntry{
+        let at=self.index(key);
+        confirm at>=0 else throw MissingSetting(key);
+        origin[at];
+    }
+    keys() is Sequencing<SettingKey>{lookup.keys();}
+    private:
+    index(key is SettingKey) is int{
+        lookup.position(key);
+    }
+}
+// The diagnostic key string is not identity: ["a.b"] and ["a","b"]
+// remain distinct. Stable ordering retains original positions inside each group.
+object SettingIndexSlot does Comparing<SettingIndexSlot>{
+    has identity is SettingKey;has position is int;
+    SettingIndexSlot(identity is SettingKey,position is int){self.identity=identity;self.position=position;}
+    identity() is SettingKey{identity;}position() is int{position;}
+    order(other is SettingIndexSlot) is Order{identity.order(other.identity());}
+}
+object SettingKeyIndex{
+    has original,ordered is @SettingKey;has positions is @int;
+    SettingKeyIndex(keys is @SettingKey){
+        confirm keys.size()<=4096 else throw SettingLimitExceeded();
+        let slots is @SettingIndexSlot=(0..keys.size()).map()->index{SettingIndexSlot(keys[index],index);};
+        let sorted=slots.ordering();
+        let values is @SettingKey=sorted.map()->slot{slot.identity();};
+        let indices is @int=sorted.map()->slot{slot.position();};
+        original=keys;ordered=values;positions=indices;
+    }
+    keys() is Sequencing<SettingKey>{original;}
+    valid() is void{
+        let duplicate=(0..ordered.size()).reduce(original.size())->earliest,index{
+            if index>0 && ordered[index-1].order(ordered[index])==Order.equal && positions[index]<earliest{positions[index];}else{earliest;}
+        };
+        confirm duplicate==original.size() else throw DuplicateSetting(original[duplicate]);
+    }
+    position(key is SettingKey) is int{
+        let at=LowerBound(ordered,key).value();
+        if at<ordered.size() && ordered[at].order(key)==Order.equal{positions[at];}else{-1;}
+    }
+}
+object LayeredSettings does SettingReading{
+    has origin is Settings;
+    LayeredSettings(layers is Sequencing<SettingReading>){
+        let size=layers.size();
+        confirm size>=0 && size<=128 else throw SettingLimitExceeded();
+        let merged=(0..size).reduce(SettingOverlay())->old,index{
+            let layer=layers.item(index);
+            let keys=layer.keys();
+            confirm keys.size()>=0 && keys.size()<=4096 else throw SettingLimitExceeded();
+            keys.reduce(old)->state,key{state.replaced(layer.entry(key));};
+        };
+        origin=Settings(merged.entries());
+    }
+    membership(key is SettingKey) is bool{origin.membership(key);}
+    entry(key is SettingKey) is SettingEntry{origin.entry(key);}
+    keys() is Sequencing<SettingKey>{origin.keys();}
+}
+// Persistent AVL construction state. Entries keep their first insertion slot;
+// replacing copies one balanced path, and publication materializes one array.
+object SettingOverlay does SettingReading{
+    has root is @SettingOverlayNode;has count is int;
+    SettingOverlay(){root=[];count=0;}
+    entries() is @SettingEntry{
+        if count==0{let empty is @SettingEntry=[];return empty;}
+        let ordered=root[0].items().ordering();
+        let values is @SettingEntry=ordered.map()->slot{slot.entry();};values;
+    }
+    keys() is Sequencing<SettingKey>{let keys is @SettingKey=self.entries().map()->entry{entry.key();};keys;}
+    membership(key is SettingKey) is bool{root.size()>0 && root[0].position(key)>=0;}
+    entry(key is SettingKey) is SettingEntry{
+        confirm root.size()>0 else throw MissingSetting(key);root[0].entry(key);
+    }
+    replaced(entry is SettingEntry) is ^SettingOverlay{
+        let key=entry.key();let slot=SettingOverlaySlot(entry,key,count);
+        let update=if root.size()==0{
+            confirm count<4096 else throw SettingLimitExceeded();
+            SettingOverlayUpdate(SettingOverlayNode(slot,[],[]),true);
+        }else{root[0].updated(slot,count<4096);};
+        ^root=[update.node()];^count=count+if update.added(){1;}else{0;};
+    }
+}
+object SettingOverlaySlot does Comparing<SettingOverlaySlot>{
+    has entry is SettingEntry;has identity is SettingKey;has position is int;
+    SettingOverlaySlot(entry is SettingEntry,identity is SettingKey,position is int){self.entry=entry;self.identity=identity;self.position=position;}
+    entry() is SettingEntry{entry;}identity() is SettingKey{identity;}position() is int{position;}
+    order(other is SettingOverlaySlot) is Order{position.order(other.position());}
+}
+object SettingOverlayNode{
+    has slot is SettingOverlaySlot;has left,right is @SettingOverlayNode;has height is int;
+    SettingOverlayNode(slot is SettingOverlaySlot,left is @SettingOverlayNode,right is @SettingOverlayNode){
+        self.slot=slot;self.left=left;self.right=right;
+        let a=if left.size()==0{0;}else{left[0].height();};
+        let b=if right.size()==0{0;}else{right[0].height();};
+        height=1+if a>b{a;}else{b;};
+    }
+    slot() is SettingOverlaySlot{slot;}left() is @SettingOverlayNode{left;}right() is @SettingOverlayNode{right;}
+    height() is int{height;}
+    position(key is SettingKey) is int{
+        let order=key.order(slot.identity());if order==Order.equal{return slot.position();}
+        let following=if order==Order.less{left;}else{right;};
+        if following.size()==0{-1;}else{following[0].position(key);}
+    }
+    entry(key is SettingKey) is SettingEntry{
+        let order=key.order(slot.identity());if order==Order.equal{return slot.entry();}
+        let following=if order==Order.less{left;}else{right;};
+        confirm following.size()>0 else throw MissingSetting(key);following[0].entry(key);
+    }
+    replaced(value is SettingOverlaySlot) is SettingOverlayNode{
+        let order=value.identity().order(slot.identity());
+        if order==Order.equal{return SettingOverlayNode(value,left,right);}
+        if order==Order.less{
+            let following=if left.size()==0{SettingOverlayNode(value,[],[]);}else{left[0].replaced(value);};
+            return SettingOverlayBalance(slot,[following],right).node();
+        }
+        let following=if right.size()==0{SettingOverlayNode(value,[],[]);}else{right[0].replaced(value);};
+        SettingOverlayBalance(slot,left,[following]).node();
+    }
+    // Preserve the existing replaced(slot) helper contract. Overlay updates
+    // carry the insertion result up the same balanced path instead of looking
+    // up the old position first. Capacity is checked only at a missing leaf.
+    updated(value is SettingOverlaySlot,can_add is bool) is SettingOverlayUpdate{
+        let order=value.identity().order(slot.identity());
+        if order==Order.equal{
+            let retained=SettingOverlaySlot(value.entry(),value.identity(),slot.position());
+            return SettingOverlayUpdate(SettingOverlayNode(retained,left,right),false);
+        }
+        if order==Order.less{
+            let update=if left.size()==0{
+                confirm can_add else throw SettingLimitExceeded();
+                SettingOverlayUpdate(SettingOverlayNode(value,[],[]),true);
+            }else{left[0].updated(value,can_add);};
+            SettingOverlayUpdate(SettingOverlayBalance(slot,[update.node()],right).node(),update.added());
+        }else{
+            let update=if right.size()==0{
+                confirm can_add else throw SettingLimitExceeded();
+                SettingOverlayUpdate(SettingOverlayNode(value,[],[]),true);
+            }else{right[0].updated(value,can_add);};
+            SettingOverlayUpdate(SettingOverlayBalance(slot,left,[update.node()]).node(),update.added());
+        }
+    }
+    items() is @SettingOverlaySlot{
+        let before is @SettingOverlaySlot=if left.size()==0{[];}else{left[0].items();};
+        let after is @SettingOverlaySlot=if right.size()==0{[];}else{right[0].items();};
+        let values is @SettingOverlaySlot=(0..before.size()+1+after.size()).map()->index{
+            if index<before.size(){before[index];}else{if index==before.size(){slot;}else{after[index-before.size()-1];}}
+        };values;
+    }
+}
+object SettingOverlayUpdate{
+    has root is SettingOverlayNode;has inserted is bool;
+    SettingOverlayUpdate(root is SettingOverlayNode,inserted is bool){self.root=root;self.inserted=inserted;}
+    node() is SettingOverlayNode{root;}added() is bool{inserted;}
+}
+object SettingOverlayBalance{
+    has slot is SettingOverlaySlot;has left,right is @SettingOverlayNode;
+    SettingOverlayBalance(slot is SettingOverlaySlot,left is @SettingOverlayNode,right is @SettingOverlayNode){self.slot=slot;self.left=left;self.right=right;}
+    node() is SettingOverlayNode{
+        let difference=self.height(left)-self.height(right);
+        if difference>1{
+            let pivot=left[0];
+            if self.height(pivot.left())>=self.height(pivot.right()){
+                return SettingOverlayNode(pivot.slot(),pivot.left(),[SettingOverlayNode(slot,pivot.right(),right)]);
+            }
+            let middle=pivot.right()[0];
+            SettingOverlayNode(middle.slot(),[SettingOverlayNode(pivot.slot(),pivot.left(),middle.left())],[SettingOverlayNode(slot,middle.right(),right)]);
+        }else{if difference<(-1){
+            let pivot=right[0];
+            if self.height(pivot.right())>=self.height(pivot.left()){
+                return SettingOverlayNode(pivot.slot(),[SettingOverlayNode(slot,left,pivot.left())],pivot.right());
+            }
+            let middle=pivot.left()[0];
+            SettingOverlayNode(middle.slot(),[SettingOverlayNode(slot,left,middle.left())],[SettingOverlayNode(pivot.slot(),middle.right(),pivot.right())]);
+        }else{SettingOverlayNode(slot,left,right);}}
+    }
+    private:
+    height(nodes is @SettingOverlayNode) is int{if nodes.size()==0{0;}else{nodes[0].height();}}
+}
+object MissingSetting does Error{
+    has identity is SettingKey;
+    MissingSetting(key is SettingKey){identity=key;}
+    key() is SettingKey{identity;}
+    text() is string{"missing setting: "+identity.string();}
+}
+object DuplicateSetting does Error{
+    has identity is SettingKey;
+    DuplicateSetting(key is SettingKey){identity=key;}
+    key() is SettingKey{identity;}
+    text() is string{"duplicate setting: "+identity.string();}
+}
+object SettingLimitExceeded does Error{
+    SettingLimitExceeded();
+    text() is string{"setting snapshot limit exceeded";}
+}
+
+test "layers replace complete values and preserve the winning source"{
+    let key=SettingKey(["name"]);let defaults=SettingSource(SettingSourceKind.defaults,"defaults");
+    let cli=SettingSource(SettingSourceKind.command_line,"argv");
+    let result=LayeredSettings([Settings([SettingEntry(key,["world"],defaults)]),Settings([SettingEntry(key,[""],cli)])]);
+    test.is(result.entry(key).values().first(),"");test.is(result.entry(key).source().name(),"argv");
+}

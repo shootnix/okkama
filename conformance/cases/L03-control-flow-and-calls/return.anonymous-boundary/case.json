@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.return.anonymous-boundary",
+  "title": "return inside an anonymous action returns only from it",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.RETURN",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1\n-1\nstill in main\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: an explicit anonymous action forms its own return boundary."
+  },
+  "status": "mandatory"
+}

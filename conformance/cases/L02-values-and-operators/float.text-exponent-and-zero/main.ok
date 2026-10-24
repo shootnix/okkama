@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(100000.0.string());
+    out.writeln(1000000.0.string());
+    out.writeln(1234567.0.string());
+    out.writeln(0.0001.string());
+    out.writeln(0.00001.string());
+    out.writeln(0.00000025.string());
+    out.writeln(1000000000000000000000.0.string());
+    out.writeln((0.0 * -1.0).string());
+    out.writeln((-0.0).string());
+    out.writeln(0.0.string());
+    out.writeln(if 0.0 * -1.0 == 0.0 { "negative zero equals zero"; } else { "?"; });
+    0;
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.based.binary-and-hex",
+  "title": "binary and hexadecimal literals",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.BASED-LITERALS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "10\n3\n42\n255\n"
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar INT: 0[bB][01]+ and 0[xX][0-9a-fA-F]+ (either case); 0b1010=10, 0B11=3, 0x2A=42, 0XfF=255."
+  },
+  "status": "mandatory"
+}

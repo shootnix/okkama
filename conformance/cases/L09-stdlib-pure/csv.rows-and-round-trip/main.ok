@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "csv" take CsvRows, CsvString, CsvDialect, InvalidCsv;
+
+object Rows {
+    Rows();
+    flat(source is string) is @string {
+        let all is @string = CsvRows(source).map() -> row { row.join("|"); };
+        all;
+    }
+    count(source is string) is int {
+        let rows is @int = CsvRows(source).map() -> row { row.size(); };
+        rows.size();
+    }
+    round_trip(rows is @@string) is @string {
+        let text = CsvString(rows).string();
+        self.flat(text);
+    }
+}
+
+main() is int {
+    let c = Checks();
+    c = c.same_texts("quoted field with delimiter", Rows().flat("name,note\r\nAda,\"one, two\"\r\n"), ["name|note", "Ada|one, two"]);
+    c = c.same_texts("doubled quote", Rows().flat("\"say \"\"hi\"\"\",x"), ["say \"hi\"|x"]);
+    c = c.same_int("missing final terminator", Rows().count("a,b"), 1);
+    c = c.same_int("empty input has no rows", Rows().count(""), 0);
+    c = c.same_texts("terminator alone is one empty field", Rows().flat("\r\n"), [""]);
+    c = c.same_texts("round trip", Rows().round_trip([["a", "b,c"], ["d\"e", "f\r\ng"]]), ["a|b,c", "d\"e|f\r\ng"]);
+    c = c.same_text("unterminated quote at EOF", try { let probe = Rows().count("a,\"b"); "no error"; } catch e is InvalidCsv { "offset " + e.offset().string(); }, "offset 4");
+    c.done();
+}

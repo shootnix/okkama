@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "csv" take CsvRows, CsvString;
+
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let document = CsvRows(origin: "name,note\r\nAda,\"one, two\"");
+        CsvString(rows: document).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.comments.unterminated-block",
+  "title": "an unterminated block comment is an error",
+  "purpose": "Malformed source is rejected by the lexer/parser.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.COMMENTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-llm-context-1.0.md#5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "A block comment requires its closing `*/`."
+  },
+  "status": "mandatory"
+}

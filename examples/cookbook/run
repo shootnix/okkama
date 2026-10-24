@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Единая точка запуска учебных программ.
+# Использование: ./examples/cookbook/run help; run APP ARGS; run lab RECIPE_ID.
+# Выбирает std из этого checkout, сохраняет границы argv и возвращает код программы.
+set -euo pipefail
+COOKBOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPOSITORY_DIR="$(cd "$COOKBOOK_DIR/../.." && pwd)"
+# Интерпретатор: `okkama` из PATH (make install) или собранный в okkama-rs.
+OKKAMA="${OKKAMA:-$(command -v okkama || echo "$REPOSITORY_DIR/okkama-rs/target/release/okkama")}"
+cd "$REPOSITORY_DIR"
+export OKKAMA_STDLIB_DIR="$REPOSITORY_DIR/std"
+command_name="${1:-help}"
+if [[ $# -gt 0 ]]; then shift; fi
+case "$command_name" in
+  help|--help|-h)
+    cat <<'HELP'
+Okkama cookbook applications
+  ./examples/cookbook/run mail read FILE.eml
+  ./examples/cookbook/run taxi init DATABASE
+  ./examples/cookbook/run payroll demo
+  ./examples/cookbook/run formats demo toml
+  ./examples/cookbook/run docs [PORT]
+  ./examples/cookbook/run bookstore init DATABASE
+  ./examples/cookbook/run web-bookstore DATABASE [PORT]
+  ./examples/cookbook/run web-blog DATABASE [PORT]
+  ./examples/cookbook/run blog init DATABASE
+  ./examples/cookbook/run chat [PORT]
+  ./examples/cookbook/run chat-client PORT MESSAGE
+  ./examples/cookbook/run tests [--report=json|tap|junit]
+  ./examples/cookbook/run lab RECIPE_ID
+  ./examples/cookbook/run verify
+  ./examples/cookbook/run coverage
+See examples/cookbook/README.md and LABS.md.
+HELP
+    ;;
+  web-blog|web-bookstore)
+    exec "$COOKBOOK_DIR/web/${command_name#web-}/run" "$@"
+    ;;
+  tests)
+    exec "$OKKAMA" -t "$@" "$COOKBOOK_DIR/apps/tests.ok"
+    ;;
+  lab)
+    lab_name="${1:?Provide a recipe id from LABS.md}"; shift
+    [[ "$lab_name" =~ ^[a-z0-9-]+$ ]] || { echo 'Invalid recipe id' >&2; exit 2; }
+    entry="$COOKBOOK_DIR/labs/$lab_name/main.ok"
+    [[ -f "$entry" ]] || { echo 'Unknown recipe; see LABS.md' >&2; exit 2; }
+    if grep -Eq '^[[:space:]]*(async[[:space:]]+)?test[[:space:]]+"' "$entry"; then
+      exec "$OKKAMA" -t "$entry" "$@"
+    fi
+    exec "$OKKAMA" "$entry" "$@"
+    ;;
+  verify)
+    exec python3 "$COOKBOOK_DIR/script/verify.py" "$@"
+    ;;
+  coverage)
+    exec python3 "$COOKBOOK_DIR/script/coverage.py" --check
+    ;;
+  mail|taxi|payroll|formats|docs|bookstore|blog|chat|chat-client)
+    exec "$OKKAMA" "$COOKBOOK_DIR/apps/$command_name.ok" "$@"
+    ;;
+  *) echo "Unknown application: $command_name" >&2; exit 2 ;;
+esac

@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.raw-transaction-control-rejected",
+  "title": "raw transaction control SQL is rejected",
+  "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.SQLITE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "rejected\n"
+    }
+  },
+  "spec_refs": [
+    "docs/std/db-sqlite.md"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "db-sqlite guide: raw PRAGMA, ATTACH, DETACH and transaction/savepoint control are rejected; transactions use their capability."
+  },
+  "status": "mandatory"
+}

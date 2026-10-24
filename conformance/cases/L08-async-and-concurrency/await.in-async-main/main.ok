@@ -1,0 +1,53 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Job {
+    has name is string;
+    has result is int;
+    Job(:name, :result);
+    async run() is int {
+        Stdout().writeln("running " + name);
+        result;
+    }
+}
+
+object Quiet {
+    has result is int;
+    Quiet(:result);
+    async run() is int { result; }
+}
+
+object Broken does Error {
+    Broken();
+    text() is string { "broken"; }
+}
+
+object Failing {
+    Failing();
+    async run() is int {
+        Stdout().writeln("failing body");
+        throw Broken();
+    }
+}
+
+object Values {
+    Values();
+    async v(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    async flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+    async log(text is string) is void {
+        Stdout().writeln(text);
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    out.writeln((await Quiet(result: 9).run()).string());
+    0;
+}

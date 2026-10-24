@@ -1,0 +1,169 @@
+module os/command_capture v1.0.0;
+
+import "os/command" take Commanding;
+import "os/process" take Exit, ExitKind, ProcessFailure;
+import "runtime/process" take
+    ProcessState,
+    CapturedProcess,
+    process_state_create,
+    process_state_start,
+    process_state_capture,
+    captured_process_status,
+    captured_process_overflow,
+    captured_process_output,
+    captured_process_errors;
+
+// CommandCapture is the safe bounded alternative to manually coordinating
+// ProcessInput, ProcessOutput and ProcessErrors. completion() starts the child,
+// writes the complete optional input, closes stdin, drains stdout and stderr
+// concurrently, and waits for both pipe EOF and process termination.
+//
+// Capture without stdin:
+//
+//     let completed = await CommandCapture(
+//         origin: command,
+//         limit: 16 * 1024 * 1024,
+//     ).completion();
+//
+// Capture with explicit binary stdin:
+//
+//     let completed = await CommandCapture(
+//         origin: command,
+//         input: request,
+//         limit: 16 * 1024 * 1024,
+//     ).completion();
+//
+// output() and errors() remain bytes. Decode them explicitly with the selected
+// encoding module. The limit applies independently to each stream.
+
+enum CapturedStream = (output, errors);
+
+object CommandCapture {
+    has command is Commanding;
+    has input is @byte;
+    has limit is int;
+    has state is ProcessState;
+
+    CommandCapture(origin is Commanding, limit is int) {
+        command = origin;
+        input = [];
+        self.limit = limit;
+        state = process_state_create();
+    }
+
+    CommandCapture(origin is Commanding, input is @byte, limit is int) {
+        command = origin;
+        self.input = input;
+        self.limit = limit;
+        state = process_state_create();
+    }
+
+    async completion() is CompletedCommand {
+        confirm limit > 0 else throw InvalidCaptureLimit(limit);
+
+        try {
+            process_state_start(
+                state,
+                command.program().string(),
+                command.arguments(),
+                command.directory().path().string(),
+                command.environment().variables(),
+            );
+            let captured is CapturedProcess = await process_state_capture(
+                state,
+                input,
+                limit,
+            );
+            let overflow is int = captured_process_overflow(captured);
+            if overflow == 1 {
+                throw CaptureLimitExceeded(
+                    stream: CapturedStream.output,
+                    limit: limit,
+                );
+            }
+            if overflow == 2 {
+                throw CaptureLimitExceeded(
+                    stream: CapturedStream.errors,
+                    limit: limit,
+                );
+            }
+            let status is %string:int = captured_process_status(captured);
+            CompletedCommand(
+                exit: Exit(
+                    kind: self.exit_kind(status),
+                    code: status["code"],
+                ),
+                output: captured_process_output(captured),
+                errors: captured_process_errors(captured),
+            );
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+
+    private:
+    exit_kind(status is %string:int) is ExitKind {
+        if status["state"] == 1 {
+            ExitKind.exited;
+        }
+        else {
+            match status["code"] {
+                case 1 { ExitKind.terminated; }
+                case 2 { ExitKind.killed; }
+                case 3 { ExitKind.interrupted; }
+                else { ExitKind.other; }
+            }
+        }
+    }
+}
+
+object CompletedCommand {
+    has completed_exit is Exit;
+    has captured_output is @byte;
+    has captured_errors is @byte;
+
+    CompletedCommand(exit is Exit, output is @byte, errors is @byte) {
+        completed_exit = exit;
+        captured_output = output;
+        captured_errors = errors;
+    }
+
+    exit() is Exit { completed_exit; }
+
+    output() is @byte { captured_output; }
+
+    errors() is @byte { captured_errors; }
+}
+
+object InvalidCaptureLimit does Error {
+    has origin is int;
+
+    InvalidCaptureLimit(limit is int) {
+        origin = limit;
+    }
+
+    limit() is int { origin; }
+
+    #projected
+    text() is string {
+        "capture limit must be positive, got " + origin.string();
+    }
+}
+
+object CaptureLimitExceeded does Error {
+    has captured_stream is CapturedStream;
+    has capture_limit is int;
+
+    CaptureLimitExceeded(stream is CapturedStream, limit is int) {
+        captured_stream = stream;
+        capture_limit = limit;
+    }
+
+    stream() is CapturedStream { captured_stream; }
+
+    limit() is int { capture_limit; }
+
+    #projected
+    text() is string { "command capture limit exceeded"; }
+}

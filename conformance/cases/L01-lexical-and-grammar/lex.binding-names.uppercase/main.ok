@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Broken does Error {
+    Broken();
+    text() is string { "broken"; }
+}
+
+main() is int {
+    let USER_NAME = 1;
+    let A = 2;
+    let UserName = 3;
+    let caught = try { throw Broken(); 0; } catch Problem is Broken { 10; };
+    for [9] -> Item {
+        Stdout().writeln(Item.string());
+    }
+    USER_NAME + A + UserName + caught;
+}

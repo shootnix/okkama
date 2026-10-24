@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "random/source" take PcgRandom, InvalidRandomRange;
+
+main() is int {
+    let c = Checks();
+    c = c.same_ints("seed 42 first eight bytes", PcgRandom(seed: 42).bytes(8).map() -> b { b.int(); }, [214, 123, 245, 194, 169, 196, 7, 107]);
+    c = c.same_int("byte count", PcgRandom(seed: 7).bytes(5).size(), 5);
+    c = c.same_text("empty range", try { let probe = PcgRandom(seed: 1).integer(5, 5); "no error"; } catch e is InvalidRandomRange { "InvalidRandomRange"; }, "InvalidRandomRange");
+    c.done();
+}

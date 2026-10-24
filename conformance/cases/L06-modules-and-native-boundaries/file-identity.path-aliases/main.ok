@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "lib/owner" take Owner;
+import "lib/nested/../owner" as again;
+
+main() is int {
+    let out = Stdout();
+    let o is again.Owner = Owner(n: 4);
+    out.writeln(o::Public::n.string());
+    0;
+}

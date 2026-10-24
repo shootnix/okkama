@@ -1,0 +1,22 @@
+module runtime/random v1.0.0;
+
+// Portable PCG32 state and fixed-width sample interpretation.
+
+native object PcgState;
+
+native pcg_state(seed is int) is PcgState;
+native pcg_integer(state is PcgState, start is int, stop is int) is int;
+native pcg_float(state is PcgState) is float;
+native pcg_bytes(state is PcgState, size is int) is @byte;
+
+native random_sample_accepted(
+    sample is @byte,
+    start is int,
+    stop is int,
+) is bool;
+native random_integer_from_sample(
+    sample is @byte,
+    start is int,
+    stop is int,
+) is int;
+native random_float_from_sample(sample is @byte) is float;

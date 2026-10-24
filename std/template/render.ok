@@ -1,0 +1,42 @@
+module template/render v1.0.0;
+import "template/compile" take TextTemplate;
+import "template/model" take TemplateStrings, TemplateBindings;
+import "io/stream" take WritingText;
+import "io/buffer" take ByteBuffer;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Decoded;
+
+// Explicit command binding a bounded TextTemplate, nominal string data and a
+// borrowed text destination. Construction performs no compilation/lookup/write.
+// write() validates the complete source, then resolves contributions in order,
+// preflights each against the template's UTF-8 output budget, and writes chunks
+// <=1024 scalars (<=4096 UTF-8 bytes). No full result is accumulated here.
+// Successful prefixes remain on later failure; there is no rollback promise.
+// Sink/source errors propagate unchanged and stop later work. Repeated write()
+// renders afresh and appends again. Never adds a newline, flushes or closes.
+// No owned resource/destroy. The destination remains usable after this command.
+// Example: TemplateOutput(template,data,Utf8Output(origin:buffer.writing())).write().
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/render.ok
+object TemplateOutput {
+    has origin is TextTemplate;
+    has data is TemplateStrings;
+    has destination is WritingText;
+    TemplateOutput(origin is TextTemplate,data is TemplateStrings,destination is WritingText) {
+        self.origin=origin;self.data=data;self.destination=destination;
+    }
+    write() is void {origin.write(data,destination);}
+}
+
+test "streamed template command repeats and borrows destination" {
+    let out=ByteBuffer();
+    let command=TemplateOutput(TextTemplate("Hello {{name}}"),TemplateStrings.fake(),Utf8Output(origin:out.writing()));
+    command.write();
+    command.write();
+    test.is(Utf8Decoded(out.content().bytes()).string(),"Hello AdaHello Ada");
+    test.is(out.closing().closed(),false);
+}
+test "empty streamed template has no implicit newline" {
+    let out=ByteBuffer();
+    TemplateOutput(TextTemplate("",0,0,0),TemplateBindings([]),Utf8Output(origin:out.writing())).write();
+    test.is(out.content().size(),0);
+}

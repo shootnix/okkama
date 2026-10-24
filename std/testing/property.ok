@@ -1,0 +1,96 @@
+module testing/property v1.0.0;
+import "testing/check" take Checking,AsyncChecking,CheckContext;
+import "testing/generation" take Generation,Generated,InvalidGeneration,IntegerGeneration;
+import "random/source" take PcgRandom;
+object PropertyReproduction {
+    has seed,case_index,size is int;has value is string;
+    PropertyReproduction(seed is int,case_index is int,size is int,value is string){self.seed=seed;self.case_index=case_index;self.size=size;self.value=value;}
+    seed() is int{seed;}case_index() is int{case_index;}size() is int{size;}value() is string{value;}
+    string() is string{"seed="+seed.string()+" case="+case_index.string()+" size="+size.string()+" value="+value;}
+}
+object PropertyObservation {
+    has passed,typed_error is bool;has description is string;
+    PropertyObservation(passed is bool,typed_error is bool,description is string){self.passed=passed;self.typed_error=typed_error;self.description=description;}
+    passed() is bool{passed;}typed_error() is bool{typed_error;}description() is string{description;}
+}
+object InvalidProperty does Error {
+    has reason is string;InvalidProperty(reason is string){self.reason=reason;}text() is string{"invalid property: "+reason;}
+}
+
+object Property<T> does Checking {
+    has origin is Generation<T>;has seed,cases,maximum_size,shrink_limit is int;has condition is (T) is bool;
+    Property(origin is Generation<T>,seed is int,cases is int,maximum_size is int,shrink_limit is int,condition is (T) is bool) {
+        confirm cases>0 && cases<=10000 && maximum_size>=0 && maximum_size<=65536 && shrink_limit>=0 && shrink_limit<=128 else throw InvalidProperty("cases 1..10000, size 0..65536, shrink 0..128 required");
+        self.origin=origin;self.seed=seed;self.cases=cases;self.maximum_size=maximum_size;self.shrink_limit=shrink_limit;self.condition=condition;
+    }
+    check() is void {
+        CheckContext().verify();let random=PcgRandom(seed);
+        for (0..cases)->index {
+            let size=if cases==1{0;}else{((index.rat()*maximum_size.rat())/(cases-1).rat()).int();};
+            let generated=origin.sample(random,size);let observation=self.observe(generated.value());
+            if !observation.passed() {
+                let reduced=if observation.typed_error(){generated;}else{self.shrink(generated,shrink_limit);};
+                test.fail("property failed: "+PropertyReproduction(seed,index,size,reduced.string()).string()+" "+observation.description());return;
+            }
+        }
+    }
+    private:
+    observe(value is T) is PropertyObservation {
+        try{let result=condition(value);PropertyObservation(result,false,if result{"passed";}else{"false condition";});}
+        catch error is Cancelled {throw;}
+        catch error is Error {PropertyObservation(false,true,"typed error: "+error.text());}
+    }
+    shrink(origin is Generated<T>,remaining is int) is Generated<T> {
+        if remaining==0{return origin;}let source=origin.reductions();let size=source.size();
+        confirm size>=0 && size<=4096 else throw InvalidGeneration("reduction count");
+        let count=if size<remaining{size;}else{remaining;};
+        for (0..count)->index {
+            let candidate=source.item(index);let result=self.observe(candidate.value());
+            if result.typed_error(){test.fail("typed error during shrinking: "+candidate.string()+" "+result.description());return origin;}
+            if !result.passed(){return self.shrink(candidate,remaining-index-1);}
+        }
+        origin;
+    }
+}
+
+object AsyncProperty<T> does AsyncChecking {
+    has origin is Generation<T>;has seed,cases,maximum_size,shrink_limit is int;has condition is async (T) is bool;
+    AsyncProperty(origin is Generation<T>,seed is int,cases is int,maximum_size is int,shrink_limit is int,condition is async (T) is bool) {
+        confirm cases>0 && cases<=10000 && maximum_size>=0 && maximum_size<=65536 && shrink_limit>=0 && shrink_limit<=128 else throw InvalidProperty("cases 1..10000, size 0..65536, shrink 0..128 required");
+        self.origin=origin;self.seed=seed;self.cases=cases;self.maximum_size=maximum_size;self.shrink_limit=shrink_limit;self.condition=condition;
+    }
+    async check() is void {
+        CheckContext().verify();let random=PcgRandom(seed);
+        let observe=(value is T) is Future<PropertyObservation> {self.observe(value);};
+        let shrink=(value is Generated<T>,remaining is int) is Future<Generated<T>> {self.shrink(value,remaining);};
+        for (0..cases)->index {
+            let size=if cases==1{0;}else{((index.rat()*maximum_size.rat())/(cases-1).rat()).int();};
+            let generated=origin.sample(random,size);let observation=await observe(generated.value());
+            if !observation.passed() {
+                let reduced=if observation.typed_error(){generated;}else{await shrink(generated,shrink_limit);};
+                test.fail("property failed: "+PropertyReproduction(seed,index,size,reduced.string()).string()+" "+observation.description());return;
+            }
+        }
+    }
+    private:
+    async observe(value is T) is PropertyObservation {
+        try{let result=await condition(value);PropertyObservation(result,false,if result{"passed";}else{"false condition";});}
+        catch error is Cancelled {throw;}
+        catch error is Error {PropertyObservation(false,true,"typed error: "+error.text());}
+    }
+    async shrink(origin is Generated<T>,remaining is int) is Generated<T> {
+        let observe=(value is T) is Future<PropertyObservation> {self.observe(value);};
+        let shrink=(value is Generated<T>,remaining is int) is Future<Generated<T>> {self.shrink(value,remaining);};
+        if remaining==0{return origin;}let source=origin.reductions();let size=source.size();
+        confirm size>=0 && size<=4096 else throw InvalidGeneration("reduction count");
+        let count=if size<remaining{size;}else{remaining;};
+        for (0..count)->index {
+            let candidate=source.item(index);let result=await observe(candidate.value());
+            if result.typed_error(){test.fail("typed error during shrinking: "+candidate.string()+" "+result.description());return origin;}
+            if !result.passed(){return await shrink(candidate,remaining-index-1);}
+        }
+        origin;
+    }
+}
+
+test "seeded property checks a configured invariant" {let check is Property<int>=Property(IntegerGeneration(0,10),42,10,10,64,(value is int) is bool {value>=0 && value<10;});check.check();}

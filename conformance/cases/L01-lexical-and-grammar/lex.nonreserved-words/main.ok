@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box {
+    has mutable is int;
+    Box(:mutable);
+    mutable() is int { mutable; }
+    setters(setters is int) is int { setters; }
+}
+
+main() is int {
+    let out = Stdout();
+    let var = 1;
+    let optional = 2;
+    let box = Box(mutable: 3);
+    out.writeln((var + optional + box.mutable() + box.setters(4)).string());
+    0;
+}

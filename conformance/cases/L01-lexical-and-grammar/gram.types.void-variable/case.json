@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.types.void-variable",
+  "title": "void is not a value type",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.TYPE-REFS",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "CALL.VOID",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The contract requires rejection but the grammar marks this rule as context-sensitive (checked after parsing); detection while parsing is equally conforming."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: void is a result marker and cannot type variables."
+  },
+  "status": "mandatory"
+}

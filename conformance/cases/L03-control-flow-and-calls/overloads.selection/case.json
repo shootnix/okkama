@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.overloads.selection",
+  "title": "overloads by arity, runtime type and specificity",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "int\nstring\npair\nsquare\nrole\nany\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.8: exact concrete types beat role compatibility, which beats any; a role-typed reference matches the role overload."
+  },
+  "status": "mandatory"
+}

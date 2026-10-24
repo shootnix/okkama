@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.transaction-rollback-commit",
+  "title": "rollback discards and commit keeps work",
+  "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.TRANSACTION",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "STD.DB.SQLITE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1 2\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/transaction.ok",
+    "docs/std/db-sqlite.md"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Transactions: rolled-back work is discarded and committed work persists (one row with n = 2)."
+  },
+  "status": "mandatory"
+}

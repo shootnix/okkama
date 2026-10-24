@@ -1,0 +1,298 @@
+module regex/replace v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/views" take Accumulated, Taken;
+import "regex/match" take RegexMatching;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+import "strings/parse" take ParsedInt;
+import "runtime/regex" take
+    RegexReplacementState,
+    regex_replacement_state,
+    regex_replacement_prepare,
+    regex_replacement_tokens,
+    RegexSubstitutionState,
+    regex_substitution_state,
+    regex_substitution_ready,
+    regex_substitution_store,
+    regex_substitution_string,
+    regex_substitution_amount;
+
+role ReplacingRegexMatch {
+    replacement(found is RegexMatching) is string;
+}
+
+// Literal replacement never interprets dollars:
+//
+//     RegexSubstitution(
+//         "a1 b22",
+//         Regex("\\d+"),
+//         LiteralRegexReplacement("N"),
+//     ).string(); // "aN bN"
+//
+// Expanded replacement supports $0, $1, ${name} and $$:
+//
+//     let changed = RegexSubstitution(
+//         "Ada Lovelace",
+//         Regex("(?<first>\\w+) (?<last>\\w+)"),
+//         ExpandedRegexReplacement("${last}, ${first}"),
+//     );
+//     changed.string(); // "Lovelace, Ada"
+//     changed.amount(); // 1
+//
+// Custom policy is an ordinary ReplacingRegexMatch object. Its replacement()
+// receives the same RegexMatching interface as search results.
+
+object LiteralRegexReplacement does ReplacingRegexMatch {
+    has origin is string;
+    LiteralRegexReplacement(value is string) { origin = value; }
+    replacement(found is RegexMatching) is string { origin; }
+}
+
+object ExpandedRegexReplacement does ReplacingRegexMatch {
+    has source is string;
+    has state is RegexReplacementState;
+
+    ExpandedRegexReplacement(template is string) {
+        source = template;
+        state = regex_replacement_state(template);
+    }
+
+    replacement(found is RegexMatching) is string {
+        let status = regex_replacement_prepare(state);
+        confirm status["status"] == 0 else throw InvalidRegexReplacement(
+            offset: status["offset"],
+            message: "invalid regex replacement",
+        );
+        let tokens is @string = regex_replacement_tokens(state);
+        for Accumulated(
+            origin: ReplacementTokens(tokens),
+            initial: "",
+            action: (rendered is string, token is ReplacementToken) is string {
+                rendered + self.expansion(
+                    kind: token.kind(),
+                    value: token.text(),
+                    found: found,
+                );
+            },
+        ) -> rendered {
+            rendered;
+        }
+    }
+
+    private:
+    expansion(
+        kind is string,
+        value is string,
+        found is RegexMatching,
+    ) is string {
+        if kind == "literal" {
+            value;
+        }
+        else if kind == "index" {
+            let capture = found.capture(value ParsedInt(value));
+            if capture.matched() { capture.text(); } else { ""; }
+        }
+        else {
+            let capture = found.group(value);
+            if capture.matched() { capture.text(); } else { ""; }
+        }
+    }
+}
+
+object ReplacementToken {
+    has classification is string;
+    has origin is string;
+    ReplacementToken(kind is string, text is string) {
+        classification = kind;
+        origin = text;
+    }
+    kind() is string { classification; }
+    text() is string { origin; }
+}
+
+object ReplacementTokens does Iterating<ReplacementToken> {
+    has origin is @string;
+    ReplacementTokens(tokens is @string) { origin = tokens; }
+    cursor() is Cursor<ReplacementToken> {
+        ReplacementTokenCursor(tokens: origin, position: 0);
+    }
+}
+
+object ReplacementTokenCursor does Cursor<ReplacementToken> {
+    has origin is @string;
+    has position is int;
+    ReplacementTokenCursor(tokens is @string, position is int) {
+        origin = tokens;
+        self.position = position;
+    }
+    available() is bool { position < origin.size(); }
+    item() is ReplacementToken {
+        confirm self.available() else throw IterationEnded();
+        ReplacementToken(origin[position], origin[position + 1]);
+    }
+    successor() is Cursor<ReplacementToken> {
+        confirm self.available() else throw IterationEnded();
+        ReplacementTokenCursor(tokens: origin, position: position + 2);
+    }
+}
+
+// RegexSubstitution is the observable result, not a builder followed by
+// value(). Both facts are derived from exactly the same traversal semantics.
+object RegexSubstitution {
+    has source is string;
+    has pattern is Regex;
+    has replacing is ReplacingRegexMatch;
+    has maximum is int;
+    has state is RegexSubstitutionState;
+
+    RegexSubstitution(
+        origin is string,
+        regex is Regex,
+        replacing is ReplacingRegexMatch,
+    ) {
+        source = origin;
+        pattern = regex;
+        self.replacing = replacing;
+        maximum = -1;
+        state = regex_substitution_state();
+    }
+
+    RegexSubstitution(
+        origin is string,
+        regex is Regex,
+        replacing is ReplacingRegexMatch,
+        limit is int,
+    ) {
+        confirm limit > 0 else throw InvalidRegexReplacementLimit(limit);
+        source = origin;
+        pattern = regex;
+        self.replacing = replacing;
+        maximum = limit;
+        state = regex_substitution_state();
+    }
+
+    string() is string { self.result().string(); }
+
+    amount() is int { self.result().amount(); }
+
+    private:
+    matches() is Iterating<RegexMatching> {
+        let found = RegexMatches(source, pattern);
+        if maximum < 0 {
+            found;
+        }
+        else {
+            Taken(origin: found, count: maximum);
+        }
+    }
+
+    result() is RegexSubstitutionResult {
+        if regex_substitution_ready(state) {
+            RegexSubstitutionResult(
+                string: regex_substitution_string(state),
+                amount: regex_substitution_amount(state),
+            );
+        }
+        else {
+            self.computed();
+        }
+    }
+
+    computed() is RegexSubstitutionResult {
+        for Accumulated(
+            origin: self.matches(),
+            initial: RegexSubstitutionProgress(
+                origin: source,
+                rendered: "",
+                offset: 0,
+                amount: 0,
+            ),
+            action: (current is RegexSubstitutionProgress, found is RegexMatching) is RegexSubstitutionProgress {
+                current.successor(found, replacing);
+            },
+        ) -> current {
+            let result = current.result();
+            regex_substitution_store(
+                state,
+                result.string(),
+                result.amount(),
+            );
+            result;
+        }
+    }
+}
+
+object RegexSubstitutionProgress {
+    has source is string;
+    has rendered is string;
+    has offset is int;
+    has quantity is int;
+
+    RegexSubstitutionProgress(
+        origin is string,
+        rendered is string,
+        offset is int,
+        amount is int,
+    ) {
+        source = origin;
+        self.rendered = rendered;
+        self.offset = offset;
+        quantity = amount;
+    }
+
+    successor(
+        found is RegexMatching,
+        replacing is ReplacingRegexMatch,
+    ) is RegexSubstitutionProgress {
+        let range = found.range();
+        RegexSubstitutionProgress(
+            origin: source,
+            rendered: rendered
+                + source.slice(offset, range.start())
+                + replacing.replacement(found),
+            offset: range.end(),
+            amount: quantity + 1,
+        );
+    }
+
+    result() is RegexSubstitutionResult {
+        RegexSubstitutionResult(
+            string: rendered + source.slice(offset, source.length()),
+            amount: quantity,
+        );
+    }
+}
+
+object RegexSubstitutionResult {
+    has rendered is string;
+    has quantity is int;
+    RegexSubstitutionResult(string is string, amount is int) {
+        rendered = string;
+        quantity = amount;
+    }
+    string() is string { rendered; }
+    amount() is int { quantity; }
+}
+
+object InvalidRegexReplacement does Error {
+    has source_offset is int;
+    has message is string;
+    InvalidRegexReplacement(offset is int, message is string) {
+        source_offset = offset;
+        self.message = message;
+    }
+    offset() is int { source_offset; }
+    #projected
+    text() is string {
+        message + " at offset " + source_offset.string();
+    }
+}
+
+object InvalidRegexReplacementLimit does Error {
+    has maximum is int;
+    InvalidRegexReplacementLimit(limit is int) { maximum = limit; }
+    limit() is int { maximum; }
+    #projected
+    text() is string { "regex replacement limit must be positive"; }
+}

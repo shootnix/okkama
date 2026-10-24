@@ -1,0 +1,25 @@
+// Проверить бюджет принимаемого архива
+//
+// Ограничить загрузку архива: ArchiveLimits и ArchiveBudget проверяют число элементов, размеры и длины путей.
+//
+// Запуск: ./examples/cookbook/run lab example-archive-limits
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-archive-limits
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "archive/limits" take ArchiveLimits, ArchiveLimitExceeded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let initial = ArchiveLimits(2, 4, 6, 64).budget();
+    let first = initial.entered("a.bin", 4).expanded(2).expanded(2).completed();
+    let second = first.entered("b.bin", 0).expanded(2);
+    Stdout().writeln(second.path().string());
+    Stdout().writeln(second.total_remaining().string());
+    try { second = second.expanded(1); }
+    catch error is ArchiveLimitExceeded { Stdout().writeln(error.text()); }
+    let ready = second.completed();
+    Stdout().writeln(ready.entries_remaining().string());
+    0;
+}

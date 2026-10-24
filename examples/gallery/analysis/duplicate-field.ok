@@ -1,0 +1,6 @@
+// Статическая диагностика: Повторное объявление поля.
+// Файл намеренно содержит ошибку и проверяется без выполнения main.
+// Запуск проверки: ./examples/gallery/run check --analysis-only
+// Ожидаемое сообщение анализатора хранится в catalog.json; пример принят, если анализ его отклонил.
+module gallery/analysis/duplicate_field v1.0.0;
+object Box{has value is int;has value is int;Box(){value=0;}}main() is int{0;}

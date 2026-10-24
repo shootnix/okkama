@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let value is any = 1;
+    match value {
+        case 1 { out.writeln("one"); }
+        else { out.writeln("other"); }
+    }
+    out.writeln("unreachable");
+    0;
+}

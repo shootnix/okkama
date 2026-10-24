@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.unicode.strings-and-comments",
+  "title": "Unicode in strings and comments",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.UNICODE-SOURCE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "VAL.UNICODE-STRINGS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "日本語\n3\n1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6: length() counts Unicode code points, not UTF-8 bytes: 日本語 = 3, U+1F600 = 1."
+  },
+  "status": "mandatory"
+}

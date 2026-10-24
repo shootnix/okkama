@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.alias-same-spelled-roles",
+  "title": "same-spelled roles from different modules stay distinct under aliases",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.ALIAS-NOMINAL",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "billing/money.ok",
+    "inventory/money.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "250\n3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2",
+    "improvements-roadmap/results/IMP-25/RESULT.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.2: aliases select declarations; identity is module + ABI major + name, so billing/money.Amount and inventory/money.Amount are unrelated."
+  },
+  "status": "mandatory"
+}

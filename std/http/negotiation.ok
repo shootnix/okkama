@@ -1,0 +1,627 @@
+module http/negotiation v1.0.0;
+import "compare" take Comparing, Order;
+import "encoding/utf" take Utf8Encoded;
+import "http/method" take Method, InvalidMethod;
+import "http/header" take Header, HeaderName, InvalidHeader, HttpAsciiLowercase;
+import "http/content_coding" take ContentCoding;
+import "collections/sequence" take Sequencing;
+import "collections/ordering" take Sorted, LowerBound;
+import "error" take InvalidArgument;
+import "http/media_type" take HttpMediaType, HttpMediaParameters, HttpMediaParameter,
+    HttpMediaLimits, HttpMediaScanning, InvalidHttpMediaType, HttpMediaLimitExceeded;
+import "encoding/single_byte" take Latin1Encoded;
+import "collections/list" take List, EmptyList;
+import "locale/tag" take Locale;
+import "locale/match" take BasicLanguageRange, LanguagePrefixes, InvalidLanguageRange;
+
+// Canonical exact thousandths. Rational input is validated, never rounded to
+// a nearby legal HTTP preference. Both comparison and rendering use this grid.
+object Quality does Comparing<Quality> {
+    has thousandths is int;
+    Quality(origin is rat) {
+        confirm origin>=0.rat() && origin<=1.rat() else throw InvalidQuality("outside 0..1");
+        let scaled=origin*1000.rat();let whole=scaled.int();
+        confirm scaled==whole.rat() else throw InvalidQuality("more than three decimal places");
+        thousandths=whole;
+    }
+    value() is rat {thousandths.rat()/1000.rat();}
+    acceptable() is bool {thousandths>0;}
+    order(other is Quality) is Order {self.value().order(other.value());}
+    string() is string {
+        if thousandths==0 {return "0";}if thousandths==1000 {return "1";}
+        let digits=(1000+thousandths).string().slice(1,4);
+        let width=if thousandths%10!=0 {3;}else{if thousandths%100!=0 {2;}else{1;}};
+        "0."+digits.slice(0,width);
+    }
+}
+// qvalue is a short ASCII grammar, not the general rational/string parser.
+object ParsedQuality {
+    has origin is string;ParsedQuality(origin is string){self.origin=origin;}
+    value() is Quality {
+        confirm origin.length()>=1 && origin.length()<=5 else throw InvalidQuality("qvalue length");
+        let prefix=origin.slice(0,1);
+        confirm prefix=="0" || prefix=="1" else throw InvalidQuality("qvalue requires 0 or 1");
+        let whole=if prefix=="0" {0;}else{1000;};
+        if origin.length()==1 {return Quality(whole.rat()/1000.rat());}
+        confirm origin.slice(1,2)=="." else throw InvalidQuality("qvalue decimal point");
+        let digits=origin.slice(2,origin.length());
+        let decimal=Utf8Encoded(digits).bytes().reduce(0) -> value,octet {
+            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidQuality("ASCII qvalue digit required");
+            value*10+code-48;
+        };
+        let factors=[1000,100,10,1];
+        Quality((whole+decimal*factors[digits.length()]).rat()/1000.rat());
+    }
+}
+// The common weighted token preserves spelling. Case, wildcards, missing-field
+// defaults and specificity belong to field profiles; this is not a negotiation
+// manager or codec capability. Media ranges need their own represented entity.
+object WeightedValue {
+    has token is string;has quality is Quality;
+    WeightedValue(value is string) {
+        token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidWeightedValue("HTTP token required");};
+        quality=Quality(1.rat());
+    }
+    WeightedValue(value is string, quality is Quality) {
+        token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidWeightedValue("HTTP token required");};
+        self.quality=quality;
+    }
+    value() is string {token;}
+    quality() is Quality {quality;}
+    string() is string {token+";q="+quality.string();}
+}
+object NegotiationLimits {
+    has bytes,entries,available is int;
+    NegotiationLimits() {bytes=8192;entries=128;available=128;}
+    NegotiationLimits(bytes is int, entries is int, available is int) {
+        confirm bytes>=0 && entries>=0 && available>=0 else throw InvalidArgument("negotiation budgets must be nonnegative");
+        self.bytes=bytes;self.entries=entries;self.available=available;
+    }
+    bytes() is int {bytes;}entries() is int {entries;}available() is int {available;}
+}
+// A pure Accept-Encoding policy. Absent/empty are different; no coding is
+// available just because its name appears in the client's preference field.
+object AcceptedContentCodings {
+    has origin is @CodingPreference;
+    has indexed is Sorted<CodingPreference>;
+    has limits is NegotiationLimits;
+    has present is bool;
+    AcceptedContentCodings() {
+        let empty is @CodingPreference=[];
+        origin=empty;indexed=Sorted(origin:empty);limits=NegotiationLimits();present=false;
+    }
+    AcceptedContentCodings(origin is string) {
+        let budget=NegotiationLimits();let entries=CodingField(origin,budget).values();
+        limits=budget;self.origin=entries;indexed=CodingIndex(entries).value();present=true;
+    }
+    AcceptedContentCodings(origin is string, limits is NegotiationLimits) {
+        let entries=CodingField(origin,limits).values();
+        self.limits=limits;self.origin=entries;indexed=CodingIndex(entries).value();present=true;
+    }
+    present() is bool {present;}
+    values() is Sequencing<WeightedValue> {
+        let values is @WeightedValue=origin.map() -> entry {WeightedValue(entry.token(),entry.quality());};values;
+    }
+    string() is string {
+        confirm present else throw MissingNegotiationField();
+        let parts is @string=origin.map() -> entry {WeightedValue(entry.token(),entry.quality()).string();};parts.join(", ");
+    }
+    quality(coding is ContentCoding) is Quality {self.match(coding).quality();}
+    preference(available is Sequencing<ContentCoding>) is ContentCoding {
+        let count=available.size();confirm count>=0 else throw InvalidArgument("negative coding choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let choices is @ContentCoding=(0..count).map() -> index {available.item(index);};
+        let chosen=CodingChoice();
+        for choices -> coding {chosen=chosen.following(coding,self.match(coding));}
+        chosen.value();
+    }
+    private:
+    lookup(token is string) is @CodingPreference {
+        WeightedTokenLookup(indexed,token).value();
+    }
+    match(coding is ContentCoding) is CodingPreference {
+        let name=coding.string();
+        if !present {return CodingPreference(name,Quality(1.rat()),0);}
+        let exact=self.lookup(name);if exact.size()==1 {return exact[0];}
+        let wildcard=self.lookup("*");
+        if name=="identity" {
+            if wildcard.size()==1 && !wildcard[0].quality().acceptable() {return wildcard[0];}
+            return CodingPreference(name,Quality(1.rat()),origin.size());
+        }
+        if wildcard.size()==1 {return wildcard[0];}
+        CodingPreference(name,Quality(0.rat()),origin.size());
+    }
+}
+// Original client position is retained separately from the name-sorted index.
+// Ordering here is by token key only; quality/position determine selection.
+object CodingPreference does Comparing<CodingPreference> {
+    has token is string;has quality is Quality;has position is int;
+    CodingPreference(token is string, quality is Quality, position is int) {
+        confirm position>=0 else throw InvalidArgument("negative client coding position");
+        let checked=try {Method(token).string();}catch failure is InvalidMethod {throw InvalidNegotiation("coding token required");};
+        self.token=HttpAsciiLowercase(checked).string();self.quality=quality;self.position=position;
+    }
+    token() is string {token;}quality() is Quality {quality;}position() is int {position;}
+    order(other is CodingPreference) is Order {token.order(other.token());}
+}
+// Common exact key observation used by field-specific policies. The legacy
+// CodingPreference name is preserved for import compatibility.
+object WeightedTokenLookup {
+    has origin is Sorted<CodingPreference>;has token is string;
+    WeightedTokenLookup(origin is Sorted<CodingPreference>, token is string) {
+        self.origin=origin;self.token=HttpAsciiLowercase(Method(token).string()).string();
+    }
+    value() is @CodingPreference {
+        let probe=CodingPreference(token,Quality(0.rat()),0);
+        let at=LowerBound(origin:origin,item:probe).value();
+        if at<origin.size() && origin.item(at).token()==token {return [origin.item(at)];}
+        let empty is @CodingPreference=[];empty;
+    }
+}
+object CodingIndex {
+    has origin is @CodingPreference;CodingIndex(origin is @CodingPreference){self.origin=origin;}
+    value() is Sorted<CodingPreference> {
+        let sorted is Sorted<CodingPreference>=Sorted(origin:origin);
+        for (0..sorted.size()) -> index {
+            if index>0 {confirm sorted.item(index-1).token()!=sorted.item(index).token()
+                else throw InvalidNegotiation("duplicate coding preference");}
+        }
+        sorted;
+    }
+}
+object CodingField {
+    has origin is string;has limits is NegotiationLimits;
+    CodingField(origin is string, limits is NegotiationLimits){self.origin=origin;self.limits=limits;}
+    values() is @CodingPreference {
+        confirm origin.length()<=limits.bytes() else throw NegotiationLimitExceeded("bytes");
+        let field=try {Header(HeaderName("Accept-Encoding"),origin).value();}
+            catch failure is InvalidHeader {throw InvalidNegotiation("invalid field octets");};
+        if field=="" {let empty is @CodingPreference=[];return empty;}
+        let parts=field.split(",");confirm parts.size()<=limits.entries() else throw NegotiationLimitExceeded("entries");
+        let texts is @string=parts.map() -> part {Header(HeaderName("Accept-Encoding"),part).value();};
+        let nonempty is @string=texts.filter() -> part {part!="";};
+        let values is @CodingPreference=(0..nonempty.size()).map() -> index {CodingMember(nonempty[index],index).value();};values;
+    }
+}
+object CodingMember {
+    has origin is string;has position is int;
+    CodingMember(origin is string, position is int){self.origin=origin;self.position=position;}
+    value() is CodingPreference {
+        let fields=origin.split(";");confirm fields.size()>=1 && fields.size()<=2
+            else throw InvalidNegotiation("one optional q parameter required");
+        let token=Header(HeaderName("Accept-Encoding"),fields[0]).value();
+        let quality=if fields.size()==1 {Quality(1.rat());}else{
+            let weight=Header(HeaderName("Accept-Encoding"),fields[1]).value();
+            confirm weight.length()>=2 && (weight.slice(0,2)=="q=" || weight.slice(0,2)=="Q=")
+                else throw InvalidNegotiation("q parameter assignment required");
+            try {ParsedQuality(weight.slice(2,weight.length())).value();}
+            catch failure is InvalidQuality {throw InvalidNegotiation(failure.reason());}
+        };
+        CodingPreference(token,quality,position);
+    }
+}
+// Selection only retains a supplied immutable coding. Equal quality uses
+// client position, then keeps the already-seen (server-first) choice.
+object CodingChoice {
+    has selected is @ContentCoding;has quality is Quality;has position is int;
+    CodingChoice() {selected=[];quality=Quality(0.rat());position=0;}
+    following(coding is ContentCoding, preference is CodingPreference) is ^CodingChoice {
+        if preference.quality().acceptable() && (selected.size()==0
+            || preference.quality().order(quality)==Order.greater
+            || (preference.quality().order(quality)==Order.equal && preference.position()<position)) {
+            ^selected=[coding];^quality=preference.quality();^position=preference.position();
+        }
+    }
+    value() is ContentCoding {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+}
+// Charset spelling is a name, not a codec/provider. Only case is normalized;
+// alias resolution and registry recognition are intentionally separate.
+object CharsetName does Comparing<CharsetName> {
+    has origin is string;
+    CharsetName(origin is string) {
+        let token=try {Method(origin).string();}catch e is InvalidMethod {throw InvalidNegotiation("charset token required");};
+        confirm token!="*" else throw InvalidNegotiation("wildcard is not a concrete charset");
+        self.origin=HttpAsciiLowercase(token).string();
+    }
+    string() is string {origin;}
+    order(other is CharsetName) is Order {origin.order(other.string());}
+}
+// Shared weighted-token syntax/index, distinct charset matching policy:
+// present-empty accepts nothing, and no identity/Latin-1 preference is implicit.
+object AcceptedCharsets {
+    has origin is @CodingPreference;has indexed is Sorted<CodingPreference>;
+    has limits is NegotiationLimits;has present is bool;
+    AcceptedCharsets() {
+        let empty is @CodingPreference=[];origin=empty;indexed=Sorted(origin:empty);
+        limits=NegotiationLimits();present=false;
+    }
+    AcceptedCharsets(origin is string) {
+        let budget=NegotiationLimits();let entries=CodingField(origin,budget).values();
+        limits=budget;self.origin=entries;indexed=CodingIndex(entries).value();present=true;
+    }
+    AcceptedCharsets(origin is string, limits is NegotiationLimits) {
+        let entries=CodingField(origin,limits).values();self.limits=limits;
+        self.origin=entries;indexed=CodingIndex(entries).value();present=true;
+    }
+    present() is bool {present;}
+    values() is Sequencing<WeightedValue> {
+        let values is @WeightedValue=origin.map() -> entry {WeightedValue(entry.token(),entry.quality());};values;
+    }
+    string() is string {
+        confirm present else throw MissingNegotiationField();
+        let parts is @string=origin.map() -> entry {WeightedValue(entry.token(),entry.quality()).string();};parts.join(", ");
+    }
+    quality(charset is CharsetName) is Quality {self.lookup_match(charset).quality();}
+    preference(available is Sequencing<CharsetName>) is CharsetName {
+        let count=available.size();confirm count>=0 else throw InvalidArgument("negative charset choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let choices is @CharsetName=(0..count).map() -> index {available.item(index);};
+        let chosen=CharsetChoice();for choices -> charset {chosen=chosen.following(charset,self.lookup_match(charset));}
+        chosen.value();
+    }
+    private:
+    lookup(token is string) is @CodingPreference {
+        WeightedTokenLookup(indexed,token).value();
+    }
+    lookup_match(charset is CharsetName) is CodingPreference {
+        let name=charset.string();if !present {return CodingPreference(name,Quality(1.rat()),0);}
+        let exact=self.lookup(name);if exact.size()==1 {return exact[0];}
+        let wildcard=self.lookup("*");if wildcard.size()==1 {return wildcard[0];}
+        CodingPreference(name,Quality(0.rat()),origin.size());
+    }
+}
+object CharsetChoice {
+    has selected is @CharsetName;has quality is Quality;has position is int;
+    CharsetChoice() {selected=[];quality=Quality(0.rat());position=0;}
+    following(charset is CharsetName, preference is CodingPreference) is ^CharsetChoice {
+        if preference.quality().acceptable() && (selected.size()==0
+            || preference.quality().order(quality)==Order.greater
+            || (preference.quality().order(quality)==Order.equal && preference.position()<position)) {
+            ^selected=[charset];^quality=preference.quality();^position=preference.position();
+        }
+    }
+    value() is CharsetName {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+}
+object WeightedLanguageRange {
+    has range is BasicLanguageRange;has quality is Quality;
+    WeightedLanguageRange(range is BasicLanguageRange){self.range=range;quality=Quality(1.rat());}
+    WeightedLanguageRange(range is BasicLanguageRange, quality is Quality){self.range=range;self.quality=quality;}
+    range() is BasicLanguageRange {range;}quality() is Quality {quality;}
+    string() is string {range.string()+";q="+quality.string();}
+}
+object AcceptedLanguages {
+    has origin is @CodingPreference;has indexed is Sorted<CodingPreference>;
+    has limits is NegotiationLimits;has present is bool;
+    AcceptedLanguages() {
+        let empty is @CodingPreference=[];origin=empty;indexed=Sorted(origin:empty);
+        limits=NegotiationLimits();present=false;
+    }
+    AcceptedLanguages(origin is string) {
+        let budget=NegotiationLimits();let entries=LanguageField(origin,budget).values();
+        limits=budget;self.origin=entries;indexed=CodingIndex(entries).value();present=true;
+    }
+    AcceptedLanguages(origin is string, limits is NegotiationLimits) {
+        let entries=LanguageField(origin,limits).values();self.limits=limits;
+        self.origin=entries;indexed=CodingIndex(entries).value();present=true;
+    }
+    present() is bool {present;}
+    values() is Sequencing<WeightedLanguageRange> {
+        let values is @WeightedLanguageRange=origin.map() -> entry {
+            WeightedLanguageRange(BasicLanguageRange(entry.token()),entry.quality());
+        };values;
+    }
+    string() is string {
+        confirm present else throw MissingNegotiationField();
+        let parts is @string=origin.map() -> entry {WeightedValue(entry.token(),entry.quality()).string();};parts.join(", ");
+    }
+    quality(locale is Locale) is Quality {self.lookup_match(locale).quality();}
+    preference(available is Sequencing<Locale>) is Locale {
+        let count=available.size();confirm count>=0 else throw InvalidArgument("negative language choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let choices is @Locale=(0..count).map() -> index {available.item(index);};
+        let chosen=LanguageChoice();for choices -> locale {chosen=chosen.following(locale,self.lookup_match(locale));}
+        chosen.value();
+    }
+    private:
+    lookup_match(locale is Locale) is LanguageMatch {
+        if !present {return LanguageMatch(WeightedLanguageRange(BasicLanguageRange("*")),0);}
+        for LanguagePrefixes(locale).values() -> prefix {
+            let exact=WeightedTokenLookup(indexed,prefix.string()).value();
+            if exact.size()==1 {return LanguageMatch(WeightedLanguageRange(prefix,exact[0].quality()),exact[0].position());}
+        }
+        let wildcard=WeightedTokenLookup(indexed,"*").value();
+        if wildcard.size()==1 {return LanguageMatch(WeightedLanguageRange(BasicLanguageRange("*"),wildcard[0].quality()),wildcard[0].position());}
+        LanguageMatch(WeightedLanguageRange(BasicLanguageRange("*"),Quality(0.rat())),origin.size());
+    }
+}
+object LanguageField {
+    has origin is string;has limits is NegotiationLimits;
+    LanguageField(origin is string, limits is NegotiationLimits){self.origin=origin;self.limits=limits;}
+    values() is @CodingPreference {
+        let values=CodingField(origin,limits).values();
+        for values -> entry {
+            try{BasicLanguageRange(entry.token());}
+                catch e is InvalidLanguageRange {throw InvalidNegotiation(e.reason());}
+        }
+        values;
+    }
+}
+object LanguageMatch {
+    has origin is WeightedLanguageRange;has position is int;
+    LanguageMatch(origin is WeightedLanguageRange, position is int) {
+        confirm position>=0 else throw InvalidArgument("negative language preference position");
+        self.origin=origin;self.position=position;
+    }
+    quality() is Quality {origin.quality();}
+    specificity() is int {origin.range().specificity();}position() is int {position;}
+}
+object LanguageChoice {
+    has selected is @Locale;has quality is Quality;has specificity,position is int;
+    LanguageChoice(){selected=[];quality=Quality(0.rat());specificity=0;position=0;}
+    following(locale is Locale, preference is LanguageMatch) is ^LanguageChoice {
+        let ranked=preference.quality().order(quality);
+        if preference.quality().acceptable() && (selected.size()==0
+            || ranked==Order.greater
+            || (ranked==Order.equal && (preference.specificity()>specificity
+                || (preference.specificity()==specificity && preference.position()<position)))) {
+            ^selected=[locale];^quality=preference.quality();^specificity=preference.specificity();^position=preference.position();
+        }
+    }
+    value() is Locale {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+}
+object InvalidNegotiation does Error {
+    has reason is string;InvalidNegotiation(reason is string){self.reason=reason;}
+    reason() is string {reason;}text() is string {"invalid HTTP negotiation: "+reason;}
+}
+object NegotiationLimitExceeded does Error {
+    has kind is string;NegotiationLimitExceeded(kind is string){self.kind=kind;}
+    kind() is string {kind;}text() is string {"HTTP negotiation "+kind+" limit exceeded";}
+}
+object NoAcceptableValue does Error {
+    NoAcceptableValue();text() is string {"no acceptable supplied HTTP value";}
+}
+object MissingNegotiationField does Error {
+    MissingNegotiationField();text() is string {"missing HTTP negotiation field";}
+}
+object MediaRange {
+    has major,minor is string;has parameters is HttpMediaParameters;
+    has quality is Quality;has specificity is MediaSpecificity;
+    MediaRange() {
+        major="*";minor="*";let empty is @HttpMediaParameter=[];
+        parameters=HttpMediaParameters(empty);quality=Quality(1.rat());specificity=MediaSpecificity(0,0);
+    }
+    MediaRange(origin is string) {
+        let parsed=ParsedMediaRange(origin,HttpMediaLimits()).value();
+        major=parsed.type();minor=parsed.subtype();parameters=parsed.parameters();
+        quality=parsed.quality();specificity=parsed.specificity();
+    }
+    MediaRange(origin is string, limits is HttpMediaLimits) {
+        let parsed=ParsedMediaRange(origin,limits).value();
+        major=parsed.type();minor=parsed.subtype();parameters=parsed.parameters();
+        quality=parsed.quality();specificity=parsed.specificity();
+    }
+    MediaRange(type is string, subtype is string, parameters is HttpMediaParameters, quality is Quality) {
+        let type_name=try {Method(type).string();}catch failure is InvalidMethod {throw InvalidNegotiation("media type token required");};
+        let subtype_name=try {Method(subtype).string();}catch failure is InvalidMethod {throw InvalidNegotiation("media subtype token required");};
+        confirm type_name!="*" || subtype_name=="*" else throw InvalidNegotiation("invalid media wildcard");
+        confirm !parameters.membership("q") else throw InvalidNegotiation("q is reserved for range quality");
+        let kind=if type_name=="*" {0;}else{if subtype_name=="*" {1;}else{2;}};
+        major=HttpAsciiLowercase(type_name).string();minor=HttpAsciiLowercase(subtype_name).string();
+        self.parameters=parameters;self.quality=quality;specificity=MediaSpecificity(kind,parameters.entries().size());
+    }
+    type() is string {major;}subtype() is string {minor;}parameters() is HttpMediaParameters {parameters;}
+    quality() is Quality {quality;}specificity() is MediaSpecificity {specificity;}
+    string() is string {
+        major+"/"+minor+if parameters.entries().size()==0 {"";}else{"; "+parameters.string();}+";q="+quality.string();
+    }
+    matches(origin is HttpMediaType) is bool {
+        if major!="*" && major!=origin.type() {return false;}
+        if minor!="*" && minor!=origin.subtype() {return false;}
+        for parameters.entries() -> parameter {
+            let name=parameter.name();
+            if !origin.parameters().membership(name) || origin.parameters().first(name)!=parameter.value() {return false;}
+        }
+        true;
+    }
+}
+object ParsedMediaRange {
+    has origin is string;has limits is HttpMediaLimits;
+    ParsedMediaRange(origin is string, limits is HttpMediaLimits){self.origin=origin;self.limits=limits;}
+    value() is MediaRange {
+        let fields=try {HttpMediaScanning(origin,limits).value();}
+            catch failure is InvalidHttpMediaType {throw InvalidNegotiation(failure.reason());}
+            catch failure is HttpMediaLimitExceeded {throw NegotiationLimitExceeded(failure.kind());};
+        let wire=fields.wire_parameters();
+        let weights is @string=(0..wire.size()).map() -> index {
+            let entry=wire.item(index);
+            if entry.parameter().name()=="q" {
+                confirm !entry.quoted() else throw InvalidNegotiation("qvalue must not be quoted");
+                entry.parameter().value();
+            }else{"";}
+        };
+        let present is @string=weights.filter() -> value {value!="";};
+        let quality=if present.size()==0 {Quality(1.rat());}else{
+            try {ParsedQuality(present[0]).value();}catch failure is InvalidQuality {throw InvalidNegotiation(failure.reason());}
+        };
+        let parameters is @HttpMediaParameter=(0..wire.size()).map() -> index {wire.item(index).parameter();};
+        let kept is @HttpMediaParameter=parameters.filter() -> entry {entry.name()!="q";};
+        MediaRange(fields.type(),fields.subtype(),HttpMediaParameters(kept,limits.parameters()),quality);
+    }
+}
+object MediaSpecificity does Comparing<MediaSpecificity> {
+    has kind,parameters is int;
+    MediaSpecificity(kind is int, parameters is int) {
+        confirm kind>=0 && kind<=2 && parameters>=0 else throw InvalidArgument("invalid media specificity");
+        self.kind=kind;self.parameters=parameters;
+    }
+    kind() is int {kind;}parameters() is int {parameters;}
+    order(other is MediaSpecificity) is Order {
+        if kind!=other.kind() {kind.order(other.kind());}else{parameters.order(other.parameters());}
+    }
+}
+object MediaNegotiationLimits {
+    has bytes,entries,parameters,available is int;
+    MediaNegotiationLimits() {bytes=8192;entries=128;parameters=32;available=128;}
+    MediaNegotiationLimits(bytes is int, entries is int, parameters is int, available is int) {
+        confirm bytes>=0 && entries>=0 && parameters>=0 && available>=0 else throw InvalidArgument("negative media negotiation budget");
+        self.bytes=bytes;self.entries=entries;self.parameters=parameters;self.available=available;
+    }
+    bytes() is int {bytes;}entries() is int {entries;}parameters() is int {parameters;}available() is int {available;}
+}
+object AcceptedMediaTypes {
+    has origin is @MediaRange;has limits is MediaNegotiationLimits;has present is bool;
+    AcceptedMediaTypes() {origin=[];limits=MediaNegotiationLimits();present=false;}
+    AcceptedMediaTypes(origin is string) {
+        let budget=MediaNegotiationLimits();self.origin=MediaField(origin,budget).values();limits=budget;present=true;
+    }
+    AcceptedMediaTypes(origin is string, limits is MediaNegotiationLimits) {
+        self.origin=MediaField(origin,limits).values();self.limits=limits;present=true;
+    }
+    present() is bool {present;}values() is Sequencing<MediaRange> {origin;}
+    string() is string {
+        confirm present else throw MissingNegotiationField();
+        let parts is @string=origin.map() -> range {range.string();};parts.join(", ");
+    }
+    quality(media is HttpMediaType) is Quality {self.lookup_match(media).quality();}
+    preference(available is Sequencing<HttpMediaType>) is HttpMediaType {
+        let count=available.size();confirm count>=0 else throw InvalidArgument("negative media choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let choices is @HttpMediaType=(0..count).map() -> index {available.item(index);};
+        let selected=MediaChoice();for choices -> media {selected=selected.following(media,self.lookup_match(media));}
+        selected.value();
+    }
+    private:
+    lookup_match(media is HttpMediaType) is MediaMatch {
+        if !present {return MediaMatch(MediaRange(),0);}
+        let lookup_match=MediaMatch();
+        for (0..origin.size()) -> index {
+            let range=origin[index];if range.matches(media) {lookup_match=lookup_match.following(range,index);}
+        }
+        lookup_match;
+    }
+}
+object MediaMatch {
+    has selected is @MediaRange;has position is int;
+    MediaMatch() {selected=[];position=0;}
+    MediaMatch(range is MediaRange, position is int) {
+        confirm position>=0 else throw InvalidArgument("negative media match position");selected=[range];self.position=position;
+    }
+    following(range is MediaRange, position is int) is ^MediaMatch {
+        confirm position>=0 else throw InvalidArgument("negative media match position");
+        if selected.size()==0 || range.specificity().order(selected[0].specificity())==Order.greater {
+            ^selected=[range];^position=position;
+        }
+    }
+    quality() is Quality {if selected.size()==0 {Quality(0.rat());}else{selected[0].quality();}}
+    specificity() is MediaSpecificity {if selected.size()==0 {MediaSpecificity(0,0);}else{selected[0].specificity();}}
+    position() is int {position;}
+}
+object MediaChoice {
+    has selected is @HttpMediaType;has matched is MediaMatch;
+    MediaChoice() {selected=[];matched=MediaMatch();}
+    following(media is HttpMediaType, lookup_match is MediaMatch) is ^MediaChoice {
+        let quality=lookup_match.quality().order(matched.quality());let specificity=lookup_match.specificity().order(matched.specificity());
+        if lookup_match.quality().acceptable() && (selected.size()==0 || quality==Order.greater
+            || (quality==Order.equal && (specificity==Order.greater
+                || (specificity==Order.equal && lookup_match.position()<matched.position())))) {
+            ^selected=[media];^matched=lookup_match;
+        }
+    }
+    value() is HttpMediaType {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+}
+object MediaField {
+    has origin is string;has limits is MediaNegotiationLimits;
+    MediaField(origin is string, limits is MediaNegotiationLimits){self.origin=origin;self.limits=limits;}
+    values() is @MediaRange {
+        confirm origin.length()<=limits.bytes() else throw NegotiationLimitExceeded("bytes");
+        let field=try {Header(HeaderName("Accept"),origin).value();}
+            catch failure is InvalidHeader {throw InvalidNegotiation("invalid Accept field octets");};
+        if field=="" {let empty is @MediaRange=[];return empty;}
+        let parts=MediaMembers(field,limits.entries()).values();
+        let texts is @string=parts.map() -> part {Header(HeaderName("Accept"),part).value();};
+        let nonempty is @string=texts.filter() -> part {part!="";};
+        let values is @MediaRange=nonempty.map() -> part {MediaRange(part,HttpMediaLimits(limits.bytes(),limits.parameters()));};values;
+    }
+}
+// Quote/escape-aware member boundaries: no split(',') corrupts a parameter.
+object MediaMembers {
+    has origin is string;has maximum is int;
+    MediaMembers(origin is string, maximum is int){self.origin=origin;self.maximum=maximum;}
+    values() is @string {
+        let state=MediaMemberPosition(origin,maximum);let bytes=Latin1Encoded(origin).bytes();
+        for (0..bytes.size()) -> index {state=state.following(index,bytes[index].int());}
+        state.values();
+    }
+}
+object MediaMemberPosition {
+    has origin is string;has start,slots,maximum is int;has quoted,escaped is bool;has reversed is List<string>;
+    MediaMemberPosition(origin is string, maximum is int) {
+        confirm maximum>=0 else throw InvalidArgument("negative Accept member budget");
+        let count=if origin=="" {0;}else{1;};confirm count<=maximum else throw NegotiationLimitExceeded("entries");
+        self.origin=origin;self.maximum=maximum;start=0;slots=count;quoted=false;escaped=false;
+        let empty is List<string>=EmptyList();reversed=empty;
+    }
+    following(index is int, code is int) is ^MediaMemberPosition {
+        confirm index>=start && index<origin.length() && code>=0 && code<=255
+            else throw InvalidArgument("invalid Accept scan coordinate");
+        if escaped {^escaped=false;}
+        else {
+            if quoted {
+                if code==92 {^escaped=true;}
+                else {if code==34 {^quoted=false;}}
+            }else{
+                if code==34 {^quoted=true;}
+                else {if code==44 {
+                    confirm slots<maximum else throw NegotiationLimitExceeded("entries");
+                    ^reversed=reversed.prefix(origin.slice(start,index));^start=index+1;^slots=slots+1;
+                }}
+            }
+        }
+    }
+    values() is @string {
+        confirm !quoted && !escaped else throw InvalidNegotiation("unterminated quoted media parameter");
+        if origin=="" {let empty is @string=[];return empty;}
+        let all=reversed.prefix(origin.slice(start,origin.length()));
+        let backwards is @string=all.map() -> value {value;};
+        let values is @string=(0..backwards.size()).map() -> index {backwards[backwards.size()-index-1];};values;
+    }
+}
+object InvalidQuality does Error {
+    has reason is string;InvalidQuality(reason is string){self.reason=reason;}
+    reason() is string {reason;}text() is string {"invalid HTTP quality: "+reason;}
+}
+object InvalidWeightedValue does Error {
+    has reason is string;InvalidWeightedValue(reason is string){self.reason=reason;}
+    reason() is string {reason;}text() is string {"invalid weighted HTTP token: "+reason;}
+}
+
+test "quality is exact and zero refuses a preference" {
+    test.is(ParsedQuality("0.010").value().string(),"0.01");
+    test.is(Quality(0.rat()).acceptable(),false);
+    test.is(Quality(1.rat()/2.rat()),ParsedQuality("0.500").value());
+}
+test "weighted tokens share quality but preserve field spelling" {
+    test.is(WeightedValue("GZip").string(),"GZip;q=1");
+    test.is(WeightedValue("*",Quality(0.rat())).string(),"*;q=0");
+}
+test "coding preferences exclude exact zero before wildcard" {
+    let preferences=AcceptedContentCodings("gzip;q=0, *;q=1");
+    test.is(preferences.quality(ContentCoding("gzip")).acceptable(),false);
+    test.is(preferences.preference([ContentCoding("gzip"),ContentCoding("br")]).string(),"br");
+}
+test "media specificity takes precedence over a broad positive wildcard" {
+    let preferences=AcceptedMediaTypes("*/*;q=1, text/plain;q=0");
+    test.is(preferences.quality(HttpMediaType("text/plain")).acceptable(),false);
+    test.is(preferences.preference([HttpMediaType("text/plain"),HttpMediaType("text/html")]).string(),"text/html");
+}
+test "charset exact refusal overrides wildcard without an implicit legacy default" {
+    let accepted=AcceptedCharsets("utf-8;q=0,*;q=0.5");
+    test.is(accepted.quality(CharsetName("UTF-8")).string(),"0");
+    test.is(accepted.preference([CharsetName("utf-8"),CharsetName("us-ascii")]).string(),"us-ascii");
+    test.is(AcceptedCharsets("").quality(CharsetName("iso-8859-1")).string(),"0");
+}
+test "language matching uses most-specific basic range before wildcard quality" {
+    let accepted=AcceptedLanguages("en;q=0,*;q=0.5");
+    test.is(accepted.quality(Locale("en","US")).string(),"0");
+    test.is(accepted.preference([Locale("en","US"),Locale("fr")]).string(),"fr");
+}

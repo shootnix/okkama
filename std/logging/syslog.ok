@@ -1,0 +1,85 @@
+module logging/syslog v1.0.0;
+import "logging/level" take LogLevel;
+import "logging/record" take LogRecord;
+import "logging/line" take JsonLogLine;
+import "logging/write" take LogWriting;
+import "logging/queue" take QueuedLogs,LogQueueOptions,LogOverflow,LogDelivering,LogDraining;
+import "io/stream" take ByteSource,Closing,IncompleteWrite;
+import "encoding/utf" take Utf8Encoded;
+import "net/udp" take UdpConnection,DatagramTooLarge;
+import "async/scope" take Supervising;
+import "numbers/bigint" take BigInt;
+import "time/duration" take Duration,DurationUnit;
+import "time/rfc3339" take Rfc3339;
+
+enum SyslogFacility=(kernel,user,mail,daemon,authorization,syslog,printer,news,uucp,clock,private_authorization,ftp,ntp,audit,alert,clock2,local0,local1,local2,local3,local4,local5,local6,local7);
+object SyslogFacilityCode{
+    has origin is SyslogFacility;SyslogFacilityCode(origin is SyslogFacility){self.origin=origin;}
+    value() is int{match origin{
+        case SyslogFacility.kernel{0;}case SyslogFacility.user{1;}case SyslogFacility.mail{2;}case SyslogFacility.daemon{3;}
+        case SyslogFacility.authorization{4;}case SyslogFacility.syslog{5;}case SyslogFacility.printer{6;}case SyslogFacility.news{7;}
+        case SyslogFacility.uucp{8;}case SyslogFacility.clock{9;}case SyslogFacility.private_authorization{10;}case SyslogFacility.ftp{11;}
+        case SyslogFacility.ntp{12;}case SyslogFacility.audit{13;}case SyslogFacility.alert{14;}case SyslogFacility.clock2{15;}
+        case SyslogFacility.local0{16;}case SyslogFacility.local1{17;}case SyslogFacility.local2{18;}case SyslogFacility.local3{19;}
+        case SyslogFacility.local4{20;}case SyslogFacility.local5{21;}case SyslogFacility.local6{22;}case SyslogFacility.local7{23;}
+    }}
+}
+object SyslogSeverity{
+    has origin is LogLevel;SyslogSeverity(origin is LogLevel){self.origin=origin;}
+    value() is int{match origin{case LogLevel.debug{7;}case LogLevel.info{6;}case LogLevel.warning{4;}case LogLevel.error{3;}case LogLevel.critical{2;}}}
+}
+object SyslogHeaderName{
+    has origin is string;
+    SyslogHeaderName(origin is string,maximum is int){
+        confirm origin.length()<=maximum else throw InvalidSyslogOptions();
+        let bytes=Utf8Encoded(origin).bytes();let valid=bytes.reduce(true)->allowed,byte{allowed && byte.int()>=33 && byte.int()<=126;};
+        confirm bytes.size()<=maximum && valid else throw InvalidSyslogOptions();
+        self.origin=if origin==""{"-";}else{origin;};
+    }
+    string() is string{origin;}
+}
+object SyslogOptions{
+    has facility is SyslogFacility;has host,application is string;has maximum is int;
+    SyslogOptions(facility is SyslogFacility,host is string,application is string,maximum_payload is int){
+        confirm maximum_payload>0 && maximum_payload<=65507 else throw InvalidSyslogOptions();
+        self.facility=facility;self.host=SyslogHeaderName(host,255).string();self.application=SyslogHeaderName(application,48).string();maximum=maximum_payload;
+    }
+    facility() is SyslogFacility{facility;}host() is string{host;}application() is string{application;}maximum_payload() is int{maximum;}
+}
+// RFC5424 UTC header, microseconds without rounding. The complete structured
+// record is the BOM-marked UTF8 MSG; no newline, truncation or resend is added.
+object SyslogMessage does ByteSource{
+    has origin is @byte;
+    SyslogMessage(record is LogRecord,options is SyslogOptions){
+        let priority=SyslogFacilityCode(options.facility()).value()*8+SyslogSeverity(record.level()).value();
+        let time=Rfc3339(record.time(),Duration(0.rat(),DurationUnit.second)).string();let parts=time.split(".");
+        let timestamp=if parts.size()==1{time;}else{
+            let fraction=parts[1].slice(0,parts[1].length()-1);let length=if fraction.length()>6{6;}else{fraction.length();};parts[0]+"."+fraction.slice(0,length)+"Z";
+        };
+        let process=if record.context().process()==0{"-";}else{record.context().process().string();};
+        let header=Utf8Encoded("<"+priority.string()+">1 "+timestamp+" "+options.host()+" "+options.application()+" "+process+" - - ").bytes();
+        let message=Utf8Encoded(JsonLogLine(record).string()).bytes();let bom is @byte=[239.byte(),187.byte(),191.byte()];
+        let size=header.size()+bom.size()+message.size();confirm size<=options.maximum_payload() else throw DatagramTooLarge(size);
+        origin=(0..size).map()->index{if index<header.size(){header[index];}else if index<header.size()+3{bom[index-header.size()];}else{message[index-header.size()-3];}};
+    }
+    bytes() is @byte{origin;}
+}
+object UdpSyslogDelivery does LogDelivering{
+    has origin is UdpConnection;has options is SyslogOptions;
+    UdpSyslogDelivery(origin is UdpConnection,options is SyslogOptions){self.origin=origin;self.options=options;}
+    async deliver(record is LogRecord) is int{
+        let packet=SyslogMessage(record,options);let count=await origin.send(packet);
+        confirm count==packet.bytes().size() else throw IncompleteWrite(count);count;
+    }
+}
+object SyslogLogs does LogWriting,LogDraining,Closing{
+    has queue is QueuedLogs;
+    SyslogLogs(origin is UdpConnection,options is SyslogOptions,queue_options is LogQueueOptions,scope is Supervising<int>){queue=QueuedLogs(UdpSyslogDelivery(origin,options),queue_options,scope);}
+    SyslogLogs(origin is UdpConnection,facility is SyslogFacility,host is string,application is string,capacity is int,overflow is LogOverflow,scope is Supervising<int>){queue=QueuedLogs(UdpSyslogDelivery(origin,SyslogOptions(facility,host,application,2048)),LogQueueOptions(capacity,overflow),scope);}
+    write(record is LogRecord) is void{queue.write(record);}
+    async drain() is void{await queue.drain();}
+    dropped_records() is BigInt{queue.dropped_records();}
+    closed() is bool{queue.closed();}close() is void{queue.close();}
+    destroy{self.close();}
+}
+object InvalidSyslogOptions does Error{InvalidSyslogOptions();text() is string{"invalid syslog header or UDP payload limit";}}

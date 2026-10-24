@@ -1,0 +1,56 @@
+// ChatRoom: канал команд и immutable-состояния комнаты
+// Один владелец обрабатывает JoinRoom, LeaveRoom и BroadcastRoom по очереди.
+// Пример: group.start(room.run()); let member=await room.subscribe(); await room.publish("привет");
+// Владелец держит run до завершения приложения. Подписчик читает receive(), затем close(); вызывающий код выполняет room.leave(member).
+// Это модуль приложения; запускайте использующую его программу через ../run.
+
+module cookbook/chat_room v1.0.0;
+import "async/channel" take Channel,ChannelClosed;
+import "uuid/generation" take Uuid4s;
+import "random/source" take SecureRandom;
+object ChatSubscription {
+    has identity is string;has queue is Channel<string>;
+    ChatSubscription(){identity=Uuid4s(SecureRandom()).sample().string();queue=Channel(32);}
+    id() is string{identity;}
+    async send(text is string) is void{await queue.sending().send(text);}
+    async receive() is string{await queue.receiving().item();}
+    close() is void{queue.sending().close();queue.receiving().close();}
+}
+// A value describing room membership. Changes return a new snapshot.
+object RoomState {
+    has members is @ChatSubscription;
+    RoomState(members is @ChatSubscription){self.members=members;}
+    joined(member is ChatSubscription) is ^RoomState{
+        let following is @ChatSubscription=(0..members.size()+1).map()->index{if index<members.size(){members[index];}else{member;}};^members=following;
+    }
+    left(id is string) is ^RoomState{let following is @ChatSubscription=members.filter()->member{member.id()!=id;};^members=following;}
+    async broadcast(text is string) is void{
+        for members->member{try{await member.send(text);}catch closed is ChannelClosed{}}
+    }
+}
+role RoomCommand {async next(state is RoomState) is RoomState;}
+object JoinRoom does RoomCommand {
+    has member is ChatSubscription;JoinRoom(member is ChatSubscription){self.member=member;}
+    async next(state is RoomState) is RoomState{state.joined(member);}
+}
+object LeaveRoom does RoomCommand {
+    has id is string;LeaveRoom(id is string){self.id=id;}
+    async next(state is RoomState) is RoomState{state.left(id);}
+}
+object BroadcastRoom does RoomCommand {
+    has text is string;BroadcastRoom(text is string){self.text=text;}
+    async next(state is RoomState) is RoomState{await state.broadcast(text);state;}
+}
+object ChatRoom {
+    has commands is Channel<RoomCommand>;
+    ChatRoom(){commands=Channel(64);}
+    async subscribe() is ChatSubscription{let member=ChatSubscription();let command is RoomCommand=JoinRoom(member);await commands.sending().send(command);member;}
+    async leave(member is ChatSubscription) is void{let command is RoomCommand=LeaveRoom(member.id());await commands.sending().send(command);}
+    async publish(text is string) is void{let command is RoomCommand=BroadcastRoom(text);await commands.sending().send(command);}
+    async run() is int{
+        let empty is @ChatSubscription=[];let state=RoomState(empty);
+        loop{try{let command=await commands.receiving().item();state=await command.next(state);}catch end is ChannelClosed{last;}}
+        0;
+    }
+    close() is void{commands.sending().close();}
+}

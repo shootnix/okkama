@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.defer.failure-beats-destroy",
+  "title": "a defer failure outranks a destroy failure",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "DEFER.FAILURES",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "LIFE.DESTROY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "fragile destroy\ndefer wins\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 19: without a body failure, the first defer failure wins over automatic destroy failures; cleanup still continues."
+  },
+  "status": "mandatory"
+}

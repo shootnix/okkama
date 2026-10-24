@@ -1,0 +1,23 @@
+// Определить media type по имени файла
+//
+// Определить тип файла по расширению: StandardMediaTypes, MappedMediaTypes и SystemMediaTypes дают явный источник соответствий.
+//
+// Запуск: ./examples/cookbook/run lab example-mime-types
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-mime-types
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mime/types" take StandardMediaTypes, MappedMediaTypes, MediaTypeExtension;
+import "mime/media_type" take MediaType;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+main() is int {
+    let standard=StandardMediaTypes();
+    Stdout().writeln(standard.type(Path("not-opened/archive.TAR.GZ")).string());
+    let personal=MappedMediaTypes([MediaTypeExtension("ok",MediaType("text/plain"))],standard);
+    Stdout().writeln(personal.type(Path("source.ok")).string());
+    let extensions=personal.extensions(MediaType("text/plain")).map() -> extension {extension;};
+    Stdout().writeln(extensions.join(", "));
+    0;
+}

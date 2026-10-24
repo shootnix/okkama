@@ -1,0 +1,17 @@
+// Вызвать XML-RPC сервис учётной системы
+//
+// Обменяться данными со старым XML-RPC сервисом: типизированные значения, вызовы и результаты сохраняют wire-представление.
+//
+// Запуск: ./examples/cookbook/run lab example-http-xmlrpc
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-xmlrpc
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "http/xmlrpc" take XmlRpcCall,XmlRpcInteger,XmlRpcText,XmlRpcCallWire,ParsedXmlRpcCall,XmlRpcLimits;
+import "io/stdout" take Stdout;
+main() is int{
+    let limits=XmlRpcLimits();let call=XmlRpcCall("customer.save",[XmlRpcInteger(7),XmlRpcText("Ada")]);
+    let parsed=ParsedXmlRpcCall(XmlRpcCallWire(call,limits).bytes(),limits).call();
+    Stdout().writeln(parsed.method()+" "+parsed.parameters().size().string());0;
+}

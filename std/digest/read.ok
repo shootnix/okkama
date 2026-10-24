@@ -1,0 +1,76 @@
+module digest/read v1.0.0;
+
+import "digest/state" take Digesting;
+import "io/stream" take Reading;
+import "net/stream" take AsyncReading;
+import "error" take InvalidArgument;
+import "io/buffer" take ByteBuffer;
+
+// Digests of byte streams. ReadDigest consumes a borrowed synchronous Reading
+// until its empty end-of-stream chunk and returns the successor of the given
+// digest over everything read; AsyncReadDigest does the same over AsyncReading.
+// The chunk size bounds each read (default 65536; non-positive sizes are
+// InvalidArgument at construction). Construction reads nothing; result() reads
+// the stream once per call, so a second call continues from where the source
+// is. Neither object closes the source. Source errors propagate unchanged.
+//
+//     let digest = ReadDigest(file.reading(), Sha256()).result();
+object ReadDigest {
+    has origin is Reading;
+    has digest is Digesting;
+    has chunk is int;
+
+    ReadDigest(origin is Reading, digest is Digesting) {
+        self.origin = origin;
+        self.digest = digest;
+        chunk = 65536;
+    }
+
+    ReadDigest(origin is Reading, digest is Digesting, chunk is int) {
+        confirm chunk > 0 else throw InvalidArgument("digest read chunk must be positive");
+        self.origin = origin;
+        self.digest = digest;
+        self.chunk = chunk;
+    }
+
+    result() is Digesting { self.continued(digest); }
+
+    continued(current is Digesting) is Digesting {
+        let bytes = origin.bytes(chunk);
+        if bytes.size() == 0 { current; } else { self.continued(current.state(bytes)); }
+    }
+}
+
+object AsyncReadDigest {
+    has origin is AsyncReading;
+    has digest is Digesting;
+    has chunk is int;
+
+    AsyncReadDigest(origin is AsyncReading, digest is Digesting) {
+        self.origin = origin;
+        self.digest = digest;
+        chunk = 65536;
+    }
+
+    AsyncReadDigest(origin is AsyncReading, digest is Digesting, chunk is int) {
+        confirm chunk > 0 else throw InvalidArgument("digest read chunk must be positive");
+        self.origin = origin;
+        self.digest = digest;
+        self.chunk = chunk;
+    }
+
+    async result() is Digesting { await self.continued(digest); }
+
+    async continued(current is Digesting) is Digesting {
+        let bytes = await origin.bytes(chunk);
+        if bytes.size() == 0 { current; } else { await self.continued(current.state(bytes)); }
+    }
+}
+
+test "stream digests equal digests of the whole input" {
+    let input is @byte = (0..1000).map() -> i { (i % 256).byte(); };
+    let whole = Digesting.fake().state(input).bytes();
+    test.is(ReadDigest(ByteBuffer(input).reading(), Digesting.fake(), 7).result().bytes(), whole);
+    test.is(ReadDigest(ByteBuffer().reading(), Digesting.fake()).result().bytes().size(), 0);
+    test.ok(try { ReadDigest(ByteBuffer().reading(), Digesting.fake(), 0); false; } catch e is InvalidArgument { true; });
+}

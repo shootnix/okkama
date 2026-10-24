@@ -1,0 +1,31 @@
+module app v1.0.0;
+import "http/http1_writing" take Http1ResponseHeadWriting;
+import "http/http1_body_writing" take Http1BodyWriting;
+import "http/http1_reading" take Http1ResponseHeadReading;
+import "http/http1_body" take Http1BodyReading;
+import "http/http1_head" take ParsedHttp1ResponseHead;
+import "http/http1_framing" take Http1ResponseFraming;
+import "http/method" take Method;
+import "http/body" take ByteBody;
+import "net/unix" take UnixPaired,UnixConnection;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "io/stdout" take Stdout;
+object ConnectionOwner does Closing {
+    has origin is UnixConnection;ConnectionOwner(origin is UnixConnection){self.origin=origin;}
+    closed() is bool{origin.closed();}close() is void{origin.close();}
+}
+async main() is int {
+    let pair=await UnixPaired().result();let input=pair.first();let output=pair.second();defer input.close();defer output.close();
+    let head=ParsedHttp1ResponseHead("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").value();
+    let plan=Http1ResponseFraming(head,Method("GET")).plan();
+    await Http1ResponseHeadWriting(output.output(),head,Method("GET")).result();
+    await Http1BodyWriting(output.output(),ByteBody(Latin1Encoded("body").bytes()),plan,head.headers()).result();
+    let parsed=await Http1ResponseHeadReading(input.input()).result();
+    let reader=Http1BodyReading(input.input(),ConnectionOwner(input),plan,parsed.remainder(),parsed.head().headers());defer reader.close();
+    let buffer=ByteBuffer();defer buffer.closing().close();
+    loop {let chunk=await reader.bytes(2);last if chunk.size()==0;buffer.writing().write(ByteSnapshot(chunk));}
+    Stdout().writeln(Latin1Decoded(buffer.content().bytes()).string());0;
+}

@@ -1,0 +1,38 @@
+module http/proxy_request v1.0.0;
+import "http/message" take Request;
+import "http/header" take Headers,Header,HeaderName;
+import "http/method" take Method;
+import "http/target" take AuthorityTarget,RequestTargetKind;
+import "http/client_request" take HttpDirectRequest;
+import "http/version" take HttpVersion;
+import "url/value" take Url,UrlAuthority,MissingUrlPort;
+object HttpForwardRequest {
+    has request is Request;
+    HttpForwardRequest(origin is Request,proxy_fields is @Header){
+        confirm origin.target().kind()==RequestTargetKind.absolute && origin.target().url().parts().scheme()=="http" else throw InvalidProxyRequest("absolute HTTP target required");
+        let source=Request(origin.method(),origin.target(),origin.headers(),origin.body(),HttpVersion.http_1_1);let checked=HttpDirectRequest(source);
+        let fields=ProxyRequestFields(checked.request().headers(),proxy_fields).headers();
+        request=Request(source.method(),source.target(),fields,source.body(),source.version());
+    }
+    request() is Request{request;}
+}
+object HttpConnectRequest {
+    has request is Request;
+    HttpConnectRequest(origin is Url,proxy_fields is @Header){
+        let parts=origin.parts();confirm parts.scheme()=="https" && !parts.authority().userinfo().present() else throw InvalidProxyRequest("HTTPS tunnel target required");
+        let port=try{parts.authority().port();}catch e is MissingUrlPort{443;};let authority=UrlAuthority(parts.authority().host(),port);
+        let fields=ProxyRequestFields(Headers([Header(HeaderName("Host"),authority.string())]),proxy_fields).headers();
+        request=Request(Method("CONNECT"),AuthorityTarget(authority),fields);
+    }
+    request() is Request{request;}
+}
+object ProxyRequestFields {
+    has headers is Headers;
+    ProxyRequestFields(origin is Headers,fields is @Header){
+        confirm !origin.membership(HeaderName("Proxy-Authorization")) && fields.size()<=1 else throw InvalidProxyRequest("proxy authorization conflict");
+        for fields -> field{confirm field.name().lowercase()=="proxy-authorization" else throw InvalidProxyRequest("proxy field required");}
+        headers=if fields.size()==1{origin.addition(fields[0]);}else{origin;};
+    }
+    headers() is Headers{headers;}
+}
+object InvalidProxyRequest does Error{has reason is string;InvalidProxyRequest(reason is string){self.reason=reason;}text() is string{"invalid proxy request: "+reason;}}

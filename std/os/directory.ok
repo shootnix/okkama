@@ -1,0 +1,35 @@
+module os/directory v1.0.0;
+
+import "fs/directory" take DirectoryLocating;
+import "fs/file" take FileSystemFailure;
+import "fs/path" take Path;
+import "runtime/fs" take cwd, path_decode;
+
+// WorkingDirectory denotes the process working directory without changing it.
+// Its constructor performs no runtime work; path() observes the directory at
+// the moment it is called:
+//
+//     let working = WorkingDirectory();
+//     output.writeln(working.path().string());
+//
+// It can be passed directly to APIs that need a directory location:
+//
+//     for DirectoryEntries(origin: working) -> entry {
+//         output.writeln(entry.path().string());
+//     }
+//
+// This module deliberately exposes no process-global chdir operation. Supply
+// a DirectoryLocating object explicitly to commands and filesystem objects.
+
+object WorkingDirectory does DirectoryLocating {
+    WorkingDirectory();
+
+    path() is Path {
+        try {
+            Path(path_decode(cwd()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}

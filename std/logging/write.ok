@@ -1,0 +1,49 @@
+module logging/write v1.0.0;
+import "logging/record" take LogRecord;
+import "collections/sequence" take Sequencing;
+import "async/atomic" take Atomic;
+import "numbers/bigint" take BigInt,BigSum;
+role LogWriting{write(origin is LogRecord) is void;}
+object DiscardingLogs does LogWriting{DiscardingLogs();write(origin is LogRecord) is void{}}
+object CollectedLogs does LogWriting{
+    has origin is Atomic<@LogRecord>;has capacity is int;
+    CollectedLogs(){let empty is @LogRecord=[];origin=Atomic(empty);capacity=4096;}
+    CollectedLogs(capacity is int){confirm capacity>=0 else throw LogCollectionLimit();let empty is @LogRecord=[];origin=Atomic(empty);self.capacity=capacity;}
+    write(record is LogRecord) is void{let old=origin.value();confirm old.size()<capacity else throw LogCollectionLimit();let revised is @LogRecord=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{record;}};origin.replace(revised);}
+    size() is int{origin.value().size();}
+    records() is Sequencing<LogRecord>{origin.value();}
+}
+object BroadcastLogs does LogWriting{
+    has destinations is @LogWriting;
+    BroadcastLogs(destinations is Sequencing<LogWriting>){let size=destinations.size();confirm size>=0 && size<=128 else throw InvalidLogDestinations();let snapshot is @LogWriting=(0..size).map()->index{destinations.item(index);};self.destinations=snapshot;}
+    write(origin is LogRecord) is void{
+        let empty is @Error=[];let failures=Atomic(empty);
+        for destinations->destination{
+            try{destination.write(origin);}
+            catch failure is Error{let old=failures.value();let revised is @Error=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{failure;}};failures.replace(revised);}
+        }
+        if failures.value().size()>0{throw LogDeliveryFailure(failures.value());}
+    }
+}
+object FallbackLogs does LogWriting{
+    has primary,fallback is LogWriting;
+    FallbackLogs(primary is LogWriting,fallback is LogWriting){self.primary=primary;self.fallback=fallback;}
+    write(origin is LogRecord) is void{
+        try{primary.write(origin);}
+        catch first is Error{try{fallback.write(origin);}catch second is Error{throw LogDeliveryFailure([first,second]);}}
+    }
+}
+object BestEffortLogs does LogWriting{
+    has origin is LogWriting;has count is Atomic<BigInt>;
+    BestEffortLogs(origin is LogWriting){self.origin=origin;count=Atomic(BigInt("0"));}
+    write(record is LogRecord) is void{try{origin.write(record);}catch failure is Error{count.replace(BigSum(left:count.value(),right:BigInt("1")).value());}}
+    failures() is BigInt{count.value();}
+}
+object LogDeliveryFailure does Error{
+    has failures is @Error;
+    LogDeliveryFailure(causes is Sequencing<Error>){let size=causes.size();confirm size>0 && size<=128 else throw InvalidLogDestinations();let snapshot is @Error=(0..size).map()->index{causes.item(index);};failures=snapshot;}
+    causes() is Sequencing<Error>{failures;}
+    text() is string{"log delivery failed at "+failures.size().string()+" destination(s)";}
+}
+object InvalidLogDestinations does Error{InvalidLogDestinations();text() is string{"invalid log destination/failure count";}}
+object LogCollectionLimit does Error{LogCollectionLimit();text() is string{"log collection capacity exceeded or invalid";}}

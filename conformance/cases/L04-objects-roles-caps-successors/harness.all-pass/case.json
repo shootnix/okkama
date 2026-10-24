@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.harness.all-pass",
+  "title": "harness: passing checks print ok lines and exit 0",
+  "purpose": "Positive control for the conformance harness itself.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.LOCAL-REBIND",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "SUCC.NEW-IDENTITY",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - sum\nok 2 - concat\nok 3 - less\nok 4 - bool\nok 5 - array\nok 6 - texts\nok 7 - half\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "conformance/harness/okkama/conformance/check.ok",
+    "docs/okkama-spec-11072026.md#11.9",
+    "docs/okkama-spec-11072026.md#9.12"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "harness contract: each check prints 'ok N - label'; done() prints 'checks: T, failed: F' and returns 0 when F = 0. All seven checks are true by spec 8.3/8.4."
+  },
+  "status": "mandatory"
+}

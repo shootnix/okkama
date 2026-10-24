@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Loader {
+    async load() is int;
+}
+
+object NetLoader does Loader {
+    NetLoader();
+    async load() is int { 5; }
+}
+
+async main() is int {
+    let out = Stdout();
+    let loader is Loader = NetLoader();
+    out.writeln((await loader.load()).string());
+    0;
+}

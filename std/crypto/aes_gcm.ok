@@ -1,0 +1,45 @@
+module crypto/aes_gcm v1.0.0;
+
+import "crypto/aead" take Sealing;
+import "crypto/secret" take SecretBytes;
+import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
+import "encoding/hex" take HexEncoded;
+
+// AES-GCM (NIST SP 800-38D) with a 128- or 256-bit key, 96-bit nonce and
+// 128-bit tag. The key is a SecretBytes capability; it is exported to the host
+// per operation. See crypto/aead for the sealing contract.
+object AesGcm does Sealing {
+    has key is SecretBytes;
+    AesGcm(key is SecretBytes) {
+        confirm key.size() == 16 || key.size() == 32 else throw InvalidCryptoInput("AES-GCM key must be 16 or 32 bytes");
+        self.key = key;
+    }
+    nonce_size() is int { 12; }
+    tag_size() is int { 16; }
+    algorithm() is string { if key.size() == 16 { "aes-128-gcm"; } else { "aes-256-gcm"; } }
+    sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte {
+        HostOperation("aead-seal:" + self.algorithm(), [key.export_bytes(), nonce, aad, plaintext]).bytes();
+    }
+    opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte {
+        HostOperation("aead-open:" + self.algorithm(), [key.export_bytes(), nonce, aad, sealed]).bytes();
+    }
+}
+
+test "AES-GCM matches the GCM specification test case 2" {
+    let zeros is @byte = (0..16).map() -> i { 0.byte(); };
+    let nonce is @byte = (0..12).map() -> i { 0.byte(); };
+    let sealed = AesGcm(SecretBytes(zeros)).sealed(nonce, [], zeros);
+    test.is(HexEncoded(sealed).string(), "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf");
+    test.is(AesGcm(SecretBytes(zeros)).opened(nonce, [], sealed), zeros);
+}
+
+test "AES-GCM rejects tampering and wrong sizes" {
+    let key is @byte = (0..32).map() -> i { i.byte(); };
+    let nonce is @byte = (0..12).map() -> i { 7.byte(); };
+    let cipher = AesGcm(SecretBytes(key));
+    let sealed = cipher.sealed(nonce, [1.byte()], [5.byte(), 6.byte()]);
+    test.is(sealed.size(), 18);
+    test.ok(try { cipher.opened(nonce, [2.byte()], sealed); false; } catch e is AuthenticationFailed { true; });
+    test.ok(try { cipher.opened(nonce.slice(0, 11), [1.byte()], sealed); false; } catch e is InvalidCryptoInput { true; });
+    test.ok(try { AesGcm(SecretBytes([1.byte()])); false; } catch e is InvalidCryptoInput { true; });
+}

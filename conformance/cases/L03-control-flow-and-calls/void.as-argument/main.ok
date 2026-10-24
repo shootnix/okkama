@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Log {
+    Log();
+    note(text is string) is void {
+        Stdout().writeln(text);
+    }
+    count(text is string) is void {
+        Stdout().writeln(text);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let n = [1].size() + Log().count("b");
+    out.writeln("unreachable");
+    0;
+}

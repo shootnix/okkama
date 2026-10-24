@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Sums {
+    Sums();
+    sum(n is int) is int {
+        if n == 0 { 0; } else { n + self.sum(n - 1); }
+    }
+}
+
+main() is int {
+    Stdout().writeln(Sums().sum(1000000).string());
+    0;
+}

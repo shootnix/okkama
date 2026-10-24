@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.fs.line-reading",
+  "title": "text line reading strips LF and one CR",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.FS.FILE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[a]\n[b]\n[]\n[last]\nEOF\n"
+    }
+  },
+  "spec_refs": [
+    "std/fs/file.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "fs/file: line() removes LF and one preceding CR, returns a final unterminated non-empty line, then throws EndOfInput."
+  },
+  "status": "mandatory"
+}

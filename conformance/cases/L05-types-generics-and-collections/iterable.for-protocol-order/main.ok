@@ -1,0 +1,35 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "collections/iteration" take Cursor, Iterating;
+
+object Step does Cursor<int> {
+    has n is int;
+    Step(:n);
+    available() is bool {
+        Stdout().writeln("available " + n.string());
+        n > 0;
+    }
+    item() is int {
+        Stdout().writeln("item " + n.string());
+        n;
+    }
+    successor() is Cursor<int> {
+        Stdout().writeln("successor " + n.string());
+        Step(n: n - 1);
+    }
+}
+
+object Countdown does Iterating<int> {
+    has from is int;
+    Countdown(:from);
+    cursor() is Cursor<int> { Step(n: from); }
+}
+
+main() is int {
+    let out = Stdout();
+    for Countdown(from: 2) -> v {
+        out.writeln("body " + v.string());
+    }
+    0;
+}

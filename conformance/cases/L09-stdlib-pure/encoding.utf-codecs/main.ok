@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, Utf16Encoded, Utf16Decoded, Utf32Encoded, ByteOrder, InvalidUtf8;
+
+main() is int {
+    let c = Checks();
+    c = c.same_ints("utf8 bytes", Utf8Encoded(origin: "é😀").bytes().map() -> b { b.int(); }, [195, 169, 240, 159, 152, 128]);
+    c = c.same_ints("utf16 big endian", Utf16Encoded(origin: "A😀", order: ByteOrder.big).bytes().map() -> b { b.int(); }, [0, 65, 216, 61, 222, 0]);
+    c = c.same_ints("utf32 little endian", Utf32Encoded(origin: "é", order: ByteOrder.little).bytes().map() -> b { b.int(); }, [233, 0, 0, 0]);
+    c = c.same_text("utf16 round trip", Utf16Decoded(origin: Utf16Encoded(origin: "A😀", order: ByteOrder.little).bytes(), order: ByteOrder.little).string(), "A😀");
+    c = c.same_text("overlong rejected", try { let probe = Utf8Decoded(origin: [byte(192), byte(128)]).string(); "no error"; } catch e is InvalidUtf8 { "offset " + e.offset().string(); }, "offset 0");
+    c = c.same_text("surrogate rejected", try { let probe = Utf8Decoded(origin: [byte(65), byte(237), byte(160), byte(128)]).string(); "no error"; } catch e is InvalidUtf8 { "offset " + e.offset().string(); }, "offset 1");
+    c.done();
+}

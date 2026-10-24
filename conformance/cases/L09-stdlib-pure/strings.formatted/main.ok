@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "strings/format" take Formatted, InvalidFormat;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("two slots", Formatted(pattern: "{}: {}", values: ["Ada", "3"]).string(), "Ada: 3");
+    c = c.same_text("other braces literal", Formatted(pattern: "{x} {}", values: ["v"]).string(), "{x} v");
+    c = c.same_text("no slots", Formatted(pattern: "plain", values: []).string(), "plain");
+    c = c.same_text("count mismatch", try { let probe = Formatted(pattern: "{} {}", values: ["one"]).string(); "no error"; } catch e is InvalidFormat { "InvalidFormat"; }, "InvalidFormat");
+    c.done();
+}

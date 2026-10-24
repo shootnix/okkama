@@ -1,0 +1,42 @@
+// Параллельный подсчёт простых чисел
+// Задача: Распределить диапазон между процессами и получить квадраты через канал.
+// Запуск из корня: ./examples/gallery/run parallel
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: ParallelMapped с ограничением workers, упорядоченный результат, Channel.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/parallel.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/parallel v1.0.0;
+import "parallel/map" take ParallelMapped;
+import "async/channel" take Channel,Sending,ChannelClosed;
+import "async/scope" take FutureGroup;
+import "io/stdout" take Stdout;
+object PrimeCounter {
+    has width is int;PrimeCounter(width is int){self.width=width;}
+    run(index is int) is int {
+        let start=if index==0{2;}else{index*width;};
+        (start..(index+1)*width).reduce(0)->count,n{count+if self.prime(n){1;}else{0;};};
+    }
+    prime(n is int) is bool {
+        if n<2{return false;}if n%2==0{return n==2;}
+        let divisor=Candidate(3);
+        loop{let d=divisor.value();if d*d>n{return true;}if n%d==0{return false;}divisor=divisor.following();}
+    }
+}
+object Candidate {
+    has value is int;Candidate(value is int){self.value=value;}
+    value() is int{value;}following() is ^Candidate{^value=value+2;}
+}
+object Squares {
+    has output is Sending<int>;Squares(output is Sending<int>){self.output=output;}
+    async run() is int{defer output.close();for (1..13)->n{await output.send(n*n);}0;}
+}
+async main() is int {
+    // 1000 чисел хватает, чтобы показать настоящие изолированные workers и быструю проверку результата.
+    let counter=PrimeCounter(250);let mapped is ParallelMapped<int,int>=ParallelMapped([0,1,2,3],counter.run,2);
+    let results=await mapped.results();let total=results.reduce(0)->sum,count{sum+count;};confirm total==168;
+    Stdout().writeln("Primes below 1000: "+total.string());
+    let channel is Channel<int>=Channel(4);let workers is FutureGroup<int>=FutureGroup();workers.start(Squares(channel.sending()).run());
+    for (1..13)->n{let square=await channel.receiving().item();confirm square==n*n;Stdout().writeln(square.string());}
+    await workers.wait();0;
+}

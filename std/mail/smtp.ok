@@ -1,0 +1,140 @@
+module mail/smtp v1.0.0;
+
+import "mail/smtp_reply" take SmtpReply;
+import "collections/sequence" take Sequencing;
+import "collections/set" take Set, OrderedSet;
+import "mime/media_type" take MimeItems;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "numbers/bigint" take BigInt;
+
+// Immutable EHLO observations; no connection, TLS or authentication effects.
+// Construct from a successful 250 reply. Its first line is greeting metadata,
+// never an extension. Keyword matching is ASCII-insensitive; original extension
+// spelling/unknown parameters are retained. Duplicate keywords are rejected.
+// SIZE absent, SIZE without a parameter and explicit SIZE 0 remain distinct.
+// SASL names use their uppercase 1..20-character grammar; duplicates collapse.
+// A capability advertises server behavior, not verified TLS or permission to
+// send credentials. New post-STARTTLS EHLO replies require fresh snapshots.
+enum SmtpFeature = (size, eight_bit_mime, smtp_utf8, pipelining, start_tls,
+    authentication, dsn, enhanced_status_codes, chunking, binary_mime);
+object SmtpExtension {
+    has original, name is string;has arguments is @string;
+    SmtpExtension(origin is string) {
+        confirm origin.length()>0 && origin.length()<=512 else throw InvalidSmtpCapabilities("extension length outside 1..512");
+        let parts=origin.split(" ");let keyword=parts[0];
+        confirm keyword.length()>0 else throw InvalidSmtpCapabilities("empty extension keyword");
+        let bytes=Utf8Encoded(keyword).bytes();
+        for (0..bytes.size()) -> index {
+            let code=bytes[index].int();let alnum=(code>=48 && code<=57) || (code>=65 && code<=90) || (code>=97 && code<=122);
+            confirm alnum || (index>0 && code==45) else throw InvalidSmtpCapabilities("invalid extension keyword");
+        }
+        let parameters is @string=(1..parts.size()).map() -> index {
+            let value=parts[index];confirm value!="" else throw InvalidSmtpCapabilities("empty extension parameter");
+            for Utf8Encoded(value).bytes() -> octet {
+                confirm octet.int()>=33 && octet.int()<=126 else throw InvalidSmtpCapabilities("invalid extension parameter");
+            }
+            value;
+        };
+        let upper is @byte=bytes.map() -> octet {let code=octet.int();if code>=97 && code<=122 {(code-32).byte();} else {octet;}};
+        original=origin;name=Utf8Decoded(upper).string();arguments=parameters;
+    }
+    name() is string {name;}
+    parameters() is Sequencing<string> {arguments;}
+    string() is string {original;}
+}
+object SmtpCapabilities {
+    has extensions is @SmtpExtension;has features is Set<SmtpFeature>;
+    has mechanisms is @string;has size_available is bool;has size_value is BigInt;
+    SmtpCapabilities(reply is SmtpReply) {
+        confirm reply.code()==250 else throw InvalidSmtpCapabilities("EHLO requires a 250 reply");
+        let lines=reply.lines();confirm lines.first()!="" else throw InvalidSmtpCapabilities("EHLO greeting is empty");
+        let entries is MimeItems<SmtpExtension>=MimeItems();let known is MimeItems<SmtpFeature>=MimeItems();
+        let names is MimeItems<string>=MimeItems();let maximum is MimeItems<string>=MimeItems();
+        for (1..lines.size()) -> index {
+            let extension=SmtpExtension(lines.item(index));let keyword=extension.name();let parameters=extension.parameters();
+            let duplicate=entries.entries().reduce(false) -> found,previous {found || previous.name()==keyword;};
+            confirm !duplicate else throw InvalidSmtpCapabilities("duplicate extension keyword: "+keyword);
+            let recognized=SmtpKnownFeature(keyword).features();
+            if recognized.size()>0 {
+                known=known.following(recognized[0]);
+                if keyword=="SIZE" {
+                    confirm parameters.size()<=1 else throw InvalidSmtpCapabilities("SIZE has more than one parameter");
+                    if parameters.size()==1 {maximum=maximum.following(SmtpSizeNumber(parameters.first()).string());}
+                } else {
+                    if keyword=="AUTH" {
+                        confirm parameters.size()>0 else throw InvalidSmtpCapabilities("AUTH requires mechanisms");
+                        for (0..parameters.size()) -> position {
+                            let mechanism=SmtpMechanismName(parameters.item(position)).string();
+                            let present=names.entries().reduce(false) -> found,name {found || name==mechanism;};
+                            if !present {names=names.following(mechanism);}
+                        }
+                    } else {confirm parameters.size()==0 else throw InvalidSmtpCapabilities("unexpected parameters for "+keyword);}
+                }
+            }
+            entries=entries.following(extension);
+        }
+        self.extensions=entries.entries();features=OrderedSet(known.entries());mechanisms=names.entries();
+        size_available=maximum.size()>0;size_value=BigInt(if maximum.size()>0 {maximum.entries()[0];} else {"0";});
+    }
+    extensions() is Sequencing<SmtpExtension> {extensions;}
+    features() is Set<SmtpFeature> {features;}
+    mechanisms() is Sequencing<string> {mechanisms;}
+    has_maximum_size() is bool {size_available;}
+    maximum_size() is BigInt {confirm size_available else throw MissingSmtpSize();size_value;}
+}
+object InvalidSmtpCapabilities does Error {
+    has reason is string;
+    InvalidSmtpCapabilities(reason is string) {self.reason=reason;}
+    reason() is string {reason;}
+    text() is string {"invalid SMTP capabilities: "+reason;}
+}
+object MissingSmtpSize does Error {
+    MissingSmtpSize();
+    text() is string {"SMTP server did not advertise a numeric SIZE parameter";}
+}
+object SmtpKnownFeature {
+    has name is string;
+    SmtpKnownFeature(name is string) {self.name=name;}
+    features() is @SmtpFeature {
+        match name {
+            case "SIZE" {[SmtpFeature.size];} case "8BITMIME" {[SmtpFeature.eight_bit_mime];}
+            case "SMTPUTF8" {[SmtpFeature.smtp_utf8];} case "PIPELINING" {[SmtpFeature.pipelining];}
+            case "STARTTLS" {[SmtpFeature.start_tls];} case "AUTH" {[SmtpFeature.authentication];}
+            case "DSN" {[SmtpFeature.dsn];} case "ENHANCEDSTATUSCODES" {[SmtpFeature.enhanced_status_codes];}
+            case "CHUNKING" {[SmtpFeature.chunking];} case "BINARYMIME" {[SmtpFeature.binary_mime];}
+            else {let empty is @SmtpFeature=[];empty;}
+        }
+    }
+}
+object SmtpSizeNumber {
+    has origin is string;
+    SmtpSizeNumber(origin is string) {
+        confirm origin!="" else throw InvalidSmtpCapabilities("empty SIZE number");
+        for Utf8Encoded(origin).bytes() -> octet {
+            confirm octet.int()>=48 && octet.int()<=57 else throw InvalidSmtpCapabilities("SIZE requires decimal digits");
+        }
+        self.origin=origin;
+    }
+    string() is string {origin;}
+}
+object SmtpMechanismName {
+    has origin is string;
+    SmtpMechanismName(origin is string) {
+        confirm origin.length()>0 && origin.length()<=20 else throw InvalidSmtpCapabilities("SASL mechanism length outside 1..20");
+        for Utf8Encoded(origin).bytes() -> octet {
+            let code=octet.int();confirm (code>=65 && code<=90) || (code>=48 && code<=57) || code==45 || code==95
+                else throw InvalidSmtpCapabilities("invalid SASL mechanism name");
+        }
+        self.origin=origin;
+    }
+    string() is string {origin;}
+}
+
+test "EHLO distinguishes SIZE presence and retains unknown extensions" {
+    let caps=SmtpCapabilities(SmtpReply(250,["server","SIZE","X-LOCAL Value"]));
+    test.ok(caps.features().membership(SmtpFeature.size));test.ok(!caps.has_maximum_size());
+    test.is(caps.extensions().last().string(),"X-LOCAL Value");
+}
+test "EHLO does not promote greeting text into capabilities" {
+    test.is(SmtpCapabilities(SmtpReply(250,["STARTTLS"])).features().size(),0);
+}

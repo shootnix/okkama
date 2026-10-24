@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.refund-reconciliation-totals",
+  "title": "refunds, adjustments and duplicate events reconcile to exact totals",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.RECONCILIATION",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "APP.ANALYTICS-REBUILD",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - charged paid refunded adjusted cash adjusted-charge\nok 2 - rebuild equals incremental\nchecks: 2, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "improvements-roadmap/results/COMPLETION.md",
+    "docs/refund-reconciliation.md"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "IMP-32 reference totals: charged 2970, paid 2970, refunded 500, adjustment 100, cash balance 2470, adjusted charge 2870; the duplicate payment event p2 is applied once; a full rebuild equals the incremental projection."
+  },
+  "status": "mandatory"
+}

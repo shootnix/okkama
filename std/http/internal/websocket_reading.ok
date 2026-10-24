@@ -1,0 +1,41 @@
+module http/internal/websocket_reading v1.0.0;
+import "http/internal/websocket_frame" take ParsedWebSocketFrameHeader,WebSocketFrame,WebSocketMaskedBytes,WebSocketHeaderPrefix;
+import "http/websocket" take WebSocketFailure,WebSocketClosed;
+import "net/stream" take AsyncReading,StreamReadCleanup;
+import "async/scope" take FutureGroup;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot,InvalidReading;
+import "http/internal/wire_bytes" take HttpWireBytes;
+
+// Memoized one-frame consumption, borrowed input and one supervised child per
+// physical read. No completed-read history survives to the next operation.
+object WebSocketFrameReading {
+    has waiting is Future<WebSocketFrame>;
+    WebSocketFrameReading(origin is AsyncReading,masked is bool,maximum is int){let input=WebSocketFrameInput(origin,masked,maximum);waiting=input.reading();}
+    async result() is WebSocketFrame{let group is FutureGroup<WebSocketFrame>=FutureGroup();let cleanup=WebSocketFrameSettlement(group);defer await cleanup.close();group.start(waiting);await waiting;}
+}
+object WebSocketFrameInput {
+    has origin is AsyncReading;has masked is bool;has maximum is int;
+    WebSocketFrameInput(origin is AsyncReading,masked is bool,maximum is int){self.origin=origin;self.masked=masked;self.maximum=maximum;}
+    async chunk(limit is int) is @byte{
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=StreamReadCleanup(group);defer await cleanup.close();let waiting=origin.bytes(limit);group.start(waiting);await waiting;
+    }
+    async exact(amount is int,between_frames is bool) is @byte{
+        let buffer=ByteBuffer();defer buffer.closing().close();
+        loop{let remaining=amount-buffer.content().size();last if remaining==0;let limit=if remaining<=65536{remaining;}else{65536;};let chunk=await self.chunk(limit);
+            confirm chunk.size()<=limit else throw InvalidReading("WebSocket source exceeded requested limit");
+            if chunk.size()==0{if between_frames && buffer.content().size()==0{throw WebSocketClosed(1006,"");}throw WebSocketFailure("truncated frame");}
+            buffer.writing().write(ByteSnapshot(chunk));
+        }buffer.content().bytes();
+    }
+    async reading() is WebSocketFrame{
+        let prefix=await self.exact(2,true);WebSocketHeaderPrefix(prefix,masked).checked();let indicator=prefix[1].int() & 127;let width=if indicator==126{2;}else{if indicator==127{8;}else{0;}};
+        let extended=await self.exact(width,false);let header=ParsedWebSocketFrameHeader(HttpWireBytes([prefix,extended],10).bytes(),masked,maximum).value();
+        let mask is @byte=if masked{await self.exact(4,false);}else{let empty is @byte=[];empty;};
+        let bytes=await self.exact(header.length(),false);let payload=if masked{WebSocketMaskedBytes(bytes,mask,0).bytes();}else{bytes;};WebSocketFrame(header.opcode(),header.final(),payload);
+    }
+}
+object WebSocketFrameSettlement {
+    has group is FutureGroup<WebSocketFrame>;WebSocketFrameSettlement(group is FutureGroup<WebSocketFrame>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}

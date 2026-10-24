@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.trim-whitespace-set",
+  "title": "trim removes Unicode white space and chomp one line terminator",
+  "purpose": "Whitespace handling follows Go strings.TrimSpace; chomp removes one trailing CRLF or LF.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-WHITESPACE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.STRING-TRIM-CHOMP",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[x y]\n3\n0\n1\n2\n2\n0\n0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6",
+    "contracts/DISCREPANCY-LEDGER.md#d-033"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-033): trim() removes leading/trailing Unicode White_Space like Go strings.TrimSpace (oracle: go1.26.1 — tab, LF, CR, space, U+00A0, U+2003, U+3000, U+2028 removed; U+200B is not white space); chomp() removes exactly one trailing CRLF or LF and leaves a lone CR."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-010"
+  ]
+}

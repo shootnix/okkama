@@ -1,0 +1,100 @@
+module conformance/check v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Conformance-suite checks, written in ordinary Okkama.
+//
+// Every check prints exactly one line ("ok N - label" or
+// "not ok N - label: detail"), so a case's expected stdout lists every check
+// that must run: a skipped, duplicated or failing check changes the output
+// and the case fails even if the program exits 0. Checks is an immutable
+// object; each check is a successor, so a discarded check result is itself a
+// language error (successor must-use). done() prints a summary line and
+// returns 0 only when no check failed, which becomes the exit status.
+//
+//     let c = Checks();
+//     c = c.same_int("sum", 1 + 2, 3);
+//     c.done();
+//
+// The module depends only on io/stdout, objects, successors, local rebinding,
+// string concatenation and int/float .string(). Its own behaviour, including
+// deliberately failing checks, is verified by the L04.harness.* cases.
+object Checks {
+    has total is int = 0;
+    has failed is int = 0;
+
+    Checks();
+
+    ok(label is string, condition is bool) is ^Checks {
+        ^failed = failed + self.report(label, condition, "condition is false");
+        ^total = total + 1;
+    }
+
+    fail(label is string, reason is string) is ^Checks {
+        ^failed = failed + self.report(label, false, reason);
+        ^total = total + 1;
+    }
+
+    same_int(label is string, actual is int, expected is int) is ^Checks {
+        ^failed = failed + self.report(label, actual == expected,
+            "expected " + expected.string() + ", got " + actual.string());
+        ^total = total + 1;
+    }
+
+    same_text(label is string, actual is string, expected is string) is ^Checks {
+        ^failed = failed + self.report(label, actual == expected,
+            "expected \"" + expected + "\", got \"" + actual + "\"");
+        ^total = total + 1;
+    }
+
+    same_bool(label is string, actual is bool, expected is bool) is ^Checks {
+        ^failed = failed + self.report(label, actual == expected,
+            "expected " + self.flag(expected) + ", got " + self.flag(actual));
+        ^total = total + 1;
+    }
+
+    same_float(label is string, actual is float, expected is float) is ^Checks {
+        ^failed = failed + self.report(label, actual == expected,
+            "expected " + expected.string() + ", got " + actual.string());
+        ^total = total + 1;
+    }
+
+    same_ints(label is string, actual is @int, expected is @int) is ^Checks {
+        ^failed = failed + self.report(label, actual == expected,
+            "expected [" + self.ints(expected) + "], got [" + self.ints(actual) + "]");
+        ^total = total + 1;
+    }
+
+    same_texts(label is string, actual is @string, expected is @string) is ^Checks {
+        ^failed = failed + self.report(label, actual == expected,
+            "expected [" + expected.join(", ") + "], got [" + actual.join(", ") + "]");
+        ^total = total + 1;
+    }
+
+    done() is int {
+        Stdout().writeln("checks: " + total.string() + ", failed: " + failed.string());
+        if failed == 0 { 0; } else { 1; }
+    }
+
+    private:
+
+    report(label is string, passed is bool, detail is string) is int {
+        let number = total + 1;
+        if passed {
+            Stdout().writeln("ok " + number.string() + " - " + label);
+            0;
+        } else {
+            Stdout().writeln("not ok " + number.string() + " - " + label + ": " + detail);
+            1;
+        }
+    }
+
+    flag(value is bool) is string {
+        if value { "true"; } else { "false"; }
+    }
+
+    ints(values is @int) is string {
+        let parts is @string = values.map() -> value { value.string(); };
+        parts.join(", ");
+    }
+}

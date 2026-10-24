@@ -1,0 +1,24 @@
+// Показать цену с выбранным округлением
+//
+// В печатном отчёте цена должна иметь две десятичные цифры по правилу half_even.
+//
+// Запуск: ./examples/cookbook/run lab recipe-decimal-price
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-decimal-price
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/decimal_price v1.0.0;
+import "math/decimal" take Decimal;
+import "math/rounding" take Rounding;
+import "locale/tag" take Locale;
+import "locale/number" take LocalizedDecimal,NumberFormat,NumberNotation,NumberGrouping,NumberSign,NumberPrecision;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let price = Decimal("1234.565");
+    let format = NumberFormat(NumberNotation.standard, NumberGrouping.automatic, NumberSign.automatic, NumberPrecision(1, 2, 2, Rounding.half_even));
+    let text = LocalizedDecimal(price, Locale("en"), format).string();
+    confirm text == "1,234.56";
+    Stdout().writeln(text);
+    0;
+}

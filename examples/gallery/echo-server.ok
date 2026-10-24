@@ -1,0 +1,57 @@
+// TCP echo-сервер и клиент
+// Задача: Обменяться сообщениями по loopback и дождаться остановки сервера.
+// Запуск из корня: ./examples/gallery/run echo-server
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: владеющий listener, порт 0, ограниченное чтение и явный протокол строк.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/echo-server.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/echo_server v1.0.0;
+import "net/tcp" take TcpListening,TcpAcceptance,TcpConnecting,TcpConnection;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "async/scope" take FutureGroup;
+import "encoding/single_byte" take AsciiEncoded,AsciiDecoded;
+import "io/decorators" take ByteSnapshot;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+// Однобайтовая длина и точное чтение отделяют сообщения от границ TCP-пакетов.
+object ExactBytes {
+    ExactBytes();
+    async read(connection is TcpConnection,count is int) is @byte {
+        let buffer=ByteBuffer();defer buffer.closing().close();
+        loop{
+            let remaining=count-buffer.content().size();last if remaining==0;
+            let chunk=await connection.input().bytes(remaining);confirm chunk.size()>0;
+            buffer.writing().write(ByteSnapshot(chunk));
+        }buffer.content().bytes();
+    }
+}
+object EchoServer {
+    has listener is TcpAcceptance;EchoServer(listener is TcpAcceptance){self.listener=listener;}
+    async run() is int {
+        defer listener.close();
+        for (0..3)->i{
+            let connection=await listener.connection();defer connection.close();
+            let width=await ExactBytes().read(connection,1);
+            let request=await ExactBytes().read(connection,width[0].int());
+            let upper is @byte=request.map()->octet{
+                let code=octet.int();if code>=97 && code<=122{(code-32).byte();}else{octet;}
+            };
+            await connection.output().write(ByteSnapshot([upper.size().byte()]));
+            await connection.output().write(ByteSnapshot(upper));
+        }0;
+    }
+}
+async main() is int {
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let server=EchoServer(listener);let group is FutureGroup<int>=FutureGroup();group.start(server.run());
+    for ["hello","okkama sockets","goodbye"]->text{
+        let peer=await TcpConnecting(listener.local_endpoint()).connection();defer peer.close();
+        await peer.output().write(ByteSnapshot([text.length().byte()]));
+        await peer.output().write(ByteSnapshot(AsciiEncoded(text).bytes()));
+        let width=await ExactBytes().read(peer,1);
+        let received=await ExactBytes().read(peer,width[0].int());let reply=AsciiDecoded(received).string();
+        Stdout().writeln(text+" -> "+reply);confirm reply.length()==text.length();
+    }await group.wait();Stdout().writeln("Server stopped cleanly.");0;
+}

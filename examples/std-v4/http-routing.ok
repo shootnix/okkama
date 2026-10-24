@@ -1,0 +1,88 @@
+module app v1.0.0;
+import "http/routing" take Routes,Route,RoutePattern;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/target" take ParsedRequestTarget;
+import "http/version" take HttpVersion;
+import "http/body" take EmptyBody;
+import "http/exchange" take ExchangeDetails;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "async/cancellation" take Cancellation;
+import "io/stdout" take Stdout;
+
+object CustomerPage does Handling{
+    CustomerPage();
+    
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        ResponseHandling(
+            Response(
+                Status(200),
+                Headers(
+                    [
+                        Header(
+                            HeaderName("X-Customer"),
+                            context.parameters()["id"]
+                        )
+                    ]
+                )
+            )
+        );
+    }
+}
+
+object MissingPage does Handling {
+    MissingPage();
+    
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        ResponseHandling(
+            Response(Status(404), Headers([]))
+        );
+    }
+}
+// In-memory dispatch with explicitly supplied demonstration endpoint facts.
+// HttpServer supplies actual observations when this Handling is used on wire.
+async main() is int{
+    let routes = Routes(
+        [
+            Route(
+                Method("GET"),
+                RoutePattern("/customer/:id"),
+                CustomerPage()
+            )
+        ],
+        MissingPage()
+    );
+    let endpoint = IpEndpoint(
+        IpAddress("127.0.0.1"),
+        8080
+    );
+    let endpoints is ConnectionEndpoints<IpEndpoint> = ConnectionEndpoints(endpoint, endpoint);
+    let context = HttpRequestContext(
+        ExchangeDetails(
+            endpoints,
+            HttpVersion.http_1_1
+        ),
+        Cancellation().cancelling()
+    );
+    let method = Method("HEAD");
+    let request = Request(
+        method,
+        ParsedRequestTarget("/customer/a%2Fb",method).value(),
+        Headers([]),
+        EmptyBody()
+    );
+    let result = await routes.handling(request,context);
+    Stdout().writeln(
+        result.response().status().code().string()
+    );
+    
+    Stdout().writeln(result.response().headers().first(HeaderName("X-Customer")));
+    
+    0;
+}

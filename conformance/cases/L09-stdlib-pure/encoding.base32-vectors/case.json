@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.base32-vectors",
+  "title": "Base32 RFC 4648 test vectors",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.BASE32",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - f\nok 2 - foo\nok 3 - foobar\nok 4 - empty\nok 5 - decode size\nok 6 - lowercase rejected\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/base32.ok",
+    "RFC 4648 section 10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 4648 section 10 vectors; the module rejects lowercase input."
+  },
+  "status": "mandatory"
+}

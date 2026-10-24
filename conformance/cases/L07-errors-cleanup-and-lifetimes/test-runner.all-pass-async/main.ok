@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+object Worker {
+    Worker();
+    async value() is int { 7; }
+    test "object scoped test" {
+        test.ok(true);
+    }
+}
+
+async test "async result" {
+    let result = await Worker().value();
+    test.is(result, 7);
+    test.isnt(result, 8);
+}
+
+main() is int {
+    1;
+}

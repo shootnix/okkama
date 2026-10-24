@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.based.trailing-underscore",
+  "title": "malformed based literal 0x1F_",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.BASED-LITERALS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "Malformed numeric tokens are lexical errors; an implementation may surface them while parsing or in the token-validation step before analysis."
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar INT production and bitwise guide: `_` is allowed only between digits."
+  },
+  "status": "mandatory"
+}

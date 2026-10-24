@@ -1,0 +1,128 @@
+module http/http1_reading v1.0.0;
+import "http/http1_head" take Http1Limits,Http1LimitExceeded,Http1RequestHead,Http1ResponseHead,ParsedHttp1RequestHead,ParsedHttp1ResponseHead;
+import "http/message" take InvalidHttpMessage;
+import "net/stream" take AsyncReading;
+import "io/decorators" take ByteSnapshot,InvalidReading;
+import "io/buffer" take ByteBuffer;
+import "encoding/single_byte" take Latin1Decoded;
+import "async/scope" take FutureScope,Supervising;
+
+// Lazy one-head operations borrow the source and preserve an exact byte tail.
+// Their Future is memoized, including cancellation/failure. A started failure
+// can consume input: discard the enclosing session; no retry/timeout is hidden.
+object Http1RequestHeadReading {
+    has pending is Future<Http1HeadRead<Http1RequestHead>>;
+    Http1RequestHeadReading(origin is AsyncReading){pending=Http1RequestHeadDecoding().reading(origin,[],Http1Limits(),4096);}
+    Http1RequestHeadReading(origin is AsyncReading,prefix is @byte){pending=Http1RequestHeadDecoding().reading(origin,prefix,Http1Limits(),4096);}
+    Http1RequestHeadReading(origin is AsyncReading,prefix is @byte,limits is Http1Limits,chunk_bytes is int){pending=Http1RequestHeadDecoding().reading(origin,prefix,limits,chunk_bytes);}
+    result() is Future<Http1HeadRead<Http1RequestHead>>{pending;}
+}
+object Http1ResponseHeadReading {
+    has pending is Future<Http1HeadRead<Http1ResponseHead>>;
+    Http1ResponseHeadReading(origin is AsyncReading){pending=Http1ResponseHeadDecoding().reading(origin,[],Http1Limits(),4096);}
+    Http1ResponseHeadReading(origin is AsyncReading,prefix is @byte){pending=Http1ResponseHeadDecoding().reading(origin,prefix,Http1Limits(),4096);}
+    Http1ResponseHeadReading(origin is AsyncReading,prefix is @byte,limits is Http1Limits,chunk_bytes is int){pending=Http1ResponseHeadDecoding().reading(origin,prefix,limits,chunk_bytes);}
+    result() is Future<Http1HeadRead<Http1ResponseHead>>{pending;}
+}
+object Http1HeadRead<T> {
+    has head is T;has tail is @byte;has count is int;
+    Http1HeadRead(head is T,tail is @byte,count is int){self.head=head;self.tail=tail;self.count=count;}
+    head() is T{head;}remainder() is @byte{tail;}consumed() is int{count;}
+}
+object Http1RequestHeadDecoding {
+    Http1RequestHeadDecoding();
+    decode(origin is string,tail is @byte,count is int,limits is Http1Limits) is Http1HeadRead<Http1RequestHead>{
+        let head=ParsedHttp1RequestHead(origin,limits).value();Http1HeadRead(head,tail,count);
+    }
+    reading(origin is AsyncReading,prefix is @byte,limits is Http1Limits,chunk_bytes is int) is Future<Http1HeadRead<Http1RequestHead>> {
+        let input is Http1HeadInput<Http1HeadRead<Http1RequestHead>>=Http1HeadInput(origin,prefix,limits,chunk_bytes,Http1RequestHeadDecoding().decode);
+        input.read();
+    }
+}
+object Http1ResponseHeadDecoding {
+    Http1ResponseHeadDecoding();
+    decode(origin is string,tail is @byte,count is int,limits is Http1Limits) is Http1HeadRead<Http1ResponseHead>{
+        let head=ParsedHttp1ResponseHead(origin,limits).value();Http1HeadRead(head,tail,count);
+    }
+    reading(origin is AsyncReading,prefix is @byte,limits is Http1Limits,chunk_bytes is int) is Future<Http1HeadRead<Http1ResponseHead>> {
+        let input is Http1HeadInput<Http1HeadRead<Http1ResponseHead>>=Http1HeadInput(origin,prefix,limits,chunk_bytes,Http1ResponseHeadDecoding().decode);
+        input.read();
+    }
+}
+object Http1HeadInput<T> {
+    has origin is AsyncReading;has prefix is @byte;has limits is Http1Limits;has chunk_bytes is int;
+    has decode is (string,@byte,int,Http1Limits) is T;
+    Http1HeadInput(origin is AsyncReading,prefix is @byte,limits is Http1Limits,chunk_bytes is int,decode is (string,@byte,int,Http1Limits) is T) {
+        confirm chunk_bytes>0 && chunk_bytes<=65536 else throw InvalidHttpMessage("HTTP1 read chunk must be 1..65536");
+        confirm prefix.size()<=limits.head_bytes()+chunk_bytes else throw Http1LimitExceeded("prefix_bytes");
+        self.origin=origin;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;self.decode=decode;
+    }
+    async read() is T {await self.read_from(Http1ScopedReading(origin));}
+    async read(group is Supervising<@byte>) is T {await self.read_from(Http1SupervisedReading(origin,group));}
+    async read_from(input is AsyncReading) is T {
+        let output=ByteBuffer();defer output.closing().close();let writing=output.writing();
+        let state=Http1BoundaryTail();let first=Http1HeadBoundary("",prefix);let consumed=first.after();
+        let piece=if consumed<0 {prefix;}else{prefix.slice(0,consumed);};
+        confirm piece.size()<=limits.head_bytes() else throw Http1LimitExceeded("head_bytes");writing.write(ByteSnapshot(piece));
+        if consumed>=0 {return decode(Latin1Decoded(output.content().bytes()).string(),prefix.slice(consumed,prefix.size()),piece.size(),limits);}
+        state=state.following(first.tail());
+        loop {
+            let used=output.content().size();let remaining=limits.head_bytes()-used;
+            confirm remaining>0 else throw Http1LimitExceeded("head_bytes");
+            let requested=if chunk_bytes<remaining {chunk_bytes;}else{remaining;};
+            let chunk=await input.bytes(requested);
+            confirm chunk.size()<=requested else throw InvalidReading("HTTP1 source exceeded requested bytes");
+            confirm chunk.size()>0 else throw InvalidHttpMessage("EOF before complete HTTP1 head");
+            let boundary=Http1HeadBoundary(state.string(),chunk);let after=boundary.after();
+            let accepted=if after<0 {chunk;}else{chunk.slice(0,after);};writing.write(ByteSnapshot(accepted));
+            if after>=0 {return decode(Latin1Decoded(output.content().bytes()).string(),chunk.slice(after,chunk.size()),used+after,limits);}
+            state=state.following(boundary.tail());
+        }
+    }
+}
+// Each standard physical read owns one group and drains it before the next
+// read. The await chain propagates cancellation without a head-long registry.
+object Http1ScopedReading does AsyncReading {
+    has origin is AsyncReading;
+    Http1ScopedReading(origin is AsyncReading){self.origin=origin;}
+    async bytes(limit is int) is @byte {
+        let source=Http1PhysicalRead(origin,limit);
+        let scope is FutureScope<@byte,@byte>=FutureScope(action:source.read);
+        await scope.result();
+    }
+}
+object Http1PhysicalRead {
+    has origin is AsyncReading;has limit is int;
+    Http1PhysicalRead(origin is AsyncReading,limit is int){self.origin=origin;self.limit=limit;}
+    async read(group is Supervising<@byte>) is @byte {
+        let pending=origin.bytes(limit);group.start(pending);await pending;
+    }
+}
+// Explicit supplied supervision retains its original whole-head contract.
+object Http1SupervisedReading does AsyncReading {
+    has origin is AsyncReading;has group is Supervising<@byte>;
+    Http1SupervisedReading(origin is AsyncReading,group is Supervising<@byte>){self.origin=origin;self.group=group;}
+    async bytes(limit is int) is @byte {let pending=origin.bytes(limit);group.start(pending);await pending;}
+}
+// Scan only the new chunk plus at most three preceding delimiter bytes. The
+// accumulated head is materialized once after completion, never per feed.
+object Http1HeadBoundary {
+    has after is int;has tail is string;
+    Http1HeadBoundary(prefix is string,chunk is @byte) {
+        confirm prefix.length()<=3 else throw InvalidHttpMessage("HTTP1 delimiter boundary width");
+        let text=prefix+Latin1Decoded(chunk).string();let pieces=text.split("\r\n\r\n");
+        after=if pieces.size()>1 {pieces[0].length()+4-prefix.length();}else{-1;};
+        tail=if text.length()<=3 {text;}else{text.slice(text.length()-3,text.length());};
+    }
+    after() is int{after;}tail() is string{tail;}
+}
+object Http1BoundaryTail {
+    has origin is string;Http1BoundaryTail(){origin="";}
+    following(origin is string) is ^Http1BoundaryTail {^origin=origin;}
+    string() is string{origin;}
+}
+test "head delimiter scan remembers only its boundary" {
+    let first=Http1HeadBoundary("",[65.byte(),13.byte(),10.byte(),13.byte()]);
+    test.ok(first.after()<0 && first.tail()=="\r\n\r");
+    let end=Http1HeadBoundary(first.tail(),[10.byte(),0.byte()]);test.ok(end.after()==1);
+}

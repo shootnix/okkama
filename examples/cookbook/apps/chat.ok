@@ -1,0 +1,91 @@
+// Многопользовательский WebSocket-чат
+//
+// Раздаёт страницу чата и пересылает текстовые сообщения всем подключённым клиентам.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run chat 8083
+//     Открыть http://127.0.0.1:8083/ в двух окнах.
+//     Или: ./examples/cookbook/run chat-client 8083 "Ада: привет"
+//
+// HTTP /socket выполняет Upgrade с subprotocol okkama-chat и проверкой same-origin. Команды комнаты идут по Channel; RoomState меняется через immutable successors. Очередь участника: 32 сообщения.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/chat v1.0.0;
+import "../support/arguments" take Arguments;
+import "../support/http" take Page;
+import "../support/chat_room" take ChatRoom,ChatSubscription;
+import "web/routing" take WebRoutes,Get;
+import "web/request" take WebRequest;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult,WebSocketHandlingResult,WebSocketHandling;
+import "http/message" take Request;
+import "http/request_context" take HttpRequestContext;
+import "http/server" take HttpServer;
+import "http/server_policy" take ServerPolicy;
+import "http/websocket" take WebSocketConnection,WebSocketLimits,WebSocketClosed,TextWebSocketMessage,WebSocketMessageKind;
+import "http/websocket_server" take WebSocketUpgrade;
+import "http/websocket_origin" take SameOriginWebSockets;
+import "async/channel" take ChannelClosed;
+import "async/scope" take FutureGroup;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "url/value" take ParsedUrl;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+object ChatOutput {
+    has connection is WebSocketConnection;has member is ChatSubscription;
+    ChatOutput(connection is WebSocketConnection,member is ChatSubscription){self.connection=connection;self.member=member;}
+    async run() is int{
+        try{loop{
+            // Сначала ждём очередь, затем начинаем отправку отдельным async-вызовом.
+            let text=await member.receive();
+            await connection.send(TextWebSocketMessage(text));
+        }}
+        catch end is ChannelClosed{}catch closed is WebSocketClosed{}0;
+    }
+}
+object ChatWorkCleanup {
+    has member is ChatSubscription;has group is FutureGroup<int>;
+    ChatWorkCleanup(member is ChatSubscription,group is FutureGroup<int>){self.member=member;self.group=group;}
+    async close() is void{member.close();group.cancel();await group.wait();}
+}
+object ChatApplication does WebSocketHandling {
+    has room is ChatRoom;ChatApplication(room is ChatRoom){self.room=room;}
+    async handle(connection is WebSocketConnection,request is Request,context is HttpRequestContext) is WebSocketHandling{
+        let member=await room.subscribe();let group is FutureGroup<int>=FutureGroup();
+        defer await room.leave(member);defer await ChatWorkCleanup(member,group).close();
+        await connection.send(TextWebSocketMessage("Добро пожаловать в Okkama chat"));
+        group.start(ChatOutput(connection,member).run());
+        try{loop{
+            let message=await connection.message();
+            if message.kind()!=WebSocketMessageKind.text || message.text().length()>2000{await connection.close(1008,"text up to 2000 characters");last;}
+            await room.publish(message.text());
+        }}catch closed is WebSocketClosed{}
+        self;
+    }
+}
+object ChatPages {
+    has room is ChatRoom;ChatPages(room is ChatRoom){self.room=room;}
+    async index(request is WebRequest) is HandlingResult{
+        Page("Okkama chat","<p>Откройте эту страницу в двух окнах.</p><input id=name value=Ада maxlength=40><form id=send><input id=message placeholder=Сообщение maxlength=1900 required><button>Отправить</button></form><article id=messages></article><script>const ws=new WebSocket('ws://'+location.host+'/socket','okkama-chat');ws.onmessage=e=>{const p=document.createElement('p');p.textContent=e.data;document.querySelector('#messages').append(p)};document.querySelector('#send').onsubmit=e=>{e.preventDefault();const input=document.querySelector('#message');if(ws.readyState===1){ws.send(document.querySelector('#name').value+': '+input.value);input.value=''}};</script>").reply();
+    }
+    async socket(request is WebRequest) is HandlingResult{
+        WebSocketHandlingResult(WebSocketUpgrade(["okkama-chat"],WebSocketLimits(),SameOriginWebSockets(),Duration(5.rat(),DurationUnit.second)),ChatApplication(room));
+    }
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"Страница не найдена");}
+}
+object RoomCleanup {
+    has room is ChatRoom;has group is FutureGroup<int>;
+    RoomCleanup(room is ChatRoom,group is FutureGroup<int>){self.room=room;self.group=group;}
+    async close() is void{room.close();await group.wait();}
+}
+async main() is int{
+    let args=Arguments();let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),args.integer(0,8083))).acceptance();
+    let port=listener.local_endpoint().port();let room=ChatRoom();let work is FutureGroup<int>=FutureGroup();work.start(room.run());defer await RoomCleanup(room,work).close();
+    let pages=ChatPages(room);let routes=WebRoutes([Get("/",pages.index),Get("/socket",pages.socket)],pages.missing);
+    let destination=ParsedUrl("http://127.0.0.1:"+port.string()+"/").value();
+    let server=HttpServer(listener,routes.table(),ServerPolicy(),SystemClock(),destination);defer await server.settled();defer server.close();
+    Stdout().writeln("PORT "+port.string());Stdout().flush();await server.serve();0;
+}

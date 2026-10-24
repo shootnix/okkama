@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "http/conditional" take ByteRanges;
+import "numbers/bigint" take BigInt;
+import "io/stdout" take Stdout;
+main() is int {
+    let plan=ByteRanges("bytes=500-700, 601-999, -100");
+    Stdout().writeln(plan.string());
+    let ranges=plan.ranges(BigInt("1000"));
+    for ranges -> range {Stdout().writeln(range.string()+" ("+range.size().string()+" bytes)");}
+    0;
+}

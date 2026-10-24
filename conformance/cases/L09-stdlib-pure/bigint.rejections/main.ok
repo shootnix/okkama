@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "numbers/bigint" take BigInt, BigSum, BigProduct, BigQuotient, BigRemainder, BigGcd, BigLcm, BigPower, BigDivisionByZero, InvalidBigInt;
+import "numbers/bigrational" take BigRational, BigRationalSum, ZeroBigRationalDenominator;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("plus sign", try { let probe = BigInt("+1").string(); "no error"; } catch e is InvalidBigInt { "InvalidBigInt"; }, "InvalidBigInt");
+    c = c.same_text("whitespace", try { let probe = BigInt(" 1").string(); "no error"; } catch e is InvalidBigInt { "InvalidBigInt"; }, "InvalidBigInt");
+    c = c.same_text("division by zero", try { let probe = (value BigQuotient(left: BigInt("1"), right: BigInt("0"))).string(); "no error"; } catch e is BigDivisionByZero { "BigDivisionByZero"; }, "BigDivisionByZero");
+    c = c.same_text("zero denominator", try { let probe = BigRational(numerator: BigInt("1"), denominator: BigInt("0")).string(); "no error"; } catch e is ZeroBigRationalDenominator { "zero"; }, "zero");
+    c.done();
+}

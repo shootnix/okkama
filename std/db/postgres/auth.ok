@@ -1,0 +1,139 @@
+module db/postgres/auth v1.0.0;
+
+import "crypto/secret" take SecretBytes;
+import "crypto/kdf" take Pbkdf2Secret, KdfHash;
+import "crypto/hmac" take Hmac, HmacHash;
+import "crypto/constant_time" take ConstantTimeEqual;
+import "digest/sha2" take Sha256;
+import "digest/legacy" take Md5;
+import "encoding/base64" take Base64Encoded, Base64Decoded;
+import "encoding/hex" take HexEncoded;
+import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take ParsedInt;
+
+// PostgreSQL password authentication, written in Okkama over crypto/*.
+//
+// ScramExchange is SCRAM-SHA-256 (RFC 5802, RFC 7677) without channel
+// binding ("n,,"): client_first() opens the exchange with the caller's nonce,
+// client_final(server_first) proves knowledge of the password, and
+// server_verified(server_first, server_final) checks the server signature in
+// constant time. PostgreSQL ignores the SCRAM user name (it uses the startup
+// user), so the driver sends an empty one. The password is used as UTF-8
+// bytes without SASLprep; passwords that SASLprep would change must be stored
+// already normalized. A malformed or foreign server message, a nonce that
+// does not extend ours or an iteration count below 4096 is ScramFailure.
+//
+// Md5Password is the legacy "md5" response: md5(md5(password || user) || salt).
+object ScramExchange {
+    has user is string;
+    has password is SecretBytes;
+    has nonce is string;
+
+    ScramExchange(user is string, password is SecretBytes, nonce is string) {
+        confirm nonce.length() >= 18 && nonce.split(",").size() == 1 else throw ScramFailure("client nonce must be 18+ printable characters without commas");
+        self.user = user;
+        self.password = password;
+        self.nonce = nonce;
+    }
+
+    bare() is string { "n=" + user + ",r=" + nonce; }
+    client_first() is string { "n,," + self.bare(); }
+
+    client_final(server_first is string) is string {
+        let parsed = ScramServerFirst(server_first, nonce);
+        let without = "c=biws,r=" + parsed.nonce();
+        let keys = ScramKeys(password, parsed);
+        let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
+        let client_key = keys.client();
+        let signature = Hmac(HmacHash.sha256, SecretBytes(Sha256(client_key).bytes()), message).bytes();
+        let proof is @byte = (0..32).map() -> index { client_key[index] ^ signature[index]; };
+        without + ",p=" + Base64Encoded(proof).string();
+    }
+
+    server_verified(server_first is string, server_final is string) is bool {
+        let parsed = ScramServerFirst(server_first, nonce);
+        confirm server_final.length() > 2 && server_final.slice(0, 2) == "v=" else throw ScramFailure("server final message has no verifier");
+        let without = "c=biws,r=" + parsed.nonce();
+        let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
+        let expected = Hmac(HmacHash.sha256, SecretBytes(ScramKeys(password, parsed).server()), message).bytes();
+        ConstantTimeEqual(expected, Base64Decoded(server_final.slice(2, server_final.length())).bytes()).value();
+    }
+}
+
+// Internal: r=, s=, i= attributes of server-first-message.
+object ScramServerFirst {
+    has origin is string;
+    has client is string;
+    ScramServerFirst(origin is string, client is string) {
+        self.origin = origin;
+        self.client = client;
+    }
+    attribute(name is string) is string {
+        let matches is @string = origin.split(",").filter() -> part { part.length() >= 2 && part.slice(0, 2) == name + "="; };
+        confirm matches.size() == 1 else throw ScramFailure("server first message lacks " + name);
+        matches[0].slice(2, matches[0].length());
+    }
+    nonce() is string {
+        let value = self.attribute("r");
+        confirm value.length() > client.length() && value.slice(0, client.length()) == client else throw ScramFailure("server nonce does not extend the client nonce");
+        value;
+    }
+    salt() is @byte { Base64Decoded(self.attribute("s")).bytes(); }
+    iterations() is int {
+        let count = ParsedInt(self.attribute("i")).value();
+        confirm count >= 4096 else throw ScramFailure("SCRAM iteration count is below 4096");
+        count;
+    }
+}
+
+// Internal: SaltedPassword-derived client and server keys.
+object ScramKeys {
+    has password is SecretBytes;
+    has first is ScramServerFirst;
+    ScramKeys(password is SecretBytes, first is ScramServerFirst) {
+        self.password = password;
+        self.first = first;
+    }
+    salted() is SecretBytes { Pbkdf2Secret(KdfHash.sha256, password, first.salt(), first.iterations(), 32).secret(); }
+    client() is @byte { Hmac(HmacHash.sha256, self.salted(), Utf8Encoded("Client Key").bytes()).bytes(); }
+    server() is @byte { Hmac(HmacHash.sha256, self.salted(), Utf8Encoded("Server Key").bytes()).bytes(); }
+}
+
+object Md5Password {
+    has user is string;
+    has password is SecretBytes;
+    has salt is @byte;
+    Md5Password(user is string, password is SecretBytes, salt is @byte) {
+        confirm salt.size() == 4 else throw ScramFailure("MD5 salt must be 4 bytes");
+        self.user = user;
+        self.password = password;
+        self.salt = salt;
+    }
+    string() is string {
+        let inner = HexEncoded(Md5(@byte(password.export_bytes()..., Utf8Encoded(user).bytes()...)).bytes()).string();
+        "md5" + HexEncoded(Md5(@byte(Utf8Encoded(inner).bytes()..., salt...)).bytes()).string();
+    }
+}
+
+object ScramFailure does Error {
+    has reason is string;
+    ScramFailure(reason is string) { self.reason = reason; }
+    reason() is string { reason; }
+    text() is string { "SCRAM authentication failed: " + reason; }
+}
+
+test "SCRAM-SHA-256 matches RFC 7677 section 3" {
+    let exchange = ScramExchange("user", SecretBytes(Utf8Encoded("pencil").bytes()), "rOprNGfwEbeRWgbNEkqO");
+    test.is(exchange.client_first(), "n,,n=user,r=rOprNGfwEbeRWgbNEkqO");
+    let server_first = "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096";
+    test.is(exchange.client_final(server_first), "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=");
+    test.ok(exchange.server_verified(server_first, "v=6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4="));
+    test.ok(!exchange.server_verified(server_first, "v=7rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4="));
+    test.ok(try { exchange.client_final("r=attacker,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096"); false; } catch e is ScramFailure { true; });
+    test.ok(try { exchange.client_final("r=rOprNGfwEbeRWgbNEkqOx,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=10"); false; } catch e is ScramFailure { true; });
+}
+
+test "MD5 password response matches the PostgreSQL formula" {
+    let response = Md5Password("postgres", SecretBytes(Utf8Encoded("secret").bytes()), [1.byte(), 2.byte(), 3.byte(), 4.byte()]).string();
+    test.is(response, "md5bb41a296aab6baccb36ff243a562abff");
+}

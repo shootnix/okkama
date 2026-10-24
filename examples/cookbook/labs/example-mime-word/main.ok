@@ -1,0 +1,21 @@
+// Закодировать кириллицу в теме письма
+//
+// Закодировать тему с кириллицей: EncodedWord и DecodedWords работают с encoded-word заголовков.
+//
+// Запуск: ./examples/cookbook/run lab example-mime-word
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-mime-word
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mime/word" take EncodedWord, DecodedWords;
+import "message/header" take MessageHeader, MessageHeaderName;
+import "io/stdout" take Stdout;
+main() is int {
+    let text="Письмо про чай и MIME";
+    let encoded=EncodedWord(text).string();
+    Stdout().writeln(encoded);
+    let header=MessageHeader(MessageHeaderName("Subject"),encoded);
+    Stdout().writeln(DecodedWords(header.value()).string());
+    0;
+}

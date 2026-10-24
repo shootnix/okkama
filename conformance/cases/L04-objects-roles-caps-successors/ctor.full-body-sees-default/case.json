@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.ctor.full-body-sees-default",
+  "title": "a full constructor body sees the default and may replace it",
+  "purpose": "Defaults are bound before the body of a full constructor runs.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTION-ORDER",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "default evaluated\nbody sees 10\n15\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3",
+    "contracts/DISCREPANCY-LEDGER.md#d-035"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-035, refined): before the constructor runs, every defaulted field is filled with its default; the constructor then binds the supplied values, replacing defaults; finally every field must be bound, otherwise construction fails. The default (10) is evaluated first, the body reads it and rebinds n to 10 + 5 = 15."
+  },
+  "status": "mandatory"
+}

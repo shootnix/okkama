@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.float.text-exponent-and-zero",
+  "title": "exponent notation thresholds and signed zero follow Go",
+  "purpose": "Values below 1e-4 or at least 1e6 use exponent notation; negative zero prints as -0.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.FLOAT-TEXT",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "100000\n1e+06\n1.234567e+06\n0.0001\n1e-05\n2.5e-07\n1e+21\n-0\n-0\n0\nnegative zero equals zero\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6",
+    "contracts/DISCREPANCY-LEDGER.md#d-032"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-032): Go strconv.FormatFloat(x, 'g', -1, 64) (oracle: go1.26.1, runtime values; digits cross-checked with Python repr) switches to %e when the decimal exponent is < -4 or >= 6 (two-digit signed exponent) and prints IEEE negative zero as -0; -0 == 0 in IEEE 754."
+  },
+  "status": "mandatory",
+  "notes": "Non-finite floats are not representable in the current finite float contract, so their text is not asserted.",
+  "defects": [
+    "DEF-009"
+  ]
+}

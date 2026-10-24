@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.range.for-and-functional",
+  "title": "ranges as for sources and functional receivers",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.RANGES",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "CTRL.FOR",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "123\n3 9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.6",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.8: ranges accept map; (1..4) maps 1,2,3 to 1,4,9."
+  },
+  "status": "mandatory"
+}

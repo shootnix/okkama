@@ -1,0 +1,127 @@
+module http/sse v1.0.0;
+import "http/body" take BodyOpening,BodyReading,BodyClosed,BodyAlreadyOpened,UnknownBodyLength,TrailersUnavailable;
+import "http/header" take Headers,Header,HeaderName;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "runtime/utf" take utf8_valid_prefix;
+import "time/duration" take Duration,DurationUnit;
+import "numbers/bigint" take BigInt;
+import "strings/parse" take ParsedInt;
+import "compare" take Order;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/channel" take Receiving,ChannelClosed;
+import "async/scope" take FutureGroup;
+import "io/stream" take InvalidReadLimit;
+import "io/decorators" take InvalidReading;
+
+object InvalidServerEvent does Error{has reason is string;InvalidServerEvent(reason is string){self.reason=reason;}text() is string{"invalid server event: "+reason;}}
+object EventStreamEnded does Error{EventStreamEnded();text() is string{"event stream ended";}}
+object MissingEventRetry does Error{MissingEventRetry();text() is string{"event retry not supplied";}}
+object EventStreamBusy does Error{EventStreamBusy();text() is string{"concurrent event stream operation";}}
+object EventStreamLimit does Error{has kind is string;EventStreamLimit(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"event stream limit: "+kind;}}
+object ServerEvent {
+    has data,event,identifier is string;has identifier_supplied,keep_alive is bool;has milliseconds is @int;
+    ServerEvent(data is string){ServerEventData(data);self.data=data;event="message";identifier="";identifier_supplied=false;keep_alive=false;milliseconds=[];}
+    ServerEvent(comment is string,keep_alive is bool){confirm keep_alive else throw InvalidServerEvent("comment marker must be true");ServerEventMetadata(comment);data=comment;event="message";identifier="";identifier_supplied=false;self.keep_alive=true;milliseconds=[];}
+    ServerEvent(data is string,event is string,identifier is string,retry is Duration){ServerEventData(data);ServerEventMetadata(event);ServerEventMetadata(identifier);self.data=data;self.event=if event==""{"message";}else{event;};self.identifier=identifier;identifier_supplied=true;keep_alive=false;milliseconds=[EventRetry(retry).milliseconds()];}
+    // Explicit optional retry for parsed events and deliberate output omission.
+    ServerEvent(data is string,event is string,identifier is string,milliseconds is @int,identifier_supplied is bool){ServerEventData(data);ServerEventMetadata(event);ServerEventMetadata(identifier);confirm milliseconds.size()<=1 else throw InvalidServerEvent("retry cardinality");for milliseconds -> value{confirm value>=0 && value<=2147483647 else throw InvalidServerEvent("retry bound");}self.data=data;self.event=if event==""{"message";}else{event;};self.identifier=identifier;self.milliseconds=milliseconds;self.identifier_supplied=identifier_supplied;keep_alive=false;}
+    data() is string{data;}event() is string{event;}identifier() is string{identifier;}
+    identifier_supplied() is bool{identifier_supplied;}
+    keep_alive() is bool{keep_alive;}
+    retry() is Duration{confirm milliseconds.size()==1 else throw MissingEventRetry();Duration(milliseconds[0].rat(),DurationUnit.millisecond);}
+}
+object ServerEventData{ServerEventData(data is string){confirm Utf8Encoded(data).bytes().size()<=1048576 else throw EventStreamLimit("data_bytes");}}
+object ServerEventMetadata{ServerEventMetadata(value is string){let bytes=Utf8Encoded(value).bytes();confirm bytes.size()<=1024 else throw EventStreamLimit("metadata_bytes");for bytes -> octet{let code=octet.int();confirm code!=0 && code!=10 && code!=13 else throw InvalidServerEvent("metadata contains CR/LF/NUL");}}}
+object EventRetry {
+    has milliseconds is int;
+    EventRetry(origin is Duration){let value=origin.seconds()*1000.rat();confirm value.denominator()=="1" else throw InvalidServerEvent("retry requires integral milliseconds");let amount=BigInt(value.numerator());milliseconds=if amount.sign()<0{0;}else{if amount.order(BigInt("2147483647"))==Order.greater{2147483647;}else{ParsedInt(amount.string()).value();}};}
+    milliseconds() is int{milliseconds;}
+}
+object ServerEventWire {
+    has origin is ServerEvent;ServerEventWire(origin is ServerEvent){self.origin=origin;}
+    bytes() is @byte{
+        if origin.keep_alive(){return Utf8Encoded(": "+origin.data()+"\n\n").bytes();}
+        let lines=origin.data().replace("\r\n","\n").replace("\r","\n").split("\n");confirm lines.size()<=65536 else throw EventStreamLimit("data_lines");
+        let data is @string=lines.map()->line{"data: "+line+"\n";};let type=if origin.event()=="message"{"";}else{"event: "+origin.event()+"\n";};let id=if origin.identifier_supplied(){"id: "+origin.identifier()+"\n";}else{"";};
+        let retry=try{"retry: "+EventRetry(origin.retry()).milliseconds().string()+"\n";}catch e is MissingEventRetry{"";};Utf8Encoded(type+id+retry+data.join("")+"\n").bytes();
+    }
+}
+// Deliberate response metadata; applications select this rather than receiving
+// hidden cache/proxy defaults from the server or transport.
+object EventStreamHeaders{EventStreamHeaders();headers() is Headers{Headers([Header(HeaderName("Content-Type"),"text/event-stream; charset=utf-8"),Header(HeaderName("Cache-Control"),"no-cache"),Header(HeaderName("X-Accel-Buffering"),"no")]);}}
+role EventDraining{cancel() is void;async settled() is bool;}
+object EventGroup<T> does EventDraining{has group is FutureGroup<T>;EventGroup(group is FutureGroup<T>){self.group=group;}cancel() is void{group.cancel();}async settled() is bool{await group.wait();true;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+object EventRegistration{has owner is EventOperation;EventRegistration(owner is EventOperation,operation is EventDraining){self.owner=owner;owner.register(operation);}close() is void{owner.release();}}
+object EventOperation {
+    has active is Atomic<@EventDraining>;has stopped is Event;
+    EventOperation(){let empty is @EventDraining=[];active=Atomic(empty);stopped=Event();}
+    register(operation is EventDraining) is void{confirm !stopped.ready() else throw BodyClosed();confirm active.value().size()==0 else throw EventStreamBusy();active.replace([operation]);}
+    release() is void{active.replace([]);}closed() is bool{stopped.ready();}
+    close() is void{if !stopped.ready(){stopped.set();for active.value() -> operation{operation.cancel();}}}
+    async settled() is bool{let batch=active.value();for batch -> operation{await operation.settled();}true;}
+}
+object ServerEvents {
+    has input is BodyReading;has operations is EventOperation;has tail,data,type,identifier,published_identifier is Atomic<string>;has retry is Atomic<@int>;has data_bytes is Atomic<int>;has eof,started is Event;has skip_lf is Atomic<bool>;
+    ServerEvents(origin is BodyReading){confirm !origin.closed() else throw BodyClosed();input=origin;operations=EventOperation();tail=Atomic("");data=Atomic("");type=Atomic("");identifier=Atomic("");published_identifier=Atomic("");let empty is @int=[];retry=Atomic(empty);data_bytes=Atomic(0);eof=Event();started=Event();skip_lf=Atomic(false);}
+    closed() is bool{operations.closed() || eof.ready();}close() is void{operations.close();input.close();tail.replace("");data.replace("");}async settled() is bool{await operations.settled();}
+    last_identifier() is string{published_identifier.value();}
+    async event() is ServerEvent{if eof.ready(){throw EventStreamEnded();}let group is FutureGroup<ServerEvent>=FutureGroup();let registration=EventRegistration(operations,EventGroup(group));defer registration.close();let cleanup=EventGroup(group);defer await cleanup.close();let pending=self.read();group.start(pending);await pending;}
+    async read() is ServerEvent{
+        let complete=Event();let cleanup=EventReadCleanup(self,complete);defer cleanup.close();
+        loop{let line=await self.line();if line==""{
+                published_identifier.replace(identifier.value());let accumulated=data.value();let selected=type.value();data.replace("");data_bytes.replace(0);type.replace("");if accumulated!=""{complete.set();return ServerEvent(accumulated.slice(0,accumulated.length()-1),selected,published_identifier.value(),retry.value(),true);}next;
+            }
+            if line.slice(0,1)==":"{next;}let parts=line.split(":");let name=parts[0];let value=if parts.size()>1{let text=line.slice(name.length()+1,line.length());if text!="" && text.slice(0,1)==" "{text.slice(1,text.length());}else{text;}}else{"";};
+            if name=="data"{let count=data_bytes.value()+Utf8Encoded(value).bytes().size()+1;confirm count<=1048577 else throw EventStreamLimit("data_bytes");data_bytes.replace(count);data.replace(data.value()+value+"\n");}
+            if name=="event"{ServerEventMetadata(value);type.replace(value);}
+            if name=="id"{let valid=Utf8Encoded(value).bytes().reduce(true)->valid,octet{valid && octet.int()!=0;};if valid{ServerEventMetadata(value);identifier.replace(value);}}
+            if name=="retry" && value!=""{let digits=(0..value.length()).reduce(true)->valid,index{valid && "0123456789".split(value.slice(index,index+1)).size()==2;};if digits{let amount=BigInt(value);let bounded=if amount.order(BigInt("2147483647"))==Order.greater{2147483647;}else{ParsedInt(amount.string()).value();};retry.replace([bounded]);}}
+        }
+    }
+    async line() is string{
+        loop{
+            let text=tail.value();if skip_lf.value() && text!=""{skip_lf.replace(false);if text.slice(0,1)=="\n"{tail.replace(text.slice(1,text.length()));next;}}
+            let cr=text.split("\r")[0].length();let lf=text.split("\n")[0].length();let at=if cr<lf{cr;}else{lf;};
+            if at<text.length(){confirm at<=8192 else throw EventStreamLimit("line_bytes");let raw=text.slice(0,at);skip_lf.replace(text.slice(at,at+1)=="\r");tail.replace(text.slice(at+1,text.length()));let decoded=EventUtf8(Latin1Encoded(raw).bytes()).string();if !started.ready(){started.set();if decoded!="" && decoded.slice(0,1)=="﻿"{return decoded.slice(1,decoded.length());}}return decoded;}
+            confirm text.length()<=8192 else throw EventStreamLimit("line_bytes");let group is FutureGroup<@byte>=FutureGroup();let cleanup=EventGroup(group);defer await cleanup.close();let pending=input.bytes(4096);group.start(pending);let bytes=await pending;confirm bytes.size()<=4096 else throw InvalidReading("SSE source exceeded requested limit");if bytes.size()==0{eof.set();input.close();tail.replace("");data.replace("");throw EventStreamEnded();}tail.replace(text+Latin1Decoded(bytes).string());
+        }
+    }
+    destroy{self.close();}
+}
+object EventReadCleanup{has owner is ServerEvents;has complete is Event;EventReadCleanup(owner is ServerEvents,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready() && !owner.closed(){owner.close();}}}
+// WHATWG replacement decoding at line boundaries. Native strict prefix scans
+// preserve maximal well-formed runs; malformed maximal subparts consume once.
+object EventUtf8 {
+    has origin is string;EventUtf8(origin is @byte){self.origin=Latin1Decoded(origin).string();}
+    string() is string{
+        let prefix=utf8_valid_prefix(Latin1Encoded(origin).bytes());let at=Atomic(prefix);let result=Atomic(Utf8Decoded(Latin1Encoded(origin.slice(0,prefix)).bytes()).string());loop{let start=at.value();if start==origin.length(){return result.value();}
+            let lead=Latin1Encoded(origin.slice(start,start+1)).bytes()[0].int();let width=if lead>=194 && lead<=223{2;}else{if lead>=224 && lead<=239{3;}else{if lead>=240 && lead<=244{4;}else{1;}}};let consumed=Atomic(1);
+            for (1..width) -> index{if start+index>=origin.length(){last;}let code=Latin1Encoded(origin.slice(start+index,start+index+1)).bytes()[0].int();let lower=if index==1 && lead==224{160;}else{if index==1 && lead==240{144;}else{128;}};let upper=if index==1 && lead==237{159;}else{if index==1 && lead==244{143;}else{191;}};if code<lower || code>upper{last;}consumed.replace(consumed.value()+1);}
+            let text=if (width==1 && lead<128) || (width>1 && consumed.value()==width){Utf8Decoded(Latin1Encoded(origin.slice(start,start+width)).bytes()).string();}else{"�";};result.replace(result.value()+text);at.replace(start+consumed.value());
+        }
+    }
+}
+object EventBody does BodyOpening {
+    has input is Receiving<ServerEvent>;has opened is Atomic<bool>;
+    EventBody(origin is Receiving<ServerEvent>){input=origin;opened=Atomic(false);}
+    length() is BigInt{throw UnknownBodyLength();}replayable() is bool{false;}
+    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();EventBodyInput(input);}
+    destroy{if !opened.value(){input.close();}}
+}
+object EventBodyInput does BodyReading {
+    has input is Receiving<ServerEvent>;has operations is EventOperation;has tail is Atomic<string>;has ended is Event;
+    EventBodyInput(input is Receiving<ServerEvent>){self.input=input;operations=EventOperation();tail=Atomic("");ended=Event();}
+    closed() is bool{operations.closed();}close() is void{operations.close();input.close();tail.replace("");}
+    trailers() is Headers{confirm ended.ready() else throw TrailersUnavailable();Headers([]);}
+    async bytes(limit is int) is @byte{confirm limit>0 else throw InvalidReadLimit(limit);let group is FutureGroup<@byte>=FutureGroup();let registration=EventRegistration(operations,EventGroup(group));defer registration.close();let cleanup=EventGroup(group);defer await cleanup.close();let pending=self.read(limit);group.start(pending);await pending;}
+    async read(limit is int) is @byte{
+        let complete=Event();let cleanup=EventBodyCleanup(self,complete);defer cleanup.close();if ended.ready(){complete.set();return [];}
+        if tail.value()==""{let group is FutureGroup<ServerEvent>=FutureGroup();let cleanup=EventGroup(group);defer await cleanup.close();let pending=input.item();group.start(pending);let values is @ServerEvent=try{[await pending];}catch e is ChannelClosed{[];};if values.size()==0{ended.set();complete.set();return [];}tail.replace(Latin1Decoded(ServerEventWire(values[0]).bytes()).string());}
+        let text=tail.value();let count=if text.length()<limit{text.length();}else{limit;};tail.replace(text.slice(count,text.length()));complete.set();Latin1Encoded(text.slice(0,count)).bytes();
+    }
+    destroy{self.close();}
+}
+object EventBodyCleanup{has owner is EventBodyInput;has complete is Event;EventBodyCleanup(owner is EventBodyInput,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready(){owner.close();}}}
+test "event retry is explicit and negative delays clamp to zero" {test.ok(try{ServerEvent("x").retry();false;}catch e is MissingEventRetry{true;});test.is(ServerEvent("x","message","",Duration((-1).rat(),DurationUnit.second)).retry().seconds(),0.rat());}

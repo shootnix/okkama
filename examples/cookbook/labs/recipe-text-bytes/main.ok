@@ -1,0 +1,25 @@
+// Передать Unicode-текст в байтовом поле API
+//
+// Имя клиента нужно превратить в UTF-8 bytes, упаковать в Base64 и восстановить на другой стороне.
+//
+// Запуск: ./examples/cookbook/run lab recipe-text-bytes
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-text-bytes
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/text_bytes v1.0.0;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "encoding/base64" take Base64Encoded,Base64Decoded;
+import "encoding/hex" take HexEncoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let original = "Ада";
+    let bytes = Utf8Encoded(original).bytes();
+    let transfer = Base64Encoded(bytes).string();
+    let restored = Utf8Decoded(Base64Decoded(transfer).bytes()).string();
+    confirm restored == original;
+    Stdout().writeln("base64: " + transfer);
+    Stdout().writeln("hex: " + HexEncoded(bytes).string());
+    0;
+}

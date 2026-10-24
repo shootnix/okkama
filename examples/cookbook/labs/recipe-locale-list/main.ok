@@ -1,0 +1,23 @@
+// Сформировать естественное перечисление
+//
+// В письме клиенту нужно перечислить заказанные товары с союзом выбранного языка.
+//
+// Запуск: ./examples/cookbook/run lab recipe-locale-list
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-locale-list
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/locale_list v1.0.0;
+import "locale/list" take LocalizedList,ListKind,ListStyle;
+import "locale/tag" take Locale;
+import "locale/system" take FixedLanguagePreferences;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let preferences = FixedLanguagePreferences(["ru-KZ", "en"], true);
+    confirm preferences.tags().item(0) == "ru-KZ";
+    let products = ["чай", "кофе", "сок"];
+    let text = LocalizedList(products, Locale("ru"), ListKind.conjunction, ListStyle.long).string();
+    Stdout().writeln(text);
+    0;
+}

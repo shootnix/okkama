@@ -1,0 +1,12 @@
+module example v1.0.0;
+import "http/sse" take ServerEvent,EventBody,ServerEvents,EventStreamEnded;
+import "async/channel" take Channel;
+import "io/stdout" take Stdout;
+async main() is int{
+    let queue is Channel<ServerEvent>=Channel(2);
+    await queue.sending().send(ServerEvent("alive",true));
+    await queue.sending().send(ServerEvent("customer updated"));queue.sending().close();
+    let events=ServerEvents(EventBody(queue.receiving()).reading());defer events.close();
+    let event=await events.event();Stdout().writeln(event.event()+": "+event.data());
+    try{await events.event();}catch e is EventStreamEnded{}0;
+}

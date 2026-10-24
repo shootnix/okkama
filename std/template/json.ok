@@ -1,0 +1,183 @@
+module template/json v1.0.0;
+
+import "template/model" take TemplateStrings, MissingTemplateValue;
+import "template/path" take TemplatePath, TemplatePathFromString;
+import "template/compile" take TemplateOutputLimitExceeded;
+import "json/value" take JsonValue, JsonWriting, JsonKind, JsonMember, JsonObject, MissingJsonMember;
+import "collections/sequence" take Sequencing;
+import "math/decimal" take Decimal;
+import "io/buffer" take ByteBuffer;
+import "io/stream" take WritingText;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Decoded;
+import "runtime/template" take template_output_size;
+
+// Explicit JSON-to-template adapter. Constructors only retain dependencies.
+// Exact paths traverse object members through JsonWriting, never kind()/casts.
+// String/null/bool/number leaves become literal text/empty/true|false/Decimal
+// text. Arrays/objects at the leaf throw NonScalarTemplateValue; nonobjects on
+// the way to a member and absent members throw MissingTemplateValue(full path).
+// string(path is string) accepts compiled tag spelling: '.' observes the bound
+// origin itself; other spellings parse exact dotted member paths. A fresh adapter
+// binds each section item; there is no parent lookup or array indexing. The
+// TemplatePath overload still treats ['.'] as a literal member, not current item.
+// Current arrays/objects fail with NonScalarTemplateValue at diagnostic path '.';
+// they are never materialized. Current scalars need no member budget. Path errors
+// precede JSON observation. No reflection, trimming or implicit escaping.
+//
+// Default per-object member limit 1024, per-scalar UTF-8 output 1048576 bytes;
+// optional limits must be nonnegative. Zero permits empty objects/text. Maximum
+// path depth is 64, checked before printing. Each lookup observes data afresh.
+// Traversed member sequences: size once, bound before reads, ascending snapshot
+// once, duplicate validation before selection. Unselected values are not printed.
+// Exactly one completed print event per visited value is required. Suppressed
+// duplicate-event/downstream errors cannot turn into successful text. Source
+// failures escape unchanged; invalid sizes/protocol have typed errors. Buffers
+// are local and closed via defer; returned strings escape independently, sources never close.
+// O(n) snapshot references/O(n²) duplicate checks per level, up to 64 levels.
+// Byte limits are checked before output allocation; TextTemplate separately
+// bounds combined output. Existing native helpers only; no external I/O.
+// Example: TextTemplate("{{name}}").string(JsonTemplateStrings(document)).
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/json.ok
+object JsonTemplateStrings does TemplateStrings {
+    has origin is JsonValue;
+    has maximum_members, maximum_output is int;
+    JsonTemplateStrings(origin is JsonValue) {
+        self.origin = origin;
+        maximum_members = 1024;
+        maximum_output = 1048576;
+    }
+    JsonTemplateStrings(origin is JsonValue, maximum_members is int, maximum_output is int) {
+        confirm maximum_members >= 0 && maximum_output >= 0 else throw InvalidTemplateJsonLimits();
+        self.origin = origin;
+        self.maximum_members = maximum_members;
+        self.maximum_output = maximum_output;
+    }
+    string(path is TemplatePath) is string {
+        confirm path.segments().size() <= 64 else throw TemplateJsonLimitExceeded();
+        self.scalar(path, 0);
+    }
+    string(path is string) is string {
+        if path == "." {
+            self.scalar(TemplatePath(["."]), 1);
+        } else {
+            self.string(TemplatePathFromString(path).value());
+        }
+    }
+    private:
+    scalar(path is TemplatePath, index is int) is string {
+        let output = ByteBuffer();
+        defer output.closing().close();
+        JsonTemplateObservation(origin: origin, path: path, index: index,
+            maximum_members: maximum_members, maximum_output: maximum_output,
+            destination: Utf8Output(origin: output.writing())).write();
+        Utf8Decoded(output.content().bytes()).string();
+    }
+}
+
+// Internal one-event observation and visitor. Importable only because the
+// language lacks module-private declarations; buffers never cross public APIs.
+object JsonTemplateObservation {
+    has origin is JsonValue;
+    has path is TemplatePath;
+    has index, maximum_members, maximum_output is int;
+    has destination is WritingText;
+    JsonTemplateObservation(:origin, :path, :index, :maximum_members, :maximum_output, :destination);
+    write() is void {
+        let seen = ByteBuffer();
+        defer seen.closing().close();
+        origin.print(JsonTemplateVisitor(path: path, index: index,
+            maximum_members: maximum_members, maximum_output: maximum_output,
+            destination: destination, seen: seen));
+        confirm seen.content().size() == 2 else throw InvalidTemplateJsonProtocol();
+    }
+}
+object JsonTemplateVisitor does JsonWriting {
+    has path is TemplatePath;
+    has index, maximum_members, maximum_output is int;
+    has destination is WritingText;
+    has seen is ByteBuffer;
+    JsonTemplateVisitor(:path, :index, :maximum_members, :maximum_output, :destination, :seen);
+    null_value() is void { self.scalar(""); }
+    boolean(value is bool) is void { self.scalar(if value {"true";} else {"false";}); }
+    number(value is Decimal) is void { self.scalar(value.string()); }
+    text(value is string) is void { self.scalar(value); }
+    elements(values is Sequencing<JsonValue>) is void {
+        self.mark();
+        confirm index == path.segments().size() else throw MissingTemplateValue(path);
+        throw NonScalarTemplateValue(path, JsonKind.array_value);
+    }
+    members(members is Sequencing<JsonMember>) is void {
+        self.mark();
+        confirm index < path.segments().size() else throw NonScalarTemplateValue(path, JsonKind.object_value);
+        let size = members.size();
+        confirm size >= 0 else throw InvalidTemplateJsonSize();
+        confirm size <= maximum_members else throw TemplateJsonLimitExceeded();
+        let snapshot is @JsonMember = (0..size).map() -> position {members.item(position);};
+        let document = JsonObject(snapshot);
+        let value = try { document.value(path.segments().item(index)); }
+            catch missing is MissingJsonMember { throw MissingTemplateValue(path); };
+        JsonTemplateObservation(origin: value, path: path, index: index+1,
+            maximum_members: maximum_members, maximum_output: maximum_output,
+            destination: destination).write();
+        self.complete();
+    }
+    private:
+    mark() is void {
+        if seen.content().size() == 0 {seen.writing() <- [byte(1)];}
+        else {
+            if seen.content().size() == 1 {seen.writing() <- [byte(1),byte(1)];}
+            if seen.content().size() == 2 {seen.writing() <- [byte(1)];}
+            throw InvalidTemplateJsonProtocol();
+        }
+    }
+    complete() is void {
+        confirm seen.content().size() == 1 else throw InvalidTemplateJsonProtocol();
+        seen.writing() <- [byte(1)];
+    }
+    scalar(value is string) is void {
+        self.mark();
+        confirm index == path.segments().size() else throw MissingTemplateValue(path);
+        confirm template_output_size(value,maximum_output) >= 0 else throw TemplateOutputLimitExceeded();
+        destination.write(value);
+        self.complete();
+    }
+}
+
+// Typed diagnostics retain domain coordinates, not reflected Okkama types.
+object NonScalarTemplateValue does Error {
+    has location is TemplatePath;
+    has category is JsonKind;
+    NonScalarTemplateValue(path is TemplatePath, kind is JsonKind) {
+        location = path;
+        category = kind;
+    }
+    path() is TemplatePath { location; }
+    kind() is JsonKind { category; }
+    text() is string { "non-scalar template value: " + location.string(); }
+}
+object InvalidTemplateJsonLimits does Error {
+    InvalidTemplateJsonLimits();
+    text() is string { "template JSON limits must be nonnegative"; }
+}
+object InvalidTemplateJsonSize does Error {
+    InvalidTemplateJsonSize();
+    text() is string { "template JSON member size must be nonnegative"; }
+}
+object InvalidTemplateJsonProtocol does Error {
+    InvalidTemplateJsonProtocol();
+    text() is string { "template JSON value must emit exactly one event"; }
+}
+object TemplateJsonLimitExceeded does Error {
+    TemplateJsonLimitExceeded();
+    text() is string { "template JSON traversal limit exceeded"; }
+}
+
+// Consumer suite 286 covers imported JSON constructors and full compositions;
+// root inline tests currently cannot resolve imported constructors.
+test "template JSON failures have stable diagnostics" {
+    test.is(InvalidTemplateJsonLimits().text(), "template JSON limits must be nonnegative");
+    test.is(InvalidTemplateJsonSize().text(), "template JSON member size must be nonnegative");
+    test.is(InvalidTemplateJsonProtocol().text(), "template JSON value must emit exactly one event");
+    test.is(TemplateJsonLimitExceeded().text(), "template JSON traversal limit exceeded");
+}

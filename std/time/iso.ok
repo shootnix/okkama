@@ -1,0 +1,192 @@
+module time/iso v1.0.0;
+
+import "time/date" take Date;
+import "time/day" take TimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "strings/parse" take ParsedInt, InvalidInteger;
+
+// Strict ISO 8601 calendar and local-date-time representations.
+//
+//     IsoDate(origin: Date(year: 2026, month: 8, day: 11)).string();
+//     // "2026-08-11"
+//
+//     value LocalDateTimeFromIso(origin: "2026-08-11T12:30:45.125");
+//
+// Dates are exactly YYYY-MM-DD. Local date-times require an uppercase `T` and
+// seconds: YYYY-MM-DDTHH:MM:SS with an optional fraction of one through nine
+// digits. Canonical output omits a zero fraction and trims trailing zeroes.
+// Whitespace, offsets, zones, lowercase `t`, reduced precision and expanded
+// years are rejected. Offset-bearing timestamps belong to time/rfc3339.
+
+object IsoDate {
+    has origin is Date;
+
+    IsoDate(origin is Date) {
+        self.origin = origin;
+    }
+
+    #projected
+    string() is string {
+        let year is string = origin.year().string();
+        let month is string = origin.month().string();
+        let day is string = origin.day().string();
+        ("0000" + year).slice(year.length(), year.length() + 4)
+            + "-"
+            + ("00" + month).slice(month.length(), month.length() + 2)
+            + "-"
+            + ("00" + day).slice(day.length(), day.length() + 2);
+    }
+}
+
+object DateFromIso {
+    has origin is string;
+
+    DateFromIso(origin is string) {
+        self.origin = origin;
+    }
+
+    #projected
+    value() is Date {
+        confirm origin.length() == 10
+            && origin.slice(4, 5) == "-"
+            && origin.slice(7, 8) == "-"
+            else throw InvalidIsoDate(origin);
+        try {
+            Date(
+                year: value ParsedInt(origin.slice(0, 4)),
+                month: value ParsedInt(origin.slice(5, 7)),
+                day: value ParsedInt(origin.slice(8, 10)),
+            );
+        }
+        catch error is InvalidInteger {
+            throw InvalidIsoDate(origin);
+        }
+    }
+}
+
+object IsoLocalDateTime {
+    has origin is LocalDateTime;
+
+    IsoLocalDateTime(origin is LocalDateTime) {
+        self.origin = origin;
+    }
+
+    #projected
+    string() is string {
+        let time is TimeOfDay = origin.time();
+        let hour is string = time.hour().string();
+        let minute is string = time.minute().string();
+        let second is string = time.second().string();
+        let fraction is string = if time.nanosecond() == 0 {
+            "";
+        }
+        else {
+            "." + IsoFraction(origin: time.nanosecond()).string();
+        };
+        IsoDate(origin: origin.date()).string()
+            + "T"
+            + ("00" + hour).slice(hour.length(), hour.length() + 2)
+            + ":"
+            + ("00" + minute).slice(minute.length(), minute.length() + 2)
+            + ":"
+            + ("00" + second).slice(second.length(), second.length() + 2)
+            + fraction;
+    }
+}
+
+object LocalDateTimeFromIso {
+    has origin is string;
+
+    LocalDateTimeFromIso(origin is string) {
+        self.origin = origin;
+    }
+
+    #projected
+    value() is LocalDateTime {
+        let length is int = origin.length();
+        let fraction is bool = length > 19;
+        confirm (length == 19 || (length >= 21 && length <= 29))
+            && origin.slice(10, 11) == "T"
+            && origin.slice(13, 14) == ":"
+            && origin.slice(16, 17) == ":"
+            && (!fraction || origin.slice(19, 20) == ".")
+            else throw InvalidIsoLocalDateTime(origin);
+
+        try {
+            let nanosecond is int = if fraction {
+                let digits is string = origin.slice(20, length);
+                value ParsedInt(
+                    (digits + "000000000").slice(0, 9)
+                );
+            }
+            else {
+                0;
+            };
+            LocalDateTime(
+                date: value DateFromIso(origin.slice(0, 10)),
+                time: TimeOfDay(
+                    hour: value ParsedInt(origin.slice(11, 13)),
+                    minute: value ParsedInt(origin.slice(14, 16)),
+                    second: value ParsedInt(origin.slice(17, 19)),
+                    nanosecond: nanosecond,
+                ),
+            );
+        }
+        catch error is InvalidInteger {
+            throw InvalidIsoLocalDateTime(origin);
+        }
+    }
+}
+
+object IsoFraction {
+    has origin is int;
+
+    IsoFraction(origin is int) {
+        self.origin = origin;
+    }
+
+    #projected
+    string() is string {
+        let source is string = origin.string();
+        self.digits(
+            ("000000000" + source).slice(source.length(), source.length() + 9)
+        );
+    }
+
+    private:
+
+    digits(source is string) is string {
+        if source.slice(source.length() - 1, source.length()) == "0" {
+            self.digits(source.slice(0, source.length() - 1));
+        }
+        else {
+            source;
+        }
+    }
+}
+
+object InvalidIsoDate does Error {
+    has origin is string;
+
+    InvalidIsoDate(origin is string) {
+        self.origin = origin;
+    }
+
+    #projected
+    text() is string {
+        "invalid ISO date: " + origin;
+    }
+}
+
+object InvalidIsoLocalDateTime does Error {
+    has origin is string;
+
+    InvalidIsoLocalDateTime(origin is string) {
+        self.origin = origin;
+    }
+
+    #projected
+    text() is string {
+        "invalid ISO local date-time: " + origin;
+    }
+}

@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Scanner {
+    Scanner();
+    scan(values is @int) is int {
+        let doubled = values.map() -> v {
+            if v > 10 { return v; }
+            v * 2;
+        };
+        doubled.size();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Scanner().scan([1, 2, 30, 4]).string());
+    0;
+}

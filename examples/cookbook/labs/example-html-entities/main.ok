@@ -1,0 +1,20 @@
+// Вставить имя клиента в HTML
+//
+// Показать пользовательское имя в HTML: EscapedHtml кодирует специальные символы, UnescapedHtml декодирует ссылки.
+//
+// Запуск: ./examples/cookbook/run lab example-html-entities
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-html-entities
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+
+import "html/entities" take EscapedHtml;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let output = Stdout();
+    output.writeln(EscapedHtml("<Ada & Bob>").string());
+    output.writeln(EscapedHtml("\"Ada's\"", true).string());
+    0;
+}

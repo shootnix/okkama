@@ -1,0 +1,75 @@
+module checksum/adler32 v1.0.0;
+
+import "checksum/state" take Checksumming, InvalidChecksumInitial;
+
+// Adler-32 of an immutable byte chunk continued from an unsigned 32-bit seed.
+// Adler32() and Adler32(bytes) use seed 1. Adler32(bytes, initial) rejects seeds
+// outside 0..4294967295 with InvalidChecksumInitial at construction.
+//
+//     let prefix = Adler32([byte(87), byte(105), byte(107), byte(105)]);
+//     let whole = prefix.state([byte(112), byte(101), byte(100), byte(105), byte(97)]);
+//     whole.value(); // 300286872 ("Wikipedia"); prefix remains unchanged
+//
+// value() computes lazily, without mutation or memoization. It returns the
+// non-negative packed sums of RFC 1950, each modulo 65521. Empty input yields
+// 1 by default; both halves of an explicit seed are normalized even when empty,
+// matching zlib. Per-byte reduction bounds intermediate arithmetic.
+// state(bytes) evaluates this chunk and returns a successor retaining only the
+// new chunk and resulting seed. Repeated queries and independent branches are
+// valid. Immutable input arrays are borrowed; no streams/resources are closed.
+// Runtime is linear in the observed chunk. This is not a cryptographic digest;
+// encode strings explicitly before passing their bytes.
+object Adler32 does Checksumming {
+    has origin is @byte;
+    has initial is int;
+
+    Adler32() { origin = []; initial = 1; }
+    Adler32(origin is @byte) { self.origin = origin; initial = 1; }
+    Adler32(origin is @byte, initial is int) {
+        confirm initial >= 0 && initial <= 4294967295
+            else throw InvalidChecksumInitial(initial, 4294967295);
+        self.origin = origin;
+        self.initial = initial;
+    }
+
+    value() is int {
+        let normalized = (((initial >> 16) % 65521) << 16) | ((initial & 65535) % 65521);
+        origin.reduce(normalized) -> checksum, octet {
+            let low = ((checksum & 65535) + octet.int()) % 65521;
+            let high = ((checksum >> 16) + low) % 65521;
+            (high << 16) | low;
+        };
+    }
+
+    state(origin is @byte) is ^Adler32 {
+        ^initial = self.value();
+        ^origin = origin;
+    }
+}
+
+test "Adler-32 empty and Wikipedia reference vectors" {
+    test.is(Adler32().value(), 1);
+    test.is(Adler32([]).value(), 1);
+    let word = [byte(87), byte(105), byte(107), byte(105), byte(112), byte(101), byte(100), byte(105), byte(97)];
+    test.is(Adler32(word).value(), 300286872);
+    test.is(Adler32([byte(0), byte(128), byte(255)]).value(), 33685888);
+}
+
+test "Adler-32 successors preserve their origins and branches" {
+    let origin = Adler32([byte(1), byte(2)]);
+    let a = origin.state([byte(3)]);
+    let b = origin.state([byte(4)]);
+    test.is(origin.value(), 393220);
+    test.is(a.value(), 851975);
+    test.is(b.value(), 917512);
+    test.is(a.state([]).value(), 851975);
+    test.is(origin.value(), 393220);
+}
+
+test "Adler-32 seeds normalize and reject out-of-range integers" {
+    test.is(Adler32([], 0).value(), 0);
+    test.is(Adler32([], 4294967295).value(), 917518);
+    test.is(Adler32([byte(0)], 4294967295).value(), 1835022);
+    test.ok(try { Adler32([], -1); false; } catch error is Error { true; });
+    test.ok(try { Adler32([], 4294967296); false; } catch error is Error { true; });
+}

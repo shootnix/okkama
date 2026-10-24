@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Summer {
+    Summer();
+    total(label is string, values is ...int) is string {
+        let all is @int = values...;
+        let sum = all.reduce(0) -> acc, v { acc + v; };
+        label + "=" + sum.string() + "/" + all.size().string();
+    }
+    forward(values is ...int) is string {
+        self.total("fwd", 100, values...);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let s = Summer();
+    out.writeln(s.total("a", 1, 2, 3));
+    out.writeln(s.total("empty"));
+    let xs = [4, 5];
+    out.writeln(s.total("spread", 1, xs...));
+    out.writeln(s.forward(1, 2));
+    0;
+}

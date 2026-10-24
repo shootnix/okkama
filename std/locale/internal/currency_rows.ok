@@ -1,0 +1,9 @@
+module locale/internal/currency_rows v1.0.0;
+// Generated immutable packed currency row search.
+import "compare" take Order;
+object CurrencyTranslationRows {
+has fields is @string;CurrencyTranslationRows(origin is string){fields=origin.split("|");}
+row(code is string) is @string{let index=self.search(code,0,(fields.size()/10).int());if index<0{let empty is @string=[];return empty;}let values is @string=(1..10).map()->offset{fields[index*10+offset];};values;}
+private:
+search(code is string,start is int,stop is int) is int{if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=code.order(fields[middle*10]);if order==Order.equal{return middle;}if order==Order.less{self.search(code,start,middle);}else{self.search(code,middle+1,stop);}}
+}

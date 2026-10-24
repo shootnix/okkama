@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.if.expression-else-if",
+  "title": "if expressions take a block after else",
+  "purpose": "The expression form of if has no else-if chain.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.IF",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "GRAM.IF",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "grammar if_expr = \"if\" expr block \"else\" block; only if_stmt chains else-if. Detection while parsing or analysing is conforming."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#8.11"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: if_expr requires a block after else; `else if` chains belong to if_stmt only."
+  },
+  "status": "mandatory"
+}

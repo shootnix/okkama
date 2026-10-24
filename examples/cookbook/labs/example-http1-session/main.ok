@@ -1,0 +1,44 @@
+// Переиспользовать один HTTP/1-разговор
+//
+// Обменяться запросами в одном HTTP/1-соединении: Http1Session удерживает admission до завершения тела ответа.
+//
+// Запуск: ./examples/cookbook/run lab example-http1-session
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http1-session
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "http/http1_session" take Http1Session;
+import "http/http1_reading" take Http1RequestHeadReading;
+import "http/http1_message_writing" take Http1ResponseWriting;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "http/message" take Response;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/body" take ByteBody,EmptyBody;
+import "io/stdout" take Stdout;
+object Replying {
+    has listener is TcpAcceptance;Replying(listener is TcpAcceptance){self.listener=listener;}
+    async run() is void {
+        let connection=await listener.connection();defer connection.close();
+        let first=await Http1RequestHeadReading(connection.input()).result();
+        let response=Response(Status(200),Headers([Header(HeaderName("Content-Length"),"3")]),ByteBody([97.byte(),98.byte(),99.byte()]));
+        await Http1ResponseWriting(connection.output(),response,first.head().method()).result();
+        let second=await Http1RequestHeadReading(connection.input()).result();
+        await Http1ResponseWriting(connection.output(),Response(Status(204),Headers([])),second.head().method()).result();
+    }
+}
+async main() is int {
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let active=spawn Replying(listener).run();let connection=await TcpConnecting(listener.local_endpoint()).connection();
+    let session=Http1Session(connection.input(),connection.output(),connection);defer session.close();
+    let request=ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").value().request(EmptyBody());
+    let first=await session.exchange(request);let reader=first.response().body().reading();
+    confirm (await reader.bytes(1))[0].int()==97 && (await reader.bytes(1))[0].int()==98 && (await reader.bytes(1))[0].int()==99;
+    confirm (await reader.bytes(1)).size()==0;
+    let second=await session.exchange(request);confirm second.response().status().code()==204;await active;
+    Stdout().writeln("two HTTP1 exchanges on one TCP session verified");0;
+}

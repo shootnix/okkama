@@ -1,0 +1,131 @@
+module mail/imap_exchange v1.0.0;
+
+
+import "mail/imap_command" take ImapCommand, ImapSimpleCommand;
+import "mail/imap_command_reading" take ImapTag, ImapCommandLimits, ImapCommandRead, ImapCommandInput,
+    ImapReplyMode, ImapContinuationWriting, ImapNoContinuation, ImapCommandLimitExceeded, ImapResponseObserving;
+import "net/stream" take AsyncReading, AsyncWriting;
+import "io/stream" take Closing;
+import "io/decorators" take ByteSnapshot;
+import "async/channel" take Channel, Sending;
+import "async/lock" take Lock;
+import "async/event" take Event;
+import "async/scope" take FutureScope, Supervising;
+import "numbers/bigint" take BigInt, BigSum;
+import "encoding/utf" take Utf8Encoded;
+import "error" take InvalidState;
+
+// Owns a connected protocol transport, not authentication or TLS negotiation.
+// The application-facing session will own this channel. Serialized operations
+// assign tags only after acquiring the lock and carry unread bytes forward.
+// A started transport/protocol failure poisons and closes the connection.
+// Tagged NO/BAD keep alignment and are returned for operation-specific handling.
+object ImapCommandChannel does Closing {
+    has input is AsyncReading;has output is AsyncWriting;has owner is Closing;
+    has limits is ImapCommandLimits;has lock is Lock;has stopped is Event;
+    has states is Channel<ImapExchangeState>;has initial is Future<Sending<ImapExchangeState>>;
+    ImapCommandChannel(input is AsyncReading, output is AsyncWriting, owner is Closing, prefix is @byte, limits is ImapCommandLimits) {
+        confirm prefix.size()<=limits.wire_bytes() else throw ImapCommandLimitExceeded("prefix_bytes");
+        confirm limits.responses()>0 else throw ImapCommandLimitExceeded("responses");
+        confirm limits.wire_bytes()>0 && limits.response().wire_bytes()>0 else throw ImapCommandLimitExceeded("wire_bytes");
+        self.input=input;self.output=output;self.owner=owner;self.limits=limits;lock=Lock();stopped=Event();
+        let channel is Channel<ImapExchangeState>=Channel(1);states=channel;
+        initial=channel.sending().send(ImapExchangeState(prefix,BigInt("1")));
+    }
+    request(command is ImapCommand) is ImapCommandExchange {ImapCommandExchange(self,command);}
+    limits() is ImapCommandLimits {limits;}
+    closed() is bool {stopped.ready() || owner.closed();}
+    close() is void {
+        if !stopped.ready() {stopped.set();states.sending().close();owner.close();}
+    }
+    abort() is void {
+        try {self.close();} catch failure is Error {} catch failure is NativeFailure {}
+    }
+    async perform(command is ImapCommand) is ImapCommandRead {
+        confirm !self.closed() else throw ImapChannelClosed();
+        await initial;
+        let guard=await lock.guard();defer guard.close();
+        confirm !self.closed() else throw ImapChannelClosed();
+        let completed=Event();let cleanup=ImapExchangeCleanup(self,completed);defer cleanup.close();
+        let state=await states.receiving().item();let tag=ImapTag("O"+state.serial().string());
+        let continuation is ImapContinuationWriting=if command.literal() {ImapLiteralWriting(output,command);} else {ImapNoContinuation();};
+        let logout=command.name()=="LOGOUT";
+        await output.write(ByteSnapshot(command.bytes(tag)));
+        let result=await ImapCommandInput(input,tag,state.prefix(),limits,ImapReplyMode(continuation,logout)).read();
+        let following=ImapExchangeState(result.remainder(),BigSum(left:state.serial(),right:BigInt("1")).value());
+        await states.sending().send(following);completed.set();
+        if logout {self.close();}
+        result;
+    }
+    async idle(stop is Event, observer is ImapResponseObserving) is @ImapCommandRead {
+        confirm !self.closed() else throw ImapChannelClosed();await initial;
+        let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        if stop.ready() {return [];}
+        let completed=Event();let cleanup=ImapExchangeCleanup(self,completed);defer cleanup.close();
+        let state=await states.receiving().item();let tag=ImapTag("O"+state.serial().string());
+        await output.write(ByteSnapshot(ImapCommand(simple:ImapSimpleCommand.idle).bytes(tag)));
+        let action=ImapIdleWireInput(input,output,tag,state.prefix(),limits,stop,observer);
+        let scope is FutureScope<int,ImapCommandRead>=FutureScope(action:action.run);
+        let result=await scope.result();
+        await states.sending().send(ImapExchangeState(result.remainder(),BigSum(left:state.serial(),right:BigInt("1")).value()));
+        completed.set();[result];
+    }
+    destroy {self.abort();}
+}
+object ImapCommandExchange {
+    has pending is Future<ImapCommandRead>;
+    ImapCommandExchange(origin is ImapCommandChannel, command is ImapCommand) {pending=origin.perform(command);}
+    result() is Future<ImapCommandRead> {pending;}
+}
+object ImapExchangeState {
+    has prefix is @byte;has serial is BigInt;
+    ImapExchangeState(prefix is @byte, serial is BigInt) {self.prefix=prefix;self.serial=serial;}
+    prefix() is @byte {prefix;}
+    serial() is BigInt {serial;}
+}
+object ImapExchangeCleanup {
+    has origin is ImapCommandChannel;has complete is Event;
+    ImapExchangeCleanup(origin is ImapCommandChannel, complete is Event) {self.origin=origin;self.complete=complete;}
+    close() is void {if !complete.ready() {origin.abort();}}
+}
+object ImapLiteralWriting does ImapContinuationWriting {
+    has output is AsyncWriting;has command is ImapCommand;
+    ImapLiteralWriting(output is AsyncWriting, command is ImapCommand) {self.output=output;self.command=command;}
+    async write() is int {await output.write(ByteSnapshot(command.literal_bytes()));1;}
+}
+object ImapChannelClosed does Error {
+    ImapChannelClosed();
+    text() is string {"IMAP command channel is closed";}
+}
+object ImapIdleWireInput {
+    has input is AsyncReading;has output is AsyncWriting;has tag is ImapTag;has prefix is @byte;
+    has limits is ImapCommandLimits;has stop is Event;has observer is ImapResponseObserving;
+    ImapIdleWireInput(input is AsyncReading, output is AsyncWriting, tag is ImapTag, prefix is @byte,
+        limits is ImapCommandLimits, stop is Event, observer is ImapResponseObserving) {
+        self.input=input;self.output=output;self.tag=tag;self.prefix=prefix;self.limits=limits;self.stop=stop;self.observer=observer;
+    }
+    async run(group is Supervising<int>) is ImapCommandRead {
+        let sent=Event();let continuation=ImapIdleContinuation(output,stop,sent,group);
+        let result=await ImapCommandInput(input,tag,prefix,limits,ImapReplyMode(continuation,false,observer)).read();
+        if !sent.ready() {group.cancel();}
+        confirm !result.successful() || sent.ready() else throw InvalidState("IDLE completed before DONE was sent");
+        result;
+    }
+}
+object ImapIdleContinuation does ImapContinuationWriting {
+    has output is AsyncWriting;has stop,sent is Event;has group is Supervising<int>;
+    ImapIdleContinuation(output is AsyncWriting, stop is Event, sent is Event, group is Supervising<int>) {
+        self.output=output;self.stop=stop;self.sent=sent;self.group=group;
+    }
+    async write() is int {group.start(ImapDoneWriting(output,stop,sent).write());1;}
+}
+object ImapDoneWriting {
+    has output is AsyncWriting;has stop,sent is Event;
+    ImapDoneWriting(output is AsyncWriting, stop is Event, sent is Event) {self.output=output;self.stop=stop;self.sent=sent;}
+    async write() is int {await stop.wait();sent.set();await output.write(ByteSnapshot(Utf8Encoded("DONE\r\n").bytes()));1;}
+}
+
+test "exchange state retains exact unread bytes and unbounded serial" {
+    let state=ImapExchangeState([0.byte(),255.byte()],BigInt("4294967296"));
+    test.is(state.prefix(),[0.byte(),255.byte()]);test.is(state.serial().string(),"4294967296");
+}

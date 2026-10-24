@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.precedence.associativity",
+  "title": "left associativity of same-level operators",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.PRECEDENCE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "5\n2\n2\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: term/factor/shift repeat left-to-right: (10-3)-2=5, (100/10)/5=2 (exact rat prints 2), (2*3)%4=2, (16>>2)>>1=2. language owner decision, 21.10.2026 (D-046): int / int is rat, and rat combines with int only after an explicit .rat(), so the second division divides by 5.rat()."
+  },
+  "status": "mandatory"
+}

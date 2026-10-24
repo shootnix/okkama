@@ -1,0 +1,29 @@
+// LocalWeb и Page: сборка локального HTTP-приложения
+// Связывает WebRoutes с listener 127.0.0.1 и формирует общий HTML-каркас страниц.
+// Пример: await LocalWeb().serve(routes,8080); Page("Заголовок","<p>Содержимое</p>").reply();
+// Переданный body — подготовленная HTML-разметка; пользовательские фрагменты экранирует контроллер. Порт 0 удобен для теста.
+// Это модуль приложения; запускайте использующую его программу через ../run.
+
+module cookbook/http v1.0.0;
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes;
+import "web/reply" take Html;
+import "html/entities" take EscapedHtml;
+import "io/stdout" take Stdout;
+object LocalWeb {
+    LocalWeb();
+    async serve(routes is WebRoutes,port is int) is void {
+        confirm port>=0 && port<=65535;
+        let server=await WebApplication(routes).server("127.0.0.1",port);
+        defer await server.settled();defer server.close();
+        Stdout().writeln("PORT "+server.local_endpoint().port().string());Stdout().flush();
+        await server.serve();
+    }
+}
+object Page {
+    has title,body is string;
+    Page(title is string,body is string){self.title=title;self.body=body;}
+    reply() is Html {
+        Html(200,"<!doctype html><html lang=ru><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>"+EscapedHtml(title).string()+"</title><style>body{font:17px system-ui;max-width:960px;margin:48px auto;padding:0 24px;background:#f7f5f0;color:#26352f}a{color:#12674c}article,pre,form{background:white;padding:24px;border-radius:12px;overflow:auto}input,textarea,button{font:inherit;margin:6px;padding:10px}textarea{display:block;width:85%}nav{margin:24px 0}pre{white-space:pre-wrap}li{margin:14px 0}</style><h1>"+EscapedHtml(title).string()+"</h1>"+body+"</html>");
+    }
+}

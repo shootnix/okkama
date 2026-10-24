@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.strings.parsed-scalars",
+  "title": "strict scalar parsing projections",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.STRINGS.PARSE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - decimal\nok 2 - negative\nok 3 - base 16\nok 4 - base 0 prefix\nok 5 - byte base 2\nok 6 - rat\nok 7 - bool true\nok 8 - float\nchecks: 8, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/strings/parse.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "strings/parse header: decimal default, explicit bases 2..36, base 0 recognises 0x; ParsedRat normalises 6/8 to 3/4."
+  },
+  "status": "mandatory"
+}

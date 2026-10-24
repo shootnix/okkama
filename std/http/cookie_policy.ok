@@ -1,0 +1,164 @@
+module http/cookie_policy v1.0.0;
+import "http/cookie" take Cookie, CookieAttributes, CookieExpiry, CookieFlag, SameSite, InvalidCookie;
+import "http/cookie_date" take ParsedCookieDate, InvalidCookieDate;
+import "http/header" take HttpAsciiLowercase;
+import "http/method" take Method;
+import "url/value" take Url, UrlHostKind, ParsedUrl;
+import "net/endpoint" take HostName;
+import "net/public_suffix" take PublicSuffixList, MissingRegistrableDomain;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
+import "collections/set" take OrderedSet, Set;
+import "encoding/utf" take Utf8Encoded;
+
+// Context is supplied by the caller. This HTTP-only profile never guesses a
+// browser frame tree or document site from a redirect/transport/session object.
+object CookieContext {
+    has site is Url;has top_level is bool;has method is Method;has key is string;
+    CookieContext(site is Url, top_level is bool, method is Method) {
+        let checked=CookieOrigin(site);self.site=site;self.top_level=top_level;self.method=method;key=checked.site();
+    }
+    site() is Url {site;}top_level() is bool {top_level;}method() is Method {method;}key() is string {key;}
+}
+object CookieOrigin {
+    has origin is Url;has domain,site,path is string;has address,secure is bool;
+    CookieOrigin(origin is Url) {
+        let parts=origin.parts();let scheme=parts.scheme();
+        confirm scheme=="http" || scheme=="https" else throw InvalidCookie("HTTP origin required");
+        confirm parts.authority().present() else throw InvalidCookie("origin authority required");
+        let host=parts.authority().host();let kind=host.kind();
+        confirm kind==UrlHostKind.name || kind==UrlHostKind.address else throw InvalidCookie("DNS or IP origin required");
+        let dns=kind==UrlHostKind.name;
+        let raw=if dns {host.name().ascii();}else{host.address().string();};
+        let canonical=if dns && raw.slice(raw.length()-1,raw.length())=="." {raw.slice(0,raw.length()-1);}else{raw;};
+        let registrable=if dns {try{PublicSuffixList().registrable(HostName(canonical)).ascii();}
+            catch e is MissingRegistrableDomain{canonical;}}else{host.string();};
+        self.origin=origin;domain=canonical;site=scheme+"://"+registrable;address=!dns;secure=scheme=="https";
+        path=if parts.path()=="" {"/";}else{parts.path();};
+    }
+    url() is Url {origin;}domain() is string {domain;}site() is string {site;}path() is string {path;}
+    address() is bool {address;}secure() is bool {secure;}
+}
+object CookieDefaultPath {
+    has origin is string;CookieDefaultPath(origin is string){self.origin=origin;}
+    string() is string {
+        if origin=="" || origin.slice(0,1)!="/" {return "/";}
+        let slash=(0..origin.length()).reduce(0) -> previous,index {if origin.slice(index,index+1)=="/"{index;}else{previous;}};
+        if slash==0 {"/";}else{origin.slice(0,slash);}
+    }
+}
+object CookiePathMatch {
+    has cookie,request is string;CookiePathMatch(cookie is string, request is string){self.cookie=cookie;self.request=request;}
+    matches() is bool {
+        if cookie==request {return true;}
+        if cookie=="" || request.length()<=cookie.length() || request.slice(0,cookie.length())!=cookie {return false;}
+        cookie.slice(cookie.length()-1,cookie.length())=="/" || request.slice(cookie.length(),cookie.length()+1)=="/";
+    }
+}
+object CookieDomainMatch {
+    has cookie,request is string;has address is bool;
+    CookieDomainMatch(cookie is string, request is string, address is bool){self.cookie=cookie;self.request=request;self.address=address;}
+    matches() is bool {
+        if cookie==request {return true;}
+        !address && cookie!="" && request.length()>cookie.length()
+            && request.slice(request.length()-cookie.length()-1,request.length())=="."+cookie;
+    }
+}
+object ParsedSetCookie {
+    has origin is string;has url is Url;has reference is Instant;
+    ParsedSetCookie(origin is string, url is Url, reference is Instant){self.origin=origin;self.url=url;self.reference=reference;}
+    value() is Cookie {
+        confirm origin.length()<=8192 else throw InvalidCookie("Set-Cookie source limit exceeded");
+        confirm Utf8Encoded(origin).bytes().reduce(true) -> valid,octet {let code=octet.int();valid && (code==9 || (code>=32 && code<=126));}
+            else throw InvalidCookie("ASCII Set-Cookie source required");
+        let endpoint=CookieOrigin(url);let fields=origin.split(";");
+        confirm fields.size()<=129 else throw InvalidCookie("Set-Cookie attribute limit exceeded");
+        let pair=fields[0];let coordinates=pair.split("=");
+        let name=if coordinates.size()==1 {"";}else{CookieWsp(coordinates[0]).string();};
+        let value=CookieWsp(if coordinates.size()==1 {pair;}else{pair.slice(coordinates[0].length()+1,pair.length());}).string();
+        let state=CookieAttributeReading();
+        for (1..fields.size()) -> index {state=state.following(fields[index]);}
+        state.cookie(name,value,endpoint,reference);
+    }
+}
+object CookieAttributeReading {
+    has domain,path is string;has expiry is CookieExpiry;has age is @int;
+    has same_site is SameSite;has secure,http_only,partitioned is bool;
+    CookieAttributeReading(){domain="";path="";expiry=CookieExpiry();age=[];same_site=SameSite.unspecified;secure=false;http_only=false;partitioned=false;}
+    following(source is string) is ^CookieAttributeReading {
+        let parts=source.split("=");let name=HttpAsciiLowercase(CookieWsp(parts[0]).string()).string();
+        let value=if parts.size()==1 {"";}else{CookieWsp(source.slice(parts[0].length()+1,source.length())).string();};
+        match name {
+            case "domain" {if value.length()<=1024 {^domain=value;}}
+            case "path" {if value.length()<=1024 {^path=if value!="" && value.slice(0,1)=="/" {value;}else{"";};}}
+            case "expires" {
+                let parsed=try{CookieExpiry(ParsedCookieDate(value).value());}catch e is InvalidCookieDate{CookieExpiry();};
+                if parsed.persistent(){^expiry=parsed;}
+            }
+            case "max-age" {let parsed=CookieAgeSeconds(value).values();if parsed.size()==1 {^age=parsed;}}
+            case "samesite" {
+                let lower=HttpAsciiLowercase(value).string();
+                ^same_site=match lower {case "strict" {SameSite.strict;}case "lax" {SameSite.lax;}case "none" {SameSite.cross_site;}else{SameSite.unspecified;}};
+            }
+            case "secure" {^secure=true;}case "httponly" {^http_only=true;}case "partitioned" {^partitioned=true;}
+            else{}
+        }
+    }
+    cookie(name is string, value is string, endpoint is CookieOrigin, reference is Instant) is Cookie {
+        let selected is @CookieFlag=[CookieFlag.secure,CookieFlag.http_only,CookieFlag.partitioned].filter()->flag {
+            match flag {case CookieFlag.secure {secure;}case CookieFlag.http_only {http_only;}case CookieFlag.partitioned {partitioned;}else{false;}}
+        };let flags is Set<CookieFlag>=OrderedSet(selected);
+        // Validate prefixes against supplied Domain/Path before deriving defaults
+        // or applying the PSL exact-origin exception; neither may grant __Host-.
+        Cookie(name,value,CookieAttributes(domain,path,CookieExpiry(),same_site,flags));
+        confirm !secure || endpoint.secure() else throw InvalidCookie("Secure cookie requires HTTPS origin");
+        let proposed=CookieAttributes(domain,path,CookieExpiry(),same_site,flags).domain();
+        let target=if proposed=="" {"";}else{
+            confirm CookieDomainMatch(proposed,endpoint.domain(),endpoint.address()).matches() else throw InvalidCookie("cookie Domain does not match origin");
+            if !endpoint.address() && PublicSuffixList().public(HostName(proposed)) {
+                confirm proposed==endpoint.domain() else throw InvalidCookie("public suffix Domain rejected");"";
+            }else{proposed;}
+        };
+        let actual_path=if path=="" {CookieDefaultPath(endpoint.path()).string();}else{path;};
+        let cap=reference.plus(Duration(400.rat(),DurationUnit.day));
+        let expires=if age.size()==1 {
+            CookieExpiry(if age[0]<=0 {Instant(Duration((-11644473600).rat(),DurationUnit.second));}
+                else{reference.plus(Duration(age[0].rat(),DurationUnit.second));});
+        }else{if expiry.persistent() && expiry.instant().unix_duration().seconds()>cap.unix_duration().seconds() {CookieExpiry(cap);}else{expiry;}};
+        Cookie(name,value,CookieAttributes(target,actual_path,expires,same_site,flags));
+    }
+}
+object CookieAgeSeconds {
+    has origin is string;CookieAgeSeconds(origin is string){self.origin=origin;}
+    values() is @int {
+        let negative=origin!="" && origin.slice(0,1)=="-";
+        let digits=if negative {origin.slice(1,origin.length());}else{origin;};
+        if digits=="" {let empty is @int=[];return empty;}
+        let bytes=Utf8Encoded(digits).bytes();
+        let valid=bytes.reduce(true)->accepted,octet{accepted && octet.int()>=48 && octet.int()<=57;};
+        if !valid {let empty is @int=[];return empty;}
+        let seconds=bytes.reduce(0)->total,octet {
+            if total>=3456000 {34560000;}else{let next_value=total*10+octet.int()-48;if next_value>34560000 {34560000;}else{next_value;}}
+        };
+        [if negative {0;}else{seconds;}];
+    }
+}
+object CookieWsp {
+    has origin is string;CookieWsp(origin is string){self.origin=origin;}
+    string() is string {
+        let start=(0..origin.length()).reduce(-1)->selected,index {
+            if selected>=0 {selected;}else{let scalar=origin.slice(index,index+1);if scalar==" " || scalar=="\t" {-1;}else{index;}}
+        };
+        if start<0 {return "";}
+        let after=(0..origin.length()-start).reduce(-1)->selected,index {
+            if selected>=0 {selected;}else{let scalar=origin.slice(origin.length()-index-1,origin.length()-index);
+                if scalar==" " || scalar=="\t" {-1;}else{origin.length()-index;}}
+        };origin.slice(start,after);
+    }
+}
+test "Set-Cookie keeps explicit context and precedence" {
+    let url=ParsedUrl("https://example.com/a/b").value();
+    let cookie=ParsedSetCookie("id=v; Max-Age=10; Expires=01 Jan 70 0:0:0",url,Instant(Duration(0.rat(),DurationUnit.second))).value();
+    test.ok(cookie.attributes().path()=="/a");
+    test.ok(cookie.attributes().expiry().instant().unix_duration().seconds()==10.rat());
+}

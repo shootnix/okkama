@@ -1,0 +1,34 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.has.untyped-with-default",
+  "title": "a has declaration may omit its type",
+  "purpose": "Syntax acceptance of the construct.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.HAS-DECL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success"
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: has_decl = \"has\" attr_name_list has_type? has_default? \";\" (the type is optional syntactically)."
+  },
+  "status": "mandatory"
+}

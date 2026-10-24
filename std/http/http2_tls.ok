@@ -1,0 +1,13 @@
+module http/http2_tls v1.0.0;
+import "http/version" take HttpVersion,UnsupportedHttpVersion;
+// Actual negotiated ALPN, never the advertised protocol list.
+object Http2TlsProtocol {
+    has selected is string;Http2TlsProtocol(selected is string){self.selected=selected;}
+    version() is HttpVersion{confirm selected=="h2" else throw UnsupportedHttpVersion();HttpVersion.http_2;}
+}
+test "HTTP2 TLS requires exact h2 selection" {
+    test.ok(Http2TlsProtocol("h2").version()==HttpVersion.http_2);
+    test.ok(try{Http2TlsProtocol("").version();false;}catch e is UnsupportedHttpVersion{true;});
+    test.ok(try{Http2TlsProtocol("http/1.1").version();false;}catch e is UnsupportedHttpVersion{true;});
+    test.ok(try{Http2TlsProtocol("H2").version();false;}catch e is UnsupportedHttpVersion{true;});
+}

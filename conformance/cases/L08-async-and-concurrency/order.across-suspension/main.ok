@@ -1,0 +1,62 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Job {
+    has name is string;
+    has result is int;
+    Job(:name, :result);
+    async run() is int {
+        Stdout().writeln("running " + name);
+        result;
+    }
+}
+
+object Quiet {
+    has result is int;
+    Quiet(:result);
+    async run() is int { result; }
+}
+
+object Broken does Error {
+    Broken();
+    text() is string { "broken"; }
+}
+
+object Failing {
+    Failing();
+    async run() is int {
+        Stdout().writeln("failing body");
+        throw Broken();
+    }
+}
+
+object Values {
+    Values();
+    async v(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    async flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+    async log(text is string) is void {
+        Stdout().writeln(text);
+    }
+}
+
+object Pair {
+    Pair();
+    join(a is int, b is int) is int { a * 10 + b; }
+}
+
+async main() is int {
+    let out = Stdout();
+    let v = Values();
+    let sum = (await v.v("x", 1)) + (await v.v("y", 2));
+    out.writeln(sum.string());
+    let args = Pair().join(await v.v("first", 3), await v.v("second", 4));
+    out.writeln(args.string());
+    0;
+}

@@ -1,0 +1,21 @@
+// Различить текст и HTML при подстановке
+//
+// Подать JSON в текстовый шаблон: JsonTemplateStrings адаптирует скаляры через протокол JsonWriting.
+//
+// Запуск: ./examples/cookbook/run lab example-template-context
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-template-context
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "template/json" take JsonTemplateStrings;
+import "json/value" take JsonText, JsonObject, JsonMember;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let item=JsonTemplateStrings(JsonText("Ada"));
+    let user=JsonTemplateStrings(JsonObject([JsonMember("name",JsonText("Grace"))]));
+    Stdout().writeln(item.string("."));
+    Stdout().writeln(user.string("name"));
+    0;
+}

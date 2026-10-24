@@ -1,0 +1,35 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.action.forms",
+  "title": "async, void, successor and typed actions parse",
+  "purpose": "Syntax acceptance of the construct.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.ACTION-DECL",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success"
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#11.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: action_decl = async_mark? IDENT \"(\" param_list? \")\" result_spec block; result_spec allows a type, ^Type or void."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-profile/1",
+  "title": "Profile",
+  "type": "object",
+  "required": [
+    "schema",
+    "name",
+    "kind",
+    "description",
+    "select"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ocs-profile/1"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "milestone",
+        "release-member",
+        "release-gate",
+        "informative",
+        "benchmark"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "select": {
+      "type": "object",
+      "required": [
+        "levels"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "levels": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "L00",
+              "L01",
+              "L02",
+              "L03",
+              "L04",
+              "L05",
+              "L06",
+              "L07",
+              "L08",
+              "L09",
+              "L10",
+              "L11",
+              "L12",
+              "L13"
+            ]
+          }
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "parse",
+              "check",
+              "run",
+              "test"
+            ]
+          }
+        },
+        "environment_within": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stdout",
+              "stderr",
+              "stdin",
+              "args",
+              "env-vars",
+              "filesystem",
+              "process-spawn",
+              "worker-process",
+              "real-clock",
+              "real-random",
+              "loopback-network",
+              "tls",
+              "sqlite",
+              "unicode-data",
+              "locale-data",
+              "timezone-data"
+            ]
+          }
+        },
+        "environment_any_of": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stdout",
+              "stderr",
+              "stdin",
+              "args",
+              "env-vars",
+              "filesystem",
+              "process-spawn",
+              "worker-process",
+              "real-clock",
+              "real-random",
+              "loopback-network",
+              "tls",
+              "sqlite",
+              "unicode-data",
+              "locale-data",
+              "timezone-data"
+            ]
+          }
+        },
+        "mandatory_only": {
+          "type": "boolean"
+        },
+        "statuses": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "mandatory",
+              "informative",
+              "unresolved"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

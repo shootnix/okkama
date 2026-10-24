@@ -1,0 +1,63 @@
+module runtime/ini v1.0.0;
+
+// Private, memory-only INI codec substrate. Public nominal values: config/ini.
+// Lazy parse caches one complete document or diagnostic. Counts/indices preserve
+// insertion order. Invalid documents expose no sections; wrong indices fail.
+// Coordinates count Unicode scalars from one. LF/CRLF; budgets >=0; <=1024
+// bindings per section. Registry teardown releases memory; no external resource.
+//
+// Canonical quoted writing is bounded in Unicode scalars. Status: 0 valid,
+// 1 entry before section, 2 duplicate section, 3 duplicate entry, 4 output limit,
+// 5 invalid scalar text. Failures are sticky; string access then fails, never
+// exposing partial output. name/parent retain duplicate coordinates.
+// New state per rendering; callbacks cannot reset failures.
+native object IniParseState;
+native object IniWriteState;
+native ini_parse_state(origin is string, maximum_input is int, maximum_sections is int, maximum_entries is int) is IniParseState;
+native ini_parse_valid(origin is IniParseState) is bool;
+native ini_parse_line(origin is IniParseState) is int;
+native ini_parse_column(origin is IniParseState) is int;
+native ini_parse_message(origin is IniParseState) is string;
+native ini_section_count(origin is IniParseState) is int;
+native ini_section_name(origin is IniParseState, section is int) is string;
+native ini_entry_count(origin is IniParseState, section is int) is int;
+native ini_entry_name(origin is IniParseState, section is int, entry is int) is string;
+native ini_entry_value(origin is IniParseState, section is int, entry is int) is string;
+native ini_write_state(maximum_output is int) is IniWriteState;
+native ini_write_section(origin is IniWriteState, name is string) is bool;
+native ini_write_entry(origin is IniWriteState, name is string, value is string) is bool;
+native ini_write_status(origin is IniWriteState) is int;
+native ini_write_name(origin is IniWriteState) is string;
+native ini_write_parent(origin is IniWriteState) is string;
+native ini_write_string(origin is IniWriteState) is string;
+
+test "native INI parser preserves order and cached diagnostics" {
+    let state = ini_parse_state("[s]\nx=y", 7, 1, 1);
+    test.ok(ini_parse_valid(state));
+    test.is(ini_section_count(state), 1);
+    test.is(ini_section_name(state, 0), "s");
+    test.is(ini_entry_count(state, 0), 1);
+    test.is(ini_entry_name(state, 0, 0), "x");
+    test.is(ini_entry_value(state, 0, 0), "y");
+    let invalid = ini_parse_state("[s]\r\nx=\"", 100, 1, 1);
+    test.is(ini_parse_valid(invalid), false);
+    test.is(ini_parse_line(invalid), 2);
+    test.is(ini_parse_column(invalid), 4);
+    test.is(ini_parse_valid(invalid), false);
+}
+test "native INI writer enforces sticky order duplicates and scalar budget" {
+    let state = ini_write_state(14);
+    test.ok(ini_write_section(state, "é"));
+    test.ok(ini_write_entry(state, "a", "😀"));
+    test.is(ini_write_string(state), "[\"é\"]\n\"a\"=\"😀\"\n");
+    test.is(ini_write_section(state, "é"), false);
+    test.is(ini_write_status(state), 2);
+    test.is(ini_write_section(state, "other"), false);
+    test.is(ini_write_name(state), "é");
+    let early = ini_write_state(100);
+    test.is(ini_write_entry(early, "x", "y"), false);
+    test.is(ini_write_status(early), 1);
+    let small = ini_write_state(1);
+    test.is(ini_write_section(small, "s"), false);
+    test.is(ini_write_status(small), 4);
+}

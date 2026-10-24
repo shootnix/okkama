@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.collections.literals",
+  "title": "array and map literals with trailing commas",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.COLLECTION-LITERALS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "GRAM.TRAILING-COMMA",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3\n2\n0\n0\nsame\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.7",
+    "docs/okkama-spec-11072026.md#8.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.7/8.8: trailing commas allowed; `[]` is the empty array, `[:]` the empty map and `[ : ]` is equivalent."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,132 @@
+module http/internal/http2_body v1.0.0;
+import "http/body" take BodyOpening,BodyReading,BodyClosed,BodyAlreadyOpened,UnknownBodyLength,TrailersUnavailable;
+import "http/header" take Headers,Header,HeaderName;
+import "http/internal/trailers" take HttpTrailerRules;
+import "http/message" take InvalidHttpMessage;
+import "http/internal/http2_fields" take Http2FieldSection;
+import "http/internal/hpack_tables" take HpackField;
+import "http/internal/http2_flow" take Http2DataPayload,Http2FlowWindow;
+import "http/internal/http2_frame" take Http2Fault,Http2FaultScope;
+import "runtime/buffer" as buffer;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
+import "encoding/single_byte" take Latin1Encoded;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "io/stream" take InvalidReadLimit;
+import "error" take InvalidState;
+
+// Owner charges connection DATA before calling data(), and queues returned
+// credit synchronously. Buffer owns only this stream's storage/read lifetime.
+role Http2BodyEvents{
+    credit(stream is int,amount is int,stream_update is bool) is void;
+    discard(stream is int,amount is int,cancel is bool) is void;
+}
+object Http2BodyBuffer does BodyReading {
+    has stream,maximum is int;has events is Http2BodyEvents;has expected is Atomic<@BigInt>;has empty is Atomic<bool>;has configured,needs_fields is Event;
+    has state is buffer.BufferState;has window is Atomic<Http2FlowWindow>;has received is Atomic<int>;
+    has changed is Atomic<Event>;has stopped,ended,eof,released is Event;has busy is Atomic<bool>;has failure is Atomic<@Error>;has end is Atomic<Headers>;
+    Http2BodyBuffer(stream is int,initial is int,maximum is int,events is Http2BodyEvents,expected is @BigInt,empty is bool){
+        confirm stream>0 && stream<=2147483647 && initial>=0 && initial<=1048576 && maximum>=0 && maximum<=9007199254740991 && expected.size()<=1
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid incoming body limits");
+        for expected -> length{confirm length.sign()>=0 else throw Http2Fault(Http2FaultScope.stream,1,stream,"negative incoming length");if !empty{confirm length.order(BigInt(maximum.string()))!=Order.greater else throw Http2Fault(Http2FaultScope.stream,11,stream,"declared incoming body limit");}}
+        self.stream=stream;self.maximum=maximum;self.events=events;self.expected=Atomic(expected);self.empty=Atomic(empty);configured=Event();needs_fields=Event();
+        state=buffer.buffer_state_create([]);window=Atomic(Http2FlowWindow(Http2FaultScope.stream,stream,initial));received=Atomic(0);changed=Atomic(Event());
+        stopped=Event();ended=Event();eof=Event();released=Event();busy=Atomic(false);let errors is @Error=[];failure=Atomic(errors);end=Atomic(Headers([]));
+    }
+    configure(expected is @BigInt,empty is bool) is void{
+        self.check();confirm !configured.ready() && received.value()==0 && !ended.ready() else throw InvalidState("incoming body already configured or started");
+        confirm expected.size()<=1 else throw Http2Fault(Http2FaultScope.stream,1,stream,"multiple expected body lengths");
+        for expected -> length{confirm length.sign()>=0 else throw Http2Fault(Http2FaultScope.stream,1,stream,"negative incoming length");if !empty{confirm length.order(BigInt(maximum.string()))!=Order.greater else throw Http2Fault(Http2FaultScope.stream,11,stream,"declared incoming body limit");}}
+        self.expected.replace(expected);self.empty.replace(empty);configured.set();
+    }
+    stream() is int{stream;}
+    require_fields() is void{needs_fields.set();}
+    remaining() is int{window.value().remaining();}closed() is bool{stopped.ready();}
+    wire_ended() is bool{ended.ready();}
+    trailers() is Headers{confirm eof.ready() else throw TrailersUnavailable();end.value();}
+    check() is void{for failure.value() -> error{throw error;}confirm !stopped.ready() else throw BodyClosed();}
+    wake() is void{changed.value().set();changed.replace(Event());}
+    exact(total is int) is void{
+        if !empty.value(){for expected.value() -> length{confirm BigInt(total.string()).order(length)==Order.equal else throw Http2Fault(Http2FaultScope.stream,1,stream,"incoming Content-Length mismatch");}}
+    }
+    credit(amount is int) is void{
+        if amount>0{window.replace(window.value().credited(amount));events.credit(stream,amount,!ended.ready());}
+    }
+    data(data is Http2DataPayload) is void{
+        self.check();confirm data.stream()==stream else throw Http2Fault(Http2FaultScope.connection,1,0,"body stream mismatch");
+        confirm !needs_fields.ready() || configured.ready() else throw Http2Fault(Http2FaultScope.stream,1,stream,"DATA before final fields");
+        confirm !ended.ready() else throw Http2Fault(Http2FaultScope.stream,5,stream,"DATA after remote end");
+        let charged=window.value();charged=charged.received(data.flow_bytes());let bytes=data.bytes();let total=received.value()+bytes.size();
+        confirm !empty.value() || bytes.size()==0 else throw Http2Fault(Http2FaultScope.stream,1,stream,"DATA on empty response");
+        confirm total<=maximum else throw Http2Fault(Http2FaultScope.stream,11,stream,"incoming body byte limit");
+        if !empty.value(){for expected.value() -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw Http2Fault(Http2FaultScope.stream,1,stream,"incoming Content-Length overflow");}}
+        if data.end_stream(){self.exact(total);}
+        // All validation precedes storage; owner can return the whole current
+        // frame's connection charge if a stream fault occurs above.
+        window.replace(charged);buffer.buffer_state_append(state,bytes);received.replace(total);
+        if data.end_stream(){ended.set();}self.credit(data.flow_bytes()-bytes.size());self.wake();
+    }
+    ending(trailers is Headers) is void{
+        self.check();confirm !ended.ready() else throw Http2Fault(Http2FaultScope.stream,5,stream,"duplicate remote end");self.exact(received.value());end.replace(trailers);ended.set();self.wake();
+    }
+    fail(error is Error) is void{
+        if !stopped.ready() && !eof.ready(){failure.replace([error]);stopped.set();self.release(false);self.wake();}
+    }
+    close() is void{
+        if !stopped.ready(){stopped.set();self.release(!ended.ready());self.wake();}
+    }
+    release(cancel is bool) is void{
+        if !released.ready(){let unread=buffer.buffer_state_size(state);released.set();buffer.buffer_state_close(state);events.discard(stream,unread,cancel);}
+    }
+    async bytes(limit is int) is @byte{
+        confirm limit>0 else throw InvalidReadLimit(limit);self.check();confirm busy.compare_and_replace(false,true) else throw InvalidState("body already has pending read");
+        let complete=Event();let cleanup=Http2BodyReadCleanup(self,busy,complete);defer cleanup.close();
+        loop{
+            self.check();if eof.ready(){complete.set();return [];}
+            let signal=changed.value();let available=buffer.buffer_state_size(state);
+            if available>0{let bytes=buffer.buffer_state_read(state,limit);self.credit(bytes.size());complete.set();return bytes;}
+            if ended.ready(){eof.set();self.release(false);complete.set();return [];}
+            await signal.wait();
+        }
+    }
+    destroy{if !released.ready(){self.close();}}
+}
+object Http2BodyReadCleanup{
+    has body is Http2BodyBuffer;has busy is Atomic<bool>;has complete is Event;
+    Http2BodyReadCleanup(body is Http2BodyBuffer,busy is Atomic<bool>,complete is Event){self.body=body;self.busy=busy;self.complete=complete;}
+    close() is void{busy.replace(false);if !complete.ready(){body.close();}}
+}
+object Http2IncomingBody does BodyOpening {
+    has origin is Http2BodyBuffer;has known is @BigInt;has opened is Atomic<bool>;
+    Http2IncomingBody(origin is Http2BodyBuffer,known is @BigInt){confirm known.size()<=1;self.origin=origin;self.known=known;opened=Atomic(false);}
+    length() is BigInt{confirm known.size()==1 else throw UnknownBodyLength();known[0];}
+    replayable() is bool{false;}
+    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();origin;}
+    destroy{if !opened.value(){origin.close();}}
+}
+object Http2BodyLength {
+    has origin is Headers;has stream is int;Http2BodyLength(origin is Headers,stream is int){confirm stream>0 && stream<=2147483647 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid length stream");self.origin=origin;self.stream=stream;}
+    known() is @BigInt{
+        let values=origin.values(HeaderName("content-length"));if values.size()==0{return [];}
+        let original=Atomic("");
+        for (0..values.size()) -> index{for values.item(index).split(",") -> text{
+            let value=Header(HeaderName("content-length"),text).value();let bytes=Latin1Encoded(value).bytes();
+            confirm bytes.size()>0 && bytes.size()<=1024 else throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid Content-Length digits");
+            for bytes -> octet{confirm octet.int()>=48 && octet.int()<=57 else throw Http2Fault(Http2FaultScope.stream,1,stream,"invalid Content-Length grammar");}
+            if original.value()==""{original.replace(value);}else{confirm value==original.value() else throw Http2Fault(Http2FaultScope.stream,1,stream,"conflicting Content-Length lexemes");}
+        }}
+        [BigInt(original.value())];
+    }
+}
+object Http2Trailers {
+    has headers is Headers;
+    Http2Trailers(fields is @HpackField,stream is int){
+        let section=Http2FieldSection(fields,[],false,stream);let headers=section.headers();
+        let rules=HttpTrailerRules([]);let entries=headers.entries();for (0..entries.size()) -> index{
+            try{rules.check(entries.item(index));}catch e is InvalidHttpMessage{throw Http2Fault(Http2FaultScope.stream,1,stream,"forbidden trailing field");}
+        }
+        self.headers=headers;
+    }
+    headers() is Headers{headers;}
+}

@@ -1,0 +1,104 @@
+module http/websocket_handshake v1.0.0;
+import "http/websocket" take WebSocketFailure;
+import "http/message" take Request,Response;
+import "http/header" take Header,HeaderName,Headers,HttpAsciiLowercase;
+import "http/method" take Method,InvalidMethod;
+import "http/status" take Status;
+import "http/target" take OriginTarget,RequestTargetKind;
+import "http/version" take HttpVersion;
+import "http/http1_head" take Http1RequestHead;
+import "url/value" take Url,UrlHostKind;
+import "encoding/base64" take Base64Encoded,Base64Decoded,InvalidBase64;
+import "encoding/single_byte" take AsciiEncoded;
+import "digest/legacy" take Sha1;
+
+// The nonce is checked canonical standard Base64, exactly sixteen bytes.
+// SHA-1 is mandated solely for protocol interoperability, not authentication.
+object WebSocketAccept {
+    has key is string;
+    WebSocketAccept(key is string){
+        confirm key.length()==24 else throw WebSocketFailure("nonce width");
+        let bytes=try{Base64Decoded(key).bytes();}catch e is InvalidBase64{throw WebSocketFailure("nonce encoding");};
+        confirm bytes.size()==16 else throw WebSocketFailure("nonce width");self.key=key;
+    }
+    string() is string{Base64Encoded(Sha1(AsciiEncoded(key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").bytes()).bytes()).string();}
+}
+object WebSocketProtocols {
+    has origin is @string;
+    WebSocketProtocols(origin is @string){
+        confirm origin.size()<=32 else throw WebSocketFailure("subprotocol count");
+        for (0..origin.size()) -> index{
+            let value=origin[index];confirm value.length()>0 && value.length()<=256 else throw WebSocketFailure("subprotocol width");
+            try{Method(value);}catch e is InvalidMethod{throw WebSocketFailure("subprotocol token");}
+            for (0..index) -> prior{confirm origin[prior]!=value else throw WebSocketFailure("duplicate subprotocol");}
+        }self.origin=origin;
+    }
+    values() is @string{origin;}
+    string() is string{(0..origin.size()).reduce("")->joined,index{joined+if index==0{"";}else{", ";}+origin[index];};}
+    contains(value is string) is bool{origin.reduce(false)->found,item{found || item==value;};}
+}
+// Bounded field/token parsing without silently joining singleton fields.
+object WebSocketHandshakeFields {
+    has origin is Headers;
+    WebSocketHandshakeFields(origin is Headers){
+        confirm origin.entries().size()<=128 else throw WebSocketFailure("handshake field count");
+        let size=(0..origin.entries().size()).reduce(0)->used,index{let field=origin.entries().item(index);let width=field.name().string().length()+field.value().length()+4;confirm width<=65536-used else throw WebSocketFailure("handshake field budget");used+width;};self.origin=origin;
+    }
+    single(name is string) is string{let values=origin.values(HeaderName(name));confirm values.size()==1 else throw WebSocketFailure("handshake singleton field");values.item(0);}
+    tokens(name is string) is @string{
+        let values=origin.values(HeaderName(name));let joined=(0..values.size()).reduce("")->all,index{all+if index==0{"";}else{",";}+values.item(index);};
+        if values.size()==0{let empty is @string=[];return empty;}
+        let parts=joined.split(",");confirm parts.size()<=32 else throw WebSocketFailure("handshake token count");
+        let tokens is @string=parts.map()->part{let value=Header(HeaderName(name),part).value();confirm value!="" else throw WebSocketFailure("empty handshake token");try{Method(value);}catch e is InvalidMethod{throw WebSocketFailure("handshake token");}value;};tokens;
+    }
+    upgrade() is void{
+        confirm HttpAsciiLowercase(self.single("Upgrade")).string()=="websocket" else throw WebSocketFailure("WebSocket Upgrade required");
+        let tokens=self.tokens("Connection");confirm (tokens.reduce(false)->found,token{found || HttpAsciiLowercase(token).string()=="upgrade";}) else throw WebSocketFailure("Connection Upgrade required");
+        confirm !(tokens.reduce(false)->found,token{found || HttpAsciiLowercase(token).string()=="close";}) else throw WebSocketFailure("conflicting Connection close");
+    }
+}
+object WebSocketClientHandshake {
+    has request is Request;has accept is WebSocketAccept;has offered is WebSocketProtocols;
+    WebSocketClientHandshake(url is Url,protocols is @string,headers is Headers,nonce is @byte){
+        let parts=url.parts();confirm parts.scheme()=="ws" || parts.scheme()=="wss" else throw WebSocketFailure("WebSocket URL required");
+        let authority=parts.authority();confirm authority.present() && authority.host().kind()!=UrlHostKind.empty && authority.host().kind()!=UrlHostKind.future else throw WebSocketFailure("WebSocket authority required");
+        confirm !authority.userinfo().present() && !parts.fragment().present() else throw WebSocketFailure("WebSocket URL userinfo or fragment");
+        if authority.port_marker().present(){confirm authority.port()>0 else throw WebSocketFailure("WebSocket port");}
+        confirm url.string().length()<=8192 else throw WebSocketFailure("WebSocket URL budget");
+        WebSocketHandshakeFields(headers);let reserved=["host","upgrade","connection","sec-websocket-key","sec-websocket-version","sec-websocket-protocol","sec-websocket-extensions","sec-websocket-accept","content-length","transfer-encoding","expect","trailer","proxy-authorization"];
+        for (0..headers.entries().size()) -> index{let name=headers.entries().item(index).name().lowercase();confirm !(reserved.reduce(false)->found,value{found || name==value;}) else throw WebSocketFailure("reserved handshake caller field");}
+        confirm nonce.size()==16 else throw WebSocketFailure("nonce width");let key=Base64Encoded(nonce).string();let checked=WebSocketProtocols(protocols);
+        let fields=headers.addition(Header(HeaderName("Host"),authority.string())).addition(Header(HeaderName("Upgrade"),"websocket")).addition(Header(HeaderName("Connection"),"Upgrade")).addition(Header(HeaderName("Sec-WebSocket-Key"),key)).addition(Header(HeaderName("Sec-WebSocket-Version"),"13"));
+        let complete=if protocols.size()==0{fields;}else{fields.addition(Header(HeaderName("Sec-WebSocket-Protocol"),checked.string()));};WebSocketHandshakeFields(complete);
+        request=Request(Method("GET"),OriginTarget(if parts.path()==""{"/";}else{parts.path();},parts.query()),complete);accept=WebSocketAccept(key);offered=checked;
+    }
+    request() is Request{request;}
+    selected(response is Response) is string{
+        confirm response.status().code()==101 && response.version()==HttpVersion.http_1_1 else throw WebSocketFailure("HTTP1.1 switching response required");
+        let fields=WebSocketHandshakeFields(response.headers());fields.upgrade();confirm fields.single("Sec-WebSocket-Accept")==accept.string() else throw WebSocketFailure("WebSocket accept mismatch");
+        confirm !response.headers().membership(HeaderName("Sec-WebSocket-Extensions")) else throw WebSocketFailure("unnegotiated extensions");
+        confirm !response.headers().membership(HeaderName("Content-Length")) && !response.headers().membership(HeaderName("Transfer-Encoding")) else throw WebSocketFailure("switching response framing");
+        let values=response.headers().values(HeaderName("Sec-WebSocket-Protocol"));confirm values.size()<=1 else throw WebSocketFailure("multiple selected subprotocols");
+        if values.size()==0{return "";}
+        let selected=WebSocketProtocols([values.item(0)]).values()[0];confirm offered.contains(selected) else throw WebSocketFailure("unoffered subprotocol");selected;
+    }
+}
+// Protocol validation only. Caller must authorize Origin before writing response.
+object WebSocketServerHandshake {
+    has accept is WebSocketAccept;has offered is WebSocketProtocols;
+    WebSocketServerHandshake(request is Http1RequestHead){
+        confirm request.method().string()=="GET" && request.version()==HttpVersion.http_1_1 && request.target().kind()==RequestTargetKind.origin else throw WebSocketFailure("HTTP1.1 origin GET required");
+        let fields=WebSocketHandshakeFields(request.headers());fields.upgrade();confirm fields.single("Sec-WebSocket-Version")=="13" else throw WebSocketFailure("WebSocket version 13 required");
+        confirm !request.headers().membership(HeaderName("Transfer-Encoding")) else throw WebSocketFailure("upgrade request transfer coding");
+        let lengths=request.headers().values(HeaderName("Content-Length"));confirm lengths.size()==0 || (lengths.size()==1 && lengths.item(0)=="0") else throw WebSocketFailure("upgrade request body");
+        accept=WebSocketAccept(fields.single("Sec-WebSocket-Key"));offered=WebSocketProtocols(fields.tokens("Sec-WebSocket-Protocol"));
+    }
+    protocols() is @string{offered.values();}
+    response(protocol is string) is Response{
+        confirm protocol=="" || offered.contains(protocol) else throw WebSocketFailure("unoffered subprotocol");
+        let fields=Headers([Header(HeaderName("Upgrade"),"websocket"),Header(HeaderName("Connection"),"Upgrade"),Header(HeaderName("Sec-WebSocket-Accept"),accept.string())]);
+        Response(Status(101),if protocol==""{fields;}else{fields.addition(Header(HeaderName("Sec-WebSocket-Protocol"),protocol));});
+    }
+}
+
+test "WebSocket accept uses RFC6455 nonce" {test.is(WebSocketAccept("dGhlIHNhbXBsZSBub25jZQ==").string(),"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");}

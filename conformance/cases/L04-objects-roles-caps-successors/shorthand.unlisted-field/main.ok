@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Member {
+    has name is string;
+    has id is int;
+    has internal is int = 40;
+    Member(:id, :name);
+    describe() is string { name + "#" + id.string() + "/" + internal.string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let m = Member(name: "A", id: 1, internal: 2);
+    out.writeln("unreachable");
+    0;
+}

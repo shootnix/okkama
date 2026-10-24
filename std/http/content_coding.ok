@@ -1,0 +1,25 @@
+module http/content_coding v1.0.0;
+import "http/method" take Method, InvalidMethod;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+
+// A canonical coding identity, not a compressor and not an installed-codec
+// observation. Wildcards belong to negotiation. No I/O or algorithm fallback.
+object ContentCoding {
+    has origin is string;
+    ContentCoding(origin is string) {
+        confirm origin!="*" else throw InvalidContentCoding(origin);
+        let checked=try{Method(origin).string();}catch failure is InvalidMethod{throw InvalidContentCoding(origin);};
+        let folded is @byte=Utf8Encoded(checked).bytes().map() -> octet {
+            let code=octet.int();if code>=65 && code<=90{(code+32).byte();}else{octet;}
+        };self.origin=Utf8Decoded(folded).string();
+    }
+    string() is string {origin;}
+}
+object InvalidContentCoding does Error {
+    has origin is string;InvalidContentCoding(origin is string){self.origin=origin;}
+    text() is string {"invalid HTTP content coding name: "+origin;}
+}
+test "coding identity is canonical without claiming codec support" {
+    test.is(ContentCoding("GZip").string(),"gzip");
+    test.ok(ContentCoding("X-Custom")==ContentCoding("x-custom"));
+}

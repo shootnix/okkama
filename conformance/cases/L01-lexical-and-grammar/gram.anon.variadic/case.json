@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.anon.variadic",
+  "title": "malformed anonymous action: anonymous parameters cannot be variadic",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.ANON-ACTION",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The contract requires rejection but the grammar marks this rule as context-sensitive (checked after parsing); detection while parsing is equally conforming."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.10.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.10.2: anonymous parameters cannot be variadic."
+  },
+  "status": "mandatory"
+}

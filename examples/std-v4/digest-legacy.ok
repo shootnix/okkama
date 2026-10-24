@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "digest/legacy" take Md5, Sha1;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/hex" take HexEncoded;
+import "io/stdout" take Stdout;
+
+// Legacy interoperability only; not for new security decisions.
+main() is int {
+    let prefix = Md5(Utf8Encoded("ab").bytes());
+    let complete = prefix.state(Utf8Encoded("c").bytes());
+    Stdout().writeln(HexEncoded(complete.bytes()).string());
+    Stdout().writeln(HexEncoded(Sha1(Utf8Encoded("abc").bytes()).bytes()).string());
+    Stdout().writeln(HexEncoded(prefix.bytes()).string());
+    0;
+}

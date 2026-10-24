@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.tenant-isolation-and-permissions",
+  "title": "tenant isolation and role-based permissions",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.TENANCY",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok",
+    "domain.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - admin reads own\nok 2 - viewer reads own\nok 3 - support gets redacted\nok 4 - foreign tenant is not found\nok 5 - missing invoice\nok 6 - admin writes\nok 7 - viewer cannot write\nok 8 - support cannot write\nok 9 - foreign write is not found\nchecks: 9, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "improvements-roadmap/workspace/billing/app",
+    "improvements-roadmap/results/IMP-23/RESULT.md",
+    "docs/tenant-job-budget.md"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "IMP-23 route policy: foreign resources remain 404 (no existence leak), viewer/support cannot write (403), support reads the redacted projection only; admins read and write their own tenant."
+  },
+  "status": "mandatory"
+}

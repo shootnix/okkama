@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.env.isolated-snapshot",
+  "title": "isolated environments are explicit immutable snapshots",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.OS.ENVIRONMENT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "env-vars"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "base has LANG\nchild lacks LANG\n[]\ntest\nmissing ABSENT\n"
+    }
+  },
+  "spec_refs": [
+    "std/os/environment.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "os/environment: Environment(values:) is isolated; addition/difference build new snapshots; empty values are distinct from missing ones."
+  },
+  "status": "mandatory"
+}

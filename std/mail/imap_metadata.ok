@@ -1,0 +1,216 @@
+module mail/imap_metadata v1.0.0;
+import "mail/imap_response" take ParsedImapResponse;
+import "encoding/utf" take Utf8Encoded;
+
+import "mail/imap_data" take ParsedImapData, ImapValue, ImapValueKind, ImapDataTokens, ImapDataLexing,
+    ImapDataTree, ImapDataLimits, ImapDataUpper, InvalidImapData;
+import "mail/imap_response" take ImapResponse, ImapResponseKind, ImapResponseQuote;
+import "mail/imap_name" take ImapMailboxName, ImapUtf7Decoded;
+import "mail/imap_uid" take ImapUid, ImapUidValidity, ImapSequence, ImapUidSet, ImapUidSetLimits, ImapUidLimitExceeded;
+import "mail/imap_command_reading" take ImapTag;
+import "mail/mailbox" take MailFlag, MailFlags, SystemFlag, SystemMailFlag, KeywordFlag;
+import "numbers/bigint" take BigInt;
+import "collections/sequence" take Sequencing;
+import "collections/set" take Set, OrderedSet;
+import "mime/media_type" take MimeItems, MimePosition;
+import "encoding/utf" take Utf8Decoded;
+import "error" take InvalidState;
+
+object ImapStatusCode {
+    has values is @ImapValue;
+    ImapStatusCode(origin is ImapResponse) {
+        confirm origin.kind()==ImapResponseKind.tagged || origin.name()=="OK" || origin.name()=="NO"
+            || origin.name()=="BAD" || origin.name()=="BYE" || origin.name()=="PREAUTH"
+            else throw InvalidImapData("response is not a status");
+        let line=Utf8Decoded(origin.parts().item(0).bytes()).string();
+        let start=if origin.kind()==ImapResponseKind.tagged {origin.tag().length()+origin.name().length()+2;}
+            else {origin.name().length()+3;};
+        if start<line.length()-2 && line.slice(start,start+1)=="[" {
+            let quote=ImapResponseQuote();let end=MimePosition(start+1);
+            loop {
+                confirm end.index()<line.length()-2 else throw InvalidImapData("unclosed response code");
+                let char=line.slice(end.index(),end.index()+1);
+                last if char=="]" && !quote.quoted();
+                quote=quote.accepted(char,end.index());end=end.following(end.index()+1);
+            }
+            let limits=ImapDataLimits();let tokens=ImapDataLexing(line.slice(start+1,end.index()),ImapDataTokens(limits)).tokens().entries();
+            let tree=ImapDataTree(tokens,limits);let result is MimeItems<ImapValue>=MimeItems();let position=MimePosition(0);
+            loop {last if position.index()==tokens.size();let parsed=tree.item(position.index(),0);
+                result=result.following(parsed.value());position=position.following(parsed.after());}
+            let entries=result.entries();
+            confirm entries.size()>0 && entries[0].kind()==ImapValueKind.atom else throw InvalidImapData("response code requires a name");
+            values=entries;
+        } else {values=[];}
+    }
+    present() is bool {values.size()>0;}
+    name() is string {confirm self.present() else throw InvalidState("response has no code");ImapDataUpper(values[0].string()).string();}
+    arguments() is Sequencing<ImapValue> {
+        confirm self.present() else throw InvalidState("response has no code");
+        let result is @ImapValue=(1..values.size()).map() -> index {values[index];};result;
+    }
+}
+object ImapMailbox {
+    has name is ImapMailboxName;has separator is @string;has attributes is Set<string>;
+    ImapMailbox(origin is ImapResponse) {
+        confirm origin.name()=="LIST" || origin.name()=="LSUB" else throw InvalidImapData("expected LIST or LSUB");
+        let values=ParsedImapData(origin).entries();
+        confirm values.size()==5 else throw InvalidImapData("unsupported mailbox response shape");
+        let flags=values.item(2).entries();let names is @string=(0..flags.size()).map() -> index {
+            let flag=flags.item(index);confirm flag.kind()==ImapValueKind.atom else throw InvalidImapData("mailbox attribute is not an atom");
+            ImapDataUpper(flag.string()).string();
+        };
+        let delimiter=values.item(3);
+        if delimiter.absent() {separator=[];} else {
+            confirm delimiter.kind()==ImapValueKind.quoted && delimiter.string().length()==1 else throw InvalidImapData("delimiter requires one quoted character or NIL");
+            separator=[delimiter.string()];
+        }
+        let mailbox=values.item(4);confirm mailbox.kind()!=ImapValueKind.list && mailbox.kind()!=ImapValueKind.literal8
+            else throw InvalidImapData("mailbox name requires an astring");
+        name=ImapMailboxName(ImapUtf7Decoded(mailbox.string()).string());attributes=OrderedSet(names);
+    }
+    name() is ImapMailboxName {name;}
+    hierarchical() is bool {separator.size()>0;}
+    delimiter() is string {confirm self.hierarchical() else throw InvalidState("flat mailbox namespace has no delimiter");separator[0];}
+    attributes() is Set<string> {attributes;}
+    selectable() is bool {!attributes.membership("\\NOSELECT");}
+}
+object ImapUnsigned {
+    has value is int;
+    ImapUnsigned(origin is string, nonzero is bool) {
+        confirm origin.length()>0 && origin.length()<=10 else throw InvalidImapData("unsigned number length outside 1..10");
+        if nonzero {confirm origin.slice(0,1)!="0" else throw InvalidImapData("nonzero number starts with zero");}
+        let count=MimePosition(0);
+        for (0..origin.length()) -> index {
+            let char=origin.slice(index,index+1);
+            // Explicit decimal scanning avoids accepting signs or whitespace.
+            let digit=match char {case "0" {0;} case "1" {1;} case "2" {2;} case "3" {3;} case "4" {4;}
+                case "5" {5;} case "6" {6;} case "7" {7;} case "8" {8;} case "9" {9;}
+                else {throw InvalidImapData("unsigned number requires decimal digits");}
+            };
+            confirm count.index().rat()<=(4294967295-digit)/10 else throw InvalidImapData("unsigned number exceeds 32 bits");
+            count=count.following(count.index()*10+digit);
+        }
+        value=count.index();
+    }
+    value() is int {value;}
+}
+object ImapFlagsValue {
+    has value is MailFlags;
+    ImapFlagsValue(origin is ImapValue) {
+        let entries=origin.entries();confirm entries.size()<=256 else throw InvalidImapData("too many flags");
+        let flags is @MailFlag=(0..entries.size()).map() -> index {
+            let entry=entries.item(index);confirm entry.kind()==ImapValueKind.atom else throw InvalidImapData("flag is not an atom");
+            let raw=entry.string();let name=ImapDataUpper(raw).string();
+            match name {
+                case "\\ANSWERED" {SystemFlag(SystemMailFlag.answered);} case "\\FLAGGED" {SystemFlag(SystemMailFlag.flagged);}
+                case "\\DELETED" {SystemFlag(SystemMailFlag.deleted);} case "\\SEEN" {SystemFlag(SystemMailFlag.seen);}
+                case "\\DRAFT" {SystemFlag(SystemMailFlag.draft);} case "\\RECENT" {SystemFlag(SystemMailFlag.recent);}
+                else {
+                    confirm raw.length()>0 && raw.slice(0,1)!="\\" else throw InvalidImapData("unsupported system flag");
+                    KeywordFlag(raw);
+                }
+            }
+        };value=MailFlags(flags);
+    }
+    flags() is MailFlags {value;}
+}
+object ImapUidRanges {
+    has value is ImapUidSet;has expanded is int;
+    ImapUidRanges(origin is string, limits is ImapUidSetLimits) {
+        confirm origin.length()>0 else throw InvalidImapData("empty UID range");
+        confirm origin.length()<=limits.wire_bytes() else throw ImapUidLimitExceeded("wire_bytes");
+        let items is MimeItems<ImapUid>=MimeItems();let count=MimePosition(0);
+        for origin.split(",") -> part {
+            let endpoints=part.split(":");confirm endpoints.size()>=1 && endpoints.size()<=2 else throw InvalidImapData("invalid UID range");
+            let first=ImapUnsigned(endpoints[0],true).value();
+            let final=if endpoints.size()==2 {ImapUnsigned(endpoints[1],true).value();} else {first;};
+            let size=1+(if final>=first {final-first;} else {first-final;});
+            confirm size<=limits.entries()-count.index() else throw ImapUidLimitExceeded("entries");
+            // RFC 4315: 12:10 is the sequence 10,11,12, just like 10:12.
+            // This matters for positional COPYUID source/destination mappings.
+            let lowest=if final>=first {first;} else {final;};
+            for (0..size) -> offset {
+                let number=lowest+offset;
+                items=items.following(ImapUid(BigInt(number.string())));
+            }
+            count=count.following(count.index()+size);
+        }
+        value=ImapUidSet(items.entries(),limits);expanded=count.index();
+    }
+    uids() is ImapUidSet {value;}
+    expanded_count() is int {expanded;}
+}
+object ImapSearchResult {
+    has value is ImapUidSet;
+    ImapSearchResult(origin is ImapResponse, tag is ImapTag, limits is ImapUidSetLimits) {
+        let values=ParsedImapData(origin).entries();
+        if origin.name()=="SEARCH" {
+            confirm values.size()-2<=limits.entries() else throw ImapUidLimitExceeded("entries");
+            let ids is @ImapUid=(2..values.size()).map() -> index {
+                let entry=values.item(index);confirm entry.kind()==ImapValueKind.atom else throw InvalidImapData("SEARCH UID is not an atom");
+                ImapUid(BigInt(ImapUnsigned(entry.string(),true).value().string()));
+            };value=ImapUidSet(ids,limits);
+        } else {
+            confirm origin.name()=="ESEARCH" else throw InvalidImapData("expected SEARCH or ESEARCH");
+            let position=MimePosition(2);
+            if position.index()<values.size() && values.item(position.index()).kind()==ImapValueKind.list {
+                let correlator=values.item(position.index()).entries();
+                confirm correlator.size()==2 && correlator.item(0).kind()==ImapValueKind.atom
+                    && correlator.item(1).kind()==ImapValueKind.quoted && ImapDataUpper(correlator.item(0).string()).string()=="TAG"
+                    && correlator.item(1).string()==tag.string() else throw InvalidImapData("ESEARCH tag mismatch");
+                position=position.following(position.index()+1);
+            }
+            confirm position.index()<values.size() && values.item(position.index()).kind()==ImapValueKind.atom
+                && ImapDataUpper(values.item(position.index()).string()).string()=="UID"
+                else throw InvalidImapData("ESEARCH result is not a UID set");
+            position=position.following(position.index()+1);
+            let found is MimeItems<ImapUidSet>=MimeItems();let count=MimePosition(-1);
+            let minimum=MimePosition(-1);let maximum=MimePosition(-1);
+            loop {
+                last if position.index()==values.size();
+                confirm values.size()-position.index()>=2 else throw InvalidImapData("missing ESEARCH result value");
+                confirm values.item(position.index()).kind()==ImapValueKind.atom
+                    && values.item(position.index()+1).kind()==ImapValueKind.atom else throw InvalidImapData("ESEARCH items require atoms");
+                let name=ImapDataUpper(values.item(position.index()).string()).string();let raw=values.item(position.index()+1).string();
+                if name=="ALL" {
+                    confirm found.entries().size()==0 else throw InvalidImapData("duplicate ESEARCH ALL");
+                    found=found.following(ImapUidRanges(raw,limits).uids());
+                } else {
+                    if name=="COUNT" {
+                        confirm count.index()==-1 else throw InvalidImapData("duplicate ESEARCH COUNT");
+                        count=count.following(ImapUnsigned(raw,false).value());
+                    } else {
+                        confirm name=="MIN" || name=="MAX" else throw InvalidImapData("unsupported ESEARCH result item");
+                        let number=ImapUnsigned(raw,true).value();
+                        if name=="MIN" {confirm minimum.index()==-1 else throw InvalidImapData("duplicate ESEARCH MIN");minimum=minimum.following(number);}
+                        else {confirm maximum.index()==-1 else throw InvalidImapData("duplicate ESEARCH MAX");maximum=maximum.following(number);}
+                    }
+                }
+                position=position.following(position.index()+2);
+            }
+            let sets=found.entries();
+            if sets.size()==0 {
+                confirm count.index()<=0 && minimum.index()==-1 && maximum.index()==-1
+                    else throw InvalidImapData("ESEARCH result without ALL identifiers");
+                value=ImapUidSet([]);
+            } else {
+                confirm count.index()==-1 || count.index()==sets[0].entries().size() else throw InvalidImapData("ESEARCH COUNT differs from ALL");
+                let identifiers=sets[0].entries();let smallest=MimePosition(4294967295);let largest=MimePosition(0);
+                for (0..identifiers.size()) -> index {
+                    let number=ImapUnsigned(identifiers.item(index).string(),true).value();
+                    if number<smallest.index() {smallest=smallest.following(number);}
+                    if number>largest.index() {largest=largest.following(number);}
+                }
+                confirm (minimum.index()==-1 || minimum.index()==smallest.index())
+                    && (maximum.index()==-1 || maximum.index()==largest.index()) else throw InvalidImapData("ESEARCH extrema differ from ALL");
+                value=sets[0];
+            }
+        }
+    }
+    uids() is ImapUidSet {value;}
+}
+
+test "ESEARCH snapshots validate cardinality and extrema" {
+    let response=ParsedImapResponse(Utf8Encoded("* ESEARCH UID ALL 9,3:4 COUNT 3 MIN 3 MAX 9\r\n").bytes()).response();
+    test.is(ImapSearchResult(response,ImapTag("O1"),ImapUidSetLimits()).uids().argument(),"9,3,4");
+}

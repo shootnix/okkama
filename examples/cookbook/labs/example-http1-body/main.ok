@@ -1,0 +1,36 @@
+// Прочитать HTTP/1-тело по framing-плану
+//
+// Прочитать HTTP/1-тело по выбранному плану: Http1BodyReading связывает framing с транспортом и владельцем.
+//
+// Запуск: ./examples/cookbook/run lab example-http1-body
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http1-body
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/http1_body" take Http1BodyReading,Http1IncomingBody;
+import "http/http1_head" take ParsedHttp1ResponseHead;
+import "http/http1_framing" take Http1ResponseFraming;
+import "http/header" take HeaderName;
+import "http/method" take Method;
+import "net/unix" take UnixPaired,UnixConnection;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "io/stdout" take Stdout;
+object ConnectionOwner does Closing {
+    has origin is UnixConnection;ConnectionOwner(origin is UnixConnection){self.origin=origin;}
+    closed() is bool{origin.closed();}close() is void{origin.close();}
+}
+async main() is int {
+    let pair=await UnixPaired().result();let input=pair.first();let output=pair.second();defer input.close();defer output.close();
+    let head=ParsedHttp1ResponseHead("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").value();
+    await output.output().write(ByteSnapshot(Latin1Encoded("4\r\nbody\r\n0\r\nX-Checksum: completed\r\n\r\n").bytes()));
+    let reader=Http1BodyReading(input.input(),ConnectionOwner(input),Http1ResponseFraming(head,Method("GET")).plan(),[],head.headers());
+    let body=Http1IncomingBody(reader);let reading=body.reading();defer reading.close();
+    let content=ByteBuffer();defer content.closing().close();
+    loop {let chunk=await reading.bytes(2);last if chunk.size()==0;content.writing().write(ByteSnapshot(chunk));}
+    Stdout().writeln(Latin1Decoded(content.content().bytes()).string());
+    Stdout().writeln(reading.trailers().first(HeaderName("X-Checksum")));0;
+}

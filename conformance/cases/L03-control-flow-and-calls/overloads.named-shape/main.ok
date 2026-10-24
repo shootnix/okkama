@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Resizer {
+    Resizer();
+    size(width is int) is int { width * 10; }
+    size(height is int) is int { height * 100; }
+}
+
+main() is int {
+    let out = Stdout();
+    let r = Resizer();
+    out.writeln(r.size(width: 3).string());
+    out.writeln(r.size(height: 3).string());
+    0;
+}

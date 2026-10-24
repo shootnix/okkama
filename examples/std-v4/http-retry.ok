@@ -1,0 +1,41 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "http/client" take HttpClient,HttpStaleConnection;
+import "http/retry" take Retrying;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take ListedNetworks;
+import "http/version" take HttpVersion;
+import "http/message" take Request,InvalidHttpMessage;
+import "http/method" take Method;
+import "http/header" take Headers;
+import "http/target" take AbsoluteTarget;
+import "http/body" take EmptyBody,OneShotBody,ByteBody,BodyOpening;
+import "collections/set" take Set,OrderedSet;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "net/ip" take IpAddress,IpNetwork;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+import "url/value" take ParsedUrl;
+import "http/body" take BodyReading;
+import "numbers/bigint" take BigInt;
+import "async/atomic" take Atomic;
+import "error" take InvalidState;
+object NonReplayableEmpty does BodyOpening{
+    has opened is Atomic<bool>;NonReplayableEmpty(){opened=Atomic(false);}
+    length() is BigInt{BigInt("0");}replayable() is bool{false;}
+    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw InvalidState("fixture body opened twice");EmptyBody().reading();}
+}
+async main() is int{
+    let environment=Environment();let scenario=environment.variable("OKKAMA_RETRY_CASE");let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();
+    let enabled is @HttpVersion=if scenario=="mixed"{[HttpVersion.http_1_1,HttpVersion.http_2];}else{[HttpVersion.http_1_1];};let versions is Set<HttpVersion>=OrderedSet(enabled);let policy=ClientPolicy(versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let client=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,SystemClock());defer client.close();let retry=Retrying(client);
+    let warm=Request(Method("GET"),AbsoluteTarget(url),Headers([]));if scenario!="fresh"{let first=await client.response(warm);confirm first.response().status().code()==204;}
+    let method=if scenario=="post"{"POST";}else{"GET";};
+    let body is BodyOpening=if scenario=="oneshot"{NonReplayableEmpty();}else{EmptyBody();};
+    let request=Request(Method(method),AbsoluteTarget(url),Headers([]),body);
+    if scenario=="retry" || scenario=="mixed"{let result=await retry.response(request);let reader=result.response().body().reading();defer reader.close();confirm await reader.bytes(8)==[66.byte()];confirm (await reader.bytes(8)).size()==0;}
+    else{confirm try{await retry.response(request);false;}catch e is HttpStaleConnection{scenario=="post" || scenario=="oneshot";}catch e is InvalidHttpMessage{scenario=="partial" || scenario=="informational" || scenario=="fresh";};}
+    Stdout().writeln("retry case "+scenario+" passed");0;
+}

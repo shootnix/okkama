@@ -1,0 +1,29 @@
+// Минимальный HTTP-сервис
+// Задача: Показать корневой маршрут и параметр пути /greet/:name.
+// Запуск из корня: ./examples/gallery/run modules/web/service
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: WebRoutes, Text, native HTTP-клиент и явное владение сервером.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/modules/cro/service.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/web/service v1.0.0;
+import "support" take DemoServer,DemoClient;
+import "web/routing" take WebRoutes,Get;
+import "web/request" take WebRequest;
+import "web/reply" take Text;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult;
+import "http/server" take HttpServer;
+import "async/scope" take FutureGroup;
+object Hello {
+    Hello();
+    async index(request is WebRequest) is HandlingResult{Text(200,"Hello from Okkama!\n");}
+    async greet(request is WebRequest) is HandlingResult{Text(200,"Hello, "+request.path("name")+"!\n");}
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+}
+async main() is int {
+    let hello=Hello();let server=await DemoServer(WebRoutes([Get("/",hello.index),Get("/greet/:name",hello.greet)],hello.missing)).server();
+    let work is FutureGroup<HttpServer>=FutureGroup();defer await work.wait();defer server.close();work.start(server.serve());
+    let client=DemoClient(server);let root=await client.get("/");root.show("root");confirm root.status()==200;
+    let greeting=await client.get("/greet/Okkama");greeting.show("path");confirm greeting.text()=="Hello, Okkama!\n";0;
+}

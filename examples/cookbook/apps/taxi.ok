@@ -1,0 +1,127 @@
+// CLI учёта таксопарка
+//
+// Хранит водителей и поездки в SQLite; строит общий либо дневной отчёт по выручке и минутам.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run taxi init /tmp/taxi.sqlite
+//     ./examples/cookbook/run taxi driver-add /tmp/taxi.sqlite "Ада"
+//     ./examples/cookbook/run taxi trip-add /tmp/taxi.sqlite 1 2026-10-18 30 1200
+//     ./examples/cookbook/run taxi report /tmp/taxi.sqlite 2026-10-18
+//
+// Суммы заданы в целых центах. Параметры SQL передаются отдельно. Данные сохраняются между запусками.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/taxi v1.0.0;
+
+import "../support/arguments" take Arguments, Usage;
+import "../support/sql" take QueryJson;
+import "db/sqlite" take SqliteDatabase, SqliteOptions;
+import "db/sqlite/script" take SqliteScript;
+import "db/connection" take DbExecuting;
+import "db/statement" take Statement;
+import "db/value" take DbText, DbInteger;
+import "numbers/bigint" take BigInt;
+import "time/iso" take DateFromIso;
+import "json/write" take PrettyJson;
+import "io/stdout" take Stdout;
+import "fs/path" take Path;
+
+object TaxiCommands {
+    has target is DbExecuting;
+
+    TaxiCommands(target is DbExecuting) {
+        self.target = target;
+    }
+
+    async initialize() is void {
+        await target.execution(
+            Statement(
+                "CREATE TABLE IF NOT EXISTS drivers(id INTEGER PRIMARY KEY,name TEXT NOT NULL)"
+            )
+        );
+        await target.execution(
+            Statement(
+                "CREATE TABLE IF NOT EXISTS trips(id INTEGER PRIMARY KEY,driver_id INTEGER NOT NULL REFERENCES drivers(id),day TEXT NOT NULL,minutes INTEGER NOT NULL CHECK(minutes>0),fare_cents INTEGER NOT NULL CHECK(fare_cents>=0))"
+            )
+        );
+    }
+
+    async driver(name is string) is void {
+        confirm name.length() > 0 && name.length() <= 100
+            else throw Usage("driver name: 1..100 characters");
+        await target.execution(Statement("INSERT INTO drivers(name) VALUES(?)", [DbText(name)]));
+    }
+
+    async trip(driver is int, day is string, minutes is int, fare is int) is void {
+        DateFromIso(day).value();
+        confirm driver > 0 && minutes > 0 && minutes <= 1440 && fare >= 0 && fare <= 1000000000
+            else throw Usage("invalid trip coordinates");
+        await target.execution(
+            Statement(
+                "INSERT INTO trips(driver_id,day,minutes,fare_cents) VALUES(?,?,?,?)",
+                [
+                    DbInteger(BigInt(driver.string())),
+                    DbText(day),
+                    DbInteger(BigInt(minutes.string())),
+                    DbInteger(BigInt(fare.string()))
+                ]
+            )
+        );
+    }
+
+    async report(day is string) is void {
+        let statement = if day == "" {
+            Statement(
+                "SELECT d.id,d.name,count(t.id) AS trips,coalesce(sum(t.minutes),0) AS minutes,coalesce(sum(t.fare_cents),0) AS fare_cents FROM drivers d LEFT JOIN trips t ON t.driver_id=d.id GROUP BY d.id ORDER BY d.id"
+            );
+        }
+        else {
+            DateFromIso(day).value();
+            Statement(
+                "SELECT d.id,d.name,count(t.id) AS trips,coalesce(sum(t.minutes),0) AS minutes,coalesce(sum(t.fare_cents),0) AS fare_cents FROM drivers d LEFT JOIN trips t ON t.driver_id=d.id AND t.day=? GROUP BY d.id ORDER BY d.id",
+                [DbText(day)]
+            );
+        };
+        Stdout().writeln(
+            PrettyJson(indentation: 2, origin: await QueryJson(target, statement).value()).string()
+        );
+    }
+}
+
+async main() is int {
+    let args = Arguments();
+    let command = args.text(0, "help");
+    if command == "help" {
+        Stdout().writeln(
+            "taxi init DB | driver-add DB NAME | trip-add DB DRIVER DAY MINUTES FARE_CENTS | report DB [DAY]"
+        );
+        return 0;
+    }
+    let connection = await SqliteDatabase(Path(args.text(1)), SqliteOptions()).connection();
+    defer await connection.settled();
+    defer connection.close();
+    let cli = TaxiCommands(connection);
+    match command {
+        case "init" {
+            await cli.initialize();
+        }
+        case "driver-add" {
+            await cli.driver(args.text(2));
+        }
+        case "trip-add" {
+            await cli.trip(
+                args.integer(2, 0),
+                args.text(3),
+                args.integer(4, 0),
+                args.integer(5, -1)
+            );
+        }
+        case "report" {
+            await cli.report(args.text(2, ""));
+        }
+        else {
+            throw Usage("unknown taxi command");
+        }
+    }
+    0;
+}

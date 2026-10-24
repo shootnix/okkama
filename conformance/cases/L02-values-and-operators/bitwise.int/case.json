@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.bitwise.int",
+  "title": "bitwise operators on int",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.BITWISE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "8\n14\n6\n-1\n-6\n255\n"
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "bitwise guide: signed 64-bit two's-complement words: 12&10=8, 12|10=14, 12^10=6, ~0=-1, ~5=-6, -1&255=255."
+  },
+  "status": "mandatory"
+}

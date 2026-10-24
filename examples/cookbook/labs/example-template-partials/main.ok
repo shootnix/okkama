@@ -1,0 +1,21 @@
+// Подключить общий фрагмент письма
+//
+// Повторить строки счёта и подключить partial: SectionTemplate выполняет ограниченные секции над JSON.
+//
+// Запуск: ./examples/cookbook/run lab example-template-partials
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-template-partials
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "template/sections" take SectionTemplate;
+import "template/library" take TemplateLibrary, NamedTemplate;
+import "template/compile" take TextTemplate;
+import "json/parse" take ParsedJson;
+import "io/stdout" take Stdout;
+main() is int {
+    let partials=TemplateLibrary([NamedTemplate("row",TextTemplate("- {{name}}\n"))]);
+    let template=SectionTemplate("Users:\n{{#users}}{{>row}}{{/users}}",partials);
+    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}")));
+    0;
+}

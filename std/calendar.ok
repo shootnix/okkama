@@ -1,0 +1,437 @@
+module calendar v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing;
+import "compare" take Comparing, Order;
+import "error" take OutOfRange;
+import "size" take Sizing;
+import "time/date" take
+    Date,
+    DateOrdinal,
+    OrdinalDate,
+    Weekday;
+
+// Immutable Gregorian calendar views.
+//
+// MonthDates contains only dates belonging to its month:
+//
+//     let august = MonthDates(origin: YearMonth(year: 2026, month: 8));
+//     august.size();       // 31
+//     august.first().day(); // 1
+//     august.last().day();  // 31
+//
+// CalendarMonth divides a month into complete seven-day rows. A row may
+// contain dates from adjacent months:
+//
+//     let grid = CalendarMonth(
+//         origin: YearMonth(year: 2026, month: 8),
+//         first_weekday: Weekday.monday,
+//     );
+//     grid.first().first(); // 2026-07-27
+//     grid.last().last();   // 2026-09-06
+//
+// ISO weeks always run from Monday through Sunday. Calendar grids and ISO
+// weeks whose complete seven-day span would leave Date's supported years
+// 1..9999 are rejected instead of returning partial weeks.
+
+object YearMonth does Comparing<YearMonth> {
+    has year_value is int;
+    has month_value is int;
+
+    YearMonth(year is int, month is int) {
+        confirm year >= 1 && year <= 9999
+            else throw InvalidYearMonth("year must be within 1..9999");
+        confirm month >= 1 && month <= 12
+            else throw InvalidYearMonth("month must be within 1..12");
+        year_value = year;
+        month_value = month;
+    }
+
+    year() is int {
+        year_value;
+    }
+
+    month() is int {
+        month_value;
+    }
+
+    order(other is YearMonth) is Order {
+        if year_value != other.year() {
+            year_value.order(other.year());
+        }
+        else {
+            month_value.order(other.month());
+        }
+    }
+}
+
+object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
+    has origin is YearMonth;
+
+    MonthDates(:origin);
+
+    cursor() is Cursor<Date> {
+        MonthDateCursor(origin: self, position: 0);
+    }
+
+    size() is int {
+        match origin.month() {
+            case 2 {
+                if value LeapYear(year: origin.year()) { 29; } else { 28; }
+            }
+            case 4, 6, 9, 11 { 30; }
+            else { 31; }
+        }
+    }
+
+    item(index is int) is Date {
+        confirm index >= 0 && index < self.size()
+            else throw OutOfRange("month date index is outside the sequence");
+        Date(
+            year: origin.year(),
+            month: origin.month(),
+            day: index + 1,
+        );
+    }
+
+    first() is Date {
+        self.item(0);
+    }
+
+    last() is Date {
+        self.item(self.size() - 1);
+    }
+}
+
+object MonthDateCursor does Cursor<Date> {
+    has origin is MonthDates;
+    has position is int;
+
+    MonthDateCursor(origin is MonthDates, position is int) {
+        confirm position >= 0 && position <= origin.size()
+            else throw OutOfRange("month date cursor position is invalid");
+        self.origin = origin;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is Date {
+        confirm self.available() else throw IterationEnded();
+        origin.item(position);
+    }
+
+    successor() is Cursor<Date> {
+        confirm self.available() else throw IterationEnded();
+        MonthDateCursor(origin: origin, position: position + 1);
+    }
+}
+
+object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
+    has first_date is Date;
+
+    CalendarWeek(start is Date) {
+        self.first_date = start;
+        confirm (value DateOrdinal(origin: start)) <= 3652053
+            else throw InvalidCalendarMonth(
+                "calendar week leaves the supported date range"
+            );
+    }
+
+    cursor() is Cursor<Date> {
+        CalendarWeekCursor(origin: self, position: 0);
+    }
+
+    size() is int {
+        7;
+    }
+
+    item(index is int) is Date {
+        confirm index >= 0 && index < 7
+            else throw OutOfRange("calendar week index is outside the sequence");
+        value OrdinalDate(
+            origin: (value DateOrdinal(origin: first_date)) + index,
+        );
+    }
+
+    first() is Date {
+        first_date;
+    }
+
+    last() is Date {
+        self.item(6);
+    }
+}
+
+object CalendarWeekCursor does Cursor<Date> {
+    has origin is CalendarWeek;
+    has position is int;
+
+    CalendarWeekCursor(origin is CalendarWeek, position is int) {
+        confirm position >= 0 && position <= 7
+            else throw OutOfRange("calendar week cursor position is invalid");
+        self.origin = origin;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < 7;
+    }
+
+    item() is Date {
+        confirm self.available() else throw IterationEnded();
+        origin.item(position);
+    }
+
+    successor() is Cursor<Date> {
+        confirm self.available() else throw IterationEnded();
+        CalendarWeekCursor(origin: origin, position: position + 1);
+    }
+}
+
+object CalendarMonth does
+    Sequencing<Sequencing<Date>>,
+    Iterating<Sequencing<Date>>,
+    Sizing {
+    has origin is YearMonth;
+    has first_weekday is Weekday;
+
+    CalendarMonth(origin is YearMonth, first_weekday is Weekday) {
+        let layout = CalendarMonthLayout(
+            origin: origin,
+            first_weekday: first_weekday,
+        );
+        layout.first_ordinal();
+        self.origin = origin;
+        self.first_weekday = first_weekday;
+    }
+
+    cursor() is Cursor<Sequencing<Date>> {
+        CalendarMonthCursor(origin: self, position: 0);
+    }
+
+    size() is int {
+        CalendarMonthLayout(
+            origin: origin,
+            first_weekday: first_weekday,
+        ).size();
+    }
+
+    item(index is int) is Sequencing<Date> {
+        confirm index >= 0 && index < self.size()
+            else throw OutOfRange("calendar month row is outside the sequence");
+        let layout = CalendarMonthLayout(
+            origin: origin,
+            first_weekday: first_weekday,
+        );
+        CalendarWeek(
+            start: value OrdinalDate(
+                origin: layout.first_ordinal() + index * 7,
+            ),
+        );
+    }
+
+    first() is Sequencing<Date> {
+        self.item(0);
+    }
+
+    last() is Sequencing<Date> {
+        self.item(self.size() - 1);
+    }
+}
+
+object CalendarMonthCursor does Cursor<Sequencing<Date>> {
+    has origin is CalendarMonth;
+    has position is int;
+
+    CalendarMonthCursor(origin is CalendarMonth, position is int) {
+        confirm position >= 0 && position <= origin.size()
+            else throw OutOfRange("calendar month cursor position is invalid");
+        self.origin = origin;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is Sequencing<Date> {
+        confirm self.available() else throw IterationEnded();
+        origin.item(position);
+    }
+
+    successor() is Cursor<Sequencing<Date>> {
+        confirm self.available() else throw IterationEnded();
+        CalendarMonthCursor(origin: origin, position: position + 1);
+    }
+}
+
+object CalendarMonthLayout {
+    has origin is YearMonth;
+    has first_weekday is Weekday;
+
+    CalendarMonthLayout(:origin, :first_weekday);
+
+    first_ordinal() is int {
+        let first = Date(year: origin.year(), month: origin.month(), day: 1);
+        let lead is int = (
+            (value WeekdayIndex(origin: first.weekday()))
+                - (value WeekdayIndex(origin: first_weekday))
+                + 7
+        ) % 7;
+        let result is int = (value DateOrdinal(origin: first)) - lead;
+        confirm result >= 1 && result + self.size() * 7 - 1 <= 3652059
+            else throw InvalidCalendarMonth(
+                "calendar month leaves the supported date range"
+            );
+        result;
+    }
+
+    size() is int {
+        let first = Date(year: origin.year(), month: origin.month(), day: 1);
+        let lead is int = (
+            (value WeekdayIndex(origin: first.weekday()))
+                - (value WeekdayIndex(origin: first_weekday))
+                + 7
+        ) % 7;
+        ((lead + MonthDates(origin: origin).size() + 6) / 7).int();
+    }
+}
+
+object IsoWeek does Comparing<IsoWeek> {
+    has year_value is int;
+    has week_value is int;
+
+    IsoWeek(year is int, week is int) {
+        confirm year >= 1 && year <= 9999
+            else throw InvalidIsoWeek("ISO week year must be within 1..9999");
+        let january_first = Date(year: year, month: 1, day: 1);
+        let january_index is int = value WeekdayIndex(
+            origin: january_first.weekday(),
+        );
+        let leap is bool = value LeapYear(year: year);
+        let maximum is int = if january_index == 3
+            || (january_index == 2 && leap) { 53; } else { 52; };
+        confirm week >= 1 && week <= maximum
+            else throw InvalidIsoWeek("ISO week is outside its week-year");
+
+        let january_fourth = Date(year: year, month: 1, day: 4);
+        let first_ordinal is int = (value DateOrdinal(origin: january_fourth))
+            - (value WeekdayIndex(origin: january_fourth.weekday()))
+            + (week - 1) * 7;
+        confirm first_ordinal >= 1 && first_ordinal + 6 <= 3652059
+            else throw InvalidIsoWeek(
+                "ISO week leaves the supported date range"
+            );
+
+        year_value = year;
+        week_value = week;
+    }
+
+    year() is int {
+        year_value;
+    }
+
+    week() is int {
+        week_value;
+    }
+
+    first() is Date {
+        let january_fourth = Date(year: year_value, month: 1, day: 4);
+        value OrdinalDate(
+            origin: (value DateOrdinal(origin: january_fourth))
+                - (value WeekdayIndex(origin: january_fourth.weekday()))
+                + (week_value - 1) * 7,
+        );
+    }
+
+    last() is Date {
+        value OrdinalDate(
+            origin: (value DateOrdinal(origin: self.first())) + 6,
+        );
+    }
+
+    order(other is IsoWeek) is Order {
+        if year_value != other.year() {
+            year_value.order(other.year());
+        }
+        else {
+            week_value.order(other.week());
+        }
+    }
+}
+
+object LeapYear {
+    has origin is int;
+
+    LeapYear(year is int) {
+        confirm year >= 1 && year <= 9999
+            else throw InvalidYearMonth("year must be within 1..9999");
+        origin = year;
+    }
+
+    #projected
+    value() is bool {
+        origin % 4 == 0 && (origin % 100 != 0 || origin % 400 == 0);
+    }
+}
+
+object WeekdayIndex {
+    has origin is Weekday;
+
+    WeekdayIndex(:origin);
+
+    #projected
+    value() is int {
+        match origin {
+            case Weekday.monday { 0; }
+            case Weekday.tuesday { 1; }
+            case Weekday.wednesday { 2; }
+            case Weekday.thursday { 3; }
+            case Weekday.friday { 4; }
+            case Weekday.saturday { 5; }
+            else { 6; }
+        }
+    }
+}
+
+object InvalidYearMonth does Error {
+    has message is string;
+
+    InvalidYearMonth(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}
+
+object InvalidCalendarMonth does Error {
+    has message is string;
+
+    InvalidCalendarMonth(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}
+
+object InvalidIsoWeek does Error {
+    has message is string;
+
+    InvalidIsoWeek(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

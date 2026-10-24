@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.ownership.alias-borrows",
+  "title": "aliases borrow; an identity is destroyed once",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "looked at shared\nend of block\ndestroy shared\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#10",
+    "docs/okkama-llm-context-1.0.md#17"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 10: re-binding or storing an already reachable object creates borrows; parameters are borrowed; the identity is destroyed once."
+  },
+  "status": "mandatory"
+}

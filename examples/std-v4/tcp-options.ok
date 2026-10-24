@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "net/tcp" take TcpOptions, TcpListeningOptions;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let connection=TcpOptions(true,true);
+    let listener=TcpListeningOptions(false,false,128);
+    Stdout().writeln(if connection.no_delay() {"no-delay requested";} else {"normal packet delay";});
+    Stdout().writeln("requested backlog: "+listener.backlog().string());
+    0;
+}

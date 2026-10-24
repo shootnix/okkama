@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "numbers/bigint" take BigInt;
+import "numbers/bigrational" take BigRational, BigRationalSum;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let third = BigRational(BigInt("1"), BigInt("3"));
+        let sixth = BigRational(BigInt("1"), BigInt("6"));
+        BigRationalSum(left: third, right: sixth).value().string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

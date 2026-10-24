@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+enum Level = (low, high);
+
+role Rated {
+    rating() is int;
+}
+
+object HTTPServer2 does Rated {
+    HTTPServer2();
+    rating() is int { 5; }
+}
+
+main() is int {
+    let r is Rated = HTTPServer2();
+    let l is Level = Level.high;
+    if l == Level.high { r.rating(); } else { 0; }
+}

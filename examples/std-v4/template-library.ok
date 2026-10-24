@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "template/library" take NamedTemplate, TemplateLibrary;
+import "template/compile" take TextTemplate;
+import "template/path" take TemplatePath;
+import "template/model" take TemplateBinding, TemplateBindings;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let library = TemplateLibrary([
+        NamedTemplate("greeting", TextTemplate("Hello {{name}}!")),
+        NamedTemplate("footer", TextTemplate("Goodbye."))]);
+    let data = TemplateBindings([TemplateBinding(TemplatePath(["name"]), "Ada")]);
+    Stdout().writeln(library.value("greeting").string(data));
+    Stdout().writeln(library.names().item(1));
+    0;
+}

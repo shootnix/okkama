@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Size = (small, big);
+
+object Big {
+    Big();
+    kind() is string { "object"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let s is Size = Size.big;
+    let b is Big = Big();
+    out.writeln(if s == Size.big { "enum"; } else { "?"; });
+    out.writeln(b.kind());
+    0;
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.negative-index",
+  "title": "array access fails for a negative index",
+  "purpose": "The value-dependent operation fails at runtime after earlier effects.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ]
+    },
+    "stdout": {
+      "text": "before\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.9: missing array indexes are runtime errors unless else is present (a negative index)."
+  },
+  "status": "mandatory"
+}

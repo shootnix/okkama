@@ -1,0 +1,36 @@
+// Треугольник Паскаля
+// Задача: Построить двенадцать строк и проверить биномиальные коэффициенты.
+// Запуск из корня: ./examples/gallery/run pascal
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: новая строка через map; преемник хранит следующую версию треугольника.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/pascal.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/pascal v1.0.0;
+import "io/stdout" take Stdout;
+object Pascal {
+    has rows is @@int;Pascal(){rows=[[1]];}
+    following() is ^Pascal {
+        let previous=rows[rows.size()-1];
+        let row is @int=(0..previous.size()+1).map()->i{
+            if i==0 || i==previous.size(){1;}else{previous[i-1]+previous[i];}
+        };
+        ^rows=(0..rows.size()+1).map()->i{if i<rows.size(){rows[i];}else{row;}};
+    }
+    rows() is @@int{rows;}
+    choose(n is int,k is int) is int {
+        (1..k+1).reduce(1)->value,i{(value*(n-k+i)/i).int();};
+    }
+}
+main() is int {
+    let original=Pascal();let triangle=(0..11).reduce(original)->value,i{value.following();};
+    confirm original.rows()==[[1]];
+    for triangle.rows()->row{Stdout().writeln(row.map()->n{n.string();}.join(" "));}
+    let expected=(0..12).map()->k{triangle.choose(11,k);};
+    confirm triangle.rows()[11]==expected;
+    Stdout().writeln("Odd entries:");
+    for triangle.rows()->row{
+        let spaces is @string=(0..12-row.size()).map()->i{" ";};let padding=spaces.join("");
+        Stdout().writeln(padding+(row.map()->n{if n%2==1{"#";}else{" ";}}).join(" "));
+    }0;
+}

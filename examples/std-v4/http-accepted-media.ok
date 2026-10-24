@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/negotiation" take AcceptedMediaTypes;
+import "http/media_type" take HttpMediaType;
+import "io/stdout" take Stdout;
+main() is int {
+    let accepted=AcceptedMediaTypes("*/*;q=1, text/plain;q=0, text/html;q=0.8");
+    let chosen=accepted.preference([HttpMediaType("text/plain"),HttpMediaType("text/html")]);
+    Stdout().writeln(accepted.string());Stdout().writeln(chosen.string());
+    0;
+}

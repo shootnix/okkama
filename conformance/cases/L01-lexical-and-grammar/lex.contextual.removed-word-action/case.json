@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.contextual.removed-word-action",
+  "title": "removed words stay rejected as action labels",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.CONTEXTUAL-NAMES",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "LEX.REMOVED-WORDS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The contract requires rejection but the grammar marks this rule as context-sensitive (checked after parsing); detection while parsing is equally conforming."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 4.1: removed and deferred reserved words remain rejected in every namespace."
+  },
+  "status": "mandatory"
+}

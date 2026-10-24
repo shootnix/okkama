@@ -1,0 +1,83 @@
+module testing/result v1.0.0;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "collections/sequence" take Sequencing;
+enum TestStatus = (passed,failed,skipped,timed_out,crashed);
+object TestPosition {
+    has source is string;has line,column is int;
+    TestPosition(source is string,line is int,column is int){confirm source.length()>0 && source.length()<=4096 && line>0 && column>0 else throw InvalidTestResult("source position");self.source=source;self.line=line;self.column=column;}
+    source() is string{source;}line() is int{line;}column() is int{column;}
+}
+object TestFailure {
+    has message is string;has position is @TestPosition;has causes is @TestFailure;has depth is int;
+    TestFailure(message is string){confirm message.length()<=65536 else throw InvalidTestResult("failure text length");self.message=message;position=[];causes=[];depth=0;}
+    TestFailure(message is string,position is TestPosition){confirm message.length()<=65536 else throw InvalidTestResult("failure text length");self.message=message;self.position=[position];causes=[];depth=0;}
+    TestFailure(message is string,positions is Sequencing<TestPosition>,causes is Sequencing<TestFailure>){
+        confirm message.length()<=65536 && positions.size()>=0 && positions.size()<=1 && causes.size()>=0 && causes.size()<=1 else throw InvalidTestResult("failure details bounds");
+        let places is @TestPosition=(0..positions.size()).map()->index{positions.item(index);};
+        let reasons is @TestFailure=(0..causes.size()).map()->index{causes.item(index);};
+        let depth=if reasons.size()==0{0;}else{reasons[0].depth()+1;};confirm depth<32 else throw InvalidTestResult("failure cause depth");
+        self.message=message;position=places;self.causes=reasons;self.depth=depth;
+    }
+    message() is string{message;}located() is bool{position.size()==1;}
+    position() is TestPosition{confirm position.size()==1 else throw MissingTestPosition();position[0];}
+    causes() is Sequencing<TestFailure>{causes;}depth() is int{depth;}
+}
+object TestFailureText {
+    has origin is TestFailure;TestFailureText(origin is TestFailure){self.origin=origin;}
+    string() is string{let causes=origin.causes();origin.message()+(if causes.size()==1{"\ncaused by: "+TestFailureText(causes.item(0)).string();}else{"";});}
+}
+object TestOutput {
+    has output,errors is @byte;has truncated is bool;
+    TestOutput(output is @byte,errors is @byte,truncated is bool){confirm output.size()+errors.size()<=16777216 else throw InvalidTestResult("captured byte budget");self.output=output;self.errors=errors;self.truncated=truncated;}
+    output() is @byte{output;}errors() is @byte{errors;}truncated() is bool{truncated;}
+}
+object TestResult {
+    has name is string;has status is TestStatus;has duration is Duration;has failures is @TestFailure;has output is TestOutput;has skip_reason is string;
+    TestResult(name is string,status is TestStatus,duration is Duration,failures is Sequencing<TestFailure>,output is TestOutput){
+        confirm name.length()>0 && name.length()<=4096 && duration.seconds()>=0.rat() else throw InvalidTestResult("test name/duration");
+        let count=failures.size();confirm count>=0 && count<=1024 else throw InvalidTestResult("failure count");
+        confirm (status!=TestStatus.passed && status!=TestStatus.skipped) || count==0 else throw InvalidTestResult("passed/skipped result carries failures");
+        let snapshot is @TestFailure=(0..count).map()->index{failures.item(index);};
+        self.name=name;self.status=status;self.duration=duration;self.failures=snapshot;self.output=output;skip_reason="";
+    }
+    TestResult(name is string,status is TestStatus,duration is Duration,failures is Sequencing<TestFailure>,output is TestOutput,skip_reason is string){
+        confirm skip_reason.length()<=4096 && (skip_reason=="" || status!=TestStatus.passed) else throw InvalidTestResult("skip reason");
+        confirm name.length()>0 && name.length()<=4096 && duration.seconds()>=0.rat() else throw InvalidTestResult("test name/duration");
+        let count=failures.size();confirm count>=0 && count<=1024 else throw InvalidTestResult("failure count");
+        confirm (status!=TestStatus.passed && status!=TestStatus.skipped) || count==0 else throw InvalidTestResult("passed/skipped result carries failures");
+        let snapshot is @TestFailure=(0..count).map()->index{failures.item(index);};
+        self.name=name;self.status=status;self.duration=duration;self.failures=snapshot;self.output=output;self.skip_reason=skip_reason;
+    }
+    skip_reason() is string{skip_reason;}
+    name() is string{name;}status() is TestStatus{status;}duration() is Duration{duration;}
+    failures() is Sequencing<TestFailure>{failures;}output() is TestOutput{output;}
+}
+object TestCounts {
+    has passes,failures,skips is int;
+    TestCounts(passes is int,failures is int,skips is int){confirm passes>=0 && failures>=0 && skips>=0 && passes+failures+skips<=4096 else throw InvalidTestResult("test counts");self.passes=passes;self.failures=failures;self.skips=skips;}
+    passes() is int{passes;}failures() is int{failures;}skips() is int{skips;}total() is int{passes+failures+skips;}
+}
+object TestReport {
+    has start is Instant;has duration is Duration;has seed is int;has results is @TestResult;has counts is TestCounts;
+    TestReport(start is Instant,duration is Duration,seed is int,results is Sequencing<TestResult>){
+        confirm duration.seconds()>=0.rat() else throw InvalidTestResult("negative report duration");
+        let size=results.size();confirm size>=0 && size<=4096 else throw InvalidTestResult("result count");
+        let snapshot is @TestResult=(0..size).map()->index{results.item(index);};
+        let bytes=snapshot.reduce(0)->total,result{total+result.output().output().size()+result.output().errors().size();};
+        let scalars=snapshot.reduce(0)->total,result{let failures=result.failures();let messages=(0..failures.size()).reduce(0)->sum,index{sum+TestFailureText(failures.item(index)).string().length();};total+result.name().length()+result.skip_reason().length()+messages;};
+        confirm bytes<=16777216 && scalars<=1048576 else throw InvalidTestResult("aggregate report budget");
+        let passed=snapshot.reduce(0)->total,result{total+(if result.status()==TestStatus.passed{1;}else{0;});};
+        let skipped=snapshot.reduce(0)->total,result{total+(if result.status()==TestStatus.skipped{1;}else{0;});};
+        self.start=start;self.duration=duration;self.seed=seed;self.results=snapshot;counts=TestCounts(passed,size-passed-skipped,skipped);
+    }
+    start() is Instant{start;}duration() is Duration{duration;}seed() is int{seed;}
+    results() is Sequencing<TestResult>{results;}counts() is TestCounts{counts;}
+    exit_status() is int{if counts.failures()==0{0;}else{1;}}
+}
+object MissingTestPosition does Error {MissingTestPosition();text() is string{"test failure has no source position";}}
+object InvalidTestResult does Error {
+    has reason is string;InvalidTestResult(reason is string){self.reason=reason;}text() is string{"invalid test result: "+reason;}
+}
+
+test "empty reports have successful exit status" {let duration=Duration(0.rat(),DurationUnit.second);test.is(TestReport(Instant(duration),duration,42,[]).exit_status(),0);}

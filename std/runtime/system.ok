@@ -1,0 +1,12 @@
+module runtime/system v1.0.0;
+
+// Portable platform identity and operating-system entropy boundary.
+native system_platform() is string;
+native system_architecture() is string;
+native system_byte_order() is string;
+native system_host_name() is string;
+native system_cpu_count() is int;
+native secure_random(size is int) is @byte;
+// One coherent provider observation. Decimal strings avoid narrowing storage
+// capacities to the builtin runtime int width.
+native storage_usage(path is string) is %string:string;

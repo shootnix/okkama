@@ -1,0 +1,22 @@
+// Книжный магазин: отдельное веб-приложение Okkama.
+// Запуск из любой папки: /path/to/okkama/examples/cookbook/web/bookstore/run DATABASE [PORT].
+// Из корня: ./examples/cookbook/web/bookstore/run /tmp/bookstore.sqlite 8081
+// Откройте http://127.0.0.1:8081/; Ctrl+C завершает сервер.
+// DATABASE — сохраняемая SQLite-база, таблицы создаются при запуске; PORT=0 выбирает свободный порт.
+// HTML-страницы и JSON API используют одно хранилище. Подробный сценарий и маршруты: README.md.
+
+module cookbook/web/bookstore v1.0.0;
+import "../../support/arguments" take Arguments;
+import "../../support/http" take LocalWeb;
+import "model" take BookShelf;
+import "pages" take StorePages;
+import "web/routing" take WebRoutes,Get,Post;
+
+async main() is int {
+    let args=Arguments();
+    let storage=BookShelf(args.text(0));
+    await storage.initialize();
+    let pages=StorePages(storage);
+    await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/api/books",pages.books),Get("/api/orders",pages.orders),Post("/api/orders",pages.buy)],pages.missing),args.integer(1,8081));
+    0;
+}

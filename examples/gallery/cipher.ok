@@ -1,0 +1,39 @@
+// ROT13, Цезарь и Виженер
+// Задача: Преобразовать латинский текст и проверить обратимость трёх шифров.
+// Запуск из корня: ./examples/gallery/run cipher
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: неизменяемый курсор ключа, явная обработка регистра и знаков.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/cipher.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/cipher v1.0.0;
+import "io/stdout" take Stdout;
+object CipherText {
+    has output is string;has position is int;
+    CipherText(){output="";position=0;}
+    position() is int{position;}string() is string{output;}
+    added(letter is string,advance is bool) is ^CipherText{^output=output+letter;^position=position+if advance{1;}else{0;};}
+}
+object Cipher {
+    Cipher();
+    transform(text is string,key is @int,direction is int) is string {
+        confirm key.size()>0 && (direction==1 || direction==-1);
+        let lower="abcdefghijklmnopqrstuvwxyz";let upper="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        text.split("").reduce(CipherText())->state,letter{
+            let positions=(0..26).filter()->i{lower.slice(i,i+1)==letter || upper.slice(i,i+1)==letter;};
+            if positions.size()==0{state.added(letter,false);}else{
+                let alphabet=if letter==upper.slice(positions[0],positions[0]+1){upper;}else{lower;};
+                let shifted=(positions[0]+direction*key[state.position()%key.size()]+26)%26;
+                state.added(alphabet.slice(shifted,shifted+1),true);
+            }
+        }.string();
+    }
+}
+main() is int {
+    let cipher=Cipher();let text="Attack at Dawn!";
+    for [[13],[3],[11,4,12,14,13]]->key{
+        let encrypted=cipher.transform(text,key,1);let restored=cipher.transform(encrypted,key,-1);
+        confirm restored==text;Stdout().writeln(encrypted+" -> "+restored);
+    }
+    confirm cipher.transform(text,[11,4,12,14,13],1)=="Lxfopv ef Rnhr!";0;
+}

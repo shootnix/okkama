@@ -1,0 +1,27 @@
+module app v1.0.0;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint;
+import "net/udp" take UdpBinding, UdpOptions, Datagram;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+import "async/timeout" take Within;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+// A complete loopback exchange. Re-awaiting the send Future reports the same
+// accepted count without emitting another packet; the sender owns its socket.
+async main() is int {
+    let sender=await UdpBinding(IpEndpoint(IpAddress("127.0.0.1"),0),UdpOptions()).socket();
+    let receiver=await UdpBinding(IpEndpoint(IpAddress("127.0.0.1"),0),UdpOptions()).socket();
+    let pending=sender.send(receiver.local_endpoint(),ByteSnapshot([byte(0),byte(255),byte(42)]));
+    let count=await pending;let repeated=await pending;
+    let bounded is Within<Datagram>=Within(receiver.datagram(8),
+        Duration(2.rat(),DurationUnit.second),SystemClock());
+    let packet=await bounded.result();
+    sender.close();receiver.close();
+    Stdout().writeln("accepted: "+count.string());
+    Stdout().writeln("cached: "+repeated.string());
+    Stdout().writeln("received: "+packet.bytes().size().string());
+    Stdout().writeln(if packet.bytes()==[byte(0),byte(255),byte(42)] {"binary intact";} else {"mismatch";});
+    0;
+}

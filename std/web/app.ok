@@ -1,0 +1,48 @@
+module web/app v1.0.0;
+import "http/server" take HttpServer;
+import "http/server_policy" take ServerPolicy;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "time/clock" take Timing,SystemClock;
+import "web/routing" take WebRoutes;
+
+// Binds a route table to a plaintext HTTP/1.1 listener.
+//
+//     await WebApplication(routes).listen("127.0.0.1", 8000);
+//
+// The address is an IP literal; no name resolution happens here. listen()
+// serves until the server is closed. server() binds and returns the std
+// HttpServer without serving, for callers that own the lifetime themselves:
+// port 0 picks a free port, local_endpoint() reports it, and ServerDrain
+// drains it.
+
+object WebApplication {
+    has routes is WebRoutes;
+    has policy is ServerPolicy;
+    has clock is Timing;
+
+    WebApplication(routes is WebRoutes) {
+        self.routes = routes;
+        policy = ServerPolicy();
+        clock = SystemClock();
+    }
+
+    WebApplication(routes is WebRoutes, policy is ServerPolicy, clock is Timing) {
+        self.routes = routes;
+        self.policy = policy;
+        self.clock = clock;
+    }
+
+    async server(address is string, port is int) is HttpServer {
+        let listener = await TcpListening(IpEndpoint(IpAddress(address), port)).acceptance();
+        HttpServer(listener, routes.table(), policy, clock);
+    }
+
+    async listen(address is string, port is int) is void {
+        let server = await self.server(address, port);
+        defer await server.settled();
+        defer server.close();
+        await server.serve();
+    }
+}

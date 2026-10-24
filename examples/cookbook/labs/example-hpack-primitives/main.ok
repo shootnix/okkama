@@ -1,0 +1,20 @@
+// Проверить кодирование полей HTTP/2
+//
+// Показать двоичный идентификатор в журнале: HexEncoded выдаёт каноническую hex-строку, HexDecoded восстанавливает байты.
+//
+// Запуск: ./examples/cookbook/run lab example-hpack-primitives
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-hpack-primitives
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/internal/hpack_primitives" take HpackInteger,ParsedHpackInteger,HpackHuffman;
+import "encoding/hex" take HexDecoded;
+import "encoding/single_byte" take Latin1Decoded;
+import "io/stdout" take Stdout;
+main() is int{
+    confirm ParsedHpackInteger(HpackInteger(1337,5,0).bytes(),0,5).value()==1337;
+    let octets=HpackHuffman(HexDecoded("f1e3c2e5f23a6ba0ab90f4ff").bytes(),15).bytes();
+    confirm Latin1Decoded(octets).string()=="www.example.com";
+    Stdout().writeln("bounded HPACK integer and Huffman RFC vectors verified");0;
+}

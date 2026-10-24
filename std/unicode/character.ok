@@ -1,0 +1,132 @@
+module unicode/character v1.0.0;
+
+import "runtime/unicode_character" take
+    character_name, category_code, character_combining_class,
+    character_is_numeric, character_numeric_value;
+
+// Unicode Character Database properties for one Unicode scalar value.
+//
+//     let letter = UnicodeCharacter(origin: 'Ж');
+//     letter.name();             // "CYRILLIC CAPITAL LETTER ZHE"
+//     letter.category();         // UnicodeCategory.uppercase_letter
+//     letter.combining_class();  // 0
+//
+// Numeric characters include more than decimal digits:
+//
+//     UnicodeCharacter(origin: '½').numeric_value(); // 0.5
+//
+// numeric_value() throws NonNumericCharacter when the character has no
+// Unicode Numeric_Value property. name() returns an empty string for
+// unassigned, private-use, control and other characters without a formal
+// Unicode name. Property values follow the Unicode 16.0.0 stdlib contract;
+// they do not vary with the operating system or selected backend.
+
+enum UnicodeCategory = (
+    uppercase_letter,
+    lowercase_letter,
+    titlecase_letter,
+    modifier_letter,
+    other_letter,
+    nonspacing_mark,
+    spacing_mark,
+    enclosing_mark,
+    decimal_number,
+    letter_number,
+    other_number,
+    connector_punctuation,
+    dash_punctuation,
+    open_punctuation,
+    close_punctuation,
+    initial_punctuation,
+    final_punctuation,
+    other_punctuation,
+    math_symbol,
+    currency_symbol,
+    modifier_symbol,
+    other_symbol,
+    space_separator,
+    line_separator,
+    paragraph_separator,
+    control,
+    format,
+    surrogate,
+    private_use,
+    unassigned
+);
+
+object UnicodeCharacter {
+    has origin is char;
+
+    UnicodeCharacter(origin is char) {
+        self.origin = origin;
+    }
+
+    name() is string {
+        character_name(origin);
+    }
+
+    category() is UnicodeCategory {
+        match category_code(origin) {
+            case "Lu" { UnicodeCategory.uppercase_letter; }
+            case "Ll" { UnicodeCategory.lowercase_letter; }
+            case "Lt" { UnicodeCategory.titlecase_letter; }
+            case "Lm" { UnicodeCategory.modifier_letter; }
+            case "Lo" { UnicodeCategory.other_letter; }
+            case "Mn" { UnicodeCategory.nonspacing_mark; }
+            case "Mc" { UnicodeCategory.spacing_mark; }
+            case "Me" { UnicodeCategory.enclosing_mark; }
+            case "Nd" { UnicodeCategory.decimal_number; }
+            case "Nl" { UnicodeCategory.letter_number; }
+            case "No" { UnicodeCategory.other_number; }
+            case "Pc" { UnicodeCategory.connector_punctuation; }
+            case "Pd" { UnicodeCategory.dash_punctuation; }
+            case "Ps" { UnicodeCategory.open_punctuation; }
+            case "Pe" { UnicodeCategory.close_punctuation; }
+            case "Pi" { UnicodeCategory.initial_punctuation; }
+            case "Pf" { UnicodeCategory.final_punctuation; }
+            case "Po" { UnicodeCategory.other_punctuation; }
+            case "Sm" { UnicodeCategory.math_symbol; }
+            case "Sc" { UnicodeCategory.currency_symbol; }
+            case "Sk" { UnicodeCategory.modifier_symbol; }
+            case "So" { UnicodeCategory.other_symbol; }
+            case "Zs" { UnicodeCategory.space_separator; }
+            case "Zl" { UnicodeCategory.line_separator; }
+            case "Zp" { UnicodeCategory.paragraph_separator; }
+            case "Cc" { UnicodeCategory.control; }
+            case "Cf" { UnicodeCategory.format; }
+            case "Cs" { UnicodeCategory.surrogate; }
+            case "Co" { UnicodeCategory.private_use; }
+            case "Cn" { UnicodeCategory.unassigned; }
+            else { UnicodeCategory.unassigned; }
+        }
+    }
+
+    combining_class() is int {
+        character_combining_class(origin);
+    }
+
+    numeric_value() is float {
+        confirm character_is_numeric(origin)
+            else throw NonNumericCharacter(origin);
+        character_numeric_value(origin);
+    }
+}
+
+object NonNumericCharacter does Error {
+    has origin is char;
+
+    NonNumericCharacter(origin is char) {
+        self.origin = origin;
+    }
+
+    #projected
+    text() is string {
+        let name is string = character_name(origin);
+        if name == "" {
+            "character has no numeric value";
+        }
+        else {
+            "character has no numeric value: " + name;
+        }
+    }
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.iterable.functional",
+  "title": "Iterating objects support map/filter/reduce",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ITERABLE",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "CALL.FUNCTIONAL-OPS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "4 2 10\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#6.8",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.8: nominal iteration also enables eager map/filter/reduce; values 1..4 give 4 doubles, 2 odd values and sum 10."
+  },
+  "status": "mandatory",
+  "notes": "D-036"
+}

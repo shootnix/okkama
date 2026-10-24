@@ -1,0 +1,212 @@
+module http/http1_session v1.0.0;
+import "http/message" take Request,Response,InvalidHttpMessage;
+import "http/http1_head" take Http1Limits,Http1LimitExceeded,Http1RequestHead,Http1ResponseHead;
+import "http/http1_reading" take Http1ResponseHeadReading,Http1HeadRead;
+import "http/http1_continue" take Http1RequestStart,Http1ContinueState;
+import "http/http1_body_writing" take Http1BodyWriting;
+import "time/clock" take Timing,SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "http/http1_framing" take Http1RequestFraming,Http1ResponseFraming,Http1BodyKind,Http1BodyPlan;
+import "http/http1_body" take Http1BodyReading;
+import "http/body" take BodyOpening,BodyReading,BodyClosed,BodyAlreadyOpened,TrailersUnavailable;
+import "http/body" take EmptyBody;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "http/header" take Headers,HeaderName;
+import "collections/sequence" take Sequencing;
+import "numbers/bigint" take BigInt;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "io/stream" take Closing,InvalidReadLimit,ByteSource;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "error" take InvalidState,InvalidArgument;
+
+// One explicit transport owner, no pipelining. Admission remains held by the
+// response body until verified EOF. Failed/abandoned bodies discard transport.
+object Http1Session does Closing {
+    has input is AsyncReading;has output is AsyncWriting;has owner is Closing;has limits is Http1Limits;
+    has stopped is Event;has busy is Atomic<bool>;has current is Atomic<@Http1SessionLease>;
+    has clock is Timing;has continue_wait is Duration;
+    Http1Session(input is AsyncReading,output is AsyncWriting,owner is Closing){
+        confirm !owner.closed() else throw Http1SessionClosed();self.input=input;self.output=output;self.owner=owner;limits=Http1Limits();
+        stopped=Event();busy=Atomic(false);let empty is @Http1SessionLease=[];current=Atomic(empty);
+        clock=SystemClock();continue_wait=Duration(1.rat(),DurationUnit.second);
+    }
+    Http1Session(input is AsyncReading,output is AsyncWriting,owner is Closing,limits is Http1Limits){
+        confirm !owner.closed() else throw Http1SessionClosed();self.input=input;self.output=output;self.owner=owner;self.limits=limits;
+        stopped=Event();busy=Atomic(false);let empty is @Http1SessionLease=[];current=Atomic(empty);
+        clock=SystemClock();continue_wait=Duration(1.rat(),DurationUnit.second);
+    }
+    Http1Session(input is AsyncReading,output is AsyncWriting,owner is Closing,limits is Http1Limits,continue_wait is Duration,clock is Timing){
+        confirm !owner.closed() else throw Http1SessionClosed();confirm continue_wait.seconds()>=0.rat() else throw InvalidArgument("negative continue wait");
+        self.input=input;self.output=output;self.owner=owner;self.limits=limits;self.clock=clock;self.continue_wait=continue_wait;
+        stopped=Event();busy=Atomic(false);let empty is @Http1SessionLease=[];current=Atomic(empty);
+    }
+    closed() is bool{stopped.ready() || owner.closed();}
+    close() is void {
+        if !stopped.ready(){stopped.set();for current.value() -> lease{lease.abort();}}
+        let empty is @Http1SessionLease=[];current.replace(empty);if !owner.closed(){owner.close();}
+    }
+    async exchange(request is Request) is Http1Exchange {
+        confirm !self.closed() else throw Http1SessionClosed();
+        let outgoing=Http1RequestHead(request.method(),request.target(),request.headers(),request.version());
+        let outgoing_plan=Http1RequestFraming(outgoing,limits).plan();let sending=Http1RequestStart(output,request,outgoing,outgoing_plan,limits);
+        confirm busy.compare_and_replace(false,true) else throw InvalidState("HTTP1 response body still owns the session");
+        let lease=Http1SessionLease(owner,busy,stopped);current.replace([lease]);let published=Event();let cleanup=Http1SessionCleanup(lease,published);defer await cleanup.close();
+        let writing=sending.result();lease.writing().start(writing);let writer=await writing;
+        let continuation=Http1ContinueState(sending.expectation(),clock,continue_wait);continuation=continuation.begun();
+        let accumulated=Http1SessionHeads();
+        loop {
+            let pending=continuation.reading(Http1ResponseHeadReading(input,accumulated.prefix(),limits,4096).result());lease.heads().start(pending);let parsed=await pending;
+            let head=parsed.head();let plan=Http1ResponseFraming(head,request.method(),limits).plan();let code=head.status().code();
+            confirm plan.kind()!=Http1BodyKind.tunnel && plan.kind()!=Http1BodyKind.upgrade else throw InvalidHttpMessage("upgraded response requires dedicated protocol ownership");
+            if code<200 {
+                confirm accumulated.entries().size()<16 else throw Http1LimitExceeded("informational_responses");accumulated=accumulated.following(parsed);
+                if code==100 && !continuation.body_sent(){
+                    let body=Http1BodyWriting(writer,request.body(),outgoing_plan,outgoing.headers(),limits,4096).result();lease.writing().start(body);await body;
+                    continuation=continuation.sending_completed();
+                }
+            }else{
+                let reusable=outgoing_plan.reuse_after_eof() && plan.reuse_after_eof() && continuation.body_sent();
+                let framer=Http1BodyReading(input,Http1FramerOwner(),plan,parsed.remainder(),head.headers(),limits);
+                let reader=Http1SessionReading(framer,lease,reusable);let body=Http1SessionBody(reader,plan);
+                let response=head.response(body);let result=Http1Exchange(request,response,accumulated.entries());
+                if plan.kind()==Http1BodyKind.empty || (plan.kind()==Http1BodyKind.fixed && plan.length().sign()==0) {
+                    let group is FutureGroup<@byte>=FutureGroup();lease.priming().replace([group]);let prime=reader.bytes(1);group.start(prime);await prime;
+                }
+                published.set();return result;
+            }
+        }
+    }
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+object Http1Exchange {
+    has request is Request;has response is Response;has information is @Http1ResponseHead;
+    Http1Exchange(request is Request,response is Response,information is @Http1ResponseHead){self.request=request;self.response=response;self.information=information;}
+    request() is Request{request;}response() is Response{response;}informational() is Sequencing<Http1ResponseHead>{information;}
+}
+object Http1SessionHeads {
+    has prefix is @byte;has entries is @Http1ResponseHead;
+    Http1SessionHeads(){prefix=[];entries=[];}
+    following(parsed is Http1HeadRead<Http1ResponseHead>) is ^Http1SessionHeads {
+        let next_entries is @Http1ResponseHead=(0..entries.size()+1).map()->index{if index<entries.size(){entries[index];}else{parsed.head();}};
+        ^entries=next_entries;^prefix=parsed.remainder();
+    }
+    prefix() is @byte{prefix;}entries() is @Http1ResponseHead{entries;}
+}
+object Http1SessionLease {
+    has owner is Closing;has busy is Atomic<bool>;has stopped is Event;has phase is Atomic<int>;
+    has writing is Atomic<@FutureGroup<AsyncWriting>>;has heads is Atomic<@FutureGroup<Http1HeadRead<Http1ResponseHead>>>;
+    has reads,priming is Atomic<@FutureGroup<@byte>>;
+    Http1SessionLease(owner is Closing,busy is Atomic<bool>,stopped is Event){
+        self.owner=owner;self.busy=busy;self.stopped=stopped;phase=Atomic(0);
+        let output is FutureGroup<AsyncWriting>=FutureGroup();let input is FutureGroup<Http1HeadRead<Http1ResponseHead>>=FutureGroup();writing=Atomic([output]);heads=Atomic([input]);
+        let empty is @FutureGroup<@byte>=[];reads=Atomic(empty);priming=Atomic(empty);
+    }
+    writing() is FutureGroup<AsyncWriting>{writing.value()[0];}heads() is FutureGroup<Http1HeadRead<Http1ResponseHead>>{heads.value()[0];}priming() is Atomic<@FutureGroup<@byte>>{priming;}
+    reads() is Atomic<@FutureGroup<@byte>>{reads;}
+    aborted() is bool{phase.value()==2;}
+    finish(reusable is bool) is void {
+        if phase.compare_and_replace(0,1){busy.replace(false);if !reusable{stopped.set();if !owner.closed(){owner.close();}}}
+    }
+    // Async cleanup drains these children before abort closes their transport.
+    cancel() is void {
+        if phase.compare_and_replace(0,2){stopped.set();busy.replace(false);for writing.value() -> group{group.cancel();}for heads.value() -> group{group.cancel();}for priming.value() -> group{group.cancel();}
+            for reads.value() -> group{group.cancel();}}
+    }
+    abort() is void {self.cancel();if self.aborted() && !owner.closed(){owner.close();}}
+    async settle() is void {
+        let output=Http1WritingSettlement(writing.value());defer await output.close();let input=Http1HeadSettlement(heads.value());defer await input.close();
+        for priming.value() -> group{if group.active()>0{await group.wait();}}
+    }
+    release_startup() is void {
+        let output is @FutureGroup<AsyncWriting>=[];writing.replace(output);
+        let input is @FutureGroup<Http1HeadRead<Http1ResponseHead>>=[];heads.replace(input);
+        let primes is @FutureGroup<@byte>=[];priming.replace(primes);
+    }
+}
+object Http1WritingSettlement {
+    has groups is @FutureGroup<AsyncWriting>;Http1WritingSettlement(groups is @FutureGroup<AsyncWriting>){self.groups=groups;}
+    async close() is void{for groups -> group{if group.active()>0{await group.wait();}}}
+}
+object Http1HeadSettlement {
+    has groups is @FutureGroup<Http1HeadRead<Http1ResponseHead>>;Http1HeadSettlement(groups is @FutureGroup<Http1HeadRead<Http1ResponseHead>>){self.groups=groups;}
+    async close() is void{for groups -> group{if group.active()>0{await group.wait();}}}
+}
+object Http1SessionCleanup {
+    has lease is Http1SessionLease;has published is Event;
+    Http1SessionCleanup(lease is Http1SessionLease,published is Event){self.lease=lease;self.published=published;}
+    async close() is void {
+        let release=Http1StartupRelease(lease);defer release.close();
+        if !published.ready(){defer lease.abort();lease.cancel();await lease.settle();}
+        else{await lease.settle();}
+    }
+}
+object Http1StartupRelease {
+    has lease is Http1SessionLease;Http1StartupRelease(lease is Http1SessionLease){self.lease=lease;}
+    close() is void{lease.release_startup();}
+}
+object Http1LeaseSettlement {
+    has lease is Http1SessionLease;Http1LeaseSettlement(lease is Http1SessionLease){self.lease=lease;}
+    async close() is void{await lease.settle();}
+}
+object Http1FramerOwner does Closing {
+    has stopped is Event;Http1FramerOwner(){stopped=Event();}closed() is bool{stopped.ready();}close() is void{stopped.set();}
+}
+object Http1SessionReading does BodyReading {
+    has origin is Http1BodyReading;has lease is Http1SessionLease;has reusable is bool;has finished,stopped is Event;has busy is Atomic<bool>;
+    Http1SessionReading(origin is Http1BodyReading,lease is Http1SessionLease,reusable is bool){self.origin=origin;self.lease=lease;self.reusable=reusable;finished=Event();stopped=Event();busy=Atomic(false);}
+    async bytes(limit is int) is @byte {
+        confirm limit>0 else throw InvalidReadLimit(limit);confirm !self.closed() else throw BodyClosed();if finished.ready(){return [];}
+        confirm busy.compare_and_replace(false,true) else throw InvalidState("HTTP1 body already has a pending read");
+        let group is FutureGroup<@byte>=FutureGroup();let complete=Event();let cleanup=Http1SessionReadCleanup(lease,group,complete,busy);defer await cleanup.close();
+        lease.reads().replace([group]);let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;
+        confirm !lease.aborted() else throw BodyClosed();
+        if bytes.size()==0 {
+            confirm origin.remainder().size()==0 else throw InvalidHttpMessage("unsolicited bytes after HTTP1 response body");
+            lease.finish(reusable);finished.set();
+        }
+        complete.set();bytes;
+    }
+    trailers() is Headers{confirm finished.ready() else throw TrailersUnavailable();origin.trailers();}
+    closed() is bool{stopped.ready() || lease.aborted();}
+    close() is void{if !stopped.ready(){stopped.set();origin.close();lease.abort();}}
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+object Http1SessionReadCleanup {
+    has lease is Http1SessionLease;has group is FutureGroup<@byte>;has complete is Event;has busy is Atomic<bool>;
+    Http1SessionReadCleanup(lease is Http1SessionLease,group is FutureGroup<@byte>,complete is Event,busy is Atomic<bool>){self.lease=lease;self.group=group;self.complete=complete;self.busy=busy;}
+    async close() is void {
+        let release=Http1SessionReadRelease(lease.reads(),busy);defer release.close();
+        if !complete.ready(){defer lease.abort();lease.cancel();group.cancel();await Http1ReadSettlement(group).close();}
+        else{await Http1ReadSettlement(group).close();}
+    }
+}
+object Http1ReadSettlement {
+    has group is FutureGroup<@byte>;Http1ReadSettlement(group is FutureGroup<@byte>){self.group=group;}
+    async close() is void{if group.active()>0{await group.wait();}}
+}
+object Http1SessionReadRelease {
+    has groups is Atomic<@FutureGroup<@byte>>;has busy is Atomic<bool>;
+    Http1SessionReadRelease(groups is Atomic<@FutureGroup<@byte>>,busy is Atomic<bool>){self.groups=groups;self.busy=busy;}
+    close() is void{let empty is @FutureGroup<@byte>=[];groups.replace(empty);busy.replace(false);}
+}
+object Http1SessionBody does BodyOpening {
+    has origin is Http1SessionReading;has plan is Http1BodyPlan;has opened is Atomic<bool>;
+    Http1SessionBody(origin is Http1SessionReading,plan is Http1BodyPlan){self.origin=origin;self.plan=plan;opened=Atomic(false);}
+    length() is BigInt{plan.length();}replayable() is bool{false;}
+    reading() is BodyReading{confirm !origin.closed() else throw BodyClosed();confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();origin;}
+    destroy{try{if !opened.value(){origin.close();}}catch e is Error{}catch e is NativeFailure{}}
+}
+object Http1SessionClosed does Error {Http1SessionClosed();text() is string{"HTTP1 session is closed";}}
+object Http1UnstartedTransport does AsyncReading,AsyncWriting,Closing {
+    has stopped is Event;Http1UnstartedTransport(){stopped=Event();}
+    async bytes(limit is int) is @byte{throw InvalidState("unstarted session must not read");}
+    async write(source is ByteSource) is AsyncWriting{throw InvalidState("unstarted session must not write");}
+    closed() is bool{stopped.ready();}close() is void{stopped.set();}
+}
+async test "unstarted exchange cancellation leaves its explicit session owner available" {
+    let transport=Http1UnstartedTransport();let session=Http1Session(transport,transport,transport);defer session.close();
+    let request=ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").value().request(EmptyBody());
+    let pending=session.exchange(request);pending.cancel();test.ok(try{await pending;false;}catch e is Cancelled{true;});test.ok(!session.closed());
+}

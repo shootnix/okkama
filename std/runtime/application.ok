@@ -1,0 +1,21 @@
+module runtime/application v1.0.0;
+// Only owned host terminal effects. CLI/config/ANSI policy lives in std objects.
+native object TerminalState;
+native object TerminalModeState;
+native object TerminalResizeState;
+native async terminal_standard(output is int) is TerminalState;
+native async terminal_controlling() is TerminalState;
+native terminal_metadata(state is TerminalState) is %string:int;
+native terminal_write(state is TerminalState,bytes is @byte) is int;
+native async terminal_read(state is TerminalState,limit is int) is @byte;
+native terminal_cleanup(state is TerminalState,bytes is @byte) is bool;
+native terminal_closed(state is TerminalState) is bool;
+native terminal_close(state is TerminalState) is bool;
+native terminal_mode_open(state is TerminalState,mode is int) is TerminalModeState;
+native terminal_mode_closed(state is TerminalModeState) is bool;
+native terminal_mode_close(state is TerminalModeState) is bool;
+native terminal_mode_drop(state is TerminalModeState) is bool;
+native async terminal_resize_open(state is TerminalState) is TerminalResizeState;
+native async terminal_resize_next(state is TerminalResizeState) is @int;
+native terminal_resize_closed(state is TerminalResizeState) is bool;
+native terminal_resize_close(state is TerminalResizeState) is bool;

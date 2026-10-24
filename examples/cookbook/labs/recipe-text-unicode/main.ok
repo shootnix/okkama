@@ -1,0 +1,24 @@
+// Подготовить имена и текст справки
+//
+// Импорт содержит составные Unicode-символы; справку нужно разбить на удобные строки.
+//
+// Запуск: ./examples/cookbook/run lab recipe-text-unicode
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-text-unicode
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/text_unicode v1.0.0;
+import "unicode/normalization" take Normalized,NormalizationForm;
+import "unicode/character" take UnicodeCharacter;
+import "text/layout" take Wrapped,Indented;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let name = Normalized(origin: "é", form: NormalizationForm.nfc).string();
+    confirm name == "é";
+    let letter = UnicodeCharacter(origin: 'Ж');
+    Stdout().writeln(letter.name());
+    let help = Wrapped(origin: "Импортировать товары из проверенного CSV файла", width: 24).string();
+    Stdout().writeln(Indented(origin: help, prefix: "  ").string());
+    0;
+}

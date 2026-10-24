@@ -1,0 +1,114 @@
+module regex/split v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "regex/match" take RegexMatching;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+
+// RegexParts is the collection itself. It does not wrap an array behind
+// values(), and it does not materialize the complete split before traversal.
+//
+//     let fields = RegexParts("one, two;three", Regex("[,;]\\s*"));
+//     for fields -> field {
+//         Stdout().writeln(field);
+//     }
+//
+// An explicit limit counts separators, so a limit of 1 yields at most two
+// fields. Empty leading, adjacent and trailing fields are retained.
+object RegexParts does Iterating<string> {
+    has source is string;
+    has pattern is Regex;
+    has maximum is int;
+
+    RegexParts(origin is string, regex is Regex) {
+        source = origin;
+        pattern = regex;
+        maximum = -1;
+    }
+
+    RegexParts(origin is string, regex is Regex, limit is int) {
+        confirm limit > 0 else throw InvalidRegexSplitLimit(limit);
+        source = origin;
+        pattern = regex;
+        maximum = limit;
+    }
+
+    cursor() is Cursor<string> {
+        RegexPartsCursor(
+            origin: source,
+            separators: RegexMatches(source, pattern).cursor(),
+            offset: 0,
+            remaining: maximum,
+            final: false,
+        );
+    }
+}
+
+object RegexPartsCursor does Cursor<string> {
+    has source is string;
+    has separators is Cursor<RegexMatching>;
+    has offset is int;
+    has remaining is int;
+    has final is bool;
+
+    RegexPartsCursor(
+        origin is string,
+        separators is Cursor<RegexMatching>,
+        offset is int,
+        remaining is int,
+        final is bool,
+    ) {
+        source = origin;
+        self.separators = separators;
+        self.offset = offset;
+        self.remaining = remaining;
+        self.final = final;
+    }
+
+    available() is bool { !final; }
+
+    item() is string {
+        confirm self.available() else throw IterationEnded();
+        if self.separated() {
+            source.slice(offset, separators.item().range().start());
+        }
+        else {
+            source.slice(offset, source.length());
+        }
+    }
+
+    successor() is Cursor<string> {
+        confirm self.available() else throw IterationEnded();
+        if self.separated() {
+            RegexPartsCursor(
+                origin: source,
+                separators: separators.successor(),
+                offset: separators.item().range().end(),
+                remaining: if remaining < 0 { -1; } else { remaining - 1; },
+                final: false,
+            );
+        }
+        else {
+            RegexPartsCursor(
+                origin: source,
+                separators: separators,
+                offset: offset,
+                remaining: remaining,
+                final: true,
+            );
+        }
+    }
+
+    private:
+    separated() is bool {
+        remaining != 0 && separators.available();
+    }
+}
+
+object InvalidRegexSplitLimit does Error {
+    has maximum is int;
+    InvalidRegexSplitLimit(limit is int) { maximum = limit; }
+    limit() is int { maximum; }
+    #projected
+    text() is string { "regex split limit must be positive"; }
+}

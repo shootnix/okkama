@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Min<T> {
+    has first is T;
+    has rest is @T;
+
+    Min(first is T, rest is ...T) {
+        first = first;
+        let materialized is @T = rest...;
+        rest = materialized;
+    }
+
+    count() is int { rest.size() + 1; }
+    head() is T { first; }
+}
+
+main() is int {
+    let out = Stdout();
+    let m = Min(first: 1);
+    out.writeln("unreachable");
+    0;
+}

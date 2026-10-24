@@ -1,0 +1,407 @@
+module collections/set v1.0.0;
+
+import "collections/iteration" take Cursor, CursorItems, Iterating, IterationEnded;
+import "collections/list" take List, EmptyList;
+import "collections/views" take Filtered;
+import "size" take Sizing;
+
+// Immutable sets with deterministic traversal order.
+//
+// OrderedSet keeps the first occurrence of every value:
+//
+//     let empty is List<string> = EmptyList();
+//     let input = empty
+//         .prefix("third")
+//         .prefix("first")
+//         .prefix("second")
+//         .prefix("first");
+//     let names = OrderedSet(values: input);
+//     // traversal: "first", "second", "third"
+//
+// addition() and difference() are nouns: each denotes another immutable set.
+// Existing sets remain unchanged and may share their origins:
+//
+//     let extended = names.addition("fourth");
+//     let shortened = extended.difference("second");
+//
+// Binary set objects preserve deterministic order:
+//
+//     let either = Union(left: preferred, right: fallback);
+//     let common = Intersection(left: preferred, right: fallback);
+//     let only_preferred = Difference(left: preferred, right: fallback);
+//     let changed = SymmetricDifference(left: preferred, right: fallback);
+//
+// Union traverses the left set first and then unseen right values.
+// Intersection and Difference retain left order. SymmetricDifference emits
+// left-only values followed by right-only values.
+//
+// The runtime currently has neither a generic hashing contract nor a map that
+// accepts arbitrary object keys. OrderedSet therefore uses strict runtime
+// equality and linear membership instead of pretending to be a HashSet.
+// Values must support runtime equality; native opaque handles do not.
+//
+// Set is conceptually the conjunction of Iterating<T> and Sizing. Until role
+// composition exists, concrete sets explicitly implement all three roles.
+
+role Set<T> {
+    cursor() is Cursor<T>;
+    size() is int;
+    membership(value is T) is bool;
+    addition(value is T) is Set<T>;
+    difference(value is T) is Set<T>;
+}
+
+object OrderedSet<T> does Set<T>, Iterating<T>, Sizing {
+    has origin is List<T>;
+
+    OrderedSet(values is Iterating<T>) {
+        origin = DistinctList(values: values).list();
+    }
+
+    cursor() is Cursor<T> {
+        origin.cursor();
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    membership(value is T) is bool {
+        SetMembership(origin: self, value: value).result();
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object Union<T> does Set<T>, Iterating<T>, Sizing {
+    has left is Set<T>;
+    has right is Set<T>;
+
+    Union(:left, :right);
+
+    cursor() is Cursor<T> {
+        ConcatenatedSetCursor(
+            left: left.cursor(),
+            right: Filtered(
+                origin: right,
+                condition: AbsentFrom(origin: left).membership,
+            ).cursor(),
+        );
+    }
+
+    size() is int {
+        SetSize(origin: self).result();
+    }
+
+    membership(value is T) is bool {
+        left.membership(value) || right.membership(value);
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object Intersection<T> does Set<T>, Iterating<T>, Sizing {
+    has left is Set<T>;
+    has right is Set<T>;
+
+    Intersection(:left, :right);
+
+    cursor() is Cursor<T> {
+        Filtered(
+            origin: left,
+            condition: right.membership,
+        ).cursor();
+    }
+
+    size() is int {
+        SetSize(origin: self).result();
+    }
+
+    membership(value is T) is bool {
+        left.membership(value) && right.membership(value);
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object Difference<T> does Set<T>, Iterating<T>, Sizing {
+    has left is Set<T>;
+    has right is Set<T>;
+
+    Difference(:left, :right);
+
+    cursor() is Cursor<T> {
+        Filtered(
+            origin: left,
+            condition: AbsentFrom(origin: right).membership,
+        ).cursor();
+    }
+
+    size() is int {
+        SetSize(origin: self).result();
+    }
+
+    membership(value is T) is bool {
+        left.membership(value) && !right.membership(value);
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object SymmetricDifference<T> does Set<T>, Iterating<T>, Sizing {
+    has left is Set<T>;
+    has right is Set<T>;
+
+    SymmetricDifference(:left, :right);
+
+    cursor() is Cursor<T> {
+        ConcatenatedSetCursor(
+            left: Filtered(
+                origin: left,
+                condition: AbsentFrom(origin: right).membership,
+            ).cursor(),
+            right: Filtered(
+                origin: right,
+                condition: AbsentFrom(origin: left).membership,
+            ).cursor(),
+        );
+    }
+
+    size() is int {
+        SetSize(origin: self).result();
+    }
+
+    membership(value is T) is bool {
+        left.membership(value) != right.membership(value);
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object SetWith<T> does Set<T>, Iterating<T>, Sizing {
+    has origin is Set<T>;
+    has value is T;
+    has present is bool;
+
+    SetWith(origin is Set<T>, value is T) {
+        self.origin = origin;
+        self.value = value;
+        present = origin.membership(value);
+    }
+
+    cursor() is Cursor<T> {
+        if present {
+            origin.cursor();
+        }
+        else {
+            SetWithCursor(origin: origin.cursor(), value: value, emitted: false);
+        }
+    }
+
+    size() is int {
+        origin.size() + if present { 0; } else { 1; };
+    }
+
+    membership(value is T) is bool {
+        self.value == value || origin.membership(value);
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object SetWithout<T> does Set<T>, Iterating<T>, Sizing {
+    has origin is Set<T>;
+    has value is T;
+    has present is bool;
+
+    SetWithout(origin is Set<T>, value is T) {
+        self.origin = origin;
+        self.value = value;
+        present = origin.membership(value);
+    }
+
+    cursor() is Cursor<T> {
+        Filtered(
+            origin: origin,
+            condition: DifferentFrom(origin: value).comparison,
+        ).cursor();
+    }
+
+    size() is int {
+        origin.size() - if present { 1; } else { 0; };
+    }
+
+    membership(value is T) is bool {
+        self.value != value && origin.membership(value);
+    }
+
+    addition(value is T) is Set<T> {
+        SetWith(origin: self, value: value);
+    }
+
+    difference(value is T) is Set<T> {
+        SetWithout(origin: self, value: value);
+    }
+}
+
+object SetWithCursor<T> does Cursor<T> {
+    has origin is Cursor<T>;
+    has value is T;
+    has emitted is bool;
+
+    SetWithCursor(:origin, :value, :emitted);
+
+    available() is bool {
+        origin.available() || !emitted;
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        if origin.available() { origin.item(); } else { value; }
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        if origin.available() {
+            SetWithCursor(origin: origin.successor(), value: value, emitted: emitted);
+        }
+        else {
+            SetWithCursor(origin: origin, value: value, emitted: true);
+        }
+    }
+}
+
+object ConcatenatedSetCursor<T> does Cursor<T> {
+    has left is Cursor<T>;
+    has right is Cursor<T>;
+
+    ConcatenatedSetCursor(:left, :right);
+
+    available() is bool {
+        left.available() || right.available();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        if left.available() { left.item(); } else { right.item(); }
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        if left.available() {
+            ConcatenatedSetCursor(left: left.successor(), right: right);
+        }
+        else {
+            ConcatenatedSetCursor(left: left, right: right.successor());
+        }
+    }
+}
+
+object SetMembership<T> {
+    has origin is Iterating<T>;
+    has value is T;
+
+    SetMembership(:origin, :value);
+
+    result() is bool {
+        let cursor = origin.cursor();
+        if !cursor.available() {
+            false;
+        }
+        else {
+            for CursorItems(cursor: cursor) -> candidate {
+                last true if candidate == value;
+                false;
+            }
+        }
+    }
+}
+
+object SetSize<T> {
+    has origin is Iterating<T>;
+
+    SetSize(:origin);
+
+    result() is int {
+        origin.reduce(0) -> amount, item { amount + 1; };
+    }
+}
+
+object AbsentFrom<T> {
+    has origin is Set<T>;
+
+    AbsentFrom(:origin);
+
+    membership(value is T) is bool {
+        !origin.membership(value);
+    }
+}
+
+object DifferentFrom<T> {
+    has origin is T;
+
+    DifferentFrom(:origin);
+
+    comparison(value is T) is bool {
+        origin != value;
+    }
+}
+
+object DistinctList<T> {
+    has origin is Iterating<T>;
+
+    DistinctList(values is Iterating<T>) {
+        origin = values;
+    }
+
+    list() is List<T> {
+        let reversed is List<T> = origin.reduce(EmptyList()) -> items, item {
+            if SetMembership(origin: items, value: item).result() {
+                items;
+            }
+            else {
+                items.prefix(item);
+            }
+        };
+        let result is List<T> = reversed.reduce(EmptyList()) -> items, item {
+            items.prefix(item);
+        };
+        result;
+    }
+}

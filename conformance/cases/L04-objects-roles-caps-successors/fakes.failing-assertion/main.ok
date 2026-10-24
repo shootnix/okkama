@@ -1,0 +1,34 @@
+module app v1.0.0;
+
+role Books {
+    remember(id is int, title is string) is void;
+    title(id is int) is string;
+    count() is int;
+
+    fake {
+        has prefix is string = "fake:";
+        remember(id is int, title is string) is void {
+            fake.storage.set(id, title);
+        }
+        title(id is int) is string {
+            prefix + fake.storage.get(id);
+        }
+        count() is int {
+            fake.storage.size();
+        }
+    }
+}
+
+test "deliberately wrong expectation" {
+    let books is Books = Books.fake();
+    books.remember(1, "Dune");
+    test.is(books.title(1), "Dune");
+}
+
+test "passing test still runs" {
+    test.ok(true);
+}
+
+main() is int {
+    0;
+}

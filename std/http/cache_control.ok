@@ -1,0 +1,74 @@
+module http/cache_control v1.0.0;
+import "http/header" take Headers,Header,HeaderName,HttpAsciiLowercase;
+import "http/media_type" take HttpMediaOctet,HttpMediaPosition,HttpMediaScanned,HttpMediaItems;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+// Preserve duplicates: a repeated freshness directive cannot authorize reuse.
+object CacheDirective {
+    has name is string;has arguments is @string;
+    CacheDirective(name is string,arguments is @string){self.name=HttpAsciiLowercase(name).string();self.arguments=arguments;}
+    name() is string{name;}arguments() is @string{arguments;}
+}
+object CacheControl {
+    has directives is @CacheDirective;
+    CacheControl(headers is Headers){directives=CacheControlFields(headers,8192,128).values();}
+    CacheControl(headers is Headers,bytes is int,entries is int){directives=CacheControlFields(headers,bytes,entries).values();}
+    present(name is string) is bool{self.count(name)>0;}
+    count(name is string) is int{let key=HttpAsciiLowercase(name).string();directives.reduce(0)->total,item{if item.name()==key{total+1;}else{total;}};}
+    arguments(name is string) is @string{
+        let key=HttpAsciiLowercase(name).string();let result is HttpMediaItems<string>=HttpMediaItems();
+        for directives -> item{if item.name()==key{for item.arguments() -> value{result=result.following(value);}}}result.values();
+    }
+    seconds(name is string) is int{let values=self.arguments(name);confirm self.count(name)==1 && values.size()==1 else throw InvalidCacheControl("one delta-seconds argument required");CacheDeltaSeconds(values[0]).value();}
+}
+object CacheDeltaSeconds {
+    has origin is string;CacheDeltaSeconds(origin is string){self.origin=origin;}
+    value() is int{
+        confirm origin.length()>0 && origin.length()<=8192 else throw InvalidCacheControl("delta-seconds length");
+        let bytes=try{Latin1Encoded(origin).bytes();}catch e is Error{throw InvalidCacheControl("delta-seconds syntax");};
+        bytes.reduce(0)->value,octet{let digit=octet.int()-48;confirm digit>=0 && digit<=9 else throw InvalidCacheControl("delta-seconds syntax");
+            if value>214748364 || (value==214748364 && digit>=8){2147483648;}else{value*10+digit;}};
+    }
+}
+object CacheControlFields {
+    has values is @CacheDirective;
+    CacheControlFields(headers is Headers,budget is int,entries is int){
+        confirm budget>=0 && entries>=0 else throw InvalidCacheControl("limits");
+        let fields=headers.values(HeaderName("Cache-Control"));let used=fields.reduce(0)->total,text{confirm text.length()<=budget-total else throw InvalidCacheControl("byte limit");total+text.length();};
+        let parsed is HttpMediaItems<CacheDirective>=HttpMediaItems();let count=HttpMediaPosition(0,0);
+        for fields -> text{for CacheControlScanning(text,entries).values() -> item{confirm count.slots()<entries else throw InvalidCacheControl("directive limit");parsed=parsed.following(item);count=count.separator(0);}}
+        values=parsed.values();
+    }
+    values() is @CacheDirective{values;}
+}
+object CacheControlScanning {
+    has text is string;has bytes is @byte;has width,limit is int;
+    CacheControlScanning(text is string,limit is int){self.text=text;let wire=Latin1Encoded(text).bytes();bytes=wire;width=wire.size();self.limit=limit;}
+    values() is @CacheDirective{
+        let position=HttpMediaPosition(self.list(0),0);let parsed is HttpMediaItems<CacheDirective>=HttpMediaItems();
+        loop{let at=position.index();last if at==width;confirm position.slots()<limit else throw InvalidCacheControl("directive limit");
+            let name=self.token(at);let end=self.space(name.end());
+            if end==width || bytes[end].int()==44{parsed=parsed.following(CacheDirective(name.text(),[]));position=position.separator(self.list(end));}
+            else{confirm bytes[end].int()==61 else throw InvalidCacheControl("assignment syntax");let start=end+1;confirm start<width else throw InvalidCacheControl("argument required");
+                let value=if bytes[start].int()==34{self.quoted(start);}else{self.token(start);};let following=self.space(value.end());
+                confirm following==width || bytes[following].int()==44 else throw InvalidCacheControl("directive separator");
+                parsed=parsed.following(CacheDirective(name.text(),[value.text()]));position=position.separator(self.list(following));}
+        }parsed.values();
+    }
+    private:
+    space(start is int) is int{let cursor=HttpMediaPosition(start,0);loop{let at=cursor.index();last if at==width || (bytes[at].int()!=32 && bytes[at].int()!=9);cursor=cursor.following(at+1);}cursor.index();}
+    list(start is int) is int{let cursor=HttpMediaPosition(self.space(start),0);loop{let at=cursor.index();last if at==width || bytes[at].int()!=44;confirm cursor.slots()<64 else throw InvalidCacheControl("empty member limit");cursor=cursor.separator(self.space(at+1));}cursor.index();}
+    token(start is int) is HttpMediaScanned{let cursor=HttpMediaPosition(start,0);loop{let at=cursor.index();last if at==width || !HttpMediaOctet(bytes[at].int()).token();cursor=cursor.following(at+1);}confirm cursor.index()>start else throw InvalidCacheControl("token required");HttpMediaScanned(text.slice(start,cursor.index()),cursor.index());}
+    quoted(start is int) is HttpMediaScanned{let cursor=HttpMediaPosition(start+1,0);let output=ByteBuffer();defer output.closing().close();let writer=output.writing();
+        loop{let at=cursor.index();confirm at<width else throw InvalidCacheControl("unfinished quote");let code=bytes[at].int();
+            if code==34{return HttpMediaScanned(Latin1Decoded(output.content().bytes()).string(),at+1);}
+            if code==92{confirm at+1<width else throw InvalidCacheControl("unfinished escape");writer.write(ByteSnapshot([bytes[at+1]]));cursor=cursor.following(at+2);}
+            else{writer.write(ByteSnapshot([bytes[at]]));cursor=cursor.following(at+1);}}
+    }
+}
+object InvalidCacheControl does Error{has reason is string;InvalidCacheControl(reason is string){self.reason=reason;}text() is string{"invalid Cache-Control: "+reason;}}
+
+test "cache control keeps duplicate freshness directives" {
+    let c=CacheControl(Headers([Header(HeaderName("Cache-Control"),"max-age=60,max-age=60")]));test.is(c.count("max-age"),2);
+}

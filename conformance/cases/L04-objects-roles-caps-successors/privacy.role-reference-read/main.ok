@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Valued {
+    value() is int;
+}
+
+object Coin does Valued {
+    has cents is int;
+    Coin(:cents);
+    value() is int { cents; }
+}
+
+main() is int {
+    let out = Stdout();
+    let v is Valued = Coin(cents: 5);
+    let c = v.cents;
+    out.writeln("unreachable");
+    0;
+}

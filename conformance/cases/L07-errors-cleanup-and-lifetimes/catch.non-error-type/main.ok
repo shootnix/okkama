@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    try {
+        out.writeln("body ran");
+    } catch e is int {
+        out.writeln("caught");
+    }
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,19 @@
+// Представить имя организации в X.509
+//
+// Сравнить структурированные имена сертификатов: DistinguishedName сохраняет группы атрибутов X.509.
+//
+// Запуск: ./examples/cookbook/run lab example-x509-name
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-x509-name
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "crypto/x509/name" take NameAttribute,RelativeDistinguishedName,DistinguishedName;
+import "io/stdout" take Stdout;
+main() is int {
+    let organization=RelativeDistinguishedName([NameAttribute("2.5.4.10","example")]);
+    let identity=RelativeDistinguishedName([NameAttribute("2.5.4.3","example.com"),NameAttribute("2.5.4.3","other.example")]);
+    let name=DistinguishedName([organization,identity]);
+    confirm name.relative_names().size()==2 && name.relative_names().item(1).attributes().size()==2;
+    Stdout().writeln("grouped distinguished-name snapshots verified");0;
+}

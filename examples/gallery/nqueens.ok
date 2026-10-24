@@ -1,0 +1,44 @@
+// Восемь ферзей
+// Задача: Найти все расстановки без общих вертикалей и диагоналей.
+// Запуск из корня: ./examples/gallery/run nqueens
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: backtracking, отдельные неизменяемые ветви поиска, reduce.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/nqueens.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/nqueens v1.0.0;
+import "io/stdout" take Stdout;
+object Queens {
+    has size is int;Queens(size is int){confirm size>0 && size<=10;self.size=size;}
+    safe(placed is @int,column is int) is bool {
+        let row=placed.size();
+        (0..row).reduce(true)->ok,r{
+            ok && placed[r]!=column && r-placed[r]!=row-column && r+placed[r]!=row+column;
+        };
+    }
+    solutions(placed is @int) is @@int {
+        if placed.size()==size{return [placed];}
+        (0..size).reduce(QueenSolutions())->all,column{
+            if self.safe(placed,column){
+                let extended is @int=(0..placed.size()+1).map()->i{if i<placed.size(){placed[i];}else{column;}};
+                all.addition(self.solutions(extended));
+            }else{all;}
+        }.values();
+    }
+}
+object QueenSolutions {
+    has rows is @@int;QueenSolutions(){let empty is @@int=[];rows=empty;}
+    addition(found is @@int) is ^QueenSolutions {
+        let following is @@int=(0..rows.size()+found.size()).map()->i{if i<rows.size(){rows[i];}else{found[i-rows.size()];}};
+        ^rows=following;
+    }
+    values() is @@int{rows;}
+}
+main() is int {
+    let solutions=Queens(8).solutions([]);confirm solutions.size()==92;
+    Stdout().writeln("Solutions for N=8: "+solutions.size().string());
+    for solutions[0]->queen{
+        Stdout().writeln((0..8).map()->column{if column==queen{"Q";}else{".";}}.join(" "));
+    }
+    confirm Queens(4).solutions([]).size()==2;0;
+}

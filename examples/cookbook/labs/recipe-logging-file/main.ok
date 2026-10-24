@@ -1,0 +1,42 @@
+// Записать журнал с ротацией и дождаться доставки
+//
+// Сервису требуется ограничить размер рабочего log-файла и корректно завершить очередь.
+//
+// Запуск: ./examples/cookbook/run lab recipe-logging-file
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-logging-file
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/logging_file v1.0.0;
+import "logging/file" take FileLogOptions;
+import "logging/rotation" take RotatingLogFile,SizeRotating;
+import "logging/queue" take QueuedLogs,LogOverflow;
+import "logging/stream" take JsonStreamLogs;
+import "logging/named" take NamedLogging;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields;
+import "fs/stat" take PermissionMode,Permissions;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "async/scope" take FutureGroup;
+import "numbers/bigint" take BigInt;
+import "time/clock" take SystemClock;
+
+async main() is int {
+    let scratch = TemporaryDirectory(Directory(Path(".")), "cookbook-log-");
+    defer scratch.close();
+    let clock = SystemClock();
+    let mode = PermissionMode(384);
+    let file = RotatingLogFile(scratch.path().child("orders.log"), FileLogOptions(mode,true,false), SizeRotating(BigInt("1024")), 3, clock);
+    defer file.close();
+    let workers is FutureGroup<int> = FutureGroup();
+    let queue = QueuedLogs(JsonStreamLogs(file), 32, LogOverflow.reject, workers);
+    let logger = NamedLogging(LogName(["orders"]), queue, clock, LogFields([]));
+    logger.log(LogLevel.info, "заказ сохранён");
+    await queue.drain();
+    queue.close();
+    await workers.wait();
+    0;
+}

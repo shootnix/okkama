@@ -1,0 +1,20 @@
+// Сформировать имя папки с Unicode
+//
+// Назвать IMAP-папку с кириллицей: ImapMailboxName и modified UTF-7 кодеки задают wire-имя.
+//
+// Запуск: ./examples/cookbook/run lab example-imap-names
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-imap-names
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mail/imap_name" take ImapMailboxName, ImapUtf7Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let name=ImapMailboxName("~peter/mail/台北/日本語");
+    Stdout().writeln(name.wire_name());
+    Stdout().writeln(name.quoted());
+    Stdout().writeln(ImapUtf7Decoded(name.wire_name()).string());
+    0;
+}

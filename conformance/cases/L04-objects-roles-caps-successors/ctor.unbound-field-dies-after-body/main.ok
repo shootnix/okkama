@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Gate {
+    has a is int;
+    Gate(flag is bool) {
+        if flag {
+            self.a = 1;
+        }
+    }
+    a() is int { a; }
+}
+
+main() is int {
+    let out = Stdout();
+    let g = Gate(true);
+    out.writeln(g.a().string());
+    let h = Gate(false);
+    out.writeln("unreachable");
+    0;
+}

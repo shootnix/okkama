@@ -1,0 +1,23 @@
+module terminal/error v1.0.0;
+object TerminalUnavailable does Error{
+    has reason is string;
+    TerminalUnavailable(reason is string){self.reason=reason;}
+    text() is string{reason;}
+}
+object TerminalFailure does Error{
+    has category,message is string;
+    TerminalFailure(code is string,message is string){category=code;self.message=message;}
+    code() is string{category;}
+    text() is string{message;}
+}
+object TerminalClosed does Error{TerminalClosed();text() is string{"terminal capability is closed";}}
+object TerminalInputLimit does Error{TerminalInputLimit();text() is string{"terminal line exceeds its positive byte limit";}}
+object TerminalProblem{
+    has failure is NativeFailure;
+    TerminalProblem(failure is NativeFailure){self.failure=failure;}
+    value() is Error{
+        if failure.code()=="already_closed"{TerminalClosed();}
+        else{if failure.code()=="not_found"{TerminalUnavailable(failure.message());}
+        else{TerminalFailure(failure.code(),failure.message());}}
+    }
+}

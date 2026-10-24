@@ -1,0 +1,163 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Async and concurrency",
+  "description": "Futures, await, spawn (spec section 18). Channels, cancellation and scopes are standard-library contracts.",
+  "contracts": [
+    {
+      "id": "ASYNC.FUTURES",
+      "title": "Async calls are lazy Futures that start once and cache their value or failure",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.AWAIT-CONTEXT",
+      "title": "await is legal only inside async actions; non-futures cannot be awaited",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.FAILURE",
+      "title": "Typed failures complete the future exceptionally and rethrow at every await",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.ORDER",
+      "title": "Evaluation order and laziness are preserved across suspension",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.VOID",
+      "title": "async void completions can be awaited for effect only",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.6",
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.SPAWN-TASK",
+      "title": "spawn of an async action schedules it eagerly in the current runtime",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.SPAWN-WORKER",
+      "title": "spawn of a synchronous action runs it in an isolated worker; only transferable values cross",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.ROLE-SHAPE",
+      "title": "Async shape is part of role conformance",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.SHUTDOWN",
+      "title": "At root completion unfinished owned work receives cancellation and its cleanup is awaited",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#18",
+        "docs/async-guide.md#6.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Async and concurrency"
+    },
+    {
+      "id": "ASYNC.UNOBSERVED-FAILURE",
+      "title": "An unobserved spawned failure makes the run fail with a nonzero status (owner decision)",
+      "spec_refs": [
+        "docs/async-guide.md#6.4",
+        "contracts/DISCREPANCY-LEDGER.md#d-034"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-034"
+      ],
+      "family": "Async and concurrency"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.builtin.wrong-arity",
+  "title": "builtin calls are exact-arity",
+  "purpose": "The operation must fail instead of producing a value.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.BUILTIN-CALLS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes the operation an error but leaves the detection stage open: a static pass may reject it when operand categories are known, otherwise it fails at runtime. It must never yield a value."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6.2: builtin actions are exact-arity."
+  },
+  "status": "mandatory"
+}

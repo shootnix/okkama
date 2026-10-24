@@ -1,0 +1,286 @@
+module html/events v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing;
+import "error" take InvalidArgument;
+import "runtime/html" take
+    HtmlEventsState,
+    html_events,
+    html_event_count,
+    html_event_kind,
+    html_event_name,
+    html_event_value,
+    html_event_target,
+    html_event_data,
+    html_event_self_closing,
+    html_attribute_count,
+    html_attribute_name,
+    html_attribute_valued,
+    html_attribute_value;
+
+// A deterministic event tokenizer for one already available string.
+//
+//     let handler = PrintingHtmlEvents(output: Stdout());
+//     for HtmlEvents(origin: document) -> event {
+//         event.dispatch(handler);
+//     }
+//
+// HtmlEvents never reads a file, URL, DTD or other external resource. It does
+// not construct or repair a browser DOM. Event order and attribute order are
+// source order. ASCII tag and attribute names are normalized to lowercase.
+//
+// Character references use the pinned 2,231-entry WHATWG-compatible named
+// table and HTML numeric recovery. References are decoded in ordinary text and
+// attribute values. Contents of script and style are raw text and remain
+// undecoded until the matching end tag.
+//
+// Malformed markup is recovered into a deterministic best-effort event stream.
+// The tokenizer never inserts implicit html/head/body/table elements and never
+// attempts browser-equivalent tree construction.
+
+enum HtmlEventKind = (
+    start_tag,
+    end_tag,
+    text,
+    comment,
+    declaration,
+    processing_instruction
+);
+
+object HtmlAttribute {
+    has attribute_name is string;
+    has has_value is bool;
+    has attribute_value is string;
+
+    HtmlAttribute(name is string, valued is bool, value is string) {
+        confirm valued || value.empty()
+            else throw InvalidArgument(
+                "an unvalued HTML attribute must have an empty value"
+            );
+        attribute_name = name;
+        has_value = valued;
+        attribute_value = value;
+    }
+
+    name() is string { attribute_name; }
+
+    valued() is bool { has_value; }
+
+    value() is string { attribute_value; }
+}
+
+// Payload roles keep the visitor dependency graph acyclic while exposing the
+// exact actions available for each event shape.
+role StartingHtmlTag {
+    name() is string;
+    attributes() is Sequencing<HtmlAttribute>;
+    self_closing() is bool;
+}
+
+role EndingHtmlTag {
+    name() is string;
+}
+
+role ContainingHtmlText {
+    value() is string;
+}
+
+role ContainingHtmlComment {
+    value() is string;
+}
+
+role DeclaringHtml {
+    value() is string;
+}
+
+role ProcessingHtmlInstruction {
+    target() is string;
+    data() is string;
+}
+
+// Six overloads remain one public action name. Double dispatch keeps every
+// payload statically typed without a cast from HtmlEvent.
+role HandlingHtmlEvent {
+    handle(event is StartingHtmlTag) is void;
+    handle(event is EndingHtmlTag) is void;
+    handle(event is ContainingHtmlText) is void;
+    handle(event is ContainingHtmlComment) is void;
+    handle(event is DeclaringHtml) is void;
+    handle(event is ProcessingHtmlInstruction) is void;
+}
+
+role HtmlEvent {
+    kind() is HtmlEventKind;
+    dispatch(to is HandlingHtmlEvent) is void;
+}
+
+object HtmlStartTag does HtmlEvent, StartingHtmlTag {
+    has tag_name is string;
+    has tag_attributes is Sequencing<HtmlAttribute>;
+    has closes_self is bool;
+
+    HtmlStartTag(
+        name is string,
+        attributes is Sequencing<HtmlAttribute>,
+        self_closing is bool,
+    ) {
+        tag_name = name;
+        tag_attributes = attributes;
+        closes_self = self_closing;
+    }
+
+    kind() is HtmlEventKind { HtmlEventKind.start_tag; }
+
+    name() is string { tag_name; }
+
+    attributes() is Sequencing<HtmlAttribute> { tag_attributes; }
+
+    self_closing() is bool { closes_self; }
+
+    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+}
+
+object HtmlEndTag does HtmlEvent, EndingHtmlTag {
+    has tag_name is string;
+
+    HtmlEndTag(name is string) { tag_name = name; }
+
+    kind() is HtmlEventKind { HtmlEventKind.end_tag; }
+
+    name() is string { tag_name; }
+
+    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+}
+
+object HtmlText does HtmlEvent, ContainingHtmlText {
+    has origin is string;
+
+    HtmlText(value is string) { origin = value; }
+
+    kind() is HtmlEventKind { HtmlEventKind.text; }
+
+    value() is string { origin; }
+
+    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+}
+
+object HtmlComment does HtmlEvent, ContainingHtmlComment {
+    has origin is string;
+
+    HtmlComment(value is string) { origin = value; }
+
+    kind() is HtmlEventKind { HtmlEventKind.comment; }
+
+    value() is string { origin; }
+
+    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+}
+
+object HtmlDeclaration does HtmlEvent, DeclaringHtml {
+    has origin is string;
+
+    HtmlDeclaration(value is string) { origin = value; }
+
+    kind() is HtmlEventKind { HtmlEventKind.declaration; }
+
+    value() is string { origin; }
+
+    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+}
+
+object HtmlProcessingInstruction does HtmlEvent, ProcessingHtmlInstruction {
+    has instruction_target is string;
+    has instruction_data is string;
+
+    HtmlProcessingInstruction(target is string, data is string) {
+        instruction_target = target;
+        instruction_data = data;
+    }
+
+    kind() is HtmlEventKind { HtmlEventKind.processing_instruction; }
+
+    target() is string { instruction_target; }
+
+    data() is string { instruction_data; }
+
+    dispatch(to is HandlingHtmlEvent) is void { to.handle(self); }
+}
+
+object HtmlEvents does Iterating<HtmlEvent> {
+    has state is HtmlEventsState;
+
+    HtmlEvents(origin is string) {
+        state = html_events(origin);
+    }
+
+    cursor() is Cursor<HtmlEvent> {
+        HtmlEventCursor(
+            origin: state,
+            position: 0,
+            amount: html_event_count(state),
+        );
+    }
+}
+
+object HtmlEventCursor does Cursor<HtmlEvent> {
+    has origin is HtmlEventsState;
+    has position is int;
+    has amount is int;
+
+    HtmlEventCursor(origin is HtmlEventsState, position is int, amount is int) {
+        self.origin = origin;
+        self.position = position;
+        self.amount = amount;
+    }
+
+    available() is bool { position < amount; }
+
+    item() is HtmlEvent {
+        confirm self.available() else throw IterationEnded();
+        match html_event_kind(origin, position) {
+            case 0 {
+                let attributes is @HtmlAttribute = (
+                    0..html_attribute_count(origin, position)
+                ).map() -> index {
+                    HtmlAttribute(
+                        name: html_attribute_name(origin, position, index),
+                        valued: html_attribute_valued(origin, position, index),
+                        value: html_attribute_value(origin, position, index),
+                    );
+                };
+                HtmlStartTag(
+                    name: html_event_name(origin, position),
+                    attributes: attributes,
+                    self_closing: html_event_self_closing(origin, position),
+                );
+            }
+            case 1 {
+                HtmlEndTag(name: html_event_name(origin, position));
+            }
+            case 2 {
+                HtmlText(value: html_event_value(origin, position));
+            }
+            case 3 {
+                HtmlComment(value: html_event_value(origin, position));
+            }
+            case 4 {
+                HtmlDeclaration(value: html_event_value(origin, position));
+            }
+            else {
+                HtmlProcessingInstruction(
+                    target: html_event_target(origin, position),
+                    data: html_event_data(origin, position),
+                );
+            }
+        }
+    }
+
+    successor() is Cursor<HtmlEvent> {
+        confirm self.available() else throw IterationEnded();
+        HtmlEventCursor(
+            origin: origin,
+            position: position + 1,
+            amount: amount,
+        );
+    }
+}

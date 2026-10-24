@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "net/dns" take FixedResolution,HostAddresses,AddressName;
+import "net/endpoint" take HostName,HostEndpoint;
+import "net/ip" take IpAddress;
+import "io/stdout" take Stdout;
+async main() is int {
+    let host=HostName("example.com");let address=IpAddress("192.0.2.1");
+    let resolver=FixedResolution([HostAddresses(host,[address,address])],[AddressName(address,host)]);
+    let result=await resolver.addresses(HostEndpoint(host,443));
+    confirm result.size()==1 && result.item(0).string()=="192.0.2.1:443";
+    confirm (await resolver.name(address))==host;
+    Stdout().writeln("deterministic forward and reverse resolution verified");0;
+}

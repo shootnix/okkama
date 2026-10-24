@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "mail/mbox" take MboxSeparator, MboxRecord, MboxArchive, ParsedMbox;
+import "mail/message" take ParsedMail;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let message=ParsedMail(Utf8Encoded("Subject: example\r\n\r\nFrom sender\r\n>From quoted\r\n").bytes()).message();
+    let record=MboxRecord(MboxSeparator("From sender@example.test Thu Jan  1 00:00:00 1970"),message);
+    let archive=MboxArchive([record]).bytes();
+    Stdout().write(Utf8Decoded(archive).string());
+    let restored=ParsedMbox(archive).records().first();
+    Stdout().write(Utf8Decoded(restored.message().body().bytes()).string());
+    0;
+}

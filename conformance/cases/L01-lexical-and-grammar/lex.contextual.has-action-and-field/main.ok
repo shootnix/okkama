@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Bag {
+    has items is @int;
+    Bag(:items);
+
+    has(value is int) is bool {
+        let found = items.filter() -> item { item == value; };
+        found.size() > 0;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let bag = Bag(items: [1, 2, 3]);
+    out.writeln(if bag.has(2) { "has 2"; } else { "no 2"; });
+    out.writeln(if bag.has(9) { "has 9"; } else { "no 9"; });
+    0;
+}

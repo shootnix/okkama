@@ -1,0 +1,19 @@
+module app v1.0.0;
+import "archive/metadata" take ArchiveMetadata, ArchiveOwnership, ArchiveModificationFromEpoch, MissingArchiveMode;
+import "numbers/bigint" take BigInt;
+import "fs/stat" take PermissionMode;
+import "time/iso" take IsoLocalDateTime;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let modified = ArchiveModificationFromEpoch(rat(-1, 2)).value();
+    let owner = ArchiveOwnership("builder", "build", BigInt("1000"), BigInt("1000"));
+    let member = ArchiveMetadata(PermissionMode(420), modified, owner, "exact timestamp");
+    Stdout().writeln(IsoLocalDateTime(member.modification()).string());
+    Stdout().writeln(member.ownership().user());
+    Stdout().writeln(member.comment());
+    let plain = ArchiveMetadata(modified, "mode absent");
+    try { plain.mode(); }
+    catch error is MissingArchiveMode { Stdout().writeln(error.text()); }
+    0;
+}

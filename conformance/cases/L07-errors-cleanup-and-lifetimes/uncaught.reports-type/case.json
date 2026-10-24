@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.uncaught.reports-type",
+  "title": "an uncaught typed error terminates unsuccessfully",
+  "purpose": "The program terminates unsuccessfully after the observable effects listed.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.UNCAUGHT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "uncaught-error"
+      ],
+      "error_type": "NotFound"
+    },
+    "stdout": {
+      "text": "working\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#3",
+    "docs/okkama-spec-11072026.md#20"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 3/20: an uncaught typed error is not a successful return; its concrete type is reported."
+  },
+  "status": "mandatory"
+}

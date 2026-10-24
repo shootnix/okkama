@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "message/header" take MessageHeaderName, MessageHeader, MessageHeaders, RenderedMessageHeaders;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let headers=MessageHeaders([
+        MessageHeader(MessageHeaderName("Subject"),"A folded\r\n message subject"),
+        MessageHeader(MessageHeaderName("X-Trace"),"first"),
+        MessageHeader(MessageHeaderName("x-trace"),"second")]);
+    Stdout().writeln(headers.first(MessageHeaderName("subject")));
+    Stdout().writeln(headers.values(MessageHeaderName("X-TRACE")).size().string());
+    Stdout().writeln(Utf8Decoded(RenderedMessageHeaders(headers).bytes()).string());
+    0;
+}

@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "encoding/base85" take Base85Encoded, Base85Decoded, Base85Alphabet, InvalidBase85;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("ascii85", Base85Encoded(origin: Utf8Encoded(origin: "Man is").bytes(), alphabet: Base85Alphabet.ascii85).string(), "9jqo^Bla");
+    c = c.same_text("ascii85 zero group", Base85Encoded(origin: [byte(0), byte(0), byte(0), byte(0)], alphabet: Base85Alphabet.ascii85).string(), "z");
+    c = c.same_text("rfc1924", Base85Encoded(origin: Utf8Encoded(origin: "hello").bytes(), alphabet: Base85Alphabet.rfc1924).string(), "Xk~0{Zv");
+    c = c.same_text("decode", Utf8Decoded(origin: Base85Decoded(origin: "BOu!rDZ", alphabet: Base85Alphabet.ascii85).bytes()).string(), "hello");
+    c = c.same_text("single trailing character", try { let probe = Base85Decoded(origin: "BOu!rD", alphabet: Base85Alphabet.ascii85).bytes(); "no error"; } catch e is InvalidBase85 { "InvalidBase85"; }, "InvalidBase85");
+    c.done();
+}

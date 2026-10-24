@@ -1,0 +1,141 @@
+module http/date v1.0.0;
+
+import "compare" take Comparing, Order;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
+import "time/date" take Date, DateOrdinal, InvalidDate;
+import "time/day" take TimeOfDay, InvalidTimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "time/format" take FormattedLocalDateTime;
+import "encoding/utf" take Utf8Encoded;
+
+// HTTP timestamps identify whole UTC seconds, including before Unix epoch.
+// Calendar bounds are checked before narrowing an arbitrary rational duration.
+object HttpDate does Comparing<HttpDate> {
+    has origin is Instant;
+    HttpDate(origin is Instant) {
+        let seconds=origin.unix_duration().seconds();
+        confirm seconds>=(-62135596800).rat() && seconds<253402300800.rat()
+            else throw InvalidHttpDate("instant outside years 1..9999");
+        let truncated=seconds.int();let whole=if seconds<truncated.rat(){truncated-1;}else{truncated;};
+        self.origin=Instant(Duration(whole.rat(),DurationUnit.second));
+    }
+    value() is Instant {origin;}
+    order(other is HttpDate) is Order {origin.order(other.value());}
+    string() is string {
+        let local=HttpDateLocal(origin).value();
+        let weekdays=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+        let months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        let weekday=weekdays[(DateOrdinal(local.date()).value()-1)%7];
+        weekday+", "+FormattedLocalDateTime(local,"%d "+months[local.date().month()-1]+" %Y %H:%M:%S GMT").string();
+    }
+}
+// Parsing is deferred. An explicit reference is required only for the obsolete
+// two-digit-year grammar, making century selection reproducible without a clock.
+object ParsedHttpDate {
+    has origin is string;has references is @Instant;
+    ParsedHttpDate(origin is string){self.origin=origin;references=[];}
+    ParsedHttpDate(origin is string,reference is Instant){self.origin=origin;references=[reference];}
+    value() is Instant {
+        confirm origin.length()>=24 && origin.length()<=33 else throw InvalidHttpDate("date length");
+        if origin.length()==29 && origin.slice(3,5)==", " {
+            confirm origin.slice(7,8)==" " && origin.slice(11,12)==" " && origin.slice(16,17)==" "
+                && origin.slice(25,29)==" GMT" else throw InvalidHttpDate("IMF layout");
+            return HttpDateFields(HttpDateDecimal(origin.slice(12,16),4).value(),HttpDateMonth(origin.slice(8,11)).value(),
+                HttpDateDecimal(origin.slice(5,7),2).value(),HttpDateClock(origin.slice(17,25)).value(),
+                HttpDateWeekday(origin.slice(0,3),false).value()).value();
+        }
+        if origin.length()==24 && origin.slice(3,4)==" " {
+            confirm origin.slice(7,8)==" " && origin.slice(10,11)==" " && origin.slice(19,20)==" "
+                else throw InvalidHttpDate("asctime layout");
+            let day=if origin.slice(8,9)==" "{HttpDateDecimal(origin.slice(9,10),1).value();}
+                else{HttpDateDecimal(origin.slice(8,10),2).value();};
+            return HttpDateFields(HttpDateDecimal(origin.slice(20,24),4).value(),HttpDateMonth(origin.slice(4,7)).value(),
+                day,HttpDateClock(origin.slice(11,19)).value(),HttpDateWeekday(origin.slice(0,3),false).value()).value();
+        }
+        let parts=origin.split(", ");confirm parts.size()==2 else throw InvalidHttpDate("RFC850 layout");
+        let weekday=HttpDateWeekday(parts[0],true).value();let body=parts[1];
+        confirm body.length()==22 && body.slice(2,3)=="-" && body.slice(6,7)=="-" && body.slice(9,10)==" "
+            && body.slice(18,22)==" GMT" else throw InvalidHttpDate("RFC850 layout");
+        let day=HttpDateDecimal(body.slice(0,2),2).value();let month=HttpDateMonth(body.slice(3,6)).value();
+        let short=HttpDateDecimal(body.slice(7,9),2).value();let time=HttpDateClock(body.slice(10,18)).value();
+        confirm references.size()==1 else throw HttpDateReferenceRequired();
+        let reference=HttpDateLocal(HttpDate(references[0]).value()).value();let latest=reference.date().year()+50;
+        let candidate=(latest/100).int()*100+short;
+        let suffix=month*100000000+day*1000000+time.hour()*10000+time.minute()*100+time.second();
+        let current=reference.date().month()*100000000+reference.date().day()*1000000
+            +reference.time().hour()*10000+reference.time().minute()*100+reference.time().second();
+        let year=if candidate>latest || (candidate==latest && suffix>current){candidate-100;}else{candidate;};
+        HttpDateFields(year,month,day,time,weekday).value();
+    }
+}
+// Bounded grammar/calendar collaborators. No host locale parser or mail grammar.
+object HttpDateLocal {
+    has origin is Instant;HttpDateLocal(origin is Instant){self.origin=origin;}
+    value() is LocalDateTime {
+        let epoch=LocalDateTime(Date(1970,1,1),TimeOfDay(0,0,0,0));epoch.plus(origin.unix_duration());
+    }
+}
+object HttpDateFields {
+    has local is LocalDateTime;
+    HttpDateFields(year is int,month is int,day is int,time is TimeOfDay,weekday is int) {
+        let date=try{Date(year,month,day);}catch failure is InvalidDate{throw InvalidHttpDate("calendar date");};
+        confirm (DateOrdinal(date).value()-1)%7==weekday else throw InvalidHttpDate("weekday disagrees with date");
+        local=LocalDateTime(date,time);
+    }
+    value() is Instant {
+        let epoch=LocalDateTime(Date(1970,1,1),TimeOfDay(0,0,0,0));Instant(local.minus(epoch));
+    }
+}
+object HttpDateClock {
+    has origin is string;HttpDateClock(origin is string){self.origin=origin;}
+    value() is TimeOfDay {
+        confirm origin.length()==8 && origin.slice(2,3)==":" && origin.slice(5,6)==":" else throw InvalidHttpDate("clock layout");
+        try {TimeOfDay(HttpDateDecimal(origin.slice(0,2),2).value(),HttpDateDecimal(origin.slice(3,5),2).value(),
+            HttpDateDecimal(origin.slice(6,8),2).value(),0);}
+        catch failure is InvalidTimeOfDay {throw InvalidHttpDate("clock fields or unsupported leap second");}
+    }
+}
+object HttpDateDecimal {
+    has origin is string;has width is int;
+    HttpDateDecimal(origin is string,width is int){self.origin=origin;self.width=width;}
+    value() is int {
+        confirm width>=1 && width<=4 && origin.length()==width else throw InvalidHttpDate("decimal width");
+        Utf8Encoded(origin).bytes().reduce(0) -> result,octet {
+            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidHttpDate("ASCII decimal required");
+            result*10+code-48;
+        };
+    }
+}
+object HttpDateMonth {
+    has origin is string;HttpDateMonth(origin is string){self.origin=origin;}
+    value() is int {
+        let names=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        for (0..12) -> index {if names[index]==origin{return index+1;}}
+        throw InvalidHttpDate("month name");
+    }
+}
+object HttpDateWeekday {
+    has origin is string;has full is bool;
+    HttpDateWeekday(origin is string,full is bool){self.origin=origin;self.full=full;}
+    value() is int {
+        let names=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+        for (0..7) -> index {
+            let name=if full{names[index];}else{names[index].slice(0,3);};if name==origin{return index;}
+        }
+        throw InvalidHttpDate("weekday name");
+    }
+}
+object InvalidHttpDate does Error {
+    has reason is string;InvalidHttpDate(reason is string){self.reason=reason;}
+    text() is string {"invalid HTTP date: "+reason;}
+}
+object HttpDateReferenceRequired does Error {
+    HttpDateReferenceRequired();text() is string {"RFC850 HTTP date requires an explicit reference instant";}
+}
+
+test "HTTP dates are whole seconds in GMT" {
+    let parsed=ParsedHttpDate("Thu, 01 Jan 1970 00:00:00 GMT").value();
+    test.is(HttpDate(parsed).string(),"Thu, 01 Jan 1970 00:00:00 GMT");
+    test.is(parsed.unix_duration().seconds(),0.rat());
+}

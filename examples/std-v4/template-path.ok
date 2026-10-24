@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "template/path" take TemplatePath, TemplatePathFromString;
+import "compare" take Order;
+object ExampleResult {
+    ExampleResult();
+    value() is any {
+        let name = TemplatePathFromString("user.name").value();
+        let literal = TemplatePath(["user.name"]);
+        [name.string(), name.segments().size(), literal.order(name) == Order.greater];
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(if [1, 2] == [1, 2] { "t"; } else { "f"; });
+    out.writeln(if [1, 2] == [2, 1] { "t"; } else { "f"; });
+    out.writeln(if ["a": 1, "b": 2] == ["b": 2, "a": 1] { "t"; } else { "f"; });
+    out.writeln(if (1..3) == (1..3) { "t"; } else { "f"; });
+    out.writeln(if (1..3) == (1..=3) { "t"; } else { "f"; });
+    out.writeln(if [[1], [2, 3]] == [[1], [2, 3]] { "t"; } else { "f"; });
+    0;
+}

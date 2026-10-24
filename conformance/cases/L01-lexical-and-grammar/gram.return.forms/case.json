@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.return.forms",
+  "title": "return with a value and bare return in void actions",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.RETURN",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "logged\n30\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: bare return is valid in void actions; `return expr` exits a typed action (3 > 2 gives 30)."
+  },
+  "status": "mandatory"
+}

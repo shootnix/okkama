@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.recursion.tail-constant-stack",
+  "title": "a self tail call runs in constant stack",
+  "purpose": "Ten million self tail calls complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.RECURSION",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "50000005000000\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6.1"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS from the cited contract text",
+    "expected_basis": "§11.6.1: tail calls of the action itself need constant stack; 10000000·10000001/2 = 50000005000000."
+  },
+  "status": "mandatory"
+}

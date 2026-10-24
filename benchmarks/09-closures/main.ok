@@ -1,0 +1,34 @@
+module bench/closures v1.0.0;
+
+// Замыкания и функции высшего порядка: композиция, захват значений,
+// action-значения в коллекциях.
+import "io/stdout" take Stdout;
+
+object Pipeline {
+    Pipeline();
+
+    compose(f is (int) is int, g is (int) is int) is (int) is int {
+        (value is int) is int { g(f(value)); };
+    }
+
+    adder(amount is int) is (int) is int {
+        (value is int) is int { value + amount; };
+    }
+
+    multiplier(factor is int) is (int) is int {
+        (value is int) is int { value * factor % 1000003; };
+    }
+}
+
+main() is int {
+    let pipeline = Pipeline();
+    let stages = (0..8).map() -> i {
+        if i % 2 == 0 { pipeline.adder(i + 1); } else { pipeline.multiplier(i + 2); }
+    };
+    let combined = stages.reduce((value is int) is int { value; }) -> composed, stage { pipeline.compose(composed, stage); };
+    let total = (0..600000).reduce(0) -> sum, i { (sum + combined(i)) % 1000000007; };
+    let counters = (0..50000).map() -> i { pipeline.adder(i); };
+    let applied = counters.reduce(0) -> sum, add { add(sum) % 1000003; };
+    Stdout().writeln(total.string() + " " + applied.string());
+    0;
+}

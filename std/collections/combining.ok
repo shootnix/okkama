@@ -1,0 +1,259 @@
+module collections/combining v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+
+// Combines Iterating values without materializing them.
+//
+// Pair preserves the two original types:
+//
+//     let entry = Pair(first: "answer", second: 42);
+//     // entry.first() == "answer"
+//     // entry.second() == 42
+//
+// Zipped walks two sources together and stops at the shorter one. It is useful
+// when extra values on either side are intentionally irrelevant:
+//
+//     for Zipped(left: names, right: scores) -> pair {
+//         output.writeln(pair.first(), ": ", pair.second().string());
+//     }
+//
+// StrictlyZipped is appropriate when unequal lengths mean corrupt input. Its
+// cursor throws UnequalSizes as soon as available() observes that only one
+// side still has an item.
+//
+// Chained flattens an Iterating<Iterating<T>> by one level. Sources remain lazy
+// and empty inner sources are skipped with an iterative, stack-safe search:
+//
+//     let all = Chained(origins: pages);
+//     for all -> row {
+//         output.writeln(row);
+//     }
+//
+// Every cursor in this module is immutable. successor() returns the next
+// cursor and leaves the receiver at its original item.
+
+object Pair<A,B> {
+    has left is A;
+    has right is B;
+
+    Pair(first is A, second is B) {
+        left = first;
+        right = second;
+    }
+
+    first() is A {
+        left;
+    }
+
+    second() is B {
+        right;
+    }
+}
+
+object Zipped<A,B> does Iterating<Pair<A,B>> {
+    has left is Iterating<A>;
+    has right is Iterating<B>;
+
+    Zipped(:left, :right);
+
+    cursor() is Cursor<Pair<A,B>> {
+        ZippedCursor(left: left.cursor(), right: right.cursor());
+    }
+}
+
+object ZippedCursor<A,B> does Cursor<Pair<A,B>> {
+    has left is Cursor<A>;
+    has right is Cursor<B>;
+
+    ZippedCursor(:left, :right);
+
+    available() is bool {
+        left.available() && right.available();
+    }
+
+    item() is Pair<A,B> {
+        confirm self.available() else throw IterationEnded();
+        Pair(first: left.item(), second: right.item());
+    }
+
+    successor() is Cursor<Pair<A,B>> {
+        confirm self.available() else throw IterationEnded();
+        ZippedCursor(left: left.successor(), right: right.successor());
+    }
+}
+
+object StrictlyZipped<A,B> does Iterating<Pair<A,B>> {
+    has left is Iterating<A>;
+    has right is Iterating<B>;
+
+    StrictlyZipped(:left, :right);
+
+    cursor() is Cursor<Pair<A,B>> {
+        StrictlyZippedCursor(left: left.cursor(), right: right.cursor());
+    }
+}
+
+object StrictlyZippedCursor<A,B> does Cursor<Pair<A,B>> {
+    has left is Cursor<A>;
+    has right is Cursor<B>;
+
+    StrictlyZippedCursor(:left, :right);
+
+    available() is bool {
+        let left_available = left.available();
+        let right_available = right.available();
+        confirm left_available == right_available else throw UnequalSizes();
+        left_available;
+    }
+
+    item() is Pair<A,B> {
+        confirm self.available() else throw IterationEnded();
+        Pair(first: left.item(), second: right.item());
+    }
+
+    successor() is Cursor<Pair<A,B>> {
+        confirm self.available() else throw IterationEnded();
+        StrictlyZippedCursor(
+            left: left.successor(),
+            right: right.successor(),
+        );
+    }
+}
+
+object UnequalSizes does Error {
+    UnequalSizes();
+
+    text() is string {
+        "cannot strictly zip sources of unequal sizes";
+    }
+}
+
+object Chained<T> does Iterating<T> {
+    has origins is Iterating<Iterating<T>>;
+
+    Chained(:origins);
+
+    cursor() is Cursor<T> {
+        ChainedCursorSearch(origins: origins.cursor()).result();
+    }
+}
+
+object ChainedCursorSearch<T> {
+    has origins is Cursor<Iterating<T>>;
+
+    ChainedCursorSearch(:origins);
+
+    result() is Cursor<T> {
+        if !origins.available() {
+            ExhaustedChainedCursor(origins: origins);
+        }
+        else {
+            for ChainedCursorCandidates(origins: origins) -> candidate {
+                let current = candidate.origin().cursor();
+                last ChainedItemCursor(
+                    current: current,
+                    remaining: candidate.remaining(),
+                ) if current.available();
+                ExhaustedChainedCursor(origins: candidate.remaining());
+            }
+        }
+    }
+}
+
+object ChainedCursorCandidates<T>
+    does Iterating<ChainedCursorCandidateValue<T>> {
+    has origins is Cursor<Iterating<T>>;
+
+    ChainedCursorCandidates(:origins);
+
+    cursor() is Cursor<ChainedCursorCandidateValue<T>> {
+        ChainedCursorCandidate(origins: origins);
+    }
+}
+
+object ChainedCursorCandidate<T>
+    does Cursor<ChainedCursorCandidateValue<T>> {
+    has origins is Cursor<Iterating<T>>;
+
+    ChainedCursorCandidate(:origins);
+
+    available() is bool {
+        origins.available();
+    }
+
+    item() is ChainedCursorCandidateValue<T> {
+        confirm self.available() else throw IterationEnded();
+        ChainedCursorCandidateValue(
+            origin: origins.item(),
+            remaining: origins.successor(),
+        );
+    }
+
+    successor() is Cursor<ChainedCursorCandidateValue<T>> {
+        confirm self.available() else throw IterationEnded();
+        ChainedCursorCandidate(origins: origins.successor());
+    }
+}
+
+object ChainedCursorCandidateValue<T> {
+    has source is Iterating<T>;
+    has following is Cursor<Iterating<T>>;
+
+    ChainedCursorCandidateValue(origin is Iterating<T>, remaining is Cursor<Iterating<T>>) {
+        source = origin;
+        following = remaining;
+    }
+
+    origin() is Iterating<T> {
+        source;
+    }
+
+    remaining() is Cursor<Iterating<T>> {
+        following;
+    }
+}
+
+object ExhaustedChainedCursor<T> does Cursor<T> {
+    has origins is Cursor<Iterating<T>>;
+
+    ExhaustedChainedCursor(:origins);
+
+    available() is bool {
+        false;
+    }
+
+    item() is T {
+        throw IterationEnded();
+    }
+
+    successor() is Cursor<T> {
+        throw IterationEnded();
+    }
+}
+
+object ChainedItemCursor<T> does Cursor<T> {
+    has current is Cursor<T>;
+    has remaining is Cursor<Iterating<T>>;
+
+    ChainedItemCursor(:current, :remaining);
+
+    available() is bool {
+        current.available();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        current.item();
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        let following = current.successor();
+        if following.available() {
+            ChainedItemCursor(current: following, remaining: remaining);
+        }
+        else {
+            ChainedCursorSearch(origins: remaining).result();
+        }
+    }
+}

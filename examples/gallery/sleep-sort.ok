@@ -1,0 +1,34 @@
+// Sleep sort и общий старт задач
+// Задача: Получить числа в порядке срабатывания таймеров.
+// Запуск из корня: ./examples/gallery/run sleep-sort
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: Event как стартовый барьер, FutureGroup и типизированный канал.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/sleep-sort.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/sleep_sort v1.0.0;
+import "async/channel" take Channel,Sending;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+object Sleeper {
+    has number is int;has go is Event;has output is Sending<int>;
+    Sleeper(number is int,go is Event,output is Sending<int>){self.number=number;self.go=go;self.output=output;}
+    async run() is int {
+        await go.wait();await SystemClock().wait(Duration((number*100).rat(),DurationUnit.millisecond));
+        await output.send(number);number;
+    }
+}
+async main() is int {
+    let input=[5,1,8,2,9,3,7,4,6];let go=Event();let channel is Channel<int>=Channel(input.size());
+    let group is FutureGroup<int>=FutureGroup();
+    for input->number{group.start(Sleeper(number,go,channel.sending()).run());}go.set();
+    await group.wait();channel.sending().close();
+    let output is @int=(0..input.size()).map()->i{await channel.receiving().item();};
+    Stdout().writeln("in: "+(input.map()->n{n.string();}).join(" "));
+    Stdout().writeln("out: "+(output.map()->n{n.string();}).join(" "));
+    // Наблюдаем фактический порядок таймеров; для обычной сортировки в галерее есть quicksort.
+    confirm output.size()==input.size();0;
+}

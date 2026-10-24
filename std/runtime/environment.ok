@@ -1,0 +1,23 @@
+module runtime/environment v1.0.0;
+
+// Portable immutable environment boundary used by os/environment.
+native environment_snapshot() is %string:string;
+native environment_normalize(values is %string:string) is %string:string;
+native environment_add(
+    values is %string:string,
+    name is string,
+    value is string,
+) is %string:string;
+native environment_diff(
+    values is %string:string,
+    name is string,
+) is %string:string;
+native environment_name(name is string) is string;
+native environment_home(values is %string:string) is string;
+native environment_path_separator() is string;
+
+// Legacy raw mutation boundary. High-level std modules must not use it.
+native environment_get(name is @byte) is @byte;
+native environment_set(name is @byte, value is @byte) is bool;
+native environment_remove(name is @byte) is bool;
+native environment_all() is @@@byte;

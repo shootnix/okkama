@@ -1,0 +1,212 @@
+module time/date v1.0.0;
+
+import "compare" take Comparing, Order;
+
+// Immutable dates in the proleptic Gregorian calendar.
+//
+//     let release = Date(year: 2026, month: 8, day: 11);
+//     release.weekday(); // Weekday.tuesday
+//     let tomorrow = value ShiftedDate(origin: release, days: 1);
+//     value DaysBetween(left: release, right: tomorrow); // 1
+//
+// Supported years are 1..9999. There is no year zero, implicit time zone or
+// host calendar dependency. Date ordinals are one-based: 0001-01-01 is day 1
+// and Monday. DaysBetween(left, right) is signed and means right minus left.
+
+enum Weekday = (
+    monday,
+    tuesday,
+    wednesday,
+    thursday,
+    friday,
+    saturday,
+    sunday
+);
+
+object Date does Comparing<Date> {
+    has year_value is int;
+    has month_value is int;
+    has day_value is int;
+
+    Date(year is int, month is int, day is int) {
+        confirm year >= 1 && year <= 9999
+            else throw InvalidDate("date year must be within 1..9999");
+        confirm month >= 1 && month <= 12
+            else throw InvalidDate("date month must be within 1..12");
+
+        let leap is bool = year % 4 == 0
+            && (year % 100 != 0 || year % 400 == 0);
+        let maximum is int = match month {
+            case 2 { if leap { 29; } else { 28; } }
+            case 4, 6, 9, 11 { 30; }
+            else { 31; }
+        };
+        confirm day >= 1 && day <= maximum
+            else throw InvalidDate("date day is outside the selected month");
+
+        year_value = year;
+        month_value = month;
+        day_value = day;
+    }
+
+    year() is int {
+        year_value;
+    }
+
+    month() is int {
+        month_value;
+    }
+
+    day() is int {
+        day_value;
+    }
+
+    weekday() is Weekday {
+        match ((value DateOrdinal(origin: self)) - 1) % 7 {
+            case 0 { Weekday.monday; }
+            case 1 { Weekday.tuesday; }
+            case 2 { Weekday.wednesday; }
+            case 3 { Weekday.thursday; }
+            case 4 { Weekday.friday; }
+            case 5 { Weekday.saturday; }
+            else { Weekday.sunday; }
+        }
+    }
+
+    order(other is Date) is Order {
+        if year_value != other.year() {
+            year_value.order(other.year());
+        }
+        else {
+            if month_value != other.month() {
+                month_value.order(other.month());
+            }
+            else {
+                day_value.order(other.day());
+            }
+        }
+    }
+}
+
+object ShiftedDate {
+    has origin is Date;
+    has days is int;
+
+    ShiftedDate(origin is Date, days is int) {
+        self.origin = origin;
+        self.days = days;
+    }
+
+    #projected
+    value() is Date {
+        let ordinal is int = value DateOrdinal(origin: origin);
+        confirm days >= 1 - ordinal && days <= 3652059 - ordinal
+            else throw InvalidDate("shifted date is outside years 1..9999");
+        value OrdinalDate(origin: ordinal + days);
+    }
+}
+
+object DaysBetween {
+    has left is Date;
+    has right is Date;
+
+    DaysBetween(left is Date, right is Date) {
+        self.left = left;
+        self.right = right;
+    }
+
+    #projected
+    value() is int {
+        (value DateOrdinal(origin: right))
+            - (value DateOrdinal(origin: left));
+    }
+}
+
+// One-based Gregorian ordinal used as the shared arithmetic representation.
+object DateOrdinal {
+    has origin is Date;
+
+    DateOrdinal(origin is Date) {
+        self.origin = origin;
+    }
+
+    #projected
+    value() is int {
+        let year is int = origin.year();
+        let month is int = origin.month();
+        let previous_year is int = year - 1;
+        let leap is bool = year % 4 == 0
+            && (year % 100 != 0 || year % 400 == 0);
+        let adjustment is int = if month <= 2 {
+            0;
+        }
+        else {
+            if leap { -1; } else { -2; }
+        };
+
+        previous_year * 365
+            + (previous_year / 4).int()
+            - (previous_year / 100).int()
+            + (previous_year / 400).int()
+            + ((367 * month - 362) / 12).int()
+            + adjustment
+            + origin.day();
+    }
+}
+
+// Exact inverse of DateOrdinal for the supported positive ordinal range.
+object OrdinalDate {
+    has origin is int;
+
+    OrdinalDate(origin is int) {
+        self.origin = origin;
+    }
+
+    #projected
+    value() is Date {
+        confirm origin >= 1 && origin <= 3652059
+            else throw InvalidDate("date ordinal is outside years 1..9999");
+
+        let shifted is int = origin + 305;
+        let era is int = (shifted / 146097).int();
+        let day_of_era is int = shifted - era * 146097;
+        let year_of_era is int = ((
+            day_of_era
+                - (day_of_era / 1460).int()
+                + (day_of_era / 36524).int()
+                - (day_of_era / 146096).int()
+        ) / 365).int();
+        let year_base is int = year_of_era + era * 400;
+        let day_of_year is int = day_of_era - (
+            year_of_era * 365
+                + (year_of_era / 4).int()
+                - (year_of_era / 100).int()
+        );
+        let month_part is int = ((5 * day_of_year + 2) / 153).int();
+        let day is int = day_of_year
+            - ((153 * month_part + 2) / 5).int()
+            + 1;
+        let month is int = if month_part < 10 {
+            month_part + 3;
+        }
+        else {
+            month_part - 9;
+        };
+        let year is int = year_base + (if month <= 2 { 1; } else { 0; });
+
+        Date(year: year, month: month, day: day);
+    }
+}
+
+object InvalidDate does Error {
+    has message is string;
+
+    InvalidDate(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

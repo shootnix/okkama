@@ -1,0 +1,365 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Lexical structure",
+  "description": "Tokens, literals, reserved words (spec section 4, grammar terminals).",
+  "contracts": [
+    {
+      "id": "LEX.IDENTIFIERS",
+      "title": "Lowercase identifiers name fields, parameters, actions and module segments",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.BINDING-NAMES",
+      "title": "let/for/catch bindings accept [A-Za-z_][A-Za-z0-9_]* and are case-sensitive",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.3"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.TYPE-NAMES",
+      "title": "Type names start with an uppercase letter",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1",
+        "docs/okkama-spec-11072026.md#11.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.KEYWORDS",
+      "title": "Reserved keywords are not ordinary identifiers",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.CONTEXTUAL-NAMES",
+      "title": "Keyword-spelled lowercase names are valid as module path segments and action labels where unambiguous; `has(...)` is an action label in object bodies",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1",
+        "docs/okkama-llm-context-1.0.md#1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.REMOVED-WORDS",
+      "title": "null, none, nil, isa, super, abstract, protected, with, finally, `?.`, `?` and `**` are rejected",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.3",
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-llm-context-1.0.md#2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.NONRESERVED-WORDS",
+      "title": "`optional`, `setters`, `mutable` and `var` are ordinary identifiers (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.3",
+        "docs/okkama-grammar-1.0.ebnf",
+        "contracts/DISCREPANCY-LEDGER.md#d-005"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the decision makes these words ordinary identifiers; there is no rejected form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-005"
+      ],
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.WITH-NAMES",
+      "title": "Action declarations and member calls reject `with` and `with_*` names but allow unrelated names such as `withdrawal`",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.COMMENTS",
+      "title": "`//` line comments and non-nesting `/* */` block comments",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1",
+        "docs/okkama-llm-context-1.0.md#5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.INT-LITERALS",
+      "title": "Decimal integer literals",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: no invalid decimal spelling is specified; out-of-range literals are covered by VAL.INT-OVERFLOW (unresolved)",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.BASED-LITERALS",
+      "title": "0b/0B/0x/0X literals with internal underscores, nonnegative and at most INT64_MAX",
+      "spec_refs": [
+        "docs/bitwise-guide.md",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.FLOAT-LITERALS",
+      "title": "Float literals are digits '.' digits",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.DECIMAL-LITERALS",
+      "title": "Decimal literal tokens",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "deferred",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-009"
+      ],
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.STRING-LITERALS",
+      "title": "Double-quoted strings with escapes \\n \\r \\t \\\" \\\\; unknown escapes, lone trailing backslash and unterminated strings are lexer errors",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.RAW-STRINGS",
+      "title": "Triple-backtick fenced strings keep every character literally; unterminated fences and isolated backticks are errors",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.CHAR-LITERALS",
+      "title": "Char literals hold exactly one character after escape decoding",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2",
+        "docs/okkama-spec-11072026.md#6.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.BOOL-LITERALS",
+      "title": "true and false are the only boolean literals",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#7.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.WHITESPACE",
+      "title": "Spaces, tabs and newlines separate tokens and are otherwise insignificant",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#8.8",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: no whitespace form is rejected by the contract",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.CRLF",
+      "title": "CR LF line endings are accepted and CR inside raw strings is discarded, as in Go (owner decision)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2",
+        "contracts/DISCREPANCY-LEDGER.md#d-030"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: no line-ending form is rejected",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "discrepancies": [
+        "D-030"
+      ],
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.UNICODE-SOURCE",
+      "title": "Sources are UTF-8; Unicode is allowed in strings, chars and comments while identifiers are ASCII",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.1",
+        "docs/okkama-spec-11072026.md#4.2"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.INVALID-CHARACTERS",
+      "title": "Characters outside the token set are lexer errors",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#4.2",
+        "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "n/a: the contract is purely a rejection rule; there is no accepted form to exercise",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Lexical structure"
+    },
+    {
+      "id": "LEX.OPERATOR-TOKENS",
+      "title": "Multi-character operators tokenize as specified: `<-` vs `< -`, `..`/`..=`/`...`, `::`, `&&` vs `&`, `>>` closing nested generics",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#8.4.1"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: misuse of removed operators is covered by LEX.REMOVED-WORDS and GRAM.REMOVED-SYNTAX",
+        "interaction": "required"
+      },
+      "family": "Lexical structure"
+    }
+  ]
+}

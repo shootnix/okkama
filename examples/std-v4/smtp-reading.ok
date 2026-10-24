@@ -1,0 +1,23 @@
+module app v1.0.0;
+import "mail/smtp_reading" take SmtpReplyReading;
+import "net/stream" take AsyncReading;
+import "io/stream" take Reading;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+// Deterministic short reads; no connection and no mail delivery.
+object Fragments does AsyncReading {
+    has origin is Reading;
+    Fragments(origin is Reading) {self.origin=origin;}
+    async bytes(limit is int) is @byte {origin.bytes(if limit<3 {limit;} else {3;});}
+}
+async main() is int {
+    let buffer=ByteBuffer(Utf8Encoded("220 ready\r\n250-mail.example\r\n250 SIZE 4096\r\n").bytes());
+    defer buffer.closing().close();let input=Fragments(buffer.reading());
+    let greeting=await SmtpReplyReading(input).result();
+    let ehlo=await SmtpReplyReading(input,greeting.remainder()).result();
+    Stdout().writeln(greeting.reply().text());
+    Stdout().writeln(ehlo.reply().text());
+    0;
+}

@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "csv" take CsvDialect, CsvRows, CsvString;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let dialect = CsvDialect(";", "'", "\n");
+        let rows = CsvRows("name;note\nAda;'one; two'\n", dialect);
+        CsvString(rows, dialect).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

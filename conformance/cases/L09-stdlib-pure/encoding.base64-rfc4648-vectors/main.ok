@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "encoding/base64" take Base64Encoded, Base64Decoded, Base64Alphabet, InvalidBase64;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("empty", Base64Encoded(origin: @byte()).string(), "");
+    c = c.same_text("f", Base64Encoded(origin: Utf8Encoded(origin: "f").bytes()).string(), "Zg==");
+    c = c.same_text("fo", Base64Encoded(origin: Utf8Encoded(origin: "fo").bytes()).string(), "Zm8=");
+    c = c.same_text("foo", Base64Encoded(origin: Utf8Encoded(origin: "foo").bytes()).string(), "Zm9v");
+    c = c.same_text("foob", Base64Encoded(origin: Utf8Encoded(origin: "foob").bytes()).string(), "Zm9vYg==");
+    c = c.same_text("fooba", Base64Encoded(origin: Utf8Encoded(origin: "fooba").bytes()).string(), "Zm9vYmE=");
+    c = c.same_text("foobar", Base64Encoded(origin: Utf8Encoded(origin: "foobar").bytes()).string(), "Zm9vYmFy");
+    c = c.same_text("url alphabet", Base64Encoded(origin: [byte(251), byte(255)], alphabet: Base64Alphabet.url).string(), "-_8=");
+    c = c.same_text("decode", Utf8Decoded(origin: Base64Decoded(origin: "Zm9vYmFy").bytes()).string(), "foobar");
+    c.done();
+}

@@ -1,0 +1,193 @@
+module archive/entry v1.0.0;
+
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+
+// Immutable archive member values, with already-bound paths and metadata.
+// No filesystem reads, extraction, link resolution, permission changes or
+// device creation. File data is an immutable byte snapshot already in memory;
+// aggregate limits belong to the archive reader. No owned resources.
+//
+//     let entry = ArchiveFile(path, metadata, [byte(0), byte(255)]);
+//     entry.data();       // exact bytes, repeatable, no I/O
+//     entry.accept(to);   // exactly one to.file(entry) event
+//
+// Only ArchiveFile has data(). Links have target(); devices have major/minor.
+// A symbolic target is relative to the link's parent; a hard target is relative
+// to the archive root. Both use the strict ArchivePath grammar: no absolute or
+// parent-traversing targets. This subset neither resolves links nor proves safe
+// extraction. Cycles, existence and destination containment are checked later.
+//
+// accept() passes the concrete value unchanged to one nominal visitor action.
+// The visitor controls effects, may retain entries, and its errors propagate.
+// Repeated accepts repeat the event without consuming data or traversing links.
+// The role fake emits an empty file named entry with UTC epoch metadata.
+enum ArchiveEntryKind = (
+    file, directory, symbolic_link, hard_link, fifo, character_device, block_device
+);
+
+role ArchiveEntry {
+    path() is ArchivePath;
+    kind() is ArchiveEntryKind;
+    metadata() is ArchiveMetadata;
+    accept(to is ArchiveEntryVisitor) is void;
+
+    fake {
+        path() is ArchivePath { ArchivePath("entry"); }
+        kind() is ArchiveEntryKind { ArchiveEntryKind.file; }
+        metadata() is ArchiveMetadata {
+            ArchiveMetadata(ArchiveModificationFromEpoch(0.rat()).value(), "");
+        }
+        accept(to is ArchiveEntryVisitor) is void {
+            to.file(ArchiveFile(self.path(), self.metadata(), []));
+        }
+    }
+}
+
+// Typed variant dispatch for consumers of heterogeneous ArchiveEntry values.
+// These actions receive concrete values, so no reflection/downcast is needed
+// to obtain file bytes, link targets or device numbers.
+role ArchiveEntryVisitor {
+    file(entry is ArchiveFile) is void;
+    directory(entry is ArchiveDirectory) is void;
+    symbolic_link(entry is ArchiveSymbolicLink) is void;
+    hard_link(entry is ArchiveHardLink) is void;
+    fifo(entry is ArchiveFifo) is void;
+    device(entry is ArchiveDevice) is void;
+}
+
+object ArchiveFile does ArchiveEntry {
+    has origin is ArchivePath;
+    has attributes is ArchiveMetadata;
+    has content is @byte;
+    ArchiveFile(path is ArchivePath, metadata is ArchiveMetadata, data is @byte) {
+        origin = path;
+        attributes = metadata;
+        content = data;
+    }
+    path() is ArchivePath { origin; }
+    kind() is ArchiveEntryKind { ArchiveEntryKind.file; }
+    metadata() is ArchiveMetadata { attributes; }
+    data() is @byte { content; }
+    accept(to is ArchiveEntryVisitor) is void { to.file(self); }
+}
+
+object ArchiveDirectory does ArchiveEntry {
+    has origin is ArchivePath;
+    has attributes is ArchiveMetadata;
+    ArchiveDirectory(path is ArchivePath, metadata is ArchiveMetadata) {
+        origin = path;
+        attributes = metadata;
+    }
+    path() is ArchivePath { origin; }
+    kind() is ArchiveEntryKind { ArchiveEntryKind.directory; }
+    metadata() is ArchiveMetadata { attributes; }
+    accept(to is ArchiveEntryVisitor) is void { to.directory(self); }
+}
+
+object ArchiveSymbolicLink does ArchiveEntry {
+    has origin, destination is ArchivePath;
+    has attributes is ArchiveMetadata;
+    ArchiveSymbolicLink(path is ArchivePath, metadata is ArchiveMetadata, target is ArchivePath) {
+        origin = path;
+        attributes = metadata;
+        destination = target;
+    }
+    path() is ArchivePath { origin; }
+    kind() is ArchiveEntryKind { ArchiveEntryKind.symbolic_link; }
+    metadata() is ArchiveMetadata { attributes; }
+    target() is ArchivePath { destination; }
+    accept(to is ArchiveEntryVisitor) is void { to.symbolic_link(self); }
+}
+
+object ArchiveHardLink does ArchiveEntry {
+    has origin, destination is ArchivePath;
+    has attributes is ArchiveMetadata;
+    ArchiveHardLink(path is ArchivePath, metadata is ArchiveMetadata, target is ArchivePath) {
+        origin = path;
+        attributes = metadata;
+        destination = target;
+    }
+    path() is ArchivePath { origin; }
+    kind() is ArchiveEntryKind { ArchiveEntryKind.hard_link; }
+    metadata() is ArchiveMetadata { attributes; }
+    target() is ArchivePath { destination; }
+    accept(to is ArchiveEntryVisitor) is void { to.hard_link(self); }
+}
+
+object ArchiveFifo does ArchiveEntry {
+    has origin is ArchivePath;
+    has attributes is ArchiveMetadata;
+    ArchiveFifo(path is ArchivePath, metadata is ArchiveMetadata) {
+        origin = path;
+        attributes = metadata;
+    }
+    path() is ArchivePath { origin; }
+    kind() is ArchiveEntryKind { ArchiveEntryKind.fifo; }
+    metadata() is ArchiveMetadata { attributes; }
+    accept(to is ArchiveEntryVisitor) is void { to.fifo(self); }
+}
+
+// Device metadata only: validate kind before numbers; preserve all nonnegative
+// int coordinates without narrowing them to an OS-specific device identifier.
+object ArchiveDevice does ArchiveEntry {
+    has origin is ArchivePath;
+    has entry_kind is ArchiveEntryKind;
+    has attributes is ArchiveMetadata;
+    has major_number, minor_number is int;
+    ArchiveDevice(path is ArchivePath, kind is ArchiveEntryKind, metadata is ArchiveMetadata, major is int, minor is int) {
+        confirm kind == ArchiveEntryKind.character_device || kind == ArchiveEntryKind.block_device
+            else throw InvalidArchiveDevice("expected character or block kind");
+        confirm major >= 0 && minor >= 0 else throw InvalidArchiveDevice("negative device number");
+        origin = path;
+        entry_kind = kind;
+        attributes = metadata;
+        major_number = major;
+        minor_number = minor;
+    }
+    path() is ArchivePath { origin; }
+    kind() is ArchiveEntryKind { entry_kind; }
+    metadata() is ArchiveMetadata { attributes; }
+    major() is int { major_number; }
+    minor() is int { minor_number; }
+    accept(to is ArchiveEntryVisitor) is void { to.device(self); }
+}
+
+object InvalidArchiveDevice does Error {
+    has reason is string;
+    InvalidArchiveDevice(message is string) { reason = message; }
+    text() is string { "invalid archive device: " + reason; }
+}
+
+test "archive entries preserve the role coordinates and file bytes" {
+    let source = ArchiveEntry.fake();
+    let file = ArchiveFile(source.path(), source.metadata(), [byte(0), byte(255)]);
+    let directory = ArchiveDirectory(source.path(), source.metadata());
+    test.is(file.kind(), ArchiveEntryKind.file);
+    test.is(directory.kind(), ArchiveEntryKind.directory);
+    test.is(file.path(), directory.path());
+    test.is(file.data(), [byte(0), byte(255)]);
+    test.is(file.data(), [byte(0), byte(255)]);
+}
+
+test "archive symbolic and hard links keep distinct kinds" {
+    let source = ArchiveEntry.fake();
+    let symbolic = ArchiveSymbolicLink(source.path(), source.metadata(), source.path());
+    let hard = ArchiveHardLink(source.path(), source.metadata(), source.path());
+    test.ok(symbolic.kind() != hard.kind());
+    test.is(symbolic.target(), hard.target());
+    test.is(ArchiveFifo(source.path(), source.metadata()).kind(), ArchiveEntryKind.fifo);
+}
+
+test "archive devices reject contradictory kind and negative numbers" {
+    let source = ArchiveEntry.fake();
+    let device = ArchiveDevice(source.path(), ArchiveEntryKind.block_device, source.metadata(), 0, 7);
+    test.is(device.major(), 0);
+    test.is(device.minor(), 7);
+    test.ok(try {
+        ArchiveDevice(source.path(), ArchiveEntryKind.file, source.metadata(), 0, 0); false;
+    } catch error is InvalidArchiveDevice { true; });
+    test.ok(try {
+        ArchiveDevice(source.path(), ArchiveEntryKind.character_device, source.metadata(), -1, 0); false;
+    } catch error is InvalidArchiveDevice { true; });
+}

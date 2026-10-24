@@ -1,0 +1,234 @@
+module http/xmlrpc v1.0.0;
+import "collections/sequence" take Sequencing;
+import "collections/list" take List,EmptyList;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "compare" take Order;
+import "time/local_datetime" take LocalDateTime;
+import "time/date" take Date;
+import "time/day" take TimeOfDay;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "encoding/base64" take Base64Encoded,Base64Decoded;
+import "strings/parse" take ParsedInt;
+import "html/entities" take EscapedHtml;
+import "plist/parse" take PlistXmlSource,PlistXmlToken,PlistXmlText;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "http/client" take Exchanging;
+import "http/exchange" take ClientResponse;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/body" take BodyReading,ByteBody;
+import "http/header" take Headers,Header,HeaderName,HttpAsciiLowercase;
+import "http/method" take Method;
+import "http/status" take Status;
+import "mime/media_type" take MediaType;
+import "http/target" take AbsoluteTarget,RequestTargetKind;
+import "url/value" take Url;
+import "io/decorators" take InvalidReading;
+
+enum XmlRpcKind=(integer,boolean,text,floating,datetime,binary,array,structure,nil_value);
+enum XmlRpcResultKind=(success,fault);
+object InvalidXmlRpc does Error{has reason is string;InvalidXmlRpc(reason is string){self.reason=reason;}text() is string{"invalid XML-RPC: "+reason;}}
+object XmlRpcLimitExceeded does Error{has kind is string;XmlRpcLimitExceeded(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"XML-RPC limit: "+kind;}}
+object WrongXmlRpcResult does Error{WrongXmlRpcResult();text() is string{"wrong XML-RPC result projection";}}
+object XmlRpcHttpFailed does Error{has code is int;XmlRpcHttpFailed(code is int){self.code=code;}status() is int{code;}text() is string{"XML-RPC HTTP status: "+code.string();}}
+// Broad values cooperate through one typed event; no downcast or role escape.
+role XmlRpcValue{kind() is XmlRpcKind;print(to is XmlRpcWriting) is void;}
+role XmlRpcWriting{integer(value is int) is void;boolean(value is bool) is void;text(value is string) is void;floating(value is Decimal) is void;datetime(value is LocalDateTime) is void;binary(value is @byte) is void;elements(values is Sequencing<XmlRpcValue>) is void;members(values is Sequencing<XmlRpcMember>) is void;nil_value() is void;}
+object XmlRpcInteger does XmlRpcValue{has origin is int;XmlRpcInteger(value is int){confirm value>=-2147483648 && value<=2147483647 else throw InvalidXmlRpc("32-bit integer required");origin=value;}value() is int{origin;}kind() is XmlRpcKind{XmlRpcKind.integer;}print(to is XmlRpcWriting) is void{to.integer(origin);}}
+object XmlRpcBoolean does XmlRpcValue{has origin is bool;XmlRpcBoolean(value is bool){origin=value;}value() is bool{origin;}kind() is XmlRpcKind{XmlRpcKind.boolean;}print(to is XmlRpcWriting) is void{to.boolean(origin);}}
+object XmlRpcText does XmlRpcValue{has origin is string;XmlRpcText(value is string){origin=value;}value() is string{origin;}kind() is XmlRpcKind{XmlRpcKind.text;}print(to is XmlRpcWriting) is void{to.text(origin);}}
+object XmlRpcFloat does XmlRpcValue{has origin is float;XmlRpcFloat(value is float){origin=value;}value() is float{origin;}kind() is XmlRpcKind{XmlRpcKind.floating;}print(to is XmlRpcWriting) is void{to.floating(Decimal(origin.string()));}}
+// Decoding preserves exact decimal wire text rather than silently rounding it.
+object XmlRpcDouble does XmlRpcValue{has origin is Decimal;XmlRpcDouble(value is Decimal){confirm value.order(Decimal("1.7976931348623157e308"))!=Order.greater && value.order(Decimal("-1.7976931348623157e308"))!=Order.less else throw InvalidXmlRpc("double range");origin=value;}value() is Decimal{origin;}kind() is XmlRpcKind{XmlRpcKind.floating;}print(to is XmlRpcWriting) is void{to.floating(origin);}}
+object XmlRpcDateTime does XmlRpcValue{has origin is LocalDateTime;XmlRpcDateTime(value is LocalDateTime){confirm value.time().nanosecond()==0 else throw InvalidXmlRpc("whole local seconds required");origin=value;}value() is LocalDateTime{origin;}kind() is XmlRpcKind{XmlRpcKind.datetime;}print(to is XmlRpcWriting) is void{to.datetime(origin);}}
+object XmlRpcBinary does XmlRpcValue{has origin is @byte;XmlRpcBinary(value is @byte){origin=value;}value() is @byte{origin;}kind() is XmlRpcKind{XmlRpcKind.binary;}print(to is XmlRpcWriting) is void{to.binary(origin);}}
+object XmlRpcArray does XmlRpcValue{
+    has origin is @XmlRpcValue;XmlRpcArray(values is Sequencing<XmlRpcValue>){let count=values.size();confirm count>=0 && count<=4096 else throw XmlRpcLimitExceeded("container_items");let copied is @XmlRpcValue=(0..count).map()->index{values.item(index);};origin=copied;}
+    values() is Sequencing<XmlRpcValue>{origin;}kind() is XmlRpcKind{XmlRpcKind.array;}print(to is XmlRpcWriting) is void{to.elements(origin);}
+}
+object XmlRpcMember{has name is string;has value is XmlRpcValue;XmlRpcMember(name is string,value is XmlRpcValue){self.name=name;self.value=value;}name() is string{name;}value() is XmlRpcValue{value;}}
+object XmlRpcStruct does XmlRpcValue{
+    has origin is @XmlRpcMember;
+    XmlRpcStruct(values is Sequencing<XmlRpcMember>){
+        let count=values.size();confirm count>=0 && count<=4096 else throw XmlRpcLimitExceeded("container_items");
+        let copied is @XmlRpcMember=(0..count).map()->index{
+            let entry=values.item(index);
+            confirm Utf8Encoded(entry.name()).bytes().size()<=1024 else throw XmlRpcLimitExceeded("member_name");entry;
+        };
+        // Sort only immutable names for uniqueness; members keep source order.
+        // All source/name budgets still run before duplicate validation.
+        let names is @string=copied.map()->entry{entry.name();};let ordered=names.ordering();
+        for (0..ordered.size()) -> index{
+            if index>0{confirm (ordered[index-1]!=ordered[index]) else throw InvalidXmlRpc("duplicate member");}
+        }
+        origin=copied;
+    }
+    values() is Sequencing<XmlRpcMember>{origin;}kind() is XmlRpcKind{XmlRpcKind.structure;}print(to is XmlRpcWriting) is void{to.members(origin);}
+}
+object XmlRpcNil does XmlRpcValue{XmlRpcNil();kind() is XmlRpcKind{XmlRpcKind.nil_value;}print(to is XmlRpcWriting) is void{to.nil_value();}}
+object XmlRpcCall{has method is string;has parameters is @XmlRpcValue;XmlRpcCall(method is string,parameters is Sequencing<XmlRpcValue>){XmlRpcMethod(method);self.method=method;let count=parameters.size();confirm count>=0 && count<=4096 else throw XmlRpcLimitExceeded("parameters");let copied is @XmlRpcValue=(0..count).map()->index{parameters.item(index);};self.parameters=copied;}method() is string{method;}parameters() is Sequencing<XmlRpcValue>{parameters;}}
+object XmlRpcMethod{XmlRpcMethod(origin is string){confirm origin!="" && origin.length()<=256 else throw InvalidXmlRpc("method name budget");for Utf8Encoded(origin).bytes() -> octet{let code=octet.int();confirm (code>=65 && code<=90) || (code>=97 && code<=122) || (code>=48 && code<=57) || code==95 || code==46 || code==58 || code==47 else throw InvalidXmlRpc("method name grammar");}}}
+object XmlRpcFault{has code is int;has message is string;XmlRpcFault(code is int,message is string){XmlRpcInteger(code);self.code=code;self.message=message;}code() is int{code;}text() is string{message;}}
+role XmlRpcResult{kind() is XmlRpcResultKind;value() is XmlRpcValue;fault() is XmlRpcFault;}
+object XmlRpcSuccess does XmlRpcResult{has origin is XmlRpcValue;XmlRpcSuccess(origin is XmlRpcValue){self.origin=origin;}kind() is XmlRpcResultKind{XmlRpcResultKind.success;}value() is XmlRpcValue{origin;}fault() is XmlRpcFault{throw WrongXmlRpcResult();}}
+object XmlRpcFailure does XmlRpcResult{has origin is XmlRpcFault;XmlRpcFailure(origin is XmlRpcFault){self.origin=origin;}kind() is XmlRpcResultKind{XmlRpcResultKind.fault;}value() is XmlRpcValue{throw WrongXmlRpcResult();}fault() is XmlRpcFault{origin;}}
+object XmlRpcLimits {
+    has depth,values,text_bytes,binary_bytes is int;has nil_enabled is bool;
+    XmlRpcLimits(){depth=64;values=4096;text_bytes=1048576;binary_bytes=1048576;nil_enabled=false;}
+    XmlRpcLimits(depth is int,values is int,text_bytes is BigInt,binary_bytes is BigInt){XmlRpcBudget(depth,values,text_bytes,binary_bytes);self.depth=depth;self.values=values;self.text_bytes=ParsedInt(text_bytes.string()).value();self.binary_bytes=ParsedInt(binary_bytes.string()).value();nil_enabled=false;}
+    XmlRpcLimits(depth is int,values is int,text_bytes is BigInt,binary_bytes is BigInt,nil_enabled is bool){XmlRpcBudget(depth,values,text_bytes,binary_bytes);self.depth=depth;self.values=values;self.text_bytes=ParsedInt(text_bytes.string()).value();self.binary_bytes=ParsedInt(binary_bytes.string()).value();self.nil_enabled=nil_enabled;}
+    depth() is int{depth;}values() is int{values;}text_bytes() is BigInt{BigInt(text_bytes.string());}binary_bytes() is BigInt{BigInt(binary_bytes.string());}nil_enabled() is bool{nil_enabled;}
+    wire_bytes() is int{let derived=text_bytes*6+((binary_bytes+2)/3).int()*4+values*128+1024;if derived<16777216{derived;}else{16777216;}}
+}
+object XmlRpcBudget{XmlRpcBudget(depth is int,values is int,text_bytes is BigInt,binary_bytes is BigInt){confirm depth>=0 && depth<=64 && values>=0 && values<=4096 else throw InvalidXmlRpc("structural budgets");for [text_bytes,binary_bytes] -> bytes{confirm bytes.sign()>=0 && bytes.order(BigInt("8388608"))!=Order.greater else throw InvalidXmlRpc("byte budget");}}}
+object XmlRpcUsage {
+    has limits is XmlRpcLimits;has values,text,binary is Atomic<int>;
+    XmlRpcUsage(limits is XmlRpcLimits){self.limits=limits;values=Atomic(0);text=Atomic(0);binary=Atomic(0);}
+    node(depth is int) is void{confirm depth<=limits.depth() else throw XmlRpcLimitExceeded("depth");confirm values.value()<limits.values() else throw XmlRpcLimitExceeded("values");values.replace(values.value()+1);}
+    text(origin is string) is void{let bytes=Utf8Encoded(origin).bytes().size();confirm bytes<=ParsedInt(limits.text_bytes().string()).value()-text.value() else throw XmlRpcLimitExceeded("text_bytes");text.replace(text.value()+bytes);}
+    binary(bytes is int) is void{confirm bytes<=ParsedInt(limits.binary_bytes().string()).value()-binary.value() else throw XmlRpcLimitExceeded("binary_bytes");binary.replace(binary.value()+bytes);}
+    limits() is XmlRpcLimits{limits;}
+}
+object XmlRpcXmlText{has origin is string;XmlRpcXmlText(origin is string){self.origin=origin;}string() is string{XmlRpcXmlCharacters(origin);EscapedHtml(origin).string();}}
+object XmlRpcWire {
+    has usage is XmlRpcUsage;has output is Atomic<string>;has used is Atomic<int>;XmlRpcWire(limits is XmlRpcLimits){usage=XmlRpcUsage(limits);output=Atomic("");used=Atomic(0);}
+    usage() is XmlRpcUsage{usage;}
+    append(text is string) is void{let count=Utf8Encoded(text).bytes().size();confirm count<=usage.limits().wire_bytes()-used.value() else throw XmlRpcLimitExceeded("wire_bytes");used.replace(used.value()+count);output.replace(output.value()+text);}
+    node(value is XmlRpcValue,depth is int) is void{usage.node(depth);self.append("<value>");let event=XmlRpcNodeWriting(self,depth);value.print(event);event.complete();self.append("</value>");}
+    scalar(tag is string,value is string) is void{self.append("<"+tag+">"+value+"</"+tag+">");}
+    bytes() is @byte{Utf8Encoded(output.value()).bytes();}
+}
+object XmlRpcNodeWriting does XmlRpcWriting {
+    has wire is XmlRpcWire;has depth is int;has seen is Event;XmlRpcNodeWriting(wire is XmlRpcWire,depth is int){self.wire=wire;self.depth=depth;seen=Event();}
+    claim() is void{confirm !seen.ready() else throw InvalidXmlRpc("multiple value events");seen.set();}complete() is void{confirm seen.ready() else throw InvalidXmlRpc("missing value event");}
+    integer(value is int) is void{self.claim();XmlRpcInteger(value);wire.scalar("int",value.string());}
+    boolean(value is bool) is void{self.claim();wire.scalar("boolean",if value{"1";}else{"0";});}
+    text(value is string) is void{self.claim();wire.usage().text(value);wire.scalar("string",XmlRpcXmlText(value).string());}
+    floating(value is Decimal) is void{self.claim();XmlRpcDouble(value);wire.scalar("double",XmlRpcDoubleText(value).string());}
+    datetime(value is LocalDateTime) is void{self.claim();XmlRpcDateTime(value);wire.scalar("dateTime.iso8601",XmlRpcDateText(value).string());}
+    binary(value is @byte) is void{self.claim();wire.usage().binary(value.size());wire.scalar("base64",Base64Encoded(value).string());}
+    elements(values is Sequencing<XmlRpcValue>) is void{self.claim();let count=values.size();confirm count>=0 && count<=4096 else throw XmlRpcLimitExceeded("container_items");wire.append("<array><data>");for (0..count) -> index{wire.node(values.item(index),depth+1);}wire.append("</data></array>");}
+    members(values is Sequencing<XmlRpcMember>) is void{self.claim();let checked=XmlRpcStruct(values).values();wire.append("<struct>");for (0..checked.size()) -> index{let member=checked.item(index);wire.usage().text(member.name());wire.append("<member>");wire.scalar("name",XmlRpcXmlText(member.name()).string());wire.node(member.value(),depth+1);wire.append("</member>");}wire.append("</struct>");}
+    nil_value() is void{self.claim();confirm wire.usage().limits().nil_enabled() else throw InvalidXmlRpc("nil extension disabled");wire.append("<nil/>");}
+}
+object XmlRpcDoubleText {
+    has origin is Decimal;XmlRpcDoubleText(origin is Decimal){self.origin=origin;}
+    string() is string{let raw=origin.coefficient().string();let sign=if raw.slice(0,1)=="-"{"-";}else{"";};let digits=if sign=="-"{raw.slice(1,raw.length());}else{raw;};let exponent=origin.exponent();confirm exponent>=-4096 && exponent<=4096 else throw XmlRpcLimitExceeded("double_spelling");let point=digits.length()+exponent;let zeros is @string=(0..(if exponent<0{-exponent;}else{exponent;})).map()->index{"0";};if point<=0{sign+"0."+zeros.join("").slice(0,-point)+digits;}else{if point>=digits.length(){sign+digits+zeros.join("")+".0";}else{sign+digits.slice(0,point)+"."+digits.slice(point,digits.length());}}}
+}
+object XmlRpcPadded{has value,width is int;XmlRpcPadded(value is int,width is int){self.value=value;self.width=width;}string() is string{let digits=value.string();let zeros is @string=(0..width-digits.length()).map()->index{"0";};zeros.join("")+digits;}}
+object XmlRpcDateText{has origin is LocalDateTime;XmlRpcDateText(origin is LocalDateTime){self.origin=origin;}string() is string{let date=origin.date();let time=origin.time();XmlRpcPadded(date.year(),4).string()+XmlRpcPadded(date.month(),2).string()+XmlRpcPadded(date.day(),2).string()+"T"+XmlRpcPadded(time.hour(),2).string()+":"+XmlRpcPadded(time.minute(),2).string()+":"+XmlRpcPadded(time.second(),2).string();}}
+object XmlRpcCallWire {
+    has origin is XmlRpcCall;has limits is XmlRpcLimits;XmlRpcCallWire(origin is XmlRpcCall,limits is XmlRpcLimits){self.origin=origin;self.limits=limits;}
+    bytes() is @byte{let wire=XmlRpcWire(limits);wire.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><methodCall>");wire.usage().text(origin.method());wire.scalar("methodName",origin.method());wire.append("<params>");let parameters=origin.parameters();for (0..parameters.size()) -> index{wire.append("<param>");wire.node(parameters.item(index),1);wire.append("</param>");}wire.append("</params></methodCall>");wire.bytes();}
+}
+object XmlRpcResultWire {
+    has origin is XmlRpcResult;has limits is XmlRpcLimits;XmlRpcResultWire(origin is XmlRpcResult,limits is XmlRpcLimits){self.origin=origin;self.limits=limits;}
+    bytes() is @byte{let wire=XmlRpcWire(limits);wire.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?><methodResponse>");if origin.kind()==XmlRpcResultKind.success{wire.append("<params><param>");wire.node(origin.value(),1);wire.append("</param></params>");}else{let fault=origin.fault();wire.append("<fault>");wire.node(XmlRpcStruct([XmlRpcMember("faultCode",XmlRpcInteger(fault.code())),XmlRpcMember("faultString",XmlRpcText(fault.text()))]),1);wire.append("</fault>");}wire.append("</methodResponse>");wire.bytes();}
+}
+// Narrow XML1 token consumption reuses the existing plist lexical primitives.
+// DTD/PI/attributes/extension tags are rejected by this protocol grammar.
+object XmlRpcXmlCharacters {
+    XmlRpcXmlCharacters(origin is string){
+        for (0..32) -> code{if code==9 || code==10 || code==13{next;}let character=Utf8Decoded([code.byte()]).string();confirm origin.split(character).size()==1 else throw InvalidXmlRpc("XML control character");}
+        for [[239.byte(),191.byte(),190.byte()],[239.byte(),191.byte(),191.byte()]] -> bytes{confirm origin.split(Utf8Decoded(bytes).string()).size()==1 else throw InvalidXmlRpc("XML noncharacter");}
+    }
+}
+object XmlRpcXmlDecoded {
+    has origin is string;XmlRpcXmlDecoded(origin is string){self.origin=origin;}
+    string() is string{
+        let text=origin.replace("\r\n","\n").replace("\r","\n");let pieces=text.split("&");let decoded is @string=(0..pieces.size()).map()->index{
+            let part=pieces[index];if index==0{part;}else{let tokens=part.split(";");confirm tokens.size()>1 && tokens[0].length()<=32 else throw InvalidXmlRpc("unfinished or excessive XML reference");let entity=tokens[0];let value=match entity{case "amp"{"&";}case "lt"{"<";}case "gt"{">";}case "quot"{"\"";}case "apos"{"'";}else{try{PlistXmlSource("",0).decoded("&"+entity+";",0);}catch e is Error{throw InvalidXmlRpc("XML reference");}}};value+part.slice(entity.length()+1,part.length());}
+        };decoded.join("");
+    }
+}
+object XmlRpcParsing {
+    has source is PlistXmlSource;has position is Atomic<int>;has usage is XmlRpcUsage;
+    XmlRpcParsing(bytes is @byte,limits is XmlRpcLimits){confirm bytes.size()<=limits.wire_bytes() else throw XmlRpcLimitExceeded("wire_bytes");let decoded=try{Utf8Decoded(bytes).string();}catch e is Error{throw InvalidXmlRpc("UTF8 input");};let text=if decoded!="" && decoded.slice(0,1)=="﻿"{decoded.slice(1,decoded.length());}else{decoded;};XmlRpcXmlCharacters(text);source=PlistXmlSource(text,0);position=Atomic(0);usage=XmlRpcUsage(limits);let first=try{let token=self.source.token(0);confirm token.kind()!="doctype" else throw InvalidXmlRpc("DTD disabled");token;}catch e is Error{throw InvalidXmlRpc("XML token");};if first.kind()=="declaration"{self.position.replace(first.end());}}
+    token() is PlistXmlToken{try{let token=source.token(position.value());confirm token.kind()!="doctype" else throw InvalidXmlRpc("DTD disabled");token;}catch e is Error{throw InvalidXmlRpc("XML token");}}
+    peek() is PlistXmlToken{loop{let token=self.token();if token.kind()=="skip" || (token.kind()=="text" && PlistXmlText(token.text()).stripped()==""){position.replace(token.end());}else{return token;}}}
+    open(name is string) is bool{let token=self.peek();confirm token.text()==name && (token.kind()=="open" || token.kind()=="empty") else throw InvalidXmlRpc("expected "+name);position.replace(token.end());token.kind()=="open";}
+    close(name is string) is void{let token=self.peek();confirm token.kind()=="close" && token.text()==name else throw InvalidXmlRpc("expected closing "+name);position.replace(token.end());}
+    done() is void{confirm self.peek().kind()=="eof" else throw InvalidXmlRpc("trailing XML");}
+    text_element(name is string) is string{if !self.open(name){return "";}let text=self.content(name);self.close(name);text;}
+    content(name is string) is string{
+        let text=Atomic("");let used=Atomic(0);loop{let token=self.token();if token.kind()=="close" && token.text()==name{return text.value();}confirm token.kind()=="text" || token.kind()=="cdata" || token.kind()=="skip" else throw InvalidXmlRpc("nested scalar content");position.replace(token.end());if token.kind()=="skip"{next;}if token.kind()=="text"{confirm token.text().split("]]>").size()==1 else throw InvalidXmlRpc("CDATA close in text");}let value=if token.kind()=="cdata"{token.text().replace("\r\n","\n").replace("\r","\n");}else{XmlRpcXmlDecoded(token.text()).string();};used.replace(used.value()+Utf8Encoded(value).bytes().size());confirm used.value()<=usage.limits().wire_bytes() else throw XmlRpcLimitExceeded("scalar_bytes");text.replace(text.value()+value);}
+    }
+    value(depth is int) is XmlRpcValue{
+        usage.node(depth);if !self.open("value"){usage.text("");return XmlRpcText("");}let raw=self.token();let next_token=self.peek();let result is XmlRpcValue=if next_token.kind()=="open" || next_token.kind()=="empty"{
+            let tag=next_token.text();let scalar is XmlRpcValue=match tag{
+                case "array"{let items is List<XmlRpcValue>=EmptyList();let collected=Atomic(items);confirm self.open("array") else throw InvalidXmlRpc("array requires data element");{if self.open("data"){loop{let ending=self.peek();if ending.kind()=="close" && ending.text()=="data"{last;}confirm collected.value().size()<4096 else throw XmlRpcLimitExceeded("container_items");collected.replace(collected.value().prefix(self.value(depth+1)));}self.close("data");}self.close("array");}let reverse is @XmlRpcValue=collected.value().map()->value{value;};let ordered is @XmlRpcValue=(0..reverse.size()).map()->index{reverse[reverse.size()-index-1];};XmlRpcArray(ordered);}
+                case "struct"{let items is List<XmlRpcMember>=EmptyList();let collected=Atomic(items);if self.open("struct"){loop{let ending=self.peek();if ending.kind()=="close" && ending.text()=="struct"{last;}confirm self.open("member") else throw InvalidXmlRpc("empty member");let name=self.text_element("name");usage.text(name);let value=self.value(depth+1);self.close("member");confirm collected.value().size()<4096 else throw XmlRpcLimitExceeded("container_items");collected.replace(collected.value().prefix(XmlRpcMember(name,value)));}self.close("struct");}let reverse is @XmlRpcMember=collected.value().map()->member{member;};let ordered is @XmlRpcMember=(0..reverse.size()).map()->index{reverse[reverse.size()-index-1];};XmlRpcStruct(ordered);}
+                case "string"{let value=self.text_element(tag);usage.text(value);XmlRpcText(value);}
+                case "int","i4"{let text=self.text_element(tag);XmlRpcInteger(XmlRpcIntegerText(text).value());}
+                case "boolean"{let text=self.text_element(tag);confirm text=="0" || text=="1" else throw InvalidXmlRpc("boolean spelling");XmlRpcBoolean(text=="1");}
+                case "double"{let text=self.text_element(tag);XmlRpcDouble(XmlRpcParsedDouble(text).value());}
+                case "dateTime.iso8601"{XmlRpcDateTime(XmlRpcParsedDate(self.text_element(tag)).value());}
+                case "base64"{let text=self.text_element(tag).replace(" ","").replace("\t","").replace("\r","").replace("\n","");let remaining=ParsedInt(usage.limits().binary_bytes().string()).value();confirm text.length()<=((remaining+2)/3).int()*4 else throw XmlRpcLimitExceeded("binary_bytes");let bytes=try{Base64Decoded(text).bytes();}catch e is Error{throw InvalidXmlRpc("base64 grammar");};usage.binary(bytes.size());XmlRpcBinary(bytes);}
+                case "nil"{confirm usage.limits().nil_enabled() && self.text_element("nil")=="" else throw InvalidXmlRpc("nil disabled or nonempty");XmlRpcNil();}
+                else{throw InvalidXmlRpc("unsupported type or attributes");}
+            };scalar;
+        }else{
+            // Restore skipped whitespace: an untyped value is a string.
+            position.replace(raw.start());let text=self.content("value");usage.text(text);XmlRpcText(text);
+        };self.close("value");result;
+    }
+    call() is XmlRpcCall{
+        confirm self.open("methodCall") else throw InvalidXmlRpc("empty call");let name=self.text_element("methodName");usage.text(name);let items is List<XmlRpcValue>=EmptyList();let values=Atomic(items);let token=self.peek();if token.text()=="params" && (token.kind()=="open" || token.kind()=="empty"){if self.open("params"){loop{let ending=self.peek();if ending.kind()=="close" && ending.text()=="params"{last;}confirm self.open("param") else throw InvalidXmlRpc("empty parameter");values.replace(values.value().prefix(self.value(1)));self.close("param");}self.close("params");}}self.close("methodCall");self.done();let reverse is @XmlRpcValue=values.value().map()->value{value;};let ordered is @XmlRpcValue=(0..reverse.size()).map()->index{reverse[reverse.size()-index-1];};XmlRpcCall(name,ordered);
+    }
+    result() is XmlRpcResult{
+        confirm self.open("methodResponse") else throw InvalidXmlRpc("empty response");let first=self.peek();let result is XmlRpcResult=if first.text()=="params"{confirm self.open("params") && self.open("param") else throw InvalidXmlRpc("one response parameter required");let value=self.value(1);self.close("param");self.close("params");XmlRpcSuccess(value);}else{confirm self.open("fault") else throw InvalidXmlRpc("empty fault");let value=self.value(1);self.close("fault");let fault=XmlRpcFaultCapture();value.print(fault);XmlRpcFailure(fault.fault());};self.close("methodResponse");self.done();result;
+    }
+}
+object ParsedXmlRpcCall{has bytes is @byte;has limits is XmlRpcLimits;ParsedXmlRpcCall(bytes is @byte,limits is XmlRpcLimits){self.bytes=bytes;self.limits=limits;}call() is XmlRpcCall{XmlRpcParsing(bytes,limits).call();}}
+object ParsedXmlRpcResult{has bytes is @byte;has limits is XmlRpcLimits;ParsedXmlRpcResult(bytes is @byte,limits is XmlRpcLimits){self.bytes=bytes;self.limits=limits;}result() is XmlRpcResult{XmlRpcParsing(bytes,limits).result();}}
+object XmlRpcIntegerText{has value is int;XmlRpcIntegerText(origin is string){confirm origin.length()>0 && origin.length()<=16 else throw InvalidXmlRpc("integer spelling budget");let text=if origin.slice(0,1)=="+"{origin.slice(1,origin.length());}else{origin;};value=try{ParsedInt(text).value();}catch e is Error{throw InvalidXmlRpc("integer spelling");};XmlRpcInteger(self.value);}value() is int{value;}}
+object XmlRpcParsedDouble{has value is Decimal;XmlRpcParsedDouble(origin is string){confirm origin!="" && origin.length()<=4096 else throw InvalidXmlRpc("double spelling budget");let text=if origin.slice(0,1)=="+"{origin.slice(1,origin.length());}else{origin;};let offset=if text!="" && text.slice(0,1)=="-"{1;}else{0;};let digits=text.slice(offset,text.length());let points=digits.split(".");confirm points.size()<=2 && digits!="" && digits!="." else throw InvalidXmlRpc("double spelling");let packed=points.join("");for (0..packed.length()) -> index{confirm "0123456789".split(packed.slice(index,index+1)).size()==2 else throw InvalidXmlRpc("double digits");}let normalized=if digits.slice(0,1)=="."{text.slice(0,offset)+"0"+digits;}else{text;};let complete=if normalized.slice(normalized.length()-1,normalized.length())=="."{normalized+"0";}else{normalized;};value=try{Decimal(complete);}catch e is Error{throw InvalidXmlRpc("double decimal");};XmlRpcDouble(self.value);}value() is Decimal{value;}}
+object XmlRpcParsedDate{has value is LocalDateTime;XmlRpcParsedDate(origin is string){confirm origin.length()==17 && origin.slice(8,9)=="T" && origin.slice(11,12)==":" && origin.slice(14,15)==":" else throw InvalidXmlRpc("date spelling");value=try{LocalDateTime(Date(ParsedInt(origin.slice(0,4)).value(),ParsedInt(origin.slice(4,6)).value(),ParsedInt(origin.slice(6,8)).value()),TimeOfDay(ParsedInt(origin.slice(9,11)).value(),ParsedInt(origin.slice(12,14)).value(),ParsedInt(origin.slice(15,17)).value(),0));}catch e is Error{throw InvalidXmlRpc("date coordinates");};}value() is LocalDateTime{value;}}
+object XmlRpcFaultCapture does XmlRpcWriting {
+    has code is Atomic<@int>;has message is Atomic<@string>;has seen is Event;
+    XmlRpcFaultCapture(){let codes is @int=[];code=Atomic(codes);let messages is @string=[];message=Atomic(messages);seen=Event();}
+    fault() is XmlRpcFault{confirm seen.ready() && code.value().size()==1 && message.value().size()==1 else throw InvalidXmlRpc("fault fields");XmlRpcFault(code.value()[0],message.value()[0]);}
+    members(values is Sequencing<XmlRpcMember>) is void{confirm !seen.ready() && values.size()==2 else throw InvalidXmlRpc("fault structure");seen.set();for (0..2) -> index{let member=values.item(index);confirm member.name()=="faultCode" || member.name()=="faultString" else throw InvalidXmlRpc("unknown fault member");member.value().print(XmlRpcFaultScalar(member.name(),code,message));}}
+    integer(value is int) is void{throw InvalidXmlRpc("fault must be a struct");}boolean(value is bool) is void{throw InvalidXmlRpc("fault must be a struct");}text(value is string) is void{throw InvalidXmlRpc("fault must be a struct");}floating(value is Decimal) is void{throw InvalidXmlRpc("fault must be a struct");}datetime(value is LocalDateTime) is void{throw InvalidXmlRpc("fault must be a struct");}binary(value is @byte) is void{throw InvalidXmlRpc("fault must be a struct");}elements(values is Sequencing<XmlRpcValue>) is void{throw InvalidXmlRpc("fault must be a struct");}nil_value() is void{throw InvalidXmlRpc("fault must be a struct");}
+}
+object XmlRpcFaultScalar does XmlRpcWriting {
+    has name is string;has code is Atomic<@int>;has message is Atomic<@string>;XmlRpcFaultScalar(name is string,code is Atomic<@int>,message is Atomic<@string>){self.name=name;self.code=code;self.message=message;}
+    integer(value is int) is void{confirm name=="faultCode" && code.value().size()==0 else throw InvalidXmlRpc("faultCode type/cardinality");XmlRpcInteger(value);code.replace([value]);}
+    text(value is string) is void{confirm name=="faultString" && message.value().size()==0 else throw InvalidXmlRpc("faultString type/cardinality");message.replace([value]);}
+    members(values is Sequencing<XmlRpcMember>) is void{throw InvalidXmlRpc("scalar fault member required");}boolean(value is bool) is void{throw InvalidXmlRpc("scalar fault member required");}floating(value is Decimal) is void{throw InvalidXmlRpc("scalar fault member required");}datetime(value is LocalDateTime) is void{throw InvalidXmlRpc("scalar fault member required");}binary(value is @byte) is void{throw InvalidXmlRpc("scalar fault member required");}elements(values is Sequencing<XmlRpcValue>) is void{throw InvalidXmlRpc("scalar fault member required");}nil_value() is void{throw InvalidXmlRpc("scalar fault member required");}
+}
+role XmlRpcCalling{async result(call is XmlRpcCall) is XmlRpcResult;}
+object XmlRpcClient does XmlRpcCalling {
+    has origin is Exchanging;has endpoint is Url;has limits is XmlRpcLimits;
+    XmlRpcClient(origin is Exchanging,endpoint is Url,limits is XmlRpcLimits){let parts=endpoint.parts();confirm (parts.scheme()=="http" || parts.scheme()=="https") && parts.authority().present() && !parts.fragment().present() else throw InvalidXmlRpc("HTTP endpoint required");self.origin=origin;self.endpoint=endpoint;self.limits=limits;}
+    async result(call is XmlRpcCall) is XmlRpcResult{
+        let bytes=XmlRpcCallWire(call,limits).bytes();let request=Request(Method("POST"),AbsoluteTarget(endpoint),Headers([Header(HeaderName("Content-Type"),"text/xml; charset=utf-8"),Header(HeaderName("Accept"),"text/xml"),Header(HeaderName("User-Agent"),"Okkama-XMLRPC/1.0"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes));
+        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=XmlRpcSettlement(group);defer await cleanup.close();let waiting=origin.response(request);group.start(waiting);let exchange=await waiting;let response=exchange.response();let input=response.body().reading();defer input.close();let code=response.status().code();confirm code>=200 && code<300 else throw XmlRpcHttpFailed(code);XmlRpcMedia(response.headers());let body=XmlRpcBodyBytes(input,limits);let reads is FutureGroup<@byte>=FutureGroup();let reading=XmlRpcSettlement(reads);defer await reading.close();let pending=body.bytes();reads.start(pending);ParsedXmlRpcResult(await pending,limits).result();
+    }
+}
+object XmlRpcBodyBytes {
+    has input is BodyReading;has limits is XmlRpcLimits;XmlRpcBodyBytes(input is BodyReading,limits is XmlRpcLimits){self.input=input;self.limits=limits;}
+    async bytes() is @byte{
+        defer input.close();let text=Atomic("");loop{let remaining=limits.wire_bytes()-text.value().length();let count=if remaining>=8192{8192;}else{remaining+1;};let group is FutureGroup<@byte>=FutureGroup();let cleanup=XmlRpcSettlement(group);defer await cleanup.close();let pending=input.bytes(count);group.start(pending);let bytes=await pending;confirm bytes.size()<=count else throw InvalidReading("XML-RPC source exceeded limit");confirm bytes.size()<=remaining else throw XmlRpcLimitExceeded("wire_bytes");if bytes.size()==0{return Latin1Encoded(text.value()).bytes();}text.replace(text.value()+Latin1Decoded(bytes).string());}
+    }
+}
+object XmlRpcMedia{XmlRpcMedia(headers is Headers){let types=headers.values(HeaderName("Content-Type"));confirm types.size()==1 else throw InvalidXmlRpc("one XML media type required");let media=try{MediaType(types.item(0));}catch e is Error{throw InvalidXmlRpc("XML media type");};confirm (media.type()=="text" || media.type()=="application") && media.subtype()=="xml" else throw InvalidXmlRpc("XML media type required");let charsets=media.parameters().values("charset");confirm charsets.size()<=1 else throw InvalidXmlRpc("duplicate charset");if charsets.size()==1{let charset=HttpAsciiLowercase(charsets.item(0)).string();confirm charset=="utf-8" else throw InvalidXmlRpc("UTF8 charset required");}}}
+object XmlRpcHandling does Handling {
+    has path is string;has calling is XmlRpcCalling;has limits is XmlRpcLimits;
+    XmlRpcHandling(path is string,calling is XmlRpcCalling,limits is XmlRpcLimits){confirm path!="" && path.slice(0,1)=="/" && path.split("?").size()==1 && path.split("#").size()==1 else throw InvalidXmlRpc("absolute request path required");self.path=path;self.calling=calling;self.limits=limits;}
+    async handling(request is Request,context is HttpRequestContext) is HandlingResult{
+        let kind=request.target().kind();let requested=if kind==RequestTargetKind.origin{request.target().string().split("?")[0];}else{if kind==RequestTargetKind.absolute{request.target().url().parts().path();}else{"";}};if requested!=path{return ResponseHandling(Response(Status(404),Headers([])));}
+        if request.method().string()!="POST"{return ResponseHandling(Response(Status(405),Headers([Header(HeaderName("Allow"),"POST")])));}
+        let media=try{XmlRpcMedia(request.headers());true;}catch e is Error{false;};if !media{return ResponseHandling(Response(Status(415),Headers([])));}
+        let source=request.body().reading();defer source.close();let reads is FutureGroup<@byte>=FutureGroup();let cleanup=XmlRpcSettlement(reads);defer await cleanup.close();let pending=XmlRpcBodyBytes(source,limits).bytes();reads.start(pending);
+        let calls is @XmlRpcCall=try{[ParsedXmlRpcCall(await pending,limits).call()];}catch e is InvalidXmlRpc{[];}catch e is XmlRpcLimitExceeded{return ResponseHandling(Response(Status(413),Headers([])));};if calls.size()==0{return ResponseHandling(Response(Status(400),Headers([])));}
+        let tasks is FutureGroup<XmlRpcResult>=FutureGroup();let work=XmlRpcSettlement(tasks);defer await work.close();let waiting=calling.result(calls[0]);tasks.start(waiting);let result=await waiting;let bytes=XmlRpcResultWire(result,limits).bytes();ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"text/xml; charset=utf-8"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes)));
+    }
+}
+object XmlRpcSettlement<T>{has group is FutureGroup<T>;XmlRpcSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+test "standard XMLRPC values do not require casts" {test.ok(try{XmlRpcInteger(2147483648);false;}catch e is InvalidXmlRpc{true;});test.is(XmlRpcInteger(-2147483648).value(),-2147483648);}

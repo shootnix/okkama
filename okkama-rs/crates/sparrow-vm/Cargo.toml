@@ -1,0 +1,27 @@
+[package]
+name = "sparrow-vm"
+description = "Standalone Sparrow bytecode execution engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+okkama-sparrow = { path = "../okkama-sparrow" }
+okkama-runtime-core = { path = "../okkama-runtime-core" }
+cranelift-codegen = "0.137"
+cranelift-frontend = "0.137"
+cranelift-jit = "0.137"
+cranelift-module = "0.137"
+cranelift-native = "0.137"
+
+# unsafe разрешён только в `jit` (вызов машинного кода и его помощники).
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

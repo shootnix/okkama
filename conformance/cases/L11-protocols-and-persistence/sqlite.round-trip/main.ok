@@ -1,0 +1,30 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "db/sqlite" take SqliteMemory;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbInteger, DbText, DbDecimal, DbNull, ObservedDbValue;
+import "db/row" take RowsEnded;
+import "db/read" take RowReader;
+import "db/error" take DbFailure;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "compare" take Order;
+
+async main() is int {
+    let out = Stdout();
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE customers(id INTEGER, name TEXT)"));
+    await connection.execution(Statement("INSERT INTO customers VALUES(?, ?)", [DbInteger(BigInt("7")), DbText("Ada; DROP TABLE customers")]));
+    let rows = await connection.rows(Statement("SELECT id, name FROM customers WHERE id = ?", [DbInteger(BigInt("7"))]));
+    let row = await rows.row();
+    let reader = RowReader(origin: row);
+    out.writeln(reader.int("id").string() + " " + reader.text("name"));
+    let ended = try { await rows.row(); "more"; } catch e is RowsEnded { "ended"; };
+    rows.close();
+    out.writeln(ended);
+    0;
+}

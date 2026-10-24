@@ -1,0 +1,25 @@
+// Сохранить точное отношение сумм
+//
+// Сложить счётчики больше машинного int: BigInt и BigSum сохраняют точные целые произвольной длины.
+//
+// Запуск: ./examples/cookbook/run lab example-bigrational
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-bigrational
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "numbers/bigint" take BigInt;
+import "numbers/bigrational" take BigRational, BigRationalSum;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let third = BigRational(BigInt("1"), BigInt("3"));
+        let sixth = BigRational(BigInt("1"), BigInt("6"));
+        BigRationalSum(left: third, right: sixth).value().string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let a is @int = [1..5];
+    let b is @int = [1..=5];
+    let c is @int = [0, 2..=4, 9];
+    out.writeln(a.size().string() + " " + b.size().string());
+    let parts is @string = c.map() -> v { v.string(); };
+    out.writeln(parts.join(","));
+    0;
+}

@@ -1,0 +1,27 @@
+// Прочитать SAN, ключ и расширения сертификата
+//
+// Разобрать DER-сертификат партнёра: Certificate предоставляет имя, ключ, расширения и цепочку наблюдений.
+//
+// Запуск: ./examples/cookbook/run lab example-certificate-observers
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-certificate-observers
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "crypto/x509/certificate" take Certificate,CertificateNames,CertificateChain;
+import "crypto/x509/trust" take TrustStore,PemTrustStore,TrustedCertificates;
+import "encoding/base64" take Base64Decoded;
+import "encoding/pem" take PemEncoded;
+import "net/ip" take IpAddress;
+import "io/stdout" take Stdout;
+main() is int {
+    let certificate=Certificate(Base64Decoded("MIIDXTCCAkWgAwIBAgIBBzANBgkqhkiG9w0BAQsFADASMRAwDgYDVQQKDAdFeGFtcGxlMB4XDTIzMTExNDIyMTMyMFoXDTI3MDExNTA4MDAwMFowMTEQMA4GA1UECgwHRXhhbXBsZTEdMAoGA1UECwwDVExTMA8GA1UEAwwIb25lLnRlc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC1PT/xZlx3qpz+hOUpep7NNz+mzYhS+HimbPSNo9QbEfHBFLvrvjzCmgVImyPL0FOzwgzKs7hSHB/gL0ml2VTt98hZhoOzT6zaH0A90OwM1rq22OkGHzxmELJl9t2tFzbb6DtVr198Vj7bVpt8RCp+mLEkmsOP37W/7NW4ilPX+c2oMBvJj/MITXCeqLgp58KZRZn92VlJESzcRUuEjYR1TDQeyYIMO0DpaCL2+2nC2sg4Uldk6MSLWo+fEOBKSIf53xNXlc2gR/oG55tZV29gFwLseyMaluKo6b8xqpBa3AqJTmL7u4C2pTNkAkm9SLzq4vFbKT2767HcLIiueQ6JAgMBAAGjgZ4wgZswHQYDVR0OBBYEFICI7Y+9QxWMMKjkvhdeVAer1O9EMAkGA1UdIwQCMAAwHwYDVR0RBBgwFoIOKi5leGFtcGxlLnRlc3SHBMAAAgcwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCBaAwEQYJYIZIAYb4QgEBBAQDAgbAMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcDATANBgkqhkiG9w0BAQsFAAOCAQEAZOm1/tL+Q6lb3mxS6kMVU6NqIwVAcCq7cEaZGRqa+GF0ITgMi+bayJ2+KYzF/+sCfdqBgRVVOCN2uMOrnQPD9J6aJsUUWsl13v4kCNk9Ao1xMrM/y6ihiZfLnV528P5aTXqgMaaED32cN14US6zLXNH4NaifjYMOwENFwOUa8o5LOiuRsJDStfRgttiia0VceeCd2pMtMeedmDj086QHELQJXpUtd1GOI8+aF1hROE2LGN1Uml51zrS04mpIgC3CR6wQ34vz68SeegOlxB7G/uqRygcAsLvQ5C0nHku3uoHkzFjAdeK40eu9LRAFwTwEXgD9+IOeSai4Lqkkp234hg==").bytes());
+    let names=CertificateNames(certificate);
+    confirm names.dns().item(0)=="*.example.test";
+    confirm names.ips().item(0)==IpAddress("192.0.2.7");
+    let chain=CertificateChain([certificate]);confirm chain.certificates().size()==1;
+    let empty is TrustStore=TrustedCertificates([]);confirm empty.certificates().size()==0;
+    let roots is TrustStore=PemTrustStore(PemEncoded("CERTIFICATE",certificate.der()).string());
+    confirm roots.certificates().item(0)==certificate;
+    Stdout().writeln("SAN, supplied chain and explicit PEM roots verified as snapshots");0;
+}

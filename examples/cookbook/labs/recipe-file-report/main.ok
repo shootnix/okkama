@@ -1,0 +1,30 @@
+// Сохранить текстовый отчёт и прочитать его обратно
+//
+// После расчёта нужно записать UTF-8 файл и проверить его содержимое.
+//
+// Запуск: ./examples/cookbook/run lab recipe-file-report
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-file-report
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/file_report v1.0.0;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "fs/directory" take Directory;
+import "fs/temp" take TemporaryDirectory;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let scratch = TemporaryDirectory(Directory(Path(".")), "cookbook-report-");
+    defer scratch.close();
+    let path = scratch.path().child("report.txt");
+    let output = File(mode: FileMode.writing, path: path);
+    output.text().writeln("Заказов: 7");
+    output.close();
+    let input = File(mode: FileMode.reading, path: path);
+    defer input.close();
+    let text = input.text().line();
+    confirm text == "Заказов: 7";
+    Stdout().writeln(text);
+    0;
+}

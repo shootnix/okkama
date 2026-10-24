@@ -1,0 +1,27 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Echo<T> {
+    echo(value is T) is T;
+}
+
+object EchoBox<T> does Echo<T> {
+    has seed is T;
+    EchoBox(:seed);
+    echo(value is T) is T { value; }
+}
+
+object Wrapper<T> {
+    has inner is Echo<T>;
+    has sample is T;
+    Wrapper(:inner, :sample);
+    run() is T { inner.echo(sample); }
+}
+
+main() is int {
+    let out = Stdout();
+    let w = Wrapper(inner: EchoBox(seed: 2), sample: 3);
+    out.writeln(w.run().string());
+    0;
+}

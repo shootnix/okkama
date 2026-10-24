@@ -1,0 +1,8 @@
+module example v1.0.0;
+import "http/xmlrpc" take XmlRpcCall,XmlRpcInteger,XmlRpcText,XmlRpcCallWire,ParsedXmlRpcCall,XmlRpcLimits;
+import "io/stdout" take Stdout;
+main() is int{
+    let limits=XmlRpcLimits();let call=XmlRpcCall("customer.save",[XmlRpcInteger(7),XmlRpcText("Ada")]);
+    let parsed=ParsedXmlRpcCall(XmlRpcCallWire(call,limits).bytes(),limits).call();
+    Stdout().writeln(parsed.method()+" "+parsed.parameters().size().string());0;
+}

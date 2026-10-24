@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln((byte(12) & byte(10)).string());
+    out.writeln((~byte(0)).string());
+    out.writeln(if (byte(240) | byte(15)) == byte(255) { "byte 255"; } else { "?"; });
+    out.writeln(if (byte(1) ^ byte(3)) == byte(2) { "byte 2"; } else { "?"; });
+    0;
+}

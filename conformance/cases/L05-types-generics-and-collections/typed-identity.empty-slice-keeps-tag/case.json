@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.typed-identity.empty-slice-keeps-tag",
+  "title": "an empty slice of @int remains @int",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.TYPED-IDENTITY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage (spec 6.3: a static pass may diagnose boundary mismatches before execution). The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6.2: even empty slice()/keys()/values() results remember their element type."
+  },
+  "status": "mandatory"
+}

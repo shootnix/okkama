@@ -1,0 +1,9 @@
+module runtime/decimal v1.0.0;
+
+// Backend-neutral exact decimal decomposition. Every runtime provider must
+// implement this contract without a binary floating-point round trip.
+native decimal_valid(origin is string) is bool;
+native decimal_canonical(origin is string) is string;
+native decimal_coefficient(origin is string) is string;
+native decimal_exponent(origin is string) is int;
+native decimal_order(left is string, right is string) is int;

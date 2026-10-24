@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let total = [1, 2, 3, 4]
+        .filter() -> v { v % 2 == 0; }
+        .map() -> v { v * 10; }
+        .reduce(0) -> acc, v { acc + v; };
+    out.writeln(total.string());
+    for ([1, 2].map() -> v { v + 1; }) -> d {
+        out.writeln(d.string());
+    }
+    0;
+}

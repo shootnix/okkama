@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anon.compose",
+  "title": "higher-order composition",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "CALL.ACTION-TYPES",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "12\n11\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5.1 example: compose(first, second)(v) = second(first(v)); (5+1)*2 = 12 and 5*2+1 = 11."
+  },
+  "status": "mandatory"
+}

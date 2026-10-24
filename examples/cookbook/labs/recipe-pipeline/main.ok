@@ -1,0 +1,24 @@
+// Преобразовать вывод программы следующей командой
+//
+// Нужен простой конвейер обработки текста с отдельными argv каждой программы.
+//
+// Запуск: ./examples/cookbook/run lab recipe-pipeline
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-pipeline
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/pipeline v1.0.0;
+import "os/command" take InheritedCommand;
+import "os/pipeline_capture" take PipelineCapture;
+import "fs/path" take Path;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let producer = InheritedCommand(program: Path("/usr/bin/printf"), arguments: ["%s", "order-ready"]);
+    let consumer = InheritedCommand(program: Path("/usr/bin/tr"), arguments: ["a-z", "A-Z"]);
+    let completed = await PipelineCapture(commands: [producer, consumer], limit: 4096).completion();
+    confirm Utf8Decoded(completed.output()).string() == "ORDER-READY";
+    Stdout().writeln(Utf8Decoded(completed.output()).string());
+    0;
+}

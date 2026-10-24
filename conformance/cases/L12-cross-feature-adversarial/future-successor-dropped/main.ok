@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+object Counter {
+    has n is int;
+    Counter(:n);
+    async bumped() is ^Counter { ^n = n + 1; }
+}
+
+async main() is int {
+    await Counter(n: 1).bumped();
+    0;
+}

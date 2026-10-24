@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "checksum/crc" take Crc32, Crc16Ccitt;
+import "checksum/state" take InvalidChecksumInitial;
+import "encoding/utf" take Utf8Encoded;
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("crc32 check value", Crc32(Utf8Encoded(origin: "123456789").bytes()).value(), 3421780262);
+    c = c.same_int("crc32 chunked", Crc32(Utf8Encoded(origin: "1234").bytes()).state(Utf8Encoded(origin: "56789").bytes()).value(), 3421780262);
+    c = c.same_int("crc32 empty", Crc32().value(), 0);
+    c = c.same_int("crc16 seed 65535", Crc16Ccitt(Utf8Encoded(origin: "123456789").bytes(), 65535).value(), 10673);
+    c = c.same_int("crc16 seed 0", Crc16Ccitt(Utf8Encoded(origin: "123456789").bytes(), 0).value(), 12739);
+    c = c.same_text("invalid seed", try { let probe = Crc32(@byte(), -1).value(); "no error"; } catch e is InvalidChecksumInitial { "rejected"; }, "rejected");
+    c.done();
+}

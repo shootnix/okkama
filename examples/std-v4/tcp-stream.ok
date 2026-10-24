@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance,TcpConnection;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+async main() is int {
+    let listener is TcpAcceptance=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let accepting is async () is TcpConnection=listener.connection;let pending=spawn accepting();
+    let client=await TcpConnecting(listener.local_endpoint()).connection();defer client.close();let server=await pending;defer server.close();
+    await client.output().write(ByteSnapshot([7.byte(),8.byte()]));
+    let input=server.input();confirm (await input.bytes(1))[0].int()==7 && (await input.bytes(1))[0].int()==8;
+    server.output().close();confirm (await client.input().bytes(1)).size()==0;
+    confirm !server.closed();Stdout().writeln("TCP loopback and half shutdown verified");0;
+}

@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "url/value" take ParsedUrl, ParsedUrlReference, UrlResolution, UrlQuery;
+import "url/query" take ParsedQueryParameters, MissingQueryParameter;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("g").value()).value().string(), "http://a/b/c/g");
+    c = c.same_text("./g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("./g").value()).value().string(), "http://a/b/c/g");
+    c = c.same_text("g/", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("g/").value()).value().string(), "http://a/b/c/g/");
+    c = c.same_text("/g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("/g").value()).value().string(), "http://a/g");
+    c = c.same_text("//g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("//g").value()).value().string(), "http://g");
+    c = c.same_text("?y", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("?y").value()).value().string(), "http://a/b/c/d;p?y");
+    c = c.same_text("g?y", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("g?y").value()).value().string(), "http://a/b/c/g?y");
+    c = c.same_text("#s", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("#s").value()).value().string(), "http://a/b/c/d;p?q#s");
+    c = c.same_text("..", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("..").value()).value().string(), "http://a/b/");
+    c = c.same_text("../g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("../g").value()).value().string(), "http://a/b/g");
+    c = c.same_text("../../g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("../../g").value()).value().string(), "http://a/g");
+    c = c.same_text("../../../g", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("../../../g").value()).value().string(), "http://a/g");
+    c = c.same_text("./g/.", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("./g/.").value()).value().string(), "http://a/b/c/g/");
+    c = c.same_text("g;x=1/../y", UrlResolution(base: ParsedUrl("http://a/b/c/d;p?q").value(), reference: ParsedUrlReference("g;x=1/../y").value()).value().string(), "http://a/b/c/y");
+    c.done();
+}

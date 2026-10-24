@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.contextual.has-action-and-field",
+  "title": "has(...) is an action label beside has field declarations",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.CONTEXTUAL-NAMES",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "has 2\nno 9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 4.1: in an object body `has(...)` is an action label while `has field is Type;` is state; filter keeps matches."
+  },
+  "status": "mandatory"
+}

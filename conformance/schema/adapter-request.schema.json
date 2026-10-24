@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-adapter-request/1",
+  "title": "Adapter request",
+  "type": "object",
+  "required": [
+    "protocol",
+    "mode",
+    "sources",
+    "args",
+    "cwd",
+    "stdlib_root",
+    "timeout_s"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "ocs-adapter/1"
+    },
+    "mode": {
+      "enum": [
+        "parse",
+        "check",
+        "run",
+        "test"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "stdlib_root": {
+      "type": "string"
+    },
+    "timeout_s": {
+      "type": "number"
+    }
+  }
+}

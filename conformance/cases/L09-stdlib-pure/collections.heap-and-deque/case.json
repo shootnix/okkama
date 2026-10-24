@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.collections.heap-and-deque",
+  "title": "persistent heap and deque",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.COLLECTIONS.HEAP",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.COLLECTIONS.DEQUE",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - heap top\nok 2 - heap remainder top\nok 3 - heap persistence\nok 4 - deque front\nok 5 - deque back after addition\nok 6 - deque item\nok 7 - empty deque access\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/heap.ok",
+    "std/collections/deque.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "collections/heap: top() is the least value and earlier heaps remain valid; collections/deque: end operations return new deques; empty endpoint access throws EmptyDequeAccess. Builtin arrays are Iterating evidence (LLM context 21)."
+  },
+  "status": "mandatory"
+}

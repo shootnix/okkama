@@ -1,0 +1,109 @@
+module cli/help v1.0.0;
+import "cli/spec" take CliCommand,OperandCardinality;
+import "terminal/width" take WrappedDisplay,DisplayWidth;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Encoded;
+
+enum CompletionShell=(bash,zsh,fish);
+object Usage{
+    has origin is CliCommand;has program is string;has width is int;
+    Usage(origin is CliCommand,program is string,width is int){self.origin=origin;self.program=program;self.width=width;}
+    string() is string{
+        confirm width>=8 else throw InvalidHelpWidth();
+        DisplayWidth(program).value();
+        let syntax=origin.syntax();
+        let options=if syntax.options().size()+syntax.flags().size()>0{" [OPTIONS]";}else{"";};
+        let operands_lines is @string=syntax.operands().map()->operand{
+            let value=operand.name()+if operand.cardinality()==OperandCardinality.repeated{"...";}else{"";};
+            " "+if operand.cardinality()==OperandCardinality.required{"<"+value+">";}else{"["+value+"]";};
+        };
+        let operands=operands_lines.join("");        let children=if origin.children().size()>0{" <COMMAND>";}else{"";};
+        let values_lines is @string=syntax.options().map()->option{
+            let names is @string=option.names().map()->name{name;};
+            "  "+names.join(", ")+" <"+option.value().name()+">"
+                +if option.value().repeated(){"...";}else{"";}+"\n    "+option.help()+"\n";
+        };
+        let values=values_lines.join("");        let flags_lines is @string=syntax.flags().map()->flag{let names is @string=flag.names().map()->name{name;};"  "+names.join(", ")+"\n    "+flag.help()+"\n";};
+        let flags=flags_lines.join("");        let files_lines is @string=syntax.operands().map()->operand{
+            "  "+operand.name()+if operand.cardinality()==OperandCardinality.repeated{"...";}else{"";}+"\n    "+operand.help()+"\n";
+        };
+        let files=files_lines.join("");        let commands_lines is @string=origin.children().map()->child{"  "+child.name()+"\n    "+child.summary()+"\n";};
+        let commands=commands_lines.join("");        let text="Usage: "+program+options+operands+children+"\n"+origin.summary()+"\n"
+            +if values+flags!=""{"\nOptions:\n"+values+flags;}else{"";}
+            +if files!=""{"\nOperands:\n"+files;}else{"";}
+            +if commands!=""{"\nCommands:\n"+commands;}else{"";};
+        WrappedDisplay(text,width).string();
+    }
+}
+// Static union of declared aliases and child names. No runtime callbacks,
+// filesystem suggestions or implicit option-value guesses are installed.
+object ShellCompletion{
+    has origin is CliCommand;has program is string;has shell is CompletionShell;
+    ShellCompletion(origin is CliCommand,program is string,shell is CompletionShell){self.origin=origin;self.program=program;self.shell=shell;}
+    string() is string{
+        DisplayWidth(program).value();
+        let codes is @string=Utf8Encoded(program).bytes().map()->octet{octet.int().string();};
+        let function="_okkama_"+codes.join("_");
+        let words=CompletionWords(origin).items();
+        if shell==CompletionShell.fish{
+            let lines is @string=words.map()->word{
+                let declaration=if word.length()>2 && word.slice(0,2)=="--"{
+                    " -l "+FishCompletionLiteral(word.slice(2,word.length())).string();
+                }else{if word.length()==2 && word.slice(0,1)=="-"{
+                    " -s "+FishCompletionLiteral(word.slice(1,2)).string();
+                }else{" -a "+FishCompletionLiteral(FishCompletionLiteral(word).string()).string();}};
+                "complete -c "+FishCompletionLiteral(program).string()+" -f"+declaration+"\n";
+            };
+            if words.size()>0{lines.join("");}else{"complete -c "+FishCompletionLiteral(program).string()+" -f\n";}
+        }else{
+            let quoted is @string=words.map()->word{CompletionLiteral(word).string();};
+            let literals=quoted.join(" ");
+            if shell==CompletionShell.bash{
+                let iteration=if words.size()>0{"  for candidate in "+literals+"; do\n    if [[ \"$candidate\" == \"$cur\"* ]]; then COMPREPLY+=(\"$candidate\"); fi\n  done\n";}else{"";};
+                function+"() {\n  local candidate cur=\"${COMP_WORDS[COMP_CWORD]}\"\n  COMPREPLY=()\n"+iteration+"}\ncomplete -F "+function+" -- "+CompletionLiteral(program).string()+"\n";
+            }else{
+                let operation=if words.size()>0{"  compadd -- "+literals+"\n";}else{"  return 0\n";};
+                function+"() {\n"+operation+"}\ncompdef "+function+" "+CompletionLiteral(program).string()+"\n";
+            }
+        }
+    }
+}
+object CompletionWords{
+    has origin is @string;
+    CompletionWords(command is CliCommand){
+        let all=command.syntax().options().reduce(CompletionNames())->old,option{
+            option.names().reduce(old)->state,name{state.added(name);};
+        };
+        let flags=command.syntax().flags().reduce(all)->old,flag{
+            flag.names().reduce(old)->state,name{state.added(name);};
+        };
+        let children=command.children().reduce(flags)->old,child{
+            CompletionWords(child).items().reduce(old.added(child.name()))->state,name{state.added(name);};
+        };
+        origin=children.items();
+    }
+    items() is @string{origin;}
+}
+object CompletionNames{
+    has origin is @string;
+    CompletionNames(){origin=[];}
+    added(name is string) is ^CompletionNames{
+        let found=origin.reduce(false)->old,value{old || value==name;};
+        if !found{
+            let revised is @string=(0..origin.size()+1).map()->index{if index<origin.size(){origin[index];}else{name;}};
+            ^origin=revised;
+        }
+    }
+    items() is @string{origin;}
+}
+object CompletionLiteral{
+    has origin is string;
+    CompletionLiteral(origin is string){self.origin=origin;}
+    string() is string{"'"+origin.replace("'","'\"'\"'")+"'";}
+}
+object FishCompletionLiteral{
+    has origin is string;
+    FishCompletionLiteral(origin is string){self.origin=origin;}
+    string() is string{"'"+origin.replace("\\","\\\\").replace("'","\\'")+"'";}
+}
+object InvalidHelpWidth does Error{InvalidHelpWidth();text() is string{"help width must be at least eight columns";}}

@@ -1,0 +1,32 @@
+module http/exchange v1.0.0;
+import "http/message" take Request,Response;
+import "http/version" take HttpVersion;
+import "net/stream" take ConnectionEndpoints;
+import "net/endpoint" take IpEndpoint;
+import "net/tls" take TlsDetails;
+import "collections/sequence" take Sequencing;
+import "error" take InvalidArgument;
+
+object ExchangeDetails {
+    has endpoints is ConnectionEndpoints<IpEndpoint>;has tls is @TlsDetails;has version is HttpVersion;
+    ExchangeDetails(endpoints is ConnectionEndpoints<IpEndpoint>,version is HttpVersion){self.endpoints=endpoints;self.version=version;tls=[];}
+    ExchangeDetails(endpoints is ConnectionEndpoints<IpEndpoint>,version is HttpVersion,tls is TlsDetails){self.endpoints=endpoints;self.version=version;self.tls=[tls];}
+    endpoints() is ConnectionEndpoints<IpEndpoint>{endpoints;}version() is HttpVersion{version;}secure() is bool{tls.size()==1;}
+    tls() is TlsDetails{confirm tls.size()==1 else throw PlainHttpHasNoTls();tls[0];}
+}
+object PlainHttpHasNoTls does Error{PlainHttpHasNoTls();text() is string{"plaintext HTTP exchange has no TLS details";}}
+object ExchangeHop {
+    has request is Request;has response is Response;
+    ExchangeHop(request is Request,response is Response){self.request=request;self.response=response;}
+    request() is Request{request;}response() is Response{response;}
+}
+object ClientResponse {
+    has request is Request;has response is Response;has history is @ExchangeHop;has details is ExchangeDetails;
+    ClientResponse(request is Request,response is Response,details is ExchangeDetails){self.request=request;self.response=response;self.details=details;history=[];}
+    ClientResponse(request is Request,response is Response,history is Sequencing<ExchangeHop>,details is ExchangeDetails){
+        let count=history.size();confirm count>=0 && count<=20 else throw InvalidArgument("HTTP history limit");
+        let snapshot is @ExchangeHop=(0..count).map()->index{history.item(index);};
+        self.request=request;self.response=response;self.history=snapshot;self.details=details;
+    }
+    request() is Request{request;}response() is Response{response;}history() is Sequencing<ExchangeHop>{history;}details() is ExchangeDetails{details;}
+}

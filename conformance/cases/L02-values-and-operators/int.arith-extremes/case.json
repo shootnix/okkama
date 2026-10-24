@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.int.arith-extremes",
+  "title": "int arithmetic at the signed 64-bit extremes without overflow",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-ARITH",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "LEX.INT-LITERALS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9223372036854775806\n-9223372036854775808\n-1\n7\n9223372036854775807\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3",
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Values stay inside -2^63..2^63-1, so no overflow semantics are involved: min+max = -1, max % 10 = 7."
+  },
+  "status": "mandatory"
+}

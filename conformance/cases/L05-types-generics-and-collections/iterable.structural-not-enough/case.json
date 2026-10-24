@@ -1,0 +1,62 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.iterable.structural-not-enough",
+  "title": "matching method names without the role are not iterable",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ITERABLE",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "TYPE.NOMINAL",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage (spec 6.3: a static pass may diagnose boundary mismatches before execution). The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.9: matching action names alone do not make an object iterable; it must explicitly implement the std role."
+  },
+  "status": "mandatory",
+  "notes": "D-036"
+}

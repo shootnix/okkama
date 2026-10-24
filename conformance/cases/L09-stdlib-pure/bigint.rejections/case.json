@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.bigint.rejections",
+  "title": "big integer errors",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.NUMBERS.BIGINT",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.NUMBERS.BIGRATIONAL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - plus sign\nok 2 - whitespace\nok 3 - division by zero\nok 4 - zero denominator\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/numbers/bigint.ok",
+    "std/numbers/bigrational.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "numbers/bigint never accepts `+` or whitespace; division by zero throws BigDivisionByZero; a zero rational denominator is rejected."
+  },
+  "status": "mandatory"
+}

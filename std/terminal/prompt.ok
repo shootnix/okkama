@@ -1,0 +1,31 @@
+module terminal/prompt v1.0.0;
+import "terminal/session" take TerminalSession;
+import "terminal/mode" take TerminalMode;
+import "terminal/error" take TerminalUnavailable,TerminalInputLimit;
+import "async/event" take Event;
+object PromptedLine{
+    has origin is TerminalSession;has prompt is string;has limit is int;
+    PromptedLine(origin is TerminalSession,prompt is string,limit is int){self.origin=origin;self.prompt=prompt;self.limit=limit;}
+    async string() is string{
+        confirm limit>0 && limit<=1048576 else throw TerminalInputLimit();
+        origin.output().write(prompt);origin.output().flush();await origin.input().line(limit);
+    }
+}
+object PromptedSecret{
+    has origin is TerminalSession;has prompt is string;has limit is int;
+    PromptedSecret(origin is TerminalSession,prompt is string,limit is int){self.origin=origin;self.prompt=prompt;self.limit=limit;}
+    async string() is string{
+        confirm limit>0 && limit<=1048576 else throw TerminalInputLimit();
+        confirm origin.controlling() && origin.capabilities().input_interactive()
+            else throw TerminalUnavailable("secret input requires a controlling terminal");
+        let complete=Event();let cleanup=SecretPromptCleanup(origin,complete);defer cleanup.close();
+        let lease=origin.apply(TerminalMode.secret);defer lease.close();
+        origin.output().write(prompt);origin.output().flush();let result=await origin.input().line(limit);
+        complete.set();result;
+    }
+}
+object SecretPromptCleanup{
+    has origin is TerminalSession;has complete is Event;
+    SecretPromptCleanup(origin is TerminalSession,complete is Event){self.origin=origin;self.complete=complete;}
+    close() is void{if !complete.ready(){origin.close();}}
+}

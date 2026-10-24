@@ -1,0 +1,28 @@
+module runtime/time_zone v1.0.0;
+
+native timezone_version() is string;
+native timezone_known(name is string) is bool;
+native timezone_offset(name is string, instant is rat) is int;
+native timezone_daylight(name is string, instant is rat) is bool;
+native timezone_abbreviation(name is string, instant is rat) is string;
+native timezone_local_candidates(
+    name is string,
+    year is int,
+    month is int,
+    day is int,
+    hour is int,
+    minute is int,
+    second is int,
+    nanosecond is int,
+) is int;
+native timezone_local_instant(
+    name is string,
+    year is int,
+    month is int,
+    day is int,
+    hour is int,
+    minute is int,
+    second is int,
+    nanosecond is int,
+    later is bool,
+) is rat;

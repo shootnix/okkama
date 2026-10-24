@@ -1,0 +1,21 @@
+// Закодировать вложение для письма
+//
+// Выбрать кодирование тела письма: TransferEncodedBody и TransferDecodedBody связывают bytes с Content-Transfer-Encoding.
+//
+// Запуск: ./examples/cookbook/run lab example-mime-transfer
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-mime-transfer
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mime/transfer" take TransferEncoding, TransferEncodedBody, TransferDecodedBody;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+main() is int {
+    let source=ByteSnapshot(Utf8Encoded("Привет, MIME!\r\n").bytes());
+    let encoded=TransferEncodedBody(source,TransferEncoding.base64);
+    Stdout().writeln(Utf8Decoded(encoded.bytes()).string());
+    Stdout().writeln(Utf8Decoded(TransferDecodedBody(encoded,TransferEncoding.base64).bytes()).string());
+    0;
+}

@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.float.text-shortest-round-trip",
+  "title": "floats print as the shortest round-trip decimal text",
+  "purpose": "Non-terminating binary values print with the fewest digits that read back to the same float.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.FLOAT-TEXT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0.30000000000000004\n1.2100000000000002\n0.3333333333333333\n0.6666666666666666\n0.5\n3\n123.456\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6",
+    "contracts/DISCREPANCY-LEDGER.md#d-032"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-032): float text is Go strconv.FormatFloat(x, 'g', -1, 64) (oracle: go1.26.1, runtime values; digits cross-checked with Python repr)."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-009"
+  ]
+}

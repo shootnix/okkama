@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "db/sqlite" take SqliteMemory;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbInteger, DbText, DbDecimal, DbNull, ObservedDbValue;
+import "db/row" take RowsEnded;
+import "db/read" take RowReader;
+import "db/error" take DbFailure;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "compare" take Order;
+
+async main() is int {
+    let out = Stdout();
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE amounts(big INTEGER, money TEXT, empty TEXT)"));
+    await connection.execution(Statement("INSERT INTO amounts VALUES(?, ?, ?)", [DbInteger(BigInt("9223372036854775807")), DbDecimal(Decimal("12345678901234567890.01")), DbNull()]));
+    let rows = await connection.rows(Statement("SELECT big, money, empty FROM amounts"));
+    let row = await rows.row();
+    rows.close();
+    out.writeln(ObservedDbValue(row.value("big")).integer().string());
+    let stored = Decimal(ObservedDbValue(row.value("money")).text());
+    out.writeln(if stored.order(Decimal("12345678901234567890.01")) == Order.equal { "decimal exact"; } else { "decimal changed"; });
+    let empty_text = try { RowReader(origin: row).text("empty"); } catch e is Error { "null is not text"; };
+    out.writeln(empty_text);
+    0;
+}

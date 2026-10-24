@@ -1,0 +1,35 @@
+// Частоты слов и текстовая диаграмма
+// Задача: Посчитать слова в тексте и вывести десять самых частых.
+// Запуск из корня: ./examples/gallery/run wordcount
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: RegexMatches, Frequencies, Comparing и стабильный порядок.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/wordcount.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/wordcount v1.0.0;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+import "collections/frequencies" take Frequencies;
+import "collections/ordering" take Sorted;
+import "compare" take Comparing,Order;
+import "encoding/single_byte" take AsciiEncoded,AsciiDecoded;
+import "io/stdout" take Stdout;
+object WordCount does Comparing<WordCount> {
+    has word is string;has amount is int;
+    WordCount(word is string,amount is int){self.word=word;self.amount=amount;}
+    word() is string{word;}amount() is int{amount;}
+    order(other is WordCount) is Order{
+        let count=other.amount().order(amount);
+        if count==Order.equal{word.order(other.word());}else{count;}
+    }
+    string() is string{word+" "+amount.string()+" "+((0..amount).map()->i{"#";}).join("");}
+}
+main() is int {
+    let text="The fog comes on little cat feet. It sits looking over harbour and city on silent haunches and then moves on. The fog is grey, the fog is soft, the fog is everywhere the city looks; and the little cat of the fog moves on and on over the harbour, over the city, and then the fog is gone.";
+    let lowercase is @byte=AsciiEncoded(text).bytes().map()->octet{let code=octet.int();if code>=65 && code<=90{(code+32).byte();}else{octet;}};
+    let words=RegexMatches(AsciiDecoded(lowercase).string(),Regex("[a-z']+")).map()->found{found.text();};
+    let counts=Frequencies(words);let ordered=Sorted(counts.map()->entry{WordCount(entry.item(),entry.amount());});
+    confirm counts.amount("the")==10 && counts.amount("fog")==6;
+    Stdout().writeln("Words: "+counts.total().string()+"; unique: "+counts.size().string());
+    for (0..10)->i{Stdout().writeln(ordered.item(i).string());}0;
+}

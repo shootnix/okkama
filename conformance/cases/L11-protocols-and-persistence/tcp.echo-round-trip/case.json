@@ -1,0 +1,60 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.tcp.echo-round-trip",
+  "title": "TCP connect, write, read and close against a loopback peer",
+  "purpose": "Exercise a protocol boundary against a suite-owned loopback fixture.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.NET.TCP",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.NET.STREAM",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "args": [
+    "{fixture.tcp-echo.port}"
+  ],
+  "requires": {
+    "environment": [
+      "stdout",
+      "args",
+      "loopback-network"
+    ],
+    "fixtures": [
+      "tcp-echo"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "echo:hello\n"
+    }
+  },
+  "spec_refs": [
+    "std/net/tcp.ok",
+    "std/net/stream.ok",
+    "conformance/fixtures/tcp-echo/server.py"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "The fixture replies `echo:` plus the received line; the reply (11 bytes) arrives on the stream input."
+  },
+  "status": "mandatory",
+  "notes": "A single read is used; the fixture writes the whole reply with one sendall on loopback. If an implementation legitimately returns a shorter prefix, the case reports a FAIL rather than a false pass."
+}

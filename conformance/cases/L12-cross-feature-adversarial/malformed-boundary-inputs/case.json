@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.malformed-boundary-inputs",
+  "title": "malformed bytes are rejected at decoding boundaries with typed errors",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.MALFORMED-BOUNDARY",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "4\ninvalid utf-8 at 2\ntoo deep\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/utf.ok",
+    "std/json/parse.ok",
+    "std/fs/file.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Raw bytes are not decoded implicitly; strict UTF-8 reports the offset of 0xFF (2); json/parse enforces maximum_depth (root depth 1) with InvalidJson."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.object.generic-trailing-comma",
+  "title": "generic parameter lists accept a trailing comma",
+  "purpose": "Syntax acceptance of the construct.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.OBJECT-DECL",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "GRAM.TRAILING-COMMA",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success"
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: generic_params = \"<\" TYPE_NAME (\",\" TYPE_NAME)* \",\"? \">\"."
+  },
+  "status": "mandatory"
+}

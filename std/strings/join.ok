@@ -1,0 +1,73 @@
+module strings/join v1.0.0;
+
+import "collections/iteration" take Iterating;
+import "collections/list" take List, EmptyList;
+
+// A bounded snapshot of strings and their literal separator.
+// Construction traverses the source once; string() observes only the snapshot.
+object Joined {
+    has snapshot is JoinedParts;
+    Joined(separator is string, values is Iterating<string>) {
+        snapshot = values.reduce(JoinedParts(separator, 10000, 1048576)) -> parts, value {
+            parts.following(value);
+        };
+    }
+    Joined(separator is string, values is Iterating<string>, maximum_items is int,
+        maximum_length is int) {
+        confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits();
+        snapshot = values.reduce(JoinedParts(separator, maximum_items, maximum_length)) -> parts, value {
+            parts.following(value);
+        };
+    }
+    #projected
+    string() is string { snapshot.string(); }
+}
+
+// Importable immutable snapshot collaborator; no module-private declarations.
+object JoinedParts {
+    has separator is string;
+    has maximum_items, maximum_length is int;
+    has used is int = 0;
+    has values is List<string>;
+    JoinedParts(separator is string, maximum_items is int, maximum_length is int) {
+        confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits();
+        self.separator = separator;
+        self.maximum_items = maximum_items;
+        self.maximum_length = maximum_length;
+        let empty is List<string> = EmptyList();
+        values = empty;
+    }
+    following(value is string) is ^JoinedParts {
+        confirm values.size() < maximum_items else throw JoinLimitExceeded(JoinLimit.items);
+        let gap = if values.size() > 0 { separator.length(); } else { 0; };
+        confirm gap <= maximum_length - used else throw JoinLimitExceeded(JoinLimit.length);
+        confirm value.length() <= maximum_length - used - gap
+            else throw JoinLimitExceeded(JoinLimit.length);
+        ^used = used + gap + value.length();
+        ^values = values.prefix(value);
+    }
+    string() is string {
+        let backwards is @string = values.map() -> value { value; };
+        let ordered is @string = (0..backwards.size()).map() -> index {
+            backwards[backwards.size() - 1 - index];
+        };
+        ordered.join(separator);
+    }
+}
+
+enum JoinLimit = (items, length);
+object InvalidJoinLimits does Error {
+    InvalidJoinLimits();
+    text() is string { "join limits must be nonnegative"; }
+}
+object JoinLimitExceeded does Error {
+    has limit is JoinLimit;
+    JoinLimitExceeded(limit is JoinLimit) { self.limit = limit; }
+    kind() is JoinLimit { limit; }
+    text() is string {
+        match limit {
+            case JoinLimit.items { "joined item limit exceeded"; }
+            case JoinLimit.length { "joined length limit exceeded"; }
+        }
+    }
+}

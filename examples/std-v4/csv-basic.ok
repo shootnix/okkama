@@ -1,0 +1,14 @@
+module app v1.0.0;
+import "csv" take CsvString;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let rows is @@string = [["name", "note"], ["Ada", "commas, and quotes: \""]];
+        CsvString(rows: rows).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

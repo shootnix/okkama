@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Broken does Error {
+    Broken();
+}
+
+main() is int {
+    let out = Stdout();
+    let e = Broken();
+    out.writeln("unreachable");
+    0;
+}

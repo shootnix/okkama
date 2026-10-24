@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Problem does Error {
+    Problem();
+    text() is string { "problem"; }
+}
+
+main() is int {
+    let out = Stdout();
+    confirm true;
+    confirm 1 < 2 else throw Problem();
+    confirm 2 > 1 else panic "never";
+    out.writeln("confirmed");
+    0;
+}

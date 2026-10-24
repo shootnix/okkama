@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln((rat(1, 2) + 1.rat()).string());
+    out.writeln((rat(1, 2) * rat(2, 3)).string());
+    out.writeln((rat(1, 2) - byte(1).rat()).string());
+    out.writeln((-rat(1, 3)).string());
+    out.writeln(rat(7, 2).int().string());
+    out.writeln(rat(-7, 2).int().string());
+    out.writeln(rat(1, 4).float().string());
+    out.writeln(if rat(1, 2) < 1.rat() { "less"; } else { "?"; });
+    0;
+}

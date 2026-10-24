@@ -1,0 +1,45 @@
+module crypto/x509/name v1.0.0;
+import "collections/sequence" take Sequencing;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+import "strings/parse" take ParsedInt;
+
+object NameAttribute {
+    has identifier,value is string;
+    NameAttribute(identifier is string,value is string){
+        confirm identifier.length()<=1024 && value.length()<=4096 else throw InvalidDistinguishedName("attribute limit exceeded");
+        confirm RegexMatches(identifier,Regex("^[012]\\.(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))*$")).found()
+            else throw InvalidDistinguishedName("canonical dotted OID required");
+        let parts=identifier.split(".");confirm parts.size()<=128 else throw InvalidDistinguishedName("OID arc limit exceeded");
+        if parts[0]!="2"{confirm parts[1].length()<=2 && ParsedInt(parts[1]).value()<=39 else throw InvalidDistinguishedName("OID second arc outside root range");}
+        self.identifier=identifier;self.value=value;
+    }
+    identifier() is string{identifier;}value() is string{value;}
+}
+object RelativeDistinguishedName {
+    has origin is @NameAttribute;has cost is int;
+    RelativeDistinguishedName(attributes is Sequencing<NameAttribute>){
+        let count=attributes.size();confirm count>0 && count<=32 else throw InvalidDistinguishedName("RDN attribute count outside limits");
+        let values is @NameAttribute=(0..count).map()->index{attributes.item(index);};
+        let cost=values.reduce(0)->sum,item{sum+item.identifier().length()+item.value().length();};
+        confirm cost<=65536 else throw InvalidDistinguishedName("RDN scalar budget exceeded");origin=values;self.cost=cost;
+    }
+    attributes() is Sequencing<NameAttribute>{origin;}scalars() is int{cost;}
+}
+object DistinguishedName {
+    has origin is @RelativeDistinguishedName;
+    DistinguishedName(relative_names is Sequencing<RelativeDistinguishedName>){
+        let count=relative_names.size();confirm count>=0 && count<=128 else throw InvalidDistinguishedName("DN group count outside limits");
+        let values is @RelativeDistinguishedName=(0..count).map()->index{relative_names.item(index);};
+        let cost=values.reduce(0)->sum,item{sum+item.scalars();};confirm cost<=65536 else throw InvalidDistinguishedName("DN scalar budget exceeded");origin=values;
+    }
+    relative_names() is Sequencing<RelativeDistinguishedName>{origin;}
+}
+object InvalidDistinguishedName does Error {
+    has reason is string;InvalidDistinguishedName(reason is string){self.reason=reason;}reason() is string{reason;}
+    text() is string{"invalid distinguished name: "+reason;}
+}
+test "two attributes in one RDN retain their membership" {
+    let name=DistinguishedName([RelativeDistinguishedName([NameAttribute("2.5.4.3","a"),NameAttribute("2.5.4.10","b")])]);
+    test.is(name.relative_names().size(),1);test.is(name.relative_names().item(0).attributes().size(),2);
+}

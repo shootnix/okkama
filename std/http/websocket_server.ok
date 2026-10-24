@@ -1,0 +1,56 @@
+module http/websocket_server v1.0.0;
+import "http/websocket" take WebSocketConnection,WebSocketLimits,WebSocketFailure;
+import "http/websocket_handshake" take WebSocketServerHandshake,WebSocketProtocols;
+import "http/websocket_origin" take WebSocketAllowing;
+import "http/websocket_session" take WebSocketSession;
+import "http/internal/websocket_upgrade" take WebSocketPrefixedInput,WebSocketOpeningCleanup;
+import "http/internal/websocket_output" take WebSocketOutputSettlement;
+import "http/http1_reading" take Http1HeadRead;
+import "http/http1_head" take Http1RequestHead,Http1ResponseHead;
+import "http/http1_writing" take Http1ResponseHeadWriting;
+import "http/body" take EmptyBody;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "io/stream" take Closing;
+import "url/value" take Url;
+import "time/duration" take Duration;
+import "time/clock" take Timing;
+import "random/source" take SecureRandom;
+import "async/scope" take FutureGroup;
+import "async/event" take Event;
+import "async/timeout" take Within;
+
+// Explicit upgrade policy. Origin approval is mandatory; server preference
+// orders subprotocol selection. No extension negotiation is implicit.
+object WebSocketUpgrade {
+    has protocols is WebSocketProtocols;has limits is WebSocketLimits;has access is WebSocketAllowing;has deadline is Duration;
+    WebSocketUpgrade(protocols is @string,limits is WebSocketLimits,access is WebSocketAllowing,deadline is Duration){self.protocols=WebSocketProtocols(protocols);self.limits=limits;self.access=access;confirm deadline.seconds()>0.rat() else throw WebSocketFailure("positive server upgrade deadline required");self.deadline=deadline;}
+    protocols() is @string{protocols.values();}limits() is WebSocketLimits{limits;}access() is WebSocketAllowing{access;}deadline() is Duration{deadline;}
+}
+// Dedicated server consumer adopts one HTTP1 head plus its exact over-read tail
+// and the owned transport. The caller keeps the ordinary request handler scope
+// separate from the eventual WebSocket application lifetime.
+object WebSocketAccepting {
+    has waiting is Future<WebSocketSession>;
+    WebSocketAccepting(input is AsyncReading,output is AsyncWriting,owner is Closing,head is Http1HeadRead<Http1RequestHead>,destination is Url,upgrade is WebSocketUpgrade,clock is Timing){
+        let operation=WebSocketServerOpening(input,output,owner,head,destination,upgrade,clock);let bounded is Within<WebSocketSession>=Within(operation.open(),upgrade.deadline(),clock);waiting=bounded.result();
+    }
+    async connection() is WebSocketConnection{
+        let group is FutureGroup<WebSocketSession>=FutureGroup();let taken=Event();let cleanup=WebSocketOpeningCleanup(group,waiting,taken);defer await cleanup.close();group.start(waiting);let session=await waiting;taken.set();await session.started();session;
+    }
+}
+object WebSocketServerOpening {
+    has input is AsyncReading;has output is AsyncWriting;has owner is Closing;has head is Http1HeadRead<Http1RequestHead>;has destination is Url;has upgrade is WebSocketUpgrade;has clock is Timing;
+    WebSocketServerOpening(input is AsyncReading,output is AsyncWriting,owner is Closing,head is Http1HeadRead<Http1RequestHead>,destination is Url,upgrade is WebSocketUpgrade,clock is Timing){self.input=input;self.output=output;self.owner=owner;self.head=head;self.destination=destination;self.upgrade=upgrade;self.clock=clock;}
+    async open() is WebSocketSession{
+        let published=Event();let cleanup=WebSocketServerUnpublished(owner,published);defer cleanup.close();let request=head.head();let handshake=WebSocketServerHandshake(request);
+        confirm upgrade.access().allowed(request.request(EmptyBody()),destination) else throw WebSocketFailure("Origin denied");
+        let selected=WebSocketServerProtocol(handshake.protocols(),upgrade.protocols()).value();let response=handshake.response(selected);let wire=Http1ResponseHead(response.status(),response.headers(),response.version());
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let settlement=WebSocketOutputSettlement(group);defer await settlement.close();let pending=Http1ResponseHeadWriting(output,wire,request.method()).result();group.start(pending);await pending;
+        let session=WebSocketSession(WebSocketPrefixedInput(input,head.remainder()),output,owner,false,SecureRandom(),upgrade.limits(),upgrade.deadline(),clock);published.set();session;
+    }
+}
+object WebSocketServerProtocol {
+    has offered,supported is @string;WebSocketServerProtocol(offered is @string,supported is @string){self.offered=offered;self.supported=supported;}
+    value() is string{for supported -> protocol{if offered.reduce(false)->found,value{found || protocol==value;}{return protocol;}}"";}
+}
+object WebSocketServerUnpublished{has owner is Closing;has published is Event;WebSocketServerUnpublished(owner is Closing,published is Event){self.owner=owner;self.published=published;}close() is void{if !published.ready(){owner.close();}}}

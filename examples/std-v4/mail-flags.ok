@@ -1,0 +1,8 @@
+module app v1.0.0;
+import "mail/mailbox" take SystemFlag, SystemMailFlag, KeywordFlag;
+import "io/stdout" take Stdout;
+main() is int {
+    Stdout().writeln(SystemFlag(SystemMailFlag.seen).string());
+    Stdout().writeln(KeywordFlag("$CustomLabel").keyword());
+    0;
+}

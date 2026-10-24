@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.generic-successor-specialization",
+  "title": "generic successors keep their specialization through roles",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.GENERIC-ROLE-SUCCESSOR",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\nc v2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5",
+    "docs/okkama-spec-11072026.md#12",
+    "improvements-roadmap/results/README.md",
+    "okkama-pl/t/interpreter/916-generic-successor-arguments.t"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.5: specialization is identity across successors; ^Cell<int> satisfies ^Versioned<int>; chained successors on Cell<string> keep T = string (v2 after two revisions)."
+  },
+  "status": "mandatory"
+}

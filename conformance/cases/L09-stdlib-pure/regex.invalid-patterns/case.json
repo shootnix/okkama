@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.regex.invalid-patterns",
+  "title": "unsupported regex constructs are rejected",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.REGEX.PATTERN",
+      "aspects": [
+        "invalid",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - unbalanced group\nok 2 - backreference\nok 3 - lookahead\nchecks: 3, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/regex/pattern.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "regex/pattern: backreferences and lookaround are not part of Dialect 1; malformed syntax throws InvalidRegex."
+  },
+  "status": "mandatory"
+}

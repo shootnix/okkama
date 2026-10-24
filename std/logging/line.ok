@@ -1,0 +1,64 @@
+module logging/line v1.0.0;
+import "logging/record" take LogRecord;
+import "logging/level" take LogLevelName;
+import "json/value" take JsonMember,JsonText,JsonNumber,JsonObject,JsonValue;
+import "json/write" take CompactJson,PrettyJson;
+import "json/parse" take ParsedJson;
+import "math/decimal" take Decimal;
+import "time/zone" take TimeZone;
+import "time/duration" take Duration,DurationUnit;
+import "time/rfc3339" take Rfc3339;
+import "encoding/utf" take Utf8Encoded;
+import "runtime/unicode_character";
+object TextLogLine{
+    has origin is LogRecord;has zone is TimeZone;
+    TextLogLine(origin is LogRecord,zone is TimeZone){self.origin=origin;self.zone=zone;}
+    string() is string{
+        let time=origin.time();let context=origin.context();
+        let name=BoundedLogJson(JsonText(context.name().string())).string();
+        let message=BoundedLogJson(JsonText(origin.message())).string();
+        let fields=BoundedLogJson(context.fields().values()).string();
+        let cause=if origin.has_cause(){" cause="+BoundedLogJson(JsonText(origin.cause().text())).string();}else{"";};
+        PhysicalLogLine(Rfc3339(time,zone.offset(time)).string()+" level="+LogLevelName(origin.level()).string()+" name="+name+" process="+context.process().string()+" message="+message+" fields="+fields+cause).string();
+    }
+}
+object JsonLogLine{
+    has origin is LogRecord;JsonLogLine(origin is LogRecord){self.origin=origin;}
+    string() is string{
+        let context=origin.context();
+        let members is @JsonMember=[JsonMember("time",JsonText(Rfc3339(origin.time(),Duration(0.rat(),DurationUnit.second)).string())),JsonMember("level",JsonText(LogLevelName(origin.level()).string())),JsonMember("name",JsonText(context.name().string())),JsonMember("process",JsonNumber(Decimal(context.process().string()))),JsonMember("message",JsonText(origin.message())),JsonMember("fields",context.fields().values())];
+        let complete is @JsonMember=if origin.has_cause(){(0..members.size()+1).map()->index{if index<members.size(){members[index];}else{JsonMember("cause",JsonText(origin.cause().text()));}};}else{members;};
+        PhysicalLogLine(BoundedLogJson(JsonObject(complete)).string()).string();
+    }
+}
+object BoundedLogJson{
+    has origin is JsonValue;BoundedLogJson(origin is JsonValue){self.origin=origin;}
+    string() is string{
+        let text=PrettyJson(origin:origin,indentation:0,maximum_depth:34,maximum_bytes:1048576).string();
+        CompactJson(origin:ParsedJson(text,34)).string();
+    }
+}
+// JSON already escapes C0. Escape remaining terminal controls and Unicode line
+// separators without altering quoting, so text and JSON remain one line.
+object PhysicalLogLine{
+    has origin is string;PhysicalLogLine(origin is string){self.origin=origin;}
+    string() is string{
+        confirm origin.length()<=1048576 else throw LogLineLimit();
+        if unicode_character.display_invalid_index(origin)<0{
+            confirm Utf8Encoded(origin).bytes().size()<=1048576 else throw LogLineLimit();
+            return origin;
+        }
+        let digits="0123456789abcdef";
+        let parts is @string=(0..origin.length()).map()->index{
+            let char=origin.slice(index,index+1);let bytes=Utf8Encoded(char).bytes();let first=bytes[0].int();
+            if first<32 || first==127 || (first==194 && bytes[1].int()<160){
+                let code=if first==194{bytes[1].int();}else{first;};
+                let high=(code/16).int();let low=code%16;
+                "\\u00"+digits.slice(high,high+1)+digits.slice(low,low+1);
+            }else if bytes.size()==3 && first==226 && bytes[1].int()==128 && (bytes[2].int()==168 || bytes[2].int()==169){if bytes[2].int()==168{"\\u2028";}else{"\\u2029";}}
+            else{char;}
+        };
+        let result=parts.join("");confirm Utf8Encoded(result).bytes().size()<=1048576 else throw LogLineLimit();result;
+    }
+}
+object LogLineLimit does Error{LogLineLimit();text() is string{"formatted log record exceeds 1 MiB";}}

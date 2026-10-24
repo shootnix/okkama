@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.bitwise.byte",
+  "title": "bitwise operators preserve byte",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.BITWISE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "8\n255\nbyte 255\nbyte 2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "bitwise guide: byte words are unsigned 8-bit and the category is preserved, so results compare equal to byte values."
+  },
+  "status": "mandatory"
+}

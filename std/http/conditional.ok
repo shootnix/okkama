@@ -1,0 +1,328 @@
+module http/conditional v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "collections/list" take List, EmptyList;
+import "encoding/single_byte" take Latin1Encoded, UnrepresentableLatin1Character;
+import "error" take InvalidArgument;
+import "numbers/bigint" take BigInt, BigDifference, BigSum;
+import "collections/ordering" take SortedBy;
+import "compare" take Order;
+import "http/header" take HttpAsciiLowercase;
+
+// Immutable HTTP validators. This is etagc, not quoted-string: a backslash is
+// opaque data and never quotes a following character. See http-conditional.md.
+object EntityTag {
+    has opaque is string;
+    has weak is bool;
+    EntityTag(value is string, weak is bool) {
+        let bytes=try {Latin1Encoded(value).bytes();}
+            catch failure is UnrepresentableLatin1Character {
+                throw InvalidEntityTag(failure.offset(),"validator is not an octet string");
+            };
+        for (0..bytes.size()) -> index {
+            let code=bytes[index].int();
+            confirm code==33 || (code>=35 && code<=126) || code>=128
+                else throw InvalidEntityTag(index,"invalid opaque validator octet");
+        }
+        opaque=value;self.weak=weak;
+    }
+    value() is string {opaque;}
+    weak() is bool {weak;}
+    string() is string {let prefix=if weak {"W/";}else{"";};prefix+"\""+opaque+"\"";}
+    strong_matches(other is EntityTag) is bool {!weak && !other.weak() && opaque==other.value();}
+    weak_matches(other is EntityTag) is bool {opaque==other.value();}
+}
+object ConditionalLimits {
+    has bytes,entries is int;
+    ConditionalLimits() {bytes=8192;entries=128;}
+    ConditionalLimits(bytes is int, entries is int) {
+        confirm bytes>=0 && entries>=0 else throw InvalidArgument("conditional budgets must be nonnegative");
+        self.bytes=bytes;self.entries=entries;
+    }
+    bytes() is int {bytes;}
+    entries() is int {entries;}
+}
+// A wildcard denotes any EXISTING representation. Existence is a consumer's
+// precondition, not a hidden query performed by this pure list value.
+object EntityTags {
+    has origin is @EntityTag;
+    has wildcard is bool;
+    EntityTags() {origin=[];wildcard=true;}
+    EntityTags(values is Sequencing<EntityTag>) {
+        origin=EntityTagSnapshot(values,ConditionalLimits()).values();wildcard=false;
+    }
+    EntityTags(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
+        origin=EntityTagSnapshot(values,limits).values();wildcard=false;
+    }
+    wildcard() is bool {wildcard;}
+    values() is Sequencing<EntityTag> {origin;}
+    string() is string {
+        if wildcard {"*";}else{let parts is @string=origin.map() -> tag {tag.string();};parts.join(", ");}
+    }
+    strong_matches(other is EntityTag) is bool {
+        if wildcard {return true;}
+        origin.reduce(false) -> matched,tag {matched || tag.strong_matches(other);};
+    }
+    weak_matches(other is EntityTag) is bool {
+        if wildcard {return true;}
+        origin.reduce(false) -> matched,tag {matched || tag.weak_matches(other);};
+    }
+}
+object ParsedEntityTags {
+    has origin is string;
+    has limits is ConditionalLimits;
+    ParsedEntityTags(origin is string) {self.origin=origin;limits=ConditionalLimits();}
+    ParsedEntityTags(origin is string, limits is ConditionalLimits) {self.origin=origin;self.limits=limits;}
+    value() is EntityTags {
+        confirm origin.length()<=limits.bytes() else throw ConditionalLimitExceeded("bytes");
+        try {Latin1Encoded(origin).bytes();}
+        catch failure is UnrepresentableLatin1Character {
+            throw InvalidEntityTag(failure.offset(),"field is not an octet string");
+        }
+        let position=ConditionalPosition(self.space(0),1);
+        if position.index()==origin.length() {let empty is @EntityTag=[];return EntityTags(empty,limits);}
+        if origin.slice(position.index(),position.index()+1)=="*" {
+            confirm self.space(position.index()+1)==origin.length()
+                else throw InvalidEntityTag(position.index()+1,"wildcard must stand alone");
+            confirm limits.entries()>=1 else throw ConditionalLimitExceeded("entries");
+            return EntityTags();
+        }
+        confirm position.slots()<=limits.entries() else throw ConditionalLimitExceeded("entries");
+        let tags is ConditionalItems<EntityTag>=ConditionalItems();
+        loop {
+            let at=position.index();last if at==origin.length();
+            if origin.slice(at,at+1)=="," {
+                position=position.separator(self.space(at+1));
+                confirm position.slots()<=limits.entries() else throw ConditionalLimitExceeded("entries");
+                next;
+            }
+            let weak=origin.length()-at>=2 && origin.slice(at,at+2)=="W/";
+            let quote=at+if weak {2;}else{0;};
+            confirm quote<origin.length() && origin.slice(quote,quote+1)=="\""
+                else throw InvalidEntityTag(quote,"expected quoted entity tag");
+            let start=quote+1;let cursor=ConditionalPosition(start,0);
+            loop {
+                confirm cursor.index()<origin.length() else throw InvalidEntityTag(quote,"unterminated entity tag");
+                last if origin.slice(cursor.index(),cursor.index()+1)=="\"";
+                cursor=cursor.following(cursor.index()+1);
+            }
+            let tag=try {EntityTag(origin.slice(start,cursor.index()),weak);}
+                catch failure is InvalidEntityTag {throw InvalidEntityTag(start+failure.offset(),failure.reason());};
+            tags=tags.following(tag);position=position.following(self.space(cursor.index()+1));
+            confirm position.index()==origin.length() || origin.slice(position.index(),position.index()+1)==","
+                else throw InvalidEntityTag(position.index(),"expected list separator");
+        }
+        EntityTags(tags.values(),limits);
+    }
+    private:
+    space(start is int) is int {
+        let position=ConditionalPosition(start,0);
+        loop {
+            let at=position.index();if at==origin.length() {return at;}
+            let char=origin.slice(at,at+1);if char!=" " && char!="\t" {return at;}
+            position=position.following(at+1);
+        }
+    }
+}
+// Snapshot size is validated before invoking a user sequence's item action.
+object EntityTagSnapshot {
+    has origin is @EntityTag;
+    EntityTagSnapshot(values is Sequencing<EntityTag>, limits is ConditionalLimits) {
+        let count=values.size();confirm count>=0 else throw InvalidArgument("negative entity tag sequence size");
+        confirm count<=limits.entries() else throw ConditionalLimitExceeded("entries");
+        let tags is @EntityTag=(0..count).map() -> index {values.item(index);};
+        let used=tags.reduce(0) -> total,tag {
+            let size=tag.string().length()+if total==0 {0;}else{2;};
+            confirm size<=limits.bytes()-total else throw ConditionalLimitExceeded("bytes");total+size;
+        };origin=tags;
+    }
+    values() is @EntityTag {origin;}
+}
+// Persistent list accumulation avoids rebuilding a complete array per member.
+object ConditionalItems<T> {
+    has reversed is List<T>;
+    ConditionalItems() {let empty is List<T>=EmptyList();reversed=empty;}
+    following(item is T) is ^ConditionalItems<T> {^reversed=reversed.prefix(item);}
+    values() is @T {
+        let reverse is @T=reversed.map() -> item {item;};
+        let ordered is @T=(0..reverse.size()).map() -> index {reverse[reverse.size()-index-1];};ordered;
+    }
+}
+object ConditionalPosition {
+    has index,slots is int;
+    ConditionalPosition(index is int, slots is int) {
+        confirm index>=0 && slots>=0 else throw InvalidArgument("negative conditional position");
+        self.index=index;self.slots=slots;
+    }
+    index() is int {index;}
+    slots() is int {slots;}
+    following(index is int) is ^ConditionalPosition {^index=index;}
+    separator(index is int) is ^ConditionalPosition {^index=index;^slots=slots+1;}
+}
+// A concrete interval has inclusive bounds and is always nonempty. Its size
+// derives from the bounds with arbitrary precision, never from an int cast.
+object ByteRange {
+    has start,end is BigInt;
+    ByteRange(start is BigInt, end is BigInt) {
+        confirm start.sign()>=0 && end.order(start)!=Order.less
+            else throw InvalidRange("invalid inclusive coordinates");
+        self.start=start;self.end=end;
+    }
+    start() is BigInt {start;}
+    end() is BigInt {end;}
+    size() is BigInt {BigSum(left:BigDifference(left:end,right:start).value(),right:BigInt("1")).value();}
+    string() is string {start.string()+"-"+end.string();}
+}
+object ByteRanges {
+    has origin is @ByteRangeSpec;
+    ByteRanges(origin is string) {self.origin=ByteRangeParsing(origin,ConditionalLimits()).values();}
+    ByteRanges(origin is string, limits is ConditionalLimits) {self.origin=ByteRangeParsing(origin,limits).values();}
+    string() is string {
+        let parts is @string=origin.map() -> entry {entry.string();};"bytes="+parts.join(", ");
+    }
+    satisfiable(size is BigInt) is bool {
+        confirm size.sign()>=0 else throw InvalidRange("negative or unknown representation size");
+        origin.reduce(false) -> matched,entry {matched || entry.satisfiable(size);};
+    }
+    ranges(size is BigInt) is Sequencing<ByteRange> {
+        confirm size.sign()>=0 else throw InvalidRange("negative or unknown representation size");
+        let materialized is ConditionalItems<ByteRange>=ConditionalItems();
+        for origin -> entry {for entry.ranges(size) -> range {materialized=materialized.following(range);}}
+        let sorted is SortedBy<ByteRange,BigInt>=SortedBy(origin:materialized.values(),
+            key:(range is ByteRange) is BigInt {range.start();});
+        let merged=CoalescedByteRanges();for sorted -> range {merged=merged.following(range);}
+        merged.values();
+    }
+}
+// A validated wire spec has zero/one first and last coordinates: suffix, open,
+// or bounded. No negative/maximum sentinel pretends to be a missing position.
+object ByteRangeSpec {
+    has lower,upper is @BigInt;
+    ByteRangeSpec(origin is string) {
+        let fields=origin.split("-");confirm fields.size()==2 else throw InvalidRange("expected one range dash");
+        confirm fields[0]!="" || fields[1]!="" else throw InvalidRange("empty range");
+        let left is @BigInt=if fields[0]=="" {[];}else{[ConditionalDecimal(fields[0]).value()];};
+        let right is @BigInt=if fields[1]=="" {[];}else{[ConditionalDecimal(fields[1]).value()];};
+        if left.size()==1 && right.size()==1 {
+            confirm right[0].order(left[0])!=Order.less else throw InvalidRange("end precedes start");
+        }
+        lower=left;upper=right;
+    }
+    string() is string {
+        let left=if lower.size()==0 {"";}else{lower[0].string();};
+        let right=if upper.size()==0 {"";}else{upper[0].string();};left+"-"+right;
+    }
+    satisfiable(size is BigInt) is bool {
+        confirm size.sign()>=0 else throw InvalidRange("negative representation size");
+        if lower.size()==0 {upper[0].sign()>0;}else{lower[0].order(size)==Order.less;}
+    }
+    ranges(size is BigInt) is @ByteRange {
+        confirm size.sign()>=0 else throw InvalidRange("negative representation size");
+        if size.sign()==0 || !self.satisfiable(size) {let empty is @ByteRange=[];return empty;}
+        let end=BigDifference(left:size,right:BigInt("1")).value();
+        if lower.size()==0 {
+            let start=if upper[0].order(size)==Order.less {BigDifference(left:size,right:upper[0]).value();}else{BigInt("0");};
+            return [ByteRange(start,end)];
+        }
+        let clipped=if upper.size()==1 && upper[0].order(end)==Order.less {upper[0];}else{end;};
+        [ByteRange(lower[0],clipped)];
+    }
+}
+object ByteRangeParsing {
+    has origin is string;has limits is ConditionalLimits;
+    ByteRangeParsing(origin is string, limits is ConditionalLimits) {self.origin=origin;self.limits=limits;}
+    values() is @ByteRangeSpec {
+        confirm origin.length()<=limits.bytes() else throw ConditionalLimitExceeded("bytes");
+        try {Latin1Encoded(origin).bytes();}
+        catch failure is UnrepresentableLatin1Character {throw InvalidRange("field is not an octet string");}
+        let field=ConditionalText(origin).string();let fields=field.split("=");
+        confirm fields.size()==2 && HttpAsciiLowercase(fields[0]).string()=="bytes"
+            else throw InvalidRange("expected bytes range unit");
+        let parts=fields[1].split(",");
+        confirm parts.size()<=limits.entries() else throw ConditionalLimitExceeded("entries");
+        let texts is @string=parts.map() -> part {ConditionalText(part).string();};
+        let nonempty is @string=texts.filter() -> part {part!="";};
+        confirm nonempty.size()>0 else throw InvalidRange("range list requires a member");
+        let values is @ByteRangeSpec=nonempty.map() -> part {ByteRangeSpec(part);};
+        let canonical is @string=values.map() -> part {part.string();};
+        confirm 6+canonical.join(", ").length()<=limits.bytes() else throw ConditionalLimitExceeded("bytes");
+        values;
+    }
+}
+object ConditionalDecimal {
+    has origin is string;ConditionalDecimal(origin is string){self.origin=origin;}
+    value() is BigInt {
+        confirm origin.length()>0 else throw InvalidRange("empty decimal coordinate");
+        let bytes=try {Latin1Encoded(origin).bytes();}
+            catch failure is UnrepresentableLatin1Character {throw InvalidRange("ASCII decimal required");};
+        for bytes -> octet {confirm octet.int()>=48 && octet.int()<=57 else throw InvalidRange("ASCII decimal required");}
+        BigInt(origin);
+    }
+}
+// Strict HTTP OWS, not the host's Unicode whitespace trimming policy.
+object ConditionalText {
+    has origin is string;ConditionalText(origin is string){self.origin=origin;}
+    string() is string {
+        let left=ConditionalPosition(0,0);let right=ConditionalPosition(origin.length(),0);
+        loop {
+            last if left.index()==right.index();let char=origin.slice(left.index(),left.index()+1);
+            last if char!=" " && char!="\t";left=left.following(left.index()+1);
+        }
+        loop {
+            last if right.index()==left.index();let char=origin.slice(right.index()-1,right.index());
+            last if char!=" " && char!="\t";right=right.following(right.index()-1);
+        }
+        origin.slice(left.index(),right.index());
+    }
+}
+object CoalescedByteRanges {
+    has reversed is List<ByteRange>;
+    CoalescedByteRanges() {let empty is List<ByteRange>=EmptyList();reversed=empty;}
+    following(range is ByteRange) is ^CoalescedByteRanges {
+        if reversed.size()==0 {^reversed=reversed.prefix(range);}
+        else {
+            let previous=reversed.first();
+            confirm range.start().order(previous.start())!=Order.less else throw InvalidRange("coalescing requires sorted intervals");
+            let after=BigSum(left:previous.end(),right:BigInt("1")).value();
+            if range.start().order(after)!=Order.greater {
+                let end=if range.end().order(previous.end())==Order.greater {range.end();}else{previous.end();};
+                ^reversed=reversed.tail().prefix(ByteRange(previous.start(),end));
+            }else{^reversed=reversed.prefix(range);}
+        }
+    }
+    values() is @ByteRange {
+        let reverse is @ByteRange=reversed.map() -> range {range;};
+        let ordered is @ByteRange=(0..reverse.size()).map() -> index {reverse[reverse.size()-index-1];};ordered;
+    }
+}
+object InvalidRange does Error {
+    has reason is string;InvalidRange(reason is string){self.reason=reason;}
+    reason() is string {reason;}text() is string {"invalid HTTP byte range: "+reason;}
+}
+object InvalidEntityTag does Error {
+    has position is int;has reason is string;
+    InvalidEntityTag(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid entity tag at octet "+position.string()+": "+reason;}
+}
+object ConditionalLimitExceeded does Error {
+    has kind is string;ConditionalLimitExceeded(kind is string){self.kind=kind;}
+    kind() is string {kind;}
+    text() is string {"HTTP conditional "+kind+" limit exceeded";}
+}
+
+test "entity tag comparison respects validator strength" {
+    let strong=EntityTag("version-1",false);let weak=EntityTag("version-1",true);
+    test.is(strong.strong_matches(weak),false);test.is(strong.weak_matches(weak),true);
+    test.is(ParsedEntityTags("\"a,b\", W/\"version-1\"").value().weak_matches(strong),true);
+}
+test "entity tag list wildcard and empty list differ" {
+    test.is(EntityTags().string(),"*");let empty is @EntityTag=[];
+    test.is(EntityTags(empty).weak_matches(EntityTag("",false)),false);
+}
+test "byte range plans normalize exact inclusive intervals" {
+    let ranges=ByteRanges("bytes=9-, 0-4, 3-8").ranges(BigInt("10"));
+    test.is(ranges.size(),1);test.is(ranges.first().size().string(),"10");
+    test.is(ByteRanges("bytes=-1").satisfiable(BigInt("0")),true);
+}

@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "http/target" take ParsedRequestTarget, RequestTargetKind;
+import "http/method" take Method;
+import "io/stdout" take Stdout;
+main() is int {
+    let origin=ParsedRequestTarget("//a/b?",Method("GET")).value();
+    confirm origin.kind()==RequestTargetKind.origin && origin.path()=="//a/b";
+    let tunnel=ParsedRequestTarget("[::1]:443",Method("CONNECT")).value();
+    confirm tunnel.authority().port()==443;
+    Stdout().writeln(origin.string());Stdout().writeln(tunnel.string());
+    0;
+}

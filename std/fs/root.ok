@@ -1,0 +1,35 @@
+module fs/root v1.0.0;
+import "fs/directory" take DirectoryLocating,Directory;
+import "fs/path" take Path;
+import "fs/stat" take FileStat,FileStatFromMap;
+import "fs/file" take FileSystemFailure;
+import "runtime/fs" take path_encode;
+import "runtime/fs_root" as rooted;
+import "io/stream" take Closing,InvalidReadLimit;
+
+// Eager explicit root acquisition. Children own independent descriptors and
+// remain valid after root close; coordinates never become joined ambient paths.
+object FileRoot does Closing {
+    has state is rooted.FileRootState;
+    FileRoot(directory is DirectoryLocating){state=try{rooted.file_root_open(path_encode(directory.path().string()));}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());};}
+    entry(segments is @string) is RootedEntry{let state=try{rooted.file_root_entry(self.state,segments);}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());};RootedEntry(state);}
+    closed() is bool{rooted.file_root_closed(state);}
+    close() is void{try{rooted.file_root_close(state);}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());}}
+    destroy{self.close();}
+}
+object RootedEntry does Closing {
+    has state is rooted.RootedEntryState;
+    RootedEntry(state is rooted.RootedEntryState){self.state=state;}
+    stat() is FileStat{let metadata=try{rooted.rooted_entry_stat(state);}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());};value FileStatFromMap(origin:metadata);}
+    bytes_at(offset is int,limit is int) is @byte{confirm limit>0 else throw InvalidReadLimit(limit);try{rooted.rooted_entry_read(state,offset,limit);}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());}}
+    names(maximum is int) is @string{try{rooted.rooted_entry_names(state,maximum);}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());}}
+    closed() is bool{rooted.rooted_entry_closed(state);}
+    close() is void{try{rooted.rooted_entry_close(state);}catch e is NativeFailure{throw FileSystemFailure(e.code(),e.message());}}
+    destroy{self.close();}
+}
+test "explicit root close is idempotent and child descriptor is independent" {
+    let roots is @FileRoot=try{[FileRoot(directory:Directory(path:Path(".")))];}
+        catch e is FileSystemFailure{if e.code()=="unsupported"{[];}else{throw e;}};
+    if roots.size()==1{let root=roots[0];let entry=root.entry([]);root.close();root.close();test.ok(root.closed() && !entry.closed());entry.close();test.ok(entry.closed());}
+    else{test.ok(true);}
+}

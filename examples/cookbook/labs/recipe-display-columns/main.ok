@@ -1,0 +1,20 @@
+// Ограничить ширину колонки с Unicode
+//
+// В консольной таблице название товара должно занимать заданное число экранных колонок.
+//
+// Запуск: ./examples/cookbook/run lab recipe-display-columns
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-display-columns
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/display_columns v1.0.0;
+import "terminal/width" take DisplayWidth,TruncatedDisplay;
+import "io/stdout" take Stdout;
+
+main() is int {
+    confirm DisplayWidth("界").value() == 2;
+    let label = TruncatedDisplay("Длинное название товара", 12, "…").string();
+    confirm DisplayWidth(label).value() <= 12;
+    Stdout().writeln(label);
+    0;
+}

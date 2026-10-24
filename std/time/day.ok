@@ -1,0 +1,95 @@
+module time/day v1.0.0;
+
+import "compare" take Comparing, Order;
+
+// Immutable civil time within one nominal day.
+//
+//     let noon = TimeOfDay(
+//         hour: 12,
+//         minute: 0,
+//         second: 0,
+//         nanosecond: 0,
+//     );
+//     noon.order(TimeOfDay(
+//         hour: 12,
+//         minute: 0,
+//         second: 0,
+//         nanosecond: 1,
+//     )); // Order.less
+//
+// TimeOfDay carries no date, offset or time zone. Seconds are 0..59: leap
+// seconds are timeline events and are deliberately not encoded as civil field
+// values. Nanoseconds are integral and never rounded.
+
+object TimeOfDay does Comparing<TimeOfDay> {
+    has hour_value is int;
+    has minute_value is int;
+    has second_value is int;
+    has nanosecond_value is int;
+
+    TimeOfDay(hour is int, minute is int, second is int, nanosecond is int) {
+        confirm hour >= 0 && hour <= 23
+            else throw InvalidTimeOfDay("hour must be within 0..23");
+        confirm minute >= 0 && minute <= 59
+            else throw InvalidTimeOfDay("minute must be within 0..59");
+        confirm second >= 0 && second <= 59
+            else throw InvalidTimeOfDay("second must be within 0..59");
+        confirm nanosecond >= 0 && nanosecond <= 999999999
+            else throw InvalidTimeOfDay(
+                "nanosecond must be within 0..999999999"
+            );
+
+        hour_value = hour;
+        minute_value = minute;
+        second_value = second;
+        nanosecond_value = nanosecond;
+    }
+
+    hour() is int {
+        hour_value;
+    }
+
+    minute() is int {
+        minute_value;
+    }
+
+    second() is int {
+        second_value;
+    }
+
+    nanosecond() is int {
+        nanosecond_value;
+    }
+
+    order(other is TimeOfDay) is Order {
+        if hour_value != other.hour() {
+            hour_value.order(other.hour());
+        }
+        else {
+            if minute_value != other.minute() {
+                minute_value.order(other.minute());
+            }
+            else {
+                if second_value != other.second() {
+                    second_value.order(other.second());
+                }
+                else {
+                    nanosecond_value.order(other.nanosecond());
+                }
+            }
+        }
+    }
+}
+
+object InvalidTimeOfDay does Error {
+    has message is string;
+
+    InvalidTimeOfDay(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

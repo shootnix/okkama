@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let found = loop {
+        last 7;
+    };
+    out.writeln(found.string());
+    for 1..=6 -> n {
+        next if n % 2 == 0;
+        last if n > 4;
+        out.writeln(n.string());
+    }
+    let limited = loop {
+        last 9 if true;
+    };
+    out.writeln(limited.string());
+    0;
+}

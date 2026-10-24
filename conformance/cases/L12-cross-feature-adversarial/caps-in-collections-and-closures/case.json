@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.caps-in-collections-and-closures",
+  "title": "caps keep their type in collections, generics and closures",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.CAP-TRANSPORT",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[a],[b]\n[c]\n[d]\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.2.1",
+    "docs/object-caps-0.0.1-ru.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.2.1: locals, collections, generics and closures preserve the exact cap type; caps retain their owner graph even from temporaries."
+  },
+  "status": "mandatory"
+}

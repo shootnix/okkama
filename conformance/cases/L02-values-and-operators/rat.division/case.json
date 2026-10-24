@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.rat.division",
+  "title": "integer division produces exact rationals",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-DIVISION",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "VAL.RAT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "4\n1/3\n3/2\n1\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3",
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.3: `/` on integer categories gives an exact rat; rat.string() is canonical n/d or just n when d = 1 (book 5.2: (1/3 + 2/3).string() is \"1\"). language owner decision, 21.10.2026 (D-046): int / int is rat, and rat combines with int only after an explicit .rat(), so the second division divides by 5.rat()."
+  },
+  "status": "mandatory"
+}

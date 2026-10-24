@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "digest/legacy" take Md5, Sha1;
+import "encoding/hex" take HexEncoded;
+import "encoding/utf" take Utf8Encoded;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("md5 abc", HexEncoded(origin: Md5(Utf8Encoded(origin: "abc").bytes()).bytes()).string(), "900150983cd24fb0d6963f7d28e17f72");
+    c = c.same_text("md5 empty", HexEncoded(origin: Md5().bytes()).string(), "d41d8cd98f00b204e9800998ecf8427e");
+    c = c.same_text("md5 message digest", HexEncoded(origin: Md5(Utf8Encoded(origin: "message digest").bytes()).bytes()).string(), "f96b697d7cb7938d525a2f31aaf161d0");
+    c = c.same_text("sha1 abc", HexEncoded(origin: Sha1(Utf8Encoded(origin: "abc").bytes()).bytes()).string(), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    c = c.same_text("sha1 empty", HexEncoded(origin: Sha1().bytes()).string(), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    c = c.same_text("sha1 two blocks", HexEncoded(origin: Sha1(Utf8Encoded(origin: "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq").bytes()).bytes()).string(), "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
+    c = c.same_text("md5 chunked state", HexEncoded(origin: Md5(Utf8Encoded(origin: "ab").bytes()).state(Utf8Encoded(origin: "c").bytes()).bytes()).string(), "900150983cd24fb0d6963f7d28e17f72");
+    c.done();
+}

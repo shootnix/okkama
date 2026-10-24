@@ -1,0 +1,21 @@
+module app v1.0.0;
+import "mail/pop3_reading" take PopReplyReading;
+import "mail/pop3_reply" take PopReplyMode;
+import "net/stream" take AsyncReading;
+import "io/stream" take Reading;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+object Fragments does AsyncReading {
+    has origin is Reading;Fragments(origin is Reading) {self.origin=origin;}
+    async bytes(limit is int) is @byte {origin.bytes(if limit<2 {limit;} else {2;});}
+}
+async main() is int {
+    let buffer=ByteBuffer(Utf8Encoded("+OK message follows\r\nSubject: example\r\n\r\n..body\r\n.\r\n-ERR unavailable\r\n").bytes());
+    defer buffer.closing().close();let input=Fragments(buffer.reading());
+    let first=await PopReplyReading(input,PopReplyMode.multiline).result();
+    let second=await PopReplyReading(input,PopReplyMode.single,first.remainder()).result();
+    Stdout().writeln(first.reply().text());Stdout().writeln(Utf8Decoded(first.reply().body()).string());
+    Stdout().writeln(second.reply().text());0;
+}

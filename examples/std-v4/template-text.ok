@@ -1,0 +1,19 @@
+module app v1.0.0;
+import "template/compile" take TextTemplate;
+import "template/model" take TemplateBindings, TemplateBinding;
+import "template/path" take TemplatePath;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let data = TemplateBindings([
+            TemplateBinding(TemplatePath(["user","name"]), "Ada"),
+            TemplateBinding(TemplatePath(["message"]), "{{literal}} & <plain>")
+        ]);
+        TextTemplate("{{! no implicit HTML escaping }}\nHello {{user.name}}: {{message}}").string(data);
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

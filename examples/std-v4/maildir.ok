@@ -1,0 +1,23 @@
+module app v1.0.0;
+import "mail/mailbox" take Maildir, ChangedMaildirFlags, MailFlags, SystemFlag, SystemMailFlag;
+import "mail/message" take ParsedMail;
+import "fs/path" take Path;
+import "fs/directory" take Directory;
+import "fs/temp" take TemporaryDirectory;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let directory=TemporaryDirectory(Directory(Path(".")),"maildir-example-");
+    defer directory.close();
+    for ["new","cur","tmp"] -> name {Directory(directory.path().child(name)).create();}
+    let mailbox=Maildir(directory.path());
+    mailbox.add(ParsedMail(Utf8Encoded("Subject: example\r\n\r\nHello from Maildir").bytes()).message());
+    let saved=mailbox.messages().first();
+    Stdout().writeln(Utf8Decoded(saved.message().body().bytes()).string());
+    let changed=ChangedMaildirFlags(mailbox,saved.identifier(),MailFlags([SystemFlag(SystemMailFlag.seen)])).result();
+    Stdout().writeln(changed.flags().membership(SystemFlag(SystemMailFlag.seen)).string());
+    mailbox.remove(saved.identifier());
+    Stdout().writeln(mailbox.messages().size().string());
+    0;
+}

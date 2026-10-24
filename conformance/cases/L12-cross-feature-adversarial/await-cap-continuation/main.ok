@@ -1,0 +1,37 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+
+object Customer {
+    has name is string;
+    Customer(:name);
+    cap Card {
+        title is string { "card of " + name; }
+    }
+}
+
+object Source {
+    Source();
+    async customer() is Customer { Customer(name: "Ada"); }
+}
+
+object Reader {
+    Reader();
+    async direct(gate is Event) is string {
+        await gate.wait();
+        (await Source().customer())::Card::title;
+    }
+}
+
+async main() is int {
+    let gate is Event = Event();
+    let group is FutureGroup<string> = FutureGroup();
+    let pending = Reader().direct(gate);
+    group.start(pending);
+    gate.set();
+    await group.wait();
+    Stdout().writeln(await pending);
+    0;
+}

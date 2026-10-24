@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+role Counter {
+    count() is int;
+    async later() is int;
+    bumped() is ^Counter;
+
+    fake {
+        has n is int = 0;
+        count() is int { n; }
+        async later() is int { n; }
+        bumped() is ^Counter { ^n = n + 1; }
+    }
+
+    test "role test" {
+        test.ok(true);
+    }
+}
+
+main() is int {
+    0;
+}

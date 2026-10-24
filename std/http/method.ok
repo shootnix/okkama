@@ -1,0 +1,44 @@
+module http/method v1.0.0;
+
+import "encoding/utf" take Utf8Encoded;
+
+// An immutable HTTP method token. RFC 9110 methods are case-sensitive:
+// lowercase "get" is a distinct extension, not an alias for GET. Validation
+// happens at construction without I/O; the later wire framer owns line limits.
+object Method {
+    has origin is string;
+    Method(origin is string) {
+        confirm origin.length()>0 else throw InvalidMethod(origin);
+        for Utf8Encoded(origin).bytes() -> octet {
+            let code=octet.int();
+            confirm (code>=48 && code<=57) || (code>=65 && code<=90) || (code>=97 && code<=122)
+                || code==33 || code==35 || code==36 || code==37 || code==38 || code==39
+                || code==42 || code==43 || code==45 || code==46 || code==94 || code==95
+                || code==96 || code==124 || code==126 else throw InvalidMethod(origin);
+        }
+        self.origin=origin;
+    }
+    string() is string {origin;}
+}
+// Conservative protocol observations, never an automatic retry policy or a
+// request-body restriction. Unknown extensions do not acquire standard semantics.
+object MethodSemantics {
+    has origin is Method;
+    MethodSemantics(origin is Method) {self.origin=origin;}
+    safe() is bool {
+        let name=origin.string();name=="GET" || name=="HEAD" || name=="OPTIONS" || name=="TRACE";
+    }
+    idempotent() is bool {self.safe() || origin.string()=="PUT" || origin.string()=="DELETE";}
+}
+object InvalidMethod does Error {
+    has origin is string;
+    InvalidMethod(origin is string) {self.origin=origin;}
+    text() is string {"invalid HTTP method token: "+origin;}
+}
+
+test "method spelling determines standard semantics" {
+    test.is(Method("X-Custom").string(),"X-Custom");
+    test.ok(MethodSemantics(Method("GET")).safe());
+    test.ok(!MethodSemantics(Method("get")).safe());
+    test.ok(MethodSemantics(Method("DELETE")).idempotent());
+}

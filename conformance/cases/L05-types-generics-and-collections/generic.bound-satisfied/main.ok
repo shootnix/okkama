@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Ranked<T> {
+    beats(other is T) is bool;
+}
+
+object Score does Ranked<Score> {
+    has n is int;
+    Score(:n);
+    beats(other is Score) is bool { n > other.value(); }
+    value() is int { n; }
+}
+
+object Best<T: Ranked<T>> {
+    has first is T;
+    has second is T;
+    Best(:first, :second);
+    winner() is T { if first.beats(second) { first; } else { second; } }
+}
+
+main() is int {
+    let out = Stdout();
+    let best = Best(first: Score(n: 3), second: Score(n: 9));
+    out.writeln(best.winner().value().string());
+    0;
+}

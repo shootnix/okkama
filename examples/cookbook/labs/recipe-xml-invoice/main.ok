@@ -1,0 +1,22 @@
+// Сформировать XML-накладную
+//
+// Партнёр принимает идентификатор и название позиции в XML-документе.
+//
+// Запуск: ./examples/cookbook/run lab recipe-xml-invoice
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-xml-invoice
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/xml_invoice v1.0.0;
+import "xml/name" take XmlName;
+import "xml/node" take XmlElement,XmlText,XmlAttribute,XmlDocument;
+import "xml/write" take EscapedXml;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let item = XmlElement(XmlName("item"), [XmlAttribute(XmlName("id"), "A-7")], [XmlText("Чай & кофе")]);
+    let document = XmlDocument(XmlElement(XmlName("invoice"), [item]));
+    Stdout().writeln(document.xml());
+    confirm EscapedXml("A&B", false).string() == "A&amp;B";
+    0;
+}

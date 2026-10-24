@@ -1,0 +1,30 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Summer {
+    Summer();
+    total(label is string, values is ...int) is string {
+        let all is @int = values...;
+        let sum = all.reduce(0) -> acc, v { acc + v; };
+        label + "=" + sum.string() + "/" + all.size().string();
+    }
+    forward(values is ...int) is string {
+        self.total("fwd", 100, values...);
+    }
+}
+
+object Collector {
+    Collector();
+    first(values is ...int) is int {
+        let v = values;
+        0;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let x = Collector().first(1, 2);
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,31 @@
+module collections/iteration v1.0.0;
+
+role Cursor<T> {
+    available() is bool;
+    item() is T;
+    successor() is Cursor<T>;
+}
+
+role Iterating<T> {
+    cursor() is Cursor<T>;
+}
+
+object IterationEnded does Error {
+    IterationEnded();
+
+    text() is string {
+        "iteration has ended";
+    }
+}
+
+object CursorItems<T> does Iterating<T> {
+    has origin is Cursor<T>;
+
+    CursorItems(cursor is Cursor<T>) {
+        origin = cursor;
+    }
+
+    cursor() is Cursor<T> {
+        origin;
+    }
+}

@@ -1,0 +1,14 @@
+module app v1.0.0;
+import "net/ip" take IpAddress, IpInterface;
+import "net/interface" take NetworkInterface;
+import "io/stdout" take Stdout;
+
+main() is int {
+    // Explicit fixture data; this example does not query the operating system.
+    let addresses is @IpInterface=[IpInterface(IpAddress("192.0.2.7"),24),
+        IpInterface(IpAddress("2001:db8::8"),64)];
+    let interface=NetworkInterface("example0",2,addresses,true,false);
+    Stdout().writeln(interface.name()+" #"+interface.index().string());
+    for interface.addresses() -> address {Stdout().writeln(address.string());}
+    0;
+}

@@ -1,0 +1,247 @@
+module http/digest v1.0.0;
+import "http/auth" take InvalidAuthentication,HttpAuthorizing,AuthenticationScope,AuthenticationConflict;
+import "http/auth_challenge" take AuthenticationChallenge,AuthenticationChallenges,InvalidAuthenticationChallenge;
+import "http/header" take Header,HeaderName,Headers,HttpAsciiLowercase;
+import "http/message" take Request,Response;
+import "http/client_request" take HttpDirectRequest;
+import "crypto/secret" take SecretBytes,ExportedSecret;
+import "encoding/single_byte" take AsciiEncoded,AsciiDecoded,Latin1Encoded,Latin1Decoded,UnrepresentableAsciiCharacter,UnrepresentableLatin1Character;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded,InvalidUtf8;
+import "unicode/normalization" take Normalized,NormalizationForm;
+import "url/percent" take PercentEncoded,UrlComponent;
+import "encoding/hex" take HexEncoded,HexDecoded,InvalidHex;
+import "runtime/crypto" as native_crypto;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "async/atomic" take Atomic;
+import "http/client" take Exchanging;
+import "http/exchange" take ClientResponse;
+import "random/source" take SecureRandom;
+import "async/scope" take FutureGroup;
+import "async/event" take Event;
+import "url/value" take Url;
+import "http/version" take HttpVersion;
+import "http/body" take BodyOpening,BodyReading;
+import "numbers/bigint" take BigInt;
+object DigestCredentials {
+    has username is string;has password is SecretBytes;
+    DigestCredentials(username is string,password is SecretBytes){
+        confirm username.length()>0 && username.length()<=1024 && password.size()<=4096 else throw InvalidAuthentication("digest credential size");
+        let name=DigestText(username).bytes();for name -> octet{confirm octet.int()!=58 else throw InvalidAuthentication("digest username syntax");}
+        self.username=username;self.password=password;
+    }
+    username() is string{username;}
+
+    response_digest(challenge is DigestChallenge,uri is string,method is string,cnonce is string,count is string) is string{
+        let identity=self.identity(challenge);let raw_password=ExportedSecret(password).bytes();
+        let password=if challenge.utf8(){let text=try{Utf8Decoded(raw_password).string();}catch e is InvalidUtf8{throw InvalidAuthentication("digest password UTF-8");};DigestText(text).bytes();}else{
+            for raw_password -> octet{confirm octet.int()>=32 && octet.int()<=126 else throw InvalidAuthentication("ASCII digest password required");}raw_password;
+        };
+        let a1 is @byte=(0..identity.size()+1+password.size()).map()->index{if index<identity.size(){identity[index];}else{if index==identity.size(){58.byte();}else{password[index-identity.size()-1];}}};
+        let original=DigestHash(a1,challenge.algorithm()).string();let secret=if challenge.session(){DigestHash(DigestAscii(original+":"+challenge.nonce()+":"+cnonce).bytes(),challenge.algorithm()).string();}else{original;};
+        let a2=DigestHash(DigestAscii(method+":"+uri).bytes(),challenge.algorithm()).string();
+        DigestHash(DigestAscii(secret+":"+challenge.nonce()+":"+count+":"+cnonce+":auth:"+a2).bytes(),challenge.algorithm()).string();
+    }
+
+    identity(challenge is DigestChallenge) is @byte{
+        let name=if challenge.utf8(){DigestText(self.username()).bytes();}else{DigestAscii(self.username()).bytes();};let realm=challenge.realm_bytes();
+        (0..name.size()+1+realm.size()).map()->index{if index<name.size(){name[index];}else{if index==name.size(){58.byte();}else{realm[index-name.size()-1];}}};
+    }
+}
+// Explicit SHA-256/SHA-512-256 profile and session variants, qop=auth.
+// UTF-8 challenges normalize username/password to NFC. Without charset,
+// credentials remain ASCII. No MD5 fallback or inferred body hashing.
+object DigestChallenge {
+    has realm,nonce,algorithm,opaque is string;has opaque_present,userhash,stale,utf8 is bool;
+    DigestChallenge(origin is AuthenticationChallenge){
+        confirm origin.scheme()=="digest" && origin.token68()=="" else throw UnsupportedDigestChallenge();
+        confirm origin.present("algorithm") else throw UnsupportedDigestChallenge();let offered=origin.parameter("algorithm");let kind=HttpAsciiLowercase(offered).string();
+        confirm (kind=="sha-256" || kind=="sha-256-sess" || kind=="sha-512-256" || kind=="sha-512-256-sess") else throw UnsupportedDigestChallenge();
+        confirm origin.present("qop") else throw UnsupportedDigestChallenge();
+        let options=origin.parameter("qop").split(",");let supported=options.reduce(false)->found,option{found || Header(HeaderName("Qop"),option).value()=="auth";};
+        confirm supported else throw UnsupportedDigestChallenge();
+        confirm origin.present("realm") && origin.present("nonce") else throw InvalidAuthentication("digest required parameters");
+        let realm=origin.parameter("realm");let nonce=origin.parameter("nonce");
+        confirm nonce.length()>0 && nonce.length()<=1024 && realm.length()<=1024 else throw InvalidAuthentication("digest challenge size");
+        let utf8=origin.present("charset");
+        if utf8{try{Utf8Decoded(Latin1Encoded(realm).bytes()).string();}catch e is InvalidUtf8{throw InvalidAuthentication("digest realm UTF-8");}}else{DigestAscii(realm).bytes();}DigestAscii(nonce).bytes();
+        if origin.present("charset"){confirm HttpAsciiLowercase(origin.parameter("charset")).string()=="utf-8" else throw UnsupportedDigestChallenge();}
+        let opaque_present=origin.present("opaque");let opaque=if opaque_present{origin.parameter("opaque");}else{"";};
+        confirm opaque.length()<=1024 else throw InvalidAuthentication("digest opaque size");DigestAscii(opaque).bytes();
+        self.realm=realm;self.nonce=nonce;self.algorithm=offered;self.opaque=opaque;self.opaque_present=opaque_present;self.utf8=utf8;
+        userhash=DigestFlag(origin,"userhash").value();stale=DigestFlag(origin,"stale").value();
+    }
+    realm() is string{realm;}nonce() is string{nonce;}algorithm() is string{algorithm;}opaque() is string{opaque;}opaque_present() is bool{opaque_present;}userhash() is bool{userhash;}stale() is bool{stale;}
+    session() is bool{let kind=HttpAsciiLowercase(algorithm).string();kind=="sha-256-sess" || kind=="sha-512-256-sess";}
+    utf8() is bool{utf8;}realm_bytes() is @byte{if utf8{Latin1Encoded(realm).bytes();}else{DigestAscii(realm).bytes();}}
+}
+object DigestFlag {
+    has origin is AuthenticationChallenge;has name is string;DigestFlag(origin is AuthenticationChallenge,name is string){self.origin=origin;self.name=name;}
+    value() is bool{
+        if !origin.present(name){return false;}let value=HttpAsciiLowercase(origin.parameter(name)).string();
+        confirm value=="true" || value=="false" else throw InvalidAuthentication("digest flag syntax");value=="true";
+    }
+}
+object DigestAuthorization does HttpAuthorizing {
+    has credentials is DigestCredentials;has challenge is DigestChallenge;has uri,method,cnonce,count is string;
+    DigestAuthorization(credentials is DigestCredentials,challenge is DigestChallenge,request is Request,cnonce is string,count is int){
+        confirm count>=1 && count<=4294967295 && cnonce.length()>0 && cnonce.length()<=256 else throw InvalidAuthentication("digest nonce count or cnonce");DigestAscii(cnonce).bytes();
+        self.credentials=credentials;self.challenge=challenge;uri=HttpDirectRequest(Request(request.method(),request.target(),request.headers(),request.body(),HttpVersion.http_1_1)).request().target().string();method=request.method().string();self.cnonce=cnonce;
+        self.count=HexEncoded([((count>>24)&255).byte(),((count>>16)&255).byte(),((count>>8)&255).byte(),(count&255).byte()]).string();
+    }
+    header() is Header{
+        let response=self.response_digest(method);
+        let name=if challenge.utf8(){DigestText(credentials.username()).string();}else{DigestAscii(credentials.username()).bytes();credentials.username();};
+        let user=if challenge.userhash(){"username="+DigestQuoted(DigestHash(self.identity(),challenge.algorithm()).string()).string();}else{
+            let ascii=try{AsciiEncoded(name).bytes();true;}catch e is UnrepresentableAsciiCharacter{false;};
+            if ascii{"username="+DigestQuoted(name).string();}else{"username*=UTF-8''"+PercentEncoded(name,UrlComponent.data).string();}
+        };
+        let value="Digest "+user+", realm="+DigestQuoted(challenge.realm()).string()+", nonce="+DigestQuoted(challenge.nonce()).string()
+            +", uri="+DigestQuoted(uri).string()+", algorithm="+challenge.algorithm()+", response="+DigestQuoted(response).string()+", qop=auth, nc="+count+", cnonce="+DigestQuoted(cnonce).string()
+            +if challenge.opaque_present(){", opaque="+DigestQuoted(challenge.opaque()).string();}else{"";}+if challenge.userhash(){", userhash=true";}else{"";};
+        Header(HeaderName("Authorization"),value);
+    }
+    proof() is DigestServerProof{DigestServerProof(self.response_digest(""),cnonce,count);}
+    private:
+
+    response_digest(method is string) is string{credentials.response_digest(challenge,uri,method,cnonce,count);}
+
+    identity() is @byte{credentials.identity(challenge);}
+}
+object DigestAscii {
+    has origin is string;DigestAscii(origin is string){self.origin=origin;}
+    bytes() is @byte{let bytes=try{AsciiEncoded(origin).bytes();}catch e is UnrepresentableAsciiCharacter{throw InvalidAuthentication("ASCII digest profile required");};for bytes -> octet{confirm octet.int()>=32 && octet.int()<=126 else throw InvalidAuthentication("digest control character");}bytes;}
+}
+object DigestHash {
+    has origin is @byte;has algorithm is string;DigestHash(origin is @byte){self.origin=origin;algorithm="sha256";}
+    DigestHash(origin is @byte,algorithm is string){self.origin=origin;let kind=HttpAsciiLowercase(algorithm).string();confirm kind=="sha-256" || kind=="sha-256-sess" || kind=="sha-512-256" || kind=="sha-512-256-sess" else throw UnsupportedDigestChallenge();self.algorithm=if kind=="sha-256" || kind=="sha-256-sess"{"sha256";}else{"sha512256";};}
+    string() is string{let bytes=try{native_crypto.digest(algorithm,origin);}catch e is NativeFailure{throw InvalidAuthentication("digest provider unavailable");};confirm bytes.size()==32 else throw InvalidAuthentication("digest provider result");HexEncoded(bytes).string();}
+}
+object DigestQuoted {
+    has origin is string;DigestQuoted(origin is string){self.origin=origin;}
+    string() is string{let bytes=try{Latin1Encoded(origin).bytes();}catch e is UnrepresentableLatin1Character{throw InvalidAuthentication("digest wire octet");};for bytes -> octet{confirm octet.int()>=32 && octet.int()!=127 else throw InvalidAuthentication("digest wire control");}let output=ByteBuffer();defer output.closing().close();let writer=output.writing();writer.write(ByteSnapshot([34.byte()]));
+        for bytes -> octet{if octet.int()==34 || octet.int()==92{writer.write(ByteSnapshot([92.byte()]));}writer.write(ByteSnapshot([octet]));}
+        writer.write(ByteSnapshot([34.byte()]));Latin1Decoded(output.content().bytes()).string();
+    }
+}
+object DigestNonce {
+    has nonce is string;has count is int;DigestNonce(nonce is string,count is int){self.nonce=nonce;self.count=count;}nonce() is string{nonce;}count() is int{count;}
+}
+object DigestNonces {
+    has entries is Atomic<@DigestNonce>;has maximum is int;
+    DigestNonces(maximum is int){confirm maximum>0 && maximum<=1024 else throw InvalidAuthentication("digest nonce ledger limit");self.maximum=maximum;let empty is @DigestNonce=[];entries=Atomic(empty);}
+    ticket(nonce is string) is int{
+        confirm nonce.length()>0 && nonce.length()<=1024 else throw InvalidAuthentication("digest nonce size");
+        loop{let previous=entries.value();let found=previous.reduce(false)->found,entry{found || entry.nonce()==nonce;};
+            confirm found || previous.size()<maximum else throw InvalidAuthentication("digest nonce history limit");
+            let count=previous.reduce(1)->count,entry{if entry.nonce()==nonce{entry.count()+1;}else{count;}};confirm count<=4294967295 else throw InvalidAuthentication("digest nonce count exhausted");
+            let following is @DigestNonce=(0..previous.size()+if found{0;}else{1;}).map()->index{if index==previous.size() || previous[index].nonce()==nonce{DigestNonce(nonce,count);}else{previous[index];}};
+            if entries.compare_and_replace(previous,following){return count;}
+        }
+    }
+}
+object UnsupportedDigestChallenge does Error{UnsupportedDigestChallenge();text() is string{"unsupported Digest challenge";}}
+
+// No preemptive nonce cache or domain expansion. A direct scoped 401 can
+// authorize one replay; one further stale=true/new-nonce refresh is bounded.
+object DigestExchanging does Exchanging {
+    has origin is Exchanging;has scope is AuthenticationScope;has credentials is DigestCredentials;has random is SecureRandom;has counts is DigestNonces;
+    DigestExchanging(origin is Exchanging,scope is Url,credentials is DigestCredentials,random is SecureRandom){self.origin=origin;self.scope=AuthenticationScope(scope);self.credentials=credentials;self.random=random;counts=DigestNonces(128);}
+    async response(request is Request) is ClientResponse{
+        if !scope.matches(request){return await self.once(request);}
+        confirm !request.headers().membership(HeaderName("Authorization")) else throw AuthenticationConflict();
+        let first=await self.once(request);let retained=Event();let cleanup=DigestResponseCleanup(first.response(),retained);defer cleanup.close();
+        if !self.eligible(first,request) || !request.body().replayable(){retained.set();return first;}
+        let challenges=DigestSelection(first.response().headers()).values();if challenges.size()==0{retained.set();return first;}
+        let selected=challenges[0];cleanup.close();
+        let result=await self.authorized(request,selected);let final=Event();let final_cleanup=DigestResponseCleanup(result.response(),final);defer final_cleanup.close();
+        if self.eligible(result,request){
+            let refreshing=DigestSelection(result.response().headers()).values();
+            if refreshing.size()==1 && refreshing[0].stale() && refreshing[0].nonce()!=selected.nonce(){
+                final_cleanup.close();let refreshed=await self.authorized(request,refreshing[0]);return self.result(request,refreshed);
+            }
+        }
+        final.set();self.result(request,result);
+    }
+    private:
+    eligible(result is ClientResponse,request is Request) is bool{result.response().status().code()==401 && result.history().size()==0 && result.request().target().url().string()==request.target().url().string() && scope.matches(result.request());}
+    async authorized(request is Request,challenge is DigestChallenge) is ClientResponse{
+        let count=counts.ticket(challenge.nonce());let nonce=HexEncoded(random.bytes(16)).string();
+        let authorization=DigestAuthorization(credentials,challenge,request,nonce,count);let header=authorization.header();let proof=authorization.proof();
+        let outgoing=Request(request.method(),request.target(),request.headers().addition(header),request.body(),request.version());let result=await self.once(outgoing);
+        let retained=Event();let cleanup=DigestResponseCleanup(result.response(),retained);defer cleanup.close();
+        confirm result.history().size()==0 && result.request().target().url().string()==request.target().url().string() else throw InvalidAuthentication("Digest requires a direct exchange");
+        proof.verify(result.response().headers());let source=result.response();let response=Response(source.status(),source.headers(),DigestBody(source.body(),proof),source.version());
+        let verified=ClientResponse(result.request(),response,result.details());retained.set();verified;
+    }
+    async once(request is Request) is ClientResponse{
+        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=DigestSettlement(group);defer await cleanup.close();let pending=origin.response(request);group.start(pending);await pending;
+    }
+    result(request is Request,result is ClientResponse) is ClientResponse{
+        if result.history().size()==0 && result.request().target().url().string()==request.target().url().string(){return ClientResponse(request,result.response(),result.details());}result;
+    }
+}
+object DigestSelection {
+    has headers is Headers;DigestSelection(headers is Headers){self.headers=headers;}
+    values() is @DigestChallenge{
+        let fields=headers.values(HeaderName("WWW-Authenticate"));confirm fields.size()<=32 else throw InvalidAuthentication("digest challenge field limit");
+        let size=fields.reduce(0)->size,field{size+field.length();};confirm size<=8192 else throw InvalidAuthentication("digest challenge byte limit");
+        let selected is @DigestChallenge=[];
+        for (0..fields.size()) -> index{
+            for AuthenticationChallenges(fields.item(index)).values() -> challenge{
+                if challenge.scheme()=="digest"{
+                    let supported is @DigestChallenge=try{[DigestChallenge(challenge)];}catch e is UnsupportedDigestChallenge{let empty is @DigestChallenge=[];empty;};
+                    if supported.size()==1{return supported;}
+                }
+            }
+        }
+        selected;
+    }
+}
+object DigestResponseCleanup {
+    has origin is Response;has retained,closed is Event;DigestResponseCleanup(origin is Response,retained is Event){self.origin=origin;self.retained=retained;closed=Event();}
+    close() is void{if !retained.ready() && !closed.ready(){closed.set();origin.body().reading().close();}}
+}
+object DigestSettlement<T>{has group is FutureGroup<T>;DigestSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+
+object DigestServerProof {
+    has expected,cnonce,count is string;
+    DigestServerProof(expected is string,cnonce is string,count is string){self.expected=expected;self.cnonce=cnonce;self.count=count;}
+    verify(headers is Headers) is void{
+        let fields=headers.values(HeaderName("Authentication-Info"));if fields.size()==0{return;}
+        confirm fields.size()<=32 else throw InvalidAuthentication("digest server proof limit");
+        let width=fields.reduce(0)->width,field{width+field.length();};confirm width<=8192 else throw InvalidAuthentication("digest server proof limit");
+        let wire=(0..fields.size()).reduce("")->text,index{text+if index==0{"";}else{", ";}+fields.item(index);};
+        let parsed=try{AuthenticationChallenges("Digest "+wire).values();}catch e is InvalidAuthenticationChallenge{throw InvalidAuthentication("digest server proof syntax");};
+        confirm parsed.size()==1 && parsed[0].token68()=="" else throw InvalidAuthentication("digest server proof syntax");let info=parsed[0];
+        confirm info.present("qop") && info.present("cnonce") && info.present("nc") && info.present("rspauth") else throw InvalidAuthentication("digest server proof components");
+        confirm HttpAsciiLowercase(info.parameter("qop")).string()=="auth" && info.parameter("cnonce")==cnonce && HttpAsciiLowercase(info.parameter("nc")).string()==count else throw InvalidAuthentication("digest server proof coordinates");
+        let value=info.parameter("rspauth");confirm value.length()==64 else throw InvalidAuthentication("digest server proof size");
+        let actual=try{HexDecoded(value).bytes();}catch e is InvalidHex{throw InvalidAuthentication("digest server proof syntax");};
+        let correct=try{native_crypto.secure_equal(HexDecoded(expected).bytes(),actual);}catch e is NativeFailure{throw InvalidAuthentication("digest server proof provider");};
+        confirm correct else throw InvalidAuthentication("digest server proof mismatch");
+    }
+}
+object DigestBody does BodyOpening {
+    has origin is BodyOpening;has proof is DigestServerProof;DigestBody(origin is BodyOpening,proof is DigestServerProof){self.origin=origin;self.proof=proof;}
+    length() is BigInt{origin.length();}replayable() is bool{origin.replayable();}reading() is BodyReading{DigestReading(origin.reading(),proof);}
+}
+object DigestReading does BodyReading {
+    has origin is BodyReading;has proof is DigestServerProof;DigestReading(origin is BodyReading,proof is DigestServerProof){self.origin=origin;self.proof=proof;}
+    closed() is bool{origin.closed();}close() is void{origin.close();}trailers() is Headers{origin.trailers();}
+    async bytes(limit is int) is @byte{
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=DigestSettlement(group);defer await cleanup.close();
+        try{let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;if bytes.size()==0{proof.verify(origin.trailers());}bytes;}
+        catch e is Error{origin.close();throw;}catch e is NativeFailure{origin.close();throw;}
+    }
+}
+
+test "Digest nonce counts remain independent and monotone" {
+    let counts=DigestNonces(2);test.ok(counts.ticket("n")==1 && counts.ticket("n")==2 && counts.ticket("other")==1);
+}
+
+object DigestText {
+    has origin is string;DigestText(origin is string){self.origin=origin;}
+    string() is string{let normalized=Normalized(origin,NormalizationForm.nfc).string();for Utf8Encoded(normalized).bytes() -> octet{confirm octet.int()>=32 && octet.int()!=127 else throw InvalidAuthentication("digest control character");}normalized;}
+    bytes() is @byte{Utf8Encoded(self.string()).bytes();}
+}

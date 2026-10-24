@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "collections/frequencies" take Frequencies, Frequency;
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("distinct", Frequencies(values: ["blue", "red", "blue"]).size(), 2);
+    c = c.same_int("total", Frequencies(values: ["blue", "red", "blue"]).total(), 3);
+    c = c.same_int("amount", Frequencies(values: ["blue", "red", "blue"]).amount("blue"), 2);
+    c = c.same_int("absent amount", Frequencies(values: ["blue"]).amount("missing"), 0);
+    c = c.same_texts("first-occurrence order", Frequencies(values: ["blue", "red", "blue"]).map() -> f { f.item() + ":" + f.amount().string(); }, ["blue:2", "red:1"]);
+    c.done();
+}

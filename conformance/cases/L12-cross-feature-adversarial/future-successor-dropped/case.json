@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.future-successor-dropped",
+  "title": "dropping an awaited successor is a must-use error",
+  "purpose": "An awaited successor must be used.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.FUTURE-SUCCESSOR",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "Statically visible loss is a semantic error; runtime discard checks remain defensive."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.1 (static successor consumption)",
+    "docs/okkama-spec-11072026.md#11.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.1: awaiting a successor future without consuming the result loses the successor."
+  },
+  "status": "mandatory"
+}

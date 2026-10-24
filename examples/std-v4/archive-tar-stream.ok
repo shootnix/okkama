@@ -1,0 +1,33 @@
+module app v1.0.0;
+import "archive/tar" take TarWriting, TarReading;
+import "archive/stream" take EndOfArchive;
+import "archive/entry" take ArchiveFile;
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "archive/limits" take ArchiveLimits;
+import "encoding/utf" take Utf8Encoded;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+
+// A buffer stands in for a caller-owned byte stream. Each entry() consumes just
+// one member and its padding; the final call validates the trailer and EOF.
+// close() releases reader state while the caller still owns the source.
+main() is int {
+    let wire=ByteBuffer();defer wire.closing().close();
+    let metadata=ArchiveMetadata(ArchiveModificationFromEpoch(rat(0,1)).value(), "");
+    let writer=TarWriting(wire.writing());
+    writer.write(ArchiveFile(ArchivePath("hello.txt"),metadata,Utf8Encoded("hello\n").bytes()));
+    writer.write(ArchiveFile(ArchivePath("empty.txt"),metadata,[]));
+    writer.finish();writer.close();
+
+    let reader=TarReading(wire.reading(),ArchiveLimits(2,1024,2048,255));
+    let first=reader.entry();Stdout().writeln(first.path().string());
+    let second=reader.entry();Stdout().writeln(second.path().string());
+    confirm !reader.finished() else panic "EOF observed too early";
+    let complete=try {reader.entry();false;} catch end is EndOfArchive {true;};
+    confirm complete && reader.finished() else panic "expected normal EOF";
+    reader.close();
+    confirm !wire.closing().closed() else panic "borrowed input was closed";
+    Stdout().writeln("retained after close: "+first.path().string());
+    0;
+}

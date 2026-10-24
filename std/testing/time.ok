@@ -1,0 +1,79 @@
+module testing/time v1.0.0;
+import "testing/check" take CheckContext;
+import "time/clock" take Timing,Instant,MonotonicInstant;
+import "time/duration" take Duration,DurationUnit;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "collections/ordering" take SortedBy;
+import "compare" take Order;
+import "runtime/time" take clock_domain;
+// Test-context-only owner, no host clock or sleeping. State publication precedes
+// every wake. Nested advance during wake dispatch is explicitly rejected.
+object ManualClock does Timing {
+    has cell is Atomic<ManualClockFrame>;
+    has domain is string;
+    ManualClock(start is Instant){CheckContext().verify();domain=clock_domain(true);cell=Atomic(ManualClockFrame(start,Duration(0.rat(),DurationUnit.second),[],0,false,false));}
+    instant() is Instant {CheckContext().verify();self.open().wall();}
+    monotonic_instant() is MonotonicInstant {CheckContext().verify();MonotonicInstant(self.open().elapsed(),domain);}
+    set_wall(value is Instant) is void {
+        CheckContext().verify();let old=self.open();cell.replace(ManualClockFrame(value,old.elapsed(),old.waiters(),old.serial(),false,old.dispatching()));
+    }
+    pending() is int {CheckContext().verify();cell.value().waiters().size();}
+    closed() is bool {CheckContext().verify();cell.value().closed();}
+    advance(duration is Duration) is void {
+        CheckContext().verify();confirm duration.seconds()>=0.rat() else throw InvalidManualClock("negative advance");
+        let old=self.open();confirm !old.dispatching() else throw InvalidManualClock("reentrant advance during wake dispatch");
+        let elapsed=old.elapsed().plus(duration);let waiting=old.waiters();
+        let due is @ManualClockWaiter=waiting.filter()->entry{entry.deadline().order(elapsed)!=Order.greater;};
+        let remaining is @ManualClockWaiter=waiting.filter()->entry{entry.deadline().order(elapsed)==Order.greater;};
+        let sorted is SortedBy<ManualClockWaiter,Duration>=SortedBy(origin:due,key:(entry is ManualClockWaiter) is Duration{entry.deadline();});
+        cell.replace(ManualClockFrame(old.wall().plus(duration),elapsed,remaining,old.serial(),false,true));
+        defer self.finish_dispatch();
+        for (0..sorted.size())->index {sorted.item(index).signal().set();}
+    }
+    async wait(duration is Duration) is void {
+        CheckContext().verify();confirm duration.seconds()>=0.rat() else throw InvalidManualClock("negative wait");
+        let old=self.open();if duration.seconds()==0.rat(){return;}
+        confirm old.waiters().size()<1024 && old.serial()<2000000000 else throw InvalidManualClock("waiter/registration budget");
+        let signal=Event();let id=old.serial()+1;let waiting=old.waiters();
+        let added is @ManualClockWaiter=(0..waiting.size()+1).map()->index{
+            if index<waiting.size(){waiting[index];}else{ManualClockWaiter(id,old.elapsed().plus(duration),signal);}
+        };
+        cell.replace(ManualClockFrame(old.wall(),old.elapsed(),added,id,false,old.dispatching()));
+        defer self.remove(id);
+        await signal.wait();
+        self.open();
+    }
+    close() is void {
+        CheckContext().verify();let old=cell.value();if old.closed(){return;}
+        cell.replace(ManualClockFrame(old.wall(),old.elapsed(),[],old.serial(),true,old.dispatching()));
+        for old.waiters()->entry {entry.signal().set();}
+    }
+    destroy {self.close();}
+    private:
+    open() is ManualClockFrame {let frame=cell.value();confirm !frame.closed() else throw ManualClockClosed();frame;}
+    remove(id is int) is void {
+        let old=cell.value();let remaining is @ManualClockWaiter=old.waiters().filter()->entry{entry.id()!=id;};
+        cell.replace(ManualClockFrame(old.wall(),old.elapsed(),remaining,old.serial(),old.closed(),old.dispatching()));
+    }
+    finish_dispatch() is void {let old=cell.value();cell.replace(ManualClockFrame(old.wall(),old.elapsed(),old.waiters(),old.serial(),old.closed(),false));}
+}
+object ManualClockWaiter {
+    has id is int;has deadline is Duration;has signal is Event;
+    ManualClockWaiter(id is int,deadline is Duration,signal is Event){self.id=id;self.deadline=deadline;self.signal=signal;}
+    id() is int{id;}deadline() is Duration{deadline;}signal() is Event{signal;}
+}
+object ManualClockFrame {
+    has wall is Instant;has elapsed is Duration;has waiters is @ManualClockWaiter;has serial is int;has closed,dispatching is bool;
+    ManualClockFrame(wall is Instant,elapsed is Duration,waiters is @ManualClockWaiter,serial is int,closed is bool,dispatching is bool){
+        self.wall=wall;self.elapsed=elapsed;self.waiters=waiters;self.serial=serial;self.closed=closed;self.dispatching=dispatching;
+    }
+    wall() is Instant{wall;}elapsed() is Duration{elapsed;}waiters() is @ManualClockWaiter{waiters;}
+    serial() is int{serial;}closed() is bool{closed;}dispatching() is bool{dispatching;}
+}
+object ManualClockClosed does Error {ManualClockClosed();text() is string{"manual clock is closed";}}
+object InvalidManualClock does Error {
+    has reason is string;InvalidManualClock(reason is string){self.reason=reason;}text() is string{"invalid manual clock: "+reason;}
+}
+
+test "manual clock changes no host clock" {let clock=ManualClock(Instant(Duration(0.rat(),DurationUnit.second)));defer clock.close();clock.advance(Duration(2.rat(),DurationUnit.second));test.is(clock.monotonic_instant().reading().seconds(),2.rat());}

@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.length-slice",
+  "title": "length and slice count code points",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-LENGTH-SLICE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "VAL.UNICODE-STRINGS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "5\nhe\né\n😀\n3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6",
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6: length/slice count Unicode code points, slice is end-exclusive."
+  },
+  "status": "mandatory"
+}

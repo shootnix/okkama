@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L10.fs.directory-entries-sorted",
+  "title": "directory entries are sorted lexicographically",
+  "purpose": "Observe host-resource behaviour inside the case's isolated working directory.",
+  "level": "L10",
+  "contracts": [
+    {
+      "contract": "STD.FS.DIRECTORY",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "filesystem"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "tree/a.txt\ntree/b.txt\ntree/c.txt\n"
+    }
+  },
+  "spec_refs": [
+    "std/fs/directory.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "fs/directory: DirectoryEntries snapshots and lexicographically sorts one directory; Path.child joins with the native separator."
+  },
+  "status": "mandatory",
+  "notes": "Expected paths use POSIX separators; the suite's filesystem profile targets POSIX hosts."
+}

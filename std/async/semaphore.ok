@@ -1,0 +1,75 @@
+module async/semaphore v1.0.0;
+
+import "io/stream" take Closing;
+
+/*
+=head1 NAME
+
+async/semaphore - bounded cooperative access to a shared resource
+
+=head1 SYNOPSIS
+
+    let connections is Semaphore = Semaphore(permits: 8);
+
+    async request() is Response {
+        let permit is Permit = await connections.permit();
+        defer permit.close();
+        await client.request();
+    }
+
+=head1 DESCRIPTION
+
+C<Semaphore> limits the number of simultaneous owners. C<permit()> suspends
+when every permit is held and grants waiting acquirers in FIFO order.
+C<permits()> reports the number currently available, not the configured total.
+It is a diagnostic observation and must not be used as a synchronization
+precondition.
+
+Each successful acquisition creates one C<Permit>. A permit has no public
+constructor, returns its capacity exactly once, and supports lexical cleanup
+with C<defer permit.close()>. Cancelling a waiting acquisition removes it from
+the queue without consuming capacity.
+
+The initial count must be positive. Use an unbuffered C<Channel> for a
+rendezvous rather than treating a zero-permit semaphore as another primitive.
+
+=cut
+*/
+
+object Semaphore {
+    has amount is int;
+
+    Semaphore(permits is int) {
+        confirm permits > 0 else throw InvalidPermitCount(permits: permits);
+        amount = permits;
+    }
+
+    async permit() is Permit {
+        panic "Semaphore.permit is a VM intrinsic";
+    }
+
+    permits() is int {
+        panic "Semaphore.permits is a VM intrinsic";
+    }
+}
+
+object Permit does Closing {
+    closed() is bool {
+        panic "Permit.closed is a VM intrinsic";
+    }
+
+    close() is void {
+        panic "Permit.close is a VM intrinsic";
+    }
+}
+
+object InvalidPermitCount does Error {
+    has amount is int;
+    InvalidPermitCount(permits is int) { amount = permits; }
+
+    permits() is int { amount; }
+
+    text() is string {
+        "semaphore permit count must be positive";
+    }
+}

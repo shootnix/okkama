@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.future.cancel-unstarted",
+  "title": "cancelling an unstarted future completes it as Cancelled without running it",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.FUTURES",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-1\ncancelled\n"
+    }
+  },
+  "spec_refs": [
+    "docs/async-guide.md#4.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async guide 4.5: cancelling an unstarted Future completes it Cancelled without running its body; repeated cancel() is safe; await throws Cancelled."
+  },
+  "status": "mandatory"
+}

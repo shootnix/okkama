@@ -1,0 +1,22 @@
+module example v1.0.0;
+import "testing/generation" take IntegerGeneration,SequenceGeneration;
+import "testing/property" take Property;
+import "collections/sequence" take Sequencing;
+import "testing/check" take TextEquals;
+import "random/source" take PcgRandom;
+import "io/stdout" take Stdout;
+main() is int {
+    let generated=IntegerGeneration(-10,11).sample(PcgRandom(42),10);
+    Stdout().writeln("seed=42 value="+generated.string());
+    0;
+}
+test "configured sequence property" {
+    let generation is SequenceGeneration<int>=SequenceGeneration(IntegerGeneration(-10,11),0,8);
+    let property is Property<Sequencing<int>>=Property(generation,42,30,8,64,(values is Sequencing<int>) is bool{values.size()<=8;});
+    property.check();
+}
+test "configured integer property" {
+    TextEquals("same","same").check();
+    let property is Property<int>=Property(IntegerGeneration(-10,11),42,100,10,64,(value is int) is bool{value>=-10 && value<=10;});
+    property.check();
+}

@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Color = (red, blue);
+enum Light = (red, green);
+
+main() is int {
+    let out = Stdout();
+    let a is Color = Color.red;
+    let b = Color.red;
+    out.writeln(if a == b { "equal"; } else { "different"; });
+    out.writeln(if a != Color.blue { "not blue"; } else { "?"; });
+    let colors is @Color = [Color.red, Color.blue];
+    out.writeln(colors.size().string());
+    0;
+}

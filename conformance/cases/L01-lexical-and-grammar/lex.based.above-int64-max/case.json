@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.based.above-int64-max",
+  "title": "a based literal above INT64_MAX is rejected",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.BASED-LITERALS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The guide requires a language diagnostic for unrepresentable literals without fixing lexer vs analysis stage."
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "bitwise guide: based literals are nonnegative and limited to INT64_MAX (0x8000000000000000 = 2^63)."
+  },
+  "status": "mandatory"
+}

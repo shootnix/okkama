@@ -1,0 +1,39 @@
+// Отправить HTTP/1 head и body одной операцией
+//
+// Отправить сообщение HTTP/1 целиком: Http1RequestWriting и Http1ResponseWriting связывают head и body.
+//
+// Запуск: ./examples/cookbook/run lab example-http1-message-writing
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http1-message-writing
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/http1_message_writing" take Http1ResponseWriting;
+import "http/http1_reading" take Http1ResponseHeadReading;
+import "http/http1_body" take Http1BodyReading;
+import "http/http1_framing" take Http1ResponseFraming;
+import "http/message" take Response;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/method" take Method;
+import "http/body" take ByteBody;
+import "net/unix" take UnixPaired,UnixConnection;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "io/stdout" take Stdout;
+object ConnectionOwner does Closing {
+    has origin is UnixConnection;ConnectionOwner(origin is UnixConnection){self.origin=origin;}
+    closed() is bool{origin.closed();}close() is void{origin.close();}
+}
+async main() is int {
+    let pair=await UnixPaired().result();let input=pair.first();let output=pair.second();defer input.close();defer output.close();
+    let response=Response(Status(200),Headers([Header(HeaderName("Content-Length"),"4")]),ByteBody(Latin1Encoded("body").bytes()));
+    await Http1ResponseWriting(output.output(),response,Method("GET")).result();
+    let parsed=await Http1ResponseHeadReading(input.input()).result();let head=parsed.head();let plan=Http1ResponseFraming(head,Method("GET")).plan();
+    let reader=Http1BodyReading(input.input(),ConnectionOwner(input),plan,parsed.remainder(),head.headers());defer reader.close();
+    let buffer=ByteBuffer();defer buffer.closing().close();
+    loop {let chunk=await reader.bytes(2);last if chunk.size()==0;buffer.writing().write(ByteSnapshot(chunk));}
+    Stdout().writeln(Latin1Decoded(buffer.content().bytes()).string());0;
+}

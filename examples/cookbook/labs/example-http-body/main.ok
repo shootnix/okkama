@@ -1,0 +1,19 @@
+// Передать небольшое либо одноразовое HTTP-тело
+//
+// Передать байтовое или одноразовое тело: BodyOpening и BodyReading делают время потребления явным.
+//
+// Запуск: ./examples/cookbook/run lab example-http-body
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-body
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/body" take ByteBody;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+async main() is int {
+    let body=ByteBody(Utf8Encoded("hello").bytes());let reader=body.reading();defer reader.close();
+    Stdout().writeln("length: "+body.length().string());
+    loop {let chunk=await reader.bytes(2);last if chunk.size()==0;Stdout().writeln(Utf8Decoded(chunk).string());}
+    Stdout().writeln("trailers: "+reader.trailers().entries().size().string());0;
+}

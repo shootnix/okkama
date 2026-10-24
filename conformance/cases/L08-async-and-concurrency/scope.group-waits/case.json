@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.scope.group-waits",
+  "title": "FutureGroup starts children and waits for all of them",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.SCOPE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0\n3\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/scope.ok",
+    "docs/async-guide.md#11.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async/scope: start registers and eagerly starts futures (re-registering is idempotent); wait() waits for all; active() is 0 afterwards."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,35 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Shop {
+    has items is @int;
+    has label is string;
+    Shop(:items, :label);
+
+    cap Summary {
+        total is int {
+            let sum = items.reduce(0) -> acc, v { acc + v; };
+            if sum > 10 { return sum; }
+            0;
+        }
+        banner is string {
+            let original = label;
+            let label = "shadowed";
+            label + "/" + original;
+        }
+        doubler is (int) is int {
+            (n is int) is int { n * 2; };
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let shop = Shop(items: [3, 4, 5], label: "store");
+    let view = shop::Summary;
+    out.writeln(view::total.string());
+    out.writeln(view::banner);
+    out.writeln(view::doubler(21).string());
+    0;
+}

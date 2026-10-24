@@ -1,0 +1,34 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NegativeValue does Error {
+    NegativeValue();
+    text() is string { "negative"; }
+}
+
+object Checked {
+    has value is int;
+    Checked(value is int) {
+        self.value = value;
+        confirm value >= 0 else throw NegativeValue();
+    }
+
+    #projected
+    positive() is int {
+        Stdout().writeln("projection ran");
+        value;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let r = try {
+        positive Checked(-3);
+    } catch e is NegativeValue {
+        -1;
+    };
+    out.writeln(r.string());
+    out.writeln((positive Checked(4)).string());
+    0;
+}

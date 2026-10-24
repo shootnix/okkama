@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.url.reference-resolution",
+  "title": "RFC 3986 reference resolution examples",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.URL.VALUE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - g\nok 2 - ./g\nok 3 - g/\nok 4 - /g\nok 5 - //g\nok 6 - ?y\nok 7 - g?y\nok 8 - #s\nok 9 - ..\nok 10 - ../g\nok 11 - ../../g\nok 12 - ../../../g\nok 13 - ./g/.\nok 14 - g;x=1/../y\nchecks: 14, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/url/value.ok",
+    "RFC 3986 section 5.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "RFC 3986 section 5.4.1/5.4.2 published resolution examples against base http://a/b/c/d;p?q."
+  },
+  "status": "mandatory"
+}

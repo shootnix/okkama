@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.order.lazy-branches",
+  "title": "short-circuit and fallbacks stay lazy across await",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.ORDER",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "resumed\n7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 18: short-circuit branches and index fallbacks remain lazy across suspension; locals survive suspension."
+  },
+  "status": "mandatory"
+}

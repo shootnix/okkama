@@ -1,0 +1,523 @@
+module plist/parse v1.0.0;
+import "plist/value" take PlistValue, PlistBoolean, PlistInteger, PlistReal, PlistString, PlistData, PlistDate, PlistUid, PlistArray, PlistDictionary, PlistMember;
+import "collections/list" take List, EmptyList;
+import "numbers/bigint" take BigInt, BigSum, BigProduct, BigDifference, BigPower;
+import "math/decimal" take Decimal, InvalidDecimal;
+import "compare" take Order;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded, Utf32Encoded, ByteOrder, InvalidUtf8, InvalidUtf16;
+import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness, FloatFromBytes, FloatWidth;
+import "encoding/base64" take Base64Decoded, InvalidBase64;
+import "time/rfc3339" take InstantFromRfc3339;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
+
+// Bounded, repeatable plist decoding, entirely in Okkama. Construction retains
+// immutable bytes; value() detects UTF-8 XML or bplist00 and validates anew.
+// Defaults: 1 MiB input, 4096 visited nodes (including keys/repeated references),
+// depth 64 with root at one. Negative budgets fail at construction; all input
+// failures are InvalidPlist with original byte offsets. No I/O or owned resource.
+// Returned values survive parser scope. Containers preserve declaration order.
+// XML is the explicit strict plist dialect in docs/std/plist-parse-guide.md;
+// standard DOCTYPE is recognized but never fetched, custom entities are rejected.
+// Binary offsets/spans/references are checked before reads; cycles on the active
+// path fail, acyclic sharing expands under the node budget. Unreachable payloads
+// are not decoded. Existing UTF/binary/number primitives are the only substrate.
+// Example: ParsedPlist(Utf8Encoded("<plist><true/></plist>").bytes()).value().
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/plist/parse.ok
+object ParsedPlist {
+    has origin is @byte;
+    has maximum_input, maximum_nodes, maximum_depth is int;
+    ParsedPlist(origin is @byte) {
+        self.origin=origin;maximum_input=1048576;maximum_nodes=4096;maximum_depth=64;
+    }
+    ParsedPlist(origin is @byte, maximum_input is int, maximum_nodes is int, maximum_depth is int) {
+        confirm maximum_input>=0 && maximum_nodes>=0 && maximum_depth>=0 else throw InvalidPlistLimits();
+        self.origin=origin;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;self.maximum_depth=maximum_depth;
+    }
+    #projected
+    value() is PlistValue {
+        confirm origin.size()<=maximum_input else throw InvalidPlist(0,"input budget exceeded");
+        if origin.size()>=6 && origin.slice(0,6)==[byte(98),byte(112),byte(108),byte(105),byte(115),byte(116)] {
+            return PlistBinaryDocument(origin,maximum_nodes,maximum_depth).value();
+        }
+        let bom=origin.size()>=3 && origin.slice(0,3)==[byte(239),byte(187),byte(191)];
+        let base=if bom {3;} else {0;};
+        let source=try {Utf8Decoded(origin.slice(base,origin.size())).string();}
+            catch error is InvalidUtf8 {throw InvalidPlist(base+error.offset(),"invalid UTF-8");};
+        PlistXmlDocument(PlistXmlSource(source,base),maximum_nodes,maximum_depth).value();
+    }
+}
+object InvalidPlist does Error {
+    has position is int;has reason is string;
+    InvalidPlist(offset is int, message is string) {position=offset;reason=message;}
+    offset() is int {position;}
+    text() is string {"invalid plist at byte "+position.string()+": "+reason;}
+}
+object InvalidPlistLimits does Error {
+    InvalidPlistLimits();text() is string {"plist budgets must not be negative";}
+}
+
+// Internal parse result and immutable progress cursor. The result counts all
+// expanded nodes; parents subtract that count before parsing the next sibling.
+// Internal successor for the growing parse output. The linked list itself is
+// immutable and has no rebinding protocol; each accepted item yields a new frame.
+object PlistParsedItems<T> {
+    has origin is List<T>;
+    PlistParsedItems() {let empty is List<T> = EmptyList();origin=empty;}
+    following(item is T) is ^PlistParsedItems<T> {^origin=origin.prefix(item);}
+    reversed() is @T {let values is @T=origin.map() -> value {value;};values;}
+}
+object PlistParsedNode {
+    has origin is PlistValue;has end, nodes is int;
+    PlistParsedNode(value is PlistValue, end is int, nodes is int) {origin=value;self.end=end;self.nodes=nodes;}
+    value() is PlistValue {origin;}
+    end() is int {end;}
+    nodes() is int {nodes;}
+}
+object PlistParsePosition {
+    has at, used is int;
+    PlistParsePosition(at is int) {self.at=at;used=0;}
+    at() is int {at;}
+    used() is int {used;}
+    following(end is int, nodes is int) is ^PlistParsePosition {^at=end;^used=used+nodes;}
+}
+
+// Original XML source owns byte-coordinate conversion. UTF-32 scalar checks
+// enforce XML 1.0 characters without borrowing a host XML or HTML parser.
+object PlistXmlSource {
+    has origin is string;has base is int;
+    PlistXmlSource(source is string, base is int) {origin=source;self.base=base;}
+    text() is string {origin;}
+    failure(at is int, reason is string) is InvalidPlist {InvalidPlist(base+Utf8Encoded(origin.slice(0,at)).bytes().size(),reason);}
+    until(start is int, delimiter is string) is int {
+        for (start..origin.length()) -> index {
+            if index+delimiter.length()<=origin.length() && origin.slice(index,index+delimiter.length())==delimiter {return index;}
+        }
+        throw self.failure(start,"unterminated XML token");
+    }
+    text_end(start is int) is int {
+        for (start..origin.length()) -> index {if origin.slice(index,index+1)=="<" {return index;}}
+        origin.length();
+    }
+    token(at is int) is PlistXmlToken {
+        if at==origin.length() {return PlistXmlToken("eof","",at,at);}
+        if origin.slice(at,at+1)!="<" {
+            let end=self.text_end(at);
+            return PlistXmlToken("text",origin.slice(at,end),at,end);
+        }
+        if at+4<=origin.length() && origin.slice(at,at+4)=="<!--" {
+            let end=self.until(at+4,"-->");let content=origin.slice(at+4,end);
+            confirm content.split("--").size()==1 && (content=="" || content.slice(content.length()-1,content.length())!="-")
+                else throw self.failure(at,"invalid comment");
+            return PlistXmlToken("skip","",at,end+3);
+        }
+        if at+9<=origin.length() && origin.slice(at,at+9)=="<![CDATA[" {
+            let end=self.until(at+9,"]]>");
+            return PlistXmlToken("cdata",origin.slice(at+9,end),at,end+3);
+        }
+        let end=self.until(at+1,">");let raw=origin.slice(at+1,end);let body=PlistXmlText(raw).stripped();
+        confirm body!="" && raw.slice(0,1)==body.slice(0,1) else throw self.failure(at,"whitespace before tag name");
+        if body.length()>=1 && body.slice(0,1)=="?" {
+            let compact=PlistXmlText(body).compact();
+            confirm at==0 && (compact=="?xml version=\"1.0\"?" || compact=="?xml version=\"1.0\" encoding=\"UTF-8\"?"
+                || compact=="?xml version='1.0'?" || compact=="?xml version='1.0' encoding='UTF-8'?")
+                else throw self.failure(at,"unsupported XML declaration");
+            return PlistXmlToken("declaration","",at,end+1);
+        }
+        if body.length()>=1 && body.slice(0,1)=="!" {
+            let compact=PlistXmlText(body).compact();
+            confirm compact=="!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\""
+                || compact=="!DOCTYPE plist SYSTEM \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\""
+                else throw self.failure(at,"unsupported DTD or declaration");
+            return PlistXmlToken("doctype","",at,end+1);
+        }
+        let closing=body.length()>0 && body.slice(0,1)=="/";
+        let empty=body.length()>0 && body.slice(body.length()-1,body.length())=="/";
+        confirm !(closing && empty) else throw self.failure(at,"invalid closing tag");
+        confirm !empty || raw.slice(raw.length()-1,raw.length())=="/" else throw self.failure(at,"invalid empty tag close");
+        confirm !closing || (body.length()>1 && !PlistXmlText(body).whitespace(1)) else throw self.failure(at,"invalid closing tag name");
+        let name=PlistXmlText(body.slice(if closing {1;} else {0;},body.length()-(if empty {1;} else {0;}))).stripped();
+        let normalized=PlistXmlText(name).compact();
+        let plain=if normalized=="plist version=\"1.0\"" || normalized=="plist version='1.0'" {"plist";} else {name;};
+        confirm !closing || plain==name else throw self.failure(at,"attributes on closing tag");
+        PlistXmlToken(if closing {"close";} else {if empty {"empty";} else {"open";}},plain,at,end+1);
+    }
+    significant(start is int) is PlistXmlToken {
+        let cursor=PlistParsePosition(start);
+        loop {
+            let token=self.token(cursor.at());
+            if token.kind()=="skip" || (token.kind()=="text" && PlistXmlText(token.text()).stripped()=="") {
+                cursor=cursor.following(token.end(),0);
+            } else {return token;}
+        }
+    }
+    checked(text is string, at is int) is string {
+        let bytes=Utf32Encoded(text,ByteOrder.big).bytes();
+        for (0..text.length()) -> index {
+            let scalar=IntegerFromBytes(bytes.slice(index*4,index*4+4),Signedness.unsigned,ByteOrder.big).value();
+            confirm PlistXmlCharacter(scalar).valid() else throw self.failure(at+index,"invalid XML character");
+        }
+        text;
+    }
+    decoded(text is string, at is int) is string {
+        let cursor=PlistParsePosition(0);
+        let pieces is PlistParsedItems<string> = PlistParsedItems();
+        loop {
+            if cursor.at()==text.length() {last;}
+            let index=cursor.at();let char=text.slice(index,index+1);
+            if char!="&" {
+                pieces=pieces.following(if char=="\r" {"\n";} else {char;});
+                let count=if char=="\r" && index+1<text.length() && text.slice(index+1,index+2)=="\n" {2;} else {1;};
+                cursor=cursor.following(index+count,0);
+            }
+            else {
+                let stops=(index+1..text.length()).filter() -> position {text.slice(position,position+1)==";";};
+                confirm stops.size()>0 else throw self.failure(at+index,"unterminated entity");
+                let end=stops[0];let entity=text.slice(index+1,end);
+                let value=match entity {
+                    case "amp" {"&";} case "lt" {"<";} case "gt" {">";} case "quot" {"\"";} case "apos" {"'";}
+                    else {
+                        confirm entity.length()>1 && entity.slice(0,1)=="#" else throw self.failure(at+index,"unknown entity");
+                        let hex=entity.slice(1,2)=="x";let start=if hex {2;} else {1;};
+                        confirm entity.length()>start else throw self.failure(at+index,"empty character reference");
+                        let alphabet=if hex {"0123456789abcdef";} else {"0123456789";};
+                        let scalar=(start..entity.length()).reduce(0) -> value,position {
+                            let digit=entity.slice(position,position+1).replace("A","a").replace("B","b").replace("C","c").replace("D","d").replace("E","e").replace("F","f");
+                            let split=alphabet.split(digit);
+                            confirm split.size()==2 && value<=1114111 else throw self.failure(at+index,"invalid character reference");
+                            value*alphabet.length()+split[0].length();
+                        };
+                        confirm PlistXmlCharacter(scalar).valid() else throw self.failure(at+index,"invalid character reference");
+                        Utf32Decoded(IntegerBytes(scalar,4,Signedness.unsigned,ByteOrder.big).bytes(),ByteOrder.big).string();
+                    }
+                };
+                pieces=pieces.following(value);cursor=cursor.following(end+1,0);
+            }
+        }
+        let reversed is @string=pieces.reversed();
+        let ordered is @string=(0..reversed.size()).map() -> index {reversed[reversed.size()-index-1];};
+        ordered.join("");
+    }
+}
+object PlistXmlCharacter {
+    has value is int;PlistXmlCharacter(value is int) {self.value=value;}
+    valid() is bool {value==9 || value==10 || value==13 || (value>=32 && value<=55295) || (value>=57344 && value<=65533) || (value>=65536 && value<=1114111);}
+}
+object PlistXmlText {
+    has origin is string;PlistXmlText(origin is string) {self.origin=origin;}
+    whitespace(index is int) is bool {let c=origin.slice(index,index+1);c==" " || c=="\t" || c=="\n" || c=="\r";}
+    stripped() is string {
+        let start=(0..origin.length()).reduce(origin.length()) -> found,index {if found==origin.length() && !self.whitespace(index) {index;} else {found;}};
+        let end=(start..origin.length()).reduce(start) -> found,index {if !self.whitespace(index) {index+1;} else {found;}};
+        origin.slice(start,end);
+    }
+    compact() is string {
+        let words=origin.replace("\r"," ").replace("\n"," ").replace("\t"," ").split(" ").filter() -> word {word!="";};
+        words.join(" ");
+    }
+}
+object PlistXmlToken {
+    has category, origin is string;has start, end is int;
+    PlistXmlToken(kind is string,text is string,start is int,end is int) {category=kind;origin=text;self.start=start;self.end=end;}
+    kind() is string {category;}text() is string {origin;}start() is int {start;}end() is int {end;}
+}
+
+// Internal XML grammar. Every element consumes one bounded subtree; dictionaries
+// read key/value pairs explicitly. Scalar text joins CDATA/comments without
+// accepting nested elements. No partial result escapes a failed parse.
+object PlistXmlDocument {
+    has source is PlistXmlSource;has maximum_nodes, maximum_depth is int;
+    PlistXmlDocument(source is PlistXmlSource, maximum_nodes is int, maximum_depth is int) {
+        self.source=source;self.maximum_nodes=maximum_nodes;self.maximum_depth=maximum_depth;
+    }
+    value() is PlistValue {
+        source.checked(source.text(),0);
+        let cursor=PlistParsePosition(0);
+        let first=source.token(0);
+        if first.kind()=="declaration" {cursor=cursor.following(first.end(),0);}
+        let prolog=source.significant(cursor.at());
+        if prolog.kind()=="doctype" {cursor=cursor.following(prolog.end(),0);}
+        let root=source.significant(cursor.at());
+        confirm root.kind()=="open" && root.text()=="plist" else throw source.failure(root.start(),"expected plist wrapper");
+        let value=self.element(root.end(),1,maximum_nodes);
+        let close=source.significant(value.end());
+        confirm close.kind()=="close" && close.text()=="plist" else throw source.failure(close.start(),"expected plist closing tag");
+        let end=source.significant(close.end());
+        confirm end.kind()=="eof" else throw source.failure(end.start(),"trailing XML content");
+        value.value();
+    }
+    element(at is int, depth is int, remaining is int) is PlistParsedNode {
+        let token=source.significant(at);
+        confirm depth<=maximum_depth && remaining>0 else throw source.failure(token.start(),"node or depth budget exceeded");
+        confirm token.kind()=="open" || token.kind()=="empty" else throw source.failure(token.start(),"expected plist value");
+        let name=token.text();
+        if name=="array" || name=="dict" {
+            let cursor=PlistParsePosition(token.end());
+            let values is PlistParsedItems<PlistValue> = PlistParsedItems();
+            let members is PlistParsedItems<PlistMember> = PlistParsedItems();
+            if token.kind()!="empty" {
+                loop {
+                    let item=source.significant(cursor.at());
+                    if item.kind()=="close" {
+                        confirm item.text()==name else throw source.failure(item.start(),"mismatched closing tag");
+                        cursor=cursor.following(item.end(),0);last;
+                    }
+                    if name=="dict" {
+                        confirm (item.kind()=="open" || item.kind()=="empty") && item.text()=="key" else throw source.failure(item.start(),"expected dictionary key");
+                        confirm remaining-cursor.used()>1 && depth<maximum_depth else throw source.failure(item.start(),"key budget exceeded");
+                        let key=self.content(item);
+                        for members.reversed() -> member {confirm member.name()!=key.text() else throw source.failure(item.start(),"duplicate dictionary key");}
+                        let child=self.element(key.end(),depth+1,remaining-cursor.used()-2);
+                        members=members.following(PlistMember(key.text(),child.value()));
+                        cursor=cursor.following(child.end(),child.nodes()+1);
+                    } else {
+                        let child=self.element(cursor.at(),depth+1,remaining-cursor.used()-1);
+                        values=values.following(child.value());cursor=cursor.following(child.end(),child.nodes());
+                    }
+                }
+            }
+            if name=="dict" {
+                let reversed is @PlistMember=members.reversed();
+                let ordered is @PlistMember=(0..reversed.size()).map() -> index {reversed[reversed.size()-index-1];};
+                return PlistParsedNode(PlistDictionary(ordered,maximum_nodes),cursor.at(),cursor.used()+1);
+            }
+            let reversed is @PlistValue=values.reversed();
+            let ordered is @PlistValue=(0..reversed.size()).map() -> index {let value is PlistValue=reversed[reversed.size()-index-1];value;};
+            return PlistParsedNode(PlistArray(ordered,maximum_nodes),cursor.at(),cursor.used()+1);
+        }
+        confirm name=="string" || name=="integer" || name=="real" || name=="data" || name=="date" || name=="true" || name=="false"
+            else throw source.failure(token.start(),"unknown plist element");
+        let content=self.content(token);let text=content.text();let scalar=PlistXmlText(text).stripped();
+        let value is PlistValue=try {
+            match name {
+                case "string" {PlistString(text);}
+                case "true", "false" {confirm text=="" else throw source.failure(token.start(),"boolean must be empty");PlistBoolean(name=="true");}
+                case "integer" {
+                    confirm scalar.length()<=4096 else throw source.failure(token.start(),"numeric spelling limit exceeded");
+                    confirm scalar.length()<2 || scalar.slice(0,2)!="+-" else throw source.failure(token.start(),"invalid integer sign");
+                    PlistInteger(BigInt(if scalar.length()>0 && scalar.slice(0,1)=="+" {scalar.slice(1,scalar.length());} else {scalar;}));
+                }
+                case "real" {PlistReal(PlistDecimalReal(scalar).value());}
+                case "data" {PlistData(Base64Decoded(text.replace(" ","").replace("\t","").replace("\n","").replace("\r","")).bytes());}
+                case "date" {
+                    confirm scalar.length()>=20 && scalar.slice(scalar.length()-1,scalar.length())=="Z" else throw source.failure(token.start(),"UTC date required");
+                    PlistDate(InstantFromRfc3339(scalar).value());
+                }
+                else {throw source.failure(token.start(),"unknown plist scalar");}
+            }
+        } catch error is Error {throw source.failure(token.start(),error.text());};
+        PlistParsedNode(value,content.end(),1);
+    }
+    content(open is PlistXmlToken) is PlistXmlToken {
+        if open.kind()=="empty" {return PlistXmlToken("text","",open.end(),open.end());}
+        let cursor=PlistParsePosition(open.end());let pieces is PlistParsedItems<string> = PlistParsedItems();
+        loop {
+            let token=source.token(cursor.at());
+            if token.kind()=="close" {
+                confirm token.text()==open.text() else throw source.failure(token.start(),"mismatched scalar closing tag");
+                let reversed is @string=pieces.reversed();
+                let ordered is @string=(0..reversed.size()).map() -> index {reversed[reversed.size()-index-1];};
+                return PlistXmlToken("text",ordered.join(""),open.end(),token.end());
+            }
+            confirm token.kind()=="text" || token.kind()=="cdata" || token.kind()=="skip" else throw source.failure(token.start(),"invalid scalar content");
+            if token.kind()!="skip" {
+                let normalized=token.text().replace("\r\n","\n").replace("\r","\n");
+                if token.kind()=="text" {
+                    confirm token.text().split("]]>").size()==1 else throw source.failure(token.start(),"unexpected CDATA close");
+                    // Decode before normalizing literal line endings so references keep CR.
+                    let decoded=source.decoded(token.text(),token.start());
+                    // Literal CR is normalized in decoded() independently of references.
+                    pieces=pieces.following(decoded);
+                } else {pieces=pieces.following(normalized);}
+            }
+            cursor=cursor.following(token.end(),0);
+        }
+    }
+}
+
+// Exact decimal-to-rational preparation avoids intermediate float overflow.
+// Conversion to finite binary64 is explicit and occurs only after range checks.
+object PlistDecimalReal {
+    has origin is string;PlistDecimalReal(origin is string) {self.origin=origin;}
+    value() is float {
+        confirm origin.length()>0 && origin.length()<=4096 else throw InvalidPlist(0,"real spelling limit exceeded");
+        confirm origin.length()<2 || origin.slice(0,2)!="+-" else throw InvalidPlist(0,"invalid real sign");
+        let raw=if origin.slice(0,1)=="+" {origin.slice(1,origin.length());} else {origin;};
+        // Bound the written exponent before handing it to the decimal substrate.
+        let parts=raw.replace("E","e").split("e");
+        confirm parts.size()<=2 else throw InvalidPlist(0,"invalid real exponent");
+        if parts.size()==2 {
+            let written=parts[1];
+            let start=if written.length()>0 && (written.slice(0,1)=="+" || written.slice(0,1)=="-") {1;} else {0;};
+            confirm written.length()>start else throw InvalidPlist(0,"empty real exponent");
+            (start..written.length()).reduce(0) -> value,index {
+                let digit="0123456789".split(written.slice(index,index+1));
+                confirm digit.size()==2 && value<=4096 else throw InvalidPlist(0,"invalid real exponent");
+                let following=value*10+digit[0].length();
+                confirm following<=4096 else throw InvalidPlist(0,"real exponent limit exceeded");
+                following;
+            };
+        }
+        let decimal=Decimal(raw);let exponent=decimal.exponent();
+        confirm exponent>=-4096 && exponent<=4096 else throw InvalidPlist(0,"real exponent limit exceeded");
+        let spelling=decimal.coefficient().string();let negative=spelling.slice(0,1)=="-";
+        let digits=if negative {spelling.slice(1,spelling.length());} else {spelling;};
+        let coefficient=(0..digits.length()).reduce(0.rat()) -> value,index {value*10.rat()+"0123456789".split(digits.slice(index,index+1))[0].length().rat();};
+        let factor=(0..(if exponent<0 {-exponent;} else {exponent;})).reduce(1.rat()) -> value,index {value*10.rat();};
+        let magnitude=if exponent<0 {coefficient/factor;} else {coefficient*factor;};
+        // Exact largest finite binary64, (2^53-1)*2^971, as decimal text.
+        let absolute=if raw.slice(0,1)=="-" {raw.slice(1,raw.length());} else {raw;};
+        confirm Decimal(absolute).order(Decimal("179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368"))!=Order.greater
+            else throw InvalidPlist(0,"real outside finite binary64");
+        (if negative {-magnitude;} else {magnitude;}).float();
+    }
+}
+
+// Checked byte view: all slices and bounded unsigned accumulations preflight
+// their span. Metadata never reaches machine overflow before its bound check.
+object PlistBinaryBytes {
+    has origin is @byte;PlistBinaryBytes(origin is @byte) {self.origin=origin;}
+    span(at is int, count is int, end is int) is @byte {
+        confirm at>=0 && end<=origin.size() && at<=end && count>=0 && count<=end-at
+            else throw InvalidPlist(if at<0 {0;} else {at;},"binary span outside object");
+        origin.slice(at,at+count);
+    }
+    uint(at is int, count is int, end is int, maximum is int) is int {
+        let bytes=self.span(at,count,end);
+        bytes.reduce(0) -> value,part {
+            confirm value.rat()<=(maximum-part.int())/256 else throw InvalidPlist(at,"binary integer exceeds bound");
+            value*256+part.int();
+        };
+    }
+}
+object PlistBinaryExtent {
+    has count, position is int;
+    PlistBinaryExtent(count is int, position is int) {self.count=count;self.position=position;}
+    count() is int {count;}position() is int {position;}
+}
+object PlistBinaryDocument {
+    has origin is @byte;has offsets is @int;
+    has root, table, references, maximum_nodes, maximum_depth is int;
+    PlistBinaryDocument(origin is @byte, maximum_nodes is int, maximum_depth is int) {
+        confirm origin.size()>=40 else throw InvalidPlist(0,"truncated binary plist");
+        confirm origin.slice(0,8)==[byte(98),byte(112),byte(108),byte(105),byte(115),byte(116),byte(48),byte(48)]
+            else throw InvalidPlist(0,"unsupported binary plist version");
+        let bytes=PlistBinaryBytes(origin);let trailer=origin.size()-32;
+        let width=origin[trailer+6].int();let refs=origin[trailer+7].int();
+        confirm width>=1 && width<=8 && refs>=1 && refs<=8 else throw InvalidPlist(trailer+6,"invalid binary widths");
+        let count=bytes.uint(trailer+8,8,origin.size(),origin.size());
+        confirm count>0 && count<=maximum_nodes else throw InvalidPlist(trailer+8,"object count exceeds budget");
+        let first=bytes.uint(trailer+16,8,origin.size(),count-1);
+        let location=bytes.uint(trailer+24,8,origin.size(),trailer);
+        confirm location>=8 && count.rat()<=(trailer-location)/width && location+count*width==trailer
+            else throw InvalidPlist(trailer+24,"invalid offset table span");
+        let positions is @int=(0..count).map() -> index {
+            let position=bytes.uint(location+index*width,width,trailer,location-1);
+            confirm position>=8 else throw InvalidPlist(location+index*width,"object offset points into header");
+            position;
+        };
+        self.origin=origin;offsets=positions;root=first;table=location;references=refs;
+        self.maximum_nodes=maximum_nodes;self.maximum_depth=maximum_depth;
+    }
+    value() is PlistValue {
+        let path is List<int> = EmptyList();
+        self.read(root,1,maximum_nodes,path).value();
+    }
+    private:
+    limit(start is int) is int {offsets.reduce(table) -> end,position {if position>start && position<end {position;} else {end;}};}
+    extent(start is int, end is int) is PlistBinaryExtent {
+        let nibble=origin[start].int()%16;
+        if nibble<15 {return PlistBinaryExtent(nibble,start+1);}
+        let bytes=PlistBinaryBytes(origin);let marker=bytes.uint(start+1,1,end,255);
+        confirm marker>=16 && marker<=19 else throw InvalidPlist(start+1,"invalid extended length marker");
+        let width=(0..(marker-16)).reduce(1) -> size,index {size*2;};
+        let count=bytes.uint(start+2,width,end,origin.size());
+        PlistBinaryExtent(count,start+2+width);
+    }
+    ref(at is int,end is int) is int {PlistBinaryBytes(origin).uint(at,references,end,offsets.size()-1);}
+    string(index is int) is string {
+        let start=offsets[index];let end=self.limit(start);let marker=origin[start].int();
+        confirm marker>=80 && marker<112 else throw InvalidPlist(start,"dictionary key must be a string");
+        let extent=self.extent(start,end);let unicode=marker>=96;
+        let payload=PlistBinaryBytes(origin).span(extent.position(),extent.count()*(if unicode {2;} else {1;}),end);
+        try {
+            if unicode {Utf16Decoded(payload,ByteOrder.big).string();} else {
+                for payload -> part {confirm part.int()<128 else throw InvalidPlist(start,"invalid ASCII string");}
+                Utf8Decoded(payload).string();
+            }
+        } catch error is InvalidPlist {throw error;}
+          catch error is Error {throw InvalidPlist(start,error.text());}
+    }
+    integer(payload is @byte, signed is bool) is BigInt {
+        let value=payload.reduce(BigInt("0")) -> number,part {BigSum(left: BigProduct(left: number,right: BigInt("256")).value(),right: BigInt(part.int().string())).value();};
+        if signed && payload[0].int()>=128 {BigDifference(left: value,right: BigPower(BigInt("256"),payload.size(),129).value()).value();} else {value;}
+    }
+    read(index is int,depth is int,remaining is int,path is List<int>) is PlistParsedNode {
+        let start=offsets[index];let end=self.limit(start);let marker=origin[start].int();let category=(marker/16).int();
+        confirm remaining>0 && depth<=maximum_depth else throw InvalidPlist(start,"node or depth budget exceeded");
+        for path -> offset {confirm offset!=start else throw InvalidPlist(start,"cyclic object reference");}
+        let active=path.prefix(start);let bytes=PlistBinaryBytes(origin);
+        if category==10 || category==13 {
+            let extent=self.extent(start,end);let count=extent.count();
+            confirm count<=remaining-1 else throw InvalidPlist(start,"container node budget exceeded");
+            bytes.span(extent.position(),count*references*(if category==13 {2;} else {1;}),end);
+            let values is PlistParsedItems<PlistValue> = PlistParsedItems();let members is PlistParsedItems<PlistMember> = PlistParsedItems();
+            let progress=PlistParsePosition(extent.position());
+            for (0..count) -> item {
+                if category==13 {
+                    confirm remaining-progress.used()>2 && depth<maximum_depth else throw InvalidPlist(start,"dictionary key budget exceeded");
+                    let key=self.string(self.ref(extent.position()+item*references,end));
+                    for members.reversed() -> member {confirm member.name()!=key else throw InvalidPlist(start,"duplicate dictionary key");}
+                    let value=self.read(self.ref(extent.position()+(count+item)*references,end),depth+1,remaining-progress.used()-2,active);
+                    members=members.following(PlistMember(key,value.value()));progress=progress.following(0,value.nodes()+1);
+                } else {
+                    let value=self.read(self.ref(extent.position()+item*references,end),depth+1,remaining-progress.used()-1,active);
+                    values=values.following(value.value());progress=progress.following(0,value.nodes());
+                }
+            }
+            if category==13 {
+                let reversed is @PlistMember=members.reversed();
+                let ordered is @PlistMember=(0..reversed.size()).map() -> item {reversed[reversed.size()-item-1];};
+                return PlistParsedNode(PlistDictionary(ordered,maximum_nodes),end,progress.used()+1);
+            }
+            let reversed is @PlistValue=values.reversed();
+            let ordered is @PlistValue=(0..reversed.size()).map() -> item {let value is PlistValue=reversed[reversed.size()-item-1];value;};
+            return PlistParsedNode(PlistArray(ordered,maximum_nodes),end,progress.used()+1);
+        }
+        let value is PlistValue=try {
+            if marker==8 || marker==9 {PlistBoolean(marker==9);}
+            else {if category==1 {
+                confirm marker<=20 else throw InvalidPlist(start,"unsupported integer width");
+                let width=(0..(marker-16)).reduce(1) -> size,item {size*2;};
+                PlistInteger(self.integer(bytes.span(start+1,width,end),width>=8));
+            } else {if category==2 || marker==51 {
+                let width=if marker==34 {4;} else {8;};
+                confirm marker==34 || marker==35 || marker==51 else throw InvalidPlist(start,"unsupported float width");
+                let number=FloatFromBytes(bytes.span(start+1,width,end),if width==4 {FloatWidth.bits32;} else {FloatWidth.bits64;},ByteOrder.big).value();
+                if marker==51 {PlistDate(Instant(Duration(number.rat()+978307200.rat(),DurationUnit.second)));} else {PlistReal(number);}
+            } else {if category==4 {
+                let extent=self.extent(start,end);PlistData(bytes.span(extent.position(),extent.count(),end));
+            } else {if category==5 || category==6 {PlistString(self.string(index));}
+            else {if category==8 {PlistUid(self.integer(bytes.span(start+1,marker%16+1,end),false));}
+            else {throw InvalidPlist(start,"unsupported binary object marker");}}}}}}
+        } catch error is InvalidPlist {throw error;}
+          catch error is Error {throw InvalidPlist(start,error.text());};
+        PlistParsedNode(value,end,1);
+    }
+}
+
+test "plist parser rejects empty and truncated inputs with byte diagnostics" {
+    test.is(try {ParsedPlist([]).value();-1;} catch error is InvalidPlist {error.offset();},0);
+    test.is(try {ParsedPlist([byte(98),byte(112),byte(108),byte(105),byte(115),byte(116),byte(48),byte(48)]).value();-1;}
+        catch error is InvalidPlist {error.offset();},0);
+}
+test "plist parser validates configuration before input observation" {
+    test.ok(try {ParsedPlist([],-1,0,0);false;} catch error is InvalidPlistLimits {true;});
+    test.ok(try {ParsedPlist([byte(0)],0,1,1).value();false;} catch error is InvalidPlist {true;});
+}
+
+// Inline runner does not resolve imported enum names at the root; consumer
+// fixtures assert exact kinds and payloads. Here the two encodings agree.
+test "plist parser recognizes both wire formats" {
+    test.is(ParsedPlist([byte(60),byte(112),byte(108),byte(105),byte(115),byte(116),byte(62),byte(60),byte(116),byte(114),byte(117),byte(101),byte(47),byte(62),byte(60),byte(47),byte(112),byte(108),byte(105),byte(115),byte(116),byte(62)]).value().kind(),ParsedPlist([byte(98),byte(112),byte(108),byte(105),byte(115),byte(116),byte(48),byte(48),byte(9),byte(8),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(1),byte(1),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(1),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(9)]).value().kind());
+}

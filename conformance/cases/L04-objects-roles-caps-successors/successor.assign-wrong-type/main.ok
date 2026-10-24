@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box {
+    has n is int = 0;
+    Box();
+    renamed(v is any) is ^Box {
+        ^n = v;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let label = "many";
+    let b = Box().renamed(label);
+    out.writeln("unreachable");
+    0;
+}

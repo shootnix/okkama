@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Problem does Error {
+    Problem();
+    text() is string { "problem"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let v = try {
+        try {
+            throw Problem();
+        } catch inner is Problem {
+            out.writeln("inner caught");
+            throw;
+        }
+        0;
+    } catch outer is Problem {
+        out.writeln("outer caught " + outer.text());
+        1;
+    };
+    out.writeln(v.string());
+    0;
+}

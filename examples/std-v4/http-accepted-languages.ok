@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/negotiation" take AcceptedLanguages;
+import "locale/tag" take Locale;
+import "io/stdout" take Stdout;
+main() is int {
+    let accepted=AcceptedLanguages("en;q=0,*;q=0.5,fr;q=0.8");
+    Stdout().writeln(accepted.string());
+    Stdout().writeln(accepted.preference([Locale("en","US"),Locale("fr","CA"),Locale("de")]).string());
+    0;
+}

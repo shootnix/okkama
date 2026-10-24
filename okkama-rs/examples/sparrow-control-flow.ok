@@ -1,0 +1,12 @@
+module examples/sparrow_control_flow v1.0.0;
+
+// Цикл, условие и next на Sparrow VM. Возвращает 42 как код выхода.
+// Сборка из okkama-rs:
+// cargo run -p okkama-cli -- build examples/sparrow-control-flow.ok --target sparrow -o out.spb
+// Запуск: cargo run -p okkama-cli -- exec out.spb
+main() is int {
+    for 1..=4 -> i {
+        next if i < 4;
+        40 + i - 2;
+    }
+}

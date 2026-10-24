@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.comments.block-not-nesting",
+  "title": "block comments do not nest",
+  "purpose": "Malformed source is rejected by the lexer/parser.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.COMMENTS",
+      "aspects": [
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-llm-context-1.0.md#5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "LLM context 5: block comments are non-nesting, so the first `*/` ends the comment and `still outer */` is not valid code."
+  },
+  "status": "mandatory"
+}

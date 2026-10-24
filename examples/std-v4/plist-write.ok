@@ -1,0 +1,17 @@
+module app v1.0.0;
+import "plist/value" take PlistDictionary, PlistMember, PlistString, PlistBoolean, PlistData;
+import "plist/write" take EncodedPlist, PlistFormat;
+import "encoding/utf" take Utf8Decoded;
+import "encoding/hex" take HexEncoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let value=PlistDictionary([
+        PlistMember("name",PlistString("Okkama & Ω")),
+        PlistMember("enabled",PlistBoolean(true)),
+        PlistMember("data",PlistData([byte(0),byte(255)])),
+    ]);
+    Stdout().writeln(Utf8Decoded(EncodedPlist(value,PlistFormat.xml).bytes()).string());
+    Stdout().writeln(HexEncoded(EncodedPlist(value,PlistFormat.binary).bytes()).string());
+    0;
+}

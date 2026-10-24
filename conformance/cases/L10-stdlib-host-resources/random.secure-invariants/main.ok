@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "random/source" take SecureRandom;
+
+main() is int {
+    let out = Stdout();
+    let r = SecureRandom();
+    let a = r.bytes(16);
+    let b = r.bytes(16);
+    out.writeln(a.size().string());
+    out.writeln(if a == b { "repeated"; } else { "distinct"; });
+    let n = r.integer(10, 20);
+    out.writeln(if n >= 10 && n < 20 { "in range"; } else { "out of range"; });
+    0;
+}

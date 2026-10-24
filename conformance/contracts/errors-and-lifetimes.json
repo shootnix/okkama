@@ -1,0 +1,284 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Errors, cleanup and lifetimes",
+  "description": "Failure model, defer, destroy and ownership (spec sections 9.4-9.6, 10, 11.4-11.5, 14, 19).",
+  "contracts": [
+    {
+      "id": "ERR.THROW",
+      "title": "throw accepts only objects that nominally do Error (or NativeFailure)",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.CATCH",
+      "title": "Typed catches in source order; non-matching failures propagate; catch types must guarantee Error",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.RETHROW",
+      "title": "Bare throw rethrows the handled error unchanged; only inside a catch",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.TRY-EXPR",
+      "title": "try is an expression yielding the try or selected catch value",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.SCOPES",
+      "title": "Try and catch bodies are separate scopes; the binding exists only in its catch",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.PANIC",
+      "title": "panic takes an exact string and is never catchable",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.CONFIRM",
+      "title": "confirm: bare failure is uncatchable, else throw raises a typed error lazily, else panic panics",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.4"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "discrepancies": [
+        "D-004"
+      ],
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.UNCAUGHT",
+      "title": "An uncaught typed error terminates the program unsuccessfully after cleanup",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#3",
+        "docs/okkama-spec-11072026.md#20"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.ERROR-ROLE",
+      "title": "Error is a system role requiring text(); objects must explicitly does Error",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.5"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "ERR.CONTROL-NOT-CAUGHT",
+      "title": "Loop control and return pass through try without being caught",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.6",
+        "docs/okkama-spec-11072026.md#8.13"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "DEFER.ORDER",
+      "title": "Deferred expressions run lazily at scope exit in LIFO order, before owned destroys",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#19"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "DEFER.EXITS",
+      "title": "Defers run on normal exit, return, next/last, throw, panic and runtime errors",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#19"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "DEFER.FAILURES",
+      "title": "Every defer runs; body failure beats defer failure beats destroy failure",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#19"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "LIFE.DESTROY",
+      "title": "destroy runs at owning-scope exit in reverse construction order; at most once per identity",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.5",
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "LIFE.OWNERSHIP",
+      "title": "Ownership follows identity: aliases, parameters and self borrow; returned objects survive",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#10"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "LIFE.CONSTRUCTOR-FAILURE",
+      "title": "A failed constructor runs no destroy for the unfinished receiver but cleans owned resources",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#11.4",
+        "improvements-roadmap/results/IMP-09/RESULT.md"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "LIFE.TRY-CLEANUP",
+      "title": "Try-owned objects are destroyed before catch selection",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#9.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    },
+    {
+      "id": "TEST.RUNNER",
+      "title": "-t runs root-module tests (not main); exit 0 only when every test passes; failures are isolated per test",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#14"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "required"
+      },
+      "family": "Errors, cleanup and lifetimes"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+module runtime/net v1.0.0;
+
+// Private numeric address conversion through the existing core.net provider.
+// These two declarations do not resolve hostnames or allocate sockets. Their
+// versioned endpoint envelope is consumed and validated only inside net/ip;
+// application code uses IpAddress and receives plain packed address bytes.
+native ip_parse(family is int, text is string, port is int) is @byte;
+native ip_format(origin is @byte) is string;
+
+test "numeric address conversion uses the existing provider" {
+    let encoded=ip_parse(1,"192.0.2.1",0);
+    test.is(encoded.size(),10);
+    test.is(ip_format(encoded),"192.0.2.1");
+}

@@ -1,0 +1,63 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.byte.compare-and-index",
+  "title": "byte equality, ordering, and explicit int conversion for indexing and ranges",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.BYTE",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "COLL.ARRAY",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.RANGES",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.FLOAT",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "eq\nlt\n20\n3\nint elements\n2.5\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.1",
+    "docs/okkama-spec-11072026.md#8.6",
+    "docs/okkama-spec-11072026.md#8.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.4: byte orders with byte; language owner decision, 21.10.2026 (D-046): different numeric categories interact only after an explicit cast; no implicit promotion: a byte index or range bound is converted with .int() (elements are int), byte*float needs float(...), giving 2.5."
+  },
+  "status": "mandatory"
+}

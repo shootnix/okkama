@@ -1,0 +1,34 @@
+module accounts v1.0.0;
+
+// Test blocks and a role fake. Run the tests with `okkama -t`; production
+// runs skip the test and fake bodies entirely.
+
+role Ledger {
+    balance() is int;
+    fake {
+        balance() is int { 42; }
+    }
+}
+
+object Account {
+    has ledger is Ledger;
+    Account(:ledger);
+
+    doubled() is int { ledger.balance() * 2; }
+
+    test "doubles the ledger balance" {
+        test.is(Account(ledger: Ledger.fake()).doubled(), 84);
+    }
+}
+
+main() is int {
+    0;
+}
+
+test "fake ledgers report a fixed balance" {
+    test.is(Ledger.fake().balance(), 42);
+}
+
+async test "async tests may await" {
+    test.ok(true);
+}

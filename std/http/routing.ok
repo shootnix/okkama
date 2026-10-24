@@ -1,0 +1,284 @@
+module http/routing v1.0.0;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/target" take RequestTargetKind,ParsedRequestTarget;
+import "collections/sequence" take Sequencing;
+import "collections/ordering" take SortedBy;
+import "collections/list" take List,EmptyList;
+import "collections/iteration" take CursorItems;
+import "async/atomic" take Atomic;
+import "url/percent" take PercentDecoded;
+import "encoding/utf" take Utf8Encoded;
+import "runtime/collections" take string_map_snapshot;
+import "async/scope" take FutureGroup;
+
+enum RouteSegmentKind=(literal,parameter,wildcard);
+object InvalidRoute does Error{has reason is string;InvalidRoute(reason is string){self.reason=reason;}text() is string{"invalid route: "+reason;}}
+// Split raw separators first, then decode once. Encoded slash remains data in
+// one segment, never a second match position. No Unicode/case normalization.
+object RoutedPath {
+    has segments is @string;
+    RoutedPath(origin is string){
+        confirm origin!="" && origin.length()<=8192 && origin.slice(0,1)=="/" && origin.split("?").size()==1 && origin.split("#").size()==1 else throw InvalidRoute("absolute path without query/fragment required");
+        let raw is @string=if origin=="/"{[];}else{origin.slice(1,origin.length()).split("/");};confirm raw.size()<=128 else throw InvalidRoute("path segment budget");
+        // Annotated binding supplies the element type when "/" yields no segments.
+        let decoded is @string=raw.map()->segment{RouteLiteral(segment).string();};segments=decoded;
+    }
+    segments() is @string{segments;}
+}
+object RouteLiteral {
+    has value is string;
+    RouteLiteral(origin is string){
+        let decoded=try{PercentDecoded(origin).string();}catch e is Error{throw InvalidRoute("invalid percent/UTF8 segment");};
+        for Utf8Encoded(decoded).bytes() -> octet{confirm octet.int()>=32 && octet.int()!=127 else throw InvalidRoute("control in decoded segment");}value=decoded;
+    }
+    string() is string{value;}
+}
+object RouteParameterName {
+    RouteParameterName(origin is string){
+        let bytes=Utf8Encoded(origin).bytes();confirm bytes.size()>0 && bytes.size()<=32 else throw InvalidRoute("parameter name budget");
+        for (0..bytes.size()) -> index{let code=bytes[index].int();let letter=(code>=65 && code<=90) || (code>=97 && code<=122) || code==95;confirm letter || (index>0 && code>=48 && code<=57) else throw InvalidRoute("ASCII identifier required");}
+    }
+}
+object RouteSegment {
+    has kind is RouteSegmentKind;has value is string;
+    RouteSegment(origin is string,final is bool){
+        let first=if origin==""{"";}else{origin.slice(0,1);};
+        if first==":" || first=="*"{
+            let name=origin.slice(1,origin.length());RouteParameterName(name);confirm first!="*" || final else throw InvalidRoute("wildcard must be final");
+            kind=if first==":"{RouteSegmentKind.parameter;}else{RouteSegmentKind.wildcard;};value=name;
+        }else{kind=RouteSegmentKind.literal;value=RouteLiteral(origin).string();}
+    }
+    kind() is RouteSegmentKind{kind;}value() is string{value;}
+}
+object RoutePattern {
+    has origin is string;has parts is @RouteSegment;
+    RoutePattern(origin is string){
+        confirm origin!="" && Utf8Encoded(origin).bytes().size()<=8192 && origin.slice(0,1)=="/" && origin.split("?").size()==1 && origin.split("#").size()==1 else throw InvalidRoute("pattern path budget or grammar");
+        let raw is @string=if origin=="/"{[];}else{origin.slice(1,origin.length()).split("/");};confirm raw.size()<=128 else throw InvalidRoute("pattern segment budget");
+        let segments is @RouteSegment=(0..raw.size()).map()->index{RouteSegment(raw[index],index+1==raw.size());};
+        // Segment grammar is validated before name uniqueness, as before.
+        // Capture names (including the final wildcard) share one namespace.
+        let named=segments.filter()->segment{segment.kind()!=RouteSegmentKind.literal;};
+        let names is @string=named.map()->segment{segment.value();};let ordered=names.ordering();
+        for (0..ordered.size())->index{
+            if index>0{confirm (ordered[index]!=ordered[index-1]) else throw InvalidRoute("duplicate parameter name");}
+        }
+        self.origin=origin;parts=segments;
+    }
+    string() is string{origin;}parts() is @RouteSegment{parts;}
+    match(path is string) is RouteMatch{self.matching(RoutedPath(path).segments());}
+    matches(path is @string) is bool{
+        confirm path.size()<=128 else throw InvalidRoute("decoded path segment budget");
+        let wildcard=parts.size()>0 && parts[parts.size()-1].kind()==RouteSegmentKind.wildcard;
+        let fixed=parts.size()-(if wildcard{1;}else{0;});if path.size()<fixed || (!wildcard && path.size()!=fixed){return false;}
+        for (0..fixed) -> index{
+            let part=parts[index];if part.kind()==RouteSegmentKind.literal && part.value()!=path[index]{return false;}
+            if part.kind()==RouteSegmentKind.parameter && path[index]==""{return false;}
+        }true;
+    }
+    matching(path is @string) is RouteMatch{
+        if !self.matches(path){return RouteMatch();}
+        let width=path.reduce(0)->used,segment{confirm segment.length()<=8192-used else throw InvalidRoute("decoded path character budget");used+segment.length();};
+        let positions is @int=(0..parts.size()).filter()->index{parts[index].kind()!=RouteSegmentKind.literal;};
+        let keys is @string=positions.map()->index{parts[index].value();};let values is @string=positions.map()->index{if parts[index].kind()==RouteSegmentKind.wildcard{path.slice(index,path.size()).join("/");}else{path[index];}};
+        let parameters=try{string_map_snapshot(keys,values,128,8192);}catch e is NativeFailure{throw InvalidRoute("captured parameter budget");};RouteMatch(parameters);
+    }
+    // No implicit priority or shadowing: same-method intersections are rejected
+    // during graph construction. Different HTTP methods may share any pattern.
+    overlaps(other is RoutePattern) is bool{
+        let right=other.parts();let common=if parts.size()<right.size(){parts.size();}else{right.size();};
+        for (0..common) -> index{
+            let left=parts[index];let peer=right[index];
+            if left.kind()==RouteSegmentKind.wildcard || peer.kind()==RouteSegmentKind.wildcard{return true;}
+            if left.kind()==RouteSegmentKind.literal && peer.kind()==RouteSegmentKind.literal && left.value()!=peer.value(){return false;}
+            if (left.kind()==RouteSegmentKind.parameter && peer.kind()==RouteSegmentKind.literal && peer.value()=="") || (peer.kind()==RouteSegmentKind.parameter && left.kind()==RouteSegmentKind.literal && left.value()==""){return false;}
+        }
+        if parts.size()==right.size(){return true;}let longer=if parts.size()>right.size(){parts;}else{right;};longer[common].kind()==RouteSegmentKind.wildcard;
+    }
+}
+object RouteMatch {
+    has matched is bool;has parameters is %string:string;
+    RouteMatch(){matched=false;parameters=[:];}RouteMatch(parameters is %string:string){matched=true;self.parameters=parameters;}
+    matched() is bool{matched;}parameters() is %string:string{confirm matched else throw InvalidRoute("no route match");parameters;}
+}
+object Route {
+    has method is Method;has pattern is RoutePattern;has handling is Handling;
+    Route(method is Method,pattern is RoutePattern,handling is Handling){self.method=method;self.pattern=pattern;self.handling=handling;}
+    method() is Method{method;}pattern() is RoutePattern{pattern;}handling() is Handling{handling;}
+}
+// Answers requests that Routes itself rejects before any handler runs. A 405
+// answer must carry the Allow field built from `allowed`; EmptyRouteRejection
+// is the default and sends empty 400/405 responses.
+role RouteRejecting {
+    malformed(request is Request,reason is string) is HandlingResult;
+    disallowed(request is Request,allowed is @string) is HandlingResult;
+}
+object EmptyRouteRejection does RouteRejecting {
+    EmptyRouteRejection();
+    malformed(request is Request,reason is string) is HandlingResult{ResponseHandling(Response(Status(400),Headers([])));}
+    disallowed(request is Request,allowed is @string) is HandlingResult{ResponseHandling(Response(Status(405),Headers([Header(HeaderName("Allow"),allowed.join(", "))])));}
+}
+// Snapshot once and validate only candidate intersections. Method tokens and
+// decoded first literals cannot contain HTAB, so the grouping key is unambiguous.
+// Root/parameter/wildcard prefixes stay broad and retain full overlap checks.
+object RouteConflictEntry {
+    has method,key is string;has broad is bool;has pattern is RoutePattern;has parts is @RouteSegment;
+    RouteConflictEntry(origin is Route){
+        let verb=origin.method().string();let compiled=origin.pattern();let parts=compiled.parts();
+        method=verb;pattern=compiled;self.parts=parts;
+        let wide=parts.size()==0 || parts[0].kind()!=RouteSegmentKind.literal;
+        broad=wide;key=verb+"\t"+(if wide {"";}else{parts[0].value();});
+    }
+    method() is string{method;}key() is string{key;}broad() is bool{broad;}
+    pattern() is RoutePattern{pattern;}
+    width() is int{parts.size();}
+    kind(index is int) is RouteSegmentKind{parts[index].kind();}
+    literal(index is int) is string{parts[index].value();}
+}
+object RouteGroupPosition {
+    has index is int;RouteGroupPosition(index is int){self.index=index;}
+    index() is int{index;}following(index is int) is ^RouteGroupPosition{^index=index;}
+}
+object CheckedRouteSnapshot {
+    has origin is @Route;
+    CheckedRouteSnapshot(routes is Sequencing<Route>){
+        let count=routes.size();confirm count>=0 && count<=256 else throw InvalidRoute("route count budget");
+        let snapshot is @Route=(0..count).map()->index{routes.item(index);};origin=snapshot;
+    }
+    entries() is @Route{
+        let entries is @RouteConflictEntry=origin.map()->route{RouteConflictEntry(route);};
+        let broad=entries.reduce(false)->found,entry{found || entry.broad();};
+        if broad{
+            // A broad pattern can cross the first-literal families. Validate
+            // complete method groups through the same safe partition worker.
+            let sorted is SortedBy<RouteConflictEntry,string>=SortedBy(entries,(entry is RouteConflictEntry) is string{entry.method();});
+            let values is @RouteConflictEntry=(0..sorted.size()).map()->index{sorted.item(index);};
+            let keys is @string=values.map()->entry{entry.method();};let group=RouteGroupPosition(0);
+            for (1..values.size()+1)->index{
+                if index==values.size() || keys[index]!=keys[index-1]{
+                    if index-group.index()>1{RoutePartitionValidation(values.slice(group.index(),index),0).validate();}
+                    group=group.following(index);
+                }
+            }
+        }else{
+            // Keep the cheap first-literal grouping for already-disjoint graphs.
+            let sorted is SortedBy<RouteConflictEntry,string>=SortedBy(entries,(entry is RouteConflictEntry) is string{entry.key();});
+            let values is @RouteConflictEntry=(0..sorted.size()).map()->index{sorted.item(index);};
+            let keys is @string=values.map()->entry{entry.key();};let group=RouteGroupPosition(0);
+            for (1..values.size()+1)->index{
+                if index==values.size() || keys[index]!=keys[index-1]{
+                    if index-group.index()>1{RoutePartitionValidation(values.slice(group.index(),index),1).validate();}
+                    group=group.following(index);
+                }
+            }
+        }
+        origin;
+    }
+}
+// Different literal values at the same fixed position cannot intersect. Only
+// positions which are literal in every member may divide a family; parameter,
+// terminal wildcard, short/empty paths always retain the exact overlap check.
+object RouteConflictPartition {
+    has entries is @RouteConflictEntry;has beginning is int;
+    RouteConflictPartition(entries is @RouteConflictEntry,beginning is int){self.entries=entries;self.beginning=beginning;}
+    groups() is @RouteConflictPartition{
+        if entries.size()<2{return [];}
+        // Keep scalar projections over one captured parts array. Rebuilding a
+        // nested typed-array projection for every partition repeats admission.
+        let width=entries.reduce(128)->smallest,entry{if entry.width()<smallest{entry.width();}else{smallest;}};
+        let chosen=Atomic(-1);defer chosen.close();
+        for (beginning..width)->position{
+            let literal=entries.reduce(true)->all,entry{all && entry.kind(position)==RouteSegmentKind.literal;};
+            if literal{
+                let first=entries[0].literal(position);
+                let different=entries.reduce(false)->found,entry{found || entry.literal(position)!=first;};
+                if different{chosen.replace(position);last;}
+            }
+        }
+        if chosen.value()<0{
+            for (0..entries.size())->index{for (0..index)->before{
+                confirm !entries[index].pattern().overlaps(entries[before].pattern()) else throw InvalidRoute("same-method patterns overlap");
+            }}
+            return [];
+        }
+        let position=chosen.value();
+        let sorted is SortedBy<RouteConflictEntry,string>=SortedBy(entries,(entry is RouteConflictEntry) is string{entry.literal(position);});
+        let values is @RouteConflictEntry=(0..sorted.size()).map()->index{sorted.item(index);};
+        let keys is @string=values.map()->entry{entry.literal(position);};
+        let empty is List<RouteConflictPartition>=EmptyList();let output=Atomic(empty);defer output.close();let group=RouteGroupPosition(0);
+        for (1..values.size()+1)->index{
+            if index==values.size() || keys[index]!=keys[index-1]{
+                if index-group.index()>1{output.replace(output.value().prefix(RouteConflictPartition(values.slice(group.index(),index),position+1)));}
+                group=group.following(index);
+            }
+        }
+        let result is @RouteConflictPartition=CursorItems(output.value().cursor()).map()->partition{partition;};result;
+    }
+}
+object RoutePartitionValidation {
+    has entries is @RouteConflictEntry;has beginning is int;
+    RoutePartitionValidation(entries is @RouteConflictEntry,beginning is int){self.entries=entries;self.beginning=beginning;}
+    validate() is void{
+        let empty is List<RouteConflictPartition>=EmptyList();let pending=Atomic(empty.prefix(RouteConflictPartition(entries,beginning)));defer pending.close();
+        loop{
+            let queue=pending.value();if queue.size()==0{last;}
+            let current=queue.first();pending.replace(queue.tail());
+            for current.groups()->group{pending.replace(pending.value().prefix(group));}
+        }
+    }
+}
+
+object Routes does Handling {
+    has routes is @Route;has fallback is Handling;has rejection is RouteRejecting;
+    Routes(routes is Sequencing<Route>,fallback is Handling){
+        let snapshot=CheckedRouteSnapshot(routes).entries();
+        self.routes=snapshot;self.fallback=fallback;rejection=EmptyRouteRejection();
+    }
+    Routes(routes is Sequencing<Route>,fallback is Handling,rejection is RouteRejecting){
+        let snapshot=CheckedRouteSnapshot(routes).entries();
+        self.routes=snapshot;self.fallback=fallback;self.rejection=rejection;
+    }
+    async invoke(handler is Handling,request is Request,context is HttpRequestContext) is HandlingResult{
+        let group is FutureGroup<HandlingResult>=FutureGroup();let cleanup=RouteSettlement(group);defer await cleanup.close();let pending=handler.handling(request,context);group.start(pending);await pending;
+    }
+    async handling(request is Request,context is HttpRequestContext) is HandlingResult{
+        context.cancelling().check();let target=request.target();if target.kind()!=RequestTargetKind.origin && target.kind()!=RequestTargetKind.absolute{return await self.invoke(fallback,request,context);}
+        let raw=if target.kind()==RequestTargetKind.origin{target.path();}else{target.url().parts().path();};
+        let sections is @@string=try{[RoutedPath(raw).segments()];}catch e is InvalidRoute{[];};if sections.size()==0{return rejection.malformed(request,"invalid route path");}
+        let path=sections[0];let method=request.method().string();let matches is @Route=routes.filter()->route{route.pattern().matches(path);};
+        let exact is @Route=matches.filter()->route{route.method().string()==method;};let chosen is @Route=if exact.size()>0{exact;}else{if method=="HEAD"{matches.filter()->route{route.method().string()=="GET";};}else{[];}};
+        if chosen.size()>0{
+            let route=chosen[0];let captured=route.pattern().matching(path).parameters();let existing=context.parameters();let old=existing.keys().filter()->name{!captured.has(name);};let fresh=captured.keys();
+            let keys is @string=(0..old.size()+fresh.size()).map()->index{if index<old.size(){old[index];}else{fresh[index-old.size()];}};
+            let values is @string=keys.map()->name{if captured.has(name){captured[name];}else{existing[name];}};
+            let parameters is @%string:string=try{[string_map_snapshot(keys,values,128,8192)];}catch e is NativeFailure{[];};if parameters.size()==0{return rejection.malformed(request,"route parameter budget exceeded");}
+            let selected=context.parameters(parameters[0]);return await self.invoke(route.handling(),request,selected);
+        }
+        if matches.size()>0{
+            let allowed=RouteMethods();for matches -> route{allowed=allowed.added(route.method().string());if route.method().string()=="GET"{allowed=allowed.added("HEAD");}}
+            return rejection.disallowed(request,allowed.names());
+        }
+        await self.invoke(fallback,request,context);
+    }
+}
+object RouteMethods {
+    has names is @string;RouteMethods(){names=[];}names() is @string{names;}
+    added(name is string) is ^RouteMethods{if !(names.reduce(false)->found,value{found || value==name;}){let following is @string=(0..names.size()+1).map()->index{if index<names.size(){names[index];}else{name;}};^names=following;}}
+}
+object RouteSettlement<T>{has group is FutureGroup<T>;RouteSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+test "encoded separators are one decoded route coordinate" {
+    let matched=RoutePattern("/:id").match("/a%2Fb");test.ok(matched.matched());test.is(matched.parameters()["id"],"a/b");test.ok(!RoutePattern("/:id").match("/a/b").matched());
+}
+test "root path is zero segments and matches only the root pattern" {
+    test.ok(RoutePattern("/").match("/").matched());test.is(RoutePattern("/").match("/").parameters().size(),0);test.ok(!RoutePattern("/a").match("/").matched());test.ok(!RoutePattern("/").match("/a").matched());
+}
+test "default rejection keeps empty 400 and Allow-carrying 405 responses" {
+    let methods is @string=["GET","HEAD"];
+    test.is(EmptyRouteRejection().disallowed(Request(Method("PUT"),ParsedRequestTarget("/a",Method("PUT")).value(),Headers([])),methods).response().headers().first(HeaderName("Allow")),"GET, HEAD");
+    test.is(EmptyRouteRejection().malformed(Request(Method("GET"),ParsedRequestTarget("/a",Method("GET")).value(),Headers([])),"x").response().status().code(),400);
+}

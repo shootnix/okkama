@@ -1,0 +1,202 @@
+module fs/temp v1.0.0;
+
+import "fs/directory" take DirectoryLocating;
+import "fs/file" take FileEntry, FileSystemFailure;
+import "fs/path" take Path;
+import "io/stream" take
+    ByteSource,
+    Reading,
+    Writing,
+    Closing,
+    IncompleteWrite,
+    InvalidReadLimit;
+import "runtime/fs" take
+    FileState,
+    TemporaryDirectoryState,
+    path_encode,
+    path_decode,
+    file_state_read,
+    file_state_write,
+    file_state_flush,
+    file_state_close,
+    file_state_closed,
+    temporary_file_create,
+    temporary_file_path,
+    temporary_file_preserve,
+    temporary_directory_create,
+    temporary_directory_path,
+    temporary_directory_closed,
+    temporary_directory_close;
+
+// Temporary resources are created eagerly with unpredictable names inside an
+// explicitly supplied directory. prefix is one filename component, not a path.
+// Temporary files are binary read/write streams with owner-only permissions:
+//
+//     let temporary = TemporaryFile(directory: scratch, prefix: "upload-");
+//     defer temporary.close();
+//     temporary.write(payload);
+//     temporary.flush();
+//     let path is Path = value TemporaryFilePath(origin: temporary);
+//
+// close() is idempotent and deletes an unpreserved temporary file. Preserve a
+// completed file under a deliberate destination before the deferred close:
+//
+//     let preservation = TemporaryFilePreservation(
+//         origin: temporary,
+//         destination: output,
+//     );
+//     preservation.preserve();
+//     let result = preservation.destination();
+//
+// Preservation never replaces an existing destination. It keeps the operation
+// atomic when both paths share a filesystem and copies in bounded chunks when
+// crossing filesystems.
+//
+// TemporaryDirectory.close() recursively deletes its contents. Symbolic links
+// are removed as leaves; their targets are never traversed or deleted.
+
+object TemporaryFile does Reading, Writing, Closing {
+    has state is FileState;
+
+    TemporaryFile(directory is DirectoryLocating, prefix is string) {
+        state = try {
+            temporary_file_create(
+                path_encode(directory.path().string()),
+                prefix,
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        };
+    }
+
+    bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        try {
+            file_state_read(state, limit);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    write(source is ByteSource) is void {
+        let content is @byte = source.bytes();
+        let written is int = try {
+            file_state_write(state, content);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        };
+        confirm written == content.size() else throw IncompleteWrite(written);
+    }
+
+    flush() is void {
+        try {
+            file_state_flush(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    destroy { self.close(); }
+
+    closed() is bool {
+        try {
+            file_state_closed(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    close() is void {
+        try {
+            file_state_close(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    path() is Path {
+        try{Path(path_decode(temporary_file_path(state)));}
+        catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}
+    }
+    preserve(destination is Path) is void {
+        try{temporary_file_preserve(state,path_encode(destination.string()));}
+        catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}
+    }
+}
+
+object TemporaryFilePath {
+    has owner is TemporaryFile;
+
+    TemporaryFilePath(origin is TemporaryFile) {
+        owner = origin;
+    }
+
+    #projected
+
+    value() is Path { owner.path(); }
+}
+
+object TemporaryFilePreservation {
+    has owner is TemporaryFile;
+    has destination is Path;
+
+    TemporaryFilePreservation(origin is TemporaryFile, destination is Path) {
+        owner = origin;
+        self.destination = destination;
+    }
+
+    destination() is FileEntry { FileEntry(path: destination); }
+
+    preserve() is void { owner.preserve(destination); }
+}
+
+object TemporaryDirectory does Closing {
+    has state is TemporaryDirectoryState;
+
+    TemporaryDirectory(parent is DirectoryLocating, prefix is string) {
+        state = try {
+            temporary_directory_create(
+                path_encode(parent.path().string()),
+                prefix,
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        };
+    }
+
+    path() is Path {
+        try {
+            Path(path_decode(temporary_directory_path(state)));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    destroy { self.close(); }
+
+    closed() is bool {
+        try {
+            temporary_directory_closed(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    close() is void {
+        try {
+            temporary_directory_close(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}

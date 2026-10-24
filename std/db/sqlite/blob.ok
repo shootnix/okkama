@@ -1,0 +1,20 @@
+module db/sqlite/blob v1.0.0;
+import "numbers/bigint" take BigInt;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+role SqliteBlobOpening{async opened_blob(database is string,table is string,column is string,row is BigInt,writable is bool) is SqliteBlob;}
+role SqliteBlob{
+    async bytes(offset is BigInt,limit is int) is @byte;
+    async write(offset is BigInt,source is @byte) is SqliteBlob;
+    size() is int;
+    closed() is bool;
+    close() is void;
+}
+object OpenedSqliteBlob{
+    has origin is SqliteBlobOpening;has database,table,column is string;has row is BigInt;has writable is bool;
+    OpenedSqliteBlob(origin is SqliteBlobOpening,database is string,table is string,column is string,row is BigInt,writable is bool){
+        for [database,table,column] -> name{confirm name!="" && Utf8Encoded(name).bytes().size()<=1024 && name.split(Utf8Decoded([0.byte()]).string()).size()==1 else throw InvalidSqliteBlob();}
+        self.origin=origin;self.database=database;self.table=table;self.column=column;self.row=row;self.writable=writable;
+    }
+    async blob() is SqliteBlob{await origin.opened_blob(database,table,column,row,writable);}
+}
+object InvalidSqliteBlob does Error{InvalidSqliteBlob();text() is string{"invalid incremental SQLite blob coordinates";}}

@@ -1,0 +1,425 @@
+module template/compile v1.0.0;
+// Parser migration contract: TemplateProgram(source, maximum_input,
+// maximum_nodes).instructions() performs bounded parsing in Okkama and returns
+// ordered immutable TemplateInstruction values (text()/variable()). Constructors
+// bind only; every observation parses afresh, with no native program cache.
+// Preserve the existing flat grammar, standalone comments, node accounting,
+// complete-before-lookup behavior and original scalar/CRLF diagnostics.
+// Maximum input is checked before scanning. Literal fragments are collected in
+// persistent lists and joined once per instruction, avoiding repeated prefix
+// copying. Diagnostics scan only the prefix preceding the offending position.
+// Private native UTF-8 byte sizing remains unchanged; grammar parsing does not
+// call runtime/template. Section/partial grammar comes after this migration.
+import "template/model" take TemplateStrings;
+import "template/path" take TemplatePathFromString;
+import "collections/list" take List, EmptyList;
+import "io/stream" take WritingText;
+import "runtime/template" take template_output_size;
+
+// Lazy plain template with explicit nominal string data. Example:
+// TextTemplate("Hello {{name}}!").string(data) -> "Hello Ada!".
+// source() returns original text. Each string(data) validates the entire program
+// before querying data, then queries each occurrence once from left to right.
+// Values are inserted literally, never recompiled, coerced or HTML escaped.
+// Custom failures and MissingTemplateValue propagate unchanged; no partial text.
+//
+// Grammar: {{ path }}, {{! comment }}, {{{{ and }}}} for literal delimiters.
+// Only ASCII space/tab trims variable boundaries. Ordinary text stays exact.
+// Whole-line comments remove their indentation and following LF/CRLF; inline
+// comments remove only their tag. Paths split literal dots and retain case.
+// Sections/partials/trusted markup are explicitly unsupported in this slice.
+// See docs/std/template-guide.md for pending extensions and exact exclusions.
+//
+// Optional limits: maximum_input scalars, maximum_nodes instructions,
+// maximum_output UTF-8 bytes; defaults 1048576,10000,1048576. All nonnegative;
+// negative configuration fails immediately. Empty text accepts all-zero limits.
+// Invalid source/bounds throw TemplateFailure with original scalar coordinates.
+// Output bounds stop before subsequent lookups; UTF-8 preflight is incremental.
+// No I/O or implicit close of data. Okkama program objects are scope-owned;
+// completed strings retain their own data and outlive template/source scope.
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/compile.ok
+object TextTemplate {
+    has origin is string;
+    has program is TemplateProgram;
+    has maximum_output is int;
+    TextTemplate(origin is string) {
+        self.origin = origin;
+        program = TemplateProgram(origin,1048576,10000);
+        maximum_output = 1048576;
+    }
+    TextTemplate(origin is string, maximum_input is int, maximum_nodes is int, maximum_output is int) {
+        confirm maximum_input >= 0 && maximum_nodes >= 0 && maximum_output >= 0 else throw InvalidTemplateLimits();
+        self.origin = origin;
+        program = TemplateProgram(origin,maximum_input,maximum_nodes);
+        self.maximum_output = maximum_output;
+    }
+    source() is string {origin;}
+    string(data is TemplateStrings) is string {
+        let nodes = program.instructions();
+        let output = nodes.reduce(TemplateTextParts(maximum_output)) -> parts,node {
+            let text = node.text();
+            let value = if !node.variable() {text;}
+                else {data.string(TemplatePathFromString(text).value());};
+            parts.following(value);
+        };
+        output.string();
+    }
+    // Explicit borrowed output. Complete validation precedes effects. Each next
+    // contribution is byte-budgeted before its first chunk; successful prefixes
+    // remain visible on later failure. At most 1024 scalars/4096 UTF-8 bytes per
+    // write, no empty chunks, newline, flush or close. No full-result buffer.
+    write(data is TemplateStrings, destination is WritingText) is void {
+        let nodes = program.instructions();
+        let budget = TemplateByteBudget(maximum_output);
+        for nodes -> node {
+            let text = node.text();
+            let value = if !node.variable() {text;}
+                else {data.string(TemplatePathFromString(text).value());};
+            budget = budget.following(value);
+            for (0..((value.length() >> 10)+1)) -> chunk {
+                let start = chunk << 10;
+                if start < value.length() {
+                    let end = if value.length()-start > 1024 {start+1024;} else {value.length();};
+                    destination.write(value.slice(start,end));
+                }
+            }
+        }
+    }
+}
+
+// Internal immutable flat instructions; no native program state escapes or is
+// retained. Grammar observation occurs through TemplateProgram.instructions().
+// Internal structured mode additionally retains tag (#,^,/,>) and original
+// offset for TemplateTree. The default mode keeps TextTemplate's flat grammar.
+object TemplateInstruction {
+    has origin is string;
+    has named is bool;
+    has marker is string = "";
+    has location is int = 0;
+    TemplateInstruction(text is string, variable is bool) {origin=text;named=variable;}
+    TemplateInstruction(text is string, variable is bool, tag is string, offset is int) {
+        origin=text;named=variable;marker=tag;location=offset;
+    }
+    text() is string {origin;}
+    variable() is bool {named;}
+    tag() is string {marker;}
+    offset() is int {location;}
+}
+object TemplateProgram {
+    has source is string;
+    has maximum_input, maximum_nodes is int;
+    has structured is bool = false;
+    TemplateProgram(source is string, maximum_input is int, maximum_nodes is int) {
+        confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits();
+        self.source=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;
+    }
+    TemplateProgram(source is string, maximum_input is int, maximum_nodes is int, structured is bool) {
+        confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits();
+        self.source=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;self.structured=structured;
+    }
+    instructions() is @TemplateInstruction {
+        confirm source.length() <= maximum_input else throw TemplateFailure(0,1,1,"template input limit exceeded");
+        let scanner=TemplateScanner(source,maximum_nodes,structured);
+        loop {
+            last if !scanner.more();
+            scanner=scanner.following();
+        }
+        scanner.instructions();
+    }
+}
+
+// Each successor consumes a literal run, escaped delimiter or tag. Lists retain
+// fragments without repeatedly copying an expanding literal. Only a completed
+// validated instruction sequence is returned, before any user data observation.
+object TemplateScanner {
+    has source is string;
+    has maximum, position is int;
+    has structured is bool = false;
+    has nodes is List<TemplateInstruction>;
+    has literal is List<string>;
+    TemplateScanner(source is string, maximum is int) {
+        self.source=source;self.maximum=maximum;position=0;
+        let empty_nodes is List<TemplateInstruction> = EmptyList();nodes=empty_nodes;
+        let empty_text is List<string> = EmptyList();literal=empty_text;
+    }
+    TemplateScanner(source is string, maximum is int, structured is bool) {
+        self.source=source;self.maximum=maximum;self.structured=structured;position=0;
+        let empty_nodes is List<TemplateInstruction> = EmptyList();nodes=empty_nodes;
+        let empty_text is List<string> = EmptyList();literal=empty_text;
+    }
+    more() is bool {position < source.length();}
+    instructions() is @TemplateInstruction {
+        let completed=self.flushed(position);
+        let reversed is @TemplateInstruction=completed.map() -> item {item;};
+        let result is @TemplateInstruction=(0..reversed.size()).map() -> index {reversed[reversed.size()-1-index];};
+        result;
+    }
+    following() is ^TemplateScanner {
+        let four=self.at(position,4);
+        let two=self.at(position,2);
+        if four=="{{{{" || four=="}}}}" {
+            ^literal=literal.prefix(four.slice(0,2));
+            ^position=position+4;
+            return;
+        }
+        confirm two!="}}" else throw self.failure(position,"unexpected closing template delimiter");
+        if two!="{{" {
+            let end=self.delimiter(position+1);
+            ^literal=literal.prefix(source.slice(position,end));
+            ^position=end;
+            return;
+        }
+        let end=self.closing(position+2);
+        confirm end>=0 else throw self.failure(position,"unclosed template tag");
+        let body=source.slice(position+2,end);
+        if body.length()>0 && body.slice(0,1)=="!" {
+            let indentation=self.indentation(position);
+            let after=self.horizontal_end(end+2);
+            let ending=if self.at(after,2)=="\r\n" {2;}
+                else {if self.at(after,1)=="\n" {1;} else {0;}};
+            if indentation>=0 && (ending>0 || after==source.length()) {
+                if indentation>0 {
+                    let tail_piece=literal.first();
+                    ^literal=literal.tail().prefix(tail_piece.slice(0,tail_piece.length()-indentation));
+                }
+                ^position=after+ending;
+            } else {^position=end+2;}
+            return;
+        }
+        let name=self.trimmed(body);
+        confirm name!="" else throw self.failure(position,"unsupported or empty template tag");
+        let first=name.slice(0,1);
+        if structured && (first=="#" || first=="^" || first=="/" || first==">") {
+            let path=self.trimmed(name.slice(1,name.length()));
+            self.validate_structural_name(path,first==">");
+            let indentation=self.indentation(position);
+            let after=self.horizontal_end(end+2);
+            let ending=if self.at(after,2)=="\r\n" {2;}
+                else {if self.at(after,1)=="\n" {1;} else {0;}};
+            let standalone=indentation>=0 && (ending>0 || after==source.length());
+            let fragments=if standalone && indentation>0 {
+                let tail_piece=literal.first();
+                literal.tail().prefix(tail_piece.slice(0,tail_piece.length()-indentation));
+            } else {literal;};
+            let completed=self.flushed_parts(fragments,position);
+            confirm completed.size()<maximum else throw self.failure(position,"template node limit exceeded");
+            ^nodes=completed.prefix(TemplateInstruction(path,false,first,position));
+            let empty is List<string> = EmptyList();
+            ^literal=empty;
+            ^position=if standalone {after+ending;} else {end+2;};
+            return;
+        }
+        confirm first!="#" && first!="^" && first!="/" && first!=">" && first!="=" && first!="&" && first!="{"
+            else throw self.failure(position,"unsupported or empty template tag");
+        for ["{","}","\r","\n"] -> invalid {
+            confirm name.split(invalid).size()==1 else throw self.failure(position,"unsupported or empty template tag");
+        }
+        confirm name.length()<=4096 else throw self.failure(position,"template path length exceeded");
+        let segments=name.split(".");
+        confirm segments.size()<=64 else throw self.failure(position,"invalid named template path");
+        if !(structured && name==".") {
+            for segments -> part {confirm part!="" else throw self.failure(position,"invalid named template path");}
+        }
+        let completed=self.flushed(position);
+        confirm completed.size()<maximum else throw self.failure(position,"template node limit exceeded");
+        ^nodes=completed.prefix(TemplateInstruction(name,true,"",position));
+        let empty is List<string> = EmptyList();
+        ^literal=empty;
+        ^position=end+2;
+    }
+    private:
+    validate_structural_name(name is string, partial is bool) is void {
+        confirm name!="" else throw self.failure(position,"empty structural template name");
+        confirm name.length()<=4096 else throw self.failure(position,"template path length exceeded");
+        for ["{","}","\r","\n"] -> invalid {
+            confirm name.split(invalid).size()==1 else throw self.failure(position,"invalid structural template name");
+        }
+        if partial {
+            for [" ","\t","(",")"] -> invalid {
+                confirm name.split(invalid).size()==1 else throw self.failure(position,"partial name must be static");
+            }
+            let first=name.slice(0,1);
+            confirm first!="#" && first!="^" && first!="=" && first!="&" && first!=">"
+                else throw self.failure(position,"invalid partial name");
+        } else {
+            if name!="." {
+                let segments=name.split(".");
+                confirm segments.size()<=64 else throw self.failure(position,"invalid named template path");
+                for segments -> part {confirm part!="" else throw self.failure(position,"invalid named template path");}
+            }
+        }
+    }
+    at(start is int, width is int) is string {
+        if width>source.length()-start {"";} else {source.slice(start,start+width);}
+    }
+    delimiter(start is int) is int {
+        for (start..source.length()) -> index {
+            let pair=self.at(index,2);
+            if pair=="{{" || pair=="}}" {return index;}
+        }
+        source.length();
+    }
+    closing(start is int) is int {
+        for (start..source.length()) -> index {if self.at(index,2)=="}}" {return index;}}
+        -1;
+    }
+    horizontal_end(start is int) is int {
+        for (start..source.length()) -> index {
+            let char=source.slice(index,index+1);
+            if char!=" " && char!="\t" {return index;}
+        }
+        source.length();
+    }
+    indentation(start is int) is int {
+        // Stop on the first non-horizontal character, rather than copying the
+        // complete source prefix for every comment on a long document.
+        for (0..start) -> distance {
+            let char=source.slice(start-distance-1,start-distance);
+            if char=="\n" {return distance;}
+            if char!=" " && char!="\t" {return -1;}
+        }
+        start;
+    }
+    trimmed(text is string) is string {
+        if text.length()==0 {return "";}
+        let begin=self.trim_start(text);
+        let finish=self.trim_end(text);
+        if begin>=finish {"";} else {text.slice(begin,finish);}
+    }
+    trim_start(text is string) is int {
+        for (0..text.length()) -> index {
+            let char=text.slice(index,index+1);
+            if char!=" " && char!="\t" {return index;}
+        }
+        text.length();
+    }
+    trim_end(text is string) is int {
+        for (0..text.length()) -> offset {
+            let index=text.length()-offset-1;
+            let char=text.slice(index,index+1);
+            if char!=" " && char!="\t" {return index+1;}
+        }
+        0;
+    }
+    flushed(offset is int) is List<TemplateInstruction> {
+        self.flushed_parts(literal,offset);
+    }
+    flushed_parts(fragments is List<string>, offset is int) is List<TemplateInstruction> {
+        let reversed is @string=fragments.map() -> item {item;};
+        let pieces is @string=(0..reversed.size()).map() -> index {reversed[reversed.size()-1-index];};
+        let text=pieces.join("");
+        if text=="" {return nodes;}
+        confirm nodes.size()<maximum else throw self.failure(offset,"template node limit exceeded");
+        nodes.prefix(TemplateInstruction(text,false,"",offset));
+    }
+    failure(offset is int, message is string) is TemplateFailure {
+        let lines=source.slice(0,offset).replace("\r\n","\n").split("\n");
+        TemplateFailure(offset,lines.size(),lines[lines.size()-1].length()+1,message);
+    }
+}
+// Internal immutable output accumulator. UTF-8 size is computed without
+// allocating a byte array before retaining another part.
+// List tails are shared by revisions; final concatenation is bounded.
+object TemplateTextParts {
+    has budget is TemplateByteBudget;
+    has parts is List<string>;
+    TemplateTextParts(maximum is int) {
+        budget = TemplateByteBudget(maximum);
+        let empty is List<string> = EmptyList();
+        parts = empty;
+    }
+    following(text is string) is ^TemplateTextParts {
+        let following = budget.following(text);
+        ^budget = following;
+        ^parts = parts.prefix(text);
+    }
+    string() is string {
+        let reversed is @string = parts.map() -> item {item;};
+        let ordered is @string = (0..reversed.size()).map() -> index {reversed[reversed.size()-1-index];};
+        ordered.join("");
+    }
+}
+// Internal shared immutable byte-budget revision. No fragments are retained,
+// so the streaming path uses memory independent of total already-written text.
+object TemplateByteBudget {
+    has maximum is int;
+    has used is int = 0;
+    TemplateByteBudget(maximum is int) {
+        confirm maximum >= 0 else throw InvalidTemplateLimits();
+        self.maximum = maximum;
+    }
+    following(text is string) is ^TemplateByteBudget {
+        let size = template_output_size(text,maximum-used);
+        confirm size >= 0 else throw TemplateOutputLimitExceeded();
+        ^used = used+size;
+    }
+}
+object TemplateFailure does Error {
+    has at, row, position is int;
+    has message is string;
+    TemplateFailure(offset is int,line is int,column is int,message is string) {
+        at=offset;row=line;position=column;self.message=message;
+    }
+    offset() is int {at;}
+    line() is int {row;}
+    column() is int {position;}
+    text() is string {message;}
+}
+object InvalidTemplateLimits does Error {
+    InvalidTemplateLimits();
+    text() is string {"template limits must be nonnegative";}
+}
+object TemplateOutputLimitExceeded does Error {
+    TemplateOutputLimitExceeded();
+    text() is string {"template output byte limit exceeded";}
+}
+
+// Root test bodies cannot currently resolve imported constructors/fakes.
+// Consumer suites 281/282 exercise nominal lookup and streamed rendering;
+// these local tests cover lazy construction, grammar and byte budgets directly.
+test "plain template construction retains source without parsing" {
+    test.is(TextTemplate("{{invalid").source(), "{{invalid");
+    test.is(TextTemplate("",0,0,0).source(), "");
+}
+test "plain templates validate syntax and byte bounds" {
+    test.ok(try {TemplateProgram("{{",2,1).instructions();false;} catch e is TemplateFailure {true;});
+    test.ok(try {[TemplateByteBudget(1).following("é")];false;} catch e is TemplateOutputLimitExceeded {true;});
+    test.ok(try {TextTemplate("",-1,0,0);false;} catch e is InvalidTemplateLimits {true;});
+}
+
+test "Okkama template program yields immutable ordered instructions" {
+    let nodes = TemplateProgram("é{{ x }}!",20,3).instructions();
+    test.is(nodes.size(),3);
+    test.is(nodes[0].text(),"é");
+    test.is(nodes[0].variable(),false);
+    test.is(nodes[1].text(),"x");
+    test.ok(nodes[1].variable());
+    test.is(nodes[2].text(),"!");
+    test.is(TemplateProgram("",0,0).instructions().size(),0);
+}
+test "Okkama template program standalone comments and escapes" {
+    let nodes=TemplateProgram("a\n {{! multi\nline }} \t\r\nb{{{{x}}}}",100,1).instructions();
+    test.is(nodes.size(),1);
+    test.is(nodes[0].text(),"a\nb{{x}}");
+    test.is(TemplateProgram(" {{!only}}",20,0).instructions().size(),0);
+}
+test "Okkama template program preserves failure coordinates and bounds" {
+    test.is(try {TemplateProgram("é\r\n{{",20,3).instructions();[0,0,0];}
+        catch e is TemplateFailure {[e.offset(),e.line(),e.column()];},[3,2,1]);
+    test.is(try {TemplateProgram("x",1,0).instructions();"bad";}
+        catch e is TemplateFailure {e.text();},"template node limit exceeded");
+    test.is(try {TemplateProgram("x",0,1).instructions();"bad";}
+        catch e is TemplateFailure {e.text();},"template input limit exceeded");
+}
+
+test "Okkama template program delimiter and comment boundaries" {
+    test.is(TemplateProgram("{{{{{{x}}}}}}",100,3).instructions().size(),3);
+    test.is(TemplateProgram("{{{{{{x}}}}}}",100,3).instructions()[2].text(),"}}");
+    test.is(TemplateProgram("a{{!inline}}b",100,1).instructions()[0].text(),"ab");
+    test.is(TemplateProgram(" {{!a}}\n\t{{!b}}\r\n",100,0).instructions().size(),0);
+    test.is(TemplateProgram("a\r{{!b}}\nc",100,1).instructions()[0].text(),"a\r\nc");
+    for ["{{}}","{{ }}","{{.}}","{{a..b}}","{{#a}}","}}","{{{x}}}"] -> text {
+        test.ok(try {TemplateProgram(text,100,10).instructions();false;}
+            catch e is TemplateFailure {true;});
+    }
+}

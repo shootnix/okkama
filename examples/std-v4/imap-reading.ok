@@ -1,0 +1,24 @@
+module app v1.0.0;
+import "mail/imap_reading" take ImapResponseReading;
+import "net/stream" take AsyncReading;
+import "io/stream" take Reading;
+import "io/buffer" take ByteBuffer;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+// Deterministic fragments split markers, literal CRLF and response boundaries.
+object Fragments does AsyncReading {
+    has origin is Reading;
+    Fragments(origin is Reading) {self.origin=origin;}
+    async bytes(limit is int) is @byte {origin.bytes(if limit<3 {limit;} else {3;});}
+}
+async main() is int {
+    let buffer=ByteBuffer(Utf8Encoded("* 1 FETCH (BODY[] {5}\r\na\r\nbc)\r\nA1 OK done\r\n").bytes());
+    defer buffer.closing().close();let input=Fragments(buffer.reading());
+    let first=await ImapResponseReading(input).result();
+    let second=await ImapResponseReading(input,first.remainder()).result();
+    Stdout().writeln(first.response().name());
+    Stdout().writeln(first.response().parts().item(1).bytes().size().string());
+    Stdout().writeln(second.response().tag()+" "+second.response().name());
+    0;
+}

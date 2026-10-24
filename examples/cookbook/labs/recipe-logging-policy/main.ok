@@ -1,0 +1,33 @@
+// Отфильтровать события и добавить tenant_id
+//
+// Для отчёта нужны только warning и выше, с общим контекстом клиента.
+//
+// Запуск: ./examples/cookbook/run lab recipe-logging-policy
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-logging-policy
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/logging_policy v1.0.0;
+import "logging/write" take CollectedLogs;
+import "logging/filter" take AllowedLogs,LevelThresholds;
+import "logging/enrichment" take FieldLogging;
+import "logging/named" take NamedLogging;
+import "logging/name" take LogName;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields;
+import "logging/syslog" take SyslogMessage,SyslogOptions,SyslogFacility;
+import "json/value" take JsonMember,JsonText;
+import "time/clock" take SystemClock;
+
+main() is int {
+    let records = CollectedLogs();
+    let sink = AllowedLogs(records, LevelThresholds(LogLevel.warning, []));
+    let named = NamedLogging(LogName(["orders"]), sink, SystemClock(), LogFields([]));
+    let logger = FieldLogging(named, LogFields([JsonMember("tenant_id", JsonText("shop-7"))]));
+    logger.log(LogLevel.info, "запрос принят");
+    logger.log(LogLevel.warning, "запрошен повтор");
+    confirm records.size() == 1;
+    let packet = SyslogMessage(records.records().item(0), SyslogOptions(SyslogFacility.local0, "orders-host", "orders", 4096));
+    confirm packet.bytes().size() > 0;
+    0;
+}

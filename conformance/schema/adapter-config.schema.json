@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-adapter-config/1",
+  "title": "Adapter configuration",
+  "type": "object",
+  "required": [
+    "schema",
+    "protocol",
+    "name",
+    "command"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ocs-adapter-config/1"
+    },
+    "protocol": {
+      "const": "ocs-adapter/1"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "pass_env": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

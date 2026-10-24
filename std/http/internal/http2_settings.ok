@@ -1,0 +1,60 @@
+module http/internal/http2_settings v1.0.0;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameRules,Http2Fault,Http2FaultScope;
+import "encoding/binary" take IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+
+// Peer advertisements are observations, not local allocation requests.
+object Http2PeerSettings {
+    has header_table,initial_window,frame_size,streams,header_list is int;
+    has streams_limited,header_list_limited,push_enabled is bool;
+    Http2PeerSettings(){
+        header_table=4096;initial_window=65535;frame_size=16384;
+        streams=4294967295;header_list=4294967295;
+        streams_limited=false;header_list_limited=false;push_enabled=true;
+    }
+    header_table() is int{header_table;}initial_window() is int{initial_window;}
+    frame_size() is int{frame_size;}streams() is int{streams;}
+    header_list() is int{header_list;}streams_limited() is bool{streams_limited;}
+    header_list_limited() is bool{header_list_limited;}push_enabled() is bool{push_enabled;}
+    setting(identifier is int,value is int,from_server is bool) is ^Http2PeerSettings{
+        confirm identifier>=0 && identifier<=65535 && value>=0 && value<=4294967295
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid setting coordinates");
+        if identifier==1{^header_table=value;}
+        if identifier==2{
+            confirm value<=1 && (!from_server || value==0)
+                else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid push setting");
+            ^push_enabled=value==1;
+        }
+        if identifier==3{^streams=value;^streams_limited=true;}
+        if identifier==4{
+            confirm value<=2147483647 else throw Http2Fault(Http2FaultScope.connection,3,0,"initial window overflow");
+            ^initial_window=value;
+        }
+        if identifier==5{
+            confirm value>=16384 && value<=16777215 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid peer frame limit");
+            ^frame_size=value;
+        }
+        if identifier==6{^header_list=value;^header_list_limited=true;}
+    }
+}
+object ReceivedHttp2Settings {
+    has origin is Http2Frame;has previous is Http2PeerSettings;has from_server is bool;
+    ReceivedHttp2Settings(origin is Http2Frame,previous is Http2PeerSettings,from_server is bool){self.origin=origin;self.previous=previous;self.from_server=from_server;}
+    value() is Http2PeerSettings{
+        Http2FrameRules(origin).check();
+        confirm origin.header().kind().int()==4 && (origin.header().flags().int() & 1)==0
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"non-ACK settings required");
+        let payload=origin.payload();let state=previous;
+        for (0..(payload.size()/6).int()) -> row{
+            let offset=row*6;
+            let identifier=IntegerFromBytes(payload.slice(offset,offset+2),Signedness.unsigned,ByteOrder.big).value();
+            let value=IntegerFromBytes(payload.slice(offset+2,offset+6),Signedness.unsigned,ByteOrder.big).value();
+            state=state.setting(identifier,value,from_server);
+        }
+        state;
+    }
+}
+test "peer zero concurrency is distinct from initial unlimited concurrency" {
+    let initial=Http2PeerSettings();let bounded=initial.setting(3,0,true);
+    test.ok(!initial.streams_limited());test.ok(bounded.streams_limited());test.is(bounded.streams(),0);
+}

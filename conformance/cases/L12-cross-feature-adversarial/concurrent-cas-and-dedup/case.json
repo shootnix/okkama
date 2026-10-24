@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.concurrent-cas-and-dedup",
+  "title": "concurrent writers using compare-and-replace lose no updates; duplicates apply once",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.CONCURRENT-WRITERS",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    },
+    {
+      "contract": "STD.ASYNC.ATOMIC",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "150\napplied,applied,duplicate,applied,duplicate\n"
+    }
+  },
+  "spec_refs": [
+    "improvements-roadmap/results/IMP-08/RESULT.md",
+    "improvements-roadmap/results/IMP-10/RESULT.md",
+    "std/async/atomic.ok"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Compare-and-replace retries lose no increments (3 x 50 = 150 regardless of interleaving); a command id applies at most once (versions/CAS and durable idempotency findings)."
+  },
+  "status": "mandatory"
+}

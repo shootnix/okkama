@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Counter {
+    Counter();
+    count(n is int, total is int) is int {
+        if n == 0 { total; } else { self.count(n - 1, total + n); }
+    }
+}
+
+main() is int {
+    Stdout().writeln(Counter().count(10000000, 0).string());
+    0;
+}

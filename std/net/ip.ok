@@ -1,0 +1,267 @@
+module net/ip v1.0.0;
+
+import "runtime/net" take ip_parse, ip_format;
+import "compare" take Comparing, Order;
+import "collections/set" take Set, OrderedSet;
+import "net/ip_registry" take IpClassification;
+import "numbers/bigint" take BigInt, BigPower;
+import "error" take InvalidArgument;
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+
+enum IpVersion = (v4, v6);
+enum IpProperty = (unspecified, loopback, link_local, private_network, global, multicast, reserved, documentation);
+
+// Immutable numeric IPv4/IPv6 address, without a port, prefix or interface zone.
+//
+//     let address=IpAddress("2001:0DB8:0:0::1");
+//     address.string();       // "2001:db8::1"
+//     address.version();      // IpVersion.v6
+//     address.bytes().size(); // 16 packed network-order octets
+//
+// Construction is strict and eager: hostnames, whitespace, NUL, brackets, zones,
+// IPv4 shorthand and leading-zero IPv4 octets throw InvalidIpAddress. Numeric
+// parsing never invokes DNS. Equivalent spellings produce equal values.
+// Canonical IPv6 text is lowercase, suppresses leading zeros and compresses the
+// first longest zero run of at least two words. Mapped IPv4 uses a dotted suffix.
+// order() compares version first (v4 < v6), then unsigned address bytes.
+// properties() returns a pinned IANA classification, not current reachability.
+// The immutable set may contain overlapping categories. Private means RFC1918
+// or IPv6 ULA, not every non-global address; conditional registry flags do not
+// assert global reachability. Mapped IPv6 retains its IPv6 classification.
+// Data versions and mapping rules are documented in docs/std/ip-properties.md.
+
+object IpAddress does Comparing<IpAddress> {
+    has family is IpVersion;
+    has packed is @byte;
+    has canonical is string;
+
+    IpAddress(origin is string) {
+        confirm origin.length()>0 && origin.length()<=45
+            else throw InvalidIpAddress(origin);
+        let valid=(0..origin.length()).reduce(true) -> valid,index {
+            valid && "0123456789abcdefABCDEF:.".split(origin.slice(index,index+1)).size()==2;
+        };
+        confirm valid else throw InvalidIpAddress(origin);
+        let ipv6=origin.split(":").size()>1;
+        let number=if ipv6 {2;} else {1;};
+        let encoded=try {ip_parse(number,origin,0);}
+            catch failure is NativeFailure {
+                if failure.domain()=="core.net" && failure.code()=="invalid_input" {
+                    throw InvalidIpAddress(origin);
+                }
+                throw;
+            };
+        let length=if ipv6 {22;} else {10;};
+        confirm encoded.size()==length && encoded[0]==byte(79) && encoded[1]==byte(75)
+            && encoded[2]==byte(1) && encoded[3]==number.byte()
+            && encoded[4]==byte(0) && encoded[5]==byte(0)
+            else panic "IP provider returned an invalid address envelope";
+        family=if ipv6 {IpVersion.v6;} else {IpVersion.v4;};
+        packed=encoded.slice(6,encoded.size());
+        canonical=ip_format(encoded);
+    }
+
+    version() is IpVersion {family;}
+    bytes() is @byte {packed;}
+    string() is string {canonical;}
+    properties() is Set<IpProperty> {
+        let flags=IpClassification(packed).flags();
+        let categories=[IpProperty.unspecified,IpProperty.loopback,IpProperty.link_local,
+            IpProperty.private_network,IpProperty.global,IpProperty.multicast,
+            IpProperty.reserved,IpProperty.documentation];
+        let positions=(0..8).filter() -> index {(flags & (1 << index))!=0;};
+        let values is @IpProperty=positions.map() -> index {categories[index];};
+        OrderedSet(values:values);
+    }
+    order(other is IpAddress) is Order {
+        if family!=other.version() {
+            return if family==IpVersion.v4 {Order.less;} else {Order.greater;};
+        }
+        let right=other.bytes();
+        for 0..packed.size() -> index {
+            let compared=packed[index].order(right[index]);
+            if compared!=Order.equal {return compared;}
+        }
+        Order.equal;
+    }
+}
+
+object InvalidIpAddress does Error {
+    has origin is string;
+    InvalidIpAddress(origin is string) {self.origin=origin;}
+    text() is string {"invalid IP address: " + origin;}
+}
+
+// Inclusive CIDR interval. Host bits are masked at construction; the original
+// IpAddress stays unchanged. broadcast() means the final address for both IP
+// versions, not an IPv6 broadcast transport. membership includes both ends.
+// size() uses BigInt even for IPv4 and is exact for the entire IPv6 /0 space.
+// Every observation uses at most 16 octets; no address list is materialized.
+object IpNetwork {
+    has base is IpAddress;
+    has length is int;
+    IpNetwork(address is IpAddress, prefix is int) {
+        let width=address.bytes().size()*8;
+        confirm prefix>=0 && prefix<=width
+            else throw InvalidIpPrefix(prefix,address.version());
+        let masked=IpNetworkBytes(address.bytes(),prefix,false).bytes();
+        base=IpAddress(PackedIpText(masked).string());
+        length=prefix;
+    }
+    network() is IpAddress {base;}
+    broadcast() is IpAddress {
+        IpAddress(PackedIpText(IpNetworkBytes(base.bytes(),length,true).bytes()).string());
+    }
+    prefix() is int {length;}
+    membership(address is IpAddress) is bool {
+        if address.version()!=base.version() {false;}
+        else {IpNetworkBytes(address.bytes(),length,false).bytes()==base.bytes();}
+    }
+    size() is BigInt {
+        BigPower(base:BigInt("2"),exponent:base.bytes().size()*8-length,maximum_bits:129).value();
+    }
+}
+
+// Host address plus validated prefix, without OS interface ownership or lookup.
+// address() preserves host bits; network() observes their normalized CIDR range.
+// string() is canonical host/prefix (unbracketed IPv6, without a port or zone).
+object IpInterface {
+    has host is IpAddress;
+    has subnet is IpNetwork;
+    IpInterface(address is IpAddress, prefix is int) {
+        host=address;
+        subnet=IpNetwork(address,prefix);
+    }
+    address() is IpAddress {host;}
+    network() is IpNetwork {subnet;}
+    string() is string {host.string()+"/"+subnet.prefix().string();}
+}
+
+object InvalidIpPrefix does Error {
+    has origin is int;
+    has family is IpVersion;
+    InvalidIpPrefix(prefix is int, version is IpVersion) {origin=prefix;family=version;}
+    prefix() is int {origin;}
+    text() is string {
+        let maximum=if family==IpVersion.v4 {32;} else {128;};
+        "IP prefix must be in 0.."+maximum.string()+": "+origin.string();
+    }
+}
+
+// Lazy inclusive traversal of a CIDR network, including network/final addresses.
+// cursor() is independent and immutable; successor() never changes its receiver.
+// Only the current and final address are retained, even for IPv6 /0. Apply Taken
+// or use the cursor before materializing a bounded prefix of a huge interval.
+object IpAddresses does Iterating<IpAddress> {
+    has origin is IpNetwork;
+    IpAddresses(origin is IpNetwork) {self.origin=origin;}
+    cursor() is Cursor<IpAddress> {
+        IpAddressCursor(current:origin.network(),limit:origin.broadcast());
+    }
+}
+
+object IpAddressCursor does Cursor<IpAddress> {
+    has current, limit is IpAddress;
+    IpAddressCursor(current is IpAddress, limit is IpAddress) {
+        confirm current.version()==limit.version() && current.order(limit)!=Order.greater
+            else throw InvalidArgument("invalid IP cursor interval");
+        self.current=current;self.limit=limit;
+    }
+    available() is bool {true;}
+    item() is IpAddress {current;}
+    successor() is Cursor<IpAddress> {
+        if current==limit {ExhaustedIpAddressCursor();}
+        else {
+            let bytes=current.bytes();
+            let following is @byte=(0..bytes.size()).map() -> index {
+                let carry=(index+1..bytes.size()).reduce(true) -> carry,position {
+                    carry && bytes[position]==byte(255);
+                };
+                if carry {((bytes[index].int()+1)%256).byte();} else {bytes[index];}
+            };
+            IpAddressCursor(current:IpAddress(PackedIpText(following).string()),limit:limit);
+        }
+    }
+}
+
+object ExhaustedIpAddressCursor does Cursor<IpAddress> {
+    ExhaustedIpAddressCursor();
+    available() is bool {false;}
+    item() is IpAddress {throw IterationEnded();}
+    successor() is Cursor<IpAddress> {throw IterationEnded();}
+}
+
+// Implementation representation of the lower/upper packed CIDR endpoint.
+object IpNetworkBytes {
+    has origin is @byte;
+    has prefix is int;
+    has upper is bool;
+    IpNetworkBytes(origin is @byte, prefix is int, upper is bool) {
+        confirm (origin.size()==4 || origin.size()==16) && prefix>=0 && prefix<=origin.size()*8
+            else throw InvalidArgument("invalid packed IP network");
+        self.origin=origin;self.prefix=prefix;self.upper=upper;
+    }
+    bytes() is @byte {
+        (0..origin.size()).map() -> index {
+            let remaining=prefix-index*8;
+            if remaining>=8 {origin[index];}
+            else {if remaining<=0 {if upper {byte(255);} else {byte(0);}}
+            else {
+                let mask=256-(1 << (8-remaining));
+                let kept=origin[index].int() & mask;
+                if upper {(kept | (255-mask)).byte();} else {kept.byte();}
+            }}
+        };
+    }
+}
+
+// Canonical text of packed address bytes. The provider envelope remains private.
+object PackedIpText {
+    has origin is @byte;
+    PackedIpText(origin is @byte) {
+        confirm origin.size()==4 || origin.size()==16
+            else throw InvalidArgument("IP text needs 4 or 16 bytes");
+        self.origin=origin;
+    }
+    string() is string {
+        let family=if origin.size()==4 {1;} else {2;};
+        let header=[byte(79),byte(75),byte(1),family.byte(),byte(0),byte(0)];
+        let envelope is @byte=(0..origin.size()+6).map() -> index {
+            if index<6 {header[index];} else {origin[index-6];}
+        };
+        ip_format(envelope);
+    }
+}
+
+test "numeric address aliases have canonical identity" {
+    let address=IpAddress("2001:0DB8:0:0:0:0:0:1");
+    test.is(address.string(),"2001:db8::1");
+    test.ok(address==IpAddress("2001:db8::1"));
+    test.is(address.bytes().size(),16);
+}
+test "address rejects endpoint decorations" {
+    let rejected=try {IpAddress("[::1]:80");false;}
+        catch failure is InvalidIpAddress {true;};
+    test.ok(rejected);
+}
+test "CIDR masks host bits and keeps inclusive endpoints" {
+    let network=IpNetwork(IpAddress("192.0.2.7"),30);
+    test.is(network.network().string(),"192.0.2.4");
+    test.is(network.broadcast().string(),"192.0.2.7");
+    test.is(network.size().string(),"4");
+    test.ok(network.membership(IpAddress("192.0.2.4")));
+    test.ok(!network.membership(IpAddress("192.0.2.8")));
+}
+test "single-address network cursor ends without wrapping" {
+    let cursor=IpAddresses(IpNetwork(IpAddress("255.255.255.255"),32)).cursor();
+    test.ok(cursor.available());
+    test.is(cursor.item().string(),"255.255.255.255");
+    test.ok(!cursor.successor().available());
+    test.ok(cursor.available());
+}
+test "interface preserves host bits alongside its normalized network" {
+    let interface=IpInterface(IpAddress("2001:0DB8::7"),64);
+    test.is(interface.string(),"2001:db8::7/64");
+    test.is(interface.address().string(),"2001:db8::7");
+    test.is(interface.network().network().string(),"2001:db8::");
+}

@@ -1,0 +1,70 @@
+module runtime/json v1.0.0;
+
+// Private exact JSON parse tree and diagnostics. The public json/parse module
+// projects these opaque states into immutable json/value objects.
+native object JsonParseState;
+native object JsonNodeState;
+
+native json_parse_state(origin is string, maximum_depth is int) is JsonParseState;
+native json_parse_valid(origin is JsonParseState) is bool;
+native json_parse_offset(origin is JsonParseState) is int;
+native json_parse_line(origin is JsonParseState) is int;
+native json_parse_column(origin is JsonParseState) is int;
+native json_parse_message(origin is JsonParseState) is string;
+native json_parse_has_duplicate(origin is JsonParseState) is bool;
+native json_parse_duplicate(origin is JsonParseState) is string;
+native json_parse_root(origin is JsonParseState) is JsonNodeState;
+
+native json_node_kind(origin is JsonNodeState) is int;
+native json_node_boolean(origin is JsonNodeState) is bool;
+native json_node_number(origin is JsonNodeState) is string;
+native json_node_text(origin is JsonNodeState) is string;
+native json_node_size(origin is JsonNodeState) is int;
+native json_node_item(origin is JsonNodeState, index is int) is JsonNodeState;
+native json_member_name(origin is JsonNodeState, index is int) is string;
+native json_member_value(origin is JsonNodeState, index is int) is JsonNodeState;
+
+// Parsing is lazy and memoized. root() is available only after valid(); a
+// malformed source returns native invalid_data, never a partial tree. Scalar
+// accessors require their exact kind, and indices are zero-based; wrong kinds
+// and out-of-range indices return native invalid_input. Key order is preserved.
+// State/node handles own pure memory until registry teardown; no I/O or close.
+// Duplicate names (including empty names) retain a separate diagnostic flag,
+// because an empty string cannot serve as the absence sentinel.
+
+test "JSON native scalar children and ordered members" {
+    let parsed = json_parse_state("[true,12,\"x\",{\"a\":null}]", 8);
+    test.ok(json_parse_valid(parsed));
+    let root = json_parse_root(parsed);
+    test.is(json_node_kind(root), 4);
+    test.is(json_node_size(root), 4);
+    test.ok(json_node_boolean(json_node_item(root, 0)));
+    test.is(json_node_number(json_node_item(root, 1)), "12");
+    test.is(json_node_text(json_node_item(root, 2)), "x");
+    let table = json_node_item(root, 3);
+    test.is(json_member_name(table, 0), "a");
+    test.is(json_node_kind(json_member_value(table, 0)), 0);
+}
+test "JSON diagnostics retain duplicate identity and source position" {
+    let invalid = json_parse_state("[", 8);
+    test.is(json_parse_valid(invalid), false);
+    test.is(json_parse_offset(invalid), 1);
+    test.is(json_parse_line(invalid), 1);
+    test.is(json_parse_column(invalid), 2);
+    test.ok(json_parse_message(invalid).length() > 0);
+    test.is(json_parse_has_duplicate(invalid), false);
+    let duplicate = json_parse_state("{\"\":1,\"\":2}", 8);
+    test.is(json_parse_valid(duplicate), false);
+    test.ok(json_parse_has_duplicate(duplicate));
+    test.is(json_parse_duplicate(duplicate), "");
+}
+test "JSON invalid observations use portable native failure codes" {
+    test.is(try {json_parse_root(json_parse_state("[", 8)); "";} catch failure is NativeFailure {failure.code();}, "invalid_data");
+    let array = json_parse_root(json_parse_state("[1]", 8));
+    let table = json_parse_root(json_parse_state("{\"a\":1}", 8));
+    for [-1, 1] -> index {
+        test.is(try {json_node_item(array, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+        test.is(try {json_member_name(table, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+        test.is(try {json_member_value(table, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    }
+}

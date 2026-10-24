@@ -1,0 +1,171 @@
+module mail/imap_changes v1.0.0;
+
+
+import "mail/imap_session" take ImapSession, SelectedMailbox;
+import "mail/imap_command" take ImapCommand, ImapMailboxCommand;
+import "mail/imap_command_reading" take ImapCommandRead;
+import "mail/imap_metadata" take ImapStatusCode, ImapUnsigned, ImapUidRanges;
+import "mail/imap_data" take ParsedImapData, ImapValueKind, InvalidImapData;
+import "mail/imap_uid" take ImapUid, ImapUidSet, ImapUidSetLimits, ImapUidValidity, ImapSequence, MailboxUids;
+import "mail/imap_name" take ImapMailboxName;
+import "mail/imap" take ImapCapabilities, ImapFeature;
+import "mail/mailbox" take MailFlags;
+import "mail/message" take MailMessage;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
+import "collections/sequence" take Sequencing;
+import "mime/media_type" take MimeItems;
+
+object ImapAssignedUids {
+    has values is @MailboxUids;
+    ImapAssignedUids() {values=[];}
+    ImapAssignedUids(value is MailboxUids) {values=[value];}
+    known() is bool {values.size()>0;}
+    uids() is MailboxUids {confirm self.known() else throw MissingAssignedImapUids();values[0];}
+}
+object MissingAssignedImapUids does Error {
+    MissingAssignedImapUids();
+    text() is string {"server did not supply assigned IMAP UIDs";}
+}
+object ImapCopiedUids {
+    has sources is ImapUidSet;has assigned is ImapAssignedUids;
+    ImapCopiedUids(result is ImapCommandRead, requested is ImapUidSet, destination is ImapMailboxName, capabilities is ImapCapabilities, account is string) {
+        result.require_success();let code=ImapStatusCode(result.completion());
+        if code.present() && code.name()=="COPYUID" {
+            ImapUidPlus(capabilities).require();let arguments=code.arguments();
+            confirm arguments.size()==3 && arguments.item(0).kind()==ImapValueKind.atom
+                && arguments.item(1).kind()==ImapValueKind.atom && arguments.item(2).kind()==ImapValueKind.atom
+                else throw InvalidImapData("invalid COPYUID code");
+            let validity=ImapUidValidity(BigInt(ImapUnsigned(arguments.item(0).string(),true).value().string()));
+            let source=ImapUidRanges(arguments.item(1).string(),ImapUidSetLimits());
+            let target=ImapUidRanges(arguments.item(2).string(),ImapUidSetLimits());
+            let from=source.uids();let to=target.uids();
+            confirm from.entries().size()==to.entries().size() && source.expanded_count()==from.entries().size()
+                && target.expanded_count()==to.entries().size() else throw InvalidImapData("COPYUID mapping must be one-to-one");
+            let wanted=requested.entries();let actual=from.entries();
+            for (0..actual.size()) -> index {
+                let exists=(0..wanted.size()).reduce(false) -> found,position {found || wanted.item(position).order(actual.item(index))==Order.equal;};
+                confirm exists else throw InvalidImapData("COPYUID source was not requested");
+            }
+            sources=from;assigned=ImapAssignedUids(MailboxUids(destination,validity,to,account));
+        } else {sources=ImapUidSet([]);assigned=ImapAssignedUids();}
+    }
+    sources() is ImapUidSet {sources;}
+    assigned() is ImapAssignedUids {assigned;}
+}
+object ImapUidPlus {
+    has origin is ImapCapabilities;
+    ImapUidPlus(origin is ImapCapabilities) {self.origin=origin;}
+    require() is void {
+        confirm origin.features().membership(ImapFeature.uid_plus)
+            else throw InvalidImapData("UID assignment without UIDPLUS advertisement in this wire mode");
+    }
+}
+object CopiedMail {
+    has pending is Future<ImapCopiedUids>;
+    CopiedMail(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName) {
+        pending=ImapCopying(origin,uids,destination,false).result();
+    }
+    uids() is Future<ImapCopiedUids> {pending;}
+}
+object MovedMail {
+    has pending is Future<ImapCopiedUids>;
+    MovedMail(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName) {
+        pending=ImapCopying(origin,uids,destination,true).result();
+    }
+    uids() is Future<ImapCopiedUids> {pending;}
+}
+object ImapCopying {
+    has origin is SelectedMailbox;has uids is MailboxUids;has destination is ImapMailboxName;has move is bool;
+    ImapCopying(origin is SelectedMailbox, uids is MailboxUids, destination is ImapMailboxName, move is bool) {
+        uids.checked(origin.name(),uids.validity(),origin.session().account());self.origin=origin;self.uids=uids;self.destination=destination;self.move=move;
+    }
+    async result() is ImapCopiedUids {
+        let reply=await origin.session().run(ImapCommand(uids:uids.uids(),destination:destination,move:move),
+            [origin.context()],[uids.validity()],move);
+        reply.result().require_success();uids.checked(origin.name(),reply.state().uid_validity(),origin.session().account());
+        ImapCopiedUids(reply.result(),uids.uids(),destination,origin.session().capabilities(),origin.session().account());
+    }
+}
+object ExpungedMail {
+    has pending is Future<Sequencing<ImapSequence>>;
+    ExpungedMail(origin is SelectedMailbox, uids is MailboxUids) {pending=ImapExpunging(origin,uids).result();}
+    identifiers() is Future<Sequencing<ImapSequence>> {pending;}
+}
+object ImapExpunging {
+    has origin is SelectedMailbox;has uids is MailboxUids;
+    ImapExpunging(origin is SelectedMailbox, uids is MailboxUids) {
+        uids.checked(origin.name(),uids.validity(),origin.session().account());self.origin=origin;self.uids=uids;
+    }
+    async result() is Sequencing<ImapSequence> {
+        let reply=await origin.session().run(ImapCommand(expunged:uids.uids()),[origin.context()],[uids.validity()],true);
+        let result=reply.result();result.require_success();uids.checked(origin.name(),reply.state().uid_validity(),origin.session().account());
+        let removed is MimeItems<ImapSequence>=MimeItems();let responses=result.responses();
+        for (0..responses.size()) -> index {
+            let response=responses.item(index);if response.name()=="EXPUNGE" {
+                let values=ParsedImapData(response).entries();removed=removed.following(ImapSequence(ImapUnsigned(values.item(1).string(),true).value()));
+            }
+        }removed.entries();
+    }
+}
+object AppendedMail {
+    has pending is Future<ImapAssignedUids>;
+    AppendedMail(origin is ImapSession, mailbox is ImapMailboxName, message is MailMessage, flags is MailFlags) {
+        pending=ImapAppending(origin,mailbox,ImapCommand(mailbox:mailbox,message:message,flags:flags)).result();
+    }
+    uids() is Future<ImapAssignedUids> {pending;}
+}
+object ImapAppending {
+    has origin is ImapSession;has mailbox is ImapMailboxName;has command is ImapCommand;
+    ImapAppending(origin is ImapSession, mailbox is ImapMailboxName, command is ImapCommand) {self.origin=origin;self.mailbox=mailbox;self.command=command;}
+    async result() is ImapAssignedUids {
+        let reply=await origin.run(command,[],[],false);let result=reply.result();result.require_success();
+        let code=ImapStatusCode(result.completion());
+        if !code.present() || code.name()!="APPENDUID" {return ImapAssignedUids();}
+        ImapUidPlus(origin.capabilities()).require();let arguments=code.arguments();
+        confirm arguments.size()==2 && arguments.item(0).kind()==ImapValueKind.atom && arguments.item(1).kind()==ImapValueKind.atom
+            else throw InvalidImapData("invalid APPENDUID code");
+        let validity=ImapUidValidity(BigInt(ImapUnsigned(arguments.item(0).string(),true).value().string()));
+        let assigned=ImapUidSet([ImapUid(BigInt(ImapUnsigned(arguments.item(1).string(),true).value().string()))]);
+        ImapAssignedUids(MailboxUids(mailbox,validity,assigned,origin.account()));
+    }
+}
+object CreatedImapMailbox {
+    has pending is Future<ImapMailboxName>;
+    CreatedImapMailbox(origin is ImapSession, name is ImapMailboxName) {
+        pending=ImapMailboxChanging(origin,name,ImapCommand(operation:ImapMailboxCommand.create,mailbox:name)).result();
+    }
+    result() is Future<ImapMailboxName> {pending;}
+}
+object ImapMailboxDeletion {
+    has pending is Future<ImapMailboxName>;
+    ImapMailboxDeletion(origin is ImapSession, name is ImapMailboxName) {
+        pending=ImapMailboxChanging(origin,name,ImapCommand(operation:ImapMailboxCommand.delete,mailbox:name)).result();
+    }
+    delete() is Future<ImapMailboxName> {pending;}
+}
+object RenamedImapMailbox {
+    has pending is Future<ImapMailboxName>;
+    RenamedImapMailbox(origin is ImapSession, source is ImapMailboxName, destination is ImapMailboxName) {
+        pending=ImapMailboxChanging(origin,destination,ImapCommand(source:source,destination:destination)).result();
+    }
+    result() is Future<ImapMailboxName> {pending;}
+}
+object ImapSubscription {
+    has pending is Future<ImapMailboxName>;
+    ImapSubscription(origin is ImapSession, name is ImapMailboxName, subscribed is bool) {
+        let action=if subscribed {ImapMailboxCommand.subscribe;} else {ImapMailboxCommand.unsubscribe;};
+        pending=ImapMailboxChanging(origin,name,ImapCommand(operation:action,mailbox:name)).result();
+    }
+    apply() is Future<ImapMailboxName> {pending;}
+}
+object ImapMailboxChanging {
+    has origin is ImapSession;has name is ImapMailboxName;has command is ImapCommand;
+    ImapMailboxChanging(origin is ImapSession, name is ImapMailboxName, command is ImapCommand) {self.origin=origin;self.name=name;self.command=command;}
+    async result() is ImapMailboxName {let reply=await origin.run(command,[],[],false);reply.result().require_success();name;}
+}
+
+test "missing assigned UIDs are explicit rather than fabricated" {
+    let assignment=ImapAssignedUids();test.is(assignment.known(),false);
+    let absent=try {assignment.uids();false;} catch failure is MissingAssignedImapUids {true;};test.is(absent,true);
+}

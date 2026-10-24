@@ -1,0 +1,186 @@
+module message/header v1.0.0;
+
+import "compare" take Comparing, Order;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+
+object MessageHeaderName does Comparing<MessageHeaderName> {
+    has spelling, key is string;
+    MessageHeaderName(origin is string) {
+        confirm origin.length()>0 else throw InvalidMessageHeader(0,"empty field name");
+        let bytes=Utf8Encoded(origin).bytes();
+        for (0..bytes.size()) -> index {
+            let value=bytes[index].int();
+            confirm value>=33 && value<=126 && value!=58 else throw InvalidMessageHeader(index,"invalid field name");
+        }
+        let folded is @byte=bytes.map() -> octet {
+            let value=octet.int();if value>=65 && value<=90 {(value+32).byte();} else {octet;}
+        };
+        spelling=origin;key=Utf8Decoded(folded).string();
+    }
+    string() is string {spelling;}
+    order(other is MessageHeaderName) is Order {
+        let folded is @byte=Utf8Encoded(other.string()).bytes().map() -> octet {
+            let value=octet.int();if value>=65 && value<=90 {(value+32).byte();} else {octet;}
+        };
+        key.order(Utf8Decoded(folded).string());
+    }
+}
+object MessageHeader {
+    has label is MessageHeaderName;
+    has text is string;
+    MessageHeader(name is MessageHeaderName, value is string) {label=name;text=UnfoldedMessageHeader(value).string();}
+    name() is MessageHeaderName {label;}
+    value() is string {text;}
+}
+object MessageHeaders {
+    has origin is @MessageHeader;
+    has maximum is int;
+    MessageHeaders(entries is Sequencing<MessageHeader>) {maximum=1024;origin=MessageHeaderSnapshot(entries,1024).entries();}
+    MessageHeaders(entries is Sequencing<MessageHeader>, maximum_entries is int) {
+        maximum=maximum_entries;origin=MessageHeaderSnapshot(entries,maximum_entries).entries();
+    }
+    entries() is Sequencing<MessageHeader> {origin;}
+    membership(name is MessageHeaderName) is bool {
+        origin.reduce(false) -> found,entry {found || entry.name().order(name)==Order.equal;};
+    }
+    first(name is MessageHeaderName) is string {
+        for origin -> entry {if entry.name().order(name)==Order.equal {return entry.value();}}
+        throw MissingMessageHeader(name);
+    }
+    values(name is MessageHeaderName) is Sequencing<string> {
+        let matching is @MessageHeader=origin.filter() -> entry {entry.name().order(name)==Order.equal;};
+        let values is @string=matching.map() -> entry {entry.value();};values;
+    }
+    addition(entry is MessageHeader) is MessageHeaders {
+        confirm origin.size()<maximum else throw MessageHeaderLimitExceeded("entries");
+        let entries is @MessageHeader=(0..origin.size()+1).map() -> index {
+            if index<origin.size() {origin[index];} else {entry;}
+        };
+        MessageHeaders(entries,maximum);
+    }
+}
+object RenderedMessageHeaders {
+    has origin is MessageHeaders;
+    has maximum is int;
+    RenderedMessageHeaders(origin is MessageHeaders) {self.origin=origin;maximum=1048576;}
+    RenderedMessageHeaders(origin is MessageHeaders, maximum_bytes is int) {
+        confirm maximum_bytes>=0 else throw InvalidArgument("header output limit must be nonnegative");
+        self.origin=origin;maximum=maximum_bytes;
+    }
+    bytes() is @byte {
+        let buffer=ByteBuffer();defer buffer.closing().close();let output=MessageHeaderOutput(buffer,maximum);
+        let entries=origin.entries();
+        for (0..entries.size()) -> index {FoldedMessageHeader(entries.item(index)).print(output);}
+        buffer.content().bytes();
+    }
+}
+object InvalidMessageHeader does Error {
+    has position is int;
+    has reason is string;
+    InvalidMessageHeader(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    text() is string {"invalid message header at scalar offset "+position.string()+": "+reason;}
+}
+object MissingMessageHeader does Error {
+    has label is MessageHeaderName;
+    MissingMessageHeader(name is MessageHeaderName) {label=name;}
+    name() is MessageHeaderName {label;}
+    text() is string {"missing message header: "+label.string();}
+}
+object MessageHeaderLimitExceeded does Error {
+    has limit is string;
+    MessageHeaderLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"message header "+limit+" limit exceeded";}
+}
+
+// Importable implementation collaborators; no HTTP grammar or field-specific
+// mail address/date/MIME parsing is implied by this generic layer.
+object UnfoldedMessageHeader {
+    has origin is string;
+    UnfoldedMessageHeader(origin is string) {self.origin=origin;}
+    string() is string {
+        let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        let consumed=(0..origin.length()).reduce(0) -> after,index {
+            if index<after {after;}
+            else {
+                let scalar=origin.slice(index,index+1);
+                if scalar=="\r" {
+                    confirm origin.length()-index>=3 && origin.slice(index+1,index+2)=="\n"
+                        && (origin.slice(index+2,index+3)==" " || origin.slice(index+2,index+3)=="\t")
+                        else throw InvalidMessageHeader(index,"invalid folded line break");
+                    index+2;
+                } else {
+                    let bytes=Utf8Encoded(scalar).bytes();let value=bytes[0].int();
+                    confirm bytes.size()==1 && (value==9 || (value>=32 && value<=126))
+                        else throw InvalidMessageHeader(index,"invalid field value character");
+                    writer.write(ByteSnapshot(bytes));index+1;
+                }
+            }
+        };
+        Utf8Decoded(buffer.content().bytes()).string();
+    }
+}
+object MessageHeaderSnapshot {
+    has origin is Sequencing<MessageHeader>;
+    has maximum is int;
+    MessageHeaderSnapshot(origin is Sequencing<MessageHeader>, maximum is int) {
+        confirm maximum>=0 else throw InvalidArgument("header entry limit must be nonnegative");
+        self.origin=origin;self.maximum=maximum;
+    }
+    entries() is @MessageHeader {
+        let size=origin.size();confirm size>=0 else throw InvalidArgument("header source size must be nonnegative");
+        confirm size<=maximum else throw MessageHeaderLimitExceeded("entries");
+        let entries is @MessageHeader=(0..size).map() -> index {origin.item(index);};entries;
+    }
+}
+object MessageHeaderOutput {
+    has buffer is ByteBuffer;
+    has maximum is int;
+    MessageHeaderOutput(buffer is ByteBuffer, maximum is int) {self.buffer=buffer;self.maximum=maximum;}
+    line(text is string) is void {
+        confirm text.length()<=998 else throw InvalidMessageHeader(0,"physical line exceeds 998 octets");
+        let bytes=Utf8Encoded(text+"\r\n").bytes();
+        confirm bytes.size()<=maximum-buffer.content().size() else throw MessageHeaderLimitExceeded("bytes");
+        buffer.writing().write(ByteSnapshot(bytes));
+    }
+}
+object MessageHeaderLine {
+    has start, boundary is int;
+    MessageHeaderLine() {start=0;boundary=0;}
+    start() is int {start;}
+    boundary() is int {boundary;}
+    following(start is int, boundary is int) is ^MessageHeaderLine {^start=start;^boundary=boundary;}
+}
+object FoldedMessageHeader {
+    has origin is MessageHeader;
+    FoldedMessageHeader(origin is MessageHeader) {self.origin=origin;}
+    print(output is MessageHeaderOutput) is void {
+        let text=origin.name().string()+": "+origin.value();
+        let boundaries=(0..text.length()+1).filter() -> index {
+            index==text.length() || (index>0 && self.whitespace(text.slice(index,index+1))
+                && !self.whitespace(text.slice(index-1,index)) && text.slice(index-1,index)!="\\");
+        };
+        let line=MessageHeaderLine();
+        for boundaries -> end {
+            if end-line.start()>78 && line.boundary()>line.start() {
+                output.line(text.slice(line.start(),line.boundary()));
+                line=line.following(line.boundary(),end);
+            } else {line=line.following(line.start(),end);}
+            confirm end-line.start()<=998 else throw InvalidMessageHeader(line.start(),"unfoldable field exceeds 998 octets");
+        }
+        output.line(text.slice(line.start(),text.length()));
+    }
+    private:
+    whitespace(text is string) is bool {text==" " || text=="\t";}
+}
+
+test "field lookup ignores case without losing spelling" {
+    let headers=MessageHeaders([MessageHeader(MessageHeaderName("Subject"),"hello")]);
+    test.is(headers.first(MessageHeaderName("SUBJECT")),"hello");
+    test.is(headers.entries().item(0).name().string(),"Subject");
+}

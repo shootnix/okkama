@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "toml/parse" take ParsedToml;
+object ExampleResult {
+    ExampleResult();
+    value() is @string {
+        let settings = ParsedToml("title='Okkama'\n[database]\nport=5432\nenabled=true").value();
+        let names is @string = settings.members().map() -> member { member.name(); };
+        names;
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

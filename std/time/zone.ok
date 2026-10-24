@@ -1,0 +1,248 @@
+module time/zone v1.0.0;
+
+import "time/duration" take Duration, DurationUnit;
+import "time/clock" take Instant;
+import "time/date" take Date;
+import "time/day" take TimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "runtime/time_zone" take
+    timezone_version,
+    timezone_known,
+    timezone_offset,
+    timezone_daylight,
+    timezone_abbreviation,
+    timezone_local_candidates,
+    timezone_local_instant;
+
+// Deterministic time-zone values backed only by bundled IANA tzdata 2026c.
+//
+//     let zone = Zone(name: "America/New_York");
+//     let local = ZonedDateTime(instant: clock.instant(), zone: zone)
+//         .local_datetime();
+//     TimeZoneDatabaseVersion().string(); // "2026c"
+//
+// Named zones never inspect the host's configured zone or host tzdata. Absolute
+// to local conversion is total for instants whose local date lies in 1..9999.
+// Local gaps throw MissingLocalTime; folds require an explicit earlier/later
+// choice. FixedZone has no daylight-saving state and uses its name as its
+// abbreviation.
+
+enum Fold = (earlier, later);
+
+role TimeZone {
+    name() is string;
+    offset(at is Instant) is Duration;
+    daylight_saving(at is Instant) is bool;
+    abbreviation(at is Instant) is string;
+    instant(origin is LocalDateTime, fold is Fold) is Instant;
+}
+
+object Zone does TimeZone {
+    has origin is string;
+
+    Zone(name is string) {
+        confirm timezone_known(name) else throw UnknownTimeZone(name);
+        origin = name;
+    }
+
+    name() is string {
+        origin;
+    }
+
+    offset(at is Instant) is Duration {
+        Duration(
+            value: timezone_offset(origin, at.unix_duration().seconds()).rat(),
+            unit: DurationUnit.second,
+        );
+    }
+
+    daylight_saving(at is Instant) is bool {
+        timezone_daylight(origin, at.unix_duration().seconds());
+    }
+
+    abbreviation(at is Instant) is string {
+        timezone_abbreviation(origin, at.unix_duration().seconds());
+    }
+
+    instant(local is LocalDateTime, fold is Fold) is Instant {
+        let date is Date = local.date();
+        let time is TimeOfDay = local.time();
+        confirm timezone_local_candidates(
+            origin,
+            date.year(),
+            date.month(),
+            date.day(),
+            time.hour(),
+            time.minute(),
+            time.second(),
+            time.nanosecond(),
+        ) > 0 else throw MissingLocalTime(origin, local);
+        Instant(origin: Duration(
+            value: timezone_local_instant(
+                origin,
+                date.year(),
+                date.month(),
+                date.day(),
+                time.hour(),
+                time.minute(),
+                time.second(),
+                time.nanosecond(),
+                fold == Fold.later,
+            ),
+            unit: DurationUnit.second,
+        ));
+    }
+}
+
+object FixedZone does TimeZone {
+    has zone_name is string;
+    has zone_offset is Duration;
+
+    FixedZone(name is string, offset is Duration) {
+        confirm name.length() > 0
+            else throw InvalidTimeZone("fixed time-zone name must not be empty");
+        confirm offset.seconds().denominator() == "1"
+            else throw InvalidTimeZone("time-zone offset must contain whole seconds");
+        confirm offset.seconds() > -86400.rat() && offset.seconds() < 86400.rat()
+            else throw InvalidTimeZone("time-zone offset must be within one day");
+        zone_name = name;
+        zone_offset = offset;
+    }
+
+    name() is string {
+        zone_name;
+    }
+
+    offset(at is Instant) is Duration {
+        zone_offset;
+    }
+
+    daylight_saving(at is Instant) is bool {
+        false;
+    }
+
+    abbreviation(at is Instant) is string {
+        zone_name;
+    }
+
+    instant(local is LocalDateTime, fold is Fold) is Instant {
+        let epoch is LocalDateTime = LocalDateTime(
+            date: Date(year: 1970, month: 1, day: 1),
+            time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
+        );
+        Instant(origin: local.minus(epoch).minus(zone_offset));
+    }
+}
+
+object ZonedDateTime {
+    has source_instant is Instant;
+    has source_zone is TimeZone;
+
+    ZonedDateTime(instant is Instant, zone is TimeZone) {
+        source_instant = instant;
+        source_zone = zone;
+    }
+
+    instant() is Instant {
+        source_instant;
+    }
+
+    zone() is TimeZone {
+        source_zone;
+    }
+
+    local_datetime() is LocalDateTime {
+        let epoch is LocalDateTime = LocalDateTime(
+            date: Date(year: 1970, month: 1, day: 1),
+            time: TimeOfDay(hour: 0, minute: 0, second: 0, nanosecond: 0),
+        );
+        epoch.plus(source_instant.unix_duration()).plus(self.offset());
+    }
+
+    offset() is Duration {
+        source_zone.offset(source_instant);
+    }
+}
+
+object ZoneObservation {
+    has origin is ZonedDateTime;
+
+    ZoneObservation(origin is ZonedDateTime) {
+        self.origin = origin;
+    }
+
+    daylight_saving() is bool {
+        origin.zone().daylight_saving(origin.instant());
+    }
+
+    abbreviation() is string {
+        origin.zone().abbreviation(origin.instant());
+    }
+}
+
+object InstantFromLocal {
+    has origin is LocalDateTime;
+    has zone is TimeZone;
+    has fold is Fold;
+
+    InstantFromLocal(origin is LocalDateTime, zone is TimeZone, fold is Fold) {
+        self.origin = origin;
+        self.zone = zone;
+        self.fold = fold;
+    }
+
+    #projected
+    value() is Instant {
+        zone.instant(origin, fold);
+    }
+}
+
+object TimeZoneDatabaseVersion {
+    TimeZoneDatabaseVersion();
+
+    #projected
+    string() is string {
+        timezone_version();
+    }
+}
+
+object UnknownTimeZone does Error {
+    has name is string;
+
+    UnknownTimeZone(name is string) {
+        self.name = name;
+    }
+
+    #projected
+    text() is string {
+        "unknown bundled time zone: " + name;
+    }
+}
+
+object InvalidTimeZone does Error {
+    has message is string;
+
+    InvalidTimeZone(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}
+
+object MissingLocalTime does Error {
+    has zone_name is string;
+    has local is LocalDateTime;
+
+    MissingLocalTime(zone is string, local is LocalDateTime) {
+        zone_name = zone;
+        self.local = local;
+    }
+
+    #projected
+    text() is string {
+        "local time does not exist in zone " + zone_name;
+    }
+}

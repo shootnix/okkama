@@ -1,0 +1,21 @@
+// Сверить контрольную сумму импортированного блока
+//
+// Сверить Adler-32 из заголовка формата: Adler32 вычисляет контрольную сумму с явным начальным значением.
+//
+// Запуск: ./examples/cookbook/run lab example-checksum-adler32
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-checksum-adler32
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "checksum/adler32" take Adler32;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let prefix = Adler32(Utf8Encoded("Wiki").bytes());
+    let whole = prefix.state(Utf8Encoded("pedia").bytes());
+    Stdout().writeln(whole.value().string());
+    Stdout().writeln(prefix.value().string());
+    0;
+}

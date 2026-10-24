@@ -1,0 +1,177 @@
+module random/source v1.0.0;
+
+import "runtime/random" take
+    PcgState,
+    pcg_state,
+    pcg_integer,
+    pcg_float,
+    pcg_bytes,
+    random_sample_accepted,
+    random_integer_from_sample,
+    random_float_from_sample;
+import "runtime/system" take secure_random;
+
+// Stateful random sources with one compact capability.
+//
+//     let repeatable is Randomizing = PcgRandom(seed: 42);
+//     let index is int = repeatable.integer(0, 10); // 0 through 9
+//     let fraction is float = repeatable.float();   // 0.0 <= x < 1.0
+//     let token is @byte = repeatable.bytes(16);
+//
+//     let secure is Randomizing = SecureRandom();
+//     let nonce is @byte = secure.bytes(24);
+//
+// PcgRandom is PCG-XSH-RR 64/32 (pcg32), with multiplier
+// 6364136223846793005 and fixed stream increment 1442695040888963407.
+// Construction performs the standard zero-state advance, adds the signed seed
+// modulo 2^64, then advances again. Each integer consumes pairs of 32-bit
+// outputs until rejection sampling accepts one. float consumes two outputs and
+// forms 53 random bits. bytes emits each 32-bit output little-endian; an
+// incomplete final word discards its unused bytes. This sequence is part of the
+// public reproducibility contract.
+//
+// PcgRandom owns an opaque mutable stream. Copies of the object share that
+// stream, just as copies of a reading capability share their underlying input.
+// It is reproducible, not cryptographically secure. SecureRandom has no seed
+// constructor and reads fresh operating-system entropy for every operation.
+// Integer ranges are always non-empty and half-open [start, stop). Random byte
+// requests are capped at 16 MiB per call.
+
+role Randomizing {
+    integer(start is int, stop is int) is int;
+    float() is float;
+    bytes(size is int) is @byte;
+}
+
+object PcgRandom does Randomizing {
+    has state is PcgState;
+
+    PcgRandom(seed is int) {
+        state = pcg_state(seed);
+    }
+
+    integer(start is int, stop is int) is int {
+        confirm start < stop else throw InvalidRandomRange(start, stop);
+        pcg_integer(state, start, stop);
+    }
+
+    float() is float {
+        pcg_float(state);
+    }
+
+    bytes(size is int) is @byte {
+        confirm size >= 0 && size <= 16777216
+            else throw InvalidRandomSize(size, 16777216);
+        pcg_bytes(state, size);
+    }
+}
+
+object SecureRandom does Randomizing {
+    SecureRandom();
+
+    integer(start is int, stop is int) is int {
+        confirm start < stop else throw InvalidRandomRange(start, stop);
+        value SecureInteger(start: start, stop: stop);
+    }
+
+    float() is float {
+        random_float_from_sample(SecureBytes(size: 7).bytes());
+    }
+
+    bytes(size is int) is @byte {
+        confirm size >= 0 && size <= 16777216
+            else throw InvalidRandomSize(size, 16777216);
+        SecureBytes(size: size).bytes();
+    }
+}
+
+object SecureInteger {
+    has beginning is int;
+    has ending is int;
+
+    SecureInteger(start is int, stop is int) {
+        beginning = start;
+        ending = stop;
+    }
+
+    #projected
+    value() is int {
+        let sample is @byte = SecureBytes(size: 8).bytes();
+        if random_sample_accepted(sample, beginning, ending) {
+            random_integer_from_sample(sample, beginning, ending);
+        }
+        else {
+            self.value();
+        }
+    }
+}
+
+object SecureBytes {
+    has amount is int;
+
+    SecureBytes(size is int) {
+        amount = size;
+    }
+
+    bytes() is @byte {
+        if amount == 0 {
+            [];
+        }
+        else {
+            try {
+                let result is @byte = secure_random(amount);
+                confirm result.size() == amount
+                    else throw UnavailableRandom();
+                result;
+            }
+            catch failure is NativeFailure {
+                throw UnavailableRandom();
+            }
+        }
+    }
+}
+
+object InvalidRandomRange does Error {
+    has beginning is int;
+    has ending is int;
+
+    InvalidRandomRange(start is int, stop is int) {
+        beginning = start;
+        ending = stop;
+    }
+
+    start() is int { beginning; }
+    stop() is int { ending; }
+
+    #projected
+    text() is string {
+        "random range must satisfy start < stop";
+    }
+}
+
+object InvalidRandomSize does Error {
+    has amount is int;
+    has limit is int;
+
+    InvalidRandomSize(requested is int, maximum is int) {
+        amount = requested;
+        limit = maximum;
+    }
+
+    requested() is int { amount; }
+    maximum() is int { limit; }
+
+    #projected
+    text() is string {
+        "random byte size must be between zero and " + limit.string();
+    }
+}
+
+object UnavailableRandom does Error {
+    UnavailableRandom();
+
+    #projected
+    text() is string {
+        "secure random source is unavailable";
+    }
+}

@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.hex",
+  "title": "hexadecimal encoding and strict decoding",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.HEX",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - encode lowercase\nok 2 - decode mixed case\nok 3 - empty\nok 4 - prefix rejected\nok 5 - odd length\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/hex.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "encoding/hex header: lowercase output; decoding accepts both cases, rejects 0x (offset of `x` is 1); an unmatched final nibble reports origin.length()."
+  },
+  "status": "mandatory"
+}

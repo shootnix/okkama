@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "mail/imap_name" take ImapMailboxName, ImapUtf7Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let name=ImapMailboxName("~peter/mail/台北/日本語");
+    Stdout().writeln(name.wire_name());
+    Stdout().writeln(name.quoted());
+    Stdout().writeln(ImapUtf7Decoded(name.wire_name()).string());
+    0;
+}

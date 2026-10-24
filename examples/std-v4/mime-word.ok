@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "mime/word" take EncodedWord, DecodedWords;
+import "message/header" take MessageHeader, MessageHeaderName;
+import "io/stdout" take Stdout;
+main() is int {
+    let text="Письмо про чай и MIME";
+    let encoded=EncodedWord(text).string();
+    Stdout().writeln(encoded);
+    let header=MessageHeader(MessageHeaderName("Subject"),encoded);
+    Stdout().writeln(DecodedWords(header.value()).string());
+    0;
+}

@@ -1,0 +1,49 @@
+module runtime/template v1.0.0;
+
+// Private bounded plain-template program. Construction binds source/input/node
+// budgets only. First observation caches a complete immutable instruction array
+// or diagnostic; no callbacks, files, environment or partial program escapes.
+// Input counts Unicode scalars; nodes count nonempty literal/variable tokens.
+// Kinds: 0 literal, 1 named variable. Text is literal or validated dotted path.
+// Offset is zero-based scalar; line/column one-based, CRLF is one line.
+// Invalid program access -> invalid_data; invalid index -> invalid_input.
+// Registry owns memory until teardown; stale handles fail, no external resource.
+native object TemplateCompileState;
+native template_compile_state(origin is string, maximum_input is int, maximum_nodes is int) is TemplateCompileState;
+native template_compile_valid(origin is TemplateCompileState) is bool;
+native template_compile_offset(origin is TemplateCompileState) is int;
+native template_compile_line(origin is TemplateCompileState) is int;
+native template_compile_column(origin is TemplateCompileState) is int;
+native template_compile_message(origin is TemplateCompileState) is string;
+native template_node_count(origin is TemplateCompileState) is int;
+native template_node_kind(origin is TemplateCompileState, index is int) is int;
+native template_node_text(origin is TemplateCompileState, index is int) is string;
+
+test "template instructions preserve original text and paths" {
+    let program = template_compile_state("é{{ x }}!", 20, 3);
+    test.ok(template_compile_valid(program));
+    test.is(template_node_count(program), 3);
+    test.is(template_node_kind(program, 0), 0);
+    test.is(template_node_text(program, 0), "é");
+    test.is(template_node_kind(program, 1), 1);
+    test.is(template_node_text(program, 1), "x");
+    test.is(template_node_text(program, 2), "!");
+}
+test "template native diagnostics are memoized and bounded" {
+    let bad = template_compile_state("é\r\n{{", 20, 3);
+    test.is(template_compile_valid(bad), false);
+    test.is(template_compile_offset(bad), 3);
+    test.is(template_compile_line(bad), 2);
+    test.is(template_compile_column(bad), 1);
+    test.is(template_compile_valid(bad), false);
+    test.is(template_compile_valid(template_compile_state("x",1,0)), false);
+}
+
+// UTF-8 byte count without allocating an encoded byte array. Returns -1 when
+// text cannot fit maximum_bytes; negative budgets and non-scalars fail natively.
+native template_output_size(origin is string, maximum_bytes is int) is int;
+test "template output sizing preflights UTF-8 bytes without encoding" {
+    test.is(template_output_size("é😀",6),6);
+    test.is(template_output_size("é😀",5),-1);
+    test.is(template_output_size("",0),0);
+}

@@ -1,0 +1,86 @@
+Program @1:1-35:1
+  module: ModuleDecl @1:1-1:24
+    path: [accounts @1:8-1:16]
+    version: v1.0.0 @1:17-1:23
+  imports: []
+  items:
+    - RoleDecl @6:1-11:2
+      name: Ledger @6:6-6:12
+      generics: []
+      members:
+        - ActionSignature @7:5-7:22
+          async: false
+          name: balance @7:5-7:12
+          params: []
+          result: NamedType @7:18-7:21
+            path: [int @7:18-7:21]
+            args: []
+        - FakeDecl @8:5-10:6
+          body: SkippedBody @8:10-10:6
+    - ObjectDecl @13:1-22:2
+      name: Account @13:8-13:15
+      generics: []
+      roles: []
+      members:
+        - HasDecl @14:5-14:26
+          names: [ledger @14:9-14:15]
+          type: NamedType @14:19-14:25
+            path: [Ledger @14:19-14:25]
+            args: []
+          default: (none)
+        - ShorthandConstructor @15:5-15:22
+          name: Account @15:5-15:12
+          fields: [ledger @15:14-15:20]
+          body: (none)
+        - ActionDecl @17:5-17:47
+          async: false
+          visibility: public
+          projection: (none)
+          name: doubled @17:5-17:12
+          params: []
+          result: NamedType @17:18-17:21
+            path: [int @17:18-17:21]
+            args: []
+          body: Block @17:22-17:47
+            statements:
+              - ExpressionStatement @17:24-17:45
+                expression: Binary @17:24-17:44
+                  operator: *
+                  left: Call @17:24-17:40
+                    callee: Get @17:24-17:38
+                      object: NameExpression @17:24-17:30
+                        name: ledger @17:24-17:30
+                      name: balance @17:31-17:38
+                    arguments: []
+                  right: IntLiteral @17:43-17:44
+                    radix: decimal
+                    digits: 2
+                condition: (none)
+        - TestDecl @19:5-21:6
+          async: false
+          name: "doubles the ledger balance"
+          body: SkippedBody @19:39-21:6
+    - ActionDecl @24:1-26:2
+      async: false
+      visibility: public
+      projection: (none)
+      name: main @24:1-24:5
+      params: []
+      result: NamedType @24:11-24:14
+        path: [int @24:11-24:14]
+        args: []
+      body: Block @24:15-26:2
+        statements:
+          - ExpressionStatement @25:5-25:7
+            expression: IntLiteral @25:5-25:6
+              radix: decimal
+              digits: 0
+            condition: (none)
+    - TestDecl @28:1-30:2
+      async: false
+      name: "fake ledgers report a fixed balance"
+      body: SkippedBody @28:44-30:2
+    - TestDecl @32:1-34:2
+      async: true
+      name: "async tests may await"
+      body: SkippedBody @32:36-34:2

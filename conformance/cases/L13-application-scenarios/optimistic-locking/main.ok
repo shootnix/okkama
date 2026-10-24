@@ -1,0 +1,65 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+import "db/sqlite" take SqliteMemory, SqliteDatabase, SqliteOptions, SqliteConnection;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbInteger, DbText, ObservedDbValue;
+import "db/read" take RowReader;
+import "db/row" take RowsEnded;
+import "numbers/bigint" take BigInt;
+
+object StaleVersion does Error {
+    StaleVersion();
+    text() is string { "stale version"; }
+}
+
+object Accounts {
+    has connection is SqliteConnection;
+    Accounts(:connection);
+    async version(id is int) is int {
+        let rows = await connection.rows(Statement("SELECT version FROM accounts WHERE id = ?", [DbInteger(BigInt(id.string()))]));
+        let row = await rows.row();
+        rows.close();
+        RowReader(origin: row).int("version");
+    }
+    async credit(id is int, amount is int, expected_version is int) is int {
+        let done = await connection.execution(Statement(
+            "UPDATE accounts SET balance = balance + ?, version = version + 1 WHERE id = ? AND version = ?",
+            [DbInteger(BigInt(amount.string())), DbInteger(BigInt(id.string())), DbInteger(BigInt(expected_version.string()))]));
+        confirm done.affected_rows().string() == "1" else throw StaleVersion();
+        expected_version + 1;
+    }
+    async balance(id is int) is int {
+        let rows = await connection.rows(Statement("SELECT balance FROM accounts WHERE id = ?", [DbInteger(BigInt(id.string()))]));
+        let row = await rows.row();
+        rows.close();
+        RowReader(origin: row).int("balance");
+    }
+}
+
+async main() is int {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE accounts(id INTEGER PRIMARY KEY, balance INTEGER, version INTEGER)"));
+    await connection.execution(Statement("INSERT INTO accounts VALUES(1, 100, 1)"));
+    let accounts = Accounts(connection: connection);
+    let seen_by_a = await accounts.version(1);
+    let seen_by_b = await accounts.version(1);
+    let after_a = await accounts.credit(1, 50, seen_by_a);
+    let b_outcome = try {
+        await accounts.credit(1, 25, seen_by_b);
+        "applied";
+    } catch e is StaleVersion {
+        "stale";
+    };
+    let fresh = await accounts.version(1);
+    let after_retry = await accounts.credit(1, 25, fresh);
+    let c = Checks();
+    c = c.same_int("first writer version", after_a, 2);
+    c = c.same_text("second writer rejected", b_outcome, "stale");
+    c = c.same_int("retry version", after_retry, 3);
+    c = c.same_int("balance", await accounts.balance(1), 175);
+    c.done();
+}

@@ -1,0 +1,35 @@
+// Отбирать строки до маркера STOP
+//
+// Нужно обработать только положительные суммы до завершающей записи и сохранить номера строк.
+//
+// Запуск: ./examples/cookbook/run lab recipe-views
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-views
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/views v1.0.0;
+import "collections/views" take TakenWhile,Filtered,Mapped;
+import "collections/enumeration" take Enumerated;
+import "collections/combining" take Zipped;
+import "collections/repetition" take Repeated;
+import "collections/combinatorics" take Combinations;
+import "strings/parse" take ParsedInt;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let rows = ["12", "0", "8", "STOP", "не читать"];
+    let prefix = TakenWhile(origin: rows, condition: (row is string) is bool { row != "STOP"; });
+    let amounts = Mapped(origin: prefix, mapping: (row is string) is int { ParsedInt(row).value(); });
+    let paid = Filtered(origin: amounts, condition: (amount is int) is bool { amount > 0; });
+    for Enumerated(origin: paid, start: 1) -> line {
+        Stdout().writeln(line.index().string() + ": " + line.item().string());
+    }
+    for Zipped(left: ["A", "B"], right: [3, 7]) -> pair {
+        Stdout().writeln(pair.first() + "=" + pair.second().string());
+    }
+    confirm Repeated(value: "-", count: 4).size() == 4;
+    for Combinations(origin: ["чай", "кофе", "сок"], size: 2) -> pair {
+        Stdout().writeln(pair.item(0) + " + " + pair.item(1));
+    }
+    0;
+}

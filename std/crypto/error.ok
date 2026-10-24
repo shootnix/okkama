@@ -1,0 +1,70 @@
+module crypto/error v1.0.0;
+
+import "runtime/host_crypto" as host;
+import "encoding/utf" take Utf8Encoded;
+
+// Typed failures of digest/* and crypto/*, and the internal host boundary.
+//
+// Host cryptography is the reviewed RustCrypto provider (okkama-native); std
+// composes it and never reimplements primitives. HostOperation is the only
+// caller of runtime/host_crypto.crypto: invalid_input becomes
+// InvalidCryptoInput (wrong key/nonce length, parameters, encodings),
+// permission_denied becomes AuthenticationFailed (AEAD tag, RSA-OAEP padding,
+// non-contributory X25519 key) and any other host failure CryptoUnavailable.
+// Messages never contain key or plaintext bytes.
+object InvalidCryptoInput does Error {
+    has origin is string;
+    InvalidCryptoInput(reason is string) { origin = reason; }
+    reason() is string { origin; }
+    text() is string { "invalid cryptographic input: " + origin; }
+}
+
+object AuthenticationFailed does Error {
+    AuthenticationFailed();
+    text() is string { "authentication failed"; }
+}
+
+object CryptoUnavailable does Error {
+    has origin is string;
+    CryptoUnavailable(reason is string) { origin = reason; }
+    reason() is string { origin; }
+    text() is string { "host cryptography is unavailable: " + origin; }
+}
+
+// Internal: one host operation over byte arguments; integers are decimal ASCII.
+object HostOperation {
+    has operation is string;
+    has arguments is @@byte;
+
+    HostOperation(operation is string, arguments is @@byte) {
+        self.operation = operation;
+        self.arguments = arguments;
+    }
+
+    bytes() is @byte {
+        try {
+            host.crypto(operation, arguments);
+        } catch failure is NativeFailure {
+            if failure.code() == "invalid_input" { throw InvalidCryptoInput(failure.message()); }
+            if failure.code() == "permission_denied" { throw AuthenticationFailed(); }
+            throw CryptoUnavailable(failure.message());
+        }
+    }
+
+    // Host predicates answer [1] or [0].
+    truth() is bool { self.bytes() == [1.byte()]; }
+}
+
+// Internal: decimal ASCII form of a host integer argument.
+object DecimalArgument {
+    has value is int;
+    DecimalArgument(value is int) { self.value = value; }
+    bytes() is @byte { Utf8Encoded(value.string()).bytes(); }
+}
+
+test "host failures become typed errors" {
+    test.ok(try { HostOperation("aead-open:aes-256-gcm", [[1.byte()], [], [], []]).bytes(); false; }
+        catch e is InvalidCryptoInput { e.reason() == "aes-256-gcm key must be 32 bytes"; });
+    test.ok(try { HostOperation("no-such-operation", []).bytes(); false; } catch e is CryptoUnavailable { true; });
+    test.is(DecimalArgument(42).bytes(), [52.byte(), 50.byte()]);
+}

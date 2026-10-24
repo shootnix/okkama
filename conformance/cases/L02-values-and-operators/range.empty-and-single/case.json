@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.range.empty-and-single",
+  "title": "equal bounds produce empty or single ranges",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.RANGES",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0\n1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.6: start <= end is allowed; 3..3 is empty, 3..=3 holds 3."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Number {
+    has origin is int;
+    Number(origin is int) {
+        origin = origin;
+    }
+    #projected
+    doubled() is int { origin * 2; }
+    plain() is int { origin; }
+}
+
+main() is int {
+    let out = Stdout();
+    let n = Number(1);
+    let x = doubled n;
+    out.writeln("unreachable");
+    0;
+}

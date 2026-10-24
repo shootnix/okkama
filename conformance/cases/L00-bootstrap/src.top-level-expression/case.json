@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.src.top-level-expression",
+  "title": "a top-level expression statement is rejected",
+  "purpose": "Source-file shape violations are syntax errors.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "SRC.DECLARATIONS-ONLY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#3",
+    "docs/okkama-spec-11072026.md#5.1",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 3: module scope holds declarations only."
+  },
+  "status": "mandatory"
+}

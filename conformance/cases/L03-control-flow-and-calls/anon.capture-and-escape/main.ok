@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Factory {
+    Factory();
+    adder(amount is int) is (int) is int {
+        (value is int) is int { value + amount; };
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let factory = Factory();
+    let add5 = factory.adder(5);
+    let add10 = factory.adder(10);
+    out.writeln(add5(1).string());
+    out.writeln(add10(1).string());
+    let base = 100;
+    let shifted is (int) is int = (v is int) is int { v + base; };
+    out.writeln(shifted(1).string());
+    0;
+}

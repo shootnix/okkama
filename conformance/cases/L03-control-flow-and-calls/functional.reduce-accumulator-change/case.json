@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.functional.reduce-accumulator-change",
+  "title": "functional operation rejects: the accumulator keeps one exact type",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.FUNCTIONAL-OPS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.8: the accumulator keeps one exact type."
+  },
+  "status": "mandatory"
+}

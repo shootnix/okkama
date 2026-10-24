@@ -1,0 +1,67 @@
+module encoding/quoted_printable v1.0.0;
+
+import "runtime/quoted_printable" take
+    quoted_printable_encode,
+    quoted_printable_invalid_offset,
+    quoted_printable_decode;
+
+// Strict RFC 2045 quoted-printable over bytes.
+//
+//     QuotedPrintableEncoded(
+//         origin: [byte(0), byte(61), byte(255)],
+//     ).bytes();
+//     // ASCII bytes for "=00=3D=FF"
+//
+// Encoding uses uppercase `=HH`, preserves CRLF hard line breaks, and inserts
+// `=\r\n` soft breaks so every physical line is at most 76 bytes. Bare CR and
+// LF are encoded rather than normalized. Space and tab remain literal inside
+// a line, but are encoded at end of input or immediately before CRLF.
+//
+// Decoding accepts uppercase or lowercase ASCII hex. It rejects malformed
+// escapes, bare CR/LF, non-ASCII literals, trailing literal whitespace and
+// physical lines longer than 76 bytes. No replacement, newline conversion or
+// charset conversion occurs. InvalidQuotedPrintable.offset() is the byte
+// offset of the first violation.
+
+object QuotedPrintableEncoded {
+    has origin is @byte;
+
+    QuotedPrintableEncoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        quoted_printable_encode(origin);
+    }
+}
+
+object QuotedPrintableDecoded {
+    has origin is @byte;
+
+    QuotedPrintableDecoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        let offset is int = quoted_printable_invalid_offset(origin);
+        confirm offset == -1 else throw InvalidQuotedPrintable(offset);
+        quoted_printable_decode(origin);
+    }
+}
+
+object InvalidQuotedPrintable does Error {
+    has invalid_offset is int;
+
+    InvalidQuotedPrintable(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid quoted-printable at byte offset " + invalid_offset.string();
+    }
+}

@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "net/ip" take IpAddress, IpNetwork, IpAddresses;
+import "collections/views" take Taken;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let addresses=IpAddresses(IpNetwork(IpAddress("::"),0));
+    for Taken(origin:addresses,count:3) -> address {
+        Stdout().writeln(address.string());
+    }
+    0;
+}

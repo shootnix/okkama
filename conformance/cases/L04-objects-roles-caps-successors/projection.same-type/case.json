@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.projection.same-type",
+  "title": "projection declaration rejected: the projection MUST return a type different from the object",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.PROJECTIONS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "spec 11.3: these declaration rules are semantic errors before execution."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.3: the projection MUST return a type different from the object."
+  },
+  "status": "mandatory"
+}

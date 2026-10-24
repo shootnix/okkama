@@ -1,0 +1,25 @@
+module app v1.0.0;
+import "archive/tar" take TarArchive, TarWriting;
+import "archive/entry" take ArchiveEntry, ArchiveFile;
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "collections/list" take List, EmptyList;
+import "encoding/utf" take Utf8Encoded;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+
+// The same PAX archive through value and streaming APIs. Everything stays in
+// memory; the writer borrows the sink, and its owner closes the buffer explicitly.
+main() is int {
+    let metadata = ArchiveMetadata(ArchiveModificationFromEpoch(rat(1,2)).value(), "example");
+    let member = ArchiveFile(ArchivePath("документы/hello.txt"), metadata, Utf8Encoded("hello\n").bytes());
+    let empty is List<ArchiveEntry> = EmptyList();
+    let expected = TarArchive(empty.prefix(member)).bytes();
+    let buffer = ByteBuffer(); defer buffer.closing().close();
+    let writer = TarWriting(buffer.writing()); defer writer.close();
+    writer.write(member); writer.finish();
+    confirm buffer.content().bytes() == expected else panic "TAR outputs differ";
+    Stdout().writeln("PAX bytes: " + expected.size().string());
+    Stdout().writeln("value and stream output agree");
+    0;
+}

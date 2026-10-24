@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.identifiers.minimal",
+  "title": "single-letter and underscore-led identifiers",
+  "purpose": "Accept the construct and observe the exit status.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.IDENTIFIERS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "LEX.BINDING-NAMES",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 7,
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: BINDING_NAME = [a-zA-Z_][a-zA-Z0-9_]*, so `a`, `_b` and `_` are valid; 1+2+4 = 7."
+  },
+  "status": "mandatory"
+}

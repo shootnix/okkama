@@ -1,0 +1,25 @@
+module runtime/statistics v1.0.0;
+
+// Portable bulk boundary for numerically sensitive statistical algorithms.
+// Every backend must implement the same finite-float semantics.
+
+native statistics_mean(values is @float) is float;
+native statistics_geometric_mean(values is @float) is float;
+native statistics_harmonic_mean(values is @float) is float;
+native statistics_median(values is @float, choice is string) is float;
+native statistics_quantiles(
+    values is @float,
+    count is int,
+    method is string,
+) is @float;
+native statistics_variance(values is @float, sample is bool) is float;
+native statistics_paired_valid(
+    left is @float,
+    right is @float,
+    result is string,
+) is bool;
+native statistics_paired(
+    left is @float,
+    right is @float,
+    result is string,
+) is float;

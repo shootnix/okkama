@@ -1,0 +1,6 @@
+// Статическая диагностика: Потерянный результат действия-преемника.
+// Файл намеренно содержит ошибку и проверяется без выполнения main.
+// Запуск проверки: ./examples/gallery/run check --analysis-only
+// Ожидаемое сообщение анализатора хранится в catalog.json; пример принят, если анализ его отклонил.
+module gallery/analysis/discarded_successor v1.0.0;
+object Counter{has value is int;Counter(){value=0;}increment() is ^Counter{^value=value+1;}}main() is int{Counter().increment();0;}

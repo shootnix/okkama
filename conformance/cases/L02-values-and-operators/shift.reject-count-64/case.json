@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.shift.reject-count-64",
+  "title": "shift rejects count 64 for int",
+  "purpose": "The operation must fail instead of producing a value.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.SHIFTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes the operation an error but leaves the detection stage open: a static pass may reject it when operand categories are known, otherwise it fails at runtime. It must never yield a value."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "bitwise guide: shift counts must be int in 0..W-1 (count 64 for int fails)."
+  },
+  "status": "mandatory"
+}

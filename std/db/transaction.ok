@@ -1,0 +1,17 @@
+module db/transaction v1.0.0;
+import "db/statement" take Statement,Execution;
+import "db/row" take RowReading;
+enum Isolation=(default_level,read_uncommitted,read_committed,repeatable_read,serializable);
+object TransactionOptions {
+    has isolation is Isolation;has read_only,deferrable is bool;
+    TransactionOptions(){isolation=Isolation.default_level;read_only=false;deferrable=false;}
+    TransactionOptions(isolation is Isolation,read_only is bool,deferrable is bool){self.isolation=isolation;self.read_only=read_only;self.deferrable=deferrable;}
+    isolation() is Isolation{isolation;}read_only() is bool{read_only;}deferrable() is bool{deferrable;}
+}
+role Transaction {
+    async execution(origin is Statement) is Execution;
+    async rows(origin is Statement) is RowReading;
+    async commit() is Transaction;
+    async rollback() is Transaction;
+    active() is bool;
+}

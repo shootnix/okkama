@@ -1,0 +1,528 @@
+module fs/file v1.0.0;
+
+import "fs/path" take Path;
+import "fs/stat" take FileStat, FileStatFromMap;
+import "io/stream" take
+    ByteSource, Reading, ReadingText, Closing,
+    Writing,
+    WritingText,
+    IncompleteWrite,
+    InvalidReadLimit;
+import "io/stdin" take EndOfInput;
+import "runtime/fs" take
+    FileState, FileLockState, file_state_lock, file_lock_closed, file_lock_close,
+    path_encode,
+    file_state_create,
+    file_state_read_line, file_state_read_text, file_state_closed,
+    file_state_read,
+    file_state_write,
+    file_state_write_text,
+    file_state_flush,
+    file_state_close,
+    file_state_position,
+    file_state_seek,
+    file_state_truncate,
+    file_content,
+    stat,
+    unlink,
+    rename;
+
+// A lazy file owner with separate byte and text capabilities. Views share
+// position and retain the resource; only the owner exposes close().
+// Construction validates configuration but does not touch the filesystem;
+// the first read, write or flush opens it. close() is idempotent and does not
+// open a never-used file.
+//
+// Text mode is the default and uses strict UTF-8. text().line() returns one physical
+// line, removing its LF and one preceding CR. It returns a final non-empty
+// unterminated line, then throws EndOfInput. Library buffering is bounded by
+// the longest physical line: a single 20 GiB line necessarily needs a 20 GiB
+// string. Use binary chunks when a hard memory bound is required.
+//
+// Complete line-by-line reading:
+//
+//     let file = File(mode: FileMode.reading, path: path);
+//     defer file.close();
+//
+//     loop {
+//         try {
+//             consume(file.text().line());
+//         }
+//         catch error is EndOfInput {
+//             last;
+//         }
+//     }
+//
+// Complete chunk-by-chunk reading of a file of any size:
+//
+//     let file = File(mode: FileMode.reading, path: path, binary: true);
+//     defer file.close();
+//
+//     loop {
+//         let chunk is @byte = file.binary().bytes(64 * 1024);
+//         last if chunk.size() == 0;
+//         consume(chunk);
+//     }
+//
+// Each binary read bounds library buffering by the requested chunk size.
+// FileContent is intentionally different: bytes() materializes the complete
+// file in memory.
+//
+// Complete binary writing:
+//
+//     let file = File(mode: FileMode.writing, path: path, binary: true);
+//     defer file.close();
+//     file.binary() <- bytes;
+//     file.binary().flush();
+//
+// Complete strict UTF-8 text writing:
+//
+//     let file = File(mode: FileMode.writing, path: path);
+//     defer file.close();
+//     file.text().write("first line");
+//     file.text().writeln();
+//     file.text().writeln("second ", "line");
+//     file.text().flush();
+//
+// Other portable text encodings are selected by their exact canonical names:
+// utf-16-le, utf-16-be, utf-32-le, utf-32-be, ascii and latin-1. No byte order
+// is inferred and BOMs are never consumed or emitted implicitly.
+
+enum FileMode = (
+    reading,
+    writing,
+    appending,
+    reading_and_writing,
+    reading_and_appending
+);
+
+// Owned lock capability used by fs/lock without creating a module cycle.
+role FileLocking {
+    closed() is bool;
+    close() is void;
+}
+
+object File does Closing {
+    has state is FileState;
+
+    File(mode is FileMode, path is Path) {
+        state = value ConfiguredFileState(
+            mode: mode,
+            path: path,
+            encoding: "utf-8",
+            binary: false,
+        );
+    }
+
+    File(mode is FileMode, path is Path, encoding is string) {
+        state = value ConfiguredFileState(
+            mode: mode,
+            path: path,
+            encoding: encoding,
+            binary: false,
+        );
+    }
+
+    File(mode is FileMode, path is Path, binary is bool) {
+        state = value ConfiguredFileState(
+            mode: mode,
+            path: path,
+            encoding: if binary { ""; } else { "utf-8"; },
+            binary: binary,
+        );
+    }
+
+    File(
+        mode is FileMode,
+        path is Path,
+        encoding is string,
+        binary is bool,
+    ) {
+        confirm !binary else throw InvalidFileOperation(
+            "binary files cannot specify a text encoding"
+        );
+        state = value ConfiguredFileState(
+            mode: mode,
+            path: path,
+            encoding: encoding,
+            binary: false,
+        );
+    }
+
+    destroy { self.close(); }
+
+    binary() is FileBytes { FileBytes(origin: self); }
+    text() is FileText { FileText(origin: self); }
+    closed() is bool { file_state_closed(state); }
+
+    close() is void {
+        try {
+            file_state_close(state);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    read_bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        try {
+            file_state_read(state, limit);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    write_bytes(source is ByteSource) is void {
+        let bytes is @byte = source.bytes();
+        try {
+            let written is int = file_state_write(state, bytes);
+            confirm written == bytes.size() else throw IncompleteWrite(written);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    flush_bytes() is void {
+        try {
+            file_state_flush(state);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    read_line() is string {
+        try {
+            file_state_read_line(state);
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "end_of_input" {
+                throw EndOfInput();
+            }
+            else {
+                throw value FileError(failure: failure);
+            }
+        }
+    }
+    read_text() is string {
+        try { file_state_read_text(state); }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    write_text(values is ...string) is void {
+        let text is @string = values...;
+        try {
+            file_state_write_text(state, text, false);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    writeln_text(values is ...string) is void {
+        let text is @string = values...;
+        try {
+            file_state_write_text(state, text, true);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    flush_text() is void {
+        try {
+            file_state_flush(state);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    offset() is int {
+        try {
+            file_state_position(state);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    seek(offset is int, from is SeekOrigin) is void {
+        try {
+            file_state_seek(
+                state,
+                offset,
+                value SeekOriginCode(origin: from),
+            );
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+    truncate(size is int) is void {
+        try {
+            file_state_truncate(state, size);
+        }
+        catch failure is NativeFailure {
+            throw value FileError(failure: failure);
+        }
+    }
+
+    // Acquires a new typed resource; the existing file handle remains private.
+    locking(mode is int, waiting is int) is FileLocking {
+        FileLockLease(file_state_lock(state,mode,waiting),self);
+    }
+}
+
+object FileBytes does Reading, Writing {
+    has owner is File;
+    FileBytes(origin is File) { owner = origin; }
+
+    bytes(limit is int) is @byte { owner.read_bytes(limit); }
+
+    write(source is ByteSource) is void { owner.write_bytes(source); }
+
+    flush() is void { owner.flush_bytes(); }
+
+}
+
+object FileText does ReadingText, WritingText {
+    has owner is File;
+    FileText(origin is File) { owner = origin; }
+
+    line() is string { owner.read_line(); }
+
+    content() is string { owner.read_text(); }
+
+    text() is string {
+        self.content();
+    }
+
+    write(values is ...string) is void { owner.write_text(values...); }
+
+    writeln(values is ...string) is void { owner.writeln_text(values...); }
+
+    flush() is void { owner.flush_text(); }
+
+}
+
+enum SeekOrigin = (start, current, end);
+
+object FilePosition {
+    has owner is File;
+
+    FilePosition(origin is File) {
+        owner = origin;
+    }
+
+    offset() is int { owner.offset(); }
+
+    seek(offset is int, from is SeekOrigin) is void { owner.seek(offset, from); }
+
+    truncate(size is int) is void { owner.truncate(size); }
+}
+
+object FileEntry {
+    has origin is Path;
+
+    FileEntry(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    existence() is bool {
+        try {
+            stat(path_encode(origin.string()));
+            true;
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_found" {
+                false;
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    stat() is FileStat {
+        try {
+            value FileStatFromMap(origin: stat(path_encode(origin.string())));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    remove() is void {
+        try {
+            unlink(path_encode(origin.string()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    move(destination is Path) is void {
+        try {
+            rename(
+                path_encode(origin.string()),
+                path_encode(destination.string()),
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object FileContent {
+    has origin is FileEntry;
+
+    FileContent(origin is FileEntry) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        try {
+            file_content(path_encode(origin.path().string()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object ConfiguredFileState {
+    has mode is FileMode;
+    has path is Path;
+    has encoding is string;
+    has binary is bool;
+
+    ConfiguredFileState(:mode, :path, :encoding, :binary);
+
+    #projected
+    value() is FileState {
+        confirm binary || value SupportedFileEncoding(origin: encoding)
+            else throw UnsupportedFileEncoding(encoding);
+        try {
+            file_state_create(
+                path_encode(path.string()),
+                value FileModeCode(origin: mode),
+                encoding,
+                binary,
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object SupportedFileEncoding {
+    has origin is string;
+
+    SupportedFileEncoding(:origin);
+
+    #projected
+    value() is bool {
+        origin == "utf-8"
+            || origin == "utf-16-le"
+            || origin == "utf-16-be"
+            || origin == "utf-32-le"
+            || origin == "utf-32-be"
+            || origin == "ascii"
+            || origin == "latin-1";
+    }
+}
+
+object FileModeCode {
+    has origin is FileMode;
+
+    FileModeCode(:origin);
+
+    #projected
+    value() is int {
+        if origin == FileMode.reading { 0; }
+        else if origin == FileMode.writing { 1; }
+        else if origin == FileMode.appending { 2; }
+        else if origin == FileMode.reading_and_writing { 3; }
+        else { 4; }
+    }
+}
+
+object SeekOriginCode {
+    has origin is SeekOrigin;
+
+    SeekOriginCode(:origin);
+
+    #projected
+    value() is int {
+        if origin == SeekOrigin.start { 0; }
+        else if origin == SeekOrigin.current { 1; }
+        else { 2; }
+    }
+}
+
+object FileError {
+    has failure is NativeFailure;
+
+    FileError(:failure);
+
+    #projected
+    value() is Error {
+        if failure.code() == "invalid_input"
+            || failure.code() == "already_closed" {
+            InvalidFileOperation(failure.message());
+        }
+        else {
+            FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object InvalidFileOperation does Error {
+    has message is string;
+
+    InvalidFileOperation(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string { message; }
+}
+
+object UnsupportedFileEncoding does Error {
+    has encoding is string;
+
+    UnsupportedFileEncoding(encoding is string) {
+        self.encoding = encoding;
+    }
+
+    #projected
+    text() is string {
+        "unsupported file encoding: " + encoding;
+    }
+}
+
+object FileSystemFailure does Error {
+    has failure_code is string;
+    has message is string;
+
+    FileSystemFailure(code is string, message is string) {
+        failure_code = code;
+        self.message = message;
+    }
+
+    code() is string { failure_code; }
+
+    #projected
+    text() is string { message; }
+}
+
+// Retains File for precisely the lifetime of its acquired advisory lock.
+object FileLockLease does FileLocking {
+    has state is FileLockState;has owner is File;
+    FileLockLease(state is FileLockState,owner is File){self.state=state;self.owner=owner;}
+    closed() is bool{try{file_lock_closed(state);}catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}}
+    close() is void{try{file_lock_close(state);}catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}}
+    destroy{self.close();}
+}

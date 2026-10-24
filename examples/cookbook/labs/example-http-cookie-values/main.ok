@@ -1,0 +1,20 @@
+// Представить атрибуты cookie
+//
+// Представить Cookie и Set-Cookie: типы cookie сохраняют атрибуты и отдельное абсолютное либо сессионное время жизни.
+//
+// Запуск: ./examples/cookbook/run lab example-http-cookie-values
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-cookie-values
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/cookie" take Cookie, CookieAttributes, CookieExpiry, CookieFlag, SameSite;
+import "collections/set" take OrderedSet;
+import "io/stdout" take Stdout;
+main() is int {
+    let attributes=CookieAttributes("","/",CookieExpiry(),SameSite.lax,OrderedSet([CookieFlag.secure,CookieFlag.http_only]));
+    let cookie=Cookie("__Host-session","opaque-token",attributes);
+    Stdout().writeln(cookie.diagnostic());
+    confirm cookie.string()=="__Host-session=opaque-token; Path=/; SameSite=Lax; Secure; HttpOnly";
+    0;
+}

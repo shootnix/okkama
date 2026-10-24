@@ -1,0 +1,69 @@
+// Формы браузера и загрузка файла
+// Задача: Принять urlencoded, multipart-поля и файловую часть.
+// Запуск из корня: ./examples/gallery/run modules/web/forms
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: WebRequest.form, ParsedMultipartForm, FormText, ограничения тела.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/modules/cro/use-cases/forms.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/web/forms v1.0.0;
+import "support" take DemoServer,DemoClient;
+import "web/routing" take WebRoutes,Post;
+import "web/request" take WebRequest;
+import "web/reply" take Text;
+import "web/exception" take Exception;
+import "http/form" take ParsedMultipartForm,FormLimits,FormText,MultipartFormEnded;
+import "http/media_type" take HttpMediaType;
+import "http/handler" take HandlingResult;
+import "http/server" take HttpServer;
+import "http/header" take Headers;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Decoded;
+import "async/scope" take FutureGroup;
+object FormValues {
+    has name,colour,title,file is string;has size is int;
+    FormValues(){name="";colour="none";title="";file="";size=0;}
+    field(key is string,value is string) is ^FormValues{
+        match key{case "name"{^name=value;}case "colour"{^colour=value;}case "title"{^title=value;}else{self;}}
+    }
+    uploaded(filename is string,bytes is int) is ^FormValues{^file=filename;^size=bytes;}
+    order() is string{confirm name!="" else throw Exception(422,"name required");"order from "+name+" in "+colour;}
+    upload() is string{confirm title!="" && file!="" else throw Exception(422,"title and file required");title+": "+file+", "+size.string()+" bytes";}
+}
+object Forms {
+    Forms();
+    async values(request is WebRequest) is FormValues {
+        let media=HttpMediaType(request.header("Content-Type"));
+        if media.type()=="application" && media.subtype()=="x-www-form-urlencoded"{
+            let parameters=await request.form(16384);
+            return parameters.entries().reduce(FormValues())->values,entry{values.field(entry.name(),entry.value());};
+        }
+        confirm media.type()=="multipart" && media.subtype()=="form-data" else throw Exception(415,"form encoding required");
+        let parts=ParsedMultipartForm(request.request().body().reading(),media.parameters().first("boundary"),FormLimits()).parts();
+        defer await parts.settled();defer parts.close();let values=FormValues();
+        loop{
+            try{
+                let part=await parts.part();
+                if part.file(){
+                    let reader=part.body();defer reader.close();let buffer=ByteBuffer();defer buffer.closing().close();
+                    loop{let chunk=await reader.bytes(4096);last if chunk.size()==0;confirm buffer.content().size()+chunk.size()<=16384 else throw Exception(413,"file too large");buffer.writing().write(ByteSnapshot(chunk));}
+                    values=values.uploaded(part.filename(),buffer.content().size());
+                }else{let text=await FormText(part,"UTF-8",16384).text();values=values.field(part.name(),text);}
+            }catch ended is MultipartFormEnded{last;}
+        }values;
+    }
+    async order(request is WebRequest) is HandlingResult{let values=await self.values(request);Text(200,values.order());}
+    async upload(request is WebRequest) is HandlingResult{let values=await self.values(request);Text(200,values.upload());}
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+}
+async main() is int {
+    let forms=Forms();let server=await DemoServer(WebRoutes([Post("/order",forms.order),Post("/upload",forms.upload)],forms.missing)).server();
+    let work is FutureGroup<HttpServer>=FutureGroup();defer await work.wait();defer server.close();work.start(server.serve());let client=DemoClient(server);
+    let encoded=await client.request("POST","/order","name=Ann&colour=teal","application/x-www-form-urlencoded",Headers([]));encoded.show("urlencoded");confirm encoded.text()=="order from Ann in teal";
+    let fields="--gallery\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nBob\r\n--gallery\r\nContent-Disposition: form-data; name=\"colour\"\r\n\r\nred\r\n--gallery--\r\n";
+    let multi=await client.request("POST","/order",fields,"multipart/form-data; boundary=gallery",Headers([]));multi.show("multipart");confirm multi.text()=="order from Bob in red";
+    let upload="--gallery\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nNotes\r\n--gallery\r\nContent-Disposition: form-data; name=\"file\"; filename=\"notes.txt\"\r\nContent-Type: text/plain\r\n\r\nfirst line\nsecond line\n\r\n--gallery--\r\n";
+    let file=await client.request("POST","/upload",upload,"multipart/form-data; boundary=gallery",Headers([]));file.show("upload");confirm file.text()=="Notes: notes.txt, 23 bytes";
+    let missing=await client.request("POST","/order","colour=blue","application/x-www-form-urlencoded",Headers([]));missing.show("missing");confirm missing.status()==422;0;
+}

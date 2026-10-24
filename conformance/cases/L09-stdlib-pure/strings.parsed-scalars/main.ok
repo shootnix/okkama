@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "strings/parse" take ParsedInt, ParsedByte, ParsedRat, ParsedBool, ParsedFloat;
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("decimal", value ParsedInt("42"), 42);
+    c = c.same_int("negative", value ParsedInt("-17"), -17);
+    c = c.same_int("base 16", value ParsedInt("ff", 16), 255);
+    c = c.same_int("base 0 prefix", value ParsedInt("0xFF", 0), 255);
+    c = c.same_int("byte base 2", (value ParsedByte("11111111", 2)).int(), 255);
+    c = c.same_text("rat", string(value ParsedRat("6/8")), "3/4");
+    c = c.same_bool("bool true", value ParsedBool("true"), true);
+    c = c.same_float("float", value ParsedFloat("2.5"), 2.5);
+    c.done();
+}

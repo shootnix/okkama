@@ -1,0 +1,21 @@
+// Узнать расширения IMAP сервера
+//
+// Узнать возможности аутентифицированного IMAP-сервера: ImapCapabilities удерживает CAPABILITY-рекламу.
+//
+// Запуск: ./examples/cookbook/run lab example-imap-capabilities
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-imap-capabilities
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mail/imap" take ParsedImapCapabilities, ImapFeature;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let caps=ParsedImapCapabilities(Utf8Encoded("* CAPABILITY IMAP4rev1 STARTTLS AUTH=PLAIN IDLE X-Local=Value\r\n").bytes()).capabilities();
+    Stdout().writeln(caps.authentication().first());
+    Stdout().writeln(caps.tokens().last().string());
+    Stdout().writeln(if caps.features().membership(ImapFeature.start_tls) {"STARTTLS advertised";} else {"STARTTLS absent";});
+    0;
+}

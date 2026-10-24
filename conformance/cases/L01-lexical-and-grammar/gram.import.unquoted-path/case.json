@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.import.unquoted-path",
+  "title": "malformed import: the path must be a string literal",
+  "purpose": "Malformed imports are syntax errors.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.IMPORT-FORMS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "lib/shapes.ok"
+  ],
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar import_decl: the path must be a string literal."
+  },
+  "status": "mandatory"
+}

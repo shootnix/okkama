@@ -1,0 +1,116 @@
+module async/scope v1.0.0;
+
+/*
+=head1 NAME
+
+async/scope - structured lifetime for language futures
+
+=head1 DESCRIPTION
+
+C<FutureGroup<T>> owns the completion lifecycle of registered C<Future<T>>
+values. C<start()> registers and eagerly starts a future without taking it away
+from the caller. Registering the same future identity again is idempotent.
+
+    let group is FutureGroup<int> = FutureGroup();
+    let first = Worker(id: 1).run();
+    let second = Worker(id: 2).run();
+
+    group.start(first);
+    group.start(second);
+    await group.wait();
+
+C<wait()> seals the group, waits for every child and observes all failures.
+C<cancel()> also seals it and requests cancellation of unfinished children;
+call C<wait()> afterwards when using a group directly. Explicit cancellation
+accepts cancellation-only child outcomes, including children already settled
+by a prior await cancellation; real secondary cleanup failures remain reported.
+Without explicit group cancellation, a cancelled child remains a failure.
+Registration after
+sealing throws C<FinishedFutureGroup>.
+
+C<active()> counts children whose success, failure or cancellation cleanup has
+not settled yet. It is an observation for supervision and diagnostics, not a
+polling substitute for C<wait()>.
+
+Independent child failures are reported in registration order. The first is
+the primary failure and later failures remain ordered secondary diagnostics.
+Typed catches continue to see the unchanged primary error.
+
+C<FutureScope<T,R>> binds that group lifecycle to one async body. The body is
+invoked once, receives only the C<Supervising<T>> capability and may register
+children without gaining a separate way to finish the group. The scope waits
+for every child before publishing the body result:
+
+    object Job {
+        Job();
+        async run() is int { 21; }
+    }
+
+    object Batch {
+        Batch();
+
+        async run(group is Supervising<int>) is int {
+            group.start(Job().run());
+            42;
+        }
+    }
+
+    let scope is FutureScope<int, int> = FutureScope(action: Batch().run);
+    let answer = await scope.result();
+
+If the body fails, or the caller cancels C<scope.result()>, unfinished children
+are cancelled and their cleanup is awaited. The body failure remains primary;
+independent child cleanup failures are retained as ordered secondary failures.
+
+One scope owns one homogeneous child result type. Nest another scope when one
+operation owns children of another type.
+
+=cut
+*/
+
+role Supervising<T> {
+    start(origin is Future<T>) is void;
+    active() is int;
+    cancel() is void;
+}
+
+object FutureGroup<T> does Supervising<T> {
+    FutureGroup() {}
+
+    start(origin is Future<T>) is void {
+        throw FinishedFutureGroup();
+    }
+
+    active() is int {
+        panic "FutureGroup.active is a VM intrinsic";
+    }
+
+    cancel() is void {
+        panic "FutureGroup.cancel is a VM intrinsic";
+    }
+
+    async wait() is FutureGroup<T> {
+        panic "FutureGroup.wait is a VM intrinsic";
+        self;
+    }
+}
+
+object FutureScope<T, R> {
+    has action is async (Supervising<T>) is R;
+
+    FutureScope(:action);
+
+    async result() is R {
+        let group is FutureGroup<T> = FutureGroup();
+        await group.wait();
+        panic "FutureScope.result is a VM intrinsic";
+    }
+}
+
+object FinishedFutureGroup does Error {
+    FinishedFutureGroup();
+
+    text() is string {
+        "future group is already finishing";
+    }
+}

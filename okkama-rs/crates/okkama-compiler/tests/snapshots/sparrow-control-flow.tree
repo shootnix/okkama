@@ -1,0 +1,54 @@
+Program
+  module: ModuleDecl
+    path: [examples, sparrow_control_flow]
+    version: v1.0.0
+  imports: []
+  items:
+    - ActionDecl
+      async: false
+      visibility: public
+      projection: (none)
+      name: main
+      params: []
+      result: NamedType
+        path: [int]
+        args: []
+      body: Block
+        statements:
+          - ForStatement
+            source: Range
+              operator: ..=
+              start: IntLiteral
+                radix: decimal
+                digits: 1
+              end: IntLiteral
+                radix: decimal
+                digits: 4
+            bindings:
+              - ForBinding
+                name: i
+                batch: (none)
+            body: Block
+              statements:
+                - NextStatement
+                  condition: Binary
+                    operator: <
+                    left: NameExpression
+                      name: i
+                    right: IntLiteral
+                      radix: decimal
+                      digits: 4
+                - ExpressionStatement
+                  expression: Binary
+                    operator: -
+                    left: Binary
+                      operator: +
+                      left: IntLiteral
+                        radix: decimal
+                        digits: 40
+                      right: NameExpression
+                        name: i
+                    right: IntLiteral
+                      radix: decimal
+                      digits: 2
+                  condition: (none)

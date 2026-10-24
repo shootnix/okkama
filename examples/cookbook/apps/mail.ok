@@ -1,0 +1,51 @@
+// Локальный почтовый клиент
+//
+// Читает MIME-письма и mbox, создаёт .eml с UTF-8 телом и encoded-word темой.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run mail read examples/cookbook/data/mail.eml
+//     ./examples/cookbook/run mail inbox examples/cookbook/data/inbox.mbox
+//     ./examples/cookbook/run mail compose /tmp/outgoing.eml reader@example.test "Тема" "Текст"
+//
+// Вход: путь к .eml/mbox либо адрес, тема и тело. Результат: письмо в stdout или созданный .eml.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/mail v1.0.0;
+import "../support/arguments" take Arguments,Usage;
+import "../support/files" take LocalFiles;
+import "mail/message" take ParsedMail,MailMessage,DeliveredMail;
+import "mail/mbox" take ParsedMbox;
+import "message/header" take MessageHeaders,MessageHeader,MessageHeaderName;
+import "mime/part" take TextBody;
+import "mime/word" take DecodedWords,EncodedWord;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdout" take Stdout;
+object MailCli {
+    MailCli();
+    read(path is string) is void {
+        let message=ParsedMail(LocalFiles().bytes(path,2097152)).message();
+        for message.headers().entries()->field{Stdout().writeln(field.name().string()+": "+DecodedWords(field.value()).string());}
+        Stdout().writeln("",Utf8Decoded(message.body().bytes()).string());
+    }
+    inbox(path is string) is void {
+        let messages=ParsedMbox(LocalFiles().bytes(path,2097152)).records();
+        for (0..messages.size())->index{
+            let fields=messages.item(index).message().headers();
+            let subject=if fields.membership(MessageHeaderName("Subject")){fields.first(MessageHeaderName("Subject"));}else{"(без темы)";};
+            Stdout().writeln((index+1).string()+"\t"+subject);
+        }
+    }
+    compose(path is string,to is string,subject is string,text is string) is void {
+        let message=MailMessage(MessageHeaders([MessageHeader(MessageHeaderName("To"),to),MessageHeader(MessageHeaderName("Subject"),EncodedWord(subject).string()),MessageHeader(MessageHeaderName("Content-Type"),"text/plain; charset=utf-8"),MessageHeader(MessageHeaderName("Content-Transfer-Encoding"),"8bit")]),TextBody(text,"utf-8"));
+        LocalFiles().write(path,Utf8Decoded(DeliveredMail(message).bytes()).string());Stdout().writeln(path);
+    }
+}
+main() is int {
+    let args=Arguments();let cli=MailCli();let command=args.text(0,"help");
+    match command {
+        case "read"{cli.read(args.text(1));}
+        case "inbox"{cli.inbox(args.text(1));}
+        case "compose"{cli.compose(args.text(1),args.text(2),args.text(3),args.text(4));}
+        else{Stdout().writeln("mail read FILE.eml | inbox FILE.mbox | compose FILE.eml TO SUBJECT BODY");}
+    }0;
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.await.in-async-main",
+  "title": "await in async main",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.AWAIT-CONTEXT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 18: await is legal inside async main()."
+  },
+  "status": "mandatory"
+}

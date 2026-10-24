@@ -1,0 +1,21 @@
+// Выбрать proxy из настроек запуска
+//
+// Сервис получает proxy и список исключений в явно переданном снимке Environment.
+//
+// Запуск: ./examples/cookbook/run lab recipe-proxy-environment
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-proxy-environment
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/proxy_environment v1.0.0;
+import "http/environment_proxy" take EnvironmentProxy;
+import "os/environment" take Environment;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let environment = Environment(values: ["http_proxy": "http://proxy.example:3128", "no_proxy": "localhost"]);
+    let policy = EnvironmentProxy(environment).proxy(ParsedUrl("http://api.example/orders").value());
+    Stdout().writeln("Выбрана политика proxy");
+    0;
+}

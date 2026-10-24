@@ -1,0 +1,81 @@
+module http/selected_connection v1.0.0;
+import "http/endpoint" take HttpEndpointSelection;
+import "http/transport_observation" take HttpResponseObservation;
+import "http/http2_settings" take Http2Settings;
+import "http/internal/http2_preface" take Http2ClientPreface;
+import "http/connection" take HttpAcquisitionCleanup,HttpTcpDisposal,HttpTlsDisposal,HttpUnpublishedTcp,HttpUnpublishedTls;
+import "http/http2_session" take Http2Session;
+import "http/client_policy" take HttpLimits;
+import "http/client_protocols" take HttpClientProtocols;
+import "http/client_policy" take ClientPolicy;
+import "http/conversation" take HttpConversationConnecting,HttpConversationAcquisition,Http1Conversation,Http2Conversation,HttpConversationAcquisitionDisposal;
+import "http/http1_session" take Http1Session;
+import "http/version" take UnsupportedHttpVersion,HttpVersion;
+import "http/exchange" take ExchangeDetails;
+import "net/tcp" take TcpConnection,TcpOptions;
+import "net/tcp_racing" take TcpRacing;
+import "net/tls" take TlsClientPolicy,TlsClientHandshake,TlsConnection;
+import "url/value" take UrlHostKind,Url;
+import "crypto/x509/trust" take CertificateIdentity,DnsCertificateIdentity,IpCertificateIdentity;
+import "time/clock" take Timing,SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "http/endpoint" take AllEndpoints;
+import "net/dns" take FixedResolution;
+import "url/value" take ParsedUrl;
+import "net/tls" take TlsVersion;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+
+// Select an enabled conversation from actual ALPN, or explicit cleartext policy.
+// Every TCP attempt uses
+// the exact previously checked numeric endpoint; no second lookup occurs.
+// Bounded staggered TCP racing closes every losing attempt before publication.
+object HttpSelectedConnecting does HttpConversationConnecting {
+    has route is HttpEndpointSelection;has policy is TlsClientPolicy;
+    has limits is HttpLimits;has clock is Timing;has local is Http2Settings;
+    has protocols is HttpClientProtocols;has client is ClientPolicy;
+    HttpSelectedConnecting(route is HttpEndpointSelection,policy is TlsClientPolicy,client is ClientPolicy,clock is Timing){self.route=route;self.policy=policy;self.client=client;self.clock=clock;limits=client.limits();local=Http2Settings();protocols=HttpClientProtocols(client,policy);}
+    async acquisition() is HttpConversationAcquisition {
+        let endpoints=await route.endpoints();
+        let group is FutureGroup<TcpConnection>=FutureGroup();let empty is @Future<TcpConnection>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(group,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();
+        let waiting=TcpRacing(endpoints,TcpOptions(),Duration(250.rat(),DurationUnit.millisecond),clock).connection();pending.replace([waiting]);group.start(waiting);
+        let tcp=await waiting;taken.set();let published=Event();let anchor=HttpUnpublishedTcp(tcp,published);defer anchor.close();
+        let adopted_group is FutureGroup<HttpConversationAcquisition>=FutureGroup();let empty_acquired is @Future<HttpConversationAcquisition>=[];let pending_acquired=Atomic(empty_acquired);let acquired_taken=Event();
+        let acquired_cleanup=HttpAcquisitionCleanup(adopted_group,pending_acquired,acquired_taken,HttpConversationAcquisitionDisposal().release);defer await acquired_cleanup.close();
+        let adopting=HttpConversationAdopting(tcp,route.url(),policy,client,clock).acquisition();pending_acquired.replace([adopting]);adopted_group.start(adopting);let acquired=await adopting;acquired_taken.set();published.set();acquired;
+    }
+}
+
+object HttpConversationAdopting does HttpConversationConnecting {
+    has tcp is TcpConnection;has target is Url;has policy is TlsClientPolicy;has limits is HttpLimits;has clock is Timing;has local is Http2Settings;has protocols is HttpClientProtocols;
+    HttpConversationAdopting(tcp is TcpConnection,target is Url,policy is TlsClientPolicy,client is ClientPolicy,clock is Timing){self.tcp=tcp;self.target=target;self.policy=policy;self.clock=clock;limits=client.limits();local=Http2Settings();protocols=HttpClientProtocols(client,policy);}
+    async acquisition() is HttpConversationAcquisition{
+        let published=Event();let anchor=HttpUnpublishedTcp(tcp,published);defer anchor.close();
+        if target.parts().scheme()=="https" {
+            let host=target.parts().authority().host();
+            let identity is CertificateIdentity=if host.kind()==UrlHostKind.name{DnsCertificateIdentity(host.name());}else{IpCertificateIdentity(host.address());};
+            let tls_group is FutureGroup<TlsConnection>=FutureGroup();let empty_tls is @Future<TlsConnection>=[];let tls_pending=Atomic(empty_tls);let tls_taken=Event();
+            let tls_cleanup=HttpAcquisitionCleanup(tls_group,tls_pending,tls_taken,HttpTlsDisposal().release);defer await tls_cleanup.close();
+            let upgrading=TlsClientHandshake(tcp,identity,policy,clock).connection();tls_pending.replace([upgrading]);tls_group.start(upgrading);let tls=await upgrading;tls_taken.set();
+            let tls_anchor=HttpUnpublishedTls(tls,published);defer tls_anchor.close();
+            let version=protocols.selected(tls.details().protocol());
+            if version==HttpVersion.http_1_1{
+                let observation=HttpResponseObservation();let session=Http1Conversation(Http1Session(observation.reading(tls.input()),observation.writing(tls.output()),tls,limits.http1()),observation);
+                let acquired=HttpConversationAcquisition(session,ExchangeDetails(tls.details().endpoints(),version,tls.details()));published.set();return acquired;
+            }
+            let peer=await Http2ClientPreface(tls.input(),tls.output(),local).result();
+            let session=Http2Conversation(Http2Session(tls.input(),tls.output(),tls,local,peer,limits));
+            let acquired=HttpConversationAcquisition(session,ExchangeDetails(tls.details().endpoints(),HttpVersion.http_2,tls.details()));published.set();return acquired;
+        }
+        if protocols.clear()==HttpVersion.http_1_1{
+            let observation=HttpResponseObservation();let session=Http1Conversation(Http1Session(observation.reading(tcp.input()),observation.writing(tcp.output()),tcp,limits.http1()),observation);let acquired=HttpConversationAcquisition(session,ExchangeDetails(tcp.endpoints(),HttpVersion.http_1_1));published.set();return acquired;
+        }
+        let peer=await Http2ClientPreface(tcp.input(),tcp.output(),local).result();
+        let session=Http2Conversation(Http2Session(tcp.input(),tcp.output(),tcp,local,peer,limits));
+        let acquired=HttpConversationAcquisition(session,ExchangeDetails(tcp.endpoints(),HttpVersion.http_2));published.set();acquired;
+    }
+}

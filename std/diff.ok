@@ -1,0 +1,127 @@
+module diff v1.0.0;
+import "collections/sequence" take Sequencing;
+import "collections/list" take List,EmptyList;
+import "collections/iteration" take Cursor;
+import "async/atomic" take Atomic;
+import "runtime/diff" take diff_script;
+
+object InvalidDiff does Error {has reason is string;InvalidDiff(reason is string){self.reason=reason;}text() is string{"invalid diff: "+reason;}}
+object DiffLimitExceeded does Error {DiffLimitExceeded();text() is string{"diff work or output budget exceeded";}}
+object DiffListValues<T> {
+    has values is @T;
+    DiffListValues(origin is List<T>,reverse is bool){let cursor is Atomic<Cursor<T>>=Atomic(origin.cursor());defer cursor.close();let items is @T=(0..origin.size()).map()->index{let current=cursor.value();let item=current.item();cursor.replace(current.successor());item;};let values is @T=(0..items.size()).map()->index{items[if reverse{items.size()-index-1;}else{index;}];};self.values=values;}
+    values() is @T{values;}
+}
+object DiffLines {
+    has values is @string;
+    DiffLines(origin is Sequencing<string>){let size=origin.size();confirm size>=0 && size<=512 else throw InvalidDiff("line count must be 0..512");let values is @string=(0..size).map()->index{let text=origin.item(index);confirm text.length()<=4096 && text.split("\n").size()==1 else throw InvalidDiff("line length or embedded LF");text;};let scalars=values.reduce(0)->sum,text{sum+text.length();};confirm scalars<=1048576 else throw InvalidDiff("aggregate input length");self.values=values;}
+    values() is @string{values;}
+}
+enum DiffEditKind=(equal,removed,added);
+object DiffEdit {
+    has kind is DiffEditKind;has text is string;has left,right is int;
+    DiffEdit(kind is DiffEditKind,text is string,left is int,right is int){self.kind=kind;self.text=text;self.left=left;self.right=right;}
+    kind() is DiffEditKind{kind;}text() is string{text;}left() is int{left;}right() is int{right;}
+}
+object DiffSearching {
+    has left,right is @string;
+    DiffSearching(left is @string,right is @string){self.left=left;self.right=right;}
+    values() is @DiffEdit{
+        let script=try{diff_script(left,right);}catch error is NativeFailure{
+            if error.code()=="invalid_data"{throw InvalidDiff(error.message());}
+            throw UnavailableDiff(error.message());
+        };
+        let values is @DiffEdit=(0..(script.size()/3).int()).map()->index{
+            let kind=script[index*3];let x=script[index*3+1];let y=script[index*3+2];
+            if kind==0{DiffEdit(DiffEditKind.equal,left[x],x,y);}else if kind==1{DiffEdit(DiffEditKind.removed,left[x],x,y);}else{DiffEdit(DiffEditKind.added,right[y],x,y);}
+        };values;
+    }
+}
+object UnavailableDiff does Error {has reason is string;UnavailableDiff(reason is string){self.reason=reason;}text() is string{"unavailable diff: "+reason;}}
+object DiffScript {
+    has left,right is @string;has edits is @DiffEdit;
+    DiffScript(left is Sequencing<string>,right is Sequencing<string>){let first=DiffLines(left).values();let second=DiffLines(right).values();self.left=first;self.right=second;edits=DiffSearching(first,second).values();}
+    edits() is @DiffEdit{edits;}left_size() is int{left.size();}right_size() is int{right.size();}
+}
+object MatchingBlock {
+    has left,right,amount is int;MatchingBlock(left is int,right is int,size is int){self.left=left;self.right=right;amount=size;}
+    left() is int{left;}right() is int{right;}size() is int{amount;}
+}
+object MatchingBlocks {
+    has values is @MatchingBlock;
+    MatchingBlocks(left is Sequencing<string>,right is Sequencing<string>){
+        let script=DiffScript(left,right);let edits=script.edits();let empty is List<MatchingBlock>=EmptyList();let blocks is Atomic<List<MatchingBlock>>=Atomic(empty);defer blocks.close();
+        for edits->edit{if edit.kind()==DiffEditKind.equal{let current=blocks.value();if current.size()>0 && current.first().left()+current.first().size()==edit.left() && current.first().right()+current.first().size()==edit.right(){let previous=current.first();blocks.replace(current.tail().prefix(MatchingBlock(previous.left(),previous.right(),previous.size()+1)));}else{blocks.replace(current.prefix(MatchingBlock(edit.left(),edit.right(),1)));}}}
+        values=DiffListValues(blocks.value().prefix(MatchingBlock(script.left_size(),script.right_size(),0)),true).values();
+    }
+    values() is Sequencing<MatchingBlock>{values;}
+}
+object MatchingRatio {
+    has ratio is float;
+    MatchingRatio(left is Sequencing<string>,right is Sequencing<string>){let first=DiffLines(left).values();let second=DiffLines(right).values();let size=first.size()+second.size();let blocks=MatchingBlocks(first,second).values();let matched=(0..blocks.size()).reduce(0)->sum,index{sum+blocks.item(index).size();};ratio=if size==0{1.0;}else{(2*matched).float()/size.float();};}
+    value() is float{ratio;}
+}
+object DiffSpan {
+    has start,end is int;DiffSpan(start is int,end is int){self.start=start;self.end=end;}start() is int{start;}end() is int{end;}
+}
+object DiffHunks {
+    has values is @DiffSpan;
+    DiffHunks(edits is @DiffEdit,context is int){
+        confirm context>=0 && context<=64 else throw InvalidDiff("context must be 0..64");let empty is List<DiffSpan>=EmptyList();let spans is Atomic<List<DiffSpan>>=Atomic(empty);defer spans.close();
+        for (0..edits.size())->index{if edits[index].kind()!=DiffEditKind.equal{let start=if index>context{index-context;}else{0;};let end=if index+context+1<edits.size(){index+context+1;}else{edits.size();};let current=spans.value();if current.size()>0 && current.first().end()>=start{let previous=current.first();spans.replace(current.tail().prefix(DiffSpan(previous.start(),end)));}else{spans.replace(current.prefix(DiffSpan(start,end)));}}}
+        values=DiffListValues(spans.value(),true).values();
+    }
+    values() is @DiffSpan{values;}
+}
+object DiffRange {
+    has start,amount is int;DiffRange(start is int,amount is int){self.start=start;self.amount=amount;}
+    unified() is string{let first=if amount==0{start;}else{start+1;};first.string()+(if amount==1{"";}else{","+amount.string();});}
+    context() is string{if amount==0{start.string();}else{(start+1).string()+(if amount==1{"";}else{","+(start+amount).string();});}}
+}
+object DiffPrinting {
+    has script is DiffScript;has context is int;
+    DiffPrinting(script is DiffScript,context is int){self.script=script;self.context=context;}
+    string(context_style is bool) is string{
+        let edits=script.edits();let spans=DiffHunks(edits,context).values();if spans.size()==0{return "";}
+        let texts is @string=spans.map()->span{
+            let first=edits[span.start()];let left=(span.start()..span.end()).reduce(0)->sum,index{sum+(if edits[index].kind()!=DiffEditKind.added{1;}else{0;});};let right=(span.start()..span.end()).reduce(0)->sum,index{sum+(if edits[index].kind()!=DiffEditKind.removed{1;}else{0;});};
+            let old_range=DiffRange(first.left(),left);let new_range=DiffRange(first.right(),right);
+            if context_style{
+                let rows=DiffContextRows(edits,span).values();"***************\n*** "+old_range.context()+" ****\n"+rows[0]+"--- "+new_range.context()+" ----\n"+rows[1];
+            }else{
+                let rows is @string=(span.start()..span.end()).map()->index{let edit=edits[index];(match edit.kind(){case DiffEditKind.equal{" ";}case DiffEditKind.removed{"-";}else{"+";}})+edit.text()+"\n";};"@@ -"+old_range.unified()+" +"+new_range.unified()+" @@\n"+rows.join("");
+            }
+        };
+        let amount=texts.reduce(0)->sum,text{sum+text.length();};confirm amount<=1048576 else throw DiffLimitExceeded();(if context_style{"*** left\n--- right\n";}else{"--- left\n+++ right\n";})+texts.join("");
+    }
+}
+object DiffContextRows {
+    has values is @string;
+    DiffContextRows(edits is @DiffEdit,span is DiffSpan){
+        let empty is List<string>=EmptyList();let left is Atomic<List<string>>=Atomic(empty);let right is Atomic<List<string>>=Atomic(empty);let position=Atomic(span.start());defer left.close();defer right.close();defer position.close();
+        loop{
+            if position.value()>=span.end(){last;}let current=edits[position.value()];
+            if current.kind()==DiffEditKind.equal{let text="  "+current.text()+"\n";left.replace(left.value().prefix(text));right.replace(right.value().prefix(text));position.replace(position.value()+1);}else{
+                let start=position.value();loop{if position.value()>=span.end() || edits[position.value()].kind()==DiffEditKind.equal{last;}position.replace(position.value()+1);}
+                let removed=(start..position.value()).reduce(false)->found,index{found || edits[index].kind()==DiffEditKind.removed;};let added=(start..position.value()).reduce(false)->found,index{found || edits[index].kind()==DiffEditKind.added;};
+                for (start..position.value())->index{let edit=edits[index];if edit.kind()==DiffEditKind.removed{left.replace(left.value().prefix((if added{"! ";}else{"- ";})+edit.text()+"\n"));}else{right.replace(right.value().prefix((if removed{"! ";}else{"+ ";})+edit.text()+"\n"));}}
+            }
+        }
+        values=[DiffListValues(left.value(),true).values().join(""),DiffListValues(right.value(),true).values().join("")];
+    }
+    values() is @string{values;}
+}
+object UnifiedDiff {
+    has text is string;
+    UnifiedDiff(left is Sequencing<string>,right is Sequencing<string>){text=DiffPrinting(DiffScript(left,right),3).string(false);}
+    UnifiedDiff(left is Sequencing<string>,right is Sequencing<string>,context is int){confirm context>=0 && context<=64 else throw InvalidDiff("context must be 0..64");text=DiffPrinting(DiffScript(left,right),context).string(false);}
+    string() is string{text;}
+}
+object ContextDiff {
+    has text is string;
+    ContextDiff(left is Sequencing<string>,right is Sequencing<string>){text=DiffPrinting(DiffScript(left,right),3).string(true);}
+    ContextDiff(left is Sequencing<string>,right is Sequencing<string>,context is int){confirm context>=0 && context<=64 else throw InvalidDiff("context must be 0..64");text=DiffPrinting(DiffScript(left,right),context).string(true);}
+    string() is string{text;}
+}
+
+test "unchanged lines have no diff" {test.is(UnifiedDiff(["same"],["same"]).string(),"");}

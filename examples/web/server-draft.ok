@@ -1,0 +1,87 @@
+// Original design sketch that led to server-ddd.ok. Kept valid for the examples
+// syntax audit: placeholder bodies return a minimal result. The runnable
+// version of this idea on web/* is server-ddd.ok.
+module server_draft v1.0.0;
+
+import "http/routing" take Routes, Route, RoutePattern;
+import "http/method" take Method;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request, Response;
+import "http/handler" take Handling, HandlingResult, ResponseHandling;
+import "http/status" take Status;
+import "http/header" take Headers;
+
+
+role RootControlling {
+    index(req is Request, ctx is HttpRequestContext) is HandlingResult;
+}
+
+object RootCtrl {
+    has user_app_service is ApplicationUserService;
+
+    RootCtrl(:user_app_service);
+
+    index(req is Request, ctx is HttpRequestContext) is HandlingResult {
+        // ...
+        ResponseHandling(Response(Status(200), Headers([])));
+    }
+    login(req is Request, ctx is HttpRequestContext) is HandlingResult {
+        // ...
+        ResponseHandling(Response(Status(200), Headers([])));
+    }
+}
+
+// Handling is a role, not an action type: a bound action such as
+// `root_ctrl.index` cannot stand in for it, so each route gets an adapter.
+object RootIndex does Handling {
+    has ctrl is RootCtrl;
+
+    RootIndex(:ctrl);
+
+    async handling(request is Request, context is HttpRequestContext) is HandlingResult {
+        ctrl.index(request, context);
+    }
+}
+
+object ApplicationUserService {
+    has user_repo is UserRepository;
+
+    ApplicationUserService(:user_repo);
+
+    get_user_info() is User { user_repo.get(1); }
+}
+
+object UserRepository {
+    has db is DatabaseHandler;
+
+    UserRepository(:db);
+
+    get(id is int) is User {
+        return User();
+    }
+}
+
+object DatabaseHandler {
+    DatabaseHandler();
+}
+
+object User {
+    User();
+}
+
+async main() is int {
+    let dbh = DatabaseHandler();
+    let user_repo = UserRepository(db: dbh);
+    let app_user_service = ApplicationUserService(user_repo: user_repo);
+
+    let root_ctrl = RootCtrl(user_app_service: app_user_service);
+    let rootes = Routes(
+        [
+            Route(Method("GET"), RoutePattern("/"), RootIndex(ctrl: root_ctrl))
+        ],
+        // ...
+        RootIndex(ctrl: root_ctrl)
+    );
+
+    return 0;
+}

@@ -1,0 +1,231 @@
+module numbers/bigint v1.0.0;
+
+import "compare" take Comparing, Order;
+import "runtime/bigint" take
+    bigint_valid,
+    bigint_canonical,
+    bigint_sign,
+    bigint_bits,
+    bigint_order, bigint_difference, bigint_sum, bigint_product,
+    bigint_quotient, bigint_remainder,
+    bigint_gcd, bigint_lcm, bigint_power;
+
+// Immutable arbitrary-precision integer foundation.
+//
+//     let count = BigInt(origin: "18446744073709551616");
+//     count.sign();                  // 1
+//     count.bits();                  // 65
+//     count.string();                // canonical decimal
+//
+// Construction accepts an optional minus followed by decimal digits. It never
+// trims whitespace or accepts `+`; leading zeroes are normalized. Arithmetic
+// projected objects live in the rest of numbers/bigint and are intentionally
+// independent from this value contract. Sum/product/division/remainder/gcd/lcm
+// take named left/right operands. Division truncates toward zero; remainder
+// has the dividend's sign. Both throw BigDivisionByZero on value(), not binding.
+// Gcd/lcm are non-negative; gcd(0,0)=0 and lcm(0,n)=0.
+//
+//     let quotient = BigQuotient(left: count, right: BigInt("3"));
+//     quotient.value().string();
+//     value BigPower(base: BigInt("2"), exponent: 100, maximum_bits: 101);
+//
+// BigPower requires exponent >= 0 and a positive result bit budget (1048576
+// by default). 0^0 is 1. An oversized result throws BigPowerLimitExceeded;
+// impossible budgets are rejected before heavy exponentiation. This bounds
+// result bits, not all backend memory or wall-clock time.
+
+object BigInt does Comparing<BigInt> {
+    has origin is string;
+
+    BigInt(origin is string) {
+        confirm bigint_valid(origin) else throw InvalidBigInt();
+        self.origin = bigint_canonical(origin);
+    }
+
+    sign() is int {
+        bigint_sign(origin);
+    }
+
+    bits() is int {
+        bigint_bits(origin);
+    }
+
+    order(other is BigInt) is Order {
+        let result is int = bigint_order(origin, other.string());
+        if result < 0 {
+            Order.less;
+        }
+        else {
+            if result > 0 { Order.greater; } else { Order.equal; }
+        }
+    }
+
+    string() is string {
+        origin;
+    }
+}
+
+object InvalidBigInt does Error {
+    InvalidBigInt();
+
+    #projected
+    text() is string {
+        "invalid arbitrary-precision integer";
+    }
+}
+
+object BigDifference {
+    has left is BigInt;
+    has right is BigInt;
+    BigDifference(:left, :right);
+    #projected
+    value() is BigInt { BigInt(bigint_difference(left.string(), right.string())); }
+}
+
+object BigSum {
+    has left is BigInt;
+    has right is BigInt;
+
+    BigSum(:left, :right);
+
+    #projected
+    value() is BigInt {
+        BigInt(bigint_sum(left.string(), right.string()));
+    }
+}
+
+object BigProduct {
+    has left is BigInt;
+    has right is BigInt;
+
+    BigProduct(:left, :right);
+
+    #projected
+    value() is BigInt {
+        BigInt(bigint_product(left.string(), right.string()));
+    }
+}
+
+object BigQuotient {
+    has left is BigInt;
+    has right is BigInt;
+
+    BigQuotient(:left, :right);
+
+    #projected
+    value() is BigInt {
+        confirm right.sign() != 0 else throw BigDivisionByZero();
+        BigInt(bigint_quotient(left.string(), right.string()));
+    }
+}
+
+object BigRemainder {
+    has left is BigInt;
+    has right is BigInt;
+
+    BigRemainder(:left, :right);
+
+    #projected
+    value() is BigInt {
+        confirm right.sign() != 0 else throw BigDivisionByZero();
+        BigInt(bigint_remainder(left.string(), right.string()));
+    }
+}
+
+object BigDivisionByZero does Error {
+    BigDivisionByZero();
+
+    #projected
+    text() is string { "BigInt division by zero"; }
+}
+
+object BigGcd {
+    has left is BigInt;
+    has right is BigInt;
+
+    BigGcd(:left, :right);
+
+    #projected
+    value() is BigInt {
+        BigInt(bigint_gcd(left.string(), right.string()));
+    }
+}
+
+object BigLcm {
+    has left is BigInt;
+    has right is BigInt;
+
+    BigLcm(:left, :right);
+
+    #projected
+    value() is BigInt {
+        BigInt(bigint_lcm(left.string(), right.string()));
+    }
+}
+
+object BigPower {
+    has base is BigInt;
+    has exponent is int;
+    has maximum_bits is int;
+
+    BigPower(base is BigInt, exponent is int) {
+        self.base = base;
+        self.exponent = exponent;
+        maximum_bits = 1048576;
+
+        confirm self.exponent >= 0 else throw InvalidBigExponent(exponent: self.exponent);
+        confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit(maximum_bits: self.maximum_bits);
+    }
+
+    BigPower(base is BigInt, exponent is int, maximum_bits is int) {
+        self.base = base;
+        self.exponent = exponent;
+        self.maximum_bits = maximum_bits;
+
+        confirm self.exponent >= 0 else throw InvalidBigExponent(exponent: self.exponent);
+        confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit(maximum_bits: self.maximum_bits);
+    }
+
+    #projected
+    value() is BigInt {
+        try {
+            BigInt(bigint_power(base.string(), exponent, maximum_bits));
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "resource_exhausted" {
+                throw BigPowerLimitExceeded(maximum_bits: maximum_bits);
+            }
+            else { throw failure; }
+        }
+    }
+}
+
+object InvalidBigExponent does Error {
+    has value is int;
+
+    InvalidBigExponent(exponent is int) { value = exponent; }
+    exponent() is int { value; }
+
+    #projected
+    text() is string { "BigInt exponent must be non-negative"; }
+}
+
+object InvalidBigPowerLimit does Error {
+    has limit is int;
+
+    InvalidBigPowerLimit(maximum_bits is int) { limit = maximum_bits; }
+    maximum_bits() is int { limit; }
+
+    #projected
+    text() is string { "BigInt power bit limit must be positive"; }
+}
+
+object BigPowerLimitExceeded does Error {
+    has limit is int;
+
+    BigPowerLimitExceeded(maximum_bits is int) { limit = maximum_bits; }
+    maximum_bits() is int { limit; }
+
+    #projected
+    text() is string { "BigInt power exceeds " + limit.string() + " bits"; }
+}

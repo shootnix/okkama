@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let xs is @int = [];
+    let safe = xs.size() > 0 && xs[0] > 1;
+    out.writeln(if safe { "big"; } else { "empty or small"; });
+    0;
+}

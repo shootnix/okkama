@@ -1,0 +1,23 @@
+module app v1.0.0;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint;
+import "net/udp" take UdpBinding, UdpOptions, Datagram;
+import "async/timeout" take Within;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+
+// Prints the assigned loopback port. Send a packet to it within five seconds.
+// Only the first four bytes are retained; a longer packet reports truncation.
+async main() is int {
+    let socket=await UdpBinding(IpEndpoint(IpAddress("127.0.0.1"),0),UdpOptions()).socket();
+    Stdout().writeln(socket.local_endpoint().port().string());
+    let request is Within<Datagram>=Within(socket.datagram(4),
+        Duration(5.rat(),DurationUnit.second),SystemClock());
+    let packet=await request.result();
+    socket.close();
+    Stdout().writeln(packet.source().address().string());
+    Stdout().writeln(packet.bytes().size().string());
+    Stdout().writeln(if packet.truncated() {"truncated";} else {"complete";});
+    0;
+}

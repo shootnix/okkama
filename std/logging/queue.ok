@@ -1,0 +1,121 @@
+module logging/queue v1.0.0;
+import "logging/write" take LogWriting,LogDeliveryFailure;
+import "logging/record" take LogRecord;
+import "collections/deque" take Deque;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take Supervising;
+import "numbers/bigint" take BigInt,BigSum;
+import "compare" take Order;
+import "io/stream" take Closing;
+
+enum LogOverflow=(reject,drop_newest,drop_oldest);
+role LogDelivering{async deliver(record is LogRecord) is int;}
+role LogDraining{async drain() is void;}
+object LogQueueOptions{
+    has capacity is int;has overflow is LogOverflow;
+    LogQueueOptions(capacity is int,overflow is LogOverflow){confirm capacity>0 && capacity<=65536 else throw InvalidLogQueue();self.capacity=capacity;self.overflow=overflow;}
+    capacity() is int{capacity;}overflow() is LogOverflow{overflow;}
+}
+object SynchronousLogDelivery does LogDelivering{
+    has origin is LogWriting;SynchronousLogDelivery(origin is LogWriting){self.origin=origin;}
+    async deliver(record is LogRecord) is int{origin.write(record);0;}
+}
+object QueuedLogRecord{
+    has record is LogRecord;has sequence is BigInt;
+    QueuedLogRecord(record is LogRecord,sequence is BigInt){self.record=record;self.sequence=sequence;}
+    record() is LogRecord{record;}sequence() is BigInt{sequence;}
+}
+object LogQueueState{
+    has origin is LogDelivering;has options is LogQueueOptions;
+    has queued is Atomic<Deque<QueuedLogRecord>>;
+    has accepted,dropped is Atomic<BigInt>;
+    has inflight is Atomic<@QueuedLogRecord>;has delivery is Atomic<@Future<int>>;
+    has failures is Atomic<@Error>;has finished,started is Atomic<bool>;has changed is Atomic<Event>;
+    LogQueueState(origin is LogDelivering,options is LogQueueOptions){
+        self.origin=origin;self.options=options;
+        let empty is @QueuedLogRecord=[];queued=Atomic(Deque(empty));inflight=Atomic(empty);
+        let futures is @Future<int>=[];delivery=Atomic(futures);let errors is @Error=[];failures=Atomic(errors);
+        accepted=Atomic(BigInt("0"));dropped=Atomic(BigInt("0"));finished=Atomic(false);started=Atomic(false);changed=Atomic(Event());
+    }
+    write(record is LogRecord) is bool{
+        self.check();confirm !finished.value() else throw ClosedLogQueue();
+        let items=queued.value();
+        if items.size()==options.capacity(){
+            self.loss(1);
+            if options.overflow()==LogOverflow.reject{throw LogQueueFull();}
+            if options.overflow()==LogOverflow.drop_newest{return false;}
+            queued.replace(items.front().remainder());
+        }
+        let sequence=BigSum(left:accepted.value(),right:BigInt("1")).value();accepted.replace(sequence);
+        queued.replace(queued.value().back().addition(QueuedLogRecord(record,sequence)));self.signal();true;
+    }
+    start(scope is Supervising<int>) is void{
+        if !started.value(){
+            started.replace(true);let worker=self.run();
+            try{scope.start(worker);}catch error is Error{worker.cancel();self.failed(error);throw;}
+        }
+    }
+    async run() is int{
+        try{
+        loop{
+            if finished.value(){return 0;}
+            let items=queued.value();
+            if items.size()==0{let wake=changed.value();await wake.wait();}
+            else{
+                let ticket=items.front().value();queued.replace(items.front().remainder());inflight.replace([ticket]);
+                let work=origin.deliver(ticket.record());delivery.replace([work]);
+                await work;
+                self.completed();
+            }
+        }
+        }catch error is Cancelled{
+            if finished.value(){self.completed();return 0;}
+            self.failed(LogQueueCancelled());throw;
+        }catch error is NativeFailure{self.failed(LogDeliveryFailure([error]));throw;}
+        catch error is Error{self.failed(error);throw;}
+        0;
+    }
+    async drain() is void{
+        let target=accepted.value();
+        loop{
+            self.check();let current=inflight.value();let items=queued.value();
+            let working=current.size()>0 && current[0].sequence().order(target)!=Order.greater;
+            let pending=items.size()>0 && items.front().value().sequence().order(target)!=Order.greater;
+            last if !working && !pending;
+            let wake=changed.value();await wake.wait();
+        }
+    }
+    dropped_records() is BigInt{dropped.value();}
+    closed() is bool{finished.value();}
+    close() is void{
+        if !finished.value(){
+            finished.replace(true);self.loss(queued.value().size()+inflight.value().size());
+            let empty is @QueuedLogRecord=[];queued.replace(Deque(empty));inflight.replace(empty);
+            let work=delivery.value();self.signal();if work.size()>0{work[0].cancel();}
+        }
+    }
+    private:
+    check() is void{if failures.value().size()>0{throw failures.value()[0];}}
+    signal() is void{let previous=changed.value();changed.replace(Event());previous.set();}
+    loss(count is int) is void{dropped.replace(BigSum(left:dropped.value(),right:BigInt(count.string())).value());}
+    completed() is void{let empty is @QueuedLogRecord=[];inflight.replace(empty);let futures is @Future<int>=[];delivery.replace(futures);self.signal();}
+    failed(error is Error) is void{
+        if failures.value().size()==0{failures.replace([error]);}
+        self.close();self.completed();
+    }
+}
+object QueuedLogs does LogWriting,LogDraining,Closing{
+    has state is LogQueueState;has scope is Supervising<int>;
+    QueuedLogs(origin is LogWriting,capacity is int,overflow is LogOverflow,scope is Supervising<int>){state=LogQueueState(SynchronousLogDelivery(origin),LogQueueOptions(capacity,overflow));self.scope=scope;}
+    QueuedLogs(origin is LogDelivering,options is LogQueueOptions,scope is Supervising<int>){state=LogQueueState(origin,options);self.scope=scope;}
+    write(record is LogRecord) is void{if state.write(record){state.start(scope);}}
+    async drain() is void{await state.drain();}
+    dropped_records() is BigInt{state.dropped_records();}
+    closed() is bool{state.closed();}close() is void{state.close();}
+    destroy{self.close();}
+}
+object InvalidLogQueue does Error{InvalidLogQueue();text() is string{"log queue capacity must be in 1..65536";}}
+object ClosedLogQueue does Error{ClosedLogQueue();text() is string{"log queue is closed";}}
+object LogQueueFull does Error{LogQueueFull();text() is string{"log queue is full";}}
+object LogQueueCancelled does Error{LogQueueCancelled();text() is string{"log delivery worker was cancelled";}}

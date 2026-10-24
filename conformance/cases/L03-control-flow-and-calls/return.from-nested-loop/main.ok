@@ -1,0 +1,30 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Finder {
+    Finder();
+    first_positive(values is @int) is int {
+        for values -> value {
+            if value > 0 { return value; }
+        }
+        return 0;
+    }
+    find_pair(target is int) is int {
+        for 1..=3 -> i {
+            for 1..=3 -> j {
+                if i + j == target { return i * 10 + j; }
+            }
+        }
+        -1;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let f = Finder();
+    out.writeln(f.first_positive([-1, 0, 5, 7]).string());
+    out.writeln(f.first_positive([-1]).string());
+    out.writeln(f.find_pair(3).string());
+    0;
+}

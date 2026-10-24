@@ -1,0 +1,58 @@
+module http/proxy_connection v1.0.0;
+import "http/proxy_policy" take ProxyPolicy;
+import "http/proxy_tunnel" take HttpProxyTunnel;
+import "http/auth" take BasicAuthorization;
+import "http/header" take Header,HeaderName;
+import "http/conversation" take HttpConversationRouting,HttpConversationConnecting,HttpConversationAcquisition,Http1Conversation,HttpConversationAcquisitionDisposal;
+import "http/selected_connection" take HttpConversationAdopting;
+import "http/endpoint" take HttpEndpointSelection,EndpointAllowing;
+import "http/client_policy" take ClientPolicy;
+import "http/client_protocols" take HttpClientProtocols;
+import "http/version" take HttpVersion,UnsupportedHttpVersion;
+import "http/exchange" take ExchangeDetails;
+import "http/connection" take HttpAcquisitionCleanup,HttpTcpDisposal,HttpUnpublishedTcp;
+import "http/http1_session" take Http1Session;
+import "http/transport_observation" take HttpResponseObservation;
+import "net/tcp" take TcpConnection,TcpOptions;
+import "net/tcp_racing" take TcpRacing;
+import "net/dns" take Resolving;
+import "net/tls" take TlsClientPolicy;
+import "time/clock" take Timing;
+import "time/duration" take Duration,DurationUnit;
+import "url/value" take Url;
+import "async/scope" take FutureGroup;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+// A routing capability is fixed for one client pool. Only the actual proxy
+// socket is locally resolved/filtered; remote origin routing belongs to proxy.
+object HttpProxyRouting does HttpConversationRouting {
+    has proxy is ProxyPolicy;has resolver is Resolving;has tls is TlsClientPolicy;has client is ClientPolicy;has clock is Timing;
+    HttpProxyRouting(proxy is ProxyPolicy,resolver is Resolving,tls is TlsClientPolicy,client is ClientPolicy,clock is Timing){self.proxy=proxy;self.resolver=resolver;self.tls=tls;self.client=client;self.clock=clock;HttpClientProtocols(client,tls);}
+    connecting(url is Url) is HttpConversationConnecting{HttpProxyConnecting(proxy,url,resolver,tls,client,clock);}
+    allowed(url is Url,details is ExchangeDetails,access is EndpointAllowing) is bool{access.allowed(proxy.url(),details.endpoints().remote_endpoint());}
+}
+object HttpProxyConnecting does HttpConversationConnecting {
+    has proxy is ProxyPolicy;has target is Url;has route is HttpEndpointSelection;has tls is TlsClientPolicy;has client is ClientPolicy;has clock is Timing;
+    HttpProxyConnecting(proxy is ProxyPolicy,target is Url,resolver is Resolving,tls is TlsClientPolicy,client is ClientPolicy,clock is Timing){
+        HttpClientProtocols(client,tls);if target.parts().scheme()=="http"{confirm client.protocols().membership(HttpVersion.http_1_1) else throw UnsupportedHttpVersion();}
+        self.proxy=proxy;self.target=target;route=HttpEndpointSelection(proxy.url(),resolver,client.access());self.tls=tls;self.client=client;self.clock=clock;
+    }
+    async acquisition() is HttpConversationAcquisition{
+        let fields is @Header=if proxy.authenticated(){[Header(HeaderName("Proxy-Authorization"),BasicAuthorization(proxy.credentials()).header().value())];}else{let empty is @Header=[];empty;};
+        let endpoints=await route.endpoints();let raw is FutureGroup<TcpConnection>=FutureGroup();let empty is @Future<TcpConnection>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(raw,pending,taken,HttpTcpDisposal().release);defer await cleanup.close();
+        let opening=TcpRacing(endpoints,TcpOptions(),Duration(250.rat(),DurationUnit.millisecond),clock).connection();pending.replace([opening]);raw.start(opening);let tcp=await opening;taken.set();
+        let published=Event();let anchor=HttpUnpublishedTcp(tcp,published);defer anchor.close();
+        if target.parts().scheme()=="http"{
+            let observation=HttpResponseObservation();let session=Http1Conversation(Http1Session(observation.reading(tcp.input()),observation.writing(tcp.output()),tcp,client.limits().http1()),observation,fields);
+            let acquired=HttpConversationAcquisition(session,ExchangeDetails(tcp.endpoints(),HttpVersion.http_1_1));published.set();return acquired;
+        }
+        let tunnels is FutureGroup<bool>=FutureGroup();let tunnel_cleanup=HttpProxySettlement(tunnels);defer await tunnel_cleanup.close();
+        let tunneling=HttpProxyTunnel(tcp.input(),tcp.output(),target,fields,client.limits().http1()).ready();tunnels.start(tunneling);await tunneling;
+        let adopted is FutureGroup<HttpConversationAcquisition>=FutureGroup();let empty_acquired is @Future<HttpConversationAcquisition>=[];let acquisition_pending=Atomic(empty_acquired);let acquisition_taken=Event();
+        let adopted_cleanup=HttpAcquisitionCleanup(adopted,acquisition_pending,acquisition_taken,HttpConversationAcquisitionDisposal().release);defer await adopted_cleanup.close();
+        let adapting=HttpConversationAdopting(tcp,target,tls,client,clock).acquisition();acquisition_pending.replace([adapting]);adopted.start(adapting);let acquired=await adapting;acquisition_taken.set();published.set();acquired;
+    }
+}
+// Keep the same structured drain rule for tunnel/acquisition children.
+object HttpProxySettlement<T>{has group is FutureGroup<T>;HttpProxySettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

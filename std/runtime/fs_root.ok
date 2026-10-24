@@ -1,0 +1,12 @@
+module runtime/fs_root v1.0.0;
+native object FileRootState;
+native object RootedEntryState;
+native file_root_open(path is @byte) is FileRootState;
+native file_root_entry(root is FileRootState,segments is @string) is RootedEntryState;
+native file_root_closed(root is FileRootState) is bool;
+native file_root_close(root is FileRootState) is bool;
+native rooted_entry_stat(entry is RootedEntryState) is %string:int;
+native rooted_entry_read(entry is RootedEntryState,offset is int,limit is int) is @byte;
+native rooted_entry_names(entry is RootedEntryState,maximum is int) is @string;
+native rooted_entry_closed(entry is RootedEntryState) is bool;
+native rooted_entry_close(entry is RootedEntryState) is bool;

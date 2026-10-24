@@ -1,0 +1,41 @@
+module http/internal/websocket_messages v1.0.0;
+import "http/internal/websocket_frame" take WebSocketFrame;
+import "http/websocket" take WebSocketLimits,WebSocketMessage,TextWebSocketMessage,BinaryWebSocketMessage,WebSocketFailure,WebSocketClose,WebSocketClosed;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "async/atomic" take Atomic;
+import "encoding/utf" take Utf8Decoded,InvalidUtf8;
+import "strings/parse" take ParsedInt;
+
+// One owner per incoming message sequence. Control frames leave this state
+// intact and are handled by the connection. No repeated payload concatenation.
+object WebSocketMessageAssembly does Closing {
+    has bytes is ByteBuffer;has opcode is Atomic<int>;has maximum,frame_maximum is int;
+    WebSocketMessageAssembly(limits is WebSocketLimits){bytes=ByteBuffer();opcode=Atomic(-1);maximum=ParsedInt(limits.message_bytes().string()).value();frame_maximum=limits.frame_bytes();}
+    closed() is bool{bytes.closing().closed();}close() is void{bytes.closing().close();}
+    accept(frame is WebSocketFrame) is @WebSocketMessage{
+        confirm !self.closed() else throw WebSocketFailure("message assembler closed");
+        let kind=frame.opcode();if kind>=8{let empty is @WebSocketMessage=[];return empty;}
+        confirm frame.payload().size()<=frame_maximum else throw WebSocketFailure("data frame byte limit");
+        if kind==0{confirm opcode.value()!=-1 else throw WebSocketFailure("continuation without data message");}
+        else{confirm opcode.value()==-1 else throw WebSocketFailure("new data message during fragments");opcode.replace(kind);}
+        confirm frame.payload().size()<=maximum-bytes.content().size() else throw WebSocketFailure("message byte limit");bytes.writing().write(ByteSnapshot(frame.payload()));
+        if !frame.final(){let empty is @WebSocketMessage=[];return empty;}
+        let payload=bytes.reading().bytes(if bytes.content().size()==0{1;}else{bytes.content().size();});let selected=opcode.value();opcode.replace(-1);
+        let value is WebSocketMessage=if selected==1{
+            let text=try{Utf8Decoded(payload).string();}catch e is InvalidUtf8{throw WebSocketFailure("invalid text UTF-8");};TextWebSocketMessage(text);
+        }else{BinaryWebSocketMessage(payload);};[value];
+    }
+    destroy{self.close();}
+}
+object ParsedWebSocketClose {
+    has origin is @byte;has from_server is bool;
+    ParsedWebSocketClose(origin is @byte,from_server is bool){self.origin=origin;self.from_server=from_server;}
+    value() is WebSocketClosed{
+        if origin.size()==0{return WebSocketClosed(1005,"");}
+        confirm origin.size()>=2 && origin.size()<=125 else throw WebSocketFailure("close payload width");
+        let code=origin[0].int()*256+origin[1].int();confirm !from_server || code!=1010 else throw WebSocketFailure("server sent client-only close code");
+        let reason=try{Utf8Decoded(origin.slice(2,origin.size())).string();}catch e is InvalidUtf8{throw WebSocketFailure("invalid close UTF-8");};WebSocketClose(code,reason);WebSocketClosed(code,reason);
+    }
+}

@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Pair<K, V> {
+    has a is K;
+    has b is V;
+    Pair(:a, :b);
+}
+
+main() is int {
+    let out = Stdout();
+    let p is Pair<int> = Pair(a: 1, b: 2);
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,132 @@
+module http/target v1.0.0;
+import "http/method" take Method;
+import "url/value" take Url, UrlReference, UrlAuthority, UrlQuery, UrlHostKind, UrlComponentText,
+    ParsedUrl, ParsedUrlAuthority, InvalidUrl, MissingUrlPort;
+import "url/percent" take UrlComponent;
+import "encoding/single_byte" take AsciiEncoded, UnrepresentableAsciiCharacter;
+
+enum RequestTargetKind = (origin, absolute, authority, asterisk);
+role RequestTarget {
+    kind() is RequestTargetKind;
+    path() is string;
+    query() is UrlQuery;
+    url() is Url;
+    authority() is UrlAuthority;
+    string() is string;
+}
+// Origin-form owns absolute path/query coordinates. A generic URI-reference
+// would interpret //path as authority, so it is not the carrier of this form.
+object OriginTarget does RequestTarget {
+    has path is string;has query is UrlQuery;
+    OriginTarget(path is string, query is UrlQuery) {
+        confirm path!="" && path.length()<=8192 && path.slice(0,1)=="/" else throw InvalidRequestTarget("absolute origin path required");
+        let canonical=try{UrlComponentText(path,UrlComponent.path).string();}
+            catch e is InvalidUrl{throw InvalidRequestTarget("invalid origin path");};
+        let wire=canonical+if query.present(){"?"+query.string();}else{"";};
+        confirm wire.length()<=8192 else throw InvalidRequestTarget("target byte limit exceeded");self.path=canonical;self.query=query;
+    }
+    OriginTarget(origin is UrlReference) {
+        let parts=origin.parts();confirm parts.scheme()=="" && !parts.authority().present() && !parts.fragment().present()
+            else throw InvalidRequestTarget("origin coordinates cannot contain scheme, authority or fragment");
+        let checked=OriginTarget(parts.path(),parts.query());path=checked.path();query=checked.query();
+    }
+    kind() is RequestTargetKind{RequestTargetKind.origin;}path() is string{path;}query() is UrlQuery{query;}
+    url() is Url{throw WrongRequestTargetKind(RequestTargetKind.absolute,self.kind());}
+    authority() is UrlAuthority{throw WrongRequestTargetKind(RequestTargetKind.authority,self.kind());}
+    string() is string{path+if query.present(){"?"+query.string();}else{"";};}
+}
+object AbsoluteTarget does RequestTarget {
+    has origin is Url;
+    AbsoluteTarget(origin is Url) {
+        let parts=origin.parts();confirm parts.scheme()=="http" || parts.scheme()=="https" else throw InvalidRequestTarget("HTTP absolute URL required");
+        confirm parts.authority().present() && parts.authority().host().kind()!=UrlHostKind.empty else throw InvalidRequestTarget("nonempty HTTP authority required");
+        confirm !parts.authority().userinfo().present() && !parts.fragment().present() else throw InvalidRequestTarget("userinfo and fragment cannot enter target");
+        confirm origin.string().length()<=8192 else throw InvalidRequestTarget("target byte limit exceeded");self.origin=origin;
+    }
+    kind() is RequestTargetKind{RequestTargetKind.absolute;}url() is Url{origin;}
+    path() is string{throw WrongRequestTargetKind(RequestTargetKind.origin,self.kind());}
+    query() is UrlQuery{throw WrongRequestTargetKind(RequestTargetKind.origin,self.kind());}
+    authority() is UrlAuthority{throw WrongRequestTargetKind(RequestTargetKind.authority,self.kind());}
+    string() is string{origin.string();}
+}
+object AuthorityTarget does RequestTarget {
+    has origin is UrlAuthority;
+    AuthorityTarget(origin is UrlAuthority) {
+        confirm origin.present() && origin.host().kind()!=UrlHostKind.empty else throw InvalidRequestTarget("nonempty CONNECT authority required");
+        confirm !origin.userinfo().present() else throw InvalidRequestTarget("CONNECT userinfo prohibited");
+        try{origin.port();}catch e is MissingUrlPort{throw InvalidRequestTarget("explicit CONNECT port required");}
+        confirm origin.string().length()<=8192 else throw InvalidRequestTarget("target byte limit exceeded");self.origin=origin;
+    }
+    kind() is RequestTargetKind{RequestTargetKind.authority;}authority() is UrlAuthority{origin;}
+    path() is string{throw WrongRequestTargetKind(RequestTargetKind.origin,self.kind());}
+    query() is UrlQuery{throw WrongRequestTargetKind(RequestTargetKind.origin,self.kind());}
+    url() is Url{throw WrongRequestTargetKind(RequestTargetKind.absolute,self.kind());}
+    string() is string{origin.string();}
+}
+object AsteriskTarget does RequestTarget {
+    AsteriskTarget();kind() is RequestTargetKind{RequestTargetKind.asterisk;}string() is string{"*";}
+    path() is string{throw WrongRequestTargetKind(RequestTargetKind.origin,self.kind());}
+    query() is UrlQuery{throw WrongRequestTargetKind(RequestTargetKind.origin,self.kind());}
+    url() is Url{throw WrongRequestTargetKind(RequestTargetKind.absolute,self.kind());}
+    authority() is UrlAuthority{throw WrongRequestTargetKind(RequestTargetKind.authority,self.kind());}
+}
+object RequestTargetMethod {
+    has method is Method;has kind is RequestTargetKind;
+    RequestTargetMethod(method is Method, kind is RequestTargetKind){self.method=method;self.kind=kind;}
+    valid() is bool {
+        if method.string()=="CONNECT" {return kind==RequestTargetKind.authority;}
+        kind!=RequestTargetKind.authority && (kind!=RequestTargetKind.asterisk || method.string()=="OPTIONS");
+    }
+}
+object ParsedRequestTarget {
+    has origin is string;has method is Method;
+    ParsedRequestTarget(origin is string, method is Method){self.origin=origin;self.method=method;}
+    value() is RequestTarget {
+        confirm origin!="" && origin.length()<=8192 else throw InvalidRequestTarget("target source length");
+        try{AsciiEncoded(origin).bytes();}catch e is UnrepresentableAsciiCharacter{throw InvalidRequestTarget("ASCII wire target required");}
+        confirm origin.split("#").size()==1 else throw InvalidRequestTarget("wire target fragment prohibited");
+        let parsed is RequestTarget=try{
+            if origin=="*" {AsteriskTarget();}else{
+                if method.string()=="CONNECT" {AuthorityTarget(ParsedUrlAuthority(origin).value());}else{
+                    if origin.slice(0,1)=="/" {
+                        let parts=origin.split("?");let query=if parts.size()==1 {UrlQuery();}else{UrlQuery(origin.slice(parts[0].length()+1,origin.length()));};
+                        OriginTarget(parts[0],query);
+                    }else{AbsoluteTarget(ParsedUrl(origin).value());}
+                }
+            }
+        }catch e is InvalidUrl{throw InvalidRequestTarget("invalid target URL coordinates");};
+        confirm RequestTargetMethod(method,parsed.kind()).valid() else throw InvalidRequestTarget("method does not permit target form");parsed;
+    }
+}
+// Read only role coordinates and retain a fresh validated representation. A
+// nominal tag alone cannot certify a hand-written string() implementation.
+object RequestTargetSnapshot {
+    has origin is RequestTarget;RequestTargetSnapshot(origin is RequestTarget){self.origin=origin;}
+    value() is RequestTarget {
+        let wire=origin.string();confirm wire!="" && wire.length()<=8192 else throw InvalidRequestTarget("target byte limit exceeded");
+        let checked is RequestTarget=match origin.kind(){
+            case RequestTargetKind.origin{OriginTarget(origin.path(),origin.query());}
+            case RequestTargetKind.absolute{AbsoluteTarget(origin.url());}
+            case RequestTargetKind.authority{AuthorityTarget(origin.authority());}
+            case RequestTargetKind.asterisk{AsteriskTarget();}
+            else{throw InvalidRequestTarget("unknown target form");}
+        };
+        confirm checked.string()==wire else throw InvalidRequestTarget("target wire disagrees with coordinates");checked;
+    }
+}
+object WrongRequestTargetKind does Error {
+    has expected,actual is RequestTargetKind;
+    WrongRequestTargetKind(expected is RequestTargetKind, actual is RequestTargetKind){self.expected=expected;self.actual=actual;}
+    expected() is RequestTargetKind{expected;}actual() is RequestTargetKind{actual;}
+    text() is string{"request target coordinate is unavailable for this form";}
+}
+object InvalidRequestTarget does Error {
+    has reason is string;InvalidRequestTarget(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid request target: "+reason;}
+}
+test "origin-form keeps double slash path and explicit query" {
+    let target=ParsedRequestTarget("//a/b?",Method("GET")).value();
+    test.ok(target.kind()==RequestTargetKind.origin && target.path()=="//a/b");
+    test.ok(target.query().present() && target.string()=="//a/b?");
+    test.ok(!RequestTargetMethod(Method("GET"),RequestTargetKind.asterisk).valid());
+}

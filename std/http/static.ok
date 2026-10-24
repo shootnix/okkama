@@ -1,0 +1,174 @@
+module http/static v1.0.0;
+import "fs/root" take FileRoot,RootedEntry;
+import "fs/stat" take FileStat,FileKind;
+import "fs/file" take FileSystemFailure;
+import "fs/path" take Path;
+import "mime/types" take MediaIdentifying,UnknownMediaType;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/status" take Status;
+import "http/target" take RequestTargetKind;
+import "http/header" take Headers,Header,HeaderName,ReplacedHeader;
+import "http/body" take BodyOpening,BodyReading,ByteBody,BodyClosed,BodyAlreadyOpened,TrailersUnavailable;
+import "http/conditional" take EntityTag,ParsedEntityTags,ByteRanges,ByteRange,ConditionalLimits,ConditionalItems,InvalidRange,InvalidEntityTag,ConditionalLimitExceeded;
+import "http/date" take HttpDate,ParsedHttpDate,InvalidHttpDate,HttpDateReferenceRequired;
+import "http/negotiation" take AcceptedContentCodings,NoAcceptableValue,InvalidNegotiation;
+import "http/content_coding" take ContentCoding;
+import "url/percent" take PercentDecoded,PercentEncoded,UrlComponent,InvalidPercentEncoding;
+import "encoding/utf" take Utf8Encoded,InvalidUtf8;
+import "html/entities" take EscapedHtml;
+import "collections/sequence" take Sequencing;
+import "numbers/bigint" take BigInt;
+import "strings/parse" take ParsedInt;
+import "compare" take Order;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "io/stream" take InvalidReadLimit;
+import "random/source" take Randomizing,SecureRandom;
+import "encoding/hex" take HexEncoded;
+import "time/clock" take Timing,SystemClock,Instant;
+
+// Policy is immutable; the supplied root is borrowed. Every selected response
+// owns an independent descriptor. No joined request path or stat/open pair.
+object StaticPolicy {
+    has indexes is @string;has listing,precompressed is bool;has ranges,names is int;
+    StaticPolicy(){indexes=["index.html"];listing=false;precompressed=false;ranges=16;names=1024;}
+    StaticPolicy(indexes is Sequencing<string>,listing is bool,precompressed is bool){let checked=StaticIndexes(indexes);self.indexes=checked.values();self.listing=listing;self.precompressed=precompressed;ranges=16;names=1024;}
+    StaticPolicy(indexes is Sequencing<string>,listing is bool,precompressed is bool,ranges is int,names is int){confirm ranges>=0 && ranges<=128 && names>=0 && names<=4096 else throw InvalidStaticPolicy("range/listing budget");self.indexes=StaticIndexes(indexes).values();self.listing=listing;self.precompressed=precompressed;self.ranges=ranges;self.names=names;}
+    indexes() is Sequencing<string>{indexes;}listing() is bool{listing;}precompressed() is bool{precompressed;}ranges() is int{ranges;}names() is int{names;}
+}
+object StaticIndexes {
+    has origin is @string;
+    StaticIndexes(values is Sequencing<string>){confirm values.size()>=0 && values.size()<=32 else throw InvalidStaticPolicy("index count");let names is @string=(0..values.size()).map()->index{let name=values.item(index);try{StaticCoordinate(name);}catch e is InvalidStaticPath{throw InvalidStaticPolicy("invalid index coordinate");}name;};origin=names;}
+    values() is @string{origin;}
+}
+object StaticCoordinate {
+    StaticCoordinate(name is string){confirm name!="" && name!="." && name!=".." && Utf8Encoded(name).bytes().size()<=255 && name.split("/").size()==1 && name.split("\\").size()==1 else throw InvalidStaticPath();for Utf8Encoded(name).bytes() -> octet{confirm octet.int()>=32 && octet.int()!=127 else throw InvalidStaticPath();}}
+}
+object StaticPath {
+    has segments is @string;has wire,query is string;has slash is bool;
+    StaticPath(request is Request){
+        let target=request.target();let path=if target.kind()==RequestTargetKind.origin{target.path();}else{if target.kind()==RequestTargetKind.absolute{target.url().parts().path();}else{throw InvalidStaticPath();}};
+        let raw=if path==""{"/";}else{path;};confirm raw.length()<=8192 && raw.slice(0,1)=="/" else throw InvalidStaticPath();slash=raw.slice(raw.length()-1,raw.length())=="/";wire=raw;
+        let q=if target.kind()==RequestTargetKind.origin{target.query();}else{target.url().parts().query();};query=if q.present(){"?"+q.string();}else{"";};
+        let parts=raw.split("/");confirm parts.size()<=258 else throw InvalidStaticPath();let end=parts.size()-if self.slash{1;}else{0;};
+        let coordinates is @string=(1..end).map()->index{let name=try{PercentDecoded(parts[index]).string();}catch e is InvalidPercentEncoding{throw InvalidStaticPath();}catch e is InvalidUtf8{throw InvalidStaticPath();};StaticCoordinate(name);name;};segments=coordinates;
+    }
+    segments() is @string{segments;}slash() is bool{slash;}redirect() is string{wire+"/"+query;}
+}
+object StaticFiles does Handling {
+    has root is FileRoot;has media is MediaIdentifying;has policy is StaticPolicy;has random is Randomizing;has clock is Timing;
+    StaticFiles(root is FileRoot,media is MediaIdentifying,policy is StaticPolicy){self.root=root;self.media=media;self.policy=policy;random=SecureRandom();clock=SystemClock();}
+    StaticFiles(root is FileRoot,media is MediaIdentifying,policy is StaticPolicy,random is Randomizing){self.root=root;self.media=media;self.policy=policy;self.random=random;clock=SystemClock();}
+    StaticFiles(root is FileRoot,media is MediaIdentifying,policy is StaticPolicy,random is Randomizing,clock is Timing){self.root=root;self.media=media;self.policy=policy;self.random=random;self.clock=clock;}
+    async handling(request is Request,context is HttpRequestContext) is HandlingResult{
+        context.cancelling().check();let method=request.method().string();let now=clock.instant();if method!="GET" && method!="HEAD"{return ResponseHandling(Response(Status(405),Headers([Header(HeaderName("Allow"),"GET, HEAD"),Header(HeaderName("Date"),HttpDate(now).string())])));}
+        let response=try{self.response(request,now);}catch e is InvalidStaticPath{Response(Status(400),Headers([]));}catch e is InvalidEntityTag{Response(Status(400),Headers([]));}catch e is ConditionalLimitExceeded{Response(Status(400),Headers([]));}catch e is InvalidNegotiation{Response(Status(400),Headers([]));}catch e is NoAcceptableValue{Response(Status(406),Headers([Header(HeaderName("Vary"),"Accept-Encoding")]));}catch e is FileSystemFailure{
+            if e.code()=="not_found" || e.code()=="invalid_input" || e.code()=="permission_denied" || e.code()=="invalid_data"{Response(Status(404),Headers([]));}else{throw e;}
+        };let headers=ReplacedHeader(response.headers(),Header(HeaderName("Date"),HttpDate(now).string())).result();ResponseHandling(Response(response.status(),headers,response.body(),response.version()));
+    }
+    response(request is Request,now is Instant) is Response{
+        let path=StaticPath(request);let coordinates=path.segments();let opened=root.entry(coordinates);let owned=StaticSelection(opened,"");defer owned.close_unclaimed();let metadata=opened.stat();
+        if metadata.kind()==FileKind.directory && !path.slash(){return Response(Status(308),Headers([Header(HeaderName("Location"),path.redirect())]));}
+        let chosen=self.index(coordinates,metadata.kind()==FileKind.directory);
+        if metadata.kind()==FileKind.directory{
+            if chosen.size()==0{if !policy.listing(){return Response(Status(403),Headers([]));}return self.listing(opened,request);}
+            owned.replace(chosen[0].entry(),"",chosen[0].name());
+        }else{confirm metadata.kind()==FileKind.file else throw InvalidStaticPath();if path.slash(){return Response(Status(404),Headers([]));}owned.name(if coordinates.size()>0{coordinates[coordinates.size()-1];}else{"";});}
+        let source=owned.entry();let source_stat=source.stat();let type=try{media.type(Path(owned.name())).string();}catch e is UnknownMediaType{"application/octet-stream";};
+        let companions=self.companions(coordinates,owned.name(),metadata.kind()==FileKind.directory,source_stat,policy.precompressed());
+        let compression=StaticRepresentations(companions);defer compression.close();
+        if policy.precompressed(){
+            let preferences=StaticEncoding(request.headers()).value();
+            let rows is @StaticRepresentation=(0..companions.size()+1).map()->index{if index==0{StaticRepresentation(source,"identity");}else{companions[index-1];}};
+            let available is @ContentCoding=rows.map()->row{ContentCoding(row.coding());};let selected=preferences.preference(available).string();
+            for companions -> row{if row.coding()==selected{owned.replace(row.entry(),selected,owned.name());compression.claim(row.coding());}}
+        }else{confirm StaticEncoding(request.headers()).value().quality(ContentCoding("identity")).acceptable() else throw NoAcceptableValue();}
+        let file=owned.entry();let facts=file.stat();confirm facts.size()>=0 && facts.size()<=9007199254740991 else throw InvalidStaticPolicy("file size exceeds exact offsets");let size=facts.size();let tag=StaticValidator(facts,owned.coding()).tag();let modified=facts.times().modification();let date=HttpDate(if modified.order(now)==Order.greater{now;}else{modified;});
+        let headers=Atomic(Headers([Header(HeaderName("Content-Type"),type),Header(HeaderName("Content-Length"),size.string()),Header(HeaderName("ETag"),tag.string()),Header(HeaderName("Last-Modified"),date.string()),Header(HeaderName("Accept-Ranges"),"bytes")]));
+        if policy.precompressed(){headers.replace(ReplacedHeader(headers.value(),Header(HeaderName("Vary"),"Accept-Encoding")).result());}if owned.coding()!=""{headers.replace(ReplacedHeader(headers.value(),Header(HeaderName("Content-Encoding"),owned.coding())).result());}
+        let decision=StaticPreconditions(request.headers(),tag,date,now).status();if decision==304{return Response(Status(304),headers.value());}if decision==412{return Response(Status(412),Headers([Header(HeaderName("ETag"),tag.string())]));}
+        if request.method().string()=="HEAD"{return Response(Status(200),headers.value());}
+        let range=StaticRanges(request.headers(),size,policy.ranges());let ranges=range.values();let apply=range.present() && StaticIfRange(request.headers(),tag,date).allowed();
+        if apply && ranges.size()==0{return Response(Status(416),Headers([Header(HeaderName("Content-Range"),"bytes */"+size.string()),Header(HeaderName("ETag"),tag.string())]));}
+        let pieces is ConditionalItems<StaticPiece>=ConditionalItems();let status=if apply{206;}else{200;};
+        if apply{if ranges.size()==1{let part=ranges[0];headers.replace(ReplacedHeader(headers.value(),Header(HeaderName("Content-Range"),"bytes "+part.string()+"/"+size.string())).result());pieces=pieces.following(StaticPiece(ParsedInt(part.start().string()).value(),ParsedInt(part.size().string()).value()));}
+            else{let boundary="okkama-"+HexEncoded(random.bytes(24)).string();headers.replace(ReplacedHeader(headers.value(),Header(HeaderName("Content-Type"),"multipart/byteranges; boundary="+boundary)).result());for ranges -> part{pieces=pieces.following(StaticPiece("--"+boundary+"\r\nContent-Type: "+type+"\r\nContent-Range: bytes "+part.string()+"/"+size.string()+"\r\n\r\n"));pieces=pieces.following(StaticPiece(ParsedInt(part.start().string()).value(),ParsedInt(part.size().string()).value()));pieces=pieces.following(StaticPiece("\r\n"));}pieces=pieces.following(StaticPiece("--"+boundary+"--\r\n"));}
+        }else{pieces=pieces.following(StaticPiece(0,size));}
+        let body=StaticBody(file,pieces.values());headers.replace(ReplacedHeader(headers.value(),Header(HeaderName("Content-Length"),body.length().string())).result());owned.claim();Response(Status(status),headers.value(),body);
+    }
+    index(coordinates is @string,directory is bool) is @StaticIndexFile{
+        if !directory{let empty is @StaticIndexFile=[];return empty;}
+        for policy.indexes() -> name{let parts is @string=(0..coordinates.size()+1).map()->index{if index<coordinates.size(){coordinates[index];}else{name;}};let candidates is @RootedEntry=try{[root.entry(parts)];}catch e is FileSystemFailure{if e.code()=="not_found" || e.code()=="invalid_input"{[];}else{throw e;}};
+            if candidates.size()==1{let candidate=candidates[0];if candidate.stat().kind()==FileKind.file{return [StaticIndexFile(candidate,name)];}candidate.close();}
+        }let empty is @StaticIndexFile=[];empty;
+    }
+    companions(coordinates is @string,name is string,directory is bool,facts is FileStat,enabled is bool) is @StaticRepresentation{
+        if !enabled{let empty is @StaticRepresentation=[];return empty;}
+        let base is @string=if directory{(0..coordinates.size()+1).map()->index{if index<coordinates.size(){coordinates[index];}else{name;}};}else{coordinates;};
+        let groups is @@StaticRepresentation=["br","gzip"].map()->coding{
+            let suffix=if coding=="br"{".br";}else{".gz";};let parts is @string=(0..base.size()).map()->index{if index+1==base.size(){base[index]+suffix;}else{base[index];}};
+            let candidates is @RootedEntry=try{[root.entry(parts)];}catch e is FileSystemFailure{if e.code()=="not_found" || e.code()=="invalid_input"{[];}else{throw e;}};
+            if candidates.size()==1{let candidate=candidates[0];let metadata=candidate.stat();if metadata.kind()==FileKind.file && metadata.times().modification().order(facts.times().modification())==Order.equal{return [StaticRepresentation(candidate,coding)];}candidate.close();}
+            let empty is @StaticRepresentation=[];empty;
+        };
+        let result is ConditionalItems<StaticRepresentation>=ConditionalItems();for groups -> group{for group -> row{result=result.following(row);}}result.values();
+    }
+    listing(directory is RootedEntry,request is Request) is Response{let names=directory.names(policy.names());let text=Atomic("<!doctype html><meta charset=\"utf-8\"><title>Directory</title><ul>");let used=Atomic(text.value().length());for names -> name{let href=PercentEncoded(name,UrlComponent.data).string();let row="<li><a href=\"./"+EscapedHtml(href,true).string()+"\">"+EscapedHtml(name).string()+"</a></li>";let width=Utf8Encoded(row).bytes().size();confirm width<=1048576-used.value() else throw InvalidStaticPolicy("listing byte budget");used.replace(used.value()+width);text.replace(text.value()+row);}let bytes=Utf8Encoded(text.value()+"</ul>").bytes();let headers=Headers([Header(HeaderName("Content-Type"),"text/html; charset=utf-8"),Header(HeaderName("Content-Length"),bytes.size().string()),Header(HeaderName("Cache-Control"),"no-store")]);if request.method().string()=="HEAD"{Response(Status(200),headers);}else{Response(Status(200),headers,ByteBody(bytes));}}
+}
+object StaticSelection {
+    has current is Atomic<RootedEntry>;has encoding,name is Atomic<string>;has claimed is Event;
+    StaticSelection(entry is RootedEntry,coding is string){current=Atomic(entry);encoding=Atomic(coding);name=Atomic("");claimed=Event();}
+    entry() is RootedEntry{current.value();}coding() is string{encoding.value();}name() is string{name.value();}name(value is string) is void{name.replace(value);}
+    replace(entry is RootedEntry,coding is string,name is string) is void{current.value().close();current.replace(entry);encoding.replace(coding);self.name.replace(name);}
+    claim() is void{claimed.set();}close_unclaimed() is void{if !claimed.ready(){current.value().close();}}
+}
+object StaticIndexFile{
+    has entry is RootedEntry;has name is string;
+    StaticIndexFile(entry is RootedEntry,name is string){self.entry=entry;self.name=name;}
+    entry() is RootedEntry{entry;}name() is string{name;}
+}
+object StaticRepresentation{has entry is RootedEntry;has coding is string;StaticRepresentation(entry is RootedEntry,coding is string){self.entry=entry;self.coding=coding;}entry() is RootedEntry{entry;}coding() is string{coding;}}
+object StaticRepresentations{
+    has rows is @StaticRepresentation;has claimed is Atomic<string>;
+    StaticRepresentations(rows is @StaticRepresentation){self.rows=rows;claimed=Atomic("");}
+    claim(coding is string) is void{claimed.replace(coding);}
+    close() is void{for rows -> row{if row.coding()!=claimed.value(){row.entry().close();}}}
+}
+object StaticEncoding{has head is Headers;StaticEncoding(head is Headers){self.head=head;}value() is AcceptedContentCodings{let fields=head.values(HeaderName("Accept-Encoding"));if fields.size()==0{AcceptedContentCodings();}else{let text is @string=fields.map()->field{field;};AcceptedContentCodings(text.join(","));}}}
+object StaticValidator{has tag is EntityTag;StaticValidator(facts is FileStat,coding is string){let value=facts.identity().device().string()+"-"+facts.identity().inode().string()+"-"+facts.size().string()+"-"+facts.times().modification().unix_duration().seconds().int().string()+"-"+facts.times().change().unix_duration().seconds().int().string()+"-"+coding;tag=EntityTag(value,true);}tag() is EntityTag{tag;}}
+object StaticPreconditions{
+    has head is Headers;has tag is EntityTag;has date is HttpDate;has reference is Instant;StaticPreconditions(head is Headers,tag is EntityTag,date is HttpDate,reference is Instant){self.head=head;self.tag=tag;self.date=date;self.reference=reference;}
+    status() is int{let matches=head.values(HeaderName("If-Match"));if matches.size()>0{let strings is @string=matches.map()->field{field;};if !ParsedEntityTags(strings.join(",")).value().strong_matches(tag){return 412;}}else{let fields=head.values(HeaderName("If-Unmodified-Since"));if fields.size()==1{let valid is @HttpDate=try{[HttpDate(ParsedHttpDate(fields.item(0),reference).value())];}catch e is InvalidHttpDate{[];};if valid.size()==1 && date.order(valid[0])==Order.greater{return 412;}}}
+        let none_matches=head.values(HeaderName("If-None-Match"));if none_matches.size()>0{let strings is @string=none_matches.map()->field{field;};if ParsedEntityTags(strings.join(",")).value().weak_matches(tag){return 304;}}else{let fields=head.values(HeaderName("If-Modified-Since"));if fields.size()==1{let valid is @HttpDate=try{[HttpDate(ParsedHttpDate(fields.item(0),reference).value())];}catch e is InvalidHttpDate{[];};if valid.size()==1 && date.order(valid[0])!=Order.greater{return 304;}}}200;
+    }
+}
+// Metadata validators are weak; no date-only or tag If-Range can certify byte
+// identity under in-place filesystem mutation. Such requests receive full 200.
+object StaticIfRange{has head is Headers;StaticIfRange(head is Headers,tag is EntityTag,date is HttpDate){self.head=head;}allowed() is bool{head.values(HeaderName("If-Range")).size()==0;}}
+object StaticRanges{has ranges is @ByteRange;has present is bool;StaticRanges(head is Headers,size is int,maximum is int){let fields=head.values(HeaderName("Range"));let empty is @ByteRange=[];let selected=Atomic(empty);let accepted=Atomic(false);if fields.size()==1 && maximum>0{let parsed is @ByteRange=try{let entries=ByteRanges(fields.item(0),ConditionalLimits(8192,maximum)).ranges(BigInt(size.string()));accepted.replace(true);(0..entries.size()).map()->index{entries.item(index);};}catch e is InvalidRange{[];}catch e is ConditionalLimitExceeded{[];};selected.replace(parsed);}ranges=selected.value();present=accepted.value();}values() is @ByteRange{ranges;}present() is bool{present;}}
+object StaticPiece{has data is @byte;has start,size is int;has file is bool;StaticPiece(text is string){data=Utf8Encoded(text).bytes();size=self.data.size();start=0;file=false;}StaticPiece(start is int,size is int){data=[];self.start=start;self.size=size;file=true;}size() is int{size;}file() is bool{file;}start() is int{start;}bytes(start is int,size is int) is @byte{(start..start+size).map()->index{data[index];};}}
+object StaticBody does BodyOpening{
+    has reading is StaticBodyReading;has size is int;has opened is Atomic<bool>;
+    StaticBody(entry is RootedEntry,pieces is @StaticPiece){size=pieces.reduce(0)->used,piece{confirm piece.size()<=9007199254740991-used else throw InvalidStaticPolicy("response byte budget");used+piece.size();};reading=StaticBodyReading(entry,pieces);opened=Atomic(false);}
+    length() is BigInt{BigInt(size.string());}replayable() is bool{false;}reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();reading;}destroy{if !opened.value(){reading.close();}}
+}
+object StaticBodyReading does BodyReading{
+    has entry is RootedEntry;has pieces is @StaticPiece;has index,offset is Atomic<int>;has stopped,finished is Event;
+    StaticBodyReading(entry is RootedEntry,pieces is @StaticPiece){self.entry=entry;self.pieces=pieces;index=Atomic(0);offset=Atomic(0);stopped=Event();finished=Event();}
+    closed() is bool{stopped.ready();}close() is void{if !stopped.ready(){stopped.set();entry.close();}}trailers() is Headers{confirm finished.ready() else throw TrailersUnavailable();Headers([]);}
+    async bytes(limit is int) is @byte{confirm limit>0 else throw InvalidReadLimit(limit);confirm !self.closed() else throw BodyClosed();if finished.ready(){return [];}let complete=Event();let cleanup=StaticReadCleanup(self,complete);defer cleanup.close();
+        loop{if index.value()==pieces.size(){entry.close();finished.set();complete.set();return [];}let piece=pieces[index.value()];let remaining=piece.size()-offset.value();if remaining==0{index.replace(index.value()+1);offset.replace(0);next;}let maximum=if limit<65536{limit;}else{65536;};let amount=if remaining<maximum{remaining;}else{maximum;};let bytes=if piece.file(){entry.bytes_at(piece.start()+offset.value(),amount);}else{piece.bytes(offset.value(),amount);};confirm bytes.size()>0 && bytes.size()<=amount else throw StaticFileChanged();offset.replace(offset.value()+bytes.size());complete.set();return bytes;}
+    }
+    destroy{self.close();}
+}
+object StaticReadCleanup{has source is StaticBodyReading;has complete is Event;StaticReadCleanup(source is StaticBodyReading,complete is Event){self.source=source;self.complete=complete;}close() is void{if !complete.ready(){source.close();}}}
+object InvalidStaticPath does Error{InvalidStaticPath();text() is string{"invalid static path coordinate";}}
+object InvalidStaticPolicy does Error{has reason is string;InvalidStaticPolicy(reason is string){self.reason=reason;}text() is string{"invalid static policy: "+reason;}}
+object StaticFileChanged does Error{StaticFileChanged();text() is string{"static file changed during bounded descriptor read";}}
+
+test "static policy defaults bound ranges and disable optional file modes" {
+    let policy=StaticPolicy();test.ok(!policy.listing() && !policy.precompressed());test.is(policy.ranges(),16);test.is(policy.names(),1024);
+    test.ok(try{StaticPolicy(["../outside"],false,false);false;}catch e is InvalidStaticPolicy{true;});
+}

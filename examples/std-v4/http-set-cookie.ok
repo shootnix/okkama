@@ -1,0 +1,18 @@
+module app v1.0.0;
+import "http/cookie_policy" take ParsedSetCookie, CookieContext;
+import "http/method" take Method;
+import "url/value" take ParsedUrl;
+import "time/clock" take Instant;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+main() is int {
+    let origin=ParsedUrl("https://a.example.com/a/b").value();
+    let context=CookieContext(origin,true,Method("GET"));
+    let cookie=ParsedSetCookie("id=opaque; Domain=example.com; Max-Age=60; Secure; SameSite=Lax",origin,
+        Instant(Duration(0.rat(),DurationUnit.second))).value();
+    Stdout().writeln(context.key());
+    Stdout().writeln(cookie.diagnostic());
+    confirm cookie.attributes().path()=="/a";
+    confirm cookie.attributes().expiry().instant().unix_duration().seconds()==60.rat();
+    0;
+}

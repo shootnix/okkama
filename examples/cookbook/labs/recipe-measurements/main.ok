@@ -1,0 +1,26 @@
+// Посчитать среднее и медиану времени ответа
+//
+// Нужно включить статистику времени ответа в дневной отчёт.
+//
+// Запуск: ./examples/cookbook/run lab recipe-measurements
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-measurements
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/measurements v1.0.0;
+import "math/aggregate" take AccurateSum,Maximum;
+import "math/constants" take Pi;
+import "statistics" take Mean,Median,Quantiles,QuantileMethod;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let elapsed = [10.0, 20.0, 20.0, 100.0];
+    Stdout().writeln("сумма: " + AccurateSum(values: elapsed).value().string());
+    Stdout().writeln("среднее: " + Mean(values: elapsed).value().string());
+    Stdout().writeln("медиана: " + Median(values: elapsed).value().string());
+    confirm Maximum(values: elapsed).value() == 100.0;
+    let quartiles = Quantiles(values: elapsed, count: 4, method: QuantileMethod.inclusive).values();
+    confirm quartiles.size() == 3;
+    confirm Pi().value() > 3.14;
+    0;
+}

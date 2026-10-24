@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.confirm.bare-uncatchable",
+  "title": "a bare failed confirm is not catchable",
+  "purpose": "The program terminates unsuccessfully after the observable effects listed.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CONFIRM",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "panic",
+        "runtime"
+      ],
+      "justification": "spec 9.4 calls a bare failed confirm an uncatchable programming error while 11.4 says it panics (D-004); both categories are uncatchable."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.4",
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.4: a bare failed confirm is an uncatchable programming error (spec 11.4 calls it a panic; D-004)."
+  },
+  "status": "mandatory"
+}

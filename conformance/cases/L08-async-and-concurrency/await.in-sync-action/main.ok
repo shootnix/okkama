@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+object Quiet {
+    Quiet();
+    async run() is int { 1; }
+}
+
+object Caller {
+    Caller();
+    sync_call() is int {
+        await Quiet().run();
+    }
+}
+
+main() is int {
+    Caller().sync_call();
+}

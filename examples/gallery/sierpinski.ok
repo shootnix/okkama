@@ -1,0 +1,27 @@
+// Треугольник Серпинского
+// Задача: Нарисовать фрактал клеточным автоматом Rule 90.
+// Запуск из корня: ./examples/gallery/run sierpinski
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: поле — значение; шаг вычисляет новую строку через map и XOR.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/sierpinski.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/sierpinski v1.0.0;
+import "io/stdout" take Stdout;
+object Rule90 {
+    has cells is @int;
+    Rule90(width is int){cells=(0..width).map()->i{if i==(width/2).int(){1;}else{0;}};}
+    following() is ^Rule90 {
+        ^cells=(0..cells.size()).map()->i{
+            let left=if i>0{cells[i-1];}else{0;};
+            let right=if i+1<cells.size(){cells[i+1];}else{0;};
+            left ^ right;
+        };
+    }
+    string() is string{cells.map()->cell{if cell==1{"#";}else{" ";}}.join("");}
+}
+main() is int {
+    let first=Rule90(63);let row=first;
+    for (0..32)->i{Stdout().writeln(row.string());row=row.following();}
+    confirm first.string().split("#").size()==2;0;
+}

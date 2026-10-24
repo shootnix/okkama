@@ -1,0 +1,42 @@
+// Использовать HTTP/1 поверх проверенного TLS
+//
+// Связать проверенный TLS с HTTP/1: Http1TlsProtocol и Http1TlsSession проверяют фактический ALPN.
+//
+// Запуск: ./examples/cookbook/run lab example-https-http1-session
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-https-http1-session
+// Входы стенда, передаваемые через окружение: OKKAMA_TLS_PORT, OKKAMA_TLS_ROOT.
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "strings/parse" take ParsedInt;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint,HostName;
+import "net/tcp" take TcpConnecting;
+import "net/tls" take TlsClientPolicy,TlsClientHandshake,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates,DnsCertificateIdentity;
+import "collections/set" take Set,OrderedSet;
+import "http/tls_session" take Http1TlsSession;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "http/body" take EmptyBody;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let tcp=await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"),ParsedInt(environment.variable("OKKAMA_TLS_PORT")).value())).connection();
+    let connection=await TlsClientHandshake(tcp,DnsCertificateIdentity(HostName("example.test")),policy).connection();defer connection.close();
+    confirm tcp.closed();
+    let session=Http1TlsSession(connection);defer session.close();
+    let request=ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n").value().request(EmptyBody());
+    let exchange=await session.exchange(request);
+    confirm exchange.response().status().code()==204;
+    Stdout().writeln("verified HTTPS session returned 204");0;
+}

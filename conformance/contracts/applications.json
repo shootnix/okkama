@@ -1,0 +1,132 @@
+{
+  "schema": "ocs-contracts/1",
+  "family": "Application scenarios",
+  "description": "L13 bounded application scenarios modelled on the billing research application.",
+  "contracts": [
+    {
+      "id": "APP.INVOICE",
+      "title": "Subscription invoices with proration, half-even rounding and tax",
+      "spec_refs": [
+        "improvements-roadmap/workspace/billing/app",
+        "docs/billing-schema-phases.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the scenario's failure paths are part of its normal outcome matrix",
+        "interaction": "n/a: the scenario is itself an integration of several contracts"
+      }
+    },
+    {
+      "id": "APP.TENANCY",
+      "title": "Tenant isolation and permissions return 404 for foreign resources and 403 for forbidden writes",
+      "spec_refs": [
+        "improvements-roadmap/results/IMP-23/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: scenario boundaries are covered by the member library/language contracts",
+        "invalid": "required",
+        "interaction": "n/a: the scenario is itself an integration of several contracts"
+      }
+    },
+    {
+      "id": "APP.OPTIMISTIC-LOCKING",
+      "title": "Versioned compare-and-set rejects stale writers",
+      "spec_refs": [
+        "improvements-roadmap/results/IMP-08/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: scenario boundaries are covered by the member library/language contracts",
+        "invalid": "required",
+        "interaction": "n/a: the scenario is itself an integration of several contracts"
+      }
+    },
+    {
+      "id": "APP.DURABLE-COMMANDS",
+      "title": "Idempotency keys replay stored results and reject changed payloads",
+      "spec_refs": [
+        "docs/durable-commands.md",
+        "improvements-roadmap/results/IMP-10/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: scenario boundaries are covered by the member library/language contracts",
+        "invalid": "required",
+        "interaction": "n/a: the scenario is itself an integration of several contracts"
+      }
+    },
+    {
+      "id": "APP.AMBIGUOUS-OUTCOME",
+      "title": "Lost provider responses are reconciled by key without duplicate effects",
+      "spec_refs": [
+        "docs/refund-reconciliation.md",
+        "improvements-roadmap/results/IMP-32/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: scenario boundaries are covered by the member library/language contracts",
+        "invalid": "n/a: the scenario's failure paths are part of its normal outcome matrix",
+        "interaction": "required"
+      }
+    },
+    {
+      "id": "APP.RECONCILIATION",
+      "title": "Refunds, adjustments and duplicate events reconcile to exact totals",
+      "spec_refs": [
+        "docs/refund-reconciliation.md",
+        "improvements-roadmap/results/COMPLETION.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "n/a: the scenario's failure paths are part of its normal outcome matrix",
+        "interaction": "n/a: the scenario is itself an integration of several contracts"
+      }
+    },
+    {
+      "id": "APP.ANALYTICS-REBUILD",
+      "title": "A full rebuild of a projection equals its incremental form",
+      "spec_refs": [
+        "improvements-roadmap/results/COMPLETION.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: scenario boundaries are covered by the member library/language contracts",
+        "invalid": "n/a: the scenario's failure paths are part of its normal outcome matrix",
+        "interaction": "n/a: the scenario is itself an integration of several contracts"
+      }
+    },
+    {
+      "id": "APP.MIGRATIONS",
+      "title": "Migrations apply once across restarts and preserve data",
+      "spec_refs": [
+        "docs/sql-dialects-and-migrations.md",
+        "improvements-roadmap/results/IMP-30/RESULT.md"
+      ],
+      "status": "mandatory",
+      "family": "Application scenarios",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: scenario boundaries are covered by the member library/language contracts",
+        "invalid": "n/a: the scenario's failure paths are part of its normal outcome matrix",
+        "interaction": "required"
+      }
+    }
+  ]
+}

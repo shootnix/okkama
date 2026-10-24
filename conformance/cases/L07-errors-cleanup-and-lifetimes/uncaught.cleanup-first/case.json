@@ -1,0 +1,58 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.uncaught.cleanup-first",
+  "title": "cleanup runs before an uncaught error terminates the program",
+  "purpose": "The program terminates unsuccessfully after the observable effects listed.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.UNCAUGHT",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "LIFE.DESTROY",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "uncaught-error"
+      ],
+      "error_type": "Denied"
+    },
+    "stdout": {
+      "text": "defer\ndestroy held\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#11.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 19: defers run on throw before owned destroys; cleanup finishes before the failure leaves main."
+  },
+  "status": "mandatory"
+}

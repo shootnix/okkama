@@ -1,0 +1,113 @@
+module example/async/state_owner_counter v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+
+enum CounterOperation = (add, stop);
+
+object CounterCommand {
+    has operation is CounterOperation;
+    has amount is int;
+    has reply is Sending<int>;
+    CounterCommand(:operation, :amount, :reply);
+
+    operation() is CounterOperation { operation; }
+    amount() is int { amount; }
+    reply() is Sending<int> { reply; }
+}
+
+object CounterState {
+    has value is int;
+    CounterState(:value);
+
+    added(amount is int) is ^CounterState {
+        ^value = value + amount;
+    }
+
+    value() is int { value; }
+}
+
+object CounterOwner {
+    has commands is Receiving<CounterCommand>;
+    CounterOwner(:commands);
+
+    async run() is int {
+        let current = CounterState(value: 0);
+
+        loop {
+            let command = await commands.item();
+
+            if command.operation() == CounterOperation.add {
+                current = current.added(command.amount());
+                await command.reply().send(current.value());
+            }
+            else {
+                await command.reply().send(current.value());
+                last current.value();
+            }
+        }
+    }
+}
+
+object CounterClient {
+    has commands is Sending<CounterCommand>;
+    CounterClient(:commands);
+
+    async add(amount is int) is int {
+        let reply is Channel<int> = Channel(capacity: 1);
+        await commands.send(
+            CounterCommand(
+                operation: CounterOperation.add,
+                amount: amount,
+                reply: reply.sending()
+            )
+        );
+        await reply.receiving().item();
+    }
+
+    async stop() is int {
+        let reply is Channel<int> = Channel(capacity: 1);
+        await commands.send(
+            CounterCommand(
+                operation: CounterOperation.stop,
+                amount: 0,
+                reply: reply.sending()
+            )
+        );
+        await reply.receiving().item();
+    }
+}
+
+object AddRequest {
+    has client is CounterClient;
+    has amount is int;
+    AddRequest(:client, :amount);
+
+    async run() is int {
+        await client.add(amount);
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let commands is Channel<CounterCommand> = Channel(capacity: 4);
+        let owner = spawn CounterOwner(commands: commands.receiving()).run();
+        let client = CounterClient(commands: commands.sending());
+
+        let first = spawn AddRequest(client: client, amount: 20).run();
+        let second = spawn AddRequest(client: client, amount: 22).run();
+        await first;
+        await second;
+
+        let final_value = await client.stop();
+        let owned_value = await owner;
+        commands.sending().close();
+
+        final_value + owned_value - 42;
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}

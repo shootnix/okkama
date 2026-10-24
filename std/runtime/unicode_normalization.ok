@@ -1,0 +1,8 @@
+module runtime/unicode_normalization v1.0.0;
+
+// Portable Unicode 16.0.0 normalization boundary. A backend may use vendored
+// tables, platform libraries or VM intrinsics, but NFC/NFD/NFKC/NFKD results
+// must conform to Unicode 16.0.0. Applications should use the immutable
+// Normalized value from unicode/normalization.
+
+native normalized_text(origin is string, form is string) is string;

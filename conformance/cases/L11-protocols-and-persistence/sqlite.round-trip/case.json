@@ -1,0 +1,63 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.round-trip",
+  "title": "insert and read rows through bound parameters",
+  "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.SQLITE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.DB.STATEMENT",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.DB.READ",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.DB.ROW",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "7 Ada; DROP TABLE customers\nended\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/sqlite.ok",
+    "docs/std/db-sqlite.md"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "db-sqlite guide: values bind as data (never interpolated SQL); RowsEnded signals exhaustion."
+  },
+  "status": "mandatory"
+}

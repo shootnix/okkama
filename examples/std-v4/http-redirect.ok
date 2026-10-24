@@ -1,0 +1,51 @@
+module app v1.0.0;
+import "http/client" take HttpClient;
+import "http/redirect" take Redirecting,RedirectPolicy;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/message" take Request,Response;
+import "http/target" take AbsoluteTarget;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/http1_reading" take Http1RequestHeadReading;
+import "http/http1_message_writing" take Http1ResponseWriting;
+import "http/endpoint" take AllEndpoints;
+import "http/version" take HttpVersion;
+import "url/value" take ParsedUrl;
+import "net/tcp" take TcpListening,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+object Replying {
+ has listener is TcpAcceptance;Replying(listener is TcpAcceptance){self.listener=listener;}
+ async run() is bool{
+  let connection=await listener.connection();defer connection.close();
+  let first=await Http1RequestHeadReading(connection.input()).result();
+  let response=Response(Status(303),Headers([Header(HeaderName("Location"),"/second"),Header(HeaderName("Content-Length"),"0")]));
+  await Http1ResponseWriting(connection.output(),response,first.head().method()).result();
+  let second=await Http1RequestHeadReading(connection.input()).result();
+  await Http1ResponseWriting(connection.output(),Response(Status(204),Headers([])),second.head().method()).result();
+  first.head().target().string()=="/first?a=1" && second.head().target().string()=="/second" && first.head().method().string()=="POST" && second.head().method().string()=="GET";
+ }
+}
+
+// Explicit loopback demonstration: one socket, two exchanges, no external network.
+async main() is int{
+  let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+  let replying=Replying(listener);let reply is async () is bool=replying.run;let serving=spawn reply();
+  let versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);
+  let client=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),ClientPolicy(versions,HttpLimits(),ClientTimeouts(),1,AllEndpoints()),SystemClock());defer client.close();
+  let root="http://127.0.0.1:"+listener.local_endpoint().port().string();
+  let request=Request(Method("POST"),AbsoluteTarget(ParsedUrl(root+"/first?a=1").value()),Headers([]));
+  let result=await Redirecting(client,RedirectPolicy()).response(request);client.close();
+  let reader=result.response().body().reading();
+  confirm result.request().target().string()==root+"/second" && result.response().status().code()==204;
+  confirm result.history().size()==1 && result.history().item(0).response().status().code()==303;
+  confirm (await reader.bytes(1)).size()==0;confirm await serving;
+  Stdout().writeln("followed POST to GET with one redirect hop");0;
+}

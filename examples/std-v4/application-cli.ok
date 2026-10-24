@@ -1,0 +1,36 @@
+module example v1.0.0;
+import "cli/arguments" take ProcessArguments,Utf8Arguments;
+import "cli/spec" take CliCommand,CommandSyntax,Option,OptionValue,Flag;
+import "cli/parse" take ParsedCommand,CliFailure;
+import "cli/help" take Usage;
+import "config/key" take SettingKey;
+import "config/source" take Settings,SettingEntry,SettingSource,SettingSourceKind,LayeredSettings;
+import "config/value" take ScalarSetting;
+import "config/environment" take EnvironmentSettings,EnvironmentBinding;
+import "os/environment" take Environment;
+import "terminal/session" take OpenedStandardTerminal,TerminalOutputKind;
+import "terminal/capability" take ColorPolicy;
+import "terminal/style" take StyledText,TextStyle,NamedColor,DefaultColor,BasicColor;
+import "io/stdout" take Stderr;
+
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama examples/std-v4/application-cli.ok --name "Ada Love"
+async main() is int{
+    let name=SettingKey(["greeting","name"]);
+    let help=SettingKey(["help"]);
+    let command=CliCommand("greet","Greet one explicitly configured person",CommandSyntax(
+        [Option(name,["--name","-n"],OptionValue("NAME",false),"Person to greet")],
+        [Flag(help,["--help","-h"],"true","Show this help")],[]),[]);
+    let arguments=Utf8Arguments(ProcessArguments());
+    let invocation=try{ParsedCommand(command,arguments).value();}
+        catch failure is CliFailure{Stderr().writeln("argument "+failure.index().string()+": "+failure.text());return 2;};
+    let environment=Environment();
+    let session=await OpenedStandardTerminal(TerminalOutputKind.standard_output,ColorPolicy.automatic,environment).session();
+    defer session.close();
+    if invocation.settings().membership(help){session.output().write(Usage(command,"greet",80).string());return 0;}
+    let defaults=Settings([SettingEntry(name,["world"],SettingSource(SettingSourceKind.defaults,"application"))]);
+    let variables=EnvironmentSettings(environment,[EnvironmentBinding("OKKAMA_NAME",name)],SettingSource(SettingSourceKind.environment,"process"));
+    let settings=LayeredSettings([defaults,variables,invocation.settings()]);
+    let person=ScalarSetting(settings,name).value();
+    session.output().writeln(StyledText("Hello, "+person+"!",TextStyle(NamedColor(BasicColor.green),DefaultColor(),[])));
+    0;
+}

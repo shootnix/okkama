@@ -1,0 +1,36 @@
+module app v1.0.0;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "http/http1_session" take Http1Session;
+import "http/http1_reading" take Http1RequestHeadReading;
+import "http/http1_message_writing" take Http1ResponseWriting;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "http/http1_body" take Http1BodyReading;
+import "http/http1_framing" take Http1RequestFraming;
+import "http/message" take Response;
+import "http/status" take Status;
+import "http/header" take Headers;
+import "http/body" take ByteBody;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+object Continuing {
+    has listener is TcpAcceptance;Continuing(listener is TcpAcceptance){self.listener=listener;}
+    async run() is void {
+        let connection=await listener.connection();defer connection.close();let head=await Http1RequestHeadReading(connection.input()).result();
+        confirm head.remainder().size()==0;
+        await Http1ResponseWriting(connection.output(),Response(Status(100),Headers([])),head.head().method()).result();
+        let lease=ByteBuffer();let reader=Http1BodyReading(connection.input(),lease.closing(),Http1RequestFraming(head.head()).plan(),[],head.head().headers());defer reader.close();
+        confirm (await reader.bytes(1))[0].int()==97 && (await reader.bytes(1))[0].int()==98 && (await reader.bytes(1))[0].int()==99;
+        confirm (await reader.bytes(1)).size()==0;
+        await Http1ResponseWriting(connection.output(),Response(Status(204),Headers([])),head.head().method()).result();
+    }
+}
+async main() is int {
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let active=spawn Continuing(listener).run();let connection=await TcpConnecting(listener.local_endpoint()).connection();
+    let session=Http1Session(connection.input(),connection.output(),connection);defer session.close();
+    let request=ParsedHttp1RequestHead("POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 3\r\nExpect: 100-continue\r\n\r\n").value().request(ByteBody([97.byte(),98.byte(),99.byte()]));
+    let result=await session.exchange(request);confirm result.response().status().code()==204 && result.informational().size()==1;await active;
+    Stdout().writeln("TCP continue handshake verified before body upload");0;
+}

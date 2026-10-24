@@ -1,0 +1,23 @@
+module app v1.0.0;
+import "net/failure" take NetworkOperation, NetworkFailureKind, NetworkFailure, NetworkError;
+import "runtime/network" take socket;
+import "io/stdout" take Stdout;
+
+// Unsupported family is rejected before any socket is opened. Adapt only the
+// expected native boundary; other failures retain their ordinary error channel.
+main() is int {
+    let result=try {
+        try {socket(99,1,1);"unexpected success";}
+        catch failure is NativeFailure {
+            let translated=NetworkError(NetworkOperation.binding,failure);
+            if translated.applicable() {throw translated.value();}
+            throw;
+        }
+    } catch failure is NetworkFailure {
+        confirm failure.operation()==NetworkOperation.binding
+            && failure.kind()==NetworkFailureKind.unsupported else panic "wrong classification";
+        failure.text();
+    };
+    Stdout().writeln(result);
+    0;
+}

@@ -1,0 +1,47 @@
+module unicode/normalization v1.0.0;
+
+import "runtime/unicode_normalization" take normalized_text;
+
+// Immutable Unicode 16.0.0 normalization.
+//
+// NFC and NFD perform canonical composition and decomposition. NFKC and NFKD
+// additionally apply compatibility mappings:
+//
+//     string Normalized(origin: "é", form: NormalizationForm.nfc);
+//     // "é"
+//
+//     string Normalized(origin: "ﬃ", form: NormalizationForm.nfkc);
+//     // "ffi"
+//
+// Normalization never trims, case-folds or otherwise rewrites text beyond the
+// selected Unicode normalization algorithm. The source string remains
+// unchanged and normalizing an already normalized result is idempotent.
+
+enum NormalizationForm = (nfc, nfd, nfkc, nfkd);
+
+object Normalized {
+    has origin is string;
+    has form is NormalizationForm;
+
+    Normalized(origin is string, form is NormalizationForm) {
+        self.origin = origin;
+        self.form = form;
+    }
+
+    #projected
+    string() is string {
+        normalized_text(origin, self.form_name());
+    }
+
+    private:
+
+    form_name() is string {
+        match form {
+            case NormalizationForm.nfc { "NFC"; }
+            case NormalizationForm.nfd { "NFD"; }
+            case NormalizationForm.nfkc { "NFKC"; }
+            case NormalizationForm.nfkd { "NFKD"; }
+            else { "NFC"; }
+        }
+    }
+}

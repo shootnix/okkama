@@ -1,0 +1,23 @@
+// Подготовить JUnit XML для CI
+//
+// Передать результаты набора тестов: TestResult, TestFailure и TestReport представляют типизированный отчёт.
+//
+// Запуск: ./examples/cookbook/run lab example-junit-report
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-junit-report
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "testing/result" take TestReport,TestResult,TestStatus,TestOutput;
+import "testing/report" take JUnitTestReport;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+main() is int {
+    let elapsed=Duration(1.rat(),DurationUnit.nanosecond);
+    let report=TestReport(Instant(elapsed),elapsed,42,[
+        TestResult("explicit report",TestStatus.passed,elapsed,[],TestOutput([byte(255)],[],false)),
+    ]);
+    Stdout().writeln(JUnitTestReport(report,"example").string());
+    report.exit_status();
+}

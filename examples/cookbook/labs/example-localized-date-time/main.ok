@@ -1,0 +1,23 @@
+// Показать дату и время доставки клиенту
+//
+// Показать дату доставки привычным способом: локализованные представления связывают стиль, Locale и часовой пояс.
+//
+// Запуск: ./examples/cookbook/run lab example-localized-date-time
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-localized-date-time
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "locale/date_time" take LocalizedDate,LocalizedInstant,DateStyle,TimeStyle,DateTimeStyle;
+import "locale/tag" take Locale;
+import "time/date" take Date;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "time/zone" take Zone;
+import "io/stdout" take Stdout;
+main() is int {
+    Stdout().writeln(LocalizedDate(Date(2026,8,11),Locale("fr"),DateStyle.full).string());
+    let instant=Instant(Duration(1786467845.rat(),DurationUnit.second));
+    Stdout().writeln(LocalizedInstant(instant,Zone("America/New_York"),Locale("en"),DateTimeStyle(DateStyle.full,TimeStyle.full)).string());
+    0;
+}

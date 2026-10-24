@@ -1,0 +1,60 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fields.type-boundary",
+  "title": "a constructor field bind checks the declared type",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.FIELDS",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "TYPE.BOUNDARIES",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.3",
+    "docs/okkama-spec-11072026.md#11.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.3: object fields are typed boundaries; a string cannot bind an int field (a static pass may diagnose it)."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(7.bit_count().string());
+    out.writeln(1.leading_zeros().string());
+    out.writeln(0.leading_zeros().string());
+    out.writeln(8.trailing_zeros().string());
+    out.writeln(0.trailing_zeros().string());
+    out.writeln(byte(1).leading_zeros().string());
+    out.writeln(byte(0).trailing_zeros().string());
+    out.writeln(byte(128).rotate_left(1).string());
+    out.writeln(1.rotate_right(1).string());
+    out.writeln(byte(1).reverse_bits().string());
+    out.writeln(1.reverse_bits().string());
+    out.writeln(0x0102030405060708.swap_bytes().string());
+    out.writeln(byte(5).swap_bytes().string());
+    0;
+}

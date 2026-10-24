@@ -1,0 +1,266 @@
+module example/async/books_repository v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+import "collections/list" take List, EmptyList;
+
+object Book {
+    has id is int;
+    has title is string;
+    Book(:id, :title);
+
+    id() is int { id; }
+    title() is string { title; }
+}
+
+object MissingBook does Error {
+    has id is int;
+    MissingBook(:id);
+
+    id() is int { id; }
+    text() is string { "book is missing"; }
+}
+
+object BooksState {
+    has entries is List<Book>;
+    BooksState(:entries);
+
+    saved(book is Book) is ^BooksState {
+        ^entries = self.without(entries, book.id()).prefix(book);
+    }
+
+    removed(id is int) is ^BooksState {
+        ^entries = self.without(entries, id);
+    }
+
+    found(id is int) is Book {
+        self.find_in(entries, id);
+    }
+
+    size() is int { entries.size(); }
+
+    find_in(remaining is List<Book>, id is int) is Book {
+        if (remaining.size() == 0) {
+            throw MissingBook(id: id);
+        }
+        else if remaining.first().id() == id {
+            remaining.first();
+        }
+        else {
+            self.find_in(remaining.tail(), id);
+        }
+    }
+
+    without(remaining is List<Book>, id is int) is List<Book> {
+        if (remaining.size() == 0) {
+            remaining;
+        }
+        else if remaining.first().id() == id {
+            self.without(remaining.tail(), id);
+        }
+        else {
+            self.without(remaining.tail(), id).prefix(remaining.first());
+        }
+    }
+}
+
+enum BooksOperation = (save, find, remove, stop);
+enum BooksReplyStatus = (saved, found, removed, missing, stopped);
+
+object BooksReply {
+    has status is BooksReplyStatus;
+    has book is Book;
+    has size is int;
+    BooksReply(:status, :book, :size);
+
+    status() is BooksReplyStatus { status; }
+    book() is Book { book; }
+    size() is int { size; }
+}
+
+object BooksCommand {
+    has operation is BooksOperation;
+    has book is Book;
+    has id is int;
+    has reply is Sending<BooksReply>;
+    BooksCommand(:operation, :book, :id, :reply);
+
+    operation() is BooksOperation { operation; }
+    book() is Book { book; }
+    id() is int { id; }
+    reply() is Sending<BooksReply> { reply; }
+}
+
+object BooksOwner {
+    has commands is Receiving<BooksCommand>;
+    BooksOwner(:commands);
+
+    async run() is int {
+        let empty is List<Book> = EmptyList();
+        let entries = BooksState(entries: empty);
+        let placeholder = Book(id: 0, title: "");
+
+        loop {
+            let command = await commands.item();
+
+            if command.operation() == BooksOperation.save {
+                entries = entries.saved(command.book());
+                await command.reply().send(
+                    BooksReply(
+                        status: BooksReplyStatus.saved,
+                        book: command.book(),
+                        size: entries.size()
+                    )
+                );
+            }
+            else if command.operation() == BooksOperation.find {
+                try {
+                    let found = entries.found(command.id());
+                    await command.reply().send(
+                        BooksReply(
+                            status: BooksReplyStatus.found,
+                            book: found,
+                            size: entries.size()
+                        )
+                    );
+                }
+                catch error is MissingBook {
+                    await command.reply().send(
+                        BooksReply(
+                            status: BooksReplyStatus.missing,
+                            book: placeholder,
+                            size: entries.size()
+                        )
+                    );
+                }
+            }
+            else if command.operation() == BooksOperation.remove {
+                entries = entries.removed(command.id());
+                await command.reply().send(
+                    BooksReply(
+                        status: BooksReplyStatus.removed,
+                        book: placeholder,
+                        size: entries.size()
+                    )
+                );
+            }
+            else {
+                await command.reply().send(
+                    BooksReply(
+                        status: BooksReplyStatus.stopped,
+                        book: placeholder,
+                        size: entries.size()
+                    )
+                );
+                last entries.size();
+            }
+        }
+    }
+}
+
+object BooksInMemory {
+    has commands is Sending<BooksCommand>;
+    BooksInMemory(:commands);
+
+    async save(book is Book) is int {
+        let reply is Channel<BooksReply> = Channel(capacity: 1);
+        await commands.send(
+            BooksCommand(
+                operation: BooksOperation.save,
+                book: book,
+                id: book.id(),
+                reply: reply.sending()
+            )
+        );
+        let result = await reply.receiving().item();
+        result.size();
+    }
+
+    async book(id is int) is Book {
+        let reply is Channel<BooksReply> = Channel(capacity: 1);
+        await commands.send(
+            BooksCommand(
+                operation: BooksOperation.find,
+                book: Book(id: 0, title: ""),
+                id: id,
+                reply: reply.sending()
+            )
+        );
+        let result = await reply.receiving().item();
+
+        if result.status() == BooksReplyStatus.found {
+            result.book();
+        }
+        else {
+            throw MissingBook(id: id);
+        }
+    }
+
+    async remove(id is int) is int {
+        let reply is Channel<BooksReply> = Channel(capacity: 1);
+        await commands.send(
+            BooksCommand(
+                operation: BooksOperation.remove,
+                book: Book(id: 0, title: ""),
+                id: id,
+                reply: reply.sending()
+            )
+        );
+        let result = await reply.receiving().item();
+        result.size();
+    }
+
+    async stop() is int {
+        let reply is Channel<BooksReply> = Channel(capacity: 1);
+        await commands.send(
+            BooksCommand(
+                operation: BooksOperation.stop,
+                book: Book(id: 0, title: ""),
+                id: 0,
+                reply: reply.sending()
+            )
+        );
+        let result = await reply.receiving().item();
+        result.size();
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let commands is Channel<BooksCommand> = Channel(capacity: 8);
+        let owner = spawn BooksOwner(commands: commands.receiving()).run();
+        let writer = BooksInMemory(commands: commands.sending());
+        let reader = BooksInMemory(commands: commands.sending());
+
+        await writer.save(Book(id: 1, title: "Okkama"));
+        let saved = await reader.book(1);
+        await writer.remove(1);
+
+        let missing = try {
+            await reader.book(1);
+            0;
+        }
+        catch error is MissingBook {
+            error.id();
+        };
+
+        let final_size = await writer.stop();
+        let owner_size = await owner;
+        commands.sending().close();
+
+        if saved.title() == "Okkama"
+            && missing == 1
+            && final_size == 0
+            && owner_size == 0 {
+            42;
+        }
+        else {
+            0;
+        }
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}

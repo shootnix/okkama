@@ -1,0 +1,56 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.return.value-in-successor",
+  "title": "a successor cannot return a replacement value",
+  "purpose": "The declaration is invalid and the program must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.RETURN",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "SUCC.DECL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: in a successor action an explicit replacement expression is forbidden."
+  },
+  "status": "mandatory"
+}

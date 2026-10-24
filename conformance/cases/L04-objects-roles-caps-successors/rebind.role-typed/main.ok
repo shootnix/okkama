@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Steppable {
+    stepped() is ^Steppable;
+}
+
+object Stepper does Steppable {
+    has value is int;
+    Stepper(:value);
+    stepped() is ^Stepper { ^value = value + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    let s is Steppable = Stepper(value: 1);
+    s = s.stepped();
+    out.writeln("unreachable");
+    0;
+}

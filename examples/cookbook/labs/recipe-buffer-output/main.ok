@@ -1,0 +1,25 @@
+// Собрать UTF-8 документ в памяти
+//
+// Перед отправкой небольшого отчёта нужно получить готовые bytes из нескольких текстовых записей.
+//
+// Запуск: ./examples/cookbook/run lab recipe-buffer-output
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-buffer-output
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/buffer_output v1.0.0;
+import "io/buffer" take ByteBuffer;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let buffer = ByteBuffer();
+    defer buffer.closing().close();
+    let output = Utf8Output(origin: buffer.writing());
+    output.writeln("Заказ 7");
+    output.write("Готов к выдаче");
+    let document = buffer.content().bytes();
+    Stdout().writeln(Utf8Decoded(document).string());
+    0;
+}

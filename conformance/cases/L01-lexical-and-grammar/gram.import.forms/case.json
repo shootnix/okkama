@@ -1,0 +1,38 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.import.forms",
+  "title": "all import forms are accepted",
+  "purpose": "Plain, aliased, selective and combined imports parse.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.IMPORT-FORMS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "lib/shapes.ok"
+  ],
+  "expect": {
+    "outcome": "success"
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar: import_decl = \"import\" STRING (\"as\" IDENT)? take_clause? \";\""
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,101 @@
+module uuid/generation v1.0.0;
+
+import "uuid/value" take Uuid, UuidFromBytes;
+import "random/source" take SecureRandom;
+import "random/distribution" take Distribution;
+import "encoding/utf" take Utf8Encoded;
+import "error" take InvalidArgument;
+import "runtime/uuid" take uuid_named, uuid_versioned, uuid_custom;
+
+// RFC-compatible UUID generation that does not depend on host UUID libraries.
+//
+//     let dns = Uuid(origin: "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+//     let legacy is Uuid = value Uuid3(namespace: dns, name: "example.com");
+//     let stable is Uuid = value Uuid5(namespace: dns, name: "example.com");
+//     let random is Uuid = Uuid4s(random: SecureRandom()).sample();
+//
+// UUID 3 hashes namespace bytes followed by the exact UTF-8 name with MD5.
+// UUID 5 does the same with SHA-1 and retains its first 128 bits. Both then set
+// their version and RFC variant bits.
+//
+// UUID 8 exposes all 122 custom bits explicitly: high is the most-significant
+// 48 bits, middle is 12 bits after the version field, and low is the final 62
+// bits after the variant field. All three inputs are unsigned and bounded.
+//
+// UUID 7 is intentionally absent until time/clock supplies a wall-clock
+// Instant contract. Its generator must retain a shared monotonic
+// per-millisecond counter. UUID 1 and UUID 6 are excluded from v3 until a
+// privacy-preserving explicit node-identity capability is approved.
+
+object Uuid3 {
+    has namespace is Uuid;
+    has name is string;
+
+    Uuid3(namespace is Uuid, name is string) {
+        self.namespace = namespace;
+        self.name = name;
+    }
+
+    #projected
+    value() is Uuid {
+        value UuidFromBytes(origin: uuid_named(
+            namespace.bytes(),
+            Utf8Encoded(origin: name).bytes(),
+            3,
+        ));
+    }
+}
+
+object Uuid5 {
+    has namespace is Uuid;
+    has name is string;
+
+    Uuid5(namespace is Uuid, name is string) {
+        self.namespace = namespace;
+        self.name = name;
+    }
+
+    #projected
+    value() is Uuid {
+        value UuidFromBytes(origin: uuid_named(
+            namespace.bytes(),
+            Utf8Encoded(origin: name).bytes(),
+            5,
+        ));
+    }
+}
+
+object Uuid8 {
+    has high is int;
+    has middle is int;
+    has low is int;
+
+    Uuid8(high is int, middle is int, low is int) {
+        confirm high >= 0 && high <= 281474976710655
+            else throw InvalidArgument("UUID 8 high field must fit 48 bits");
+        confirm middle >= 0 && middle <= 4095
+            else throw InvalidArgument("UUID 8 middle field must fit 12 bits");
+        confirm low >= 0 && low <= 4611686018427387903
+            else throw InvalidArgument("UUID 8 low field must fit 62 bits");
+        self.high = high;
+        self.middle = middle;
+        self.low = low;
+    }
+
+    #projected
+    value() is Uuid {
+        value UuidFromBytes(origin: uuid_custom(high, middle, low));
+    }
+}
+
+object Uuid4s does Distribution<Uuid> {
+    has random is SecureRandom;
+
+    Uuid4s(random is SecureRandom) {
+        self.random = random;
+    }
+
+    sample() is Uuid {
+        value UuidFromBytes(origin: uuid_versioned(random.bytes(16), 4));
+    }
+}

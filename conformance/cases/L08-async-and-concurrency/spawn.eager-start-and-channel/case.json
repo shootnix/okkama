@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.spawn.eager-start-and-channel",
+  "title": "spawn starts a task eagerly; channel delivery is FIFO",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.SPAWN-TASK",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.ASYNC.CHANNEL",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1 2 3 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18.1",
+    "std/async/channel.ok",
+    "docs/async-guide.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 18.1: spawn eagerly schedules the async action (main awaits only the channel before the task); channel messages are delivered FIFO."
+  },
+  "status": "mandatory",
+  "notes": "Channel endpoint names follow the active std (Sending/Receiving/item); see D-039."
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.eval-order.operands-and-arguments",
+  "title": "operands and arguments evaluate once, left to right",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.EVAL-ORDER",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "a\nb\nc\n7\nfirst\nsecond\n45\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-llm-context-1.0.md#6",
+    "docs/okkama-spec-11072026.md#11.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "LLM context 6: receiver and arguments evaluate exactly once, left to right; precedence does not reorder operand evaluation."
+  },
+  "status": "mandatory"
+}

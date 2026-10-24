@@ -1,0 +1,139 @@
+module net/tcp v1.0.0;
+
+import "error" take InvalidArgument;
+import "runtime/network" as network;
+import "runtime/net" as net;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpVersion;
+import "net/stream" take StreamConnection,StreamReading,StreamWriting,ConnectionEndpoints,StreamFailure;
+import "net/failure" take NetworkOperation,NetworkClosed;
+import "io/stream" take Closing;
+import "io/decorators" take ByteSnapshot;
+import "strings/parse" take ParsedInt;
+import "net/ip" take IpAddress;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+
+// Immutable connection option request. Defaults keep keepalive off and do not
+// request disabling Nagle's algorithm. Construction applies no socket options;
+// the eventual connection operation owns application and unsupported failures.
+object TcpOptions {
+    has keep is bool;
+    has immediate is bool;
+    TcpOptions() {keep=false;immediate=false;}
+    TcpOptions(keep_alive is bool, no_delay is bool) {
+        keep=keep_alive;immediate=no_delay;
+    }
+    keep_alive() is bool {keep;}
+    no_delay() is bool {immediate;}
+}
+
+// Immutable listener request, to be applied before bind by the future listener.
+// Defaults: no address reuse, no implicit dual stack, requested backlog 128.
+// Backlog is non-negative and retained exactly; zero is valid. The OS can cap
+// or reinterpret it, so this value does not observe the effective queue size.
+// Unsupported settings are the consuming socket operation's responsibility.
+object TcpListeningOptions {
+    has reuse is bool;
+    has dual is bool;
+    has queued is int;
+    TcpListeningOptions() {reuse=false;dual=false;queued=128;}
+    TcpListeningOptions(address_reuse is bool, dual_stack is bool, backlog is int) {
+        confirm backlog>=0 else throw InvalidArgument("TCP backlog must be non-negative: "+backlog.string());
+        reuse=address_reuse;dual=dual_stack;queued=backlog;
+    }
+    address_reuse() is bool {reuse;}
+    dual_stack() is bool {dual;}
+    backlog() is int {queued;}
+}
+
+object TcpConnection does Closing {
+    has origin is StreamConnection;
+    TcpConnection(state is network.SocketState){origin=StreamConnection(state);}
+    input() is StreamReading{origin.input();}output() is StreamWriting{origin.output();}
+    endpoints() is ConnectionEndpoints<IpEndpoint>{origin.endpoints();}
+    closed() is bool{origin.closed();}close() is void{origin.close();}
+}
+object TcpConnecting {
+    has remote is IpEndpoint;has options is TcpOptions;
+    TcpConnecting(remote is IpEndpoint){confirm remote.port()>0 else throw InvalidArgument("TCP destination port must be positive");self.remote=remote;options=TcpOptions();}
+    TcpConnecting(remote is IpEndpoint,options is TcpOptions){confirm remote.port()>0 else throw InvalidArgument("TCP destination port must be positive");self.remote=remote;self.options=options;}
+    async connection() is TcpConnection {
+        let group is FutureGroup<network.SocketState>=FutureGroup();let cleanup=TcpConnectCleanup(group);defer await cleanup.close();
+        try {
+            let pending=network.tcp_connect(TcpEndpointWire(remote).bytes(),remote.zone(),options.keep_alive(),options.no_delay());group.start(pending);
+            let state=await pending;let ready=Event();let anchor=TcpUnpublished(state,ready);defer anchor.close();
+            let connection=TcpConnection(state);ready.set();connection;
+        }catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.connecting,e);if translated.applicable(){throw translated.value();}throw;}
+    }
+}
+object TcpListening {
+    has local is IpEndpoint;has options is TcpListeningOptions;has accepted is TcpOptions;
+    TcpListening(local is IpEndpoint){self.local=local;options=TcpListeningOptions();accepted=TcpOptions();}
+    TcpListening(local is IpEndpoint,options is TcpListeningOptions){self.local=local;self.options=options;accepted=TcpOptions();}
+    TcpListening(local is IpEndpoint,options is TcpListeningOptions,accepted is TcpOptions){self.local=local;self.options=options;self.accepted=accepted;}
+    async acceptance() is TcpAcceptance {
+        let state=try{network.tcp_bound(TcpEndpointWire(local).bytes(),local.zone(),options.address_reuse(),options.dual_stack());}
+            catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.binding,e);if translated.applicable(){throw translated.value();}throw;};
+        let ready=Event();let anchor=TcpListenerUnpublished(state,ready);defer anchor.close();
+        try {
+            network.tcp_start_listening(state,options.backlog());let listener=TcpAcceptance(state,accepted);ready.set();listener;
+        }catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.listening,e);if translated.applicable(){throw translated.value();}throw;}
+    }
+}
+object TcpAcceptance does Closing {
+    has state is network.TcpListenerState;has local is IpEndpoint;has accepted is TcpOptions;
+    TcpAcceptance(state is network.TcpListenerState,accepted is TcpOptions){
+        let endpoint=try{let fields=network.tcp_listener_endpoint(state);IpEndpoint(IpAddress(fields[0]),ParsedInt(fields[1]).value(),fields[2]);}
+            catch e is NativeFailure{network.tcp_listener_close(state);throw;}catch e is Error{network.tcp_listener_close(state);throw;};
+        self.state=state;local=endpoint;self.accepted=accepted;
+    }
+    local_endpoint() is IpEndpoint{local;}closed() is bool{network.tcp_listener_closed(state);}
+    close() is void{try{network.tcp_listener_close(state);}catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.closing,e);if translated.applicable(){throw translated.value();}throw;}}
+    async connection() is TcpConnection {
+        confirm !self.closed() else throw NetworkClosed();
+        let group is FutureGroup<network.SocketState>=FutureGroup();let cleanup=TcpConnectCleanup(group);defer await cleanup.close();
+        try{
+            let pending=network.tcp_accept(state,accepted.keep_alive(),accepted.no_delay());group.start(pending);let peer=await pending;
+            let ready=Event();let anchor=TcpUnpublished(peer,ready);defer anchor.close();let connection=TcpConnection(peer);ready.set();connection;
+        }catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.accepting,e);if translated.applicable(){throw translated.value();}throw;}
+    }
+    destroy{network.tcp_listener_close(state);}
+}
+object TcpEndpointWire {
+    has origin is IpEndpoint;TcpEndpointWire(origin is IpEndpoint){self.origin=origin;}
+    bytes() is @byte{net.ip_parse(if origin.address().version()==IpVersion.v4{1;}else{2;},origin.address().string(),origin.port());}
+}
+object TcpUnpublished {
+    has state is network.SocketState;has ready is Event;
+    TcpUnpublished(state is network.SocketState,ready is Event){self.state=state;self.ready=ready;}
+    close() is void{if !ready.ready(){network.close(state);}}
+}
+object TcpListenerUnpublished {
+    has state is network.TcpListenerState;has ready is Event;
+    TcpListenerUnpublished(state is network.TcpListenerState,ready is Event){self.state=state;self.ready=ready;}
+    close() is void{if !ready.ready(){network.tcp_listener_close(state);}}
+}
+object TcpConnectCleanup {
+    has group is FutureGroup<network.SocketState>;TcpConnectCleanup(group is FutureGroup<network.SocketState>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+
+test "TCP defaults agree with explicit settings" {
+    test.ok(TcpOptions()==TcpOptions(false,false));
+    test.ok(TcpListeningOptions()==TcpListeningOptions(false,false,128));
+}
+test "TCP options preserve independent choices" {
+    let options=TcpListeningOptions(true,false,0);
+    test.ok(options.address_reuse());
+    test.ok(!options.dual_stack());
+    test.is(options.backlog(),0);
+    test.ok(TcpOptions(false,true).no_delay());
+}
+async test "numeric TCP reports actual OS-selected endpoints" {
+    let listener is TcpAcceptance=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let accepting is async () is TcpConnection=listener.connection;let pending=spawn accepting();
+    let client=await TcpConnecting(listener.local_endpoint()).connection();defer client.close();let server=await pending;defer server.close();
+    test.ok(client.endpoints().remote_endpoint()==listener.local_endpoint());
+    await client.output().write(ByteSnapshot([7.byte()]));test.is(await server.input().bytes(1),[7.byte()]);
+}

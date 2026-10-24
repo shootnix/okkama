@@ -1,0 +1,37 @@
+module crypto/x509/value v1.0.0;
+import "time/clock" take Instant;
+import "compare" take Order;
+
+// Certificate wall-clock interval. Construction never asks a current clock or
+// asserts chain trust; endpoints are inclusive certificate metadata.
+object CertificateValidity {
+    has starts,ends is Instant;
+    CertificateValidity(starts is Instant,ends is Instant){
+        confirm starts.order(ends)!=Order.greater else throw InvalidCertificate("validity ends before it starts");
+        self.starts=starts;self.ends=ends;
+    }
+    starts() is Instant{starts;}ends() is Instant{ends;}
+}
+// Optional path depth uses distinct constructors, not a sentinel or an unused
+// numeric argument. Presence is meaningful only for a certificate authority.
+object CertificateConstraints {
+    has authority is bool;has depth is @int;
+    CertificateConstraints(authority is bool){self.authority=authority;depth=[];}
+    CertificateConstraints(authority is bool,maximum_depth is int){
+        confirm authority else throw InvalidCertificate("path depth requires a certificate authority");
+        confirm maximum_depth>=0 else throw InvalidCertificate("negative certificate path depth");
+        self.authority=authority;depth=[maximum_depth];
+    }
+    authority() is bool{authority;}limited() is bool{depth.size()>0;}
+    maximum_depth() is int{confirm self.limited() else throw MissingCertificateDepth();depth[0];}
+}
+object MissingCertificateDepth does Error {MissingCertificateDepth();text() is string{"certificate path depth is absent";}}
+object InvalidCertificate does Error {
+    has reason is string;InvalidCertificate(reason is string){self.reason=reason;}reason() is string{reason;}
+    text() is string{"invalid certificate: "+reason;}
+}
+test "path depth absence differs from present zero" {
+    let absent=CertificateConstraints(true);let zero=CertificateConstraints(true,0);
+    test.ok(!absent.limited() && zero.limited() && zero.maximum_depth()==0);
+    test.ok(try{absent.maximum_depth();false;}catch e is MissingCertificateDepth{true;});
+}

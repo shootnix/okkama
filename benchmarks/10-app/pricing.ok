@@ -1,0 +1,65 @@
+module bench/app/pricing v1.0.0;
+
+// Правила цены — роль и её реализации; порядок правил задаёт конвейер.
+import "domain" take Money, Order;
+
+role PricingRule {
+    adjusted(order is Order, total is Money) is Money;
+    name() is string;
+}
+
+// 5% скидки на заказ дороже 2000.00.
+object BulkDiscount does PricingRule {
+    BulkDiscount();
+
+    name() is string { "bulk"; }
+
+    adjusted(order is Order, total is Money) is Money {
+        if total.cents() > 200000 { total.minus(total.percent(5)); } else { total; }
+    }
+}
+
+// Уровень лояльности: 2% за уровень.
+object LoyaltyDiscount does PricingRule {
+    LoyaltyDiscount();
+
+    name() is string { "loyalty"; }
+
+    adjusted(order is Order, total is Money) is Money {
+        total.minus(total.percent(order.customer().tier() * 2));
+    }
+}
+
+// Акция категории: 10% на строки категории `category`.
+object CategoryPromotion does PricingRule {
+    has category is int;
+
+    CategoryPromotion(:category);
+
+    name() is string { "promotion"; }
+
+    adjusted(order is Order, total is Money) is Money {
+        let promoted = order.lines().filter() -> line { line.product().category() == category; };
+        let discount = promoted.reduce(Money(0)) -> sum, line { sum.plus(line.subtotal().percent(10)); };
+        total.minus(discount);
+    }
+}
+
+// Налог 20%.
+object Tax does PricingRule {
+    Tax();
+
+    name() is string { "tax"; }
+
+    adjusted(order is Order, total is Money) is Money { total.plus(total.percent(20)); }
+}
+
+object PriceEngine {
+    has rules is @PricingRule;
+
+    PriceEngine(:rules);
+
+    total(order is Order) is Money {
+        rules.reduce(order.subtotal()) -> sum, rule { rule.adjusted(order, sum); };
+    }
+}

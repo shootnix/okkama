@@ -1,0 +1,28 @@
+module bench/app/orders v1.0.0;
+
+// Поток заказов: псевдослучайные строки, резерв с отказами и частичным
+// исполнением (перехват `OutOfStock`).
+import "domain" take Order, Line, OutOfStock;
+import "catalog" take Catalog;
+
+object OrderSource {
+    has catalog is Catalog;
+
+    OrderSource(:catalog);
+
+    order(id is int) is Order {
+        let order = Order(id: id, customer: catalog.customer(id * 31 % 5000));
+        let count = id % 8 + 1;
+        for (0..count) -> index {
+            let product = catalog.product((id * 97 + index * 1031) % catalog.size());
+            let wanted = (id + index * 3) % 12 + 1;
+            let quantity = try {
+                catalog.reserved(product, wanted);
+            } catch shortage is OutOfStock {
+                shortage.available();
+            };
+            order = order.added(Line(product: product, quantity: quantity));
+        }
+        order;
+    }
+}

@@ -1,0 +1,16 @@
+module crypto/aead v1.0.0;
+
+// Authenticated encryption with associated data. A Sealing is one algorithm
+// bound to one key. sealed(nonce, aad, plaintext) returns ciphertext || tag;
+// opened(nonce, aad, sealed) verifies the tag before releasing any plaintext
+// and throws crypto/error.AuthenticationFailed on any mismatch (key, nonce,
+// associated data or bytes). A nonce must never repeat for one key: use
+// crypto/nonce.CounterNonce for counters or RandomNonce where the nonce is
+// long enough (XChaCha20-Poly1305). Wrong nonce/key sizes are
+// InvalidCryptoInput. tag_size() and nonce_size() describe the algorithm.
+role Sealing {
+    nonce_size() is int;
+    tag_size() is int;
+    sealed(nonce is @byte, aad is @byte, plaintext is @byte) is @byte;
+    opened(nonce is @byte, aad is @byte, sealed is @byte) is @byte;
+}

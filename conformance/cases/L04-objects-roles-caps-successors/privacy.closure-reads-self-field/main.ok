@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Secret {
+    has code is int;
+    Secret(:code);
+    reader() is () is int {
+        () is int { self.code; };
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let reader = Secret(code: 9).reader();
+    out.writeln(reader().string());
+    0;
+}

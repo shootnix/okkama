@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.harness.discarded-check-is-error",
+  "title": "harness: discarding a check result is a must-use error",
+  "purpose": "A check whose successor result is dropped cannot silently disappear.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.MUST-USE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "spec 11.9: statically visible successor loss is a semantic error; runtime discard checks remain defensive. Either stage is conforming; the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "conformance/harness/okkama/conformance/check.ok",
+    "docs/okkama-spec-11072026.md#11.9",
+    "docs/okkama-spec-11072026.md#9.12",
+    "docs/okkama-spec-11072026.md#11.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.9 / static successor consumption: `c.same_int(...)` as a discarded statement loses a successor."
+  },
+  "status": "mandatory"
+}

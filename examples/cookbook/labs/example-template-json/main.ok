@@ -1,0 +1,21 @@
+// Составить письмо из JSON-данных
+//
+// Составить текст письма по шаблону: TextTemplate связывает текст с именованными подстановками.
+//
+// Запуск: ./examples/cookbook/run lab example-template-json
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-template-json
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+
+import "template/compile" take TextTemplate;
+import "template/json" take JsonTemplateStrings;
+import "json/parse" take ParsedJson;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}"));
+    Stdout().writeln(TextTemplate("Hello {{user.name}}! Active: {{active}}").string(data));
+    0;
+}

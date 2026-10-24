@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "mime/media_type" take MediaType, MimeParameters, MimeParameter;
+import "message/header" take MessageHeader, MessageHeaderName, MessageHeaders, RenderedMessageHeaders;
+import "io/stdout" take Stdout;
+import "encoding/utf" take Utf8Decoded;
+
+main() is int {
+    let parsed=MediaType("Text/Plain; title=old; title*1*=%A9; title*0*=UTF-8''caf%C3");
+    Stdout().writeln(parsed.parameters().first("TITLE"));
+    let value=MediaType("application","x-example",MimeParameters([MimeParameter("filename","отчёт.txt")]));
+    Stdout().writeln(value.string());
+    let headers=MessageHeaders([MessageHeader(MessageHeaderName("Content-Type"),value.string())]);
+    Stdout().writeln(Utf8Decoded(RenderedMessageHeaders(headers).bytes()).string());
+    0;
+}

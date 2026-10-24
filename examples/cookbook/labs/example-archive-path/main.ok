@@ -1,0 +1,24 @@
+// Сохранить переносимое имя внутри архива
+//
+// Назвать элемент архива относительно его корня: ArchivePath проверяет и удерживает переносимое имя.
+//
+// Запуск: ./examples/cookbook/run lab example-archive-path
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-archive-path
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "archive/path" take ArchivePath, UnsafeArchivePath, MissingArchiveParent;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let member = ArchivePath("assets/иконка.png");
+    Stdout().writeln(member.string());
+    Stdout().writeln(member.parent().string());
+    Stdout().writeln(member.name());
+    try { ArchivePath("assets/../outside"); }
+    catch error is UnsafeArchivePath { Stdout().writeln(error.text()); }
+    try { member.parent().parent(); }
+    catch error is MissingArchiveParent { Stdout().writeln(error.text()); }
+    0;
+}

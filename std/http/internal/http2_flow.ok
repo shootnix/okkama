@@ -1,0 +1,96 @@
+module http/internal/http2_flow v1.0.0;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2FrameRules,Http2Fault,Http2FaultScope;
+import "encoding/binary" take IntegerBytes,IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+
+// Pure window accounting, not an async scheduler. Connection owns the two
+// directional window sets and publishes immutable successors under its reader.
+object Http2FlowWindow {
+    has scope is Http2FaultScope;has stream,remaining is int;
+    Http2FlowWindow(scope is Http2FaultScope,stream is int,remaining is int){
+        confirm remaining>=-2147483647 && remaining<=2147483647 && stream>=0 && stream<=2147483647
+            && ((scope==Http2FaultScope.connection && stream==0) || (scope==Http2FaultScope.stream && stream>0))
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid flow window coordinates");
+        self.scope=scope;self.stream=stream;self.remaining=remaining;
+    }
+    scope() is Http2FaultScope{scope;}stream() is int{stream;}remaining() is int{remaining;}
+    available() is int{if remaining<0{0;}else{remaining;}}
+    sent(length is int) is ^Http2FlowWindow{
+        Http2FlowDebit(length);
+        // Caller decides when an empty terminal DATA frame is legal; zero
+        // consumes no credit even if a SETTINGS reduction made it negative.
+        confirm length==0 || length<=remaining else throw Http2NoCredit(stream);
+        ^remaining=remaining-length;
+    }
+    received(length is int) is ^Http2FlowWindow{
+        Http2FlowDebit(length);
+        confirm length==0 || length<=remaining else throw Http2Fault(scope,3,stream,"peer exceeded flow window");
+        ^remaining=remaining-length;
+    }
+    credited(increment is int) is ^Http2FlowWindow{
+        confirm increment>0 && increment<=2147483647 else throw Http2Fault(scope,1,stream,"invalid window increment");
+        confirm increment<=2147483647-remaining else throw Http2Fault(scope,3,stream,"flow window overflow");
+        ^remaining=remaining+increment;
+    }
+    adjusted(delta is int) is ^Http2FlowWindow{
+        confirm scope==Http2FaultScope.stream else throw Http2Fault(Http2FaultScope.connection,1,0,"initial setting cannot change connection window");
+        confirm delta>=-2147483647 && delta<=2147483647 && remaining+delta>=-2147483647 && remaining+delta<=2147483647
+            else throw Http2Fault(Http2FaultScope.connection,3,0,"settings flow window overflow");
+        ^remaining=remaining+delta;
+    }
+}
+object Http2FlowDebit {
+    Http2FlowDebit(length is int){confirm length>=0 && length<=2147483647 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid flow debit");}
+}
+// Sender reservation is atomic data publication under the owning scheduler.
+// Receiving deliberately has no all-or-nothing pair: valid connection charge
+// must survive a stream error until the discarded bytes are credited back.
+object Http2SendCredit {
+    has connection,stream is Http2FlowWindow;
+    Http2SendCredit(connection is Http2FlowWindow,stream is Http2FlowWindow){
+        confirm connection.scope()==Http2FaultScope.connection && stream.scope()==Http2FaultScope.stream
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid send window pair");self.connection=connection;self.stream=stream;
+    }
+    connection() is Http2FlowWindow{connection;}stream() is Http2FlowWindow{stream;}
+    available() is int{let first=connection.available();let second=stream.available();if first<second{first;}else{second;}}
+    spent(length is int) is ^Http2SendCredit{
+        Http2FlowDebit(length);confirm length==0 || length<=self.available() else throw Http2NoCredit(stream.stream());
+        ^connection=connection.sent(length);^stream=stream.sent(length);
+    }
+}
+object Http2NoCredit does Error {
+    has stream is int;Http2NoCredit(stream is int){self.stream=stream;}stream() is int{stream;}
+    text() is string{"HTTP2 sender awaits flow credit";}
+}
+object Http2DataPayload {
+    has frame is Http2Frame;
+    Http2DataPayload(frame is Http2Frame){
+        confirm frame.header().kind().int()==0 else throw Http2Fault(Http2FaultScope.connection,1,0,"DATA required");Http2FrameRules(frame).check();self.frame=frame;
+    }
+    stream() is int{frame.header().stream();}flow_bytes() is int{frame.header().length();}
+    end_stream() is bool{(frame.header().flags().int() & 1)!=0;}
+    bytes() is @byte{
+        let payload=frame.payload();let padded=(frame.header().flags().int() & 8)!=0;
+        if padded{payload.slice(1,payload.size()-payload[0].int());}else{payload;}
+    }
+}
+object Http2WindowIncrement {
+    has stream,amount is int;
+    Http2WindowIncrement(frame is Http2Frame){
+        confirm frame.header().kind().int()==8 else throw Http2Fault(Http2FaultScope.connection,1,0,"WINDOW_UPDATE required");Http2FrameRules(frame).check();
+        stream=frame.header().stream();amount=IntegerFromBytes(frame.payload(),Signedness.unsigned,ByteOrder.big).value() & 2147483647;
+    }
+    stream() is int{stream;}amount() is int{amount;}
+}
+object Http2WindowFrame {
+    has stream,amount is int;
+    Http2WindowFrame(stream is int,amount is int){
+        confirm stream>=0 && stream<=2147483647 && amount>0 && amount<=2147483647
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid outgoing window increment");self.stream=stream;self.amount=amount;
+    }
+    frame() is Http2Frame{Http2Frame(Http2FrameHeader(8.byte(),0.byte(),stream,4),IntegerBytes(amount,4,Signedness.unsigned,ByteOrder.big).bytes());}
+}
+test "send reservation needs both flow windows" {
+    let credit=Http2SendCredit(Http2FlowWindow(Http2FaultScope.connection,0,10),Http2FlowWindow(Http2FaultScope.stream,1,3));
+    credit=credit.spent(3);test.is(credit.connection().remaining(),7);test.is(credit.stream().remaining(),0);
+}

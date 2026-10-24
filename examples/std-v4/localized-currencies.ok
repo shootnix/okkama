@@ -1,0 +1,14 @@
+module example v1.0.0;
+import "locale/currency" take Currency,CurrencyFormat,CurrencyDisplay,LocalizedCurrency;
+import "locale/number" take NumberFormat,NumberNotation,NumberGrouping,NumberSign,NumberPrecision;
+import "locale/tag" take Locale;
+import "math/decimal" take Decimal;
+import "math/rounding" take Rounding;
+import "io/stdout" take Stdout;
+main() is int {
+    let numbers=NumberFormat(NumberNotation.standard,NumberGrouping.automatic,NumberSign.automatic,NumberPrecision(1,0,2,Rounding.half_even));
+    let format=CurrencyFormat(numbers,CurrencyDisplay.symbol,true,true);
+    Stdout().writeln(LocalizedCurrency(Decimal("-1234.5"),Currency("USD"),Locale("en"),format).string());
+    Stdout().writeln(LocalizedCurrency(Decimal("1234.5"),Currency("EUR"),Locale("fr"),format).string());
+    0;
+}

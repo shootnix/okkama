@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    {
+        defer out.writeln("outer");
+        if false {
+            defer out.writeln("never");
+        }
+        {
+            defer out.writeln("inner");
+        }
+        out.writeln("body");
+    }
+    0;
+}

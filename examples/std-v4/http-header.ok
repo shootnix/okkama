@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "http/header" take HeaderName, Header, Headers, ReplacedHeader, Http2Headers;
+import "io/stdout" take Stdout;
+main() is int {
+    let original=Headers([Header(HeaderName("Content-Type")," text/plain "),Header(HeaderName("Set-Cookie"),"a=1"),Header(HeaderName("Set-Cookie"),"b=2")]);
+    let revised=ReplacedHeader(original,Header(HeaderName("content-type"),"application/json")).result();
+    let fields=Http2Headers(revised,false).result().entries();
+    for (0..fields.size()) -> index {
+        let field=fields.item(index);Stdout().writeln(field.name().string()+": "+field.value());
+    }
+    0;
+}

@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Valued {
+    value() is int;
+}
+
+object Coin does Valued {
+    has cents is int;
+    Coin(:cents);
+    value() is int { cents; }
+}
+
+object Holder {
+    has item is Valued;
+    Holder(:item);
+    describe() is string { item.value().string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let holder = Holder(item: Coin(cents: 25));
+    out.writeln(holder.describe());
+    0;
+}

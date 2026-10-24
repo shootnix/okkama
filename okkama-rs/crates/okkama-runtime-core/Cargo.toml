@@ -1,0 +1,47 @@
+[package]
+name = "okkama-runtime-core"
+description = "Compiler-independent runtime values and exact integer arithmetic"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+okkama-runtime-abi = { path = "../okkama-runtime-abi" }
+# Длинная арифметика `int` (Karatsuba/Toom-3, двоичные разряды).
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"
+# Криптография хоста (runtime/host_crypto) — тот же провайдер, что у JVM.
+okkama-native = { path = "../okkama-native" }
+
+# Стековые корутины задач планировщика (`sched`), как потоки задач JVM.
+corosensei = "0.3.4"
+# Вызовы ОС без обёртки std (access, файловые режимы, сокеты, процессы).
+libc = "0.2"
+# Распаковка gzip-таблиц рантайма (unicode.dat и др., общие с JVM).
+miniz_oxide = "0.8"
+# Нормализация Unicode (NFC/NFD/NFKC/NFKD), как java.text.Normalizer.
+unicode-normalization = "0.1"
+# Сокеты с опциями (reuse, dual stack, multicast), как NIO JVM.
+socket2 = { version = "0.5", features = ["all"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+# Регулярные выражения с lookbehind и бэктрекингом, как java.util.regex
+# (перенос лексических путей File::Spec и разборов JVM-провайдеров).
+fancy-regex = "0.14"
+# Кластеры графем (`\X` JVM) для ширины текста в терминале.
+unicode-segmentation = "1"
+# Именованные UUID (v3 — MD5, v5 — SHA-1), как MessageDigest JVM.
+md-5 = "0.10"
+sha1 = "0.10"
+
+# unsafe разрешён только в `sched` (указатель Yielder текущей задачи).
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

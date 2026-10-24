@@ -1,0 +1,21 @@
+module http/client_protocols v1.0.0;
+import "http/client_policy" take ClientPolicy;
+import "http/version" take HttpVersion,UnsupportedHttpVersion;
+import "net/tls" take TlsClientPolicy;
+// Agreement is checked without route/transport effects. Actual ALPN remains
+// definitive; the advertised list alone never selects the wire protocol.
+object HttpClientProtocols {
+    has h1,h2 is bool;
+    HttpClientProtocols(policy is ClientPolicy,tls is TlsClientPolicy){
+        let one=policy.protocols().membership(HttpVersion.http_1_1);let two=policy.protocols().membership(HttpVersion.http_2);
+        let count=(if one{1;}else{0;})+(if two{1;}else{0;});
+        confirm count>0 && policy.protocols().size()==count else throw UnsupportedHttpVersion();
+        for tls.protocols() -> protocol{if protocol=="h2"{confirm two else throw UnsupportedHttpVersion();}else{confirm protocol=="http/1.1" && one else throw UnsupportedHttpVersion();}}
+        h1=one;h2=two;
+    }
+    selected(protocol is string) is HttpVersion{
+        if protocol=="h2"{confirm h2 else throw UnsupportedHttpVersion();return HttpVersion.http_2;}
+        confirm h1 && (protocol=="" || protocol=="http/1.1") else throw UnsupportedHttpVersion();HttpVersion.http_1_1;
+    }
+    clear() is HttpVersion{if h1{HttpVersion.http_1_1;}else{HttpVersion.http_2;}}
+}

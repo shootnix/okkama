@@ -1,0 +1,47 @@
+module logging/stream v1.0.0;
+import "logging/write" take LogWriting;
+import "logging/record" take LogRecord;
+import "logging/level" take LogLevel;
+import "logging/line" take TextLogLine,JsonLogLine;
+import "time/zone" take TimeZone;
+import "io/stream" take Writing;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "terminal/session" take TerminalOutput;
+import "terminal/style" take TextStyle,StyledText,DefaultColor;
+import "collections/sequence" take Sequencing;
+object LogStyle{
+    has level is LogLevel;has style is TextStyle;
+    LogStyle(level is LogLevel,style is TextStyle){self.level=level;self.style=style;}
+    level() is LogLevel{level;}style() is TextStyle{style;}
+}
+object LogStyles{
+    has origin is @LogStyle;
+    LogStyles(styles is Sequencing<LogStyle>){
+        confirm styles.size()>=0 && styles.size()<=5 else throw InvalidLogStyles();
+        let snapshot is @LogStyle=(0..styles.size()).map()->index{styles.item(index);};
+        for (0..snapshot.size())->index{for (0..index)->previous{confirm snapshot[index].level()!=snapshot[previous].level() else throw InvalidLogStyles();}}
+        origin=snapshot;
+    }
+    style(level is LogLevel) is TextStyle{origin.reduce(TextStyle(DefaultColor(),DefaultColor(),[]))->old,entry{if entry.level()==level{entry.style();}else{old;}};}
+}
+object InvalidLogStyles does Error{InvalidLogStyles();text() is string{"duplicate level style or more than five styles";}}
+object TextStreamLogs does LogWriting{
+    has origin is Writing;has zone is TimeZone;
+    TextStreamLogs(origin is Writing,zone is TimeZone){self.origin=origin;self.zone=zone;}
+    write(record is LogRecord) is void{let line=TextLogLine(record,zone).string();origin.write(ByteSnapshot(Utf8Encoded(line+"\n").bytes()));}
+}
+object JsonStreamLogs does LogWriting{
+    has origin is Writing;JsonStreamLogs(origin is Writing){self.origin=origin;}
+    write(record is LogRecord) is void{let line=JsonLogLine(record).string();origin.write(ByteSnapshot(Utf8Encoded(line+"\n").bytes()));}
+}
+object TextTerminalLogs does LogWriting{
+    has origin is TerminalOutput;has zone is TimeZone;has styles is LogStyles;
+    TextTerminalLogs(origin is TerminalOutput,zone is TimeZone,styles is Sequencing<LogStyle>){self.origin=origin;self.zone=zone;self.styles=LogStyles(styles);}
+    write(record is LogRecord) is void{origin.writeln(StyledText(TextLogLine(record,zone).string(),styles.style(record.level())));}
+}
+object JsonTerminalLogs does LogWriting{
+    has origin is TerminalOutput;has styles is LogStyles;
+    JsonTerminalLogs(origin is TerminalOutput,styles is Sequencing<LogStyle>){self.origin=origin;self.styles=LogStyles(styles);}
+    write(record is LogRecord) is void{origin.writeln(StyledText(JsonLogLine(record).string(),styles.style(record.level())));}
+}

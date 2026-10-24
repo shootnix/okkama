@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "html/entities" take EscapedHtml, UnescapedHtml;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("escape", EscapedHtml("<Ada & Bob>").string(), "&lt;Ada &amp; Bob&gt;");
+    c = c.same_text("quotes", EscapedHtml("\"'", true).string(), "&quot;&#39;");
+    c = c.same_text("existing reference escaped", EscapedHtml("&amp;").string(), "&amp;amp;");
+    c = c.same_text("decode once", UnescapedHtml("<b>&amp;lt;</b>").string(), "<b>&lt;</b>");
+    c = c.same_text("named and numeric", UnescapedHtml("&copy;&#65;&#x42;").string(), "©AB");
+    c = c.same_text("unknown name literal", UnescapedHtml("&nosuch;").string(), "&nosuch;");
+    c.done();
+}

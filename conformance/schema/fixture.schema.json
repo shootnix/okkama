@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-fixture/1",
+  "title": "Fixture",
+  "type": "object",
+  "required": [
+    "schema",
+    "kind"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ocs-fixture/1"
+    },
+    "kind": {
+      "enum": [
+        "files",
+        "service"
+      ]
+    },
+    "path": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ready_regex": {
+      "type": "string"
+    },
+    "ready_timeout_s": {
+      "type": "number"
+    },
+    "provides": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "type": "string"
+    }
+  }
+}

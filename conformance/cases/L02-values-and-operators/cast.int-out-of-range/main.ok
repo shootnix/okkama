@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("before");
+    let huge = float(9223372036854775807) * 4.0;
+    let x = int(huge);
+    out.writeln("unreachable");
+    0;
+}

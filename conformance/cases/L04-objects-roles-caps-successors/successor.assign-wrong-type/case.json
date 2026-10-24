@@ -1,0 +1,60 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.assign-wrong-type",
+  "title": "a staged value must match the field type",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.DECL",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "TYPE.BOUNDARIES",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.9",
+    "docs/okkama-spec-11072026.md#6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.9: the assigned value must match the field type; spec 6.2: any is never implicitly assignable to a concrete type."
+  },
+  "status": "mandatory"
+}

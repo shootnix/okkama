@@ -1,0 +1,21 @@
+module io/text v1.0.0;
+
+import "io/stream" take Writing, WritingText;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+
+// A borrowed UTF-8 output capability. No implicit flush or close.
+object Utf8Output does WritingText {
+    has origin is Writing;
+    Utf8Output(:origin);
+
+    write(values is ...string) is void {
+        let text is @string = values...;
+        origin.write(ByteSnapshot(Utf8Encoded(text.join("")).bytes()));
+    }
+
+    writeln(values is ...string) is void {
+        let text is @string = values...;
+        self.write(text.join("") + "\n");
+    }
+}

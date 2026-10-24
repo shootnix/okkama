@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let flags is %bool:string = [true: "yes", false: "no"];
+    out.writeln(flags[false] + flags[true]);
+    let chars is %char:int = ['b': 2, 'a': 1];
+    out.writeln(chars['a'].string());
+    0;
+}

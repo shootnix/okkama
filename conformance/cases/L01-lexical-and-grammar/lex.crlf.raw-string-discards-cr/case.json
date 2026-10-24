@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.crlf.raw-string-discards-cr",
+  "title": "carriage returns inside raw strings are discarded",
+  "purpose": "A raw string spanning a CRLF line break keeps only the LF.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.CRLF",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "LEX.RAW-STRINGS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "a\nb|3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "Go spec: Raw string literals (\"Carriage return characters ('\\r') inside raw string literals are discarded\")"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision, 19.10.2026 (D-030): as in Go, CR characters inside raw string literals are discarded, so the value is a, LF, b (length 3). Spec 4.2's 'every character is retained' must be amended."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-006"
+  ]
+}

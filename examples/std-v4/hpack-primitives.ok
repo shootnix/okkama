@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "http/internal/hpack_primitives" take HpackInteger,ParsedHpackInteger,HpackHuffman;
+import "encoding/hex" take HexDecoded;
+import "encoding/single_byte" take Latin1Decoded;
+import "io/stdout" take Stdout;
+// Internal RFC wire primitives, not an HTTP2 exchange or public HPACK API.
+main() is int{
+    confirm ParsedHpackInteger(HpackInteger(1337,5,0).bytes(),0,5).value()==1337;
+    let octets=HpackHuffman(HexDecoded("f1e3c2e5f23a6ba0ab90f4ff").bytes(),15).bytes();
+    confirm Latin1Decoded(octets).string()=="www.example.com";
+    Stdout().writeln("bounded HPACK integer and Huffman RFC vectors verified");0;
+}

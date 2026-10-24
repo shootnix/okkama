@@ -1,0 +1,28 @@
+module app v1.0.0;
+import "compression/state" take Compressing;
+import "compression/read" take CompressedReading;
+import "io/buffer" take ByteBuffer;
+
+// Run with: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t examples/std-v4/compression-read.ok
+// The role fake echoes bytes after finish; this demonstrates adapter ownership
+// and bounded reads, not a compression wire format.
+object ReadingExample {
+    ReadingExample();
+    run() is void {
+        let source = ByteBuffer([byte(1), byte(2), byte(255)]);
+        let codec = Compressing.fake();
+        let stream = CompressedReading(source.reading(), codec, 1);
+        test.is(stream.bytes(1), [byte(1)]);
+        test.is(stream.bytes(8), [byte(2), byte(255)]);
+        test.is(stream.bytes(1).size(), 0);
+        test.ok(codec.finished());
+        stream.close();
+        test.ok(!codec.closed());
+        test.ok(!source.closing().closed());
+        codec.close();
+        source.closing().close();
+    }
+}
+test "bounded reading with a caller-owned codec and source" {
+    ReadingExample().run();
+}

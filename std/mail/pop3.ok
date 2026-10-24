@@ -1,0 +1,194 @@
+module mail/pop3 v1.0.0;
+
+import "mail/pop3_reply" take PopReply;
+import "collections/sequence" take Sequencing;
+import "collections/set" take Set, OrderedSet;
+import "numbers/bigint" take BigInt;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/single_byte" take Latin1Decoded;
+import "mime/media_type" take MimeItems;
+import "error" take InvalidArgument;
+
+// Immutable bounded protocol observations, independent of transport/auth.
+// Number is a transaction position. UIDL is a maildrop-scoped opaque identity;
+// neither its spelling nor a message number is an RFC Message-ID.
+enum PopFeature = (uidl, top);
+object PopNumber {
+    has origin is int;
+    PopNumber(origin is int) {
+        confirm origin>0 && origin<=2147483647 else throw InvalidPopData("message number outside supported 1..2147483647");
+        self.origin=origin;
+    }
+    value() is int {origin;}
+    string() is string {origin.string();}
+}
+object PopIdentifier {
+    has origin is string;
+    PopIdentifier(origin is string) {
+        let bytes=Utf8Encoded(origin).bytes();
+        confirm bytes.size()>0 && bytes.size()<=70 else throw InvalidPopData("UIDL length outside 1..70");
+        for bytes -> octet {confirm octet.int()>=33 && octet.int()<=126 else throw InvalidPopData("invalid UIDL octet");}
+        self.origin=origin;
+    }
+    string() is string {origin;}
+}
+object PopListingLimits {
+    has entries, digits is int;
+    PopListingLimits() {entries=4096;digits=40;}
+    PopListingLimits(entries is int, decimal_digits is int) {
+        confirm entries>=0 && decimal_digits>0 else throw InvalidArgument("invalid POP3 listing limits");
+        self.entries=entries;digits=decimal_digits;
+    }
+    entries() is int {entries;}
+    decimal_digits() is int {digits;}
+}
+object PopMessage {
+    has number is PopNumber;has size is BigInt;has identifiers is @PopIdentifier;
+    PopMessage(number is PopNumber, size is BigInt, identifiers is @PopIdentifier) {
+        confirm size.sign()>=0 && identifiers.size()<=1 else throw InvalidPopData("inconsistent message observation");
+        self.number=number;self.size=size;self.identifiers=identifiers;
+    }
+    number() is PopNumber {number;}
+    size() is BigInt {size;}
+    identified() is bool {identifiers.size()==1;}
+    identifier() is PopIdentifier {confirm self.identified() else throw MissingPopIdentifier();identifiers[0];}
+}
+object PopCapabilities {
+    has names is @string;has features is Set<PopFeature>;has available is bool;
+    PopCapabilities(reply is PopReply) {
+        let recognized is MimeItems<PopFeature>=MimeItems();let advertised is MimeItems<string>=MimeItems();
+        if reply.successful() {
+            let lines=PopDataLines(reply,PopListingLimits(256,40)).entries();
+            for lines -> line {
+                confirm line.length()>0 && line.length()<=510 else throw InvalidPopData("invalid CAPA line length");
+                for Utf8Encoded(line).bytes() -> octet {
+                    confirm octet.int()>=32 && octet.int()<=126 else throw InvalidPopData("invalid CAPA octet");
+                }
+                let parts=line.split(" ");confirm parts[0]!="" else throw InvalidPopData("empty capability name");
+                let upper is @byte=Utf8Encoded(parts[0]).bytes().map() -> octet {
+                    let code=octet.int();if code>=97 && code<=122 {(code-32).byte();}else{octet;}
+                };
+                let name=Latin1Decoded(upper).string();advertised=advertised.following(name);
+                if name=="TOP" || name=="UIDL" {
+                    confirm parts.size()==1 else throw InvalidPopData("TOP/UIDL takes no CAPA parameters");
+                    let feature=if name=="TOP"{PopFeature.top;}else{PopFeature.uidl;};
+                    recognized=recognized.following(feature);
+                }
+            }
+        }
+        self.names=advertised.entries();features=OrderedSet(recognized.entries());available=reply.successful();
+    }
+    available() is bool {available;}
+    names() is Sequencing<string> {names;}
+    features() is Set<PopFeature> {features;}
+}
+// Strict unsigned decimal parsing with separate digit and machine-number bounds.
+// Message sizes are BigInt; no float conversion can lose their low bits.
+object PopDecimal {
+    has origin is string;
+    PopDecimal(origin is string, limits is PopListingLimits) {
+        confirm origin.length()>0 else throw InvalidPopData("empty decimal");
+        confirm origin.length()<=limits.decimal_digits() else throw PopListingLimitExceeded("decimal_digits");
+        for Utf8Encoded(origin).bytes() -> octet {
+            confirm octet.int()>=48 && octet.int()<=57 else throw InvalidPopData("unsigned decimal required");
+        }
+        self.origin=origin;
+    }
+    value() is BigInt {BigInt(origin);}
+    number() is int {
+        Utf8Encoded(origin).bytes().reduce(0) -> value,octet {
+            let digit=octet.int()-48;
+            confirm value.rat()<=(2147483647-digit)/10 else throw InvalidPopData("number exceeds supported 31 bits");
+            value*10+digit;
+        };
+    }
+}
+object PopDataLines {
+    has entries is @string;
+    PopDataLines(reply is PopReply, limits is PopListingLimits) {
+        confirm reply.successful() && reply.multiline() else throw InvalidPopData("successful multiline reply required");
+        confirm reply.lines()<=limits.entries() else throw PopListingLimitExceeded("entries");
+        let body=Latin1Decoded(reply.body()).string();
+        if body=="" {entries=[];}
+        else {
+            let lines=body.split("\r\n");
+            confirm lines[lines.size()-1]=="" && lines.size()-1==reply.lines() else throw InvalidPopData("inconsistent listing framing");
+            entries=(0..lines.size()-1).map() -> index {lines[index];};
+        }
+    }
+    entries() is @string {entries;}
+}
+object PopMailboxState {
+    has count is int;has size is BigInt;
+    PopMailboxState(reply is PopReply, limits is PopListingLimits) {
+        confirm reply.successful() && !reply.multiline() else throw InvalidPopData("STAT requires positive single reply");
+        let parts=reply.text().split(" ");confirm parts.size()>=2 else throw InvalidPopData("STAT requires count and size");
+        let amount=PopDecimal(parts[0],limits).number();
+        confirm amount<=limits.entries() else throw PopListingLimitExceeded("entries");
+        let total=PopDecimal(parts[1],limits).value();
+        confirm amount>0 || total.sign()==0 else throw InvalidPopData("empty maildrop reports nonzero size");
+        count=amount;size=total;
+    }
+    count() is int {count;}
+    size() is BigInt {size;}
+}
+object PopListing {
+    has entries is @PopMessage;
+    PopListing(reply is PopReply, identifiers is @PopReply, limits is PopListingLimits) {
+        confirm identifiers.size()<=1 else throw InvalidPopData("one optional UIDL reply required");
+        let rows=PopDataLines(reply,limits).entries();let seen=PopNumbers();
+        let values is @PopMessage=rows.map() -> row {
+            let parts=row.split(" ");confirm parts.size()>=2 else throw InvalidPopData("LIST requires number and size");
+            let number=PopNumber(PopDecimal(parts[0],limits).number());
+            PopMessage(number,PopDecimal(parts[1],limits).value(),[]);
+        };
+        for values -> message {
+            confirm !seen.membership(message.number().value()) else throw InvalidPopData("duplicate LIST number");
+            seen=seen.following(message.number().value());
+        }
+        if identifiers.size()==0 {entries=values;}
+        else {
+            let uid_rows=PopDataLines(identifiers[0],limits).entries();let numbers=PopNumbers();
+            let identified is @PopMessage=uid_rows.map() -> row {
+                let parts=row.split(" ");confirm parts.size()==2 else throw InvalidPopData("UIDL requires number and identifier");
+                let number=PopNumber(PopDecimal(parts[0],limits).number());
+                PopMessage(number,BigInt("0"),[PopIdentifier(parts[1])]);
+            };
+            for identified -> message {
+                let number=message.number().value();
+                confirm seen.membership(number) && !numbers.membership(number) else throw InvalidPopData("UIDL number mismatch or duplicate");
+                numbers=numbers.following(number);
+            }
+            confirm uid_rows.size()==values.size() else throw InvalidPopData("LIST/UIDL number sets differ");
+            let joined is @PopMessage=values.map() -> message {
+                let matching is @PopMessage=identified.filter() -> entry {entry.number().value()==message.number().value();};
+                PopMessage(message.number(),message.size(),[matching[0].identifier()]);
+            };entries=joined;
+        }
+    }
+    messages() is Sequencing<PopMessage> {entries;}
+}
+object InvalidPopData does Error {
+    has reason is string;InvalidPopData(reason is string){self.reason=reason;}
+    text() is string {"invalid POP3 data: "+reason;}
+}
+object PopListingLimitExceeded does Error {
+    has kind is string;PopListingLimitExceeded(kind is string){self.kind=kind;}
+    kind() is string {kind;} text() is string {"POP3 listing "+kind+" limit exceeded";}
+}
+object MissingPopIdentifier does Error {
+    MissingPopIdentifier();text() is string {"POP3 UIDL identifier is unavailable";}
+}
+
+test "POP3 number and opaque identifier have different identities" {
+    test.is(PopNumber(7).value(),7);test.is(PopIdentifier("7").string(),"7");
+    let absent=PopMessage(PopNumber(7),BigInt("0"),[]);test.is(absent.identified(),false);
+}
+
+// Persistent seen-number set used by bounded listing validation.
+object PopNumbers {
+    has origin is Set<int>;
+    PopNumbers(){let empty is @int=[];origin=OrderedSet(empty);}
+    membership(number is int) is bool {origin.membership(number);}
+    following(number is int) is ^PopNumbers {let extended=origin.addition(number);^origin=extended;}
+}

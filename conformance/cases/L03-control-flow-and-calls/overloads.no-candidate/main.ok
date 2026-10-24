@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Mixer {
+    Mixer();
+    mix(a is int) is int { 1; }
+    mix(a is string) is int { 2; }
+}
+
+main() is int {
+    let out = Stdout();
+    let x = Mixer().mix(1.5);
+    out.writeln("unreachable");
+    0;
+}

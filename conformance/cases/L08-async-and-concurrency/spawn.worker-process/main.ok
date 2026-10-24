@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Calculator {
+    has seed is int;
+    Calculator(:seed);
+    calculate(input is int) is int { seed * input; }
+    spread(values is @int, labels is %string:int) is @int { values.map() -> v { v + seed + labels["a"]; }; }
+}
+
+async main() is int {
+    let out = Stdout();
+    let left is Future<int> = spawn Calculator(seed: 7).calculate(input: 20);
+    let right is Future<@int> = spawn Calculator(seed: 1).spread(values: [1, 2, 3], labels: ["a": 1]);
+    let r = await right;
+    out.writeln(((await left) + r.size()).string());
+    0;
+}

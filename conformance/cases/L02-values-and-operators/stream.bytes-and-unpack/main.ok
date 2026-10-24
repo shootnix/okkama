@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out <- @byte(104, 105) <- "\n";
+    out <- @string(1, 2, 3)... <- "\n";
+    let empty is @string = [];
+    out <- empty... <- "end\n";
+    0;
+}

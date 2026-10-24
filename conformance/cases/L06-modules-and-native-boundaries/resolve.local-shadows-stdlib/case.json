@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.resolve.local-shadows-stdlib",
+  "title": "a local module shadows a standard-library module",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.RESOLUTION",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "time/clock.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "local time/clock\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.2: lookup is local-first; a local time/clock.ok shadows the bundled std module of the same path."
+  },
+  "status": "mandatory"
+}

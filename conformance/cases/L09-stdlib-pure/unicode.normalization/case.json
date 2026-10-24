@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.unicode.normalization",
+  "title": "Unicode normalization forms",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.UNICODE.NORMALIZATION",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "unicode-data"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - nfd decomposes\nok 2 - nfc composes\nok 3 - nfkc compatibility\nok 4 - nfc keeps ligature\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/unicode/normalization.ok",
+    "Unicode Standard Annex #15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "UAX #15: é (U+00E9) decomposes to e + U+0301; U+FB03 is a compatibility ligature changed only by NFKC/NFKD (cross-checked with Python unicodedata)."
+  },
+  "status": "mandatory"
+}

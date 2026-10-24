@@ -1,0 +1,18 @@
+// Разобрать длину chunk и trailers
+//
+// Разобрать очередной chunk и trailers: ParsedHttp1ChunkLine и ParsedHttp1Trailers проверяют wire-грамматику.
+//
+// Запуск: ./examples/cookbook/run lab example-http1-chunks
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http1-chunks
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/http1_chunk" take ParsedHttp1ChunkLine,ParsedHttp1Trailers;
+import "http/header" take Headers,HeaderName;
+import "io/stdout" take Stdout;
+main() is int {
+    let size=ParsedHttp1ChunkLine("a; comment=\"ignored; safely\"").size();
+    let trailers=ParsedHttp1Trailers("X-Checksum: completed\r\n\r\n",Headers([])).value();
+    Stdout().writeln(size.string());Stdout().writeln(trailers.first(HeaderName("X-Checksum")));0;
+}

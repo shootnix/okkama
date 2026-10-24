@@ -1,0 +1,80 @@
+module terminal/width v1.0.0;
+import "runtime/unicode_character" take display_clusters,display_widths,display_invalid_index;
+object DisplayWidth{
+    has origin is string;
+    DisplayWidth(origin is string){self.origin=origin;}
+    #projected
+    value() is int{
+        let invalid=display_invalid_index(origin);
+        confirm invalid<0 else throw InvalidDisplayText(invalid,"control character in display text");
+        display_widths(origin).reduce(0)->width,cluster{width+cluster;};
+    }
+}
+object TruncatedDisplay{
+    has origin,ellipsis is string;
+    has width is int;
+    TruncatedDisplay(origin is string,width is int,ellipsis is string){self.origin=origin;self.width=width;self.ellipsis=ellipsis;}
+    string() is string{
+        confirm width>=0 else throw InvalidDisplayWidth();
+        let ending=DisplayWidth(ellipsis).value();
+        confirm ending<=width else throw InvalidDisplayWidth();
+        let actual=DisplayWidth(origin).value();
+        if actual<=width{origin;}else{
+            let clusters=display_clusters(origin);let sizes=display_widths(origin);
+            let prefix=(0..clusters.size()).reduce(DisplayPrefix(width-ending))->old,index{old.added(clusters[index],sizes[index]);};
+            prefix.string()+ellipsis;
+        }
+    }
+}
+object DisplayPrefix{
+    has origin is string="";
+    has remaining is int;
+    has ended is bool=false;
+    DisplayPrefix(width is int){remaining=width;}
+    added(cluster is string,width is int) is ^DisplayPrefix{
+        if !ended && width<=remaining{^origin=origin+cluster;^remaining=remaining-width;}
+        else{^ended=true;}
+    }
+    string() is string{origin;}
+}
+object InvalidDisplayText does Error{
+    has at is int;has reason is string;
+    InvalidDisplayText(index is int,reason is string){at=index;self.reason=reason;}
+    index() is int{at;}
+    text() is string{reason;}
+}
+object InvalidDisplayWidth does Error{
+    InvalidDisplayWidth();
+    text() is string{"invalid display width or ellipsis exceeds target";}
+}
+
+// Wrap at extended grapheme boundaries, preserving text and existing lines.
+object WrappedDisplay{
+    has origin is string;has width is int;
+    WrappedDisplay(origin is string,width is int){self.origin=origin;self.width=width;}
+    string() is string{
+        confirm width>0 else throw InvalidDisplayWidth();
+        origin.split("\n").map()->line{
+            DisplayWidth(line).value();
+            let clusters=display_clusters(line);let sizes=display_widths(line);
+            let wrapped=(0..clusters.size()).reduce(DisplayLines(width))->old,index{old.added(clusters[index],sizes[index]);};
+            wrapped.string();
+        }.join("\n");
+    }
+}
+object DisplayLines{
+    has origin is string="";has maximum,used is int;
+    DisplayLines(width is int){maximum=width;used=0;}
+    added(cluster is string,width is int) is ^DisplayLines{
+        confirm width<=maximum else throw InvalidDisplayWidth();
+        let gap=if used>0 && width>maximum-used{"\n";}else{"";};
+        ^origin=origin+gap+cluster;
+        ^used=if gap==""{used+width;}else{width;};
+    }
+    string() is string{origin;}
+}
+
+test "display coordinates preserve joined emoji and combining clusters"{
+    test.is(DisplayWidth("é界👩‍💻").value(),5);
+    test.is(TruncatedDisplay("👩‍💻a",2,"").string(),"👩‍💻");
+}

@@ -1,0 +1,68 @@
+module checksum/state v1.0.0;
+
+// A non-cryptographic checksum over an ordered history of bytes.
+// value() is a deterministic non-negative integer. state(bytes) returns a
+// fresh successor for the appended chunk: neither receiver nor input changes.
+// Empty chunks preserve the result; independent branches remain usable.
+// Concrete algorithms specify seed ranges, widths and their empty values.
+//
+//     let whole = partial.state([byte(0), byte(255)]);
+//     whole.value();  // partial.value() still denotes the earlier history
+//
+// Inputs are immutable arrays, not consuming streams. No resources are owned
+// or closed. Encode text explicitly before supplying bytes. The test-only
+// fake counts bytes; it does not implement a production checksum algorithm.
+role Checksumming {
+    state(origin is @byte) is ^Checksumming;
+    value() is int;
+
+    fake {
+        has count is int = 0;
+        state(origin is @byte) is ^Checksumming {
+            ^count = count + origin.size();
+        }
+        value() is int { count; }
+    }
+}
+
+// Constructor validation failure shared by bounded checksum algorithms.
+// initial()/maximum() preserve the rejected seed and inclusive upper bound.
+object InvalidChecksumInitial does Error {
+    has seed is int;
+    has limit is int;
+    InvalidChecksumInitial(initial is int, maximum is int) {
+        seed = initial;
+        limit = maximum;
+    }
+    initial() is int { seed; }
+    maximum() is int { limit; }
+    text() is string {
+        "checksum initial value must be in 0.." + limit.string() + ": " + seed.string();
+    }
+}
+
+test "checksum fake appends and branches without changing old states" {
+    let origin = Checksumming.fake();
+    let bytes = [byte(0), byte(255)];
+    let first = origin.state(bytes);
+    test.is(origin.value(), 0);
+    test.is(first.value(), 2);
+    test.is(first.state([byte(1)]).value(), 3);
+    test.is(first.state([byte(2), byte(3)]).value(), 4);
+    test.is(first.value(), 2);
+    test.is(bytes[1].int(), 255);
+}
+
+test "empty chunks and independent checksum fakes retain their values" {
+    let origin = Checksumming.fake().state([byte(4)]);
+    test.is(origin.state([]).value(), 1);
+    test.is(origin.value(), 1);
+    test.is(Checksumming.fake().value(), 0);
+}
+
+test "invalid checksum initial value preserves its diagnostic" {
+    let error = InvalidChecksumInitial(-1, 65535);
+    test.is(error.initial(), -1);
+    test.is(error.maximum(), 65535);
+    test.is(error.text(), "checksum initial value must be in 0..65535: -1");
+}

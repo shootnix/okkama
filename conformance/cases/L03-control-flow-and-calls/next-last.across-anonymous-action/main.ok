@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    for [1, 2] -> n {
+        let skip = () is void {
+            next;
+        };
+        skip();
+    }
+    out.writeln("unreachable");
+    0;
+}

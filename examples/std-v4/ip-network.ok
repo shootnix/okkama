@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "net/ip" take IpAddress, IpNetwork;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let network=IpNetwork(IpAddress("2001:db8:1:2:abcd::1"),64);
+    Stdout().writeln(network.network().string()+"/"+network.prefix().string());
+    Stdout().writeln(network.broadcast().string());
+    Stdout().writeln(network.size().string());
+    0;
+}

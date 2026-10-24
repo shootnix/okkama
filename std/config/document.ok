@@ -1,0 +1,217 @@
+module config/document v1.0.0;
+import "collections/sequence" take Sequencing;
+import "async/atomic" take Atomic;
+import "config/key" take SettingKey;
+import "config/source" take SettingReading,SettingEntry,SettingSource,Settings,DuplicateSetting,SettingLimitExceeded;
+import "compare" take Order;
+import "json/value" take JsonObject,JsonValue,JsonWriting,JsonMember;
+import "math/decimal" take Decimal;
+import "toml/value" take TomlTable,TomlValue,TomlVisitor,TomlMember,TomlLocalDate,TomlLocalTime,TomlLocalDateTime,TomlOffsetDateTime;
+import "config/ini" take IniDocument;
+
+// Strings keep decoded text. Other scalars use canonical source-format text.
+// Native file access and decoding are explicitly outside these adapters.
+object SettingDocumentEntries{
+    has origin is Atomic<@SettingEntry>;
+    SettingDocumentEntries(){let empty is @SettingEntry=[];origin=Atomic(empty);}
+    append(entry is SettingEntry) is void{
+        let old=origin.value();
+        confirm old.size()<4096 else throw SettingLimitExceeded();
+        for old->previous{confirm previous.key().order(entry.key())!=Order.equal else throw DuplicateSetting(entry.key());}
+        let revised is @SettingEntry=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{entry;}};
+        origin.replace(revised);
+    }
+    settings() is Settings{Settings(origin.value());}
+}
+object JsonSettings does SettingReading{
+    has origin is Settings;
+    JsonSettings(document is JsonObject,source is SettingSource){
+        let entries=SettingDocumentEntries();
+        let visitor=JsonSettingVisitor([],source,entries,64);
+        document.print(visitor);visitor.valid();
+        origin=entries.settings();
+    }
+    membership(key is SettingKey) is bool{origin.membership(key);}
+    entry(key is SettingKey) is SettingEntry{origin.entry(key);}
+    keys() is Sequencing<SettingKey>{origin.keys();}
+}
+object JsonSettingVisitor does JsonWriting{
+    has path is @string;
+    has source is SettingSource;
+    has entries is SettingDocumentEntries;
+    has depth is int;
+    has emission is SettingEmission;
+    JsonSettingVisitor(path is @string,source is SettingSource,entries is SettingDocumentEntries,depth is int){
+        confirm depth>0 else throw InvalidSettingDocument("document nesting exceeds 64");
+        self.path=path;self.source=source;self.entries=entries;self.depth=depth;emission=SettingEmission();
+    }
+    null_value() is void{self.scalar("null");}
+    boolean(value is bool) is void{self.scalar(if value{"true";}else{"false";});}
+    number(value is Decimal) is void{self.scalar(value.string());}
+    text(value is string) is void{self.scalar(value);}
+    elements(values is Sequencing<JsonValue>) is void{
+        self.once();
+        try{
+        let size=values.size();
+        confirm size>=0 && size<=1024 else throw SettingLimitExceeded();
+        let texts is @string=(0..size).map()->index{
+            let scalar=JsonSettingScalar();values.item(index).print(scalar);scalar.value();
+        };
+        entries.append(SettingEntry(SettingKey(path),texts,source));
+            }catch e is Error{emission.poison();throw e;}
+    }
+    members(members is Sequencing<JsonMember>) is void{
+        self.once();
+        try{
+        let size=members.size();
+        confirm size>=0 && size<=4096 else throw SettingLimitExceeded();
+        for (0..size)->index{
+            let member=members.item(index);
+            let child is @string=(0..path.size()+1).map()->at{if at<path.size(){path[at];}else{member.name();}};
+            let visitor=JsonSettingVisitor(child,source,entries,depth-1);
+            member.value().print(visitor);visitor.valid();
+        }
+            }catch e is Error{emission.poison();throw e;}
+    }
+    valid() is void{emission.valid();}
+    private:
+    once() is void{emission.start();}
+    scalar(text is string) is void{
+        self.once();
+        try{entries.append(SettingEntry(SettingKey(path),[text],source));}
+        catch e is Error{emission.poison();throw e;}
+    }
+}
+object JsonSettingScalar does JsonWriting{
+    has origin is Atomic<string>;
+    has emission is SettingEmission;
+    JsonSettingScalar(){origin=Atomic("");emission=SettingEmission();}
+    value() is string{emission.valid();origin.value();}
+    null_value() is void{self.scalar("null");}
+    boolean(value is bool) is void{self.scalar(if value{"true";}else{"false";});}
+    number(value is Decimal) is void{self.scalar(value.string());}
+    text(value is string) is void{self.scalar(value);}
+    elements(values is Sequencing<JsonValue>) is void{emission.poison();throw InvalidSettingDocument("nested arrays are not settings");}
+    members(members is Sequencing<JsonMember>) is void{emission.poison();throw InvalidSettingDocument("object-valued arrays are not settings");}
+    private:
+    scalar(text is string) is void{emission.start();origin.replace(text);}
+}
+object TomlSettings does SettingReading{
+    has origin is Settings;
+    TomlSettings(document is TomlTable,source is SettingSource){
+        let entries=SettingDocumentEntries();
+        let visitor=TomlSettingVisitor([],source,entries,64);
+        document.accept(visitor);visitor.valid();
+        origin=entries.settings();
+    }
+    membership(key is SettingKey) is bool{origin.membership(key);}
+    entry(key is SettingKey) is SettingEntry{origin.entry(key);}
+    keys() is Sequencing<SettingKey>{origin.keys();}
+}
+object TomlSettingVisitor does TomlVisitor{
+    has path is @string;
+    has source is SettingSource;
+    has entries is SettingDocumentEntries;
+    has depth is int;
+    has emission is SettingEmission;
+    TomlSettingVisitor(path is @string,source is SettingSource,entries is SettingDocumentEntries,depth is int){
+        confirm depth>0 else throw InvalidSettingDocument("document nesting exceeds 64");
+        self.path=path;self.source=source;self.entries=entries;self.depth=depth;emission=SettingEmission();
+    }
+    text(value is string) is void{self.scalar(value);}
+    integer(value is int) is void{self.scalar(value.string());}
+    real(value is float) is void{self.scalar(value.string());}
+    infinity(negative is bool) is void{self.scalar(if negative{"-inf";}else{"inf";});}
+    not_a_number() is void{self.scalar("nan");}
+    boolean(value is bool) is void{self.scalar(if value{"true";}else{"false";});}
+    local_date(value is TomlLocalDate) is void{self.scalar(value.string());}
+    local_time(value is TomlLocalTime) is void{self.scalar(value.string());}
+    local_datetime(value is TomlLocalDateTime) is void{self.scalar(value.string());}
+    offset_datetime(value is TomlOffsetDateTime) is void{self.scalar(value.string());}
+    elements(values is Sequencing<TomlValue>) is void{
+        self.once();
+        try{
+        let size=values.size();
+        confirm size>=0 && size<=1024 else throw SettingLimitExceeded();
+        let texts is @string=(0..size).map()->index{
+            let scalar=TomlSettingScalar();values.item(index).accept(scalar);scalar.value();
+        };
+        entries.append(SettingEntry(SettingKey(path),texts,source));
+            }catch e is Error{emission.poison();throw e;}
+    }
+    members(members is Sequencing<TomlMember>) is void{
+        self.once();
+        try{
+        let size=members.size();
+        confirm size>=0 && size<=4096 else throw SettingLimitExceeded();
+        for (0..size)->index{
+            let member=members.item(index);
+            let child is @string=(0..path.size()+1).map()->at{if at<path.size(){path[at];}else{member.name();}};
+            let visitor=TomlSettingVisitor(child,source,entries,depth-1);
+            member.value().accept(visitor);visitor.valid();
+        }
+            }catch e is Error{emission.poison();throw e;}
+    }
+    valid() is void{emission.valid();}
+    private:
+    once() is void{emission.start();}
+    scalar(text is string) is void{
+        self.once();
+        try{entries.append(SettingEntry(SettingKey(path),[text],source));}
+        catch e is Error{emission.poison();throw e;}
+    }
+}
+object TomlSettingScalar does TomlVisitor{
+    has origin is Atomic<string>;
+    has emission is SettingEmission;
+    TomlSettingScalar(){origin=Atomic("");emission=SettingEmission();}
+    value() is string{emission.valid();origin.value();}
+    text(value is string) is void{self.scalar(value);}
+    integer(value is int) is void{self.scalar(value.string());}
+    real(value is float) is void{self.scalar(value.string());}
+    infinity(negative is bool) is void{self.scalar(if negative{"-inf";}else{"inf";});}
+    not_a_number() is void{self.scalar("nan");}
+    boolean(value is bool) is void{self.scalar(if value{"true";}else{"false";});}
+    local_date(value is TomlLocalDate) is void{self.scalar(value.string());}
+    local_time(value is TomlLocalTime) is void{self.scalar(value.string());}
+    local_datetime(value is TomlLocalDateTime) is void{self.scalar(value.string());}
+    offset_datetime(value is TomlOffsetDateTime) is void{self.scalar(value.string());}
+    elements(values is Sequencing<TomlValue>) is void{emission.poison();throw InvalidSettingDocument("nested arrays are not settings");}
+    members(members is Sequencing<TomlMember>) is void{emission.poison();throw InvalidSettingDocument("object-valued arrays are not settings");}
+    private:
+    scalar(text is string) is void{emission.start();origin.replace(text);}
+}
+object IniSettings does SettingReading{
+    has origin is Settings;
+    IniSettings(document is IniDocument,source is SettingSource){
+        let entries=SettingDocumentEntries();
+        for document.sections()->section{
+            for section.entries()->entry{entries.append(SettingEntry(SettingKey([section.name(),entry.name()]),[entry.value()],source));}
+        }
+        origin=entries.settings();
+    }
+    membership(key is SettingKey) is bool{origin.membership(key);}
+    entry(key is SettingKey) is SettingEntry{origin.entry(key);}
+    keys() is Sequencing<SettingKey>{origin.keys();}
+}
+object InvalidSettingDocument does Error{
+    has reason is string;
+    InvalidSettingDocument(reason is string){self.reason=reason;}
+    text() is string{reason;}
+}
+
+// Seals a nominal printer observation, including errors the producer catches.
+// Returned Settings never remain writable through a retained visitor alias.
+object SettingEmission{
+    has called,failed,sealed is Atomic<bool>;
+    SettingEmission(){called=Atomic(false);failed=Atomic(false);sealed=Atomic(false);}
+    start() is void{
+        if called.value() || sealed.value(){failed.replace(true);throw InvalidSettingDocument("multiple or late value emissions");}
+        called.replace(true);
+    }
+    poison() is void{failed.replace(true);}
+    valid() is void{
+        confirm called.value() && !failed.value() else throw InvalidSettingDocument("invalid or missing document emission");
+        sealed.replace(true);
+    }
+}

@@ -1,0 +1,36 @@
+module bench/app v1.0.0;
+
+// Полное приложение: 6 файлов-модулей, объекты, роли, правила цены,
+// ошибки домена, async-сервис котировок и отчёт.
+import "domain" take Money, Order;
+import "pricing" take PricingRule, PriceEngine, BulkDiscount, LoyaltyDiscount, CategoryPromotion, Tax;
+import "catalog" take Catalog;
+import "orders" take OrderSource;
+import "report" take Report;
+import "io/stdout" take Stdout;
+
+object Quotes {
+    has engine is PriceEngine;
+
+    Quotes(:engine);
+
+    async quote(order is Order) is Money {
+        engine.total(order);
+    }
+}
+
+async main() is int {
+    let rules is @PricingRule = [BulkDiscount(), CategoryPromotion(category: 3), LoyaltyDiscount(), Tax()];
+    let quotes = Quotes(engine: PriceEngine(rules: rules));
+    let source = OrderSource(catalog: Catalog(size: 2000));
+    let report = Report();
+    for (0..30000) -> id {
+        let order = source.order(id);
+        let total = await quotes.quote(order);
+        report = report.recorded(order, total);
+    }
+    let text = report.text();
+    Stdout().writeln(text);
+    Stdout().writeln("length: " + text.length().string());
+    0;
+}

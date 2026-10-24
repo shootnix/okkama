@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.time.durations",
+  "title": "exact durations",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TIME.DURATION",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - nanoseconds\nok 2 - canonical string\nok 3 - minute in seconds\nok 4 - day is 86400 s\nok 5 - sum\nok 6 - non-integral nanoseconds\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/time/duration.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "time/duration: units are exact rational seconds (minute 60, day 86400); 1/3 s is not an integral number of nanoseconds and is rejected without rounding."
+  },
+  "status": "mandatory"
+}

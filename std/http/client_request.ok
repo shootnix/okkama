@@ -1,0 +1,39 @@
+module http/client_request v1.0.0;
+import "http/message" take Request;
+import "http/target" take RequestTargetKind,OriginTarget;
+import "http/version" take HttpVersion;
+import "http/header" take Header,HeaderName;
+import "url/value" take Url;
+import "url/value" take ParsedUrl;
+import "http/target" take AbsoluteTarget;
+import "http/method" take Method;
+import "http/header" take Headers;
+
+// Prepare an ordinary direct request before DNS or socket effects. CONNECT and
+// OPTIONS * require separate explicitly routed consumers.
+object HttpDirectRequest {
+    has url is Url;has request is Request;
+    HttpDirectRequest(origin is Request){
+        confirm origin.target().kind()==RequestTargetKind.absolute else throw InvalidClientRequest("absolute HTTP URL required");
+        confirm origin.version()==HttpVersion.http_1_1 else throw InvalidClientRequest("HTTP1.1 request required");
+        let destination=origin.target().url();let parts=destination.parts();
+        let authority=parts.authority().string();let supplied=origin.headers().values(HeaderName("Host"));
+        confirm supplied.size()<=1 else throw InvalidClientRequest("duplicate Host");
+        if supplied.size()==1 {confirm supplied.item(0)==authority else throw InvalidClientRequest("Host differs from URL authority");}
+        let fields=if supplied.size()==1{origin.headers();}else{origin.headers().addition(Header(HeaderName("Host"),authority));};
+        let path=if parts.path()==""{"/";}else{parts.path();};
+        let target=OriginTarget(path,parts.query());
+        request=Request(origin.method(),target,fields,origin.body(),origin.version());url=destination;
+    }
+    url() is Url{url;}request() is Request{request;}
+}
+object InvalidClientRequest does Error {
+    has reason is string;InvalidClientRequest(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid HTTP client request: "+reason;}
+}
+test "direct route adds Host and a slash without adding optional client features" {
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl("http://example.test").value()),Headers([]));
+    let wire=HttpDirectRequest(request).request();
+    test.ok(wire.target().string()=="/" && wire.headers().first(HeaderName("Host"))=="example.test");
+    test.ok(!wire.headers().membership(HeaderName("User-Agent")));
+}

@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Summer {
+    Summer();
+    sum(values is ...int) is int {
+        let all is @int = values...;
+        all.reduce(0) -> acc, v { acc + v; };
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let xs = [1, 2, 3];
+    let copy = xs...;
+    out.writeln(Summer().sum(xs...).string());
+    out.writeln(copy.size().string());
+    0;
+}

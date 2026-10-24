@@ -1,0 +1,34 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+object Stamp {
+    has id is int = Tracer().mark("default evaluated", 7);
+    Stamp(:id);
+    id() is int { id; }
+}
+
+object Plain {
+    has id is int = 3;
+    Plain(:id);
+    id() is int { id; }
+}
+
+main() is int {
+    let out = Stdout();
+    let a = Stamp();
+    let b = Stamp();
+    out.writeln(a.id().string() + " " + b.id().string());
+    let c = Plain(id: 5);
+    let d = Plain();
+    out.writeln(c.id().string() + " " + d.id().string());
+    0;
+}

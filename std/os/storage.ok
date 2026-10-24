@@ -1,0 +1,85 @@
+module os/storage v1.0.0;
+
+import "fs/path" take Path;
+import "numbers/bigint" take BigInt, BigDifference;
+import "compare" take Order;
+import "runtime/system" take storage_usage;
+
+// Storage denotes the mounted filesystem or volume containing a path, not a
+// physical disk. Construction retains only the path. Every usage() call asks
+// the runtime provider for one fresh, coherent observation.
+//
+//     let storage = Storage(path: Path("/srv/application"));
+//     let usage = storage.usage();
+//     output.writeln(usage.available().string());
+//
+// All quantities are bytes. available() means capacity currently available to
+// this process after filesystem reservations and applicable quotas. used() is
+// capacity() minus available(), so the three values always form one identity.
+
+object Storage {
+    has origin is Path;
+
+    Storage(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    usage() is StorageUsage {
+        let snapshot is %string:string = try {
+            storage_usage(origin.string());
+        }
+        catch failure is NativeFailure {
+            throw StorageFailure(failure.code(), failure.message());
+        };
+        StorageUsage(
+            capacity: BigInt(origin: snapshot["capacity"]),
+            available: BigInt(origin: snapshot["available"]),
+        );
+    }
+}
+
+object StorageUsage {
+    has total_capacity is BigInt;
+    has available_capacity is BigInt;
+
+    StorageUsage(capacity is BigInt, available is BigInt) {
+        total_capacity = capacity;
+        available_capacity = available;
+
+        confirm self.total_capacity.sign() >= 0 && self.available_capacity.sign() >= 0
+            && self.available_capacity.order(self.total_capacity) != Order.greater
+            else throw InvalidStorageUsage();
+    }
+
+    capacity() is BigInt { total_capacity; }
+    used() is BigInt { value BigDifference(left: total_capacity, right: available_capacity); }
+    available() is BigInt { available_capacity; }
+    fits(amount is BigInt) is bool {
+        confirm amount.sign() >= 0 else throw InvalidStorageUsage();
+        amount.order(available_capacity) != Order.greater;
+    }
+}
+
+object InvalidStorageUsage does Error {
+    InvalidStorageUsage();
+
+    #projected
+    text() is string { "storage usage values must be non-negative"; }
+}
+
+object StorageFailure does Error {
+    has failure_code is string;
+    has message is string;
+
+    StorageFailure(code is string, message is string) {
+        failure_code = code;
+        self.message = message;
+    }
+
+    code() is string { failure_code; }
+
+    #projected
+    text() is string { message; }
+}

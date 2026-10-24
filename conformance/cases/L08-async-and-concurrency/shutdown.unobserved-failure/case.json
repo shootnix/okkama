@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.shutdown.unobserved-failure",
+  "title": "an unobserved spawned failure at shutdown",
+  "purpose": "Record how an unobserved task failure affects completion.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.UNOBSERVED-FAILURE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "uncaught-error",
+        "runtime"
+      ],
+      "justification": "D-034 (owner decision): the unobserved failure is reported and the run fails; whether the runtime reports it as the task's uncaught error or a runtime failure is not fixed."
+    },
+    "stdout": {
+      "text": "failing body\nmain done\n"
+    }
+  },
+  "spec_refs": [
+    "docs/async-guide.md#6.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async guide 6.4 and language owner decision 19.10.2026 (D-034): an unobserved error is reported and the run fails with a nonzero status."
+  },
+  "status": "mandatory",
+  "notes": "D-034: language owner decision 19.10.2026 — the run fails with a nonzero status."
+}

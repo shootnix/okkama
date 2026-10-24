@@ -1,0 +1,18 @@
+module app v1.0.0;
+import "template/path" take TemplatePath, TemplatePathFromString;
+import "template/model" take TemplateBindings, TemplateBinding, TemplateStrings;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let data is TemplateStrings = TemplateBindings([
+            TemplateBinding(TemplatePath(["user","name"]), "Ada"),
+            TemplateBinding(TemplatePath(["user.name"]), "literal dotted name")
+        ]);
+        data.string(TemplatePathFromString("user.name").value());
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

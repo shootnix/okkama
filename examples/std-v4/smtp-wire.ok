@@ -1,0 +1,19 @@
+module app v1.0.0;
+import "mail/smtp_reply" take SmtpReplyDecoder;
+import "mail/smtp" take SmtpCapabilities;
+import "mail/smtp_data" take PreparedSmtpData;
+import "mail/message" take ParsedMail;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let decoder=SmtpReplyDecoder();decoder=decoder.fed(Utf8Encoded("250-mail.example\r\n250-SIZE 4096\r").bytes());
+    decoder=decoder.fed(Utf8Encoded("\n250 8BITMIME\r\n").bytes());
+    let capabilities=SmtpCapabilities(decoder.finish());
+    Stdout().writeln(capabilities.maximum_size().string());
+    let message=ParsedMail(Utf8Encoded("Subject: example\r\n\r\n.line\r\n").bytes()).message();
+    let prepared=PreparedSmtpData(message,capabilities);
+    Stdout().writeln(prepared.message_size().string());
+    Stdout().write(Utf8Decoded(prepared.bytes()).string());
+    0;
+}

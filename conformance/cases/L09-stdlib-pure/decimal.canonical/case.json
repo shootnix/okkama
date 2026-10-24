@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.decimal.canonical",
+  "title": "exact decimals have one canonical spelling",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.MATH.DECIMAL",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.COMPARE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - trailing zeros\nok 2 - scientific canonical\nok 3 - negative coefficient\nok 4 - negative exponent\nok 5 - 1000 exponent\nok 6 - equal values\nok 7 - whitespace rejected\nchecks: 7, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/math/decimal.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "math/decimal header: equivalent spellings share one canonical form (001.2000 -> 1.2, 1000 -> 1e3), so trailing zeros move into the exponent (-0.50 = -5 x 10^-1); construction never trims whitespace."
+  },
+  "status": "mandatory",
+  "notes": "D-045: only two canonical spellings are documented; the general string rule is not asserted."
+}

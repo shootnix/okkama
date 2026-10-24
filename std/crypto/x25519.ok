@@ -1,0 +1,46 @@
+module crypto/x25519 v1.0.0;
+
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, InvalidCryptoInput, AuthenticationFailed;
+import "encoding/hex" take HexEncoded, HexDecoded;
+
+// X25519 Diffie-Hellman (RFC 7748). The private key is 32 SecretBytes
+// (clamped by the function), X25519PrivateKey(secret: ...);
+// X25519PrivateKey(entropy: ...) draws one (named arguments select them).
+// shared_secret(peer) is the raw 32-byte shared secret as fresh SecretBytes;
+// derive keys from it with crypto/kdf.HkdfSecret, never use it directly. A
+// non-contributory peer key (small order, all-zero result) is
+// AuthenticationFailed.
+object X25519PrivateKey {
+    has secret is SecretBytes;
+    X25519PrivateKey(secret is SecretBytes) {
+        confirm secret.size() == 32 else throw InvalidCryptoInput("X25519 private key must be 32 bytes");
+        self.secret = secret;
+    }
+    X25519PrivateKey(entropy is Entropy) { secret = SecretBytes(entropy.bytes(32)); }
+    public_key() is X25519PublicKey { X25519PublicKey(HostOperation("x25519-public", [secret.export_bytes()]).bytes()); }
+    shared_secret(peer is X25519PublicKey) is SecretBytes {
+        SecretBytes(HostOperation("x25519-shared", [secret.export_bytes(), peer.raw()]).bytes());
+    }
+}
+
+object X25519PublicKey {
+    has origin is @byte;
+    X25519PublicKey(raw is @byte) {
+        confirm raw.size() == 32 else throw InvalidCryptoInput("X25519 public key must be 32 bytes");
+        origin = raw;
+    }
+    raw() is @byte { origin; }
+}
+
+test "X25519 matches RFC 7748 section 6.1" {
+    let alice = X25519PrivateKey(secret: SecretBytes(HexDecoded("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a").bytes()));
+    let bob = X25519PrivateKey(secret: SecretBytes(HexDecoded("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb").bytes()));
+    test.is(HexEncoded(alice.public_key().raw()).string(), "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
+    let shared = alice.shared_secret(bob.public_key());
+    test.is(HexEncoded(shared.export_bytes()).string(), "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742");
+    test.is(bob.shared_secret(alice.public_key()).export_bytes(), shared.export_bytes());
+    let zero is @byte = (0..32).map() -> i { 0.byte(); };
+    test.ok(try { alice.shared_secret(X25519PublicKey(zero)); false; } catch e is AuthenticationFailed { true; });
+}

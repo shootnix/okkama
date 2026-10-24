@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.no-constructor-rerun",
+  "title": "successors do not re-run constructor invariants",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.NO-CONSTRUCTOR-RERUN",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-15\n-999\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.4",
+    "improvements-roadmap/RESEARCH_FINDINGS.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.4: successor actions do not implicitly run constructors and MUST validate their own transitions (R19 finding): the unchecked successor yields -15; the explicitly checked one throws."
+  },
+  "status": "mandatory"
+}

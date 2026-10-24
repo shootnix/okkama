@@ -1,0 +1,38 @@
+// Множество Мандельброта в ASCII
+// Задача: Построить изображение комплексной плоскости из текстовых символов.
+// Запуск из корня: ./examples/gallery/run mandel
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: float, неизменяемая орбита и ограничение итераций.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/mandel.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/mandel v1.0.0;
+import "io/stdout" take Stdout;
+object Orbit {
+    has real,imaginary is float;has steps is int;
+    Orbit(){real=0.0;imaginary=0.0;steps=0;}
+    steps() is int{steps;}
+    escaped() is bool{real*real+imaginary*imaginary>10.0;}
+    following(cr is float,ci is float) is ^Orbit {
+        ^real=real*real-imaginary*imaginary+cr;
+        ^imaginary=2.0*real*imaginary+ci;^steps=steps+1;
+    }
+}
+object Mandelbrot {
+    Mandelbrot();
+    pixel(cr is float,ci is float) is string {
+        let orbit=Orbit();
+        loop{last if orbit.steps()==112 || orbit.escaped();orbit=orbit.following(cr,ci);}
+        let iterations=if orbit.escaped(){orbit.steps()-1;}else{112;};
+        let palette=[" ",".",":",",",";","!","/",">",")","|","&","I","H","%","*","#"];
+        palette[iterations%16];
+    }
+}
+main() is int {
+    let fractal=Mandelbrot();
+    for (0..30)->row{
+        let imaginary=(30-row).float()*0.1-1.5;
+        let line=(0..75).map()->column{fractal.pixel(column.float()*0.04-2.0,imaginary);};
+        Stdout().writeln(line.join(""));
+    }0;
+}

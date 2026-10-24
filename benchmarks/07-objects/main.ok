@@ -1,0 +1,54 @@
+module bench/objects v1.0.0;
+
+// Объекты: миллион successor-шагов (неизменяемые обновления), методы и
+// поля; цикл `for` с перепривязкой локального значения.
+import "io/stdout" take Stdout;
+
+object Particle {
+    has x, y, vx, vy is int;
+    has bounces is int;
+
+    Particle(x is int, y is int, vx is int, vy is int) {
+        self.x = x;
+        self.y = y;
+        self.vx = vx;
+        self.vy = vy;
+        bounces = 0;
+    }
+
+    energy() is int { vx * vx + vy * vy; }
+    bounces() is int { bounces; }
+    position() is int { x * 1000 + y; }
+
+    // Шаг в коробке 1000x1000 с отражением от стен.
+    moved() is ^Particle {
+        let nx = x + vx;
+        let ny = y + vy;
+        let hit_x = nx < 0 || nx > 1000;
+        let hit_y = ny < 0 || ny > 1000;
+        ^vx = if hit_x { 0 - vx; } else { vx; };
+        ^vy = if hit_y { 0 - vy; } else { vy; };
+        ^x = if hit_x { x; } else { nx; };
+        ^y = if hit_y { y; } else { ny; };
+        ^bounces = if hit_x || hit_y { bounces + 1; } else { bounces; };
+    }
+}
+
+object World {
+    World();
+
+    simulate(id is int, steps is int) is int {
+        let particle = Particle(id * 37 % 1000, id * 91 % 1000, id % 13 + 1, id % 7 + 2);
+        for (0..steps) -> step {
+            particle = particle.moved();
+        }
+        particle.position() + particle.bounces() * 7 + particle.energy();
+    }
+}
+
+main() is int {
+    let world = World();
+    let total = (0..400).reduce(0) -> sum, id { sum + world.simulate(id, 2500); };
+    Stdout().writeln(total.string());
+    0;
+}

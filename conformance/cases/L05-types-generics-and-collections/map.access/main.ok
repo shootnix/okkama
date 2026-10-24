@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let name = "who";
+    let prices is %string:int = ["pear": 140, "apple": 120, name: 1];
+    out.writeln(prices["apple"].string());
+    out.writeln(prices["who"].string());
+    out.writeln(if prices.has("pear") { "has pear"; } else { "?"; });
+    out.writeln(if prices.has("fig") { "?"; } else { "no fig"; });
+    out.writeln(prices.keys().join(","));
+    let values is @string = prices.values().map() -> v { v.string(); };
+    out.writeln(values.join(","));
+    out.writeln(prices.size().string());
+    0;
+}

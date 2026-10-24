@@ -1,0 +1,50 @@
+module testing/double v1.0.0;
+import "testing/check" take CheckContext;
+import "async/atomic" take Atomic;
+import "collections/sequence" take Sequencing;
+import "collections/list" take List,EmptyList;
+import "numbers/bigint" take BigInt;
+import "runtime/testing" as backend;
+// Fresh state per owner; explicit role fakes compose these values. No reset,
+// reflection, generated mocks or implicit expectations. Stored T is borrowed.
+object Recorded<T> {
+    has index is BigInt;has value is T;
+    Recorded(index is BigInt,value is T){self.index=index;self.value=value;}
+    index() is BigInt {index;}value() is T {value;}
+}
+object RecordedCalls<T> {
+    has cell is Atomic<List<Recorded<T>>>;
+    has state is backend.TestState;
+    RecordedCalls(){CheckContext().verify();state=backend.test_state_open(65536);let empty is List<Recorded<T>>=EmptyList();cell=Atomic(empty);}
+    record(value is T) is void {
+        CheckContext().verify();let old=cell.value();confirm old.size()<65536 else throw InvalidTestDouble("recorder capacity");
+        let index=backend.test_state_next(state);cell.replace(old.prefix(Recorded(BigInt(index.string()),value)));
+    }
+    size() is int {CheckContext().verify();backend.test_state_size(state);}
+    records() is Sequencing<Recorded<T>> {
+        CheckContext().verify();let reversed is @Recorded<T>=cell.value().map()->record{record;};
+        let snapshot is @Recorded<T>=(0..reversed.size()).map()->index{reversed[reversed.size()-index-1];};snapshot;
+    }
+    close() is void {CheckContext().verify();backend.test_state_close(state);cell.close();}
+    destroy {self.close();}
+}
+object Stub<T> {
+    has origin is @T;has position is backend.TestState;
+    Stub(values is Sequencing<T>){
+        CheckContext().verify();let size=values.size();confirm size>=0 && size<=65536 else throw InvalidTestDouble("stub capacity");
+        let snapshot is @T=(0..size).map()->index{values.item(index);};origin=snapshot;position=backend.test_state_open(size);
+    }
+    size() is int {CheckContext().verify();backend.test_state_size(position);origin.size();}
+    remaining() is int {CheckContext().verify();origin.size()-backend.test_state_size(position);}
+    next() is T {
+        CheckContext().verify();let at=try{backend.test_state_next(position);}catch error is NativeFailure{if error.code()=="resource_exhausted"{throw StubExhausted();}throw error;};origin[at];
+    }
+    close() is void {CheckContext().verify();backend.test_state_close(position);}
+    destroy {self.close();}
+}
+object StubExhausted does Error {StubExhausted();text() is string {"test stub is exhausted";}}
+object InvalidTestDouble does Error {
+    has reason is string;InvalidTestDouble(reason is string){self.reason=reason;}text() is string {"invalid test double: "+reason;}
+}
+
+test "recording snapshots remain immutable" {let calls is RecordedCalls<int>=RecordedCalls();defer calls.close();let before=calls.records();calls.record(7);test.is(before.size(),0);test.is(calls.records().first().value(),7);}

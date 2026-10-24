@@ -1,0 +1,162 @@
+module net/tls v1.0.0;
+import "crypto/x509/trust" take TrustStore,TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "collections/sequence" take Sequencing;
+import "encoding/single_byte" take Latin1Encoded,UnrepresentableLatin1Character;
+import "runtime/tls_transport" as tls;
+import "net/tcp" take TcpConnection;
+import "net/stream" take TlsTcpOrigin,AsyncReading,AsyncWriting,ConnectionEndpoints,StreamWriteCleanup;
+import "net/endpoint" take IpEndpoint;
+import "crypto/x509/trust" take CertificateIdentity,CertificateIdentityKind,CertificateFailureCode,CertificateVerificationFailed;
+import "crypto/x509/certificate" take Certificate,CertificateChain;
+import "time/clock" take Timing,SystemClock;
+import "async/event" take Event;
+import "async/atomic" take Atomic;
+import "async/lock" take Lock,LockGuard;
+import "async/scope" take FutureGroup;
+import "io/stream" take Closing,ByteSource,InvalidReadLimit;
+import "error" take InvalidState;
+
+enum TlsVersion=(tls1_2,tls1_3);
+
+// Reusable immutable inputs, without a server identity, clock, filesystem
+// acquisition or handshake effect. Empty explicit roots remain empty.
+object TlsClientPolicy {
+    has roots is TrustedCertificates;has enabled is Set<TlsVersion>;
+    has advertised is @string;
+    TlsClientPolicy(trust is TrustStore){
+        roots=TrustedCertificates(trust.certificates());
+        let defaults is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+        enabled=defaults;advertised=[];
+    }
+    TlsClientPolicy(trust is TrustStore,versions is Set<TlsVersion>,protocols is Sequencing<string>){
+        let count=versions.size();
+        confirm count>=1 && count<=2 else throw InvalidTlsPolicy("enabled versions");
+        let selected is @TlsVersion=[TlsVersion.tls1_2,TlsVersion.tls1_3].filter()->version{versions.membership(version);};
+        confirm selected.size()==count else throw InvalidTlsPolicy("inconsistent version set");
+        let snapshot is Set<TlsVersion>=OrderedSet(selected);enabled=snapshot;
+        let names=protocols.size();confirm names>=0 && names<=16 else throw InvalidTlsPolicy("protocol count");
+        let values is @string=(0..names).map()->index{
+            let value=protocols.item(index);
+            confirm value.length()>=1 && value.length()<=255 else throw InvalidTlsPolicy("protocol width");
+            try{Latin1Encoded(value).bytes();}catch e is UnrepresentableLatin1Character{throw InvalidTlsPolicy("protocol octets");}
+            value;
+        };
+        let distinct is Set<string>=OrderedSet(values);
+        confirm distinct.size()==values.size() else throw InvalidTlsPolicy("duplicate protocol");
+        roots=TrustedCertificates(trust.certificates());advertised=values;
+    }
+    trust() is TrustStore{roots;}versions() is Set<TlsVersion>{enabled;}
+    protocols() is Sequencing<string>{advertised;}
+}
+object InvalidTlsPolicy does Error {
+    has reason is string;InvalidTlsPolicy(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid TLS policy: "+reason;}
+}
+enum TlsPhase=(handshaking,verifying,reading,writing,closing);
+object TlsFailure does Error {
+    has phase is TlsPhase;has reason is string;
+    TlsFailure(phase is TlsPhase,reason is string){self.phase=phase;self.reason=reason;}
+    phase() is TlsPhase{phase;}reason() is string{reason;}text() is string{"TLS operation failed: "+reason;}
+}
+object TlsClientHandshake {
+    has origin is TlsTcpOrigin;has ends is ConnectionEndpoints<IpEndpoint>;
+    has server is CertificateIdentity;has policy is TlsClientPolicy;has clock is Timing;
+    TlsClientHandshake(origin is TcpConnection,server is CertificateIdentity,policy is TlsClientPolicy){
+        self.origin=TlsTcpOrigin(origin.input());ends=origin.endpoints();self.server=server;self.policy=policy;clock=SystemClock();
+    }
+    TlsClientHandshake(origin is TcpConnection,server is CertificateIdentity,policy is TlsClientPolicy,clock is Timing){
+        self.origin=TlsTcpOrigin(origin.input());ends=origin.endpoints();self.server=server;self.policy=policy;self.clock=clock;
+    }
+    async connection() is TlsConnection{
+        let mask=if policy.versions().membership(TlsVersion.tls1_2){1;}else{0;}+if policy.versions().membership(TlsVersion.tls1_3){2;}else{0;};
+        let protocols is @string=policy.protocols().map()->value{value;};
+        let kind=if server.kind()==CertificateIdentityKind.dns{"DNS";}else{"IP";};let identity=server.string();
+        let unrooted=if identity.length()>0 && identity.slice(identity.length()-1,identity.length())=="."{identity.slice(0,identity.length()-1);}else{identity;};
+        let sni=if kind=="DNS"{unrooted;}else{"";};
+        let state=try{origin.client(mask,protocols,sni);}catch e is NativeFailure{throw TlsFailure(TlsPhase.handshaking,e.code());};
+        let published=Event();let anchor=TlsUnpublished(state,published);defer anchor.close();
+        let group is FutureGroup<bool>=FutureGroup();let cleanup=TlsTaskCleanup(group);defer await cleanup.close();
+        try{let pending=tls.handshake(state);group.start(pending);await pending;}catch e is NativeFailure{throw TlsFailure(TlsPhase.handshaking,e.code());}
+        let roots is @@byte=policy.trust().certificates().map()->certificate{certificate.der();};
+        try{tls.authorize(state,roots,kind,identity,clock.instant().unix_duration().seconds().string());}catch e is NativeFailure{
+            if e.domain()=="core.x509.verify" && e.code()=="permission_denied"{throw CertificateVerificationFailed(CertificateFailureCode(e.message()).value());}
+            throw TlsFailure(TlsPhase.verifying,e.code());
+        }
+        let connection=TlsConnection(state,ends);published.set();connection;
+    }
+}
+object TlsUnpublished {
+    has state is tls.TlsState;has published is Event;TlsUnpublished(state is tls.TlsState,published is Event){self.state=state;self.published=published;}
+    close() is void{if !published.ready(){tls.close(state);}}
+}
+object TlsTaskCleanup<T> {
+    has group is FutureGroup<T>;TlsTaskCleanup(group is FutureGroup<T>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+object TlsConnection does Closing {
+    has state is tls.TlsState;has info is TlsDetails;has busy is Atomic<bool>;has lock is Lock;
+
+    TlsConnection(state is tls.TlsState,ends is ConnectionEndpoints<IpEndpoint>){
+        self.state=state;busy=Atomic(false);lock=Lock();
+        let certificates is @Certificate=tls.peer(state).map()->source{Certificate(source);};
+        let version=if tls.version(state)=="TLSv1_3"{TlsVersion.tls1_3;}else{TlsVersion.tls1_2;};
+        info=TlsDetails(ends,CertificateChain(certificates),version,tls.cipher(state),tls.protocol(state));
+    }
+    input() is TlsReading{TlsReading(self);}output() is TlsWriting{TlsWriting(self);}details() is TlsDetails{info;}
+    closed() is bool{tls.closed(state);}close() is void{tls.close(state);}destroy{tls.close(state);}
+    async shutdown() is void{
+        let group is FutureGroup<bool>=FutureGroup();let cleanup=TlsTaskCleanup(group);defer await cleanup.close();
+        try{let pending=tls.shutdown(state);group.start(pending);await pending;}catch e is NativeFailure{throw TlsFailure(TlsPhase.closing,e.code());}
+    }
+
+    async read_bytes(limit is int) is @byte{
+        confirm limit>0 else throw InvalidReadLimit(limit);
+        confirm busy.compare_and_replace(false,true) else throw InvalidState("TLS already has a pending read");
+        let ticket=TlsReadTicket(busy);defer ticket.close();
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=TlsTaskCleanup(group);defer await cleanup.close();
+        try{let pending=tls.read(state,limit);group.start(pending);await pending;}catch e is NativeFailure{throw TlsFailure(TlsPhase.reading,e.code());}
+    }
+    async write_bytes(source is ByteSource) is bool{
+        let guards is FutureGroup<LockGuard>=FutureGroup();let writing is FutureGroup<bool>=FutureGroup();
+        let empty is @Future<LockGuard>=[];let pending_guard=Atomic(empty);let taken=Event();
+        let cleanup=StreamWriteCleanup(guards,writing,pending_guard,taken);defer await cleanup.close();
+        let waiting=lock.guard();pending_guard.replace([waiting]);guards.start(waiting);let guard=await waiting;taken.set();defer guard.close();
+        confirm !self.closed() else throw TlsFailure(TlsPhase.writing,"already_closed");
+        let bytes=source.bytes();
+        try{let pending=tls.write(state,bytes);writing.start(pending);await pending;true;}catch e is NativeFailure{throw TlsFailure(TlsPhase.writing,e.code());}
+    }
+}
+object TlsDetails {
+    has ends is ConnectionEndpoints<IpEndpoint>;has certificates is CertificateChain;has version is TlsVersion;has cipher,protocol is string;
+    TlsDetails(ends is ConnectionEndpoints<IpEndpoint>,peer is CertificateChain,version is TlsVersion,cipher is string,protocol is string){self.ends=ends;certificates=peer;self.version=version;self.cipher=cipher;self.protocol=protocol;}
+    endpoints() is ConnectionEndpoints<IpEndpoint>{ends;}peer() is CertificateChain{certificates;}version() is TlsVersion{version;}
+    cipher() is string{cipher;}protocol() is string{protocol;}
+}
+object TlsReading does AsyncReading,Closing {
+    has owner is TlsConnection;
+    TlsReading(owner is TlsConnection){self.owner=owner;}
+    closed() is bool{owner.closed();}close() is void{owner.close();}
+    async bytes(limit is int) is @byte{ await owner.read_bytes(limit); }
+}
+object TlsReadTicket {
+    has busy is Atomic<bool>;TlsReadTicket(busy is Atomic<bool>){self.busy=busy;}close() is void{busy.replace(false);}
+}
+object TlsWriting does AsyncWriting,Closing {
+    has owner is TlsConnection;
+    TlsWriting(owner is TlsConnection){self.owner=owner;}
+    closed() is bool{owner.closed();}close() is void{owner.close();}
+    async write(source is ByteSource) is AsyncWriting{ await owner.write_bytes(source);self; }
+}
+test "client defaults retain only modern versions and explicit empty trust" {
+    let policy=TlsClientPolicy(TrustedCertificates([]));
+    test.is(policy.trust().certificates().size(),0);
+    test.ok(policy.versions().membership(TlsVersion.tls1_2) && policy.versions().membership(TlsVersion.tls1_3));
+    test.is(policy.protocols().size(),0);
+}
+test "portable TLS failures preserve phase without echoing engine details" {
+    let failure=TlsFailure(TlsPhase.writing,"already_closed");
+    test.ok(failure.phase()==TlsPhase.writing);
+    test.is(failure.reason(),"already_closed");
+    test.is(failure.text(),"TLS operation failed: already_closed");
+}

@@ -1,0 +1,6 @@
+// Статическая диагностика: Несовместимая сигнатура реализации роли.
+// Файл намеренно содержит ошибку и проверяется без выполнения main.
+// Запуск проверки: ./examples/gallery/run check --analysis-only
+// Ожидаемое сообщение анализатора хранится в catalog.json; пример принят, если анализ его отклонил.
+module gallery/analysis/role_signature v1.0.0;
+role Reading{value() is int;}object Other does Reading{Other();value() is string{"x";}}main() is int{0;}

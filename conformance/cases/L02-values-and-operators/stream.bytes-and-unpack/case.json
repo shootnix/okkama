@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.stream.bytes-and-unpack",
+  "title": "stream write of bytes and unpacked arrays",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STREAM-WRITE",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "hi\n123\nend\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.4.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.4.1: @byte is written unchanged; `sink <- xs...` writes each element; an empty unpack writes nothing."
+  },
+  "status": "mandatory"
+}

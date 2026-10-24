@@ -1,0 +1,27 @@
+module http/internal/websocket_upgrade v1.0.0;
+import "http/websocket_session" take WebSocketSession;
+import "http/websocket" take WebSocketFailure;
+import "http/internal/websocket_output" take WebSocketOutputSettlement;
+import "net/stream" take AsyncReading;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "io/stream" take InvalidReadLimit;
+
+object WebSocketOpeningCleanup {
+    has group is FutureGroup<WebSocketSession>;has waiting is Future<WebSocketSession>;has taken is Event;
+    WebSocketOpeningCleanup(group is FutureGroup<WebSocketSession>,waiting is Future<WebSocketSession>,taken is Event){self.group=group;self.waiting=waiting;self.taken=taken;}
+    async close() is void{
+        if group.active()>0{group.cancel();defer await group.wait();}
+        if !taken.ready(){let values is @WebSocketSession=try{[await waiting];}catch e is Cancelled{[];}catch e is Error{[];}catch e is NativeFailure{[];};for values -> value{value.close();await value.settled();}}
+    }
+}
+// Immutable prefix bytes with a consuming offset; borrowed origin is not closed.
+object WebSocketPrefixedInput does AsyncReading {
+    has origin is AsyncReading;has prefix is @byte;has offset is Atomic<int>;
+    WebSocketPrefixedInput(origin is AsyncReading,prefix is @byte){confirm prefix.size()<=65536 else throw WebSocketFailure("upgrade prefix limit");self.origin=origin;self.prefix=prefix;offset=Atomic(0);}
+    async bytes(limit is int) is @byte{
+        confirm limit>0 else throw InvalidReadLimit(limit);let start=offset.value();let left=prefix.size()-start;if left>0{let amount=if left<limit{left;}else{limit;};offset.replace(start+amount);return prefix.slice(start,start+amount);}
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=origin.bytes(limit);group.start(pending);await pending;
+    }
+}

@@ -1,0 +1,49 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "net/ip" take IpAddress;
+import "net/endpoint" take HostName;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/client" take HttpClient;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "time/clock" take SystemClock;
+import "http/endpoint" take ListedNetworks;
+import "url/value" take ParsedUrl,Url,UrlParts,UrlFragment;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/ip" take IpNetwork;
+import "http/body" take EmptyBody;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/target" take AbsoluteTarget;
+import "http/header" take Headers;
+import "http/version" take HttpVersion;
+import "io/stdout" take Stdout;
+import "http/exchange" take ClientResponse;
+import "async/scope" take FutureGroup;
+
+// OKKAMA_HTTP_URL selects an absolute HTTPS URL for the local fixture.
+// OKKAMA_TLS_ROOT selects its explicit DER trust anchor. DNS names are mapped
+// explicitly below; the connection uses only checked loopback endpoints.
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["h2","http/1.1"]);
+    let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();
+    let resolver=FixedResolution([HostAddresses(HostName("example.test"),[IpAddress("127.0.0.1")]),HostAddresses(HostName("wrong.test"),[IpAddress("127.0.0.1")])]);
+    let http_versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1,HttpVersion.http_2]);
+    let client_policy=ClientPolicy(http_versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let client=HttpClient(resolver,policy,client_policy,SystemClock());defer client.close();
+    let parts=url.parts();let target=Url(UrlParts(parts.scheme(),parts.authority(),parts.path(),parts.query(),UrlFragment()));
+    let request=Request(Method("GET"),AbsoluteTarget(target),Headers([]),EmptyBody(),HttpVersion.http_2);
+    let first=client.response(request);let second=client.response(request);let group is FutureGroup<ClientResponse>=FutureGroup();group.start(first);group.start(second);
+    let a=await first;let b=await second;confirm a.details().version()==HttpVersion.http_2 && b.details().version()==HttpVersion.http_2;
+    let ra=a.response().body().reading();let rb=b.response().body().reading();defer ra.close();defer rb.close();
+    confirm await rb.bytes(8)==[66.byte()];confirm (await rb.bytes(8)).size()==0;confirm await ra.bytes(8)==[65.byte()];confirm (await ra.bytes(8)).size()==0;
+    Stdout().writeln("mixed client multiplexed HTTP2 after verified ALPN");0;
+}

@@ -1,0 +1,12 @@
+module example v1.0.0;
+import "db/value" take DbInteger,DbText;
+import "db/read" take RowReader;
+import "db/statement" take Statement;
+import "db/row" take Row,Column;
+import "numbers/bigint" take BigInt;
+import "io/stdout" take Stdout;
+main() is int{
+    let statement=Statement("SELECT id, name FROM customers WHERE id = ?",[DbInteger(BigInt("7"))]);
+    let row=Row([Column(0,"id","INTEGER"),Column(1,"name","TEXT")],[DbInteger(BigInt("7")),DbText("Ada")]);
+    Stdout().writeln(statement.values().size().string()+" binding: "+RowReader(row).text("name"));0;
+}

@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Meters {
+    has n is int;
+    Meters(:n);
+}
+
+object Feet {
+    has n is int;
+    Feet(:n);
+}
+
+main() is int {
+    let out = Stdout();
+    let a is Meters = Feet(n: 3);
+    out.writeln("unreachable");
+    0;
+}

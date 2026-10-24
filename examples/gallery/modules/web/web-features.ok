@@ -1,0 +1,138 @@
+// Middleware, статика, шаблоны, streaming и SSE
+// Задача: Выполнить запросы к составному приложению и передать двоичные данные.
+// Запуск из корня: ./examples/gallery/run modules/web/web-features
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: Scope, Handling-обёртка, FileRoot, HtmlTemplate, каналы потоков и AllFutures.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/modules/cro/use-cases/web-features.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/web/features v1.0.0;
+import "support" take DemoServer,DemoClient,ReplySnapshot;
+import "web/routing" take WebRoutes,Get,Post,Scope;
+import "web/request" take WebRequest;
+import "web/reply" take Text,Html,Json;
+import "web/exception" take Exception;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/message" take Request,Response;
+import "http/request_context" take HttpRequestContext;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/body" take BodyOpening,ByteBody,OneShotBody,StreamBodyReading;
+import "http/sse" take ServerEvent,EventBody;
+import "http/static" take StaticFiles,StaticPolicy;
+import "net/stream" take AsyncReading;
+import "io/stream" take Closing;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "fs/root" take FileRoot;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "mime/types" take StandardMediaTypes;
+import "template/html" take HtmlTemplate;
+import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber;
+import "math/decimal" take Decimal;
+import "async/channel" take Channel,Sending,Receiving,ChannelClosed;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/collect" take AllFutures;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "http/server" take HttpServer;
+import "http/server_policy" take ServerPolicy;
+import "strings/parse" take ParsedInt;
+import "os/environment" take Environment;
+import "io/stdout" take Stdout;
+import "http/target" take ParsedRequestTarget;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+// Потоковые байты — IO-ресурс. Буфер удерживает только хвост текущего чанка.
+object ChunkInput does AsyncReading,Closing {
+    has queue is Receiving<@byte>;has buffer is ByteBuffer;has ended is Event;
+    ChunkInput(queue is Receiving<@byte>){self.queue=queue;buffer=ByteBuffer();ended=Event();}
+    closed() is bool{ended.ready();}
+    close() is void{ended.set();queue.close();buffer.closing().close();}
+    async bytes(limit is int) is @byte {
+        confirm limit>0;
+        if buffer.content().size()==0{
+            let chunks is @@byte=try{[await queue.item()];}catch end is ChannelClosed{[];};
+            if chunks.size()==0{return [];}
+            buffer.writing().write(ByteSnapshot(chunks[0]));
+        }buffer.reading().bytes(limit);
+    }
+}
+object Features {
+    has files is StaticFiles;has template is string;
+    Features(files is StaticFiles,template is string){self.files=files;self.template=template;}
+    async version(request is WebRequest) is HandlingResult{Json(200,JsonObject([JsonMember("api",JsonNumber(Decimal("2")))]));}
+    async echo(request is WebRequest) is HandlingResult{Text(200,request.path("rest"));}
+    async static(request is WebRequest) is HandlingResult{
+        let method=request.request().method();
+        let target=ParsedRequestTarget("/"+request.path("rest"),method).value();
+        let rewritten=Request(method,target,request.request().headers());
+        await files.handling(rewritten,request.context());
+    }
+    async page(request is WebRequest) is HandlingResult{
+        let data=JsonObject([JsonMember("title",JsonText("Shop")),JsonMember("note",JsonText("fresh <today>"))]);
+        Html(200,HtmlTemplate(template).string(data));
+    }
+    async count(request is WebRequest) is HandlingResult {
+        let queue is Channel<@byte>=Channel(5);
+        for (1..6)->i{await queue.sending().send(Utf8Encoded("line "+i.string()+"\n").bytes());}queue.sending().close();
+        let input=ChunkInput(queue.receiving());
+        let body=OneShotBody(StreamBodyReading(input,input,Headers([])));
+        ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"text/plain"),Header(HeaderName("Transfer-Encoding"),"chunked")]),body));
+    }
+    async events(request is WebRequest) is HandlingResult {
+        let queue is Channel<ServerEvent>=Channel(3);
+        for ["alpha","beta","gamma"]->text{await queue.sending().send(ServerEvent(text,"tick","",[],false));}queue.sending().close();
+        ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"text/event-stream"),Header(HeaderName("Transfer-Encoding"),"chunked")]),EventBody(queue.receiving())));
+    }
+    async slow(request is WebRequest) is HandlingResult {
+        let ms=ParsedInt(request.path("ms")).value();confirm ms>=0 && ms<=1000 else throw Exception(422,"delay 0..1000 ms");
+        await SystemClock().wait(Duration(ms.rat(),DurationUnit.millisecond));Text(200,"slept "+ms.string());
+    }
+    async upload(request is WebRequest) is HandlingResult {
+        let bytes=await request.bytes(65536);let sum=bytes.reduce(0)->sum,octet{sum+octet.int();};
+        Text(200,"got "+bytes.size().string()+" bytes, sum "+sum.string());
+    }
+    async download(request is WebRequest) is HandlingResult {
+        let bytes is @byte=(0..8192).map()->i{(i%256).byte();};
+        ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"application/octet-stream"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes)));
+    }
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+}
+object ObservedHandling does Handling {
+    has origin is Handling;has log is Sending<string>;
+    ObservedHandling(origin is Handling,log is Sending<string>){self.origin=origin;self.log=log;}
+    async handling(request is Request,context is HttpRequestContext) is HandlingResult {
+        await log.send(request.target().path());let reply=(await origin.handling(request,context)).response();
+        let headers=reply.headers().addition(Header(HeaderName("X-Served-By"),"web-features"));
+        ResponseHandling(Response(reply.status(),headers,reply.body(),reply.version()));
+    }
+}
+async main() is int {
+    let env=Environment();let gallery=Path(if env.membership("OKKAMA_GALLERY_DIR"){env.variable("OKKAMA_GALLERY_DIR");}else{"examples/gallery";});
+    let root=FileRoot(Directory(gallery.child("modules").child("web").child("static")));defer root.close();
+    let file=File(mode:FileMode.reading,path:gallery.child("modules").child("web").child("templates").child("page.html"));defer file.close();
+    let api=Features(StaticFiles(root,StandardMediaTypes(),StaticPolicy()),file.text().content());
+    let routes=WebRoutes([Scope("/api",[Get("/version",api.version),Get("/echo/*rest",api.echo)]),Get("/static/*rest",api.static),Get("/page",api.page),Get("/count",api.count),Get("/events",api.events),Get("/slow/:ms",api.slow),Post("/upload",api.upload),Get("/download",api.download)],api.missing);
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();let log is Channel<string>=Channel(32);
+    let server=HttpServer(listener,ObservedHandling(routes.table(),log.sending()),ServerPolicy(),SystemClock());
+    let work is FutureGroup<HttpServer>=FutureGroup();defer await work.wait();defer server.close();work.start(server.serve());let client=DemoClient(server);
+    for ["/api/version","/api/echo/a/b/c","/static/site.css","/static/nope.css","/page","/count","/events"]->path{
+        let reply=await client.get(path);reply.show(path);confirm reply.header("X-Served-By")=="web-features";
+        if path=="/count"{confirm reply.text()=="line 1\nline 2\nline 3\nline 4\nline 5\n";}
+        if path=="/page"{confirm reply.text().split("&lt;today&gt;").size()==2;}
+        if path=="/static/nope.css"{confirm reply.status()==404;}else{confirm reply.status()==200;}
+    }
+    let pending is @Future<ReplySnapshot>=[client.get("/slow/60"),client.get("/slow/40"),client.get("/slow/20")];
+    let concurrent=await AllFutures(origins:pending).results();for concurrent->reply{reply.show("parallel");confirm reply.status()==200;}
+    let bytes is @byte=(0..8192).map()->i{(i%256).byte();};
+    let uploaded=await client.binary("POST","/upload",bytes,"application/octet-stream",Headers([]));uploaded.show("upload");confirm uploaded.text()=="got 8192 bytes, sum 1044480";
+    let downloaded=await client.get("/download");confirm downloaded.bytes()==bytes;Stdout().writeln("download: 8192 bytes, identical");
+    log.sending().close();for (0..12)->i{let path=await log.receiving().item();if i==0{confirm path=="/api/version";}}
+    Stdout().writeln("middleware saw 12 requests");0;
+}

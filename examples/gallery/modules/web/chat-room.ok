@@ -1,0 +1,66 @@
+// Актор комнаты: сериализует join, leave и сообщения в Channel<RoomCommand>.
+// ChatRoom.subscribe(name), publish(name,text), leave(member); run() должен принадлежать FutureGroup.
+// RoomState — неизменяемый снимок участников и sequence; каждый переход возвращает преемник.
+// Подписчики получают JSON {seq,from,text}; их очереди ограничены 32 сообщениями.
+// Программа-потребитель: ./examples/gallery/run modules/web/websocket-chat.
+module gallery/web/chat_room v1.0.0;
+import "async/channel" take Channel,ChannelClosed;
+import "uuid/generation" take Uuid4s;
+import "random/source" take SecureRandom;
+import "json/value" take JsonObject,JsonMember,JsonNumber,JsonText;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+object ChatSubscription {
+    has identity,name is string;has queue is Channel<string>;
+    ChatSubscription(name is string){self.name=name;identity=Uuid4s(SecureRandom()).sample().string();queue=Channel(32);}
+    id() is string{identity;}name() is string{name;}
+    async send(text is string) is void{await queue.sending().send(text);}
+    async receive() is string{await queue.receiving().item();}
+    close() is void{queue.sending().close();queue.receiving().close();}
+}
+object RoomState {
+    has members is @ChatSubscription;has sequence is int;
+    RoomState(){let empty is @ChatSubscription=[];members=empty;sequence=0;}
+    joined(member is ChatSubscription) is ^RoomState{
+        let following is @ChatSubscription=(0..members.size()+1).map()->i{if i<members.size(){members[i];}else{member;}};
+        ^members=following;^sequence=sequence+1;
+    }
+    left(id is string) is ^RoomState{^members=members.filter()->member{member.id()!=id;};^sequence=sequence+1;}
+    advanced() is ^RoomState{^sequence=sequence+1;}
+    async broadcast(sender is string,text is string) is void {
+        let json=JsonObject([JsonMember("seq",JsonNumber(Decimal(sequence.string()))),JsonMember("from",JsonText(sender)),JsonMember("text",JsonText(text))]);
+        let wire=CompactJson(origin:json).string();
+        for members->member{try{await member.send(wire);}catch closed is ChannelClosed{}}
+    }
+}
+role RoomCommand{async next(state is RoomState) is RoomState;}
+object JoinRoom does RoomCommand {
+    has member is ChatSubscription;JoinRoom(member is ChatSubscription){self.member=member;}
+    async next(state is RoomState) is RoomState{
+        let following=state.joined(member);await following.broadcast("room",member.name()+" joined");following;
+    }
+}
+object LeaveRoom does RoomCommand {
+    has member is ChatSubscription;LeaveRoom(member is ChatSubscription){self.member=member;}
+    async next(state is RoomState) is RoomState{
+        let following=state.left(member.id());await following.broadcast("room",member.name()+" left");following;
+    }
+}
+object BroadcastRoom does RoomCommand {
+    has sender,text is string;BroadcastRoom(sender is string,text is string){self.sender=sender;self.text=text;}
+    async next(state is RoomState) is RoomState{
+        let following=state.advanced();await following.broadcast(sender,text);following;
+    }
+}
+object ChatRoom {
+    has commands is Channel<RoomCommand>;ChatRoom(){commands=Channel(64);}
+    async subscribe(name is string) is ChatSubscription{
+        let member=ChatSubscription(name);let command is RoomCommand=JoinRoom(member);await commands.sending().send(command);member;
+    }
+    async leave(member is ChatSubscription) is void{let command is RoomCommand=LeaveRoom(member);await commands.sending().send(command);}
+    async publish(name is string,text is string) is void{let command is RoomCommand=BroadcastRoom(name,text);await commands.sending().send(command);}
+    async run() is int {
+        let state=RoomState();loop{try{let command=await commands.receiving().item();state=await command.next(state);}catch ended is ChannelClosed{last;}}0;
+    }
+    close() is void{commands.sending().close();}
+}

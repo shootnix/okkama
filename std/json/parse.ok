@@ -1,0 +1,167 @@
+module json/parse v1.0.0;
+
+import "json/value" take
+    JsonKind,
+    JsonValue,
+    JsonMember,
+    JsonWriting,
+    DuplicateJsonMember;
+import "math/decimal" take Decimal;
+import "runtime/json" take
+    JsonParseState,
+    JsonNodeState,
+    json_parse_state,
+    json_parse_valid,
+    json_parse_offset,
+    json_parse_line,
+    json_parse_column,
+    json_parse_message,
+    json_parse_duplicate, json_parse_has_duplicate,
+    json_parse_root,
+    json_node_kind,
+    json_node_boolean,
+    json_node_number,
+    json_node_text,
+    json_node_size,
+    json_node_item,
+    json_member_name,
+    json_member_value;
+
+// Strict RFC-style JSON parsing into immutable json/value objects.
+//
+//     let document is JsonValue = ParsedJson(
+//         origin: "{\"name\":\"Ada\",\"active\":true}",
+//     );
+//
+// Construction only binds source and policy. Parsing happens when kind() or
+// print() first observes the document. The default maximum depth is 128 and
+// counts the root as depth 1.
+// Offsets are zero-based Unicode-scalar positions; line and column are
+// one-based, and CRLF counts as one line break.
+
+object ParsedJson does JsonValue {
+    has state is JsonParseState;
+
+    ParsedJson(origin is string) {
+        state = json_parse_state(origin, 128);
+    }
+
+    ParsedJson(origin is string, maximum_depth is int) {
+        confirm maximum_depth > 0 else throw InvalidJson(
+            offset: 0,
+            line: 1,
+            column: 1,
+            message: "maximum JSON depth must be positive",
+        );
+        state = json_parse_state(origin, maximum_depth);
+    }
+
+    kind() is JsonKind {
+        JsonNode(origin: self.root()).kind();
+    }
+
+    print(to is JsonWriting) is void {
+        JsonNode(origin: self.root()).print(to);
+    }
+
+    private:
+    root() is JsonNodeState {
+        if json_parse_valid(state) {
+            json_parse_root(state);
+        }
+        else {
+            let duplicate = json_parse_duplicate(state);
+            if !json_parse_has_duplicate(state) {
+                throw InvalidJson(
+                    offset: json_parse_offset(state),
+                    line: json_parse_line(state),
+                    column: json_parse_column(state),
+                    message: json_parse_message(state),
+                );
+            }
+            else {
+                throw DuplicateJsonMember(
+                    name: duplicate,
+                    offset: json_parse_offset(state),
+                    line: json_parse_line(state),
+                    column: json_parse_column(state),
+                );
+            }
+        }
+    }
+}
+
+object JsonNode does JsonValue {
+    has origin is JsonNodeState;
+
+    JsonNode(:origin);
+
+    kind() is JsonKind {
+        match json_node_kind(origin) {
+            case 0 { JsonKind.null_value; }
+            case 1 { JsonKind.boolean_value; }
+            case 2 { JsonKind.number_value; }
+            case 3 { JsonKind.string_value; }
+            case 4 { JsonKind.array_value; }
+            else { JsonKind.object_value; }
+        }
+    }
+
+    print(to is JsonWriting) is void {
+        match json_node_kind(origin) {
+            case 0 { to.null_value(); }
+            case 1 { to.boolean(json_node_boolean(origin)); }
+            case 2 { to.number(Decimal(json_node_number(origin))); }
+            case 3 { to.text(json_node_text(origin)); }
+            case 4 {
+                let values is @JsonValue = (
+                    0..json_node_size(origin)
+                ).map() -> index {
+                    let value is JsonValue = JsonNode(
+                        origin: json_node_item(origin, index),
+                    );
+                    value;
+                };
+                to.elements(values);
+            }
+            else {
+                let members is @JsonMember = (
+                    0..json_node_size(origin)
+                ).map() -> index {
+                    JsonMember(
+                        name: json_member_name(origin, index),
+                        value: JsonNode(
+                            origin: json_member_value(origin, index),
+                        ),
+                    );
+                };
+                to.members(members);
+            }
+        }
+    }
+}
+
+object InvalidJson does Error {
+    has source_offset is int;
+    has source_line is int;
+    has source_column is int;
+    has message is string;
+
+    InvalidJson(offset is int, line is int, column is int, message is string) {
+        source_offset = offset;
+        source_line = line;
+        source_column = column;
+        self.message = message;
+    }
+
+    offset() is int { source_offset; }
+
+    line() is int { source_line; }
+
+    column() is int { source_column; }
+
+    text() is string {
+        message + " at line " + source_line.string()
+            + ", column " + source_column.string();
+    }
+}

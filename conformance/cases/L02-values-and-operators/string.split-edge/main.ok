@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("".split(",").size().string());
+    out.writeln("".split("").size().string());
+    out.writeln("abc".split("").join("|"));
+    out.writeln("aaa".split("aa").join("|"));
+    let nothing is @string = [];
+    out.writeln("[" + nothing.join(",") + "]");
+    0;
+}

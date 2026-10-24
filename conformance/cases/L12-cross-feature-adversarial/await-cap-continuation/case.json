@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.await-cap-continuation",
+  "title": "a cap selected on an awaited receiver resumes correctly",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.AWAIT-CAP",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "card of Ada\n"
+    }
+  },
+  "spec_refs": [
+    "improvements-roadmap/results/IMP-21/RESULT.md",
+    "okkama-pl/t/interpreter/914-await-cap-continuation.t"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "IMP-21: `(await receiver)::Cap::field` inside a started FutureGroup child previously entered a synchronous await and hung before the caller could set the Event; the contract is cooperative suspension and the cap value."
+  },
+  "status": "mandatory"
+}

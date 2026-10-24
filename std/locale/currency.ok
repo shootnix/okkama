@@ -1,0 +1,154 @@
+module locale/currency v1.0.0;
+// Currency identity is explicit. ISO minor units and CLDR representation data
+// are immutable pinned snapshots; no exchange rate, locale inference or host
+// currency service participates. Undefined ISO minor units fail explicitly.
+import "locale/internal/currencies" take CldrCurrencies,CurrencySymbolLetters;
+import "locale/tag" take Locale;
+import "locale/data" take LocaleFallbacks;
+import "locale/number" take NumberPrecision,NumberFormat,NumberNotation,NumberGrouping,NumberSign,NumberPattern,NumberLocaleData,NumberRenderingData,NumberCompactData,NumberPrinting,DecimalNumberMagnitude,NumberRendered,InvalidLocalizedNumber;
+import "math/decimal" take Decimal;
+import "strings/parse" take ParsedInt;
+import "compare" take Comparing,Order;
+import "i18n/plural" take PluralNumber,PluralCategory,PluralCategoryOf,PluralKind;
+enum CurrencyDisplay=(symbol,narrow_symbol,code,name);
+object Currency does Comparing<Currency> {
+    has code,minor_units is string;
+    Currency(code is string){
+        confirm code.length()==3 else throw InvalidCurrency(code);
+        let digits=CldrCurrencies().digits(code);confirm digits!="" else throw InvalidCurrency(code);
+        self.code=code;minor_units=digits;
+    }
+    code() is string{code;}
+    digits() is int{confirm minor_units!="N.A." else throw MissingCurrencyDigits(code);ParsedInt(minor_units).value();}
+    order(other is Currency) is Order{code.order(other.code());}
+}
+object InvalidCurrency does Error {
+    has code is string;InvalidCurrency(code is string){self.code=code;}code() is string{code;}
+    text() is string{"unknown or nonuppercase ISO currency code: "+code;}
+}
+object MissingCurrencyDigits does Error {
+    has code is string;MissingCurrencyDigits(code is string){self.code=code;}code() is string{code;}
+    text() is string{"ISO minor units are not defined for "+code;}
+}
+object CurrencyFormat {
+    has numbers is NumberFormat;has display is CurrencyDisplay;has accounting,currency_digits is bool;
+    CurrencyFormat(numbers is NumberFormat,display is CurrencyDisplay,accounting is bool,currency_digits is bool){self.numbers=numbers;self.display=display;self.accounting=accounting;self.currency_digits=currency_digits;}
+    numbers() is NumberFormat{numbers;}display() is CurrencyDisplay{display;}
+    accounting() is bool{accounting;}currency_digits() is bool{currency_digits;}
+}
+object CurrencyDataVersion {
+    CurrencyDataVersion();iso() is string{"2026-09-17";}cldr() is string{"46.1.0";}
+}
+object CurrencyLocaleData {
+    has table is CldrCurrencies;has fields,translations is @string;has profile is int;has code is string;
+    CurrencyLocaleData(locale is Locale,currency is Currency,numbers is NumberLocaleData){
+        let table=CldrCurrencies();let chain=LocaleFallbacks(locale);
+        let profile=(0..chain.size()).reduce(-1)->chosen,index{if chosen>=0{chosen;}else{table.profile(chain.item(index).string(),numbers.system());}};
+        confirm profile>=0 else throw InvalidLocalizedNumber("missing pinned currency root");
+        let rows is @@string=(0..chain.size()).map()->index{table.currency(chain.item(index).string(),currency.code());};
+        let translations is @string=(0..9).map()->index{rows.reduce("")->chosen,row{if chosen=="" && row.size()==9{row[index];}else{chosen;}};};
+        self.table=table;self.profile=profile;self.fields=table.fields(profile);self.translations=translations;code=currency.code();
+    }
+    pattern(accounting is bool,alpha is bool) is NumberPattern{
+        let start=(if accounting{8;}else{0;})+(if alpha{16;}else{0;});
+        let values is @string=(start..start+8).map()->index{fields[index].replace("¤","{currency}");};NumberPattern(values);
+    }
+    compact() is %string:string{table.compact(profile);}
+    symbol(display is CurrencyDisplay) is string{
+        if display==CurrencyDisplay.code{return code;}
+        let narrow=translations[8];let standard=translations[7];
+        if display==CurrencyDisplay.narrow_symbol && narrow!=""{narrow;}else{if standard!=""{standard;}else{code;}}
+    }
+    name(category is int) is string{
+        let specific=translations[category+1];if specific!=""{specific;}else{if translations[6]!=""{translations[6];}else{if translations[0]!=""{translations[0];}else{code;}}}
+    }
+    unit(category is int) is string{let chosen=fields[32+category];if chosen!=""{chosen;}else{fields[37];}}
+    monetary(index is int) is string{fields[38+index];}
+}
+// The alpha variant depends on the symbol character facing the numeric body,
+// not on whether some other character in the symbol is a letter (US$ vs KWD).
+object CurrencyAlphabeticBoundary {
+    has value is bool;
+    CurrencyAlphabeticBoundary(label is string,pattern is NumberPattern){
+        let marker="{currency}";let prefix=pattern.prefix(false);let suffix=pattern.suffix(false);
+        let after=prefix.length()>=marker.length() && prefix.slice(prefix.length()-marker.length(),prefix.length())==marker;
+        let before=suffix.length()>=marker.length() && suffix.slice(0,marker.length())==marker;
+        value=(after && CurrencyLetter(label.slice(label.length()-1,label.length())).value()) || (before && CurrencyLetter(label.slice(0,1)).value());
+    }
+    value() is bool{value;}
+}
+object CurrencyLetter {
+    has value is bool;
+    CurrencyLetter(origin is string){value=CurrencySymbolLetters().membership(origin);}
+    value() is bool{value;}
+}
+object CurrencyNumberData does NumberRenderingData {
+    has numbers is NumberLocaleData;has currency is CurrencyLocaleData;has label is string;has accounting,alpha is bool;
+    CurrencyNumberData(numbers is NumberLocaleData,currency is CurrencyLocaleData,label is string,accounting is bool){
+        self.numbers=numbers;self.currency=currency;self.label=label;self.accounting=accounting;
+        alpha=CurrencyAlphabeticBoundary(label,currency.pattern(accounting,false)).value();
+    }
+    symbol(index is int) is string{if index<2 && currency.monetary(index)!=""{currency.monetary(index);}else{numbers.symbol(index);}}
+    digits() is string{numbers.digits();}minimum_grouping() is int{numbers.minimum_grouping();}
+    pattern(kind is int) is NumberPattern{currency.pattern(accounting,alpha);}
+    compact(long is bool) is NumberCompactData{CurrencyCompacts(currency.compact(),numbers.compact(long),currency.pattern(false,alpha),currency.pattern(accounting,alpha),long || accounting,alpha);}
+    template(origin is string,positive is bool,per_mille is bool) is string{numbers.template(origin,positive,per_mille).replace("{currency}",label);}
+    localized(origin is string) is string{numbers.localized(origin);}
+}
+// A compact pattern carries its own affix frame, including currency placement.
+// Long notation and accounting compose decimal compact units with the explicit
+// currency frame; CLDR has no independent compact-accounting pattern family.
+object CurrencyCompacts does NumberCompactData {
+    has short is %string:string;has long_data is NumberCompactData;has ordinary,frame is NumberPattern;has long,alpha is bool;
+    CurrencyCompacts(short is %string:string,long_data is NumberCompactData,ordinary is NumberPattern,frame is NumberPattern,long is bool,alpha is bool){self.short=short;self.long_data=long_data;self.ordinary=ordinary;self.frame=frame;self.long=long;self.alpha=alpha;}
+    keys() is @string{if long{return long_data.keys();}short.keys().filter()->key{key.split(":").size()==2;};}
+    has(key is string) is bool{if long{long_data.has(key);}else{short.has(key);}}
+    value(key is string) is string{
+        let encoded=if long{long_data.value(key);}else{if alpha && short.has(key+":alpha"){short[key+":alpha"];}else{short[key];}};
+        if encoded==""{return "";}
+        let values=encoded.replace("¤","{currency}").split("|");let prefix=values[0];let suffix=values[1];
+        let fragments=if long{
+            [frame.prefix(false)+prefix,suffix+frame.suffix(false),frame.prefix(true)+prefix,suffix+frame.suffix(true)];
+        }else{
+            let before=ordinary.prefix(false);let after=ordinary.suffix(false);
+            let compatible=prefix.length()>=before.length() && suffix.length()>=after.length() && prefix.slice(0,before.length())==before && suffix.slice(suffix.length()-after.length(),suffix.length())==after;
+            if compatible{
+                [prefix,suffix,frame.prefix(true)+prefix.slice(before.length(),prefix.length()),suffix.slice(0,suffix.length()-after.length())+frame.suffix(true)];
+            }else{
+                // CLDR short currency patterns can move the currency symbol.
+                // Preserve their complete negative frame when placement differs.
+                [prefix,suffix,values[2],values[3]];
+            }
+        };
+        let result is @string=(0..8).map()->index{if index<4{fragments[index];}else{values[index];}};result.join("|");
+    }
+}
+object CurrencyPluralCategory {
+    has value is int;
+    CurrencyPluralCategory(number is NumberRendered,locale is Locale,minimum_fraction is int){
+        let spelling=number.number().ascii(minimum_fraction);confirm spelling.length()<=1024 else throw InvalidLocalizedNumber("currency plural operand exceeds 1024 scalars");
+        value=match PluralCategoryOf(PluralNumber(spelling),locale,PluralKind.cardinal).value(){case PluralCategory.zero{0;}case PluralCategory.one{1;}case PluralCategory.two{2;}case PluralCategory.few{3;}case PluralCategory.many{4;}else{5;}};
+    }
+    value() is int{value;}
+}
+object LocalizedCurrency {
+    has amount is Decimal;has currency is Currency;has locale is Locale;has format is CurrencyFormat;
+    LocalizedCurrency(amount is Decimal,currency is Currency,locale is Locale,format is CurrencyFormat){self.amount=amount;self.currency=currency;self.locale=locale;self.format=format;}
+    string() is string{
+        let policy=format.numbers();let source=policy.precision();
+        let precision=if format.currency_digits(){let digits=currency.digits();NumberPrecision(source.minimum_integer(),digits,digits,source.rounding());}else{source;};
+        let numbers=NumberFormat(policy.notation(),policy.grouping(),policy.sign(),precision);let base=NumberLocaleData(locale);let data=CurrencyLocaleData(locale,currency,base);
+        let magnitude=DecimalNumberMagnitude(amount,0,false).value();
+        if format.display()==CurrencyDisplay.name{
+            let rendered=NumberPrinting(magnitude,locale,numbers,false,false,base).rendering();
+            let category=CurrencyPluralCategory(rendered,locale,precision.minimum_fraction()).value();
+            let unit=data.unit(category);let parts=unit.split("{0}");confirm parts.size()==2 else throw InvalidLocalizedNumber("currency unit pattern requires numeric placeholder");
+            confirm unit.split("{1}").size()==2 else throw InvalidLocalizedNumber("currency unit pattern requires name placeholder");
+            let label=data.name(category);let text=parts[0].replace("{1}",label)+rendered.text()+parts[1].replace("{1}",label);confirm text.length()<=8192 else throw InvalidLocalizedNumber("currency output exceeds 8192 scalars");return text;
+        }
+        let label=data.symbol(format.display());let representation=CurrencyNumberData(base,data,label,format.accounting());
+        NumberPrinting(magnitude,locale,numbers,false,false,representation).string();
+    }
+}
+
+test "currency identity never comes from a locale" {test.is(Currency("USD").digits(),2);}

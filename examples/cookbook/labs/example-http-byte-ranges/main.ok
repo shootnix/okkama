@@ -1,0 +1,20 @@
+// Выбрать часть файла по Range
+//
+// Проверить If-None-Match и диапазон байтов: EntityTag, условия и range-представления работают над метаданными.
+//
+// Запуск: ./examples/cookbook/run lab example-http-byte-ranges
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-byte-ranges
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/conditional" take ByteRanges;
+import "numbers/bigint" take BigInt;
+import "io/stdout" take Stdout;
+main() is int {
+    let plan=ByteRanges("bytes=500-700, 601-999, -100");
+    Stdout().writeln(plan.string());
+    let ranges=plan.ranges(BigInt("1000"));
+    for ranges -> range {Stdout().writeln(range.string()+" ("+range.size().string()+" bytes)");}
+    0;
+}

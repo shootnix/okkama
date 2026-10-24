@@ -1,0 +1,56 @@
+module http/message v1.0.0;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers;
+import "http/body" take BodyOpening, EmptyBody;
+import "http/version" take HttpVersion;
+import "http/target" take RequestTarget, RequestTargetSnapshot, RequestTargetMethod;
+
+// Immutable message metadata retains the body opening's declared capability.
+// It never opens, measures, closes or queries replayability during construction.
+// Connection/framing consumers own body consumption and transport validation.
+object Request {
+    has method is Method;has target is RequestTarget;has headers is Headers;
+    has body is BodyOpening;has version is HttpVersion;
+    Request(method is Method, target is RequestTarget, headers is Headers) {
+        let checked=RequestCoordinates(method,target).target();self.method=method;self.target=checked;
+        self.headers=headers;body=EmptyBody();version=HttpVersion.http_1_1;
+    }
+    Request(method is Method, target is RequestTarget, headers is Headers, body is BodyOpening) {
+        let checked=RequestCoordinates(method,target).target();self.method=method;self.target=checked;
+        self.headers=headers;self.body=body;version=HttpVersion.http_1_1;
+    }
+    Request(method is Method, target is RequestTarget, headers is Headers, body is BodyOpening, version is HttpVersion) {
+        let checked=RequestCoordinates(method,target).target();self.method=method;self.target=checked;
+        self.headers=headers;self.body=body;self.version=version;
+    }
+    method() is Method{method;}target() is RequestTarget{target;}headers() is Headers{headers;}
+    body() is BodyOpening{body;}version() is HttpVersion{version;}
+}
+object Response {
+    has status is Status;has headers is Headers;has body is BodyOpening;has version is HttpVersion;
+    Response(status is Status, headers is Headers){self.status=status;self.headers=headers;body=EmptyBody();version=HttpVersion.http_1_1;}
+    Response(status is Status, headers is Headers, body is BodyOpening){self.status=status;self.headers=headers;self.body=body;version=HttpVersion.http_1_1;}
+    Response(status is Status, headers is Headers, body is BodyOpening, version is HttpVersion) {
+        self.status=status;self.headers=headers;self.body=body;self.version=version;
+    }
+    status() is Status{status;}headers() is Headers{headers;}body() is BodyOpening{body;}version() is HttpVersion{version;}
+}
+object RequestCoordinates {
+    has target is RequestTarget;
+    RequestCoordinates(method is Method, target is RequestTarget) {
+        confirm method.string().length()<=8192 else throw InvalidHttpMessage("method source limit exceeded");
+        let checked=RequestTargetSnapshot(target).value();
+        confirm RequestTargetMethod(method,checked.kind()).valid() else throw InvalidHttpMessage("method does not permit target form");self.target=checked;
+    }
+    target() is RequestTarget{target;}
+}
+object InvalidHttpMessage does Error {
+    has reason is string;InvalidHttpMessage(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid HTTP message: "+reason;}
+}
+test "message metadata does not open its empty body" {
+    let response=Response(Status(299),Headers([]));
+    test.ok(response.status().code()==299 && response.version()==HttpVersion.http_1_1);
+    test.ok(response.body().replayable() && response.body().length().string()=="0");
+}

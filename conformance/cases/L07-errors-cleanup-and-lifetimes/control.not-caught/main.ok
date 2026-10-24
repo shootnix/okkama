@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Finder {
+    Finder();
+    find() is int {
+        try {
+            return 7;
+        } catch e is Error {
+            return 0;
+        }
+        1;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    for 1..=3 -> n {
+        try {
+            last if n == 2;
+            out.writeln(n.string());
+        } catch e is Error {
+            out.writeln("caught control");
+        }
+    }
+    out.writeln(Finder().find().string());
+    0;
+}

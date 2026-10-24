@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Books {
+    remember(id is int, title is string) is void;
+    title(id is int) is string;
+    count() is int;
+
+    fake {
+        has prefix is string = "fake:";
+        remember(id is int, title is string) is void {
+            fake.storage.set(id, title);
+        }
+        title(id is int) is string {
+            prefix + fake.storage.get(id);
+        }
+        count() is int {
+            fake.storage.size();
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let b is Books = Books.fake();
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,39 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "net/ip" take IpAddress;
+import "net/endpoint" take HostName;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/connection" take Http1Connecting;
+import "http/endpoint" take HttpEndpointSelection,ListedNetworks;
+import "url/value" take ParsedUrl;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/ip" take IpNetwork;
+import "http/http1_head" take ParsedHttp1RequestHead;
+import "http/body" take EmptyBody;
+import "io/stdout" take Stdout;
+
+// OKKAMA_HTTP_URL selects an absolute HTTPS URL for the local fixture.
+// OKKAMA_TLS_ROOT selects its explicit DER trust anchor. DNS names are mapped
+// explicitly below; the connection uses only checked loopback endpoints.
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["http/1.1"]);
+    let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();
+    let resolver=FixedResolution([HostAddresses(HostName("example.test"),[IpAddress("127.0.0.1")]),HostAddresses(HostName("wrong.test"),[IpAddress("127.0.0.1")])]);
+    let route=HttpEndpointSelection(url,resolver,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let session=await Http1Connecting(route,policy).session();defer session.close();
+    let parts=url.parts();let path=if parts.path()==""{"/";}else{parts.path();};
+    let target=path+if parts.query().present(){"?"+parts.query().string();}else{"";};
+    let request=ParsedHttp1RequestHead("GET "+target+" HTTP/1.1\r\nHost: "+parts.authority().string()+"\r\n\r\n").value().request(EmptyBody());
+    let exchange=await session.exchange(request);
+    confirm exchange.response().status().code()==204;
+    Stdout().writeln("verified HTTPS session returned 204");0;
+}

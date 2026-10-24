@@ -1,0 +1,20 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+
+main() is int {
+    let lines is @InvoiceLine = [
+        InvoiceLine(plan: Plan.pro, seats: 3, days_used: 30, days_in_period: 30),
+        InvoiceLine(plan: Plan.basic, seats: 2, days_used: 10, days_in_period: 30),
+        InvoiceLine(plan: Plan.pro, seats: 1, days_used: 15, days_in_period: 30),
+    ];
+    let invoice = Invoice(lines: lines, tax_basis_points: 825);
+    let c = Checks();
+    c = c.same_ints("line cents", invoice.line_cents(), [7500, 667, 1250]);
+    c = c.same_int("subtotal", invoice.subtotal(), 9417);
+    c = c.same_int("tax", invoice.tax(), 777);
+    c = c.same_int("total", invoice.total(), 10194);
+    c = c.same_int("tie rounds to even (12.5)", cents HalfEven(value: rat(25, 2)), 12);
+    c = c.same_int("tie rounds to even (13.5)", cents HalfEven(value: rat(27, 2)), 14);
+    c.done();
+}

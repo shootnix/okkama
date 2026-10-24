@@ -1,0 +1,208 @@
+module web/request v1.0.0;
+import "http/message" take Request;
+import "http/request_context" take HttpRequestContext;
+import "http/header" take HeaderName,MissingHeader;
+import "http/target" take RequestTargetKind;
+import "http/media_type" take HttpMediaType,InvalidHttpMediaType;
+import "url/value" take UrlQuery;
+import "url/query" take QueryParameters,QueryLimitExceeded;
+import "url/form" take ParsedForm,InvalidFormEncoding;
+import "json/parse" take ParsedJson,InvalidJson;
+import "json/value" take DuplicateJsonMember,JsonKind,JsonMember;
+import "math/decimal" take Decimal;
+import "numbers/bigint" take BigInt;
+import "json/read" take JsonView,WrongJsonKind,MissingJsonValue,InvalidJsonNumber;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded,InvalidUtf8;
+import "web/exception" take Exception;
+
+// The request as an endpoint sees it: route parameters, query, fields and a
+// body read under an explicit byte limit. Client mistakes become Exception
+// values with the matching status (400, 413, 415) so the endpoint never has to
+// translate transport problems itself. The std Request and context stay
+// reachable through request() and context().
+//
+// The body can be consumed once: text(), json(), form() and bytes() all read it.
+
+object WebRequest {
+    has origin is Request;
+    has details is HttpRequestContext;
+
+    WebRequest(request is Request, context is HttpRequestContext) {
+        origin = request;
+        details = context;
+    }
+
+    request() is Request { origin; }
+    context() is HttpRequestContext { details; }
+    method() is string { origin.method().string(); }
+
+    // Route parameter declared by the matched pattern. A missing name means the
+    // endpoint is mounted on a pattern that does not declare it: a server bug.
+    path(name is string) is string {
+        let parameters = details.parameters();
+        confirm parameters.has(name) else throw MissingRouteParameter(name);
+        parameters[name];
+    }
+
+    query(name is string) is string {
+        let parameters = self.parameters();
+        confirm parameters.membership(name) else throw Exception(400, "missing query parameter: " + name);
+        parameters.first(name);
+    }
+
+    query(name is string, fallback is string) is string {
+        let parameters = self.parameters();
+        if parameters.membership(name) { parameters.first(name); } else { fallback; }
+    }
+
+    // Query decoded the way browsers and URLSearchParams encode it
+    // (application/x-www-form-urlencoded: "+" is a space). The raw RFC 3986
+    // query stays available through request().target().query().
+    parameters() is QueryParameters {
+        let kind = origin.target().kind();
+        let raw = if kind == RequestTargetKind.origin { origin.target().query(); }
+            else { if kind == RequestTargetKind.absolute { origin.target().url().parts().query(); } else { UrlQuery(); } };
+        try { ParsedForm(Utf8Encoded(raw.string()).bytes()).parameters(); }
+        catch failure is InvalidFormEncoding { throw Exception(400, "invalid query: " + failure.text()); }
+        catch failure is QueryLimitExceeded { throw Exception(400, failure.text()); }
+    }
+
+    header(name is string) is string {
+        try { origin.headers().first(HeaderName(name)); }
+        catch failure is MissingHeader { throw Exception(400, "missing header: " + name); }
+    }
+
+    header(name is string, fallback is string) is string {
+        let field = HeaderName(name);
+        if origin.headers().membership(field) { origin.headers().first(field); } else { fallback; }
+    }
+
+    async bytes(limit is int) is @byte {
+        confirm limit >= 0 else throw InvalidBodyLimit(limit);
+        let reader = origin.body().reading();
+        defer reader.close();
+        let received = ByteBuffer();
+        loop {
+            let chunk = await reader.bytes(4096);
+            last if chunk.size() == 0;
+            if received.content().size() + chunk.size() > limit {
+                throw Exception(413, "request body exceeds " + limit.string() + " bytes");
+            }
+            received.writing().write(ByteSnapshot(chunk));
+        }
+        received.content().bytes();
+    }
+
+    async text(limit is int) is string {
+        let content = await self.bytes(limit);
+        try { Utf8Decoded(content).string(); }
+        catch failure is InvalidUtf8 { throw Exception(400, "request body is not valid UTF-8"); }
+    }
+
+    // Requires application/json or a +json media type. The document is parsed
+    // eagerly, so syntax errors are a 400 here and never escape later as InvalidJson;
+    // reading errors of the returned RequestJson are 422.
+    async json(limit is int) is RequestJson {
+        self.media("json");
+        let document = ParsedJson(await self.text(limit));
+        try { document.kind(); }
+        catch failure is InvalidJson { throw Exception(400, "invalid JSON body: " + failure.text()); }
+        catch failure is DuplicateJsonMember { throw Exception(400, "invalid JSON body: " + failure.text()); }
+        RequestJson(JsonView(document));
+    }
+
+    // Requires application/x-www-form-urlencoded.
+    async form(limit is int) is QueryParameters {
+        self.media("form");
+        let content = await self.bytes(limit);
+        try { ParsedForm(content).parameters(); }
+        catch failure is InvalidFormEncoding { throw Exception(400, failure.text()); }
+    }
+
+    private:
+    media(expected is string) is void {
+        let field = HeaderName("Content-Type");
+        confirm origin.headers().membership(field) else throw Exception(415, "Content-Type is required");
+        let media = try { HttpMediaType(origin.headers().first(field)); }
+            catch failure is InvalidHttpMediaType { throw Exception(415, "invalid Content-Type"); };
+        let suffix = media.subtype().split("+");
+        let accepted = media.type() == "application" && if expected == "json" {
+            media.subtype() == "json" || (suffix.size() > 1 && suffix[suffix.size() - 1] == "json");
+        }
+        else {
+            media.subtype() == "x-www-form-urlencoded";
+        };
+        confirm accepted else throw Exception(415, "unsupported Content-Type: " + media.type() + "/" + media.subtype());
+    }
+}
+
+object MissingRouteParameter does Error {
+    has origin is string;
+    MissingRouteParameter(name is string) { origin = name; }
+    name() is string { origin; }
+    text() is string { "route does not declare parameter: " + origin; }
+}
+
+object InvalidBodyLimit does Error {
+    has origin is int;
+    InvalidBodyLimit(limit is int) { origin = limit; }
+    limit() is int { origin; }
+    text() is string { "request body limit must be nonnegative: " + origin.string(); }
+}
+
+// The request body as JSON. Same reading API as json/read.JsonView, but every
+// reading failure is the client's: it becomes Exception(422) naming the JSON
+// pointer. Server-side JSON read through a plain JsonView keeps its own errors,
+// so a bug in server data is never reported to the client as 422.
+object RequestJson {
+    has origin is JsonView;
+
+    RequestJson(origin is JsonView) { self.origin = origin; }
+
+    view() is JsonView { origin; }
+    kind() is JsonKind { origin.kind(); }
+    pointer() is string { origin.pointer(); }
+
+    text() is string { try { origin.text(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    number() is Decimal { try { origin.number(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    boolean() is bool { try { origin.boolean(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    integer() is BigInt { try { origin.integer(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } catch e is InvalidJsonNumber { throw Exception(422, e.text()); } }
+    int() is int { try { origin.int(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } catch e is InvalidJsonNumber { throw Exception(422, e.text()); } }
+    size() is int { try { origin.size(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    names() is @string { try { origin.names(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    members() is @JsonMember { try { origin.members(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    membership(name is string) is bool { try { origin.membership(name); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+
+    items() is @RequestJson {
+        let views = try { origin.items(); } catch e is WrongJsonKind { throw Exception(422, e.text()); };
+        let wrapped is @RequestJson = views.map() -> view { RequestJson(view); };
+        wrapped;
+    }
+
+    item(index is int) is RequestJson {
+        try { RequestJson(origin.item(index)); }
+        catch e is WrongJsonKind { throw Exception(422, e.text()); }
+        catch e is MissingJsonValue { throw Exception(422, e.text()); }
+    }
+
+    member(name is string) is RequestJson {
+        try { RequestJson(origin.member(name)); }
+        catch e is WrongJsonKind { throw Exception(422, e.text()); }
+        catch e is MissingJsonValue { throw Exception(422, e.text()); }
+    }
+
+    text(name is string) is string { self.member(name).text(); }
+    number(name is string) is Decimal { self.member(name).number(); }
+    integer(name is string) is BigInt { self.member(name).integer(); }
+    int(name is string) is int { self.member(name).int(); }
+    boolean(name is string) is bool { self.member(name).boolean(); }
+}
+
+test "request JSON reading failures are 422 exceptions at the pointer" {
+    let body = RequestJson(JsonView(ParsedJson("{\"name\":\"Ada\",\"age\":\"x\"}")));
+    test.is(body.text("name"), "Ada");
+    test.is(try { body.int("age"); "no"; } catch e is Exception { e.status().string() + " " + e.detail(); }, "422 JSON value at /age must be number, found string");
+    test.is(try { body.text("missing"); "no"; } catch e is Exception { e.detail(); }, "JSON value at /missing is missing");
+}

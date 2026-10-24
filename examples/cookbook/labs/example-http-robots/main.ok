@@ -1,0 +1,19 @@
+// Выбрать правила обхода каталога сайта
+//
+// Соблюдать правила сайта при сборе каталога: представления robots выбирают правила для user-agent и пути.
+//
+// Запуск: ./examples/cookbook/run lab example-http-robots
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-robots
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "http/robots" take RobotsPolicy;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+main() is int{
+    let policy=RobotsPolicy("User-agent: *\nDisallow: /private\nAllow: /private/public\n");
+    let denied=policy.allowed("ExampleBot",ParsedUrl("https://example.test/private").value());
+    let allowed=policy.allowed("ExampleBot",ParsedUrl("https://example.test/private/public").value());
+    Stdout().writeln(denied.string()+" "+allowed.string());0;
+}

@@ -1,0 +1,52 @@
+// Согласовать HTTP transport по выбранному протоколу
+//
+// Выбрать разговор по фактически согласованному протоколу: HttpSelectedConnecting возвращает подходящий HTTP transport.
+//
+// Запуск: ./examples/cookbook/run lab example-http-selected-connecting
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-selected-connecting
+// Входы стенда, передаваемые через окружение: OKKAMA_HTTP_URL, OKKAMA_TLS_ROOT.
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "os/environment" take Environment;
+import "fs/path" take Path;
+import "fs/file" take File,FileMode;
+import "net/ip" take IpAddress;
+import "net/endpoint" take HostName;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/certificate" take Certificate;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/selected_connection" take HttpSelectedConnecting;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "time/clock" take SystemClock;
+import "http/endpoint" take HttpEndpointSelection,ListedNetworks;
+import "url/value" take ParsedUrl,Url,UrlParts,UrlFragment;
+import "net/dns" take FixedResolution,HostAddresses;
+import "net/ip" take IpNetwork;
+import "http/body" take EmptyBody;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/target" take AbsoluteTarget;
+import "http/header" take Headers;
+import "http/version" take HttpVersion;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let environment=Environment();
+    let file=File(mode:FileMode.reading,path:Path(environment.variable("OKKAMA_TLS_ROOT")),binary:true);defer file.close();
+    let roots=TrustedCertificates([Certificate(file.binary().bytes(1048577))]);
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_2,TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(roots,versions,["h2","http/1.1"]);
+    let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();
+    let resolver=FixedResolution([HostAddresses(HostName("example.test"),[IpAddress("127.0.0.1")]),HostAddresses(HostName("wrong.test"),[IpAddress("127.0.0.1")])]);
+    let route=HttpEndpointSelection(url,resolver,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let enabled is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1,HttpVersion.http_2]);let client=ClientPolicy(enabled,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let acquired=await HttpSelectedConnecting(route,policy,client,SystemClock()).acquisition();let session=acquired.session();defer await session.settled();defer session.close();
+    let parts=url.parts();let target=Url(UrlParts(parts.scheme(),parts.authority(),parts.path(),parts.query(),UrlFragment()));
+    let request=Request(Method("GET"),AbsoluteTarget(target),Headers([]),EmptyBody(),HttpVersion.http_2);
+    let exchange=await session.exchange(request);
+    confirm exchange.response().status().code()==204;
+    let version=if acquired.details().version()==HttpVersion.http_2{"HTTP2";}else{"HTTP1";};Stdout().writeln("verified negotiated "+version+" session returned 204");0;
+}

@@ -1,0 +1,60 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.overloaded",
+  "title": "variadic actions cannot be overloaded",
+  "purpose": "The declaration is invalid and the program must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8.1",
+    "docs/okkama-spec-11072026.md#11.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.8.1: an action with a variadic parameter cannot be overloaded; spec 11.8: variadic action overload sets remain forbidden."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-002"
+  ]
+}

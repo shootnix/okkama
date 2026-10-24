@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.cancellation-runs-cleanup",
+  "title": "cancelling a running task runs its cleanup and surfaces Cancelled",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.CANCELLATION-CLEANUP",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    },
+    {
+      "contract": "DEFER.EXITS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "task cleanup\n-1\ncancelled\n"
+    }
+  },
+  "spec_refs": [
+    "docs/async-guide.md#4.5",
+    "docs/okkama-spec-11072026.md#19"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async guide 4.5: cancellation is delivered at suspension points; defer runs during unwind; await throws Cancelled; cancelled() is true after unwinding."
+  },
+  "status": "mandatory"
+}

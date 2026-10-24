@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Package {
+    open() is ^Package;
+    label() is string;
+}
+
+object Box does Package {
+    has opened is bool = false;
+    Box() {}
+    open() is ^Box { ^opened = true; }
+    label() is string { if opened { "open box"; } else { "closed box"; } }
+    extra() is int { 1; }
+}
+
+object Bad does Package {
+    Bad();
+    open() is ^Bad { }
+    label(x is int) is string { "x"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let b = Bad();
+    out.writeln("unreachable");
+    0;
+}

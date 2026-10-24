@@ -1,0 +1,117 @@
+module crypto/key_format v1.0.0;
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/ed25519" take Ed25519PrivateKey, Ed25519PublicKey;
+import "crypto/ecdsa" take EcdsaCurve, EcdsaPrivateKey, EcdsaPublicKey;
+import "crypto/error" take HostOperation, InvalidCryptoInput;
+import "encoding/pem" take PemEncoded, PemBlock;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "encoding/hex" take HexDecoded;
+
+// Key interchange formats: DER PKCS#8 ("PRIVATE KEY") and DER
+// SubjectPublicKeyInfo ("PUBLIC KEY") in strict PEM (encoding/pem).
+//
+// PrivateKeyPem(pkcs8).string() and PublicKeyPem(key).string() encode.
+// ParsedPrivateKey(pem) and ParsedPublicKey(pem) decode one block with the
+// expected label and expose algorithm() and the DER (pkcs8() as fresh
+// SecretBytes, spki()); unknown algorithms are KeyAlgorithm.other.
+// signing_key()/verifying_key() build Ed25519 or ECDSA keys; RSA needs an
+// explicit scheme (crypto/rsa RsaPrivateKey/RsaPublicKey plus a signing
+// object), and asking for it here is InvalidCryptoInput. Encrypted PKCS#8,
+// PKCS#1 "RSA PRIVATE KEY" and SEC1 "EC PRIVATE KEY" are not accepted.
+enum KeyAlgorithm = (ed25519, ecdsa_p256, ecdsa_p384, rsa, other);
+
+object KeyAlgorithmName {
+    has origin is string;
+    KeyAlgorithmName(oid is string) { origin = oid; }
+    value() is KeyAlgorithm {
+        if origin == "1.3.101.112" { return KeyAlgorithm.ed25519; }
+        if origin == "1.2.840.10045.2.1|1.2.840.10045.3.1.7" { return KeyAlgorithm.ecdsa_p256; }
+        if origin == "1.2.840.10045.2.1|1.3.132.0.34" { return KeyAlgorithm.ecdsa_p384; }
+        if origin == "1.2.840.113549.1.1.1" { return KeyAlgorithm.rsa; }
+        KeyAlgorithm.other;
+    }
+}
+
+object PrivateKeyPem {
+    has key is SecretBytes;
+    PrivateKeyPem(pkcs8 is SecretBytes) { key = pkcs8; }
+    string() is string { PemEncoded("PRIVATE KEY", key.export_bytes()).string(); }
+}
+
+object PublicKeyPem {
+    has key is PublicKey;
+    PublicKeyPem(key is PublicKey) { self.key = key; }
+    string() is string { PemEncoded("PUBLIC KEY", key.bytes()).string(); }
+}
+
+object ParsedPrivateKey {
+    has origin is string;
+    ParsedPrivateKey(pem is string) { origin = pem; }
+    pkcs8() is SecretBytes {
+        let block = PemBlock(origin);
+        confirm block.kind() == "PRIVATE KEY" else throw InvalidCryptoInput("expected a PRIVATE KEY PEM block");
+        SecretBytes(block.bytes());
+    }
+    algorithm() is KeyAlgorithm {
+        KeyAlgorithmName(Utf8Decoded(HostOperation("pkcs8-algorithm", [self.pkcs8().export_bytes()]).bytes()).string()).value();
+    }
+    signing_key() is SigningKey {
+        let key = self.pkcs8();
+        match self.algorithm() {
+            case KeyAlgorithm.ed25519 { Ed25519PrivateKey(seed: SecretBytes(HostOperation("ed25519-from-pkcs8", [key.export_bytes()]).bytes())); }
+            case KeyAlgorithm.ecdsa_p256 { EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: key); }
+            case KeyAlgorithm.ecdsa_p384 { EcdsaPrivateKey(curve: EcdsaCurve.p384, pkcs8: key); }
+            case KeyAlgorithm.rsa { throw InvalidCryptoInput("RSA keys need an explicit signature scheme"); }
+            case KeyAlgorithm.other { throw InvalidCryptoInput("unsupported private key algorithm"); }
+        }
+    }
+}
+
+object ParsedPublicKey {
+    has origin is string;
+    ParsedPublicKey(pem is string) { origin = pem; }
+    spki() is @byte {
+        let block = PemBlock(origin);
+        confirm block.kind() == "PUBLIC KEY" else throw InvalidCryptoInput("expected a PUBLIC KEY PEM block");
+        block.bytes();
+    }
+    algorithm() is KeyAlgorithm {
+        KeyAlgorithmName(Utf8Decoded(HostOperation("spki-algorithm", [self.spki()]).bytes()).string()).value();
+    }
+    verifying_key() is VerifyingKey {
+        let spki = self.spki();
+        match self.algorithm() {
+            case KeyAlgorithm.ed25519 { Ed25519PublicKey(HostOperation("ed25519-from-spki", [spki]).bytes()); }
+            case KeyAlgorithm.ecdsa_p256 { EcdsaPublicKey(EcdsaCurve.p256, spki); }
+            case KeyAlgorithm.ecdsa_p384 { EcdsaPublicKey(EcdsaCurve.p384, spki); }
+            case KeyAlgorithm.rsa { throw InvalidCryptoInput("RSA keys need an explicit signature scheme"); }
+            case KeyAlgorithm.other { throw InvalidCryptoInput("unsupported public key algorithm"); }
+        }
+    }
+}
+
+test "OpenSSL Ed25519 and P-256 keys and signatures interoperate" {
+    let message = Utf8Encoded("hello").bytes();
+    let ed = ParsedPublicKey("-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAigREzzduCyebc+NFzycZPZorxURCPJ/PUBcIYWCzXO4=\n-----END PUBLIC KEY-----\n");
+    test.ok(ed.algorithm() == KeyAlgorithm.ed25519);
+    test.ok(ed.verifying_key().verified(message, HexDecoded("efd86a94f80f236bde04c219dec81680071cb95bbffb8d9d7cf3737551af5492e51241ce6d7ebc7c18634b93a93985138ba5495e3d4f7a1fccd2353b2da4f107").bytes()));
+    let ed_private = ParsedPrivateKey("-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEILmznXjfrPnt4ER4da3s+SVFZyxPzXMcIAazX8bXBS01\n-----END PRIVATE KEY-----\n");
+    test.is(ed_private.signing_key().signature(message), HexDecoded("efd86a94f80f236bde04c219dec81680071cb95bbffb8d9d7cf3737551af5492e51241ce6d7ebc7c18634b93a93985138ba5495e3d4f7a1fccd2353b2da4f107").bytes());
+    test.is(PrivateKeyPem(ed_private.pkcs8()).string(), "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEILmznXjfrPnt4ER4da3s+SVFZyxPzXMcIAazX8bXBS01\n-----END PRIVATE KEY-----\n");
+    test.is(PublicKeyPem(Ed25519PublicKey(ed_private.signing_key().public_key().bytes().slice(12, 44))).string(), "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAigREzzduCyebc+NFzycZPZorxURCPJ/PUBcIYWCzXO4=\n-----END PUBLIC KEY-----\n");
+    let ec = ParsedPublicKey("-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEot188YicOl/iy+JmmT1+T3ZtDwwN\nwe1aRv/HHrB83zKNoF8Ht388b7Gh/hSxzToQJ7CNcA6HNHOf69V1xBhJ0g==\n-----END PUBLIC KEY-----\n");
+    test.ok(ec.algorithm() == KeyAlgorithm.ecdsa_p256);
+    test.ok(ec.verifying_key().verified(message, HexDecoded("3046022100cc4a3f8e27a9fe88aa38acfb231a4e7cdb6b16c9df49d6b6a8952e63e400d17c022100971a65d6c19b498b48f27cc6a24d803bc7aa16ebb0e915d30ed8e89b47e46343").bytes()));
+    let ec_key = ParsedPrivateKey("-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg+lDbqcGuZXqERDIH\n4LlloV5sT9St+iLgqSCMyxFGCSWhRANCAASi3XzxiJw6X+LL4maZPX5Pdm0PDA3B\n7VpG/8cesHzfMo2gXwe3fzxvsaH+FLHNOhAnsI1wDoc0c5/r1XXEGEnS\n-----END PRIVATE KEY-----\n").signing_key();
+    test.ok(ec.verifying_key().verified(message, ec_key.signature(message)));
+    test.is(ec_key.public_key().bytes(), ec.spki());
+}
+
+test "RSA PEM keys are recognised but need an explicit scheme" {
+    test.ok(ParsedPublicKey("-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApXK3hfNeafhb+Q2vhlh1\nMNhgBscPEto29NJQFaQaXVOlSEvMvOO1Lap8VeIipc9bTKngjR5qPUNBG/PR2fCe\nVgagNaxDIKYlqwEinVvKs0CcbAfYWRJ+XT2RYBmQzwiEl2Jq8+fyZpDxXUWJJsr+\nq05pFoZoGOew7oZlEgzYITu98bvLZ210+8OR0li1JoX6tPNQ0MKv1l9IBPBfSMqC\nkBXRX5DWiTvGuNWLytkpql8peqRgHJ8mc3QGm8+Uj3yCELrK8xMjarYfZ2i4/PDX\nvQI7N/YvajQQ4JPWWixil50T+aVrOeIMts+3Qd4hI71Nd9qmEu94zyl9umnr5Zu+\niwIDAQAB\n-----END PUBLIC KEY-----\n").algorithm() == KeyAlgorithm.rsa);
+    test.ok(ParsedPrivateKey("-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQClcreF815p+Fv5\nDa+GWHUw2GAGxw8S2jb00lAVpBpdU6VIS8y847UtqnxV4iKlz1tMqeCNHmo9Q0Eb\n89HZ8J5WBqA1rEMgpiWrASKdW8qzQJxsB9hZEn5dPZFgGZDPCISXYmrz5/JmkPFd\nRYkmyv6rTmkWhmgY57DuhmUSDNghO73xu8tnbXT7w5HSWLUmhfq081DQwq/WX0gE\n8F9IyoKQFdFfkNaJO8a41YvK2SmqXyl6pGAcnyZzdAabz5SPfIIQusrzEyNqth9n\naLj88Ne9Ajs39i9qNBDgk9ZaLGKXnRP5pWs54gy2z7dB3iEjvU132qYS73jPKX26\naevlm76LAgMBAAECggEANWWeXKGMvbfV+z4TAdGH1SFocJeLQmLiLMa56RojFi7a\nX8hzBh2ZymjFIzTOSORxC3+iRPllgWs01tAs0OGLQKl3yIrVyXJGIvhFUzMeaxb1\nxRoNFcZVuUMXKcRmi6Mso+00Jo8cGUU7WQaJutb2NZSjbw0nCK6yWHFQqnAxyxuH\nW/fA3ztmL8Tc57/vGo6/EgITSMmITK4nQfJKLTp3GQCDu6Ui6aKkmBFGQnOtxTIs\nk/avfW1cSB+Ecr20ilDHM8SrUW7eLz/aqHkoRGObaNtNZzir3cEGSb4A4ny+8WQ/\nBsck46qE4/qv1r3kI0xUJ2EPtBvhUnKWgy3ttgnlBQKBgQDa5RzTliKjRddRtwPm\n4tG9DkfrbDeGNINi8zJdK1umgcerS2ZV1Z67BMiWj4+omQnOM5W/jeDbrdjXR1jt\nZ5OdhF+0sGpWpqaF6+uuaKzXvePujVYGFkluEJoNO1zdAI70kimdN1pEUHlBneZN\n4uGlPLZBbKnQGGeAp3hfOCRFZQKBgQDBfkrgkUskEhNiRcqF2GY1z6lBnhJ4ByUT\nytdhjFUkebzUTUUznQELmQ/px32qhcXGAGbZAV/JvxEeAdbjSL3j2IEgSuxv3E8k\naqlGhP4yi7yCQ9tWukfE8KmvdKmuoVWim7Z17nJBtCXkSdhbwzpGMWJopDg4JP0H\nPMdiKNttLwKBgQCqGpvhLW3zdcXTIactmJwnD98B61HmwA5OKfG8h4IsjfQNgIWh\nNGWqrhf3MM8R1QPSszGu72GLNbkp6q8HppMHOKRrNSEd/1mu/txi58NR0KY9bqYo\nCs+7cblViQksUU/GbYNbQnWqWuMwA7XCVwrFLr3vb7MzHJPqXbpkPKurJQKBgQCv\ns7XcnDMGax+M8mEID0wo+wvwGNEeiyZhBaV04BCEkcMlaZE4YA6N8IyhtdPoH5dK\nyBycW4IW2dh6TiNKukgsePIwV7jBjuWS5QQXlDabwYYJKAMpivgW3o7HU4GtoLT5\ndrpF9qNsBGEQHvpHwUzOZpO8/7pJSVU22DsZaI5wYwKBgQCfYLTKcp2YRE1SFUHl\nqjpYHyDgCaoggLHwq0JSRZfiWdE8eN3Ipqw2bep/qO7IkL7mr8S1+x8HMblcXAqI\nxR+4pCvSTiD9/KEGLiNmWc4TishmuTd0yfXFhhjHVGoZ7PVBIjPCSUpfCdzeeaml\naCVhjunRYNIoO7jzgo/muY2kzA==\n-----END PRIVATE KEY-----\n").algorithm() == KeyAlgorithm.rsa);
+    test.ok(try { ParsedPrivateKey("-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQClcreF815p+Fv5\nDa+GWHUw2GAGxw8S2jb00lAVpBpdU6VIS8y847UtqnxV4iKlz1tMqeCNHmo9Q0Eb\n89HZ8J5WBqA1rEMgpiWrASKdW8qzQJxsB9hZEn5dPZFgGZDPCISXYmrz5/JmkPFd\nRYkmyv6rTmkWhmgY57DuhmUSDNghO73xu8tnbXT7w5HSWLUmhfq081DQwq/WX0gE\n8F9IyoKQFdFfkNaJO8a41YvK2SmqXyl6pGAcnyZzdAabz5SPfIIQusrzEyNqth9n\naLj88Ne9Ajs39i9qNBDgk9ZaLGKXnRP5pWs54gy2z7dB3iEjvU132qYS73jPKX26\naevlm76LAgMBAAECggEANWWeXKGMvbfV+z4TAdGH1SFocJeLQmLiLMa56RojFi7a\nX8hzBh2ZymjFIzTOSORxC3+iRPllgWs01tAs0OGLQKl3yIrVyXJGIvhFUzMeaxb1\nxRoNFcZVuUMXKcRmi6Mso+00Jo8cGUU7WQaJutb2NZSjbw0nCK6yWHFQqnAxyxuH\nW/fA3ztmL8Tc57/vGo6/EgITSMmITK4nQfJKLTp3GQCDu6Ui6aKkmBFGQnOtxTIs\nk/avfW1cSB+Ecr20ilDHM8SrUW7eLz/aqHkoRGObaNtNZzir3cEGSb4A4ny+8WQ/\nBsck46qE4/qv1r3kI0xUJ2EPtBvhUnKWgy3ttgnlBQKBgQDa5RzTliKjRddRtwPm\n4tG9DkfrbDeGNINi8zJdK1umgcerS2ZV1Z67BMiWj4+omQnOM5W/jeDbrdjXR1jt\nZ5OdhF+0sGpWpqaF6+uuaKzXvePujVYGFkluEJoNO1zdAI70kimdN1pEUHlBneZN\n4uGlPLZBbKnQGGeAp3hfOCRFZQKBgQDBfkrgkUskEhNiRcqF2GY1z6lBnhJ4ByUT\nytdhjFUkebzUTUUznQELmQ/px32qhcXGAGbZAV/JvxEeAdbjSL3j2IEgSuxv3E8k\naqlGhP4yi7yCQ9tWukfE8KmvdKmuoVWim7Z17nJBtCXkSdhbwzpGMWJopDg4JP0H\nPMdiKNttLwKBgQCqGpvhLW3zdcXTIactmJwnD98B61HmwA5OKfG8h4IsjfQNgIWh\nNGWqrhf3MM8R1QPSszGu72GLNbkp6q8HppMHOKRrNSEd/1mu/txi58NR0KY9bqYo\nCs+7cblViQksUU/GbYNbQnWqWuMwA7XCVwrFLr3vb7MzHJPqXbpkPKurJQKBgQCv\ns7XcnDMGax+M8mEID0wo+wvwGNEeiyZhBaV04BCEkcMlaZE4YA6N8IyhtdPoH5dK\nyBycW4IW2dh6TiNKukgsePIwV7jBjuWS5QQXlDabwYYJKAMpivgW3o7HU4GtoLT5\ndrpF9qNsBGEQHvpHwUzOZpO8/7pJSVU22DsZaI5wYwKBgQCfYLTKcp2YRE1SFUHl\nqjpYHyDgCaoggLHwq0JSRZfiWdE8eN3Ipqw2bep/qO7IkL7mr8S1+x8HMblcXAqI\nxR+4pCvSTiD9/KEGLiNmWc4TishmuTd0yfXFhhjHVGoZ7PVBIjPCSUpfCdzeeaml\naCVhjunRYNIoO7jzgo/muY2kzA==\n-----END PRIVATE KEY-----\n").signing_key(); false; } catch e is InvalidCryptoInput { true; });
+    test.ok(try { ParsedPrivateKey("-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAigREzzduCyebc+NFzycZPZorxURCPJ/PUBcIYWCzXO4=\n-----END PUBLIC KEY-----\n").pkcs8(); false; } catch e is InvalidCryptoInput { true; });
+}

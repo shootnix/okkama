@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.recursion.infinite-rejected",
+  "title": "an action that cannot complete without calling itself is rejected",
+  "purpose": "Every path of spin calls spin before it could complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.RECURSION",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "§11.6.1: an action that cannot complete without recursing is a semantic error."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6.1"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS from the cited contract text",
+    "expected_basis": "§11.6.1: spin has no path to completion that avoids the recursive call (integer + and - cannot fail)."
+  },
+  "status": "mandatory"
+}

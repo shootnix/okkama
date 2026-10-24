@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, v is int) is int {
+        Stdout().writeln(label);
+        v;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let m = ["a": 1];
+    let present = m["a"] else Tracer().mark("fallback a", 0);
+    let missing = m["z"] else Tracer().mark("fallback z", 9);
+    out.writeln(present.string() + " " + missing.string());
+    0;
+}

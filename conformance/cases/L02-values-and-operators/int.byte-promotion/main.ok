@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln((byte(200).int() + 100).string());
+    out.writeln((byte(200) + byte(100)).string());
+    out.writeln((byte(3) * byte(3)).string());
+    let sum = byte(255) + byte(1);
+    out.writeln(if sum == 256 { "int 256"; } else { "?"; });
+    0;
+}

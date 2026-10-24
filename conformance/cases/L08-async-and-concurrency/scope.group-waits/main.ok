@@ -1,0 +1,67 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, ChannelClosed, InvalidChannelCapacity;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/collect" take AllFutures, Raced, NoFutures;
+import "async/cancellation" take Cancellation, Cancelling;
+import "async/atomic" take Atomic;
+
+object Job {
+    has name is string;
+    has result is int;
+    Job(:name, :result);
+    async run() is int {
+        Stdout().writeln("running " + name);
+        result;
+    }
+}
+
+object Quiet {
+    has result is int;
+    Quiet(:result);
+    async run() is int { result; }
+}
+
+object Broken does Error {
+    Broken();
+    text() is string { "broken"; }
+}
+
+object Failing {
+    Failing();
+    async run() is int {
+        Stdout().writeln("failing body");
+        throw Broken();
+    }
+}
+
+object Values {
+    Values();
+    async v(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    async flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+    async log(text is string) is void {
+        Stdout().writeln(text);
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let group is FutureGroup<int> = FutureGroup();
+    let a = Quiet(result: 1).run();
+    let b = Quiet(result: 2).run();
+    group.start(a);
+    group.start(b);
+    group.start(a);
+    await group.wait();
+    out.writeln(group.active().string());
+    out.writeln(((await a) + (await b)).string());
+    0;
+}

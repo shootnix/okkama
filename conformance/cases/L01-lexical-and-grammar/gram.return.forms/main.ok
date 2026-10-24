@@ -1,0 +1,27 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Logger {
+    Logger();
+    log(early is bool) is void {
+        if early {
+            return;
+        }
+        Stdout().writeln("logged");
+    }
+    pick(n is int) is int {
+        if n > 2 {
+            return n * 10;
+        }
+        n;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    Logger().log(true);
+    Logger().log(false);
+    out.writeln(Logger().pick(3).string());
+    0;
+}

@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.invoice-calculation",
+  "title": "subscription invoice with proration, half-even rounding and tax",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.INVOICE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok",
+    "domain.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - line cents\nok 2 - subtotal\nok 3 - tax\nok 4 - total\nok 5 - tie rounds to even (12.5)\nok 6 - tie rounds to even (13.5)\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "improvements-roadmap/workspace/billing/app",
+    "docs/billing-schema-phases.md",
+    "docs/okkama-spec-11072026.md#8.3"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Exact rat arithmetic (cross-checked with Python Fraction): pro 3 seats full month 7500; basic 2 seats 10/30 days = 666.67 -> 667; pro 1 seat 15/30 = 1250; subtotal 9417; 8.25% tax 776.9025 -> 777; total 10194; half-even ties 12.5 -> 12, 13.5 -> 14."
+  },
+  "status": "mandatory"
+}

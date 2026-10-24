@@ -1,0 +1,174 @@
+Program
+  module: ModuleDecl
+    path: [accounts]
+    version: v1.0.0
+  imports: []
+  items:
+    - RoleDecl
+      name: Ledger
+      generics: []
+      members:
+        - ActionSignature
+          async: false
+          name: balance
+          params: []
+          result: NamedType
+            path: [int]
+            args: []
+        - FakeDecl
+          body: FakeBody
+            members:
+              - ActionDecl
+                async: false
+                visibility: public
+                projection: (none)
+                name: balance
+                params: []
+                result: NamedType
+                  path: [int]
+                  args: []
+                body: Block
+                  statements:
+                    - ExpressionStatement
+                      expression: IntLiteral
+                        radix: decimal
+                        digits: 42
+                      condition: (none)
+    - ObjectDecl
+      name: Account
+      generics: []
+      roles: []
+      members:
+        - HasDecl
+          names: [ledger]
+          type: NamedType
+            path: [Ledger]
+            args: []
+          default: (none)
+        - ShorthandConstructor
+          name: Account
+          fields: [ledger]
+          body: (none)
+        - ActionDecl
+          async: false
+          visibility: public
+          projection: (none)
+          name: doubled
+          params: []
+          result: NamedType
+            path: [int]
+            args: []
+          body: Block
+            statements:
+              - ExpressionStatement
+                expression: Binary
+                  operator: *
+                  left: Call
+                    callee: Get
+                      object: NameExpression
+                        name: ledger
+                      name: balance
+                    arguments: []
+                  right: IntLiteral
+                    radix: decimal
+                    digits: 2
+                condition: (none)
+        - TestDecl
+          async: false
+          name: "doubles the ledger balance"
+          body: Block
+            statements:
+              - ExpressionStatement
+                expression: Call
+                  callee: Get
+                    object: NameExpression
+                      name: test
+                    name: is
+                  arguments:
+                    - Argument
+                      name: (none)
+                      value: Call
+                        callee: Get
+                          object: Call
+                            callee: NameExpression
+                              name: Account
+                            arguments:
+                              - Argument
+                                name: ledger
+                                value: Call
+                                  callee: Get
+                                    object: NameExpression
+                                      name: Ledger
+                                    name: fake
+                                  arguments: []
+                          name: doubled
+                        arguments: []
+                    - Argument
+                      name: (none)
+                      value: IntLiteral
+                        radix: decimal
+                        digits: 84
+                condition: (none)
+    - ActionDecl
+      async: false
+      visibility: public
+      projection: (none)
+      name: main
+      params: []
+      result: NamedType
+        path: [int]
+        args: []
+      body: Block
+        statements:
+          - ExpressionStatement
+            expression: IntLiteral
+              radix: decimal
+              digits: 0
+            condition: (none)
+    - TestDecl
+      async: false
+      name: "fake ledgers report a fixed balance"
+      body: Block
+        statements:
+          - ExpressionStatement
+            expression: Call
+              callee: Get
+                object: NameExpression
+                  name: test
+                name: is
+              arguments:
+                - Argument
+                  name: (none)
+                  value: Call
+                    callee: Get
+                      object: Call
+                        callee: Get
+                          object: NameExpression
+                            name: Ledger
+                          name: fake
+                        arguments: []
+                      name: balance
+                    arguments: []
+                - Argument
+                  name: (none)
+                  value: IntLiteral
+                    radix: decimal
+                    digits: 42
+            condition: (none)
+    - TestDecl
+      async: true
+      name: "async tests may await"
+      body: Block
+        statements:
+          - ExpressionStatement
+            expression: Call
+              callee: Get
+                object: NameExpression
+                  name: test
+                name: ok
+              arguments:
+                - Argument
+                  name: (none)
+                  value: BoolLiteral
+                    value: true
+            condition: (none)

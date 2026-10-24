@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.collections.persistent-list",
+  "title": "persistent linked lists share structure",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.COLLECTIONS.LIST",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - first\nok 2 - tail first\nok 3 - size\nok 4 - receiver unchanged\nok 5 - iteration order\nok 6 - empty first\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/list.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "collections/list: prefix() adds at the front without changing the receiver; first()/tail() on EmptyList throw EmptyListAccess."
+  },
+  "status": "mandatory"
+}

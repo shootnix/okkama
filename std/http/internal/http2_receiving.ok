@@ -1,0 +1,91 @@
+module http/internal/http2_receiving v1.0.0;
+import "http/internal/http2_body" take Http2BodyBuffer,Http2BodyEvents;
+import "http/internal/http2_input" take Http2ControlQueuing;
+import "http/internal/http2_flow" take Http2FlowWindow,Http2DataPayload,Http2WindowFrame;
+import "http/internal/http2_frame" take Http2Fault,Http2FaultScope;
+import "http/internal/http2_controls" take Http2ResetFrame;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "error" take InvalidState;
+
+// Connection-level receive ledger. Native body owners are deliberately
+// borrowed: the owning session retains them in supervised stream lifetimes.
+object Http2ReceiveFlow does Http2BodyEvents {
+    has controls is Http2ControlQueuing;has window is Atomic<Http2FlowWindow>;has slots is Atomic<@Http2ReceivingSlot>;
+    has highest is Atomic<int>;has maximum is int;has stopped is Event;
+    Http2ReceiveFlow(controls is Http2ControlQueuing,maximum is int){
+        confirm maximum>0 && maximum<=256 else throw InvalidState("invalid receive slot limit");self.controls=controls;self.maximum=maximum;
+        window=Atomic(Http2FlowWindow(Http2FaultScope.connection,0,65535));let empty is @Http2ReceivingSlot=[];slots=Atomic(empty);highest=Atomic(0);stopped=Event();
+    }
+    Http2ReceiveFlow(controls is Http2ControlQueuing,maximum is int,window is Http2FlowWindow){
+        confirm maximum>0 && maximum<=256 && window.scope()==Http2FaultScope.connection && window.remaining()>=0 else throw InvalidState("invalid receive context");
+        self.controls=controls;self.maximum=maximum;self.window=Atomic(window);let empty is @Http2ReceivingSlot=[];slots=Atomic(empty);highest=Atomic(0);stopped=Event();
+    }
+    remaining() is int{window.value().remaining();}active() is int{slots.value().size();}
+    // A server can reject decoded request fields before allocating a body.
+    // Remember only the increasing boundary, so late DATA still spends and
+    // returns connection credit without allocating a tombstone per stream.
+    observed_closed(stream is int) is void{
+        confirm stream>0 && stream<=2147483647 && stream%2==1 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid closed receive stream");
+        if stream>highest.value(){highest.replace(stream);}
+    }
+    register(stream is int) is void{
+        confirm !stopped.ready() else throw InvalidState("receive ledger stopped");
+        confirm stream>highest.value() && stream<=2147483647 && stream%2==1 else throw Http2Fault(Http2FaultScope.connection,1,0,"receive stream IDs must increase");
+        let old=slots.value();confirm old.size()<maximum else throw Http2Fault(Http2FaultScope.connection,11,0,"receive slot budget");let slot=Http2ReceivingSlot(stream);
+        let following is @Http2ReceivingSlot=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{slot;}};slots.replace(following);highest.replace(stream);
+    }
+    attach(stream is int,body is Http2BodyBuffer) is void{
+        confirm !stopped.ready() && body.stream()==stream && !body.closed() else throw InvalidState("invalid receive body attachment");
+        let matched=self.matching(stream);confirm matched.size()==1 else throw InvalidState("receive stream not registered");matched[0].attach(body);
+    }
+    open(stream is int,body is Http2BodyBuffer) is void{
+        confirm body.stream()==stream && !body.closed() else throw InvalidState("invalid receive body attachment");self.register(stream);self.attach(stream,body);
+    }
+    matching(stream is int) is @Http2ReceivingSlot{slots.value().filter()->slot{slot.stream()==stream;};}
+    retire(stream is int) is void{slots.replace(slots.value().filter()->slot{slot.stream()!=stream;});}
+    return_credit(amount is int) is void{
+        if amount>0{window.replace(window.value().credited(amount));if !stopped.ready(){controls.frame(Http2WindowFrame(0,amount).frame());}}
+    }
+    credit(stream is int,amount is int,stream_update is bool) is void{
+        self.return_credit(amount);if amount>0 && stream_update && !stopped.ready(){controls.frame(Http2WindowFrame(stream,amount).frame());}
+    }
+    discard(stream is int,amount is int,cancel is bool) is void{
+        self.return_credit(amount);self.retire(stream);if cancel && !stopped.ready(){controls.frame(Http2ResetFrame(stream,8).frame());}
+    }
+    data(data is Http2DataPayload) is void{
+        confirm !stopped.ready() else throw InvalidState("receive ledger stopped");window.replace(window.value().received(data.flow_bytes()));
+        let stream=data.stream();let matched=self.matching(stream);
+        if matched.size()==0{
+            confirm stream<=highest.value() && stream%2==1 else throw Http2Fault(Http2FaultScope.connection,1,0,"DATA on idle stream");
+            self.return_credit(data.flow_bytes());return;
+        }
+        let known=matched[0].bodies();
+        if known.size()==0{self.return_credit(data.flow_bytes());throw Http2Fault(Http2FaultScope.stream,1,stream,"DATA before final response fields");}
+        let body=known[0];
+        if body.closed() || body.wire_ended(){self.return_credit(data.flow_bytes());return;}
+        try{body.data(data);}catch failure is Http2Fault{
+            if failure.scope()==Http2FaultScope.stream{self.return_credit(data.flow_bytes());}throw;
+        }
+    }
+    failed(failure is Http2Fault) is bool{
+        let matched=self.matching(failure.stream());if matched.size()==0{return false;}
+        let known=matched[0].bodies();
+        for known -> body{if body.closed() || body.wire_ended(){return false;}body.fail(failure);}
+        self.retire(failure.stream());true;
+    }
+    cancel(stream is int) is void{
+        let matched=self.matching(stream);if matched.size()==0{return;}
+        let known=matched[0].bodies();if known.size()==0{self.discard(stream,0,true);return;}
+        known[0].close();
+    }
+    stop(failure is Error) is void{
+        stopped.set();for slots.value() -> slot{for slot.bodies() -> body{if !body.wire_ended(){body.fail(failure);}}}slots.replace([]);
+    }
+}
+object Http2ReceivingSlot {
+    has stream is int;has body is Atomic<@Http2BodyBuffer>;
+    Http2ReceivingSlot(stream is int){self.stream=stream;let empty is @Http2BodyBuffer=[];body=Atomic(empty);}
+    stream() is int{stream;}bodies() is @Http2BodyBuffer{body.value();}
+    attach(origin is Http2BodyBuffer) is void{confirm body.value().size()==0 else throw InvalidState("receive body already attached");body.replace([origin]);}
+}

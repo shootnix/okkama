@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.map.mixed-key-types-rejected",
+  "title": "a map literal with keys of different types is an error",
+  "purpose": "The operation must fail instead of producing a value.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes the operation an error but leaves the detection stage open: a static pass may reject it when operand categories are known, otherwise it fails at runtime. It must never yield a value."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.3",
+    "docs/okkama-spec-11072026.md#6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the owner decision D-047",
+    "expected_basis": "language owner decision, 21.10.2026 (D-047): map keys have exactly one type; any is not a map key, so 1 and \"1\" cannot be keys of one map."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-012"
+  ]
+}

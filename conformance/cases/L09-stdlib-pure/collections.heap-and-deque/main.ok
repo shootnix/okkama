@@ -1,0 +1,33 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "collections/list" take List, EmptyList, EmptyListAccess;
+import "collections/set" take OrderedSet, Union, Intersection, Difference;
+import "collections/heap" take Heap;
+import "collections/deque" take Deque, EmptyDequeAccess;
+
+object Heaps {
+    Heaps();
+    original_top() is int {
+        let empty is @int = [];
+        let original = Heap(values: empty).addition(3);
+        let extended = original.addition(1);
+        if extended.top() == 1 { original.top(); } else { -1; }
+    }
+    no_ints() is @int {
+        let none_left is @int = [];
+        none_left;
+    }
+}
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("heap top", Heap(values: [7, 2, 5]).top(), 2);
+    c = c.same_int("heap remainder top", Heap(values: [7, 2, 5]).remainder().top(), 5);
+    c = c.same_int("heap persistence", Heaps().original_top(), 3);
+    c = c.same_int("deque front", Deque(values: [1, 2, 3]).front().value(), 1);
+    c = c.same_int("deque back after addition", Deque(values: [1, 2, 3]).back().addition(4).back().value(), 4);
+    c = c.same_int("deque item", Deque(values: [1, 2, 3]).front().addition(0).item(1), 1);
+    c = c.same_text("empty deque access", try { let probe = Deque(values: Heaps().no_ints()).front().value(); "no error"; } catch e is EmptyDequeAccess { "EmptyDequeAccess"; }, "EmptyDequeAccess");
+    c.done();
+}

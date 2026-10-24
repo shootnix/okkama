@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "lib/tool" take Tool;
+
+object Helper {
+    Helper();
+    value() is int { 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Helper().value().string());
+    out.writeln(Tool().run().string());
+    0;
+}

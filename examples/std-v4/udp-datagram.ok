@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint;
+import "net/udp" take Datagram;
+import "io/stdout" take Stdout;
+
+main() is int {
+    // Captured fixture data; no socket is opened by this example.
+    let packet=Datagram(IpEndpoint(IpAddress("fe80::7"),5353,"en0"),
+        [byte(0),byte(255)],true);
+    Stdout().writeln(packet.source().string());
+    Stdout().writeln("retained bytes: "+packet.bytes().size().string());
+    Stdout().writeln(if packet.truncated() {"truncated";} else {"complete";});
+    0;
+}

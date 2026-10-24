@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.scope.iteration-fresh",
+  "title": "each loop iteration has a fresh scope",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.SCOPE",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "CTRL.FOR",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\n4\n6\n10\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#8.13"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.13: each iteration has a fresh lexical child scope, so `let doubled` per iteration is not a redeclaration; the loop binding does not leak."
+  },
+  "status": "mandatory"
+}

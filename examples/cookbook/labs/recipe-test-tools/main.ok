@@ -1,0 +1,35 @@
+// Проверить вызовы, отказ и управляемое время
+//
+// Тест должен записать отправку уведомления, проверить отказ и продвинуть часы на две секунды.
+//
+// Запуск: ./examples/cookbook/run lab recipe-test-tools
+// Режим: тестовый (-t); результат отражён в assertions и коде завершения.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-test-tools
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/test_tools v1.0.0;
+import "testing/double" take RecordedCalls,Stub;
+import "testing/error" take Throwing,ErrorTextMatching;
+import "testing/time" take ManualClock;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "error" take InvalidArgument;
+
+main() is int {
+
+    0;
+}
+
+test "уведомления и время" {
+    let calls is RecordedCalls<string> = RecordedCalls();
+    calls.record("order-7");
+    test.is(calls.records().item(0).value(), "order-7");
+    let answers = Stub([200, 503]);
+    test.is(answers.next(), 200);
+    let rejection is Throwing<int> = Throwing(() is int { throw InvalidArgument("сумма"); }, ErrorTextMatching("сумма"));
+    rejection.check();
+    let clock = ManualClock(Instant(Duration(0.rat(), DurationUnit.second)));
+    defer clock.close();
+    clock.advance(Duration(2.rat(), DurationUnit.second));
+    test.is(clock.monotonic_instant().reading().seconds(), 2.rat());
+}

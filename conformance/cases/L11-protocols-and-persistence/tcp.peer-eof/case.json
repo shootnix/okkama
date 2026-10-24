@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.tcp.peer-eof",
+  "title": "a peer closing early yields its fragment then EOF",
+  "purpose": "Exercise a protocol boundary against a suite-owned loopback fixture.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.NET.STREAM",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "args": [
+    "{fixture.tcp-truncating-peer.port}"
+  ],
+  "requires": {
+    "environment": [
+      "stdout",
+      "args",
+      "loopback-network"
+    ],
+    "fixtures": [
+      "tcp-truncating-peer"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "partial\neof bytes 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/net/stream.ok",
+    "docs/okkama-llm-context-1.0.md#23"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Single-attempt I/O with visible partial progress: the unterminated fragment is delivered and an empty read means EOF."
+  },
+  "status": "mandatory"
+}

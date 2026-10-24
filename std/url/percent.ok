@@ -1,0 +1,88 @@
+module url/percent v1.0.0;
+
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "encoding/hex" take HexDecoded, InvalidHex;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+
+// Whole-component choices preserve their grammatical separators. Use data for
+// a single query name/value. These choices do not validate URL structure.
+enum UrlComponent = (data, userinfo, path_segment, path, query, fragment);
+
+// Encode decoded text exactly once; '%' is data even in a preexisting %HH.
+// Non-ASCII scalars are UTF-8 encoded before escaping individual octets.
+object PercentEncoded {
+    has origin is string;
+    has component is UrlComponent;
+    PercentEncoded(origin is string, component is UrlComponent) {
+        self.origin=origin;self.component=component;
+    }
+    string() is string {
+        let digits="0123456789ABCDEF";
+        let chunks is @string=Utf8Encoded(origin).bytes().map() -> octet {
+            let value=octet.int();
+            if self.safe(value) {Utf8Decoded([octet]).string();}
+            else {
+                let high=(value/16).int();let low=value%16;
+                "%"+digits.slice(high,high+1)+digits.slice(low,low+1);
+            }
+        };
+        chunks.join("");
+    }
+    private:
+    safe(value is int) is bool {
+        if (value>=65 && value<=90) || (value>=97 && value<=122)
+            || (value>=48 && value<=57) || value==45 || value==46 || value==95 || value==126 {return true;}
+        if component==UrlComponent.data {return false;}
+        // sub-delims and colon are shared by all remaining choices.
+        if value==33 || value==36 || value==38 || value==39 || value==40 || value==41
+            || value==42 || value==43 || value==44 || value==59 || value==61 || value==58 {return true;}
+        if component==UrlComponent.userinfo {return false;}
+        if value==64 {return true;}
+        if component==UrlComponent.path_segment {return false;}
+        if value==47 {return true;}
+        value==63 && (component==UrlComponent.query || component==UrlComponent.fragment);
+    }
+}
+
+// Percent grammar is checked when observed. Literal Unicode contributes UTF-8;
+// '+' stays '+'. bytes() supports binary output; string() preserves InvalidUtf8.
+object PercentDecoded {
+    has origin is string;
+    PercentDecoded(origin is string) {self.origin=origin;}
+    bytes() is @byte {
+        let output=ByteBuffer();
+        defer output.closing().close();
+        let writer=output.writing();
+        let consumed=(0..origin.length()).reduce(0) -> after,index {
+            if index<after {after;}
+            else {
+                let scalar=origin.slice(index,index+1);
+                if scalar=="%" {
+                    confirm origin.length()-index>=3 else throw InvalidPercentEncoding(index);
+                    let octets=try {HexDecoded(origin.slice(index+1,index+3)).bytes();}
+                        catch failure is InvalidHex {throw InvalidPercentEncoding(index);};
+                    writer.write(ByteSnapshot(octets));index+3;
+                }
+                else {writer.write(ByteSnapshot(Utf8Encoded(scalar).bytes()));index+1;}
+            }
+        };
+        output.content().bytes();
+    }
+    string() is string {Utf8Decoded(self.bytes()).string();}
+}
+
+object InvalidPercentEncoding does Error {
+    has invalid_offset is int;
+    InvalidPercentEncoding(offset is int) {invalid_offset=offset;}
+    offset() is int {invalid_offset;}
+    text() is string {"invalid percent encoding at scalar offset "+invalid_offset.string();}
+}
+
+test "query data does not inject separators" {
+    test.is(PercentEncoded("a&b=c+d",UrlComponent.data).string(),"a%26b%3Dc%2Bd");
+    test.is(PercentDecoded("a%26b%3Dc%2Bd").string(),"a&b=c+d");
+}
+test "decoding happens once" {
+    test.is(PercentDecoded("%252F").string(),"%2F");
+}

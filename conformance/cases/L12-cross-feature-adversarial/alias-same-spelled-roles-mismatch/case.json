@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.alias-same-spelled-roles-mismatch",
+  "title": "an implementation of one module's role does not satisfy the other's",
+  "purpose": "Same-spelled roles from different modules are different nominal types.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.ALIAS-NOMINAL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "billing/money.ok",
+    "inventory/money.ok"
+  ],
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The nominal mismatch may be found statically or at the typed boundary."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2",
+    "docs/okkama-spec-11072026.md#12"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 12: conformance is nominal; Price does billing/money.Amount, not inventory/money.Amount."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,163 @@
+module collections/list v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "size" take Sizing;
+
+// An immutable persistent linked list.
+//
+// Build a list by prefixing values onto an explicitly typed empty list:
+//
+//     let empty is List<string> = EmptyList();
+//     let names = empty
+//         .prefix("Lovelace")
+//         .prefix("Hopper");
+//
+//     // names.first() == "Hopper"
+//     // names.tail().first() == "Lovelace"
+//     // empty.size() == 0
+//
+// prefix() never changes the receiver. The new list shares its immutable tail
+// with the old list, so retaining earlier versions is cheap and safe:
+//
+//     let one = empty.prefix("one");
+//     let two = one.prefix("two");
+//     // one still contains only "one"
+//     // two contains "two", then "one"
+//
+// Lists participate in ordinary iteration:
+//
+//     for names -> name {
+//         Stdout().writeln(name);
+//     }
+//
+// A list is deliberately not a Sequencing object and has no item(index)
+// action. Finding the nth linked node requires traversal; use cursor(), for,
+// or a genuinely indexed collection instead of disguising that cost.
+//
+// first() and tail() on EmptyList throw EmptyListAccess. Calling item() or
+// successor() on an exhausted cursor throws IterationEnded. List cursors are
+// immutable: successor() returns a cursor for the shared tail and leaves the
+// previous cursor unchanged.
+
+// List is conceptually the conjunction of Iterating<T> and Sizing. Until the
+// language supports role composition, the shared signatures are stated here
+// and concrete lists explicitly implement all three roles.
+role List<T> {
+    cursor() is Cursor<T>;
+    size() is int;
+    first() is T;
+    tail() is List<T>;
+    prefix(value is T) is List<T>;
+}
+
+object EmptyList<T> does List<T>, Iterating<T>, Sizing {
+    EmptyList();
+
+    cursor() is Cursor<T> {
+        EmptyListCursor(origin: self);
+    }
+
+    size() is int {
+        0;
+    }
+
+    first() is T {
+        throw EmptyListAccess(operation: "first");
+    }
+
+    tail() is List<T> {
+        throw EmptyListAccess(operation: "tail");
+    }
+
+    prefix(value is T) is List<T> {
+        LinkedList(value: value, following: self);
+    }
+}
+
+object LinkedList<T> does List<T>, Iterating<T>, Sizing {
+    has origin is T;
+    has following is List<T>;
+    has amount is int;
+
+    LinkedList(value is T, following is List<T>) {
+        origin = value;
+        self.following = following;
+        amount = following.size() + 1;
+    }
+
+    cursor() is Cursor<T> {
+        LinkedListCursor(value: origin, following: following);
+    }
+
+    size() is int {
+        amount;
+    }
+
+    first() is T {
+        origin;
+    }
+
+    tail() is List<T> {
+        following;
+    }
+
+    prefix(value is T) is List<T> {
+        LinkedList(value: value, following: self);
+    }
+}
+
+object EmptyListCursor<T> does Cursor<T> {
+    has origin is List<T>;
+
+    EmptyListCursor(:origin);
+
+    available() is bool {
+        false;
+    }
+
+    item() is T {
+        throw IterationEnded();
+    }
+
+    successor() is Cursor<T> {
+        throw IterationEnded();
+    }
+}
+
+object LinkedListCursor<T> does Cursor<T> {
+    has origin is T;
+    has following is List<T>;
+
+    LinkedListCursor(value is T, following is List<T>) {
+        origin = value;
+        self.following = following;
+    }
+
+    available() is bool {
+        true;
+    }
+
+    item() is T {
+        origin;
+    }
+
+    successor() is Cursor<T> {
+        following.cursor();
+    }
+}
+
+object EmptyListAccess does Error {
+    has origin is string;
+
+    EmptyListAccess(operation is string) {
+        origin = operation;
+    }
+
+    operation() is string {
+        origin;
+    }
+
+    text() is string {
+        "cannot call " + origin + " on an empty list";
+    }
+}

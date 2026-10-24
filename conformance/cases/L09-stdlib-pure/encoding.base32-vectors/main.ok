@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "encoding/base32" take Base32Encoded, Base32Decoded, InvalidBase32;
+import "encoding/utf" take Utf8Encoded;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("f", Base32Encoded(origin: Utf8Encoded(origin: "f").bytes()).string(), "MY======");
+    c = c.same_text("foo", Base32Encoded(origin: Utf8Encoded(origin: "foo").bytes()).string(), "MZXW6===");
+    c = c.same_text("foobar", Base32Encoded(origin: Utf8Encoded(origin: "foobar").bytes()).string(), "MZXW6YTBOI======");
+    c = c.same_text("empty", Base32Encoded(origin: @byte()).string(), "");
+    c = c.same_int("decode size", Base32Decoded(origin: "MZXW6===").bytes().size(), 3);
+    c = c.same_text("lowercase rejected", try { let probe = Base32Decoded(origin: "mzxw6===").bytes(); "no error"; } catch e is InvalidBase32 { "invalid"; }, "invalid");
+    c.done();
+}

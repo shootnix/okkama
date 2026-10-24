@@ -1,0 +1,50 @@
+Program
+  module: ModuleDecl
+    path: [app]
+    version: v1.0.0
+  imports:
+    - ImportDecl
+      path: "io/stdout"
+      alias: (none)
+      take: [Stdout]
+  items:
+    - ActionDecl
+      async: false
+      visibility: public
+      projection: (none)
+      name: main
+      params: []
+      result: NamedType
+        path: [int]
+        args: []
+      body: Block
+        statements:
+          - LetStatement
+            name: out
+            type: (none)
+            value: Call
+              callee: NameExpression
+                name: Stdout
+              arguments: []
+          - ExpressionStatement
+            expression: StreamWrite
+              sink: StreamWrite
+                sink: NameExpression
+                  name: out
+                source: Binary
+                  operator: +
+                  left: StringLiteral
+                    form: quoted
+                    value: "Hello, "
+                  right: StringLiteral
+                    form: quoted
+                    value: "Okkama!"
+              source: StringLiteral
+                form: endl
+                value: "\n"
+            condition: (none)
+          - ExpressionStatement
+            expression: IntLiteral
+              radix: decimal
+              digits: 0
+            condition: (none)

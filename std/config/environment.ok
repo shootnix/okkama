@@ -1,0 +1,30 @@
+module config/environment v1.0.0;
+import "collections/sequence" take Sequencing;
+import "compare" take Order;
+import "config/key" take SettingKey;
+import "config/source" take SettingReading,SettingEntry,SettingSource,Settings,DuplicateSetting,SettingLimitExceeded,SettingKeyIndex;
+import "os/environment" take Environment;
+object EnvironmentBinding{
+    has label is string;
+    has identity is SettingKey;
+    EnvironmentBinding(name is string,key is SettingKey){label=name;identity=key;}
+    name() is string{label;}
+    key() is SettingKey{identity;}
+}
+object EnvironmentSettings does SettingReading{
+    has origin is Settings;
+    EnvironmentSettings(environment is Environment,names is Sequencing<EnvironmentBinding>,source is SettingSource){
+        let size=names.size();
+        confirm size>=0 && size<=4096 else throw SettingLimitExceeded();
+        let mapping is @EnvironmentBinding=(0..size).map()->index{names.item(index);};
+        let keys is @SettingKey=mapping.map()->binding{binding.key();};
+        SettingKeyIndex(keys).valid();
+        let entries is @SettingEntry=mapping.filter()->binding{environment.membership(binding.name());}.map()->binding{
+            SettingEntry(binding.key(),[environment.variable(binding.name())],source);
+        };
+        origin=Settings(entries);
+    }
+    membership(key is SettingKey) is bool{origin.membership(key);}
+    entry(key is SettingKey) is SettingEntry{origin.entry(key);}
+    keys() is Sequencing<SettingKey>{origin.keys();}
+}

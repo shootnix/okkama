@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "net/tls" take TlsClientPolicy,TlsVersion;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "io/stdout" take Stdout;
+main() is int{
+    let versions is Set<TlsVersion>=OrderedSet([TlsVersion.tls1_3]);
+    let policy=TlsClientPolicy(TrustedCertificates([]),versions,["h2","http/1.1"]);
+    Stdout().writeln(policy.protocols().item(0));
+    0;
+}

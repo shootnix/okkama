@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/internal/http2_controls" take Http2GoAway,Http2GoAwayFrame,Http2GoAwayProgress,Http2Reset,Http2ResetFrame;
+import "io/stdout" take Stdout;
+// Pure control metadata; owner performs live reset/shutdown and retry decisions.
+main() is int{
+    let progress=Http2GoAwayProgress();progress=progress.received(Http2GoAway(Http2GoAwayFrame(3,0,[]).frame()));
+    confirm progress.stopping() && progress.last_stream()==3;
+    let reset=Http2Reset(Http2ResetFrame(5,8).frame());confirm reset.stream()==5 && reset.code()==8;
+    Stdout().writeln("GOAWAY stops admission; CANCEL identifies stream 5");0;
+}

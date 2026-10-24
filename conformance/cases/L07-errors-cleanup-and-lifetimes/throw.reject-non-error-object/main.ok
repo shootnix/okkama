@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Plain {
+    Plain();
+    text() is string { "x"; }
+}
+
+main() is int {
+    let out = Stdout();
+    throw Plain();
+    out.writeln("unreachable");
+    0;
+}

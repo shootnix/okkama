@@ -1,0 +1,32 @@
+module tasks v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending;
+
+// Async actions, await and a spawned task communicating over a channel.
+// Prints "6" and exits with status 0.
+
+object Producer {
+    has output is Sending<int>;
+    Producer(:output);
+
+    async run() is int {
+        await output.send(1);
+        await output.send(2);
+        await output.send(3);
+        3;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let channel is Channel<int> = Channel(capacity: 3);
+    let task = spawn Producer(output: channel.sending()).run();
+    let first = await channel.receiving().item();
+    let second = await channel.receiving().item();
+    let third = await channel.receiving().item();
+    let sent = await task;
+    out <- (first + second + third).string() <- endl;
+    confirm sent == 3;
+    0;
+}

@@ -1,0 +1,137 @@
+module db/value v1.0.0;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "encoding/utf" take Utf8Encoded;
+import "async/atomic" take Atomic;
+
+enum DbValueKind=(null_value,boolean,integer,floating,decimal,text,bytes);
+
+// A role-confined consumer sees one typed printing protocol, never concrete
+// getters obtained by downcasting or reflection.
+role DbValue {
+    kind() is DbValueKind;
+    print(output is DbValueWriting) is void;
+}
+role DbValueWriting {
+    null_value() is void;
+    boolean(value is bool) is void;
+    integer(value is BigInt) is void;
+    floating(value is float) is void;
+    decimal(value is Decimal) is void;
+    text(value is string) is void;
+    bytes(value is @byte) is void;
+}
+object DbNull does DbValue {
+    DbNull();kind() is DbValueKind{DbValueKind.null_value;}
+    print(output is DbValueWriting) is void{output.null_value();}
+}
+object DbBoolean does DbValue {
+    has origin is bool;DbBoolean(value is bool){origin=value;}
+    kind() is DbValueKind{DbValueKind.boolean;}value() is bool{origin;}
+    print(output is DbValueWriting) is void{output.boolean(origin);}
+}
+object DbInteger does DbValue {
+    has origin is BigInt;
+    DbInteger(value is BigInt){confirm value.string().length()<=4096 else throw DbValueLimit("integer digits");origin=value;}
+    kind() is DbValueKind{DbValueKind.integer;}value() is BigInt{origin;}
+    print(output is DbValueWriting) is void{output.integer(origin);}
+}
+object DbFloating does DbValue {
+    has origin is float;
+    DbFloating(value is float){let text=value.string();confirm text!="NaN" && text!="Inf" && text!="-Inf" && text!="nan" && text!="inf" && text!="-inf" else throw InvalidDbValue("finite floating value required");origin=value;}
+    kind() is DbValueKind{DbValueKind.floating;}value() is float{origin;}
+    print(output is DbValueWriting) is void{output.floating(origin);}
+}
+object DbDecimal does DbValue {
+    has origin is Decimal;
+    DbDecimal(value is Decimal){confirm value.string().length()<=4096 else throw DbValueLimit("decimal digits");origin=value;}
+    kind() is DbValueKind{DbValueKind.decimal;}value() is Decimal{origin;}
+    print(output is DbValueWriting) is void{output.decimal(origin);}
+}
+object DbText does DbValue {
+    has origin is string;has width is int;
+    DbText(value is string){confirm value.length()<=8388608 else throw DbValueLimit("text bytes");let size=Utf8Encoded(value).bytes().size();confirm size<=8388608 else throw DbValueLimit("text bytes");origin=value;width=size;}
+    width() is int{width;}
+    kind() is DbValueKind{DbValueKind.text;}value() is string{origin;}
+    print(output is DbValueWriting) is void{output.text(origin);}
+}
+object DbBytes does DbValue {
+    has origin is @byte;
+    DbBytes(value is @byte){confirm value.size()<=8388608 else throw DbValueLimit("binary bytes");origin=value;}
+    kind() is DbValueKind{DbValueKind.bytes;}value() is @byte{origin;}
+    print(output is DbValueWriting) is void{output.bytes(origin);}
+}
+
+// Print once, validate the event protocol, retain a canonical immutable value.
+// Later observations never invoke the caller's printer again.
+object ObservedDbValue {
+    has captured is DbValueCapture;has origin is DbValue;
+    ObservedDbValue(origin is DbValue){let capture=DbValueCapture(origin.kind());origin.print(capture);capture.finish();captured=capture;self.origin=capture.value();}
+    kind() is DbValueKind{origin.kind();}value() is DbValue{origin;}
+    boolean() is bool{captured.boolean_value();}integer() is BigInt{captured.integer_value();}
+    floating() is float{captured.floating_value();}decimal() is Decimal{captured.decimal_value();}
+    text() is string{captured.text_value();}bytes() is @byte{captured.bytes_value();}
+    width() is int{captured.width();}
+}
+object DbValueCapture does DbValueWriting {
+    has kind is DbValueKind;has count is Atomic<int>;has faulted,sealed is Atomic<bool>;
+    has booleans is Atomic<@DbBoolean>;has integers is Atomic<@DbInteger>;
+    has floating_values is Atomic<@DbFloating>;has decimals is Atomic<@DbDecimal>;
+    has texts is Atomic<@DbText>;has binaries is Atomic<@DbBytes>;
+    DbValueCapture(kind is DbValueKind){
+        self.kind=kind;count=Atomic(0);faulted=Atomic(false);sealed=Atomic(false);
+        let b is @DbBoolean=[];booleans=Atomic(b);let i is @DbInteger=[];integers=Atomic(i);
+        let f is @DbFloating=[];floating_values=Atomic(f);let d is @DbDecimal=[];decimals=Atomic(d);
+        let t is @DbText=[];texts=Atomic(t);let a is @DbBytes=[];binaries=Atomic(a);
+    }
+    emit(kind is DbValueKind) is void{
+        confirm !sealed.value() else throw InvalidDbValue("printer is sealed");
+        if faulted.value() || self.kind!=kind || count.value()!=0{faulted.replace(true);throw InvalidDbValue("print must emit exactly one event of its declared kind");}
+        count.replace(1);faulted.replace(true);
+    }
+    published() is void{faulted.replace(false);}
+    complete() is void{confirm count.value()==1 && !faulted.value() else throw InvalidDbValue("print omitted or invalidated its value");}
+    finish() is void{self.complete();sealed.replace(true);}
+    require(kind is DbValueKind) is void{confirm self.kind==kind else throw WrongDbValue(kind,self.kind);self.complete();}
+    null_value() is void{self.emit(DbValueKind.null_value);self.published();}
+    boolean(value is bool) is void{self.emit(DbValueKind.boolean);booleans.replace([DbBoolean(value)]);self.published();}
+    integer(value is BigInt) is void{self.emit(DbValueKind.integer);integers.replace([DbInteger(value)]);self.published();}
+    floating(value is float) is void{self.emit(DbValueKind.floating);floating_values.replace([DbFloating(value)]);self.published();}
+    decimal(value is Decimal) is void{self.emit(DbValueKind.decimal);decimals.replace([DbDecimal(value)]);self.published();}
+    text(value is string) is void{self.emit(DbValueKind.text);texts.replace([DbText(value)]);self.published();}
+    bytes(value is @byte) is void{self.emit(DbValueKind.bytes);binaries.replace([DbBytes(value)]);self.published();}
+    boolean_value() is bool{self.require(DbValueKind.boolean);booleans.value()[0].value();}
+    integer_value() is BigInt{self.require(DbValueKind.integer);integers.value()[0].value();}
+    floating_value() is float{self.require(DbValueKind.floating);floating_values.value()[0].value();}
+    decimal_value() is Decimal{self.require(DbValueKind.decimal);decimals.value()[0].value();}
+    text_value() is string{self.require(DbValueKind.text);texts.value()[0].value();}
+    bytes_value() is @byte{self.require(DbValueKind.bytes);binaries.value()[0].value();}
+    value() is DbValue{
+        self.complete();match kind{
+            case DbValueKind.null_value{DbNull();}case DbValueKind.boolean{booleans.value()[0];}
+            case DbValueKind.integer{integers.value()[0];}case DbValueKind.floating{floating_values.value()[0];}
+            case DbValueKind.decimal{decimals.value()[0];}case DbValueKind.text{texts.value()[0];}
+            case DbValueKind.bytes{binaries.value()[0];}else{throw InvalidDbValue("unknown kind");}
+        }
+    }
+    width() is int{self.complete();match kind{
+        case DbValueKind.null_value{0;}case DbValueKind.boolean{1;}
+        case DbValueKind.integer{self.integer_value().string().length();}
+        case DbValueKind.floating{self.floating_value().string().length();}
+        case DbValueKind.decimal{self.decimal_value().string().length();}
+        case DbValueKind.text{texts.value()[0].width();}
+        case DbValueKind.bytes{self.bytes_value().size();}else{throw InvalidDbValue("unknown kind");}
+    }}
+}
+object WrongDbValue does Error {
+    has expected,actual is DbValueKind;WrongDbValue(expected is DbValueKind,actual is DbValueKind){self.expected=expected;self.actual=actual;}
+    expected_kind() is DbValueKind{expected;}actual_kind() is DbValueKind{actual;}
+    text() is string{"wrong database value projection";}
+}
+object InvalidDbValue does Error{has reason is string;InvalidDbValue(reason is string){self.reason=reason;}text() is string{"invalid database value: "+reason;}}
+object DbValueLimit does Error{has reason is string;DbValueLimit(reason is string){self.reason=reason;}text() is string{"database value limit: "+reason;}}
+
+test "database NULL remains separate from empty text" {
+    test.ok(ObservedDbValue(DbNull()).kind()==DbValueKind.null_value);
+    test.is(ObservedDbValue(DbText("")).text(),"");
+}

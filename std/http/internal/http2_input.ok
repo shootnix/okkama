@@ -1,0 +1,129 @@
+module http/internal/http2_input v1.0.0;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
+import "http/internal/http2_reading" take Http2FrameReading,EndOfHttp2Frames;
+import "http/internal/http2_headers" take Http2HeaderBlock,Http2HeaderBlockReading;
+import "http/internal/hpack" take HpackDecoder,HpackBudget;
+import "http/internal/http2_settings" take Http2PeerSettings;
+import "http/http2_settings" take Http2Settings;
+import "http/internal/http2_flow" take Http2DataPayload,Http2WindowIncrement;
+import "http/internal/http2_controls" take Http2Reset,Http2ResetFrame,Http2PingReply,Http2GoAway,Http2GoAwayProgress;
+import "net/stream" take AsyncReading;
+import "encoding/binary" take IntegerFromBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "error" take InvalidState;
+
+// Synchronous event publication keeps the sole wire reader independent of
+// outbound socket completion and slow application body consumption. The owner
+// provides bounded queues, state/flow checks and physical transport lifetime.
+role Http2ReceivingEvents {
+    headers(block is Http2HeaderBlock) is void;
+    data(data is Http2DataPayload) is void;
+    reset(reset is Http2Reset) is void;
+    window(update is Http2WindowIncrement) is void;
+    settings(previous is Http2PeerSettings,current is Http2PeerSettings) is void;
+    local_settings(settings is Http2Settings) is void;
+    goaway(frame is Http2GoAway) is void;
+    stream_fault(fault is Http2Fault) is bool;
+    ended() is void;
+}
+// Optional owner acquisition barrier; never waits for application completion.
+role Http2ReceivingBarrier {async published() is bool;}
+role Http2ReadBoundary {dispatched() is void;}
+role Http2ControlQueuing {frame(frame is Http2Frame) is void;}
+object Http2ConnectionInput {
+    has origin is AsyncReading;has receiver is Http2ReceivingEvents;has controls is Http2ControlQueuing;
+    has local is Http2Settings;has peer is Atomic<Http2PeerSettings>;has decoder is Atomic<HpackDecoder>;
+    has boundaries is @Http2ReadBoundary;has barriers is @Http2ReceivingBarrier;has from_server is bool;has acknowledged,started is Event;has goaway is Atomic<Http2GoAwayProgress>;has budget is HpackBudget;
+    Http2ConnectionInput(origin is AsyncReading,receiver is Http2ReceivingEvents,controls is Http2ControlQueuing,local is Http2Settings,peer is Http2PeerSettings){
+        self.origin=origin;self.receiver=receiver;self.controls=controls;self.local=local;self.peer=Atomic(peer);decoder=Atomic(HpackDecoder());
+        acknowledged=Event();started=Event();goaway=Atomic(Http2GoAwayProgress());budget=HpackBudget();from_server=true;barriers=[];boundaries=[];
+    }
+    Http2ConnectionInput(origin is AsyncReading,receiver is Http2ReceivingEvents,controls is Http2ControlQueuing,local is Http2Settings,peer is Http2PeerSettings,budget is HpackBudget){
+        self.origin=origin;self.receiver=receiver;self.controls=controls;self.local=local;self.peer=Atomic(peer);decoder=Atomic(HpackDecoder());
+        acknowledged=Event();started=Event();goaway=Atomic(Http2GoAwayProgress());self.budget=budget;from_server=true;barriers=[];boundaries=[];
+    }
+    // Explicit receiving direction; old overloads remain client-side.
+    Http2ConnectionInput(origin is AsyncReading,receiver is Http2ReceivingEvents,controls is Http2ControlQueuing,local is Http2Settings,peer is Http2PeerSettings,budget is HpackBudget,from_server is bool){
+        self.origin=origin;self.receiver=receiver;self.controls=controls;self.local=local;self.peer=Atomic(peer);decoder=Atomic(HpackDecoder());
+        acknowledged=Event();started=Event();goaway=Atomic(Http2GoAwayProgress());self.budget=budget;self.from_server=from_server;barriers=[];boundaries=[];
+    }
+    Http2ConnectionInput(origin is AsyncReading,receiver is Http2ReceivingEvents,controls is Http2ControlQueuing,local is Http2Settings,peer is Http2PeerSettings,budget is HpackBudget,from_server is bool,barrier is Http2ReceivingBarrier){
+        self.origin=origin;self.receiver=receiver;self.controls=controls;self.local=local;self.peer=Atomic(peer);decoder=Atomic(HpackDecoder());
+        acknowledged=Event();started=Event();goaway=Atomic(Http2GoAwayProgress());self.budget=budget;self.from_server=from_server;barriers=[barrier];boundaries=[];
+    }
+    Http2ConnectionInput(origin is AsyncReading,receiver is Http2ReceivingEvents,controls is Http2ControlQueuing,local is Http2Settings,peer is Http2PeerSettings,budget is HpackBudget,from_server is bool,barrier is Http2ReceivingBarrier,boundary is Http2ReadBoundary){
+        self.origin=origin;self.receiver=receiver;self.controls=controls;self.local=local;self.peer=Atomic(peer);decoder=Atomic(HpackDecoder());
+        acknowledged=Event();started=Event();goaway=Atomic(Http2GoAwayProgress());self.budget=budget;self.from_server=from_server;barriers=[barrier];boundaries=[boundary];
+    }
+    async run() is bool{
+        confirm !started.ready() else throw InvalidState("HTTP2 wire reader is single-use");started.set();
+        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2InputSettlement(group);defer await cleanup.close();
+        let pending=self.read_loop();group.start(pending);await pending;
+    }
+
+    private:
+    async read_loop() is bool{
+        loop{
+            let eof=Event();let reads is FutureGroup<Http2Frame>=FutureGroup();let reading_cleanup=Http2InputSettlement(reads);defer await reading_cleanup.close();
+            let pending=Http2FrameReading(origin,local.frame_size()).result();reads.start(pending);
+            let available is @Http2Frame=try{[await pending];}
+                catch failure is EndOfHttp2Frames{eof.set();receiver.ended();let empty is @Http2Frame=[];empty;}
+                catch failure is Http2Fault{
+                    if failure.scope()==Http2FaultScope.connection{throw;}
+                    self.stream_fault(failure);let empty is @Http2Frame=[];empty;
+                };
+            if available.size()==0{for boundaries -> boundary{boundary.dispatched();}if eof.ready(){return true;}next;}
+            let work is FutureGroup<bool>=FutureGroup();let work_cleanup=Http2InputSettlement(work);defer await work_cleanup.close();
+            let dispatched=self.dispatch(available[0]);work.start(dispatched);
+            try{await dispatched;}catch failure is Http2Fault{
+                if failure.scope()==Http2FaultScope.connection{throw;}self.stream_fault(failure);
+            }
+            for boundaries -> boundary{boundary.dispatched();}
+        }
+    }
+    stream_fault(failure is Http2Fault) is void{
+        if receiver.stream_fault(failure){controls.frame(Http2ResetFrame(failure.stream(),failure.code()).frame());}
+    }
+    async dispatch(frame is Http2Frame) is bool{
+        let kind=frame.header().kind().int();
+        if kind==1{
+            let heads is FutureGroup<Http2HeaderBlock>=FutureGroup();let head_cleanup=Http2InputSettlement(heads);defer await head_cleanup.close();
+            let pending=Http2HeaderBlockReading(frame,origin,decoder.value(),budget,local.frame_size()).result();heads.start(pending);let block=await pending;
+            decoder.replace(block.context());receiver.headers(block);
+            for barriers -> barrier{let publications is FutureGroup<bool>=FutureGroup();let publication_cleanup=Http2InputSettlement(publications);defer await publication_cleanup.close();let waiting=barrier.published();publications.start(waiting);await waiting;}
+            return true;
+        }
+        if kind==0{receiver.data(Http2DataPayload(frame));return true;}
+        if kind==3{receiver.reset(Http2Reset(frame));return true;}
+        if kind==8{receiver.window(Http2WindowIncrement(frame));return true;}
+        if kind==6{for Http2PingReply(frame).frames() -> reply{controls.frame(reply);}return true;}
+        if kind==7{let progress=Http2GoAway(frame);goaway.replace(goaway.value().received(progress));receiver.goaway(progress);return true;}
+        if kind==4{
+            if (frame.header().flags().int() & 1)!=0{
+                confirm !acknowledged.ready() else throw Http2Fault(Http2FaultScope.connection,1,0,"unexpected settings acknowledgment");
+                decoder.replace(decoder.value().allowed(local.header_table()));receiver.local_settings(local);acknowledged.set();return true;
+            }
+            let payload=frame.payload();
+            for (0..(payload.size()/6).int()) -> row{
+                let offset=row*6;let id=IntegerFromBytes(payload.slice(offset,offset+2),Signedness.unsigned,ByteOrder.big).value();
+                let value=IntegerFromBytes(payload.slice(offset+2,offset+6),Signedness.unsigned,ByteOrder.big).value();
+                let previous=peer.value();let following=previous.setting(id,value,from_server);
+                receiver.settings(previous,following);peer.replace(following);
+            }
+            controls.frame(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]));return true;
+        }
+        if kind==9{throw Http2Fault(Http2FaultScope.connection,1,0,"unexpected standalone CONTINUATION");}
+        // Valid deprecated PRIORITY and unknown extension frames are ignored.
+        // PUSH_PROMISE was already rejected by the structural frame reader.
+        true;
+    }
+
+}
+
+object Http2InputSettlement<T> {
+    has group is FutureGroup<T>;Http2InputSettlement(group is FutureGroup<T>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}

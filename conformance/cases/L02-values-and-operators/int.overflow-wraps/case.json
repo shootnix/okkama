@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.int.overflow-wraps",
+  "title": "int arithmetic is exact beyond signed 64-bit",
+  "purpose": "int is an exact integer: results beyond signed 64-bit do not wrap (R01).",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-OVERFLOW",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9223372036854775808\n-9223372036854775809\n18446744073709551614\n9223372036854775808\n9223372036854775808\n0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3",
+    "Go spec: Integer overflow; Integer operators"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "language owner decision R01 (OIR-1 §23, 20.10.2026), superseding D-016 of 19.10.2026: int is an exact bigint, so +, -, * and unary minus never wrap; MIN % -1 is 0."
+  },
+  "status": "mandatory",
+  "notes": "D-016 (wrap as in Go) was superseded by R01; the case id is kept for history.",
+  "defects": [
+    "DEF-005"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.shift.int",
+  "title": "shift semantics on int",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.SHIFTS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-9223372036854775808\n-2\n9223372036854775807\n-1\n5\n"
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md",
+    "docs/OkkamaBook.md#5.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "bitwise guide / book 5.4: 1<<63 = INT64_MIN, >> sign-extends (-3>>1 = -2), >>> zero-fills (-1>>>1 = INT64_MAX), -1>>>0 = -1."
+  },
+  "status": "mandatory"
+}

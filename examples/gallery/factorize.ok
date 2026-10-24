@@ -1,0 +1,48 @@
+// Разложение на множители, НОД и НОК
+// Задача: Разложить целые числа, посчитать делители и сверить алгоритм Евклида.
+// Запуск из корня: ./examples/gallery/run factorize
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: переход состояния факторизации, Frequencies и BigInt gcd/lcm.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/factorize.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/factorize v1.0.0;
+import "collections/frequencies" take Frequencies;
+import "numbers/bigint" take BigInt,BigGcd,BigLcm;
+import "io/stdout" take Stdout;
+object Factoring {
+    has remaining,divisor is int;has factors is @int;
+    Factoring(number is int){confirm number>0;remaining=number;divisor=2;let empty is @int=[];factors=empty;}
+    searching() is bool{divisor*divisor<=remaining;}
+    following() is ^Factoring {
+        if remaining%divisor==0{
+            ^remaining=(remaining/divisor).int();
+            ^factors=(0..factors.size()+1).map()->i{if i<factors.size(){factors[i];}else{divisor;}};
+        }else{^divisor=if divisor==2{3;}else{divisor+2;};}
+    }
+    values() is @int {
+        if remaining==1{factors;}else{(0..factors.size()+1).map()->i{if i<factors.size(){factors[i];}else{remaining;}};}
+    }
+}
+object Euclid {
+    has left,right is int;Euclid(left is int,right is int){self.left=left;self.right=right;}
+    finished() is bool{right==0;}value() is int{left;}
+    following() is ^Euclid{^left=right;^right=left%right;}
+}
+main() is int {
+    for [360,97,1024,5040,600851475143]->number{
+        let state=Factoring(number);loop{last if !state.searching();state=state.following();}
+        let factors=state.values();let restored=factors.reduce(1)->product,p{product*p;};confirm restored==number;
+        let counts=Frequencies(factors);
+        let powers=counts.map()->entry{entry.item().string()+if entry.amount()>1{"^"+entry.amount().string();}else{"";};};
+        let divisors=counts.reduce(1)->product,entry{product*(entry.amount()+1);};
+        Stdout().writeln(number.string()+" = "+powers.join(" * ")+"; divisors = "+divisors.string());
+    }
+    for [[48,36],[1071,462],[17,5]]->pair{
+        let state=Euclid(pair[0],pair[1]);loop{last if state.finished();state=state.following();}
+        let gcd=BigGcd(left:BigInt(pair[0].string()),right:BigInt(pair[1].string())).value();
+        let lcm=BigLcm(left:BigInt(pair[0].string()),right:BigInt(pair[1].string())).value();
+        confirm state.value().string()==gcd.string();
+        Stdout().writeln("gcd="+gcd.string()+" lcm="+lcm.string());
+    }0;
+}

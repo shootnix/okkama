@@ -1,0 +1,21 @@
+// Передать отметку времени через API
+//
+// Нужно принять RFC 3339 время и вывести ту же абсолютную отметку в UTC.
+//
+// Запуск: ./examples/cookbook/run lab recipe-time-api
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-time-api
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/time_api v1.0.0;
+import "time/rfc3339" take InstantFromRfc3339,Rfc3339;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let received = InstantFromRfc3339("2026-10-18T14:30:00+05:00").value();
+    let canonical = Rfc3339(received, Duration(0.rat(), DurationUnit.second)).string();
+    confirm canonical == "2026-10-18T09:30:00Z";
+    Stdout().writeln(canonical);
+    0;
+}

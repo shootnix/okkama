@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Echo<T> {
+    echo(value is T) is T;
+}
+
+object EchoBox<T> does Echo<T> {
+    has seed is T;
+    EchoBox(:seed);
+    echo(value is T) is T { value; }
+}
+
+main() is int {
+    let out = Stdout();
+    let e is Echo<string> = EchoBox(seed: 1);
+    out.writeln("unreachable");
+    0;
+}

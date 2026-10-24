@@ -1,0 +1,67 @@
+module mail/pop3_reading v1.0.0;
+
+import "net/stream" take AsyncReading;
+import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyDecoder, PopReplyLimits, PopReplyLimitExceeded;
+import "io/decorators" take InvalidReading;
+import "error" take InvalidArgument;
+
+// One lazy read of one POP3 reply from a borrowed asynchronous byte stream.
+// result() always returns the same Future, including after failure/cancellation.
+// Pass remainder() explicitly to the next operation, using the same stream.
+// No read occurs when the prefix already contains a complete reply.
+//
+// Only one operation may consume a stream at a time. This adapter does not own
+// or close the stream. A started failure/cancellation can consume a prefix:
+// the caller must discard that protocol session, not retry this read or replay
+// an POP3 command. Within/Before compose around result() and drain cancellation
+// cleanup through the awaited source future. No implicit timeout or retry.
+object PopReplyReading {
+    has pending is Future<PopReplyRead>;
+    PopReplyReading(origin is AsyncReading, mode is PopReplyMode) {
+        pending=PopReplyInput(origin,mode,[],PopReplyLimits(),4096).read();
+    }
+    PopReplyReading(origin is AsyncReading, mode is PopReplyMode, prefix is @byte) {
+        pending=PopReplyInput(origin,mode,prefix,PopReplyLimits(),4096).read();
+    }
+    PopReplyReading(origin is AsyncReading, mode is PopReplyMode, prefix is @byte, limits is PopReplyLimits, chunk_bytes is int) {
+        pending=PopReplyInput(origin,mode,prefix,limits,chunk_bytes).read();
+    }
+    result() is Future<PopReplyRead> {pending;}
+}
+object PopReplyRead {
+    has value is PopReply;has tail is @byte;has count is int;
+    PopReplyRead(decoder is PopReplyDecoder) {
+        value=decoder.finish();tail=decoder.remainder();count=decoder.consumed();
+    }
+    reply() is PopReply {value;}
+    remainder() is @byte {tail;}
+    consumed() is int {count;}
+}
+object PopReplyInput {
+    has origin is AsyncReading;has mode is PopReplyMode;has prefix is @byte;has limits is PopReplyLimits;has chunk_bytes is int;
+    PopReplyInput(origin is AsyncReading, mode is PopReplyMode, prefix is @byte, limits is PopReplyLimits, chunk_bytes is int) {
+        confirm chunk_bytes>0 else throw InvalidArgument("POP3 read chunk size must be positive");
+        confirm prefix.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded("chunk_bytes");
+        self.origin=origin;self.mode=mode;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;
+    }
+    async read() is PopReplyRead {
+        let decoder=PopReplyDecoder(mode,limits);decoder=decoder.fed(prefix);
+        loop {
+            last if decoder.complete();
+            let remaining=limits.wire_bytes()-decoder.consumed();
+            confirm remaining>0 else throw PopReplyLimitExceeded("wire_bytes");
+            let requested=if chunk_bytes<remaining {chunk_bytes;} else {remaining;};
+            let chunk=await origin.bytes(requested);
+            confirm chunk.size()<=requested else throw InvalidReading("POP3 origin returned more bytes than requested");
+            if chunk.size()==0 {decoder.finish();}
+            decoder=decoder.fed(chunk);
+        }
+        PopReplyRead(decoder);
+    }
+}
+
+test "POP3 read snapshot preserves status and exact remainder" {
+    let decoder=PopReplyDecoder(PopReplyMode.single);decoder=decoder.fed([43.byte(),79.byte(),75.byte(),13.byte(),10.byte(),1.byte()]);
+    let read=PopReplyRead(decoder);test.is(read.reply().successful(),true);test.is(read.consumed(),5);
+    test.is(read.remainder(),[1.byte()]);
+}

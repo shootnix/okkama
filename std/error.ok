@@ -1,0 +1,56 @@
+module error v1.0.0;
+
+object InvalidArgument does Error {
+    has message is string = "invalid argument";
+    // ctor
+    InvalidArgument();
+    InvalidArgument(msg is string) {
+        message = msg;
+    }
+
+    #projected
+    text() is string { message; }
+}
+
+// InvalidState
+
+object InvalidState does Error {
+    has message is string = "invalid state";
+    // ctor
+    InvalidState();
+    InvalidState(msg is string) {
+        message = msg;
+    }
+
+    #projected
+    text() is string { message; }
+}
+
+// OutOfRange
+
+object OutOfRange does Error {
+    has message is string = "out of range";
+
+    // ctor
+    OutOfRange();
+    OutOfRange(msg is string) {
+        message = msg;
+    }
+
+    #projected
+    text() is string { message; }
+}
+
+// UnsupportedOperation
+
+object UnsupportedOperation does Error {
+    has message is string = "unsupported operation";
+    // ctor
+    UnsupportedOperation();
+    UnsupportedOperation(msg is string) {
+        message = msg;
+    }
+
+    #projected
+    text() is string { message; }
+}

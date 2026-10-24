@@ -1,0 +1,301 @@
+module mail/message v1.0.0;
+
+import "mime/part" take MimeBody, MimePart, MimeLimits, ParsedMime, InvalidMime, BinaryBody;
+import "message/header" take MessageHeader, MessageHeaderName, MessageHeaders;
+import "io/stream" take ByteSource;
+import "compare" take Order;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "time/zone" take ZonedDateTime, FixedZone, Fold;
+import "time/date" take Date, Weekday, InvalidDate;
+import "time/day" take TimeOfDay, InvalidTimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "time/duration" take Duration, DurationUnit;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "mime/media_type" take MimePosition;
+import "error" take InvalidArgument;
+
+// Content and delivery preparation do not infer an SMTP envelope.
+// Bodies are borrowed; rendering uses MIME bounds and observes bytes once.
+// Address/origination policy remains with future addressed-message consumers.
+object MailMessage does ByteSource {
+    has content is MimePart;has bounds is MimeLimits;
+    MailMessage(part is MimePart) {content=part;bounds=part.limits();}
+    MailMessage(headers is MessageHeaders, body is MimeBody) {
+        let limits=MimeLimits();bounds=limits;content=MimePart(headers,body,limits);
+    }
+    MailMessage(headers is MessageHeaders, body is MimeBody, limits is MimeLimits) {
+        bounds=limits;content=MimePart(headers,body,limits);
+    }
+    part() is MimePart {content;}
+    headers() is MessageHeaders {content.headers();}
+    body() is MimeBody {content.body();}
+    limits() is MimeLimits {bounds;}
+    bytes() is @byte {content.bytes();}
+}
+object ParsedMail {
+    has origin is @byte;has limits is MimeLimits;
+    ParsedMail(origin is @byte) {self.origin=origin;limits=MimeLimits();}
+    ParsedMail(origin is @byte, limits is MimeLimits) {self.origin=origin;self.limits=limits;}
+    message() is MailMessage {
+        try {
+            let part=ParsedMime(origin,limits).part();MailMessage(part);
+        } catch failure is InvalidMime {throw InvalidMail(failure.offset(),failure.reason());}
+    }
+}
+object DeliveredMail does ByteSource {
+    has content is MailMessage;
+    DeliveredMail(origin is MailMessage) {content=origin;}
+    bytes() is @byte {
+        let entries=content.headers().entries();let size=entries.size();
+        let fields is @MessageHeader=(0..size).map() -> index {entries.item(index);};
+        let public_fields is @MessageHeader=fields.filter() -> field {
+            field.name().order(MessageHeaderName("Bcc"))!=Order.equal
+                && field.name().order(MessageHeaderName("Resent-Bcc"))!=Order.equal;
+        };
+        content.part().headers(MessageHeaders(public_fields,size),content.limits()).bytes();
+    }
+}
+object MessageId {
+    has origin is string;
+    MessageId(origin is string) {MailIdentifier(origin).validate();self.origin=origin;}
+    string() is string {origin;}
+}
+object InvalidMail does Error {
+    has position is int;has reason is string;
+    InvalidMail(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid mail at offset "+position.string()+": "+reason;}
+}
+
+// Numeric dates are immutable snapshots; a custom zone is observed once.
+object MailDate {
+    has text is string;
+    MailDate(origin is ZonedDateTime) {text=MailDatePrinting(origin,true).string();}
+    MailDate(origin is ZonedDateTime, offset_known is bool) {text=MailDatePrinting(origin,offset_known).string();}
+    string() is string {text;}
+}
+object ParsedMailDate {
+    has origin is string;has maximum is int;
+    ParsedMailDate(origin is string) {self.origin=origin;maximum=4096;}
+    ParsedMailDate(origin is string, maximum_bytes is int) {
+        confirm maximum_bytes>=0 else throw InvalidArgument("mail date bound must be nonnegative");
+        self.origin=origin;maximum=maximum_bytes;
+    }
+    value() is ZonedDateTime {MailDateParsing(origin,maximum).result().value();}
+    offset_known() is bool {MailDateParsing(origin,maximum).result().offset_known();}
+}
+object MailDatePrinting {
+    has origin is ZonedDateTime;has known is bool;
+    MailDatePrinting(origin is ZonedDateTime, known is bool) {self.origin=origin;self.known=known;}
+    string() is string {
+        let offset=origin.offset();let raw=offset.seconds();
+        let elapsed=origin.instant().unix_duration();
+        confirm elapsed.seconds().denominator()=="1" else throw InvalidMail(0,"mail time must contain whole seconds");
+        confirm raw.denominator()=="1" else throw InvalidMail(0,"mail offset must contain whole seconds");
+        let seconds=raw.int();
+        confirm seconds % 60==0 && seconds > -86400 && seconds < 86400
+            else throw InvalidMail(0,"mail offset must contain whole minutes within one day");
+        confirm known || seconds==0 else throw InvalidMail(0,"unknown mail offset must have zero displacement");
+        let local=try {
+            LocalDateTime(Date(1970,1,1),TimeOfDay(0,0,0,0)).plus(elapsed.plus(offset));
+        } catch failure is InvalidDate {throw InvalidMail(0,"mail date outside supported calendar");};
+        let date=local.date();let time=local.time();let calendar=MailCalendar();
+        confirm date.year()>=1900 && time.nanosecond()==0
+            else throw InvalidMail(0,"mail dates require years 1900..9999 and whole seconds");
+        let magnitude=if seconds<0 {-seconds;} else {seconds;};
+        let sign=if seconds<0 || !known {"-";} else {"+";};
+        calendar.weekday(date.weekday())+", "+calendar.padded(date.day())+" "+calendar.month(date.month())+" "+date.year().string()+" "
+            +calendar.padded(time.hour())+":"+calendar.padded(time.minute())+":"+calendar.padded(time.second())+" "
+            +sign+calendar.padded((magnitude/3600).int())+calendar.padded(((magnitude%3600)/60).int());
+    }
+}
+object MailParsedDate {
+    has local is LocalDateTime;has offset is MailDateOffset;
+    MailParsedDate(local is LocalDateTime, offset is MailDateOffset) {self.local=local;self.offset=offset;}
+    value() is ZonedDateTime {
+        let zone=FixedZone("mail",Duration(offset.seconds().rat(),DurationUnit.second));
+        ZonedDateTime(zone.instant(local,Fold.earlier),zone);
+    }
+    offset_known() is bool {offset.known();}
+}
+object MailDateOffset {
+    has displacement is int;has recognized is bool;
+    MailDateOffset(seconds is int, known is bool) {displacement=seconds;recognized=known;}
+    seconds() is int {displacement;}
+    known() is bool {recognized;}
+}
+object MailDateParsing {
+    has origin is string;has maximum is int;
+    MailDateParsing(origin is string, maximum is int) {self.origin=origin;self.maximum=maximum;}
+    result() is MailParsedDate {
+        let tokens=MailDateTokens(origin,maximum).values();let count=tokens.size();let calendar=MailCalendar();
+        confirm count==5 || count==6 else throw InvalidMail(0,"mail date requires day month year time zone");
+        let start=if count==6 {1;} else {0;};
+        let day=calendar.number(tokens[start],1,2);let month=calendar.month_number(tokens[start+1]);
+        let year_text=tokens[start+2];let number=calendar.number(year_text,2,4);
+        let year=if year_text.length()==2 {if number<50 {2000+number;} else {1900+number;}}
+            else {if year_text.length()==3 {1900+number;} else {number;}};
+        confirm year>=1900 else throw InvalidMail(0,"mail year must be at least 1900");
+        let clock=tokens[start+3].split(":");
+        confirm clock.size()==2 || clock.size()==3 else throw InvalidMail(0,"mail time requires HH:MM[:SS]");
+        let hour=calendar.number(clock[0],2,2);let minute=calendar.number(clock[1],2,2);
+        let second=if clock.size()==3 {calendar.number(clock[2],2,2);} else {0;};
+        let local=try {LocalDateTime(Date(year,month,day),TimeOfDay(hour,minute,second,0));}
+            catch failure is InvalidDate {throw InvalidMail(0,"invalid mail calendar date");}
+            catch failure is InvalidTimeOfDay {throw InvalidMail(0,"invalid mail time (leap seconds are unsupported)");};
+        if start==1 {
+            confirm calendar.lower(tokens[0])==calendar.lower(calendar.weekday(local.date().weekday())+",")
+                else throw InvalidMail(0,"mail weekday does not match date");
+        }
+        MailParsedDate(local,self.zone(tokens[start+4]));
+    }
+    private:
+    zone(text is string) is MailDateOffset {
+        let calendar=MailCalendar();let name=calendar.lower(text);
+        if text.length()==5 && (text.slice(0,1)=="+" || text.slice(0,1)=="-") {
+            let hour=calendar.number(text.slice(1,3),2,2);let minute=calendar.number(text.slice(3,5),2,2);
+            confirm hour<=23 && minute<=59 else throw InvalidMail(0,"mail numeric offset outside range");
+            let sign=if text.slice(0,1)=="-" {-1;} else {1;};
+            return MailDateOffset(sign*(hour*3600+minute*60),text!="-0000");
+        }
+        let hours=match name {
+            case "ut", "gmt" {0;} case "est" {-5;} case "edt" {-4;} case "cst" {-6;} case "cdt" {-5;}
+            case "mst" {-7;} case "mdt" {-6;} case "pst" {-8;} case "pdt" {-7;} else {100;}
+        };
+        if hours!=100 {return MailDateOffset(hours*3600,true);}
+        if name.length()==1 && "abcdefghiklmnopqrstuvwxyz".split(name).size()==2 {return MailDateOffset(0,false);}
+        throw InvalidMail(0,"unsupported mail date zone");
+    }
+}
+object MailDateTokens {
+    has origin is string;has maximum is int;
+    MailDateTokens(origin is string, maximum is int) {self.origin=origin;self.maximum=maximum;}
+    values() is @string {
+        confirm origin.length()<=maximum else throw InvalidMail(0,"mail date input bound exceeded");
+        let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        let depth=MimePosition(0);let consumed=MimePosition(0);
+        for (0..origin.length()) -> index {
+            if index>=consumed.index() {
+                let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();let value=bytes[0].int();
+                confirm bytes.size()==1 else throw InvalidMail(index,"mail date must be ASCII");
+                if value==13 {
+                    confirm index+2<origin.length() && origin.slice(index+1,index+2)=="\n"
+                        && (origin.slice(index+2,index+3)==" " || origin.slice(index+2,index+3)=="\t")
+                        else throw InvalidMail(index,"invalid mail date folding");
+                    consumed=consumed.following(index+2);
+                    if depth.index()==0 {writer.write(ByteSnapshot([32.byte()]));}
+                } else {
+                    confirm value==9 || (value>=32 && value<=126) else throw InvalidMail(index,"invalid mail date character");
+                    if value==92 && depth.index()>0 {
+                        confirm index+1<origin.length() else throw InvalidMail(index,"unterminated comment escape");
+                        let escaped=Utf8Encoded(origin.slice(index+1,index+2)).bytes();let code=escaped[0].int();
+                        confirm escaped.size()==1 && (code==9 || (code>=32 && code<=126))
+                            else throw InvalidMail(index+1,"invalid escaped comment character");
+                        consumed=consumed.following(index+2);
+                    } else {
+                        if value==40 {
+                            confirm depth.index()<32 else throw InvalidMail(index,"mail date comment depth exceeded");
+                            if depth.index()==0 {writer.write(ByteSnapshot([32.byte()]));}
+                            depth=depth.following(depth.index()+1);
+                        } else {
+                            if value==41 {
+                                confirm depth.index()>0 else throw InvalidMail(index,"unexpected comment close");
+                                depth=depth.following(depth.index()-1);
+                            } else {
+                                if depth.index()==0 {writer.write(ByteSnapshot([if value==9 {32.byte();} else {value.byte();}]));}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        confirm depth.index()==0 else throw InvalidMail(origin.length(),"unterminated mail date comment");
+        let fields is @string=Utf8Decoded(buffer.content().bytes()).string().split(" ").filter() -> token {token.length()>0;};
+        fields;
+    }
+}
+object MailCalendar {
+    MailCalendar();
+    lower(text is string) is string {
+        let bytes is @byte=Utf8Encoded(text).bytes().map() -> octet {
+            let value=octet.int();if value>=65 && value<=90 {(value+32).byte();} else {octet;}
+        };Utf8Decoded(bytes).string();
+    }
+    number(text is string, minimum is int, maximum is int) is int {
+        confirm text.length()>=minimum && text.length()<=maximum else throw InvalidMail(0,"invalid mail date number width");
+        Utf8Encoded(text).bytes().reduce(0) -> result,octet {
+            let value=octet.int();confirm value>=48 && value<=57 else throw InvalidMail(0,"invalid mail date number");
+            result*10+value-48;
+        };
+    }
+    padded(number is int) is string {if number<10 {"0"+number.string();} else {number.string();}}
+    month(number is int) is string {let names=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];names[number-1];}
+    month_number(text is string) is int {
+        let name=self.lower(text);
+        for (1..13) -> number {if self.lower(self.month(number))==name {return number;}}
+        throw InvalidMail(0,"invalid mail month");
+    }
+    weekday(day is Weekday) is string {
+        match day {
+            case Weekday.monday {"Mon";} case Weekday.tuesday {"Tue";} case Weekday.wednesday {"Wed";}
+            case Weekday.thursday {"Thu";} case Weekday.friday {"Fri";} case Weekday.saturday {"Sat";} case Weekday.sunday {"Sun";}
+        }
+    }
+}
+
+object MailIdentifier {
+    has origin is string;
+    MailIdentifier(origin is string) {self.origin=origin;}
+    validate() is void {
+        let size=origin.length();
+        confirm size>=5 && size<=998 else throw InvalidMail(0,"message identifier length outside 5..998");
+        confirm origin.slice(0,1)=="<" && origin.slice(size-1,size)==">"
+            else throw InvalidMail(0,"message identifier requires angle brackets");
+        let separators=(1..size-1).filter() -> index {origin.slice(index,index+1)=="@";};
+        confirm separators.size()>0 else throw InvalidMail(1,"message identifier requires @");
+        let at=separators[0];self.atom(1,at);
+        if origin.slice(at+1,at+2)=="[" {
+            confirm origin.slice(size-2,size-1)=="]" else throw InvalidMail(size-2,"unclosed identifier literal");
+            for (at+2..size-2) -> index {
+                let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();let value=bytes[0].int();
+                confirm bytes.size()==1 && ((value>=33 && value<=90) || (value>=94 && value<=126))
+                    else throw InvalidMail(index,"invalid identifier literal character");
+            }
+        } else {self.atom(at+1,size-1);}
+    }
+    private:
+    atom(start is int, stop is int) is void {
+        confirm start<stop else throw InvalidMail(start,"empty identifier atom");
+        for (start..stop) -> index {
+            let scalar=origin.slice(index,index+1);
+            if scalar=="." {
+                confirm index>start && index+1<stop && origin.slice(index-1,index)!="."
+                    else throw InvalidMail(index,"empty identifier dot segment");
+            } else {
+                let bytes=Utf8Encoded(scalar).bytes();let value=bytes[0].int();
+                let punctuation="!#$%&'*+-/=?^_`{|}~";
+                let allowed=(0..punctuation.length()).reduce(false) -> found,at {found || punctuation.slice(at,at+1)==scalar;};
+                confirm bytes.size()==1 && ((value>=48 && value<=57) || (value>=65 && value<=90)
+                    || (value>=97 && value<=122) || allowed) else throw InvalidMail(index,"invalid identifier atom character");
+            }
+        }
+    }
+}
+
+test "delivery preparation retains the source message" {
+    let fields=MessageHeaders([MessageHeader(MessageHeaderName("Bcc"),"private@example.test")]);
+    let message=MailMessage(fields,BinaryBody([]));
+    test.is(DeliveredMail(message).bytes().size(),2);
+    test.is(message.headers().entries().size(),1);
+}
+test "message identifiers preserve case and literal spelling" {
+    test.is(MessageId("<a.1@[IPv6:::1]>").string(),"<a.1@[IPv6:::1]>");
+    let invalid=try {MessageId("<a..b@example.test>");false;} catch failure is InvalidMail {true;};
+    test.ok(invalid);
+}
+test "mail dates preserve unknown zero offsets" {
+    let parsed=ParsedMailDate("Fri, 21 Nov 1997 09:55:06 -0000");
+    test.is(MailDate(parsed.value(),parsed.offset_known()).string(),"Fri, 21 Nov 1997 09:55:06 -0000");
+}

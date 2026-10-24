@@ -1,0 +1,166 @@
+{
+  "schema": "ocs-mutations/1",
+  "description": "Mutation controls: each mutant changes one source or expectation detail of a passing case; a correct runner and adapter must report the mutant as not PASS.",
+  "mutations": [
+    {
+      "name": "exit-status-source",
+      "case": "L00.exit.forty-two",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "    42;",
+      "replace": "    43;"
+    },
+    {
+      "name": "exit-status-expectation",
+      "case": "L00.exit.forty-two",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "\"exit_status\": 42",
+      "replace": "\"exit_status\": 41"
+    },
+    {
+      "name": "stdout-byte",
+      "case": "L00.stdout.hello",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "out.writeln(\"hello\");",
+      "replace": "out.writeln(\"hellO\");"
+    },
+    {
+      "name": "invalid-entry-made-valid",
+      "case": "L00.entry.void-rejected",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "main() is void {\n    Stdout().writeln(\"body ran\");\n}",
+      "replace": "main() is int {\n    Stdout().writeln(\"body ran\");\n    0;\n}"
+    },
+    {
+      "name": "mixed-equality-made-valid",
+      "case": "L02.equality.mixed-int-string",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "1 == \"1\"",
+      "replace": "1 == 1"
+    },
+    {
+      "name": "rat-text-expectation",
+      "case": "L02.rat.division",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "\\n1/3\\n",
+      "replace": "\\n0.333\\n"
+    },
+    {
+      "name": "short-circuit-operand",
+      "case": "L03.short-circuit.skips-right-operand",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "t.flag(\"left false\", false)",
+      "replace": "t.flag(\"left false\", true)"
+    },
+    {
+      "name": "successor-discard-made-valid",
+      "case": "L04.successor.discarded",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "    bottle.open();\n",
+      "replace": "    let opened = bottle.open();\n    out.writeln(opened.state());\n"
+    },
+    {
+      "name": "map-key-order-expectation",
+      "case": "L05.map.access",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "apple,pear,who",
+      "replace": "pear,apple,who"
+    },
+    {
+      "name": "defer-order-expectation",
+      "case": "L07.defer.lifo-and-lazy",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "body end\\nsecond registered\\nfirst registered: 2",
+      "replace": "body end\\nfirst registered: 2\\nsecond registered"
+    },
+    {
+      "name": "destroy-order-expectation",
+      "case": "L07.destroy.scope-exit-lifo",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "destroy c\\ndestroy b\\ndestroy a",
+      "replace": "destroy a\\ndestroy b\\ndestroy c"
+    },
+    {
+      "name": "lazy-future-expectation",
+      "case": "L08.future.lazy-and-cached",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "created\\nrunning a",
+      "replace": "running a\\ncreated"
+    },
+    {
+      "name": "md5-vector-source",
+      "case": "L09.digest.md5-sha1-vectors",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "\"900150983cd24fb0d6963f7d28e17f72\");\n    c = c.same_text(\"md5 empty\"",
+      "replace": "\"800150983cd24fb0d6963f7d28e17f72\");\n    c = c.same_text(\"md5 empty\""
+    },
+    {
+      "name": "crc32-vector-source",
+      "case": "L09.checksum.crc32-and-crc16",
+      "kind": "source",
+      "file": "main.ok",
+      "find": ".value(), 3421780262);\n    c = c.same_int(\"crc32 chunked\"",
+      "replace": ".value(), 3421780263);\n    c = c.same_int(\"crc32 chunked\""
+    },
+    {
+      "name": "rollback-made-commit",
+      "case": "L11.sqlite.transaction-rollback-commit",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "let rolled = await first.rollback();",
+      "replace": "let rolled = await first.commit();"
+    },
+    {
+      "name": "tax-rate-source",
+      "case": "L13.invoice-calculation",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "tax_basis_points: 825",
+      "replace": "tax_basis_points: 826"
+    },
+    {
+      "name": "harness-negative-control",
+      "case": "L04.harness.deliberate-failures",
+      "kind": "source",
+      "file": "main.ok",
+      "find": "c.same_int(\"int mismatch\", 2 + 2, 5)",
+      "replace": "c.same_int(\"int mismatch\", 2 + 2, 4)"
+    },
+    {
+      "name": "import-directory-fixture",
+      "case": "L06.resolve.importer-directory-not-cwd",
+      "kind": "source",
+      "file": "app/helper.ok",
+      "find": "value() is int { 7; }",
+      "replace": "value() is int { 99; }"
+    },
+    {
+      "name": "rejection-stage-expectation",
+      "case": "L01.lex.string.unknown-escape",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "\"stages\": [\n        \"parse\"\n      ]",
+      "replace": "\"stages\": [\n        \"check\"\n      ]"
+    },
+    {
+      "name": "uncaught-type-expectation",
+      "case": "L07.uncaught.reports-type",
+      "kind": "expect",
+      "file": "case.json",
+      "find": "\"error_type\": \"NotFound\"",
+      "replace": "\"error_type\": \"Denied\""
+    }
+  ]
+}

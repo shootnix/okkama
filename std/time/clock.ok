@@ -1,0 +1,132 @@
+module time/clock v1.0.0;
+
+import "compare" take Comparing, Order;
+import "time/duration" take Duration, DurationUnit;
+import "runtime/time" take
+    wall_clock,
+    monotonic_clock,
+    clock_domain,
+    sleep_nanoseconds;
+
+// Wall-clock and monotonic time are deliberately different nominal values.
+//
+//     let clock = SystemClock();
+//     let before = clock.monotonic_instant();
+//     await clock.wait(Duration(value: 5.rat(), unit: DurationUnit.millisecond));
+//     let elapsed = clock.monotonic_instant().minus(before);
+//
+// Instant is a duration from the Unix epoch and may later be interpreted by
+// civil-time modules. MonotonicInstant is only a runtime-local reading suitable
+// for ordering and elapsed-time measurement. It has no Unix/civil projection.
+// Runtime readings carry a domain; comparisons across domains are rejected.
+// The one-argument constructor binds explicitly supplied readings to the
+// "explicit" domain and never claims compatibility with a live clock.
+
+object Instant does Comparing<Instant> {
+    has origin is Duration;
+
+    Instant(origin is Duration) {
+        self.origin = origin;
+    }
+
+    unix_duration() is Duration {
+        origin;
+    }
+
+    plus(duration is Duration) is Instant {
+        Instant(origin: origin.plus(duration));
+    }
+
+    minus(other is Instant) is Duration {
+        origin.minus(other.unix_duration());
+    }
+
+    order(other is Instant) is Order {
+        origin.order(other.unix_duration());
+    }
+}
+
+object MonotonicInstant does Comparing<MonotonicInstant> {
+    has origin is Duration;
+    has domain is string;
+
+    MonotonicInstant(origin is Duration) {
+        self.origin = origin;
+        domain = "explicit";
+    }
+
+    MonotonicInstant(origin is Duration, domain is string) {
+        confirm domain.length()>0 && domain.length()<=128 else throw IncompatibleClock();
+        self.origin = origin;
+        self.domain = domain;
+    }
+
+    domain() is string {domain;}
+
+    reading() is Duration {
+        origin;
+    }
+
+    plus(duration is Duration) is MonotonicInstant {
+        MonotonicInstant(origin: origin.plus(duration), domain: domain);
+    }
+
+    minus(other is MonotonicInstant) is Duration {
+        confirm domain==other.domain() else throw IncompatibleClock();
+        origin.minus(other.reading());
+    }
+
+    order(other is MonotonicInstant) is Order {
+        confirm domain==other.domain() else throw IncompatibleClock();
+        origin.order(other.reading());
+    }
+}
+
+// wait completes without a value; await it as a statement.
+role Timing {
+    instant() is Instant;
+    monotonic_instant() is MonotonicInstant;
+    async wait(duration is Duration) is void;
+}
+
+object SystemClock does Timing {
+    SystemClock();
+
+    instant() is Instant {
+        Instant(origin: Duration(
+            value: wall_clock().rat(),
+            unit: DurationUnit.nanosecond,
+        ));
+    }
+
+    monotonic_instant() is MonotonicInstant {
+        MonotonicInstant(origin: Duration(
+            value: monotonic_clock().rat(),
+            unit: DurationUnit.nanosecond,
+        ), domain: clock_domain(false));
+    }
+
+    async wait(duration is Duration) is void {
+        confirm duration.seconds() >= 0.rat()
+            else throw InvalidWait("wait duration must not be negative");
+        await sleep_nanoseconds(duration.nanoseconds().string());
+    }
+}
+
+object IncompatibleClock does Error {
+    IncompatibleClock();
+    text() is string {"incompatible monotonic clock domains";}
+}
+
+object InvalidWait does Error {
+    has message is string;
+
+    InvalidWait(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

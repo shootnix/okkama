@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Liar {
+    has text is string;
+    Liar(:text);
+    count() is int { self.echo(); }
+    echo() is any { text; }
+}
+
+main() is int {
+    let out = Stdout();
+    let n = Liar(text: "x").count();
+    out.writeln("unreachable");
+    0;
+}

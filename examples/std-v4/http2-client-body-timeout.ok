@@ -1,0 +1,44 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "http/client" take HttpClient,HttpTimeout;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take ListedNetworks;
+import "http/version" take HttpVersion;
+import "collections/set" take Set,OrderedSet;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "net/ip" take IpAddress,IpNetwork;
+import "time/clock" take SystemClock,Timing,Instant,MonotonicInstant;
+import "time/duration" take Duration,DurationUnit;
+import "async/event" take Event;
+import "async/atomic" take Atomic;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/header" take Headers;
+import "http/target" take AbsoluteTarget;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+import "http/exchange" take ClientResponse;
+import "async/scope" take FutureGroup;
+object ControlledClock does Timing{
+    has armed,fire is Event;has spent is Atomic<bool>;ControlledClock(armed is Event,fire is Event){self.armed=armed;self.fire=fire;spent=Atomic(false);}
+    instant() is Instant{SystemClock().instant();}monotonic_instant() is MonotonicInstant{SystemClock().monotonic_instant();}
+    async wait(duration is Duration) is void{if spent.compare_and_replace(false,true){armed.set();await fire.wait();}else{let idle=Event();await idle.wait();}}
+}
+async main() is int{
+    let versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_2]);
+    let armed=Event();let fire=Event();let zero=Duration(0.rat(),DurationUnit.second);let idle=Duration(1.rat(),DurationUnit.second);
+    let policy=ClientPolicy(versions,HttpLimits(),ClientTimeouts(zero,zero,idle),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let client=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,ControlledClock(armed,fire));defer client.close();
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl(Environment().variable("OKKAMA_HTTP_URL")).value()),Headers([]));
+    let first=client.response(request);let second=client.response(request);let group is FutureGroup<ClientResponse>=FutureGroup();group.start(first);group.start(second);
+    let a=await first;let b=await second;
+    let ra=a.response().body().reading();defer ra.close();
+    let waiting=ra.bytes(8);let reads is FutureGroup<@byte>=FutureGroup();reads.start(waiting);await armed.wait();fire.set();
+    confirm try{await waiting;false;}catch e is HttpTimeout{e.phase()=="body_idle";};
+    confirm try{await reads.wait();false;}catch e is HttpTimeout{true;};
+    let rb=b.response().body().reading();defer rb.close();confirm await rb.bytes(8)==[66.byte()];confirm (await rb.bytes(8)).size()==0;
+    let third=await client.response(request);confirm third.response().status().code()==204;
+    Stdout().writeln("HTTP2 body deadline cancelled only its own stream");0;
+}

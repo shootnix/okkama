@@ -1,0 +1,14 @@
+module example v1.0.0;
+import "locale/date_time" take LocalizedDate,LocalizedInstant,DateStyle,TimeStyle,DateTimeStyle;
+import "locale/tag" take Locale;
+import "time/date" take Date;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "time/zone" take Zone;
+import "io/stdout" take Stdout;
+main() is int {
+    Stdout().writeln(LocalizedDate(Date(2026,8,11),Locale("fr"),DateStyle.full).string());
+    let instant=Instant(Duration(1786467845.rat(),DurationUnit.second));
+    Stdout().writeln(LocalizedInstant(instant,Zone("America/New_York"),Locale("en"),DateTimeStyle(DateStyle.full,TimeStyle.full)).string());
+    0;
+}

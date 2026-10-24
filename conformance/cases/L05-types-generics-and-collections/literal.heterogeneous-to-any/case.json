@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.literal.heterogeneous-to-any",
+  "title": "an explicit @any boundary boxes a heterogeneous literal",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.LITERAL-IDENTITY",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.2: only explicit boundaries box values into any."
+  },
+  "status": "mandatory"
+}

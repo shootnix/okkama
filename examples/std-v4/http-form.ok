@@ -1,0 +1,11 @@
+module example v1.0.0;
+import "http/form" take ParsedMultipartForm,FormLimits,FormText,MultipartFormEnded;
+import "http/body" take ByteBody;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+async main() is int{
+    let source=ByteBody(Utf8Encoded("--demo\r\nContent-Disposition: form-data; name=customer\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nБарак\r\n--demo--\r\n").bytes()).reading();
+    let parts=ParsedMultipartForm(source,"demo",FormLimits()).parts();defer parts.close();
+    let part=await parts.part();Stdout().writeln(part.name()+": "+await FormText(part).text());
+    try{await parts.part();}catch e is MultipartFormEnded{}0;
+}

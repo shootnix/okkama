@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "encoding/hex" take HexEncoded, HexDecoded, InvalidHex;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("encode lowercase", HexEncoded(origin: [byte(0), byte(171), byte(255)]).string(), "00abff");
+    c = c.same_ints("decode mixed case", HexDecoded(origin: "00ABff").bytes().map() -> b { b.int(); }, [0, 171, 255]);
+    c = c.same_text("empty", HexEncoded(origin: @byte()).string(), "");
+    c = c.same_text("prefix rejected", try { let probe = HexDecoded(origin: "0x12").bytes(); "no error"; } catch e is InvalidHex { "offset " + e.offset().string(); }, "offset 1");
+    c = c.same_text("odd length", try { let probe = HexDecoded(origin: "abc").bytes(); "no error"; } catch e is InvalidHex { "offset " + e.offset().string(); }, "offset 3");
+    c.done();
+}

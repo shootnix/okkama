@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.atomic.compare-and-replace",
+  "title": "Atomic replace and compare_and_replace",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.ATOMIC",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "6\nswapped kept\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/atomic.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async/atomic: replace sets the value; compare_and_replace succeeds only when the current value equals expected."
+  },
+  "status": "mandatory"
+}

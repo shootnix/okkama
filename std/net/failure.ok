@@ -1,0 +1,136 @@
+module net/failure v1.0.0;
+
+import "async/timeout" take TimedOut;
+import "error" take InvalidArgument;
+
+// Portable observations of the attempted network operation and failure kind.
+// They contain no socket, native symbol, host errno or provider handle.
+enum NetworkOperation = (
+    resolving,
+    binding,
+    listening,
+    accepting,
+    connecting,
+    reading,
+    writing,
+    shutting_down,
+    closing
+);
+
+enum NetworkFailureKind = (
+    refused,
+    reset,
+    aborted,
+    unreachable,
+    timed_out,
+    address_in_use,
+    permission_denied,
+    resource_exhausted,
+    unsupported,
+    other
+);
+
+// Immutable observation: attempted operation, portable kind and exact diagnostic.
+// No I/O, parsing of message text, locale rules or resource lifecycle. Empty and
+// Unicode diagnostics are valid. Existing constructor and enum values are stable.
+//
+//     let failure = NetworkFailure(NetworkOperation.reading,
+//         NetworkFailureKind.reset, "connection was reset");
+//     failure.operation(); // NetworkOperation.reading
+//     failure.kind();      // NetworkFailureKind.reset
+object NetworkFailure does Error {
+    has operation is NetworkOperation;
+    has kind is NetworkFailureKind;
+    has message is string;
+    NetworkFailure(operation is NetworkOperation, kind is NetworkFailureKind, message is string) {
+        self.operation = operation;
+        self.kind = kind;
+        self.message = message;
+    }
+    text() is string {
+        message;
+    }
+    operation() is NetworkOperation {operation;}
+    kind() is NetworkFailureKind {kind;}
+}
+
+// Existing domain error for an explicitly closed network resource.
+object NetworkClosed does Error {
+    NetworkClosed();
+    text() is string {
+        "network closed";
+    }
+}
+
+// A normalized native failure at an explicitly named network boundary. Binding
+// is effect-free; applicable() distinguishes terminal core.net failures.
+// Catch only NativeFailure around that boundary, then:
+//
+//     let translated = NetworkError(NetworkOperation.connecting, failure);
+//     if translated.applicable() {throw translated.value();}
+//     throw; // bare rethrow in the original catch preserves NativeFailure
+//
+// Only core.net is translated. Foreign domains, would_block and interrupted
+// are inapplicable. The last two belong to the poll/retry loop;
+// this adapter neither retries nor classifies them as terminal network failures.
+// value() on an inapplicable failure throws InvalidArgument. The original catch
+// owns the bare rethrow; a NativeFailure value cannot be thrown as an Error.
+// Native timed_out returns async/timeout.TimedOut. Already-thrown Cancelled and
+// TimedOut never enter a NativeFailure catch and remain unchanged.
+//
+// Known portable categories map exactly; other codes map to other, preserving
+// message() byte-for-byte as text. No message/symbol heuristics or host codes.
+// The current provider merges aborted into connection_reset; do not invent the
+// lost distinction. Legacy aborted/timed_out enum members remain valid for manual
+// NetworkFailure construction. Returned NetworkFailure owns only public values.
+object NetworkError {
+    has operation is NetworkOperation;
+    has failure is NativeFailure;
+
+    NetworkError(operation is NetworkOperation, failure is NativeFailure) {
+        self.operation = operation;
+        self.failure = failure;
+    }
+
+    applicable() is bool {
+        let code = failure.code();
+        failure.domain() == "core.net" && code != "would_block" && code != "interrupted";
+    }
+
+    value() is Error {
+        confirm self.applicable()
+            else throw InvalidArgument("native failure is not a terminal core.net failure");
+        if failure.code() == "timed_out" {return TimedOut();}
+        NetworkFailure(operation,self.category(),failure.message());
+    }
+
+    private:
+    category() is NetworkFailureKind {
+        let code = failure.code();
+        if code == "connection_refused" {return NetworkFailureKind.refused;}
+        if code == "connection_reset" {return NetworkFailureKind.reset;}
+        if code == "network_unreachable" {return NetworkFailureKind.unreachable;}
+        if code == "address_in_use" {return NetworkFailureKind.address_in_use;}
+        if code == "permission_denied" {return NetworkFailureKind.permission_denied;}
+        if code == "resource_exhausted" {return NetworkFailureKind.resource_exhausted;}
+        if code == "unsupported" {return NetworkFailureKind.unsupported;}
+        NetworkFailureKind.other;
+    }
+}
+
+test "network failure observations preserve independent coordinates" {
+    let read=NetworkFailure(NetworkOperation.reading,NetworkFailureKind.reset,"");
+    let write=NetworkFailure(NetworkOperation.writing,NetworkFailureKind.reset,"");
+    test.is(read.operation(),NetworkOperation.reading);
+    test.is(write.operation(),NetworkOperation.writing);
+    test.is(read.kind(),write.kind());
+    test.is(read.text(),"");
+    test.ok(read!=write);
+}
+test "network failure values remain catchable with stable diagnostics" {
+    let original=NetworkFailure(NetworkOperation.connecting,NetworkFailureKind.refused,"Ошибка\nсети");
+    let caught=try {throw original;} catch failure is NetworkFailure {failure;};
+    test.ok(caught==original);
+    test.is(caught.text(),"Ошибка\nсети");
+    test.is(NetworkClosed().text(),"network closed");
+}

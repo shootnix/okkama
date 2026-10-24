@@ -1,0 +1,111 @@
+module text/layout v1.0.0;
+
+import "error" take InvalidArgument;
+import "runtime/layout" take indent, dedent, wrap, shorten;
+
+// Immutable text-layout values.
+//
+// Every object projects directly to string:
+//
+//     let block = string Indented(
+//         origin: "first\nsecond",
+//         prefix: "  ",
+//     );
+//     // "  first\n  second"
+//
+// Indented prefixes every nonblank line and preserves line endings. Empty and
+// whitespace-only lines are left unchanged.
+//
+// Dedented removes the longest exact spaces-and-tabs prefix shared by every
+// nonblank line. It also removes spaces and tabs from otherwise blank lines:
+//
+//     string Dedented(origin: "    first\n      second");
+//     // "first\n  second"
+//
+// Wrapped collapses whitespace between words, removes surrounding whitespace,
+// and packs whole words into lines no wider than width. A single word longer
+// than width remains intact on its own line; words are never split:
+//
+//     string Wrapped(origin: "one two three", width: 7);
+//     // "one two\nthree"
+//
+// Shortened performs the same whitespace normalization. If the normalized
+// text does not fit, it keeps the longest whole-word prefix for which the
+// exact placeholder also fits:
+//
+//     string Shortened(
+//         origin: "one two three",
+//         width: 10,
+//         placeholder: "...",
+//     );
+//     // "one two..."
+//
+// Wrapped requires a positive width. Shortened accepts a nonnegative width,
+// but rejects a placeholder wider than that width. Width and length count
+// Unicode scalar values, consistently with string.length().
+
+object Indented {
+    has source is string;
+    has indentation is string;
+
+    Indented(origin is string, prefix is string) {
+        source = origin;
+        indentation = prefix;
+    }
+
+    #projected
+    string() is string {
+        indent(source, indentation);
+    }
+}
+
+object Dedented {
+    has source is string;
+
+    Dedented(origin is string) {
+        source = origin;
+    }
+
+    #projected
+    string() is string {
+        dedent(source);
+    }
+}
+
+object Wrapped {
+    has source is string;
+    has line_width is int;
+
+    Wrapped(origin is string, width is int) {
+        confirm width > 0
+            else throw InvalidArgument("wrap width must be positive");
+        source = origin;
+        line_width = width;
+    }
+
+    #projected
+    string() is string {
+        wrap(source, line_width);
+    }
+}
+
+object Shortened {
+    has source is string;
+    has line_width is int;
+    has ending is string;
+
+    Shortened(origin is string, width is int, placeholder is string) {
+        confirm width >= 0
+            else throw InvalidArgument("shorten width cannot be negative");
+        confirm placeholder.length() <= width
+            else throw InvalidArgument("shorten placeholder exceeds width");
+        source = origin;
+        line_width = width;
+        ending = placeholder;
+    }
+
+    #projected
+    string() is string {
+        shorten(source, line_width, ending);
+    }
+}

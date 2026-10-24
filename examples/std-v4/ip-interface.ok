@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "net/ip" take IpAddress, IpInterface;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let interface=IpInterface(IpAddress("2001:0DB8::7"),64);
+    Stdout().writeln(interface.string());
+    Stdout().writeln(interface.network().network().string());
+    0;
+}

@@ -1,0 +1,315 @@
+module mail/imap_response v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "mime/media_type" take MimeItems, MimePosition;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "encoding/single_byte" take AsciiDecoded;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument, InvalidState;
+
+// Bounded ASCII server-response framing, not a complete IMAP semantic parser.
+// Tagged/status/continuation text never introduces literals. Known structured
+// responses recognize quoted strings, {n} and ~{n}; unknown response names fail
+// because their extension grammar might use different framing. Literal bytes
+// are opaque except that ordinary literals exclude NUL. No negotiation or I/O.
+// Successor decoders keep independent state, stop at one complete response and
+// preserve exact remainder. Empty feed is not EOF; finish() detects truncation.
+enum ImapResponseKind = (tagged, untagged, continuation);
+enum ImapResponsePartKind = (text, literal, literal8);
+object ImapResponseLimits {
+    has line_bytes, literal_bytes, wire_bytes, literals is int;
+    ImapResponseLimits() {line_bytes=8192;literal_bytes=16777216;wire_bytes=33554432;literals=100;}
+    ImapResponseLimits(line_bytes is int, literal_bytes is int, wire_bytes is int, literals is int) {
+        confirm line_bytes>=0 && literal_bytes>=0 && wire_bytes>=0 && literals>=0
+            else throw InvalidArgument("IMAP response limits must be nonnegative");
+        self.line_bytes=line_bytes;self.literal_bytes=literal_bytes;self.wire_bytes=wire_bytes;self.literals=literals;
+    }
+    line_bytes() is int {line_bytes;}
+    literal_bytes() is int {literal_bytes;}
+    wire_bytes() is int {wire_bytes;}
+    literals() is int {literals;}
+}
+object ImapResponsePart does ByteSource {
+    has kind is ImapResponsePartKind;has value is @byte;
+    ImapResponsePart(kind is ImapResponsePartKind, value is @byte) {self.kind=kind;self.value=value;}
+    kind() is ImapResponsePartKind {kind;}
+    bytes() is @byte {value;}
+}
+object ImapResponse does ByteSource {
+    has header is ImapResponseHeader;has parts is @ImapResponsePart;has wire is @byte;
+    ImapResponse(state is ImapResponseProgress) {
+        confirm state.complete() else throw InvalidState("IMAP response is incomplete");
+        let entries=state.parts();let buffer=ByteBuffer();defer buffer.closing().close();
+        for entries -> part {buffer.writing().write(part);}
+        header=ImapResponseHeader(state.first());parts=entries;wire=buffer.content().bytes();
+    }
+    kind() is ImapResponseKind {header.kind();}
+    name() is string {header.name();}
+    tag() is string {header.tag();}
+    parts() is Sequencing<ImapResponsePart> {parts;}
+    bytes() is @byte {wire;}
+}
+object ParsedImapResponse {
+    has origin is @byte;has limits is ImapResponseLimits;
+    ParsedImapResponse(origin is @byte) {self.origin=origin;limits=ImapResponseLimits();}
+    ParsedImapResponse(origin is @byte, limits is ImapResponseLimits) {self.origin=origin;self.limits=limits;}
+    response() is ImapResponse {
+        confirm origin.size()<=limits.wire_bytes() else throw ImapResponseLimitExceeded("wire_bytes");
+        let decoder=ImapResponseDecoder(limits);decoder=decoder.fed(origin);let response=decoder.finish();
+        confirm decoder.remainder().size()==0 else throw InvalidImapResponse(decoder.consumed(),"trailing bytes after response");
+        response;
+    }
+}
+object ImapResponseDecoder {
+    has state is ImapResponseProgress;has limits is ImapResponseLimits;has tail is @byte;
+    ImapResponseDecoder() {let bounds=ImapResponseLimits();limits=bounds;state=ImapResponseProgress(bounds);tail=[];}
+    ImapResponseDecoder(limits is ImapResponseLimits) {self.limits=limits;state=ImapResponseProgress(limits);tail=[];}
+    fed(chunk is @byte) is ^ImapResponseDecoder {
+        confirm !state.complete() else throw InvalidState("IMAP response decoder is complete");
+        confirm chunk.size()<=limits.wire_bytes() else throw ImapResponseLimitExceeded("chunk_bytes");
+        let progress=state;let position=MimePosition(0);
+        loop {
+            let at=position.index();last if at==chunk.size() || progress.complete();
+            if progress.remaining()>0 {
+                let available=chunk.size()-at;let amount=if progress.remaining()<available {progress.remaining();} else {available;};
+                let fragment is @byte=(at..at+amount).map() -> index {chunk[index];};
+                progress=progress.literal_fragment(fragment);position=position.following(at+amount);
+            } else {progress=progress.accepted(chunk[at]);position=position.following(at+1);}
+        }
+        let rest is @byte=(position.index()..chunk.size()).map() -> index {chunk[index];};
+        ^state=progress;^tail=rest;
+    }
+    complete() is bool {state.complete();}
+    consumed() is int {state.consumed();}
+    response() is ImapResponse {confirm state.complete() else throw InvalidState("IMAP response is incomplete");ImapResponse(state);}
+    finish() is ImapResponse {
+        confirm state.complete() else throw InvalidImapResponse(state.consumed(),"truncated IMAP response");ImapResponse(state);
+    }
+    remainder() is @byte {confirm state.complete() else throw InvalidState("IMAP response is incomplete");tail;}
+}
+object InvalidImapResponse does Error {
+    has position is int;has reason is string;
+    InvalidImapResponse(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid IMAP response at byte offset "+position.string()+": "+reason;}
+}
+object ImapResponseLimitExceeded does Error {
+    has limit is string;
+    ImapResponseLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"IMAP response "+limit+" limit exceeded";}
+}
+object MissingImapTag does Error {
+    MissingImapTag();
+    text() is string {"IMAP response is not tagged";}
+}
+object ImapResponseProgress {
+    has limits is ImapResponseLimits;has pending, first is string;
+    has parts is MimeItems<ImapResponsePart>;has pieces is MimeItems<ByteSnapshot>;
+    has remaining, used, literals is int;has binary, done is bool;
+    ImapResponseProgress(limits is ImapResponseLimits) {
+        self.limits=limits;pending="";first="";let empty is MimeItems<ImapResponsePart>=MimeItems();parts=empty;
+        let fragments is MimeItems<ByteSnapshot>=MimeItems();pieces=fragments;remaining=0;used=0;literals=0;binary=false;done=false;
+    }
+    complete() is bool {done;}
+    consumed() is int {used;}
+    remaining() is int {remaining;}
+    first() is string {first;}
+    parts() is @ImapResponsePart {parts.entries();}
+    literal_fragment(fragment is @byte) is ^ImapResponseProgress {
+        confirm !done && remaining>0 && fragment.size()>0 && fragment.size()<=remaining else throw InvalidState("invalid IMAP literal fragment");
+        confirm fragment.size()<=limits.wire_bytes()-used else throw ImapResponseLimitExceeded("wire_bytes");
+        if !binary {
+            for (0..fragment.size()) -> index {
+                confirm fragment[index].int()!=0 else throw InvalidImapResponse(used+index,"NUL requires literal8");
+            }
+        }
+        let extended=pieces.following(ByteSnapshot(fragment));
+        if fragment.size()==remaining {
+            let buffer=ByteBuffer();defer buffer.closing().close();
+            for extended.entries() -> piece {buffer.writing().write(piece);}
+            let kind=if binary {ImapResponsePartKind.literal8;} else {ImapResponsePartKind.literal;};
+            let appended=parts.following(ImapResponsePart(kind,buffer.content().bytes()));^parts=appended;
+            let empty is MimeItems<ByteSnapshot>=MimeItems();^pieces=empty;
+        } else {^pieces=extended;}
+        ^remaining=remaining-fragment.size();^used=used+fragment.size();
+    }
+    accepted(octet is byte) is ^ImapResponseProgress {
+        confirm !done && remaining==0 else throw InvalidState("IMAP response expects literal bytes or is complete");
+        confirm used<limits.wire_bytes() else throw ImapResponseLimitExceeded("wire_bytes");
+        confirm pending.length()<limits.line_bytes() else throw ImapResponseLimitExceeded("line_bytes");
+        let code=octet.int();let cr=pending.length()>0 && pending.slice(pending.length()-1,pending.length())=="\r";
+        if cr {confirm code==10 else throw InvalidImapResponse(used,"CR must be followed by LF");}
+        if code==10 {
+            confirm cr else throw InvalidImapResponse(used,"bare LF");
+            let line=pending.slice(0,pending.length()-1);let initial=if first=="" {line;} else {first;};
+            let header=ImapResponseHeader(initial);let start=used-pending.length();
+            let marker=ImapResponseLine(line,start,header.structured(),limits).marker();
+            let extended=parts.following(ImapResponsePart(ImapResponsePartKind.text,Utf8Encoded(pending+"\n").bytes()));
+            if marker.present() {
+                confirm literals<limits.literals() else throw ImapResponseLimitExceeded("literals");
+                confirm marker.size()<=limits.wire_bytes()-used-3 else throw ImapResponseLimitExceeded("wire_bytes");
+                if marker.size()==0 {
+                    let kind=if marker.binary() {ImapResponsePartKind.literal8;} else {ImapResponsePartKind.literal;};
+                    extended=extended.following(ImapResponsePart(kind,[]));
+                }
+                ^remaining=marker.size();^binary=marker.binary();^literals=literals+1;
+            } else {^done=true;}
+            ^parts=extended;^pending="";^first=initial;
+        } else {
+            confirm code==13 || code==9 || (code>=32 && code<=126) else throw InvalidImapResponse(used,"invalid ASCII response byte");
+            ^pending=pending+AsciiDecoded([octet]).string();
+        }
+        ^used=used+1;
+    }
+}
+object ImapResponseHeader {
+    has kind is ImapResponseKind;has tag, name is string;has structured is bool;
+    ImapResponseHeader(origin is string) {
+        let fields=origin.split(" ");let first=fields[0];
+        confirm fields.size()>=2 && first!="" else throw InvalidImapResponse(0,"missing response prefix");
+        if first=="+" {
+            ImapResponseText(origin.slice(2,origin.length()),2).validate();
+            kind=ImapResponseKind.continuation;tag="";name="";structured=false;
+        }
+        else {
+            if first=="*" {
+                confirm fields[1]!="" else throw InvalidImapResponse(2,"empty untagged response name");
+                let numeric=Utf8Encoded(fields[1]).bytes().reduce(true) -> all,octet {all && octet.int()>=48 && octet.int()<=57;};
+                let raw=if numeric {
+                    confirm fields.size()>=3 && fields[2]!="" else throw InvalidImapResponse(2,"missing numeric response name");fields[2];
+                } else {fields[1];};
+                let upper=ImapResponseWord(raw).string();
+                let status=upper=="OK" || upper=="NO" || upper=="BAD" || upper=="BYE" || upper=="PREAUTH";
+                if numeric {
+                    confirm upper=="EXISTS" || upper=="RECENT" || upper=="EXPUNGE" || upper=="FETCH"
+                        else throw InvalidImapResponse(2,"unsupported numeric response name");
+                } else {
+                    let known=status || upper=="CAPABILITY" || upper=="FLAGS" || upper=="LIST" || upper=="LSUB" || upper=="SEARCH"
+                        || upper=="STATUS" || upper=="ENABLED" || upper=="NAMESPACE" || upper=="ID" || upper=="ESEARCH"
+                        || upper=="VANISHED" || upper=="METADATA";
+                    confirm known else throw InvalidImapResponse(2,"unsupported untagged response name");
+                }
+                if status {
+                    confirm fields.size()>=3 else throw InvalidImapResponse(origin.length(),"status requires a space before text");
+                    let start=3+raw.length();ImapResponseText(origin.slice(start,origin.length()),start).validate();
+                }
+                kind=ImapResponseKind.untagged;tag="";name=upper;structured=!status;
+            } else {
+                for Utf8Encoded(first).bytes() -> octet {
+                    let code=octet.int();
+                    confirm code>=33 && code<=126 && code!=40 && code!=41 && code!=123 && code!=37 && code!=42
+                        && code!=34 && code!=92 && code!=43 else throw InvalidImapResponse(0,"invalid response tag");
+                }
+                let upper=ImapResponseWord(fields[1]).string();
+                confirm fields.size()>=3 && (upper=="OK" || upper=="NO" || upper=="BAD")
+                    else throw InvalidImapResponse(first.length()+1,"invalid tagged status");
+                let start=first.length()+fields[1].length()+2;
+                ImapResponseText(origin.slice(start,origin.length()),start).validate();
+                kind=ImapResponseKind.tagged;tag=first;name=upper;structured=false;
+            }
+        }
+    }
+    kind() is ImapResponseKind {kind;}
+    name() is string {name;}
+    tag() is string {confirm kind==ImapResponseKind.tagged else throw MissingImapTag();tag;}
+    structured() is bool {structured;}
+}
+object ImapResponseText {
+    has origin is string;has offset is int;
+    ImapResponseText(origin is string, offset is int) {self.origin=origin;self.offset=offset;}
+    validate() is void {
+        if origin=="" || origin.slice(0,1)!="[" {return;}
+        // Response-code semantics are separate. Require a closed code on this
+        // physical line so a literal-bearing/multiline code cannot silently
+        // desynchronize the stream. Human-readable text after it is opaque.
+        let quote=ImapResponseQuote();
+        for (1..origin.length()) -> index {
+            let char=origin.slice(index,index+1);
+            if !quote.quoted() && char=="]" {
+                confirm index+1<origin.length() && origin.slice(index+1,index+2)==" "
+                    else throw InvalidImapResponse(offset+index,"response code requires following space");
+                return;
+            }
+            quote=quote.accepted(char,offset+index);
+        }
+        throw InvalidImapResponse(offset,"unclosed or multiline response code is unsupported");
+    }
+}
+object ImapResponseWord {
+    has origin is string;
+    ImapResponseWord(origin is string) {self.origin=origin;}
+    string() is string {
+        let bytes is @byte=Utf8Encoded(origin).bytes().map() -> octet {
+            let code=octet.int();if code>=97 && code<=122 {(code-32).byte();} else {octet;}
+        };Utf8Decoded(bytes).string();
+    }
+}
+object ImapResponseLine {
+    has origin is string;has offset is int;has structured is bool;has limits is ImapResponseLimits;
+    ImapResponseLine(origin is string, offset is int, structured is bool, limits is ImapResponseLimits) {
+        self.origin=origin;self.offset=offset;self.structured=structured;self.limits=limits;
+    }
+    marker() is ImapLiteralMarker {
+        if !structured {return ImapLiteralMarker();}
+        let quote=ImapResponseQuote();
+        for (0..origin.length()) -> index {
+            let char=origin.slice(index,index+1);
+            if !quote.quoted() && char=="{" {
+                let start=if index>0 && origin.slice(index-1,index)=="~" {index-1;} else {index;};
+                confirm start==0 || origin.slice(start-1,start)==" " || origin.slice(start-1,start)=="("
+                    else throw InvalidImapResponse(offset+start,"literal marker must start a string");
+                return ImapLiteralMarker(origin.slice(start,origin.length()),offset+start,limits.literal_bytes());
+            }
+            quote=quote.accepted(char,offset+index);
+        }
+        confirm !quote.quoted() else throw InvalidImapResponse(offset+origin.length(),"unterminated quoted string");
+        ImapLiteralMarker();
+    }
+}
+object ImapResponseQuote {
+    has quoted, escaped is bool;
+    ImapResponseQuote() {quoted=false;escaped=false;}
+    quoted() is bool {quoted;}
+    accepted(char is string, offset is int) is ^ImapResponseQuote {
+        if escaped {
+            confirm char=="\"" || char=="\\" else throw InvalidImapResponse(offset,"invalid quoted escape");^escaped=false;
+        } else {
+            if quoted {
+                if char=="\\" {^escaped=true;} else {if char=="\"" {^quoted=false;}}
+            } else {if char=="\"" {^quoted=true;}}
+        }
+    }
+}
+object ImapLiteralMarker {
+    has amount is int;has binary is bool;
+    ImapLiteralMarker() {amount=-1;binary=false;}
+    ImapLiteralMarker(origin is string, offset is int, maximum is int) {
+        let binary=origin.length()>0 && origin.slice(0,1)=="~";let start=if binary {2;} else {1;};
+        confirm origin.length()>start+1 && origin.slice(origin.length()-1,origin.length())=="}"
+            else throw InvalidImapResponse(offset,"invalid literal marker");
+        let digits=origin.slice(start,origin.length()-1);let count=MimePosition(0);
+        for Utf8Encoded(digits).bytes() -> octet {
+            let digit=octet.int()-48;
+            confirm digit>=0 && digit<=9 else throw InvalidImapResponse(offset,"literal length requires decimal digits; server literals cannot use plus");
+            confirm digit<=maximum && count.index().rat()<=(maximum-digit)/10 else throw ImapResponseLimitExceeded("literal_bytes");
+            count=count.following(count.index()*10+digit);
+        }
+        amount=count.index();self.binary=binary;
+    }
+    present() is bool {amount>=0;}
+    size() is int {amount;}
+    binary() is bool {binary;}
+}
+
+test "IMAP status braces are text and following bytes remain unconsumed" {
+    let decoder=ImapResponseDecoder();decoder=decoder.fed(Utf8Encoded("A1 OK {9}\r\n+ \r\n").bytes());
+    test.is(decoder.finish().name(),"OK");test.is(Utf8Decoded(decoder.remainder()).string(),"+ \r\n");
+}
+test "IMAP zero literal still requires final CRLF" {
+    let decoder=ImapResponseDecoder();decoder=decoder.fed(Utf8Encoded("* LIST () {0}\r\n").bytes());
+    test.ok(!decoder.complete());decoder=decoder.fed(Utf8Encoded("\r\n").bytes());test.is(decoder.finish().parts().size(),3);
+}

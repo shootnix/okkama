@@ -1,0 +1,129 @@
+module http/internal/http2_sending v1.0.0;
+import "http/internal/http2_output" take Http2ConnectionOutput,Http2OutputStarting,Http2OutputTicket,Http2OutputCancelled,Http2OutputLimit;
+import "http/internal/http2_settings" take Http2PeerSettings;
+import "http/internal/http2_flow" take Http2FlowWindow,Http2WindowIncrement;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "error" take InvalidState;
+
+// Windows reflect physical starts; reservations are separate, so an unsent
+// frame cannot hide overflow or spend credit when its producer is cancelled.
+object Http2DataScheduler {
+    has output is Http2ConnectionOutput;has peer is Atomic<Http2PeerSettings>;has slots is Atomic<@Http2SendingSlot>;
+    has connection is Atomic<Http2FlowWindow>;has reserved,highest is Atomic<int>;has changed is Atomic<Event>;has maximum,chunk is int;has stopped is Event;
+    Http2DataScheduler(output is Http2ConnectionOutput,peer is Http2PeerSettings,maximum is int){
+        confirm maximum>0 && maximum<=256 && output.maximum_bytes()>9 else throw Http2OutputLimit();
+        self.output=output;self.peer=Atomic(peer);self.maximum=maximum;chunk=16384;let empty is @Http2SendingSlot=[];slots=Atomic(empty);
+        connection=Atomic(Http2FlowWindow(Http2FaultScope.connection,0,65535));reserved=Atomic(0);changed=Atomic(Event());highest=Atomic(0);stopped=Event();
+    }
+    Http2DataScheduler(output is Http2ConnectionOutput,peer is Http2PeerSettings,maximum is int,chunk is int){
+        confirm maximum>0 && maximum<=256 && chunk>0 && chunk<=16384 && output.maximum_bytes()>9 else throw Http2OutputLimit();
+        self.output=output;self.peer=Atomic(peer);self.maximum=maximum;self.chunk=chunk;let empty is @Http2SendingSlot=[];slots=Atomic(empty);
+        connection=Atomic(Http2FlowWindow(Http2FaultScope.connection,0,65535));reserved=Atomic(0);changed=Atomic(Event());highest=Atomic(0);stopped=Event();
+    }
+    open(stream is int) is void{
+        confirm !stopped.ready() else throw Http2SendingClosed();
+        confirm stream>0 && stream<=2147483647 && stream%2==1 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid sending stream ID");
+        confirm stream>highest.value() else throw InvalidState("sending stream ID must increase");
+        let old=slots.value();confirm old.size()<maximum else throw Http2OutputLimit();
+        for old -> slot{confirm slot.stream()!=stream else throw InvalidState("sending stream already registered");}
+        let slot=Http2SendingSlot(stream,peer.value().initial_window());let following is @Http2SendingSlot=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{slot;}};slots.replace(following);highest.replace(stream);
+    }
+    slot(stream is int) is Http2SendingSlot{
+        for slots.value() -> slot{if slot.stream()==stream{return slot;}}
+        if stream>0 && stream<=highest.value() && stream%2==1{throw Http2SendingClosed();}
+        throw Http2Fault(Http2FaultScope.connection,1,0,"unknown sending stream");
+    }
+    connection_remaining() is int{connection.value().remaining();}stream_remaining(stream is int) is int{self.slot(stream).window().value().remaining();}
+    signal() is Event{changed.value();}
+    wake() is void{changed.value().set();changed.replace(Event());}
+    data(stream is int,bytes is @byte,end_stream is bool) is Future<bool>{
+        confirm bytes.size()<=1048576 && (bytes.size()>0 || end_stream) else throw Http2OutputLimit();
+        let operation=Http2DataSending(self,self.slot(stream),bytes,end_stream);operation.result();
+    }
+    reserve(slot is Http2SendingSlot,remaining is int) is @Http2DataGrant{
+        confirm !slot.closed() else throw Http2SendingClosed();
+        let first=connection.value().remaining()-reserved.value();let second=slot.window().value().remaining()-slot.reserved().value();
+        let available=if first<second{first;}else{second;};
+        if remaining>0 && available<=0{return [];}
+        let peer_frame=peer.value().frame_size();let frame=if chunk<peer_frame{chunk;}else{peer_frame;};let storage=output.maximum_bytes()-9;let limit=if frame<storage{frame;}else{storage;};
+        let amount=if remaining<limit{remaining;}else{limit;};let size=if remaining>0 && available<amount{available;}else{amount;};
+        reserved.replace(reserved.value()+size);slot.reserved().replace(slot.reserved().value()+size);
+        let grant=Http2DataGrant(self,slot,size);slot.grant().replace([grant]);[grant];
+    }
+    enqueue(frame is Http2Frame,grant is Http2DataGrant) is Http2OutputTicket{output.submit([frame],grant);}
+    space() is Event{output.space();}
+    commit(slot is Http2SendingSlot,size is int) is void{
+        let first=connection.value();let second=slot.window().value();first=first.sent(size);second=second.sent(size);
+        connection.replace(first);slot.window().replace(second);self.release(slot,size);
+    }
+    release(slot is Http2SendingSlot,size is int) is void{reserved.replace(reserved.value()-size);slot.reserved().replace(slot.reserved().value()-size);slot.grant().replace([]);self.wake();}
+    window(update is Http2WindowIncrement) is void{
+        if update.stream()==0{connection.replace(connection.value().credited(update.amount()));}
+        else{
+            let matched is @Http2SendingSlot=try{[self.slot(update.stream())];}catch e is Http2SendingClosed{let empty is @Http2SendingSlot=[];empty;};
+            for matched -> slot{slot.window().replace(slot.window().value().credited(update.amount()));}
+        }
+        self.wake();
+    }
+    settings(previous is Http2PeerSettings,current is Http2PeerSettings) is void{
+        let delta=current.initial_window()-previous.initial_window();let old=slots.value();
+        let adjusted is @Http2FlowWindow=old.map()->slot{let window=slot.window().value();if !slot.closed(){window=window.adjusted(delta);}window;};
+        for (0..old.size()) -> index{
+            let slot=old[index];for slot.grant().value() -> grant{grant.cancel();}slot.window().replace(adjusted[index]);
+        }
+        peer.replace(current);self.wake();
+    }
+    close(stream is int) is void{
+        let matched is @Http2SendingSlot=try{[self.slot(stream)];}catch e is Http2SendingClosed{let empty is @Http2SendingSlot=[];empty;};
+        for matched -> slot{slot.close();for slot.grant().value() -> grant{grant.cancel();}}
+        slots.replace(slots.value().filter()->slot{slot.stream()!=stream;});self.wake();
+    }
+    stop() is void{stopped.set();for slots.value() -> slot{slot.close();for slot.grant().value() -> grant{grant.cancel();}}slots.replace([]);self.wake();}
+}
+object Http2SendingSlot {
+    has stream is int;has window is Atomic<Http2FlowWindow>;has reserved is Atomic<int>;has grant is Atomic<@Http2DataGrant>;has stopped is Event;has busy is Atomic<bool>;
+    Http2SendingSlot(stream is int,initial is int){self.stream=stream;window=Atomic(Http2FlowWindow(Http2FaultScope.stream,stream,initial));reserved=Atomic(0);let empty is @Http2DataGrant=[];grant=Atomic(empty);stopped=Event();busy=Atomic(false);}
+    stream() is int{stream;}window() is Atomic<Http2FlowWindow>{window;}reserved() is Atomic<int>{reserved;}grant() is Atomic<@Http2DataGrant>{grant;}busy() is Atomic<bool>{busy;}
+    closed() is bool{stopped.ready();}close() is void{stopped.set();}
+}
+object Http2DataGrant does Http2OutputStarting {
+    has owner is Http2DataScheduler;has slot is Http2SendingSlot;has amount is int;has settled is Event;has ticket is Atomic<@Http2OutputTicket>;
+    Http2DataGrant(owner is Http2DataScheduler,slot is Http2SendingSlot,amount is int){self.owner=owner;self.slot=slot;self.amount=amount;settled=Event();let empty is @Http2OutputTicket=[];ticket=Atomic(empty);}
+    size() is int{amount;}attach(value is Http2OutputTicket) is void{ticket.replace([value]);}
+    start() is void{confirm !slot.closed() && !settled.ready() else throw Http2SendingClosed();owner.commit(slot,amount);settled.set();}
+    cancel() is void{
+        for ticket.value() -> pending{pending.cancel();}
+        if !settled.ready(){owner.release(slot,amount);settled.set();}
+        // Physical-start credit stays spent; only the stream's waiter is cancelled.
+    }
+}
+object Http2DataSending {
+    has owner is Http2DataScheduler;has slot is Http2SendingSlot;has bytes is @byte;has end_stream is bool;
+    Http2DataSending(owner is Http2DataScheduler,slot is Http2SendingSlot,bytes is @byte,end_stream is bool){self.owner=owner;self.slot=slot;self.bytes=bytes;self.end_stream=end_stream;}
+    async result() is bool{
+        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SendingSettlement(group);defer await cleanup.close();let pending=self.run();group.start(pending);await pending;
+    }
+    async run() is bool{
+        confirm !slot.closed() else throw Http2SendingClosed();confirm slot.busy().compare_and_replace(false,true) else throw InvalidState("stream already has a DATA producer");
+        let release=Http2ProducerRelease(slot);defer release.close();let offset=Atomic(0);
+        loop{
+            let signal=owner.signal();let available=owner.reserve(slot,bytes.size()-offset.value());
+            if available.size()==0{await signal.wait();next;}
+            let grant=available[0];defer grant.cancel();let storage=owner.space();let size=grant.size();let final=offset.value()+size==bytes.size();
+            let frame=Http2Frame(Http2FrameHeader(0.byte(),(if final && end_stream{1.byte();}else{0.byte();}),slot.stream(),size),bytes.slice(offset.value(),offset.value()+size));
+            let accepted is @Http2OutputTicket=try{[owner.enqueue(frame,grant)];}catch e is Http2OutputLimit{grant.cancel();let empty is @Http2OutputTicket=[];empty;};
+            if accepted.size()==0{await storage.wait();next;}
+            let ticket=accepted[0];grant.attach(ticket);let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SendingSettlement(group);defer await cleanup.close();let pending=ticket.result();group.start(pending);
+            let complete=try{await pending;}catch e is Http2OutputCancelled{false;};
+            if !complete{next;}
+            confirm !slot.closed() else throw Http2SendingClosed();
+            offset.replace(offset.value()+size);if final{return true;}
+        }
+    }
+}
+object Http2ProducerRelease{has slot is Http2SendingSlot;Http2ProducerRelease(slot is Http2SendingSlot){self.slot=slot;}close() is void{slot.busy().replace(false);}}
+object Http2SendingSettlement<T>{has group is FutureGroup<T>;Http2SendingSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+object Http2SendingClosed does Error{Http2SendingClosed();text() is string{"HTTP2 sending stream closed";}}

@@ -1,0 +1,58 @@
+module http/http1_continue v1.0.0;
+import "http/message" take Request,InvalidHttpMessage;
+import "http/http1_head" take Http1RequestHead,Http1ResponseHead,Http1Limits;
+import "http/http1_framing" take Http1BodyPlan,Http1BodyKind;
+import "http/http1_message_writing" take Http1RequestWriting;
+import "http/http1_writing" take Http1RequestHeadWriting;
+import "http/http1_reading" take Http1HeadRead;
+import "http/http1_body_check" take Http1BodyCheck;
+import "http/body" take BodyOpening;
+import "http/header" take HeaderName,HttpAsciiLowercase;
+import "http/version" take HttpVersion;
+import "net/stream" take AsyncWriting;
+import "async/scope" take FutureScope,Supervising;
+import "async/timeout" take Before;
+import "time/clock" take Timing,MonotonicInstant,SystemClock;
+import "time/duration" take Duration,DurationUnit;
+
+object Http1RequestStart {
+    has pending is Future<AsyncWriting>;has expectation is bool;
+    Http1RequestStart(origin is AsyncWriting,request is Request,head is Http1RequestHead,plan is Http1BodyPlan,limits is Http1Limits){
+        let values=request.headers().values(HeaderName("Expect"));let present=values.size()>0;
+        if present {
+            confirm values.size()==1 && HttpAsciiLowercase(values.item(0)).string()=="100-continue" else throw InvalidHttpMessage("unsupported or ambiguous expectation");
+            confirm request.version()==HttpVersion.http_1_1 else throw InvalidHttpMessage("continue coordination requires HTTP1.1");
+            confirm plan.kind()==Http1BodyKind.chunked || (plan.kind()==Http1BodyKind.fixed && plan.length().sign()>0)
+                else throw InvalidHttpMessage("100-continue requires request content");
+            let sending=Http1ContinueHead(Http1RequestHeadWriting(origin,head,limits).result(),request.body(),plan,limits);
+            let scope is FutureScope<AsyncWriting,AsyncWriting>=FutureScope(action:sending.write);pending=scope.result();
+        }else{pending=Http1RequestWriting(origin,request,limits).result();}
+        expectation=present;
+    }
+    result() is Future<AsyncWriting>{pending;}expectation() is bool{expectation;}
+}
+object Http1ContinueHead {
+    has pending is Future<AsyncWriting>;has body is BodyOpening;has plan is Http1BodyPlan;has limits is Http1Limits;
+    Http1ContinueHead(pending is Future<AsyncWriting>,body is BodyOpening,plan is Http1BodyPlan,limits is Http1Limits){self.pending=pending;self.body=body;self.plan=plan;self.limits=limits;}
+    async write(group is Supervising<AsyncWriting>) is AsyncWriting {
+        let known=Http1BodyCheck(body,plan,limits,true).known();
+        confirm known.size()==0 || known[0].sign()>0 else throw InvalidHttpMessage("100-continue requires request content");
+        group.start(pending);await pending;
+    }
+}
+object Http1ContinueState {
+    has active,sent is bool;has clock is Timing;has limit is Duration;has deadline is @MonotonicInstant;
+    Http1ContinueState(active is bool,clock is Timing,limit is Duration){self.active=active;sent=!active;self.clock=clock;self.limit=limit;deadline=[];}
+    begun() is ^Http1ContinueState{if active{^deadline=[clock.monotonic_instant().plus(limit)];}}
+    body_sent() is bool{sent;}
+    sending_completed() is ^Http1ContinueState{^sent=true;}
+    reading(origin is Future<Http1HeadRead<Http1ResponseHead>>) is Future<Http1HeadRead<Http1ResponseHead>> {
+        if active && !sent{
+            let bounded is Before<Http1HeadRead<Http1ResponseHead>>=Before(origin:origin,deadline:deadline[0],clock:clock);return bounded.result();
+        }origin;
+    }
+}
+test "ordinary request entry has no outstanding continue permission" {
+    let state=Http1ContinueState(false,SystemClock(),Duration(1.rat(),DurationUnit.second));state=state.begun();
+    test.ok(state.body_sent());
+}

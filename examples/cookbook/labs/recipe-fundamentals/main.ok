@@ -1,0 +1,37 @@
+// Проверить сумму и упорядочить счета
+//
+// Предметное значение должно отвергать отрицательную сумму и сортироваться через узкий контракт.
+//
+// Запуск: ./examples/cookbook/run lab recipe-fundamentals
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-fundamentals
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/fundamentals v1.0.0;
+import "error" take InvalidArgument;
+import "compare" take Comparing,Order;
+import "size" take Sizing;
+import "collections/ordering" take Sorted;
+import "io/stdout" take Stdout;
+
+object Invoice does Comparing<Invoice> {
+    has total is int;
+    Invoice(amount is int) {
+        confirm amount >= 0 else throw InvalidArgument("сумма должна быть неотрицательной");
+        total = amount;
+    }
+    amount() is int { total; }
+    order(other is Invoice) is Order { total.order(other.amount()); }
+}
+object Report {
+    has rows is Sizing;
+    Report(rows is Sizing) { self.rows = rows; }
+    heading() is string { "Счетов: " + rows.size().string(); }
+}
+
+main() is int {
+    let invoices = Sorted(origin: [Invoice(120), Invoice(40)]);
+    confirm invoices.first().amount() == 40;
+    Stdout().writeln(Report(invoices).heading());
+    0;
+}

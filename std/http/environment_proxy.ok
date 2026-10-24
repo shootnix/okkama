@@ -1,0 +1,88 @@
+module http/environment_proxy v1.0.0;
+import "http/proxy_policy" take ProxyPolicy,InvalidProxy;
+import "os/environment" take Environment;
+import "url/value" take Url,ParsedUrl,ParsedUrlAuthority,UrlHost,UrlHostKind,EmptyUrlHost,MissingUrlPort;
+import "net/ip" take IpAddress,IpNetwork,InvalidIpAddress;
+import "encoding/single_byte" take AsciiEncoded;
+import "encoding/utf" take Utf8Encoded;
+import "http/media_type" take HttpMediaItems;
+import "compare" take Order;
+object EnvironmentProxy {
+    has environment is Environment;has bypass is @NoProxyRule;
+    EnvironmentProxy(environment is Environment){
+        self.environment=environment;let text=if environment.membership("no_proxy"){environment.variable("no_proxy");}else{if environment.membership("NO_PROXY"){environment.variable("NO_PROXY");}else{"";}};
+        confirm text.length()<=8192 else throw InvalidProxy("no_proxy byte limit");let normalized=ProxyEnvironmentValue(text).string();let values=normalized.split(",");confirm values.size()<=256 else throw InvalidProxy("no_proxy entry limit");
+        let rules is HttpMediaItems<NoProxyRule>=HttpMediaItems();for values -> value{let trimmed=ProxyEnvironmentValue(value).string();if trimmed!=""{rules=rules.following(NoProxyRule(trimmed));}}bypass=rules.values();
+    }
+    proxy(origin is Url) is ProxyPolicy{
+        confirm origin.parts().scheme()=="http" || origin.parts().scheme()=="https" else throw MissingProxy();
+        for bypass -> rule{if rule.matches(origin){throw MissingProxy();}}
+        let specific=if origin.parts().scheme()=="http"{self.variable("http_proxy","");}else{self.variable("https_proxy","HTTPS_PROXY");};
+        let selected=if specific.size()==1{specific;}else{self.variable("all_proxy","ALL_PROXY");};
+        confirm selected.size()==1 && selected[0]!="" else throw MissingProxy();confirm selected[0].length()<=8192 else throw InvalidProxy("proxy URI byte limit");
+        let parsed=try{ParsedUrl(selected[0]).value();}catch e is Error{throw InvalidProxy("environment proxy URI");};ProxyPolicy(parsed);
+    }
+    private:
+    variable(lowercase is string,uppercase is string) is @string{
+        if environment.membership(lowercase){return [environment.variable(lowercase)];}
+        if uppercase!="" && environment.membership(uppercase){return [environment.variable(uppercase)];}[];
+    }
+}
+enum NoProxyKind=(all,host,network);
+object NoProxyRule {
+    has kind is NoProxyKind;has host is UrlHost;has port is @int;has network is @IpNetwork;
+    NoProxyRule(origin is string){
+        confirm origin.length()<=1024 else throw InvalidProxy("no_proxy item limit");let parsed=NoProxyCoordinates(origin);kind=parsed.kind();host=parsed.host();port=parsed.port();network=parsed.network();
+    }
+    matches(origin is Url) is bool{
+        if kind==NoProxyKind.all{return true;}let host=origin.parts().authority().host();
+        if kind==NoProxyKind.network{return host.kind()==UrlHostKind.address && network[0].membership(host.address());}
+        if port.size()==1{let actual=try{origin.parts().authority().port();}catch e is MissingUrlPort{if origin.parts().scheme()=="https"{443;}else{80;}};if actual!=port[0]{return false;}}
+        let expected=self.host;
+        if expected.kind()==UrlHostKind.address{return host.kind()==UrlHostKind.address && host.address().order(expected.address())==Order.equal;}
+        if host.kind()!=UrlHostKind.name || expected.kind()!=UrlHostKind.name{return false;}
+        let candidate=host.name().ascii();let suffix=expected.name().ascii();if candidate==suffix{return true;}
+        candidate.length()>suffix.length() && candidate.slice(candidate.length()-suffix.length(),candidate.length())==suffix && candidate.slice(candidate.length()-suffix.length()-1,candidate.length()-suffix.length())==".";
+    }
+}
+object NoProxyCoordinates {
+    has kind is NoProxyKind;has host is UrlHost;has port is @int;has network is @IpNetwork;
+    NoProxyCoordinates(origin is string){
+        let parts=origin.split("/");
+        if origin=="*"{kind=NoProxyKind.all;host=EmptyUrlHost();port=[];network=[];}
+        else{if parts.size()==2{
+            let address=try{IpAddress(parts[0]);}catch e is Error{throw InvalidProxy("no_proxy CIDR address");};let digits=try{AsciiEncoded(parts[1]).bytes();}catch e is Error{throw InvalidProxy("no_proxy CIDR prefix");};confirm digits.size()>0 && digits.size()<=3 else throw InvalidProxy("no_proxy CIDR prefix");
+            let prefix=digits.reduce(0)->value,octet{let code=octet.int();confirm code>=48 && code<=57 else throw InvalidProxy("no_proxy CIDR prefix");value*10+code-48;};
+            let subnet=try{IpNetwork(address,prefix);}catch e is Error{throw InvalidProxy("no_proxy CIDR prefix");};kind=NoProxyKind.network;host=EmptyUrlHost();port=[];network=[subnet];
+        }else{
+            confirm parts.size()==1 && origin!="" else throw InvalidProxy("no_proxy syntax");
+            let text=if origin.slice(0,1)=="."{origin.slice(1,origin.length());}else{origin;};
+            let address is @IpAddress=try{[IpAddress(text)];}catch e is InvalidIpAddress{let empty is @IpAddress=[];empty;};
+            let wire=if address.size()==1 && text.split(":").size()>1{"["+text+"]";}else{text;};
+            let authority=try{ParsedUrlAuthority(wire).value();}catch e is Error{throw InvalidProxy("no_proxy host");};
+            confirm authority.present() && !authority.userinfo().present() && (authority.host().kind()==UrlHostKind.name || authority.host().kind()==UrlHostKind.address) else throw InvalidProxy("no_proxy host");
+            let ports is @int=try{[authority.port()];}catch e is MissingUrlPort{let empty is @int=[];empty;};for ports -> number{confirm number>0 else throw InvalidProxy("no_proxy port");}
+            kind=NoProxyKind.host;host=authority.host();port=ports;network=[];
+        }}
+    }
+    kind() is NoProxyKind{kind;}host() is UrlHost{host;}port() is @int{port;}network() is @IpNetwork{network;}
+}
+object MissingProxy does Error{MissingProxy();text() is string{"no proxy selected";}}
+
+test "environment proxies are selected only from the supplied snapshot" {
+    let choosing=EnvironmentProxy(Environment(["https_proxy":"http://proxy.test/","no_proxy":"example.test"]));
+    test.ok(try{choosing.proxy(ParsedUrl("https://example.test/").value());false;}catch e is MissingProxy{true;});
+}
+
+// Environment text is Unicode, not a Latin-1 HTTP field value. Strip only
+// ASCII OWS; retain IDNA text and classify malformed controls as configuration.
+object ProxyEnvironmentValue {
+    has origin is string;ProxyEnvironmentValue(origin is string){self.origin=origin;}
+    string() is string{
+        confirm origin.length()<=8192 else throw InvalidProxy("environment value limit");let bytes=Utf8Encoded(origin).bytes();confirm bytes.size()<=8192 else throw InvalidProxy("environment value limit");
+        for bytes -> octet{let code=octet.int();confirm code==9 || (code>=32 && code!=127) else throw InvalidProxy("environment value control");}
+        let leading=(0..bytes.size()).reduce(0)->offset,index{let code=bytes[index].int();if offset==index && (code==32 || code==9){offset+1;}else{offset;}};
+        let trailing=(0..bytes.size()-leading).reduce(0)->count,index{let code=bytes[bytes.size()-index-1].int();if count==index && (code==32 || code==9){count+1;}else{count;}};
+        origin.slice(leading,origin.length()-trailing);
+    }
+}

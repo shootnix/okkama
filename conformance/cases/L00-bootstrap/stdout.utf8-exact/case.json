@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.stdout.utf8-exact",
+  "title": "non-ASCII text is written as exact UTF-8",
+  "purpose": "Observe exact process output bytes through the standard output capability.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "STD.IO.STDOUT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "bytes_b64": "aMOpbGxvIOKckyDml6XmnKwK"
+    }
+  },
+  "spec_refs": [
+    "std/io/stdout.ok (header contract)",
+    "docs/okkama-spec-11072026.md#8.4.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "io/stdout: every string is encoded as strict UTF-8; expected bytes are the UTF-8 encoding of the literal."
+  },
+  "status": "mandatory"
+}

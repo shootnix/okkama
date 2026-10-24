@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.optimistic-locking",
+  "title": "optimistic locking detects stale writers and retries",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.OPTIMISTIC-LOCKING",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - first writer version\nok 2 - second writer rejected\nok 3 - retry version\nok 4 - balance\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "improvements-roadmap/results/IMP-08/RESULT.md",
+    "docs/durable-commands.md"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Versioned CAS (IMP-08): both writers read version 1; the first update succeeds (version 2); the second matches no row and is rejected; a retry on fresh state applies; balance 100 + 50 + 25 = 175."
+  },
+  "status": "mandatory"
+}

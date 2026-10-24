@@ -1,0 +1,62 @@
+// Добавить cookie jar к клиенту
+//
+// Переиспользовать соединения к API: HttpClient реализует Exchanging с явными resolver, TLS и политикой.
+//
+// Запуск: ./examples/cookbook/run lab example-http-cookie-client
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-cookie-client
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/client" take HttpClient;
+import "http/redirect" take Redirecting,RedirectPolicy;
+import "http/cookie_client" take CookieExchanging,FirstPartyCookies;
+import "http/cookie_jar" take MemoryCookieJar;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/message" take Request,Response;
+import "http/target" take AbsoluteTarget;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/http1_reading" take Http1RequestHeadReading;
+import "http/http1_message_writing" take Http1ResponseWriting;
+import "http/endpoint" take AllEndpoints;
+import "http/version" take HttpVersion;
+import "url/value" take ParsedUrl;
+import "net/tcp" take TcpListening,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+object Replying {
+ has listener is TcpAcceptance;Replying(listener is TcpAcceptance){self.listener=listener;}
+ async run() is bool{
+  let connection=await listener.connection();defer connection.close();
+  let first=await Http1RequestHeadReading(connection.input()).result();
+  let response=Response(Status(303),Headers([Header(HeaderName("Location"),"/second"),Header(HeaderName("Content-Length"),"0"),Header(HeaderName("Set-Cookie"),"x=1; Path=/")]));
+  await Http1ResponseWriting(connection.output(),response,first.head().method()).result();
+  let second=await Http1RequestHeadReading(connection.input()).result();
+  await Http1ResponseWriting(connection.output(),Response(Status(204),Headers([])),second.head().method()).result();
+  first.head().target().string()=="/first?a=1" && second.head().target().string()=="/second" && first.head().method().string()=="POST" && second.head().method().string()=="GET" && second.head().headers().first(HeaderName("Cookie"))=="x=1";
+ }
+}
+
+async main() is int{
+  let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+  let replying=Replying(listener);let reply is async () is bool=replying.run;let serving=spawn reply();
+  let versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);
+  let client=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),ClientPolicy(versions,HttpLimits(),ClientTimeouts(),1,AllEndpoints()),SystemClock());defer client.close();
+  let root="http://127.0.0.1:"+listener.local_endpoint().port().string();
+  let request=Request(Method("POST"),AbsoluteTarget(ParsedUrl(root+"/first?a=1").value()),Headers([]));
+  let jar=MemoryCookieJar(SystemClock());defer jar.close();
+  let result=await Redirecting(CookieExchanging(client,jar,FirstPartyCookies()),RedirectPolicy()).response(request);client.close();
+  let reader=result.response().body().reading();
+  confirm result.request().target().string()==root+"/second" && result.response().status().code()==204;
+  confirm result.history().size()==1 && result.history().item(0).response().status().code()==303;
+  confirm (await reader.bytes(1)).size()==0;confirm await serving;
+  Stdout().writeln("redirect selected Cookie x=1 on the next request");0;
+}

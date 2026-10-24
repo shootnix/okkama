@@ -1,0 +1,25 @@
+module bench/bigint v1.0.0;
+
+// Точные целые (R01): факториал 12000 и 150000-е число Фибоначчи.
+import "io/stdout" take Stdout;
+
+object Exact {
+    Exact();
+
+    factorial(n is int) is int {
+        (1..n + 1).reduce(1) -> product, k { product * k; };
+    }
+
+    fibonacci(n is int, a is int, b is int) is int {
+        if n == 0 { a; } else { self.fibonacci(n - 1, b, a + b); }
+    }
+}
+
+main() is int {
+    let exact = Exact();
+    let factorial = exact.factorial(12000);
+    let fibonacci = exact.fibonacci(150000, 0, 1);
+    let digits = factorial.string().length() + fibonacci.string().length();
+    Stdout().writeln(digits.string() + " " + (factorial % 1000000007).string() + " " + (fibonacci % 1000000007).string());
+    0;
+}

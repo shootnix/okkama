@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.html.entities",
+  "title": "HTML escaping and reference decoding",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.HTML.ENTITIES",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "unicode-data"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - escape\nok 2 - quotes\nok 3 - existing reference escaped\nok 4 - decode once\nok 5 - named and numeric\nok 6 - unknown name literal\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/html/entities.ok",
+    "WHATWG HTML named character references"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "html/entities header and the WHATWG named reference table (&copy; = U+00A9); unknown names stay literal; decoding is not recursive."
+  },
+  "status": "mandatory"
+}

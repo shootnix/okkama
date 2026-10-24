@@ -1,0 +1,201 @@
+module collections/heap v1.0.0;
+
+import "collections/iteration" take Iterating;
+import "collections/sequence" take EmptySequence;
+import "compare" take Comparing, Order;
+import "error" take InvalidArgument;
+import "size" take Sizing;
+
+// An immutable persistent min-heap.
+//
+// Construct a heap from any Iterating value. top() returns the least value
+// according to Comparing<T>, and remainder() removes one occurrence of it:
+//
+//     let empty is List<int> = EmptyList();
+//     let heap = Heap(values: empty.prefix(7).prefix(2).prefix(5));
+//     heap.top();                    // 2
+//     heap.remainder().top();        // 5
+//
+// addition() and remainder() return new heaps. They never change their
+// receiver, so earlier versions remain valid and share immutable tree nodes:
+//
+//     let original = Heap(values: empty).addition(3);
+//     let extended = original.addition(1);
+//     original.top();                // still 3
+//     extended.top();                // 1
+//
+// Heap deliberately exposes no cursor and no heap-array representation. A
+// heap guarantees access to the least value, not a traversal order. Repeated
+// top()/remainder() calls consume values in ascending order.
+//
+// The representation is a persistent leftist tree. size() and top() are
+// O(1); addition() and remainder() are O(log n). top() and remainder() on an
+// empty heap throw EmptySequence.
+
+object Heap<T: Comparing<T>> does Sizing {
+    has origin is HeapRepresenting<T>;
+
+    Heap(values is Iterating<T>) {
+        let empty is HeapRepresenting<T> = EmptyHeapTree();
+        origin = values.reduce(HeapBuilding(root: empty)) -> building, value {
+            building.addition(value);
+        }.root();
+    }
+
+    Heap(root is HeapRepresenting<T>, size is int) {
+        confirm size == root.size()
+            else throw InvalidArgument("heap representation size is inconsistent");
+        origin = root;
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    top() is T {
+        origin.top();
+    }
+
+    remainder() is Heap<T> {
+        let following = origin.remainder();
+        Heap(root: following, size: following.size());
+    }
+
+    addition(value is T) is Heap<T> {
+        let empty is HeapRepresenting<T> = EmptyHeapTree();
+        let following = origin.combination(HeapTreeNode(
+            value: value,
+            left: empty,
+            right: empty,
+        ));
+        Heap(root: following, size: following.size());
+    }
+}
+
+object HeapBuilding<T: Comparing<T>> {
+    has origin is HeapRepresenting<T>;
+
+    HeapBuilding(root is HeapRepresenting<T>) {
+        origin = root;
+    }
+
+    root() is HeapRepresenting<T> {
+        origin;
+    }
+
+    addition(value is T) is HeapBuilding<T> {
+        let empty is HeapRepresenting<T> = EmptyHeapTree();
+        HeapBuilding(root: origin.combination(HeapTreeNode(
+            value: value,
+            left: empty,
+            right: empty,
+        )));
+    }
+}
+
+// Internal tree variants share exactly the behavior needed by Heap. rank() is
+// the right-spine length used to maintain the leftist invariant.
+role HeapRepresenting<T> {
+    size() is int;
+    rank() is int;
+    top() is T;
+    remainder() is HeapRepresenting<T>;
+    combination(other is HeapRepresenting<T>) is HeapRepresenting<T>;
+}
+
+object EmptyHeapTree<T: Comparing<T>> does HeapRepresenting<T> {
+    EmptyHeapTree();
+
+    size() is int {
+        0;
+    }
+
+    rank() is int {
+        0;
+    }
+
+    top() is T {
+        throw EmptySequence();
+    }
+
+    remainder() is HeapRepresenting<T> {
+        throw EmptySequence();
+    }
+
+    combination(other is HeapRepresenting<T>) is HeapRepresenting<T> {
+        other;
+    }
+}
+
+object HeapTreeNode<T: Comparing<T>> does HeapRepresenting<T> {
+    has origin is T;
+    has beginning is HeapRepresenting<T>;
+    has ending is HeapRepresenting<T>;
+    has height is int;
+    has amount is int;
+
+    HeapTreeNode(
+        value is T,
+        left is HeapRepresenting<T>,
+        right is HeapRepresenting<T>,
+    ) {
+        let children = HeapChildren(left: left, right: right);
+        origin = value;
+        beginning = children.left();
+        ending = children.right();
+        height = children.right().rank() + 1;
+        amount = left.size() + right.size() + 1;
+    }
+
+    size() is int {
+        amount;
+    }
+
+    rank() is int {
+        height;
+    }
+
+    top() is T {
+        origin;
+    }
+
+    remainder() is HeapRepresenting<T> {
+        beginning.combination(ending);
+    }
+
+    combination(other is HeapRepresenting<T>) is HeapRepresenting<T> {
+        if other.size() == 0 {
+            self;
+        }
+        else {
+            if origin.order(other.top()) == Order.greater {
+                other.combination(self);
+            }
+            else {
+                HeapTreeNode(
+                    value: origin,
+                    left: beginning,
+                    right: ending.combination(other),
+                );
+            }
+        }
+    }
+}
+
+object HeapChildren<T> {
+    has beginning is HeapRepresenting<T>;
+    has ending is HeapRepresenting<T>;
+
+    HeapChildren(left is HeapRepresenting<T>, right is HeapRepresenting<T>) {
+        beginning = left;
+        ending = right;
+    }
+
+    left() is HeapRepresenting<T> {
+        if beginning.rank() >= ending.rank() { beginning; } else { ending; }
+    }
+
+    right() is HeapRepresenting<T> {
+        if beginning.rank() >= ending.rank() { ending; } else { beginning; }
+    }
+}

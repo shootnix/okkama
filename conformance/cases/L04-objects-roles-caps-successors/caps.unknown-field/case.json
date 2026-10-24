@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.caps.unknown-field",
+  "title": "reading an undeclared computed field is an error",
+  "purpose": "Only declared computed fields are readable.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "CAP.ACQUIRE-READ",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "An undeclared cap field may be rejected statically or at the read."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.2.1",
+    "docs/object-caps-0.0.1-ru.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.2.1: `cap::field` reads a declared computed field; `missing` is not declared."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,160 @@
+module mail/smtp_data v1.0.0;
+
+import "mail/message" take MailMessage, DeliveredMail, ParsedMail;
+import "mail/smtp" take SmtpCapabilities, SmtpFeature;
+import "mail/smtp_reply" take SmtpLimitExceeded, SmtpReply;
+import "mime/part" take MimeLimits, MimeLimitFailure, ParsedMime, MimePart, MimeBody, MimeMultipartParsing, MimeContent, MimeMetadata, MimeParsedNode;
+import "mime/transfer" take TransferEncoding;
+import "mime/media_type" take MimePosition, MediaType;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+
+// Eager DATA content snapshot, not a network command or an SMTP envelope.
+// Construction calls the borrowed body's bytes() once, removes Bcc/Resent-Bcc through
+// DeliveredMail, validates MIME/CRLF/line/size limits and advertised 8BITMIME,
+// dot-stuffs each leading dot and appends ".\r\n". Terminal content CRLF is
+// required for literal content. For Base64 only, an absent final CRLF is added
+// as ignored encoding whitespace. bytes()/message_size()/body_mode() are pure.
+// message_size excludes transparency dots and the terminator (RFC 1870 SIZE).
+// BODY mode remains a coordinate for the future MAIL command; this object does
+// not negotiate SMTPUTF8, authenticate, send DATA or infer a successful reply.
+// Binary CTE requires a separate BDAT implementation, even if advertised.
+// No automatic seven-bit recoding. All scratch resources are owned/closed.
+enum SmtpBodyMode = (seven_bit, eight_bit_mime);
+object SmtpDataLimits {
+    has message_bytes, wire_bytes, line_bytes is int;
+    SmtpDataLimits() {message_bytes=67108864;wire_bytes=134217731;line_bytes=1000;}
+    SmtpDataLimits(message_bytes is int, wire_bytes is int, line_bytes is int) {
+        confirm message_bytes>=0 && wire_bytes>=0 && line_bytes>=0 else throw InvalidArgument("SMTP DATA bounds must be nonnegative");
+        self.message_bytes=message_bytes;self.wire_bytes=wire_bytes;self.line_bytes=line_bytes;
+    }
+    message_bytes() is int {message_bytes;}
+    wire_bytes() is int {wire_bytes;}
+    line_bytes() is int {line_bytes;}
+}
+object PreparedSmtpData does ByteSource {
+    has value is SmtpDataValue;
+    PreparedSmtpData(origin is MailMessage, capabilities is SmtpCapabilities) {value=SmtpDataValue(origin,capabilities,SmtpDataLimits());}
+    PreparedSmtpData(origin is MailMessage, capabilities is SmtpCapabilities, limits is SmtpDataLimits) {value=SmtpDataValue(origin,capabilities,limits);}
+    bytes() is @byte {value.bytes();}
+    message_size() is int {value.message_size();}
+    body_mode() is SmtpBodyMode {value.body_mode();}
+}
+object InvalidSmtpData does Error {
+    has position is int;has reason is string;
+    InvalidSmtpData(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid SMTP DATA at byte offset "+position.string()+": "+reason;}
+}
+object MissingSmtpExtension does Error {
+    has name is string;
+    MissingSmtpExtension(name is string) {self.name=name;}
+    name() is string {name;}
+    text() is string {"SMTP DATA requires advertised "+name;}
+}
+object SmtpDataValue {
+    has wire is @byte;has size is int;has mode is SmtpBodyMode;
+    SmtpDataValue(origin is MailMessage, capabilities is SmtpCapabilities, limits is SmtpDataLimits) {
+        confirm MimeMetadata(origin.headers()).encoding()!=TransferEncoding.binary
+            else throw InvalidSmtpData(0,"binary MIME requires BDAT, not DATA");
+        let original=origin.limits();let maximum=if original.body_bytes()<limits.message_bytes() {original.body_bytes();} else {limits.message_bytes();};
+        let mime=MimeLimits(original.header_bytes(),original.line_bytes(),original.parts(),original.depth(),maximum);
+        let rendered=try {DeliveredMail(MailMessage(origin.headers(),origin.body(),mime)).bytes();}
+            catch failure is MimeLimitFailure {
+                if failure.kind()=="body_bytes" && maximum<original.body_bytes() {throw SmtpLimitExceeded("message_bytes");}
+                throw failure;
+            };
+        let terminated=rendered.size()>=2 && rendered[rendered.size()-2].int()==13 && rendered[rendered.size()-1].int()==10;
+        let content is @byte=if !terminated && MimeMetadata(origin.headers()).encoding()==TransferEncoding.base64 {
+            if rendered.size()>maximum-2 {
+                if maximum<original.body_bytes() {throw SmtpLimitExceeded("message_bytes");}
+                throw MimeLimitFailure("body_bytes");
+            }
+            let bytes is @byte=(0..rendered.size()+2).map() -> index {
+                if index<rendered.size() {rendered[index];} else {if index==rendered.size() {13.byte();} else {10.byte();}}
+            };bytes;
+        } else {rendered;};
+        let declared=SmtpDataMime(mime).requires_eight_bit(ParsedMime(content,mime).result());
+        let high=content.reduce(false) -> found,octet {found || octet.int()>127;};
+        let eight=declared || high;
+        confirm !eight || capabilities.features().membership(SmtpFeature.eight_bit_mime) else throw MissingSmtpExtension("8BITMIME");
+        if capabilities.has_maximum_size() {
+            let maximum=capabilities.maximum_size();
+            confirm maximum.sign()==0 || BigInt(content.size().string()).order(maximum)!=Order.greater else throw SmtpLimitExceeded("server_size");
+        }
+        let buffer=ByteBuffer();defer buffer.closing().close();let output=SmtpDataOutput(buffer,limits.wire_bytes());let start=MimePosition(0);
+        loop {
+            last if start.index()==content.size();let end=SmtpDataLine(content,start.index(),limits.line_bytes()).end();
+            if content[start.index()].int()==46 {output.write([46.byte()]);}
+            let line is @byte=(start.index()..end+2).map() -> index {content[index];};
+            output.write(line);start=start.following(end+2);
+        }
+        output.write([46.byte(),13.byte(),10.byte()]);
+        wire=buffer.content().bytes();size=content.size();mode=if eight {SmtpBodyMode.eight_bit_mime;} else {SmtpBodyMode.seven_bit;};
+    }
+    bytes() is @byte {wire;}
+    message_size() is int {size;}
+    body_mode() is SmtpBodyMode {mode;}
+}
+object SmtpDataMime {
+    // Parsed nodes retain the inspected child tree. No concrete MimeBody
+    // downcast or recursive re-serialization is needed to observe nested CTE.
+    has limits is MimeLimits;
+    SmtpDataMime() {limits=MimeLimits();}
+    SmtpDataMime(limits is MimeLimits) {self.limits=limits;}
+    requires_eight_bit(part is MimePart) is bool {
+        let metadata=MimeContent(part);let encoding=metadata.encoding();
+        confirm encoding!=TransferEncoding.binary else throw InvalidSmtpData(0,"binary MIME part requires BDAT");
+        let type=metadata.type();
+        if type.type()!="multipart" {return encoding==TransferEncoding.eight_bit;}
+        let bytes=part.body().bytes();
+        let parsed=MimeMultipartParsing(bytes,0,bytes.size(),type,limits,0,limits.parts()-1,limits.body_bytes()).result();
+        let nested=parsed.children().reduce(false) -> found,child {
+            let required=self.requires_eight_bit(child);found || required;
+        };
+        encoding==TransferEncoding.eight_bit || nested;
+    }
+    requires_eight_bit(node is MimeParsedNode) is bool {
+        let encoding=MimeContent(node.part()).encoding();
+        confirm encoding!=TransferEncoding.binary else throw InvalidSmtpData(0,"binary MIME part requires BDAT");
+        let nested=node.children().reduce(false) -> found,child {
+            let required=self.requires_eight_bit(child);found || required;
+        };
+        encoding==TransferEncoding.eight_bit || nested;
+    }
+}
+object SmtpDataLine {
+    has origin is @byte;has start, maximum is int;
+    SmtpDataLine(origin is @byte, start is int, maximum is int) {self.origin=origin;self.start=start;self.maximum=maximum;}
+    end() is int {
+        for (start..origin.size()) -> index {
+            let code=origin[index].int();confirm code!=0 && code!=10 else throw InvalidSmtpData(index,"NUL or bare LF in DATA");
+            confirm index-start<maximum else throw SmtpLimitExceeded("data_line_bytes");
+            if code==13 {
+                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidSmtpData(index,"bare CR in DATA");
+                confirm index-start+2<=maximum else throw SmtpLimitExceeded("data_line_bytes");return index;
+            }
+        }
+        throw InvalidSmtpData(origin.size(),"DATA content requires terminal CRLF");
+    }
+}
+object SmtpDataOutput {
+    has buffer is ByteBuffer;has maximum is int;
+    SmtpDataOutput(buffer is ByteBuffer, maximum is int) {self.buffer=buffer;self.maximum=maximum;}
+    write(bytes is @byte) is void {
+        confirm bytes.size()<=maximum-buffer.content().size() else throw SmtpLimitExceeded("data_bytes");
+        buffer.writing().write(ByteSnapshot(bytes));
+    }
+}
+
+test "SMTP DATA counts original content and quotes a dot-only line" {
+    let message=ParsedMail(Utf8Encoded("\r\n.\r\n").bytes()).message();
+    let prepared=PreparedSmtpData(message,SmtpCapabilities(SmtpReply(250,["server","SIZE 5"])));
+    test.is(prepared.message_size(),5);test.is(Utf8Decoded(prepared.bytes()).string(),"\r\n..\r\n.\r\n");
+}

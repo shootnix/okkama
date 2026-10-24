@@ -1,0 +1,45 @@
+module config/key v1.0.0;
+import "collections/sequence" take Sequencing;
+import "compare" take Comparing,Order;
+
+// Exact segments are identity; string() is deliberately diagnostic.
+object SettingKey does Comparing<SettingKey> {
+    has parts is @string;
+    SettingKey(segments is Sequencing<string>) {
+        let size=segments.size();
+        confirm size>0 && size<=64 else throw InvalidSettingKey("key must have 1..64 segments");
+        let snapshot is @string=(0..size).map()->index{
+            let part=segments.item(index);
+            confirm part!="" else throw InvalidSettingKey("empty key segment");
+            part;
+        };
+        let length=snapshot.reduce(0)->used,part{used+part.length();};
+        confirm length<=4096 else throw InvalidSettingKey("key exceeds 4096 scalars");
+        parts=snapshot;
+    }
+    segments() is Sequencing<string>{parts;}
+    string() is string{parts.join(".");}
+    order(other is SettingKey) is Order{
+        let right=other.segments();
+        let count=if parts.size()<right.size(){parts.size();}else{right.size();};
+        let prefix=(0..count).reduce(Order.equal)->old,index{
+            if old==Order.equal{parts[index].order(right.item(index));}else{old;}
+        };
+        if prefix==Order.equal{parts.size().order(right.size());}else{prefix;}
+    }
+}
+object SettingKeyFromString{
+    has origin,separator is string;
+    SettingKeyFromString(origin is string,separator is string){self.origin=origin;self.separator=separator;}
+    #projected
+    value() is SettingKey{
+        confirm separator!="" else throw InvalidSettingKey("empty key separator");
+        confirm origin.length()<=4096 else throw InvalidSettingKey("key exceeds 4096 scalars");
+        SettingKey(origin.split(separator));
+    }
+}
+object InvalidSettingKey does Error{
+    has reason is string;
+    InvalidSettingKey(reason is string){self.reason=reason;}
+    text() is string{reason;}
+}

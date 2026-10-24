@@ -1,0 +1,23 @@
+module app v1.0.0;
+import "http/cookie_jar" take MemoryCookieJar, SavedCookieJar, LoadedCookieJar;
+import "http/cookie_policy" take CookieContext;
+import "http/header" take Header,HeaderName,Headers;
+import "http/method" take Method;
+import "url/value" take ParsedUrl;
+import "time/clock" take SystemClock;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/file" take FileEntry;
+import "fs/path" take Path;
+import "io/stdout" take Stdout;
+main() is int {
+    let scratch=TemporaryDirectory(Directory(Path("/tmp")),"cookie-example-");defer scratch.close();
+    let clock=SystemClock();let jar=MemoryCookieJar(clock);defer jar.close();
+    let origin=ParsedUrl("https://example.com/").value();let context=CookieContext(origin,true,Method("GET"));
+    jar.store(origin,Headers([Header(HeaderName("Set-Cookie"),"persistent=opaque; Secure; Max-Age=60; Path=/"),
+        Header(HeaderName("Set-Cookie"),"session=ephemeral; Path=/")]),context);
+    let destination=FileEntry(scratch.path().child("cookies.store"));SavedCookieJar(jar,destination).result();
+    let loaded=LoadedCookieJar(destination,clock).result();defer loaded.close();
+    let values=loaded.cookies(origin,context);confirm values.size()==1;Stdout().writeln(values.item(0).diagnostic());
+    0;
+}

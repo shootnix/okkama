@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+object Stamp {
+    has id is int = Tracer().mark("default evaluated", 7);
+    Stamp(:id);
+    id() is int { id; }
+}
+
+main() is int {
+    let out = Stdout();
+    let supplied = Stamp(id: 5);
+    out.writeln("after supplied");
+    let defaulted = Stamp();
+    out.writeln(supplied.id().string() + " " + defaulted.id().string());
+    0;
+}

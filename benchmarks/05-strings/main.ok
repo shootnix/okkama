@@ -1,0 +1,28 @@
+module bench/strings v1.0.0;
+
+// Строки: сборка CSV на 30000 строк, разбор split, замены, длины и разбор чисел.
+import "strings/parse" take ParsedInt;
+import "io/stdout" take Stdout;
+
+object Records {
+    Records();
+
+    line(id is int) is string {
+        "id=" + id.string() + ";name=item-" + (id * 7 % 1000).string() + ";price=" + (id * 13 % 9973).string();
+    }
+
+    price(line is string) is int {
+        let fields = line.split(";");
+        ParsedInt(fields[2].replace("price=", "")).value();
+    }
+}
+
+main() is int {
+    let records = Records();
+    let text = (0..30000).map() -> id { records.line(id); }.join("\n");
+    let lines = text.split("\n");
+    let total = lines.reduce(0) -> sum, line { sum + records.price(line); };
+    let renamed = text.replace("item-", "product_");
+    Stdout().writeln(lines.size().string() + " " + total.string() + " " + renamed.length().string() + " " + text.length().string());
+    0;
+}

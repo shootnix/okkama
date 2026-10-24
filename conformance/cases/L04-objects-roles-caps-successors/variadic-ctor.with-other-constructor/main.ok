@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Bag {
+    has items is @int;
+    Bag(items is ...int) {
+        let all is @int = items...;
+        items = all;
+    }
+    Bag() {
+        items = [];
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let b = Bag();
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,10 @@
+module runtime/testing v1.0.0;
+native object TestState;
+native test_state_open(limit is int) is TestState;
+native test_state_next(state is TestState) is int;
+native test_state_size(state is TestState) is int;
+native test_state_close(state is TestState) is bool;
+// Immutable contextual flag only; never expose test state as a first-class value.
+native test_context_active() is bool;
+
+test "context flag is active inside a test" {test.ok(test_context_active());}

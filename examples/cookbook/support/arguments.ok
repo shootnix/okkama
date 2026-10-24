@@ -1,0 +1,65 @@
+// Arguments: граница argv
+// Читает ProcessArguments, декодирует UTF-8 и проверяет int64 перед сужением BigInt.
+// Пример: import "../support/arguments" take Arguments; let args=Arguments(); args.text(0,"help");
+// Используется всеми CLI. integer(index,fallback) задаёт значение для пропущенного аргумента.
+// Это модуль приложения; запускайте использующую его программу через ../run.
+
+module cookbook/arguments v1.0.0;
+
+import "cli/arguments" take ProcessArguments, Utf8Arguments;
+import "numbers/bigint" take BigInt;
+import "strings/parse" take ParsedInt;
+import "compare" take Order;
+
+object Arguments {
+    has origin is @string;
+
+    Arguments() {
+        let input = Utf8Arguments(ProcessArguments());
+        origin = input.map() -> item {
+            item;
+        };
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    text(index is int) is string {
+        confirm index >= 0 && index < origin.size()
+            else throw Usage("missing argument " + index.string());
+        origin[index];
+    }
+
+    text(index is int, fallback is string) is string {
+        if index >= 0 && index < origin.size() {
+            origin[index];
+        }
+        else {
+            fallback;
+        }
+    }
+
+    integer(index is int, fallback is int) is int {
+        if index >= origin.size() {
+            return fallback;
+        }
+        let exact = BigInt(self.text(index));
+        confirm exact.order(BigInt("-9223372036854775808")) != Order.less
+            && exact.order(BigInt("9223372036854775807")) != Order.greater
+            else throw Usage("integer outside signed 64-bit range");
+        ParsedInt(exact.string()).value();
+    }
+}
+
+object Usage does Error {
+    has message is string;
+
+    Usage(message is string) {
+        self.message = message;
+    }
+
+    text() is string {
+        message;
+    }
+}

@@ -1,0 +1,31 @@
+module bench/float v1.0.0;
+
+// Плавающая точка: множество Мандельброта 240x120, до 200 итераций.
+import "io/stdout" take Stdout;
+
+object Mandel {
+    Mandel();
+
+    // Число итераций до выхода из круга радиуса 2.
+    escape(cr is float, ci is float, zr is float, zi is float, step is int) is int {
+        if step == 200 || zr * zr + zi * zi > 4.0 {
+            step;
+        } else {
+            self.escape(cr, ci, zr * zr - zi * zi + cr, 2.0 * zr * zi + ci, step + 1);
+        }
+    }
+
+    row(y is int) is int {
+        let ci = y.float() * 0.02 - 1.2;
+        (0..240).reduce(0) -> total, x {
+            total + self.escape(x.float() * 0.0125 - 2.0, ci, 0.0, 0.0, 0);
+        };
+    }
+}
+
+main() is int {
+    let mandel = Mandel();
+    let total = (0..120).reduce(0) -> sum, y { sum + mandel.row(y); };
+    Stdout().writeln(total.string());
+    0;
+}

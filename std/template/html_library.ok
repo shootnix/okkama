@@ -1,0 +1,135 @@
+module template/html_library v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "template/html" take HtmlTemplate;
+
+// Exact association between a nonempty Unicode name and a HTML template.
+// Names are not paths: no trimming, case folding, normalization or I/O.
+// Declaration/lookup never compiles or renders the retained template.
+// Example: NamedHtmlTemplate("header", HtmlTemplate("Hello {{name}}"));
+object NamedHtmlTemplate {
+    has key is string;
+    has origin is HtmlTemplate;
+    NamedHtmlTemplate(name is string, value is HtmlTemplate) {
+        confirm name != "" else throw InvalidHtmlTemplateName();
+        key = name;
+        origin = value;
+    }
+    name() is string { key; }
+    value() is HtmlTemplate { origin; }
+}
+
+// Immutable ordered library, empty by default. Sequence constructors snapshot
+// size once then each ascending item once, rejecting invalid size/excess count
+// before item access. Optional nonnegative maximum_templates defaults to 1024;
+// zero permits an empty source. Duplicates are checked after the full snapshot.
+// Original source failures propagate; no cursor/first/last/close calls.
+// Queries never revisit the source. Missing names throw MissingHtmlTemplate, while
+// membership returns false, including for "". Returned values/names outlive us.
+// Retains HtmlTemplate owners; no resource acquisition, compilation or destroy.
+// O(n) references, O(n²) duplicate checks, O(n) lookups within the count bound.
+// The count does not limit source bytes; flat HtmlTemplate owns its limits.
+// Composition will apply explicit aggregate limits to these typed source values.
+// Only HtmlTemplate is accepted; no plain TextTemplate or arbitrary source role.
+// Contract: docs/std/template-html-library-guide.md.
+// Example: HtmlTemplateLibrary([NamedHtmlTemplate("greeting",HtmlTemplate("Hello"))]);
+// HTML partial expansion is separate: this module only names typed templates.
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/html_library.ok
+object HtmlTemplateLibrary {
+    has origin is @NamedHtmlTemplate;
+    HtmlTemplateLibrary() { origin = []; }
+    HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>) {
+        origin = HtmlTemplateLibrarySnapshot(values, 1024).items();
+    }
+    HtmlTemplateLibrary(values is Sequencing<NamedHtmlTemplate>, maximum_templates is int) {
+        origin = HtmlTemplateLibrarySnapshot(values, maximum_templates).items();
+    }
+    membership(name is string) is bool {
+        for origin -> item {
+            if item.name() == name { return true; }
+        }
+        false;
+    }
+    value(name is string) is HtmlTemplate {
+        for origin -> item {
+            if item.name() == name { return item.value(); }
+        }
+        throw MissingHtmlTemplate(name);
+    }
+    names() is Sequencing<string> {
+        let names is @string = origin.map() -> item { item.name(); };
+        names;
+    }
+}
+
+// Internal snapshot collaborator; public only because Okkama has no
+// module-private declarations. No source observation after construction.
+object HtmlTemplateLibrarySnapshot {
+    has origin is @NamedHtmlTemplate;
+    HtmlTemplateLibrarySnapshot(source is Sequencing<NamedHtmlTemplate>, maximum is int) {
+        confirm maximum >= 0 else throw InvalidHtmlTemplateLibraryLimit();
+        let size = source.size();
+        confirm size >= 0 else throw InvalidHtmlTemplateLibrarySize();
+        confirm size <= maximum else throw HtmlTemplateLibraryLimitExceeded();
+        let snapshot is @NamedHtmlTemplate = (0..size).map() -> index { source.item(index); };
+        for (0..size) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[index].name() != snapshot[previous].name()
+                    else throw DuplicateHtmlTemplate(snapshot[index].name());
+            }
+        }
+        origin = snapshot;
+    }
+    items() is @NamedHtmlTemplate { origin; }
+}
+
+// Lookup/declaration errors preserve exact names for programmatic diagnostics.
+object MissingHtmlTemplate does Error {
+    has origin is string;
+    MissingHtmlTemplate(name is string) { origin = name; }
+    name() is string { origin; }
+    text() is string { "missing HTML template: " + origin; }
+}
+object DuplicateHtmlTemplate does Error {
+    has origin is string;
+    DuplicateHtmlTemplate(name is string) { origin = name; }
+    name() is string { origin; }
+    text() is string { "duplicate HTML template: " + origin; }
+}
+object InvalidHtmlTemplateName does Error {
+    InvalidHtmlTemplateName();
+    text() is string { "HTML template name must not be empty"; }
+}
+object InvalidHtmlTemplateLibraryLimit does Error {
+    InvalidHtmlTemplateLibraryLimit();
+    text() is string { "HTML template library limit must be nonnegative"; }
+}
+object InvalidHtmlTemplateLibrarySize does Error {
+    InvalidHtmlTemplateLibrarySize();
+    text() is string { "HTML template library source size must be nonnegative"; }
+}
+object HtmlTemplateLibraryLimitExceeded does Error {
+    HtmlTemplateLibraryLimitExceeded();
+    text() is string { "HTML template library limit exceeded"; }
+}
+
+// Imported constructors currently fail lookup in root test bodies; successful
+// nonempty library/rendering and source-failure cases run in consumer suite 296.
+test "empty and missing templates have explicit behavior" {
+    test.is(HtmlTemplateLibrary().names().size(), 0);
+    test.is(HtmlTemplateLibrary([], 0).membership(""), false);
+    test.is(try {HtmlTemplateLibrary().value("x"); "bad";}
+        catch e is MissingHtmlTemplate {e.name();}, "x");
+}
+test "empty library permits zero and rejects negative bounds" {
+    test.is(HtmlTemplateLibrary([]).names().size(), 0);
+    test.is(HtmlTemplateLibrary([],0).names().size(), 0);
+    test.ok(try {HtmlTemplateLibrary([],-1);false;} catch e is InvalidHtmlTemplateLibraryLimit {true;});
+}
+test "template errors retain exact names and stable diagnostics" {
+    test.is(MissingHtmlTemplate("é.x").name(), "é.x");
+    test.is(MissingHtmlTemplate("é.x").text(), "missing HTML template: é.x");
+    test.is(DuplicateHtmlTemplate("é.x").name(), "é.x");
+    test.is(DuplicateHtmlTemplate("é.x").text(), "duplicate HTML template: é.x");
+    test.is(InvalidHtmlTemplateName().text(), "HTML template name must not be empty");
+}

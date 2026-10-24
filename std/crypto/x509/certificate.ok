@@ -1,0 +1,191 @@
+module crypto/x509/certificate v1.0.0;
+import "runtime/x509" as x509;
+import "crypto/x509/value" take CertificateValidity,CertificateConstraints,InvalidCertificate;
+import "crypto/x509/name" take DistinguishedName,RelativeDistinguishedName,NameAttribute,InvalidDistinguishedName;
+import "crypto/key" take PublicKey;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "strings/parse" take ParsedInt;
+import "collections/sequence" take Sequencing;
+import "net/ip" take IpAddress;
+import "collections/set" take Set,OrderedSet;
+import "encoding/hex" take HexDecoded;
+
+// ParsedCertificate(bytes).value() validates a bounded DER envelope and asks
+// OpenSSL to decode its certificate/public key. It neither verifies a signature
+// nor asks a clock, resolver, filesystem trust store, or peer hostname.
+// Exact DER plus a deterministic private facts snapshot define identity;
+// repeated getters acquire no persistent host pointers. Names preserve RDN
+// groups and DER member order. Unsupported text encodings fail on observation.
+// Limits: 1 MiB input, 8192 envelope nodes, nesting 32, 128 extensions/groups,
+// 32 attributes per RDN, 4096 scalars per decoded value, 65536 per decoded name.
+object ParsedCertificate {
+    has origin is @byte;ParsedCertificate(origin is @byte){self.origin=origin;}
+    value() is Certificate{Certificate(origin);}
+}
+object Certificate {
+    has origin is @byte;has facts is string;
+
+    Certificate(origin is @byte){
+        try{facts=x509.certificate_facts(origin);}catch e is NativeFailure{
+            if e.domain()=="core.x509"{
+                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}
+                if e.code()=="unsupported"{throw CertificateBackendUnavailable();}
+                if e.code()=="invalid_data"{throw InvalidCertificate("invalid DER certificate");}
+            }throw;
+        }self.origin=origin;
+    }
+    der() is @byte{origin;}
+    subject() is DistinguishedName{CertificateName(facts,false).value();}
+    issuer() is DistinguishedName{CertificateName(facts,true).value();}
+    validity() is CertificateValidity{
+        let times=x509.certificate_times(facts);
+        CertificateValidity(Instant(Duration(ParsedInt(times[0]).value().rat(),DurationUnit.second)),Instant(Duration(ParsedInt(times[1]).value().rat(),DurationUnit.second)));
+    }
+    public_key() is PublicKey{CertificatePublicKey(x509.certificate_spki(facts));}
+
+    names() is CertificateNames {
+        try{
+            let entries=x509.certificate_san(facts);
+            let dns_entries=entries.filter()->entry{entry[0]=="DNS";};
+            let ip_entries=entries.filter()->entry{entry[0]=="IP";};
+            let dns_values is @string=dns_entries.map()->entry{entry[1];};
+            let ip_values is @IpAddress=ip_entries.map()->entry{IpAddress(entry[1]);};
+            CertificateNames(dns_values,ip_values);
+        }catch e is NativeFailure{
+            if e.domain()=="core.x509"{
+                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}
+                if e.code()=="invalid_data"{throw InvalidCertificate("invalid subjectAltName");}
+            }throw;
+        }
+    }
+
+    extensions_items() is Sequencing<CertificateExtension>{
+        let records=x509.certificate_extensions(facts);
+        let values is @CertificateExtension=records.map()->record{CertificateExtension(record[0],record[1]=="1",HexDecoded(record[2]).bytes());};values;
+    }
+
+    extensions_extension(identifier is string) is CertificateExtension{
+        let wanted=CertificateObjectIdentifier(identifier).value();let records=x509.certificate_extensions(facts);
+        for records -> record{if record[0]==wanted{return CertificateExtension(record[0],record[1]=="1",HexDecoded(record[2]).bytes());}}
+        throw MissingCertificateExtension(wanted);
+    }
+
+    extensions_critical() is Sequencing<string>{
+        let records=x509.certificate_extensions(facts);let critical=records.filter()->record{record[1]=="1";};
+        let values is @string=critical.map()->record{record[0];};values;
+    }
+
+    extensions_constraints() is CertificateConstraints{
+        try{
+            let value=x509.certificate_constraints(facts);let authority=value[0]=="1";
+            if value[1]==""{CertificateConstraints(authority);}else{CertificateConstraints(authority,ParsedInt(value[1]).value());}
+        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}if e.code()=="invalid_data"{throw InvalidCertificate("invalid basicConstraints");}}throw;}
+    }
+
+    extensions_key_usages() is Set<CertificateKeyUsage>{
+        try{
+            let all is @CertificateKeyUsage=[CertificateKeyUsage.digital_signature,CertificateKeyUsage.content_commitment,CertificateKeyUsage.key_encipherment,CertificateKeyUsage.data_encipherment,
+                CertificateKeyUsage.key_agreement,CertificateKeyUsage.key_cert_sign,CertificateKeyUsage.crl_sign,CertificateKeyUsage.encipher_only,CertificateKeyUsage.decipher_only];
+            let bits=x509.certificate_key_usages(facts);let values is @CertificateKeyUsage=bits.map()->bit{all[bit];};OrderedSet(values);
+        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}if e.code()=="invalid_data"{throw InvalidCertificate("invalid keyUsage");}}throw;}
+    }
+
+    extensions_purposes() is Set<CertificatePurpose>{
+        try{
+            let identifiers=x509.certificate_purposes(facts);let values is @CertificatePurpose=identifiers.map()->identifier{CertificatePurpose(identifier);};OrderedSet(values);
+        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}if e.code()=="invalid_data"{throw InvalidCertificate("invalid extendedKeyUsage");}}throw;}
+    }
+}
+object CertificateName {
+    has facts is string;has issuer is bool;CertificateName(facts is string,issuer is bool){self.facts=facts;self.issuer=issuer;}
+    value() is DistinguishedName{
+        try{
+            let groups=x509.certificate_names(facts,issuer);
+            let result is @RelativeDistinguishedName=groups.map()->group{
+                let attributes is @NameAttribute=group.map()->attribute{NameAttribute(attribute[0],attribute[1]);};RelativeDistinguishedName(attributes);
+            };DistinguishedName(result);
+        }catch e is NativeFailure{
+            if e.domain()=="core.x509"{
+                if e.code()=="unsupported"{throw UnsupportedCertificateName();}
+                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}
+                if e.code()=="invalid_data"{throw InvalidCertificate("invalid encoded certificate name");}
+            }throw;
+        }
+    }
+}
+object CertificatePublicKey does PublicKey {
+    has origin is @byte;CertificatePublicKey(origin is @byte){self.origin=origin;}bytes() is @byte{origin;}
+}
+// Metadata projection only: no matching, CN fallback, IDNA transformation,
+// resolution or trust assertion. DNS spelling and repetitions are retained;
+// IP GeneralNames become nominal addresses and never enter the DNS sequence.
+object CertificateNames {
+    has dns is @string;has ips is @IpAddress;
+
+    CertificateNames(origin is Certificate){
+        let snapshot=origin.names();
+        let names is @string=snapshot.dns().map()->value{value;};dns=names;
+        let addresses is @IpAddress=snapshot.ips().map()->value{value;};ips=addresses;
+    }
+    CertificateNames(dns is @string,ips is @IpAddress){self.dns=dns;self.ips=ips;}
+
+    dns() is Sequencing<string>{dns;}ips() is Sequencing<IpAddress>{ips;}
+}
+// Snapshot of supplied, untrusted leaf-first certificates. It is not a verified
+// prospective path: repetitions/order are retained for the verifier to handle.
+object CertificateChain {
+    has origin is @Certificate;
+    CertificateChain(certificates is Sequencing<Certificate>){
+        let count=certificates.size();confirm count>0 else throw InvalidCertificate("empty or invalid certificate chain size");
+        confirm count<=32 else throw CertificateLimitExceeded();
+        let values is @Certificate=(0..count).map()->index{certificates.item(index);};
+        let bytes=values.reduce(0)->sum,certificate{sum+certificate.der().size();};
+        confirm bytes<=8388608 else throw CertificateLimitExceeded();origin=values;
+    }
+    certificates() is Sequencing<Certificate>{origin;}
+}
+enum CertificateKeyUsage=(digital_signature,content_commitment,key_encipherment,data_encipherment,key_agreement,key_cert_sign,crl_sign,encipher_only,decipher_only);
+// Purposes retain exact EKU OIDs, including unknown purposes. Construction is
+// metadata validation, never permission to bypass verification policy.
+object CertificatePurpose {
+    has identifier is string;CertificatePurpose(identifier is string){self.identifier=CertificateObjectIdentifier(identifier).value();}
+    identifier() is string{identifier;}
+}
+object CertificateExtension {
+    has identifier is string;has critical is bool;has origin is @byte;
+    CertificateExtension(identifier is string,critical is bool,origin is @byte){
+        self.identifier=CertificateObjectIdentifier(identifier).value();self.critical=critical;self.origin=origin;
+    }
+    identifier() is string{identifier;}critical() is bool{critical;}bytes() is @byte{origin;}
+}
+object CertificateExtensions {
+    has owner is Certificate;CertificateExtensions(origin is Certificate){owner=origin;}
+    items() is Sequencing<CertificateExtension>{owner.extensions_items();}
+    extension(identifier is string) is CertificateExtension{owner.extensions_extension(identifier);}
+    critical() is Sequencing<string>{owner.extensions_critical();}
+    constraints() is CertificateConstraints{owner.extensions_constraints();}
+    key_usages() is Set<CertificateKeyUsage>{owner.extensions_key_usages();}
+    purposes() is Set<CertificatePurpose>{owner.extensions_purposes();}
+}
+object CertificateObjectIdentifier {
+    has origin is string;CertificateObjectIdentifier(origin is string){self.origin=origin;}
+    value() is string{try{NameAttribute(origin,"").identifier();}catch e is InvalidDistinguishedName{throw InvalidCertificate("invalid certificate object identifier");}}
+}
+object MissingCertificateExtension does Error{
+    has identifier is string;MissingCertificateExtension(identifier is string){self.identifier=identifier;}
+    identifier() is string{identifier;}text() is string{"certificate extension is absent: "+identifier;}
+}
+test "unknown purpose OIDs remain exact metadata" {
+    test.is(CertificatePurpose("1.2.3.4").identifier(),"1.2.3.4");
+    test.ok(try{CertificatePurpose("1.40");false;}catch e is InvalidCertificate{true;});
+}
+object CertificateLimitExceeded does Error{CertificateLimitExceeded();text() is string{"certificate parsing limit exceeded";}}
+object CertificateBackendUnavailable does Error{CertificateBackendUnavailable();text() is string{"certificate backend is unavailable";}}
+object UnsupportedCertificateName does Error{UnsupportedCertificateName();text() is string{"certificate name encoding is unsupported";}}
+test "empty DER is rejected before certificate publication" {
+    test.ok(try{ParsedCertificate([]).value();false;}catch e is InvalidCertificate{true;});
+}
+test "empty supplied chain cannot denote a peer chain" {
+    test.ok(try{CertificateChain([]);false;}catch e is InvalidCertificate{true;});
+}

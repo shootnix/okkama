@@ -1,0 +1,67 @@
+module example/async/producer_consumer v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+import "io/stdout" take Stdout;
+
+object Producer {
+    has output is Sending<int>;
+    Producer(:output);
+
+    async run() is int {
+        await output.send(1);
+        await output.send(2);
+        await output.send(3);
+        await output.send(4);
+        await output.send(5);
+        15;
+    }
+}
+
+object Consumer {
+    has input is Receiving<int>;
+    Consumer(:input);
+
+    async take_five() is int {
+        let first = await input.item();
+        let second = await input.item();
+        let third = await input.item();
+        let fourth = await input.item();
+        let fifth = await input.item();
+
+        Stdout().writeln(@string(first)...);
+        Stdout().writeln(@string(second)...);
+        Stdout().writeln(@string(third)...);
+        Stdout().writeln(@string(fourth)...);
+        Stdout().writeln(@string(fifth)...);
+
+        if first == 1
+            && second == 2
+            && third == 3
+            && fourth == 4
+            && fifth == 5 {
+            42;
+        }
+        else {
+            0;
+        }
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let channel is Channel<int> = Channel(capacity: 1);
+        let consumer = spawn Consumer(input: channel.receiving()).take_five();
+        let producer = spawn Producer(output: channel.sending()).run();
+
+        let result = await consumer;
+        await producer;
+        channel.sending().close();
+        result;
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}

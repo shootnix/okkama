@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+main() is int {
+    let out = Stdout();
+    let a is int = 1;
+    let b is @int = [1, 2];
+    let c is @@int = [[1], [2, 3]];
+    let d is %string:int = ["k": 4];
+    let e is %string:@int = ["k": [5, 6]];
+    let f is (int) is int = (x is int) is int { x + 1; };
+    let g is () is void = () is void { 0; };
+    let h is Box<int> = Box(value: 7);
+    let i is any = 8;
+    g();
+    out.writeln((a + b.size() + c[1].size() + d["k"] + e["k"][1] + f(9) + h.get()).string());
+    0;
+}

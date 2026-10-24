@@ -1,0 +1,37 @@
+// Книжный магазин: CLI, HTTP API и браузер
+//
+// Хранит каталог, остатки и историю заказов в SQLite. Покупка списывает остаток и записывает заказ одной транзакцией.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run bookstore init /tmp/books.sqlite
+//     ./examples/cookbook/run bookstore books /tmp/books.sqlite
+//     ./examples/cookbook/run bookstore buy /tmp/books.sqlite 1 2
+//     ./examples/cookbook/run bookstore orders /tmp/books.sqlite
+//     ./examples/cookbook/run bookstore serve /tmp/books.sqlite 8081
+//     Открыть http://127.0.0.1:8081/
+//
+// API: GET /api/books, GET /api/orders, POST /api/orders с JSON {"book":1,"quantity":2}. Цены и суммы заказа — целые центы.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/bookstore v1.0.0;
+import "../support/arguments" take Arguments,Usage;
+import "../support/http" take LocalWeb;
+import "../web/bookstore/model" take BookShelf;
+import "../web/bookstore/pages" take StorePages;
+import "web/routing" take WebRoutes,Get,Post;
+import "json/write" take PrettyJson;
+import "io/stdout" take Stdout;
+
+async main() is int{
+    let args=Arguments();let command=args.text(0,"help");
+    if command=="help"{Stdout().writeln("bookstore init DB | books DB | orders DB | buy DB BOOK QUANTITY | serve DB [PORT]");return 0;}
+    let shelf=BookShelf(args.text(1));
+    match command{
+        case "init"{await shelf.initialize();}
+        case "books"{Stdout().writeln(PrettyJson(indentation:2,origin:await shelf.books()).string());}
+        case "orders"{Stdout().writeln(PrettyJson(indentation:2,origin:await shelf.orders()).string());}
+        case "buy"{Stdout().writeln(PrettyJson(indentation:2,origin:await shelf.purchase(args.integer(2,0),args.integer(3,0))).string());}
+        case "serve"{let pages=StorePages(shelf);await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/api/books",pages.books),Get("/api/orders",pages.orders),Post("/api/orders",pages.buy)],pages.missing),args.integer(2,8081));}
+        else{throw Usage("unknown bookstore command");}
+    }0;
+}

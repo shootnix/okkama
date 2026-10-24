@@ -1,0 +1,38 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.native.decl-valid-forms",
+  "title": "valid native declarations parse",
+  "purpose": "Native declarations are typed, bodyless and module-scoped.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "NATIVE.DECL",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success"
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.3",
+    "docs/okkama-spec-11072026.md#11.6",
+    "std/runtime/tls_transport.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.3: `native object Name;` and typed bodyless declarations at module scope; async natives follow spec 11.6, the grammar production and active std usage (D-038)."
+  },
+  "status": "mandatory",
+  "notes": "D-038: spec 5.3 still calls async natives unsupported; resolved by spec 11.6, the grammar production and 42 std declarations."
+}

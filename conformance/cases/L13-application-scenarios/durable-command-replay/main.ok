@@ -1,0 +1,67 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+import "db/sqlite" take SqliteMemory, SqliteDatabase, SqliteOptions, SqliteConnection;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbInteger, DbText, ObservedDbValue;
+import "db/read" take RowReader;
+import "db/row" take RowsEnded;
+import "numbers/bigint" take BigInt;
+
+object IdempotencyConflict does Error {
+    IdempotencyConflict();
+    text() is string { "idempotency key reused with a different payload"; }
+}
+
+object Commands {
+    has connection is SqliteConnection;
+    Commands(:connection);
+    async execute(key is string, payload is string) is string {
+        let tx = await connection.transaction(TransactionOptions());
+        let rows = await tx.rows(Statement("SELECT payload, result FROM commands WHERE key = ?", [DbText(key)]));
+        let previous = try {
+            let row = await rows.row();
+            [RowReader(origin: row).text("payload"), RowReader(origin: row).text("result")];
+        } catch e is RowsEnded {
+            let none_found is @string = [];
+            none_found;
+        };
+        rows.close();
+        if previous.size() == 2 {
+            let ended = await tx.rollback();
+            confirm previous[0] == payload else throw IdempotencyConflict();
+            return "replayed " + previous[1];
+        }
+        await tx.execution(Statement("INSERT INTO ledger(entry) VALUES(?)", [DbText(payload)]));
+        let result = "charged " + payload;
+        await tx.execution(Statement("INSERT INTO commands VALUES(?, ?, ?)", [DbText(key), DbText(payload), DbText(result)]));
+        let committed = await tx.commit();
+        result;
+    }
+}
+
+async main() is int {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE commands(key TEXT PRIMARY KEY, payload TEXT, result TEXT)"));
+    await connection.execution(Statement("CREATE TABLE ledger(entry TEXT)"));
+    let commands = Commands(connection: connection);
+    let c = Checks();
+    c = c.same_text("first execution", await commands.execute("k1", "100"), "charged 100");
+    c = c.same_text("duplicate replays", await commands.execute("k1", "100"), "replayed charged 100");
+    c = c.same_text("second command", await commands.execute("k2", "50"), "charged 50");
+    let conflict = try {
+        await commands.execute("k1", "999");
+        "accepted";
+    } catch e is IdempotencyConflict {
+        "conflict";
+    };
+    c = c.same_text("changed payload rejected", conflict, "conflict");
+    let rows = await connection.rows(Statement("SELECT COUNT(*) AS n FROM ledger"));
+    let row = await rows.row();
+    rows.close();
+    c = c.same_int("ledger entries", RowReader(origin: row).int("n"), 2);
+    c.done();
+}

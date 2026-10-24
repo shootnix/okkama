@@ -1,0 +1,73 @@
+module http/client_policy v1.0.0;
+import "http/http1_head" take Http1Limits;
+import "http/version" take HttpVersion,UnsupportedHttpVersion;
+import "http/endpoint" take EndpointAllowing,PublicEndpoints;
+import "collections/set" take Set,OrderedSet;
+import "numbers/bigint" take BigInt;
+import "compare" take Order;
+import "time/duration" take Duration,DurationUnit;
+import "encoding/single_byte" take Latin1Encoded;
+import "net/tls" take TlsClientPolicy;
+
+// Explicit, reusable inputs; these objects never resolve or acquire a socket.
+object HttpLimits {
+    has header_bytes,line_bytes is int;has body_bytes is BigInt;
+    HttpLimits(){header_bytes=65536;line_bytes=8192;body_bytes=BigInt("1073741824");}
+    HttpLimits(header_bytes is int,line_bytes is int,body_bytes is BigInt){
+        confirm header_bytes>=4 && header_bytes<=1048576 && line_bytes>0 && line_bytes<=header_bytes
+            && body_bytes.sign()>0 && body_bytes.order(BigInt("9007199254740991"))!=Order.greater
+            else throw InvalidClientPolicy("invalid HTTP budgets");
+        self.header_bytes=header_bytes;self.line_bytes=line_bytes;self.body_bytes=body_bytes;
+    }
+    header_bytes() is int{header_bytes;}line_bytes() is int{line_bytes;}body_bytes() is BigInt{body_bytes;}
+    http1() is Http1Limits{
+        let amount=Latin1Encoded(body_bytes.string()).bytes().reduce(0)->count,octet{count*10+octet.int()-48;};
+        Http1Limits(header_bytes,line_bytes,128,amount);
+    }
+}
+object ClientTimeouts {
+    has connection,headers,body_idle is Duration;
+    ClientTimeouts(){let interval=Duration(30.rat(),DurationUnit.second);connection=interval;headers=interval;body_idle=interval;}
+    ClientTimeouts(connection is Duration,headers is Duration,body_idle is Duration){
+        confirm connection.seconds()>=0.rat() && headers.seconds()>=0.rat() && body_idle.seconds()>=0.rat()
+            else throw InvalidClientPolicy("negative deadline");
+        self.connection=connection;self.headers=headers;self.body_idle=body_idle;
+    }
+    connection_timeout() is Duration{connection;}headers_timeout() is Duration{headers;}body_idle_timeout() is Duration{body_idle;}
+}
+object ClientPolicy {
+    has protocols is Set<HttpVersion>;has limits is HttpLimits;has timeouts is ClientTimeouts;
+    has connections is int;has access is EndpointAllowing;
+    ClientPolicy(){
+        let enabled is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);protocols=enabled;
+        limits=HttpLimits();timeouts=ClientTimeouts();connections=8;access=PublicEndpoints();
+    }
+    ClientPolicy(protocols is Set<HttpVersion>,limits is HttpLimits,timeouts is ClientTimeouts,connections is int,access is EndpointAllowing){
+        let count=protocols.size();confirm count>=1 && count<=3 && connections>=1 && connections<=1024
+            else throw InvalidClientPolicy("invalid protocol or connection count");
+        let selected is @HttpVersion=[HttpVersion.http_1_0,HttpVersion.http_1_1,HttpVersion.http_2].filter()->version{protocols.membership(version);};
+        confirm selected.size()==count else throw InvalidClientPolicy("inconsistent protocol set");
+        let snapshot is Set<HttpVersion>=OrderedSet(selected);self.protocols=snapshot;
+        self.limits=limits;self.timeouts=timeouts;self.connections=connections;self.access=access;
+    }
+    protocols() is Set<HttpVersion>{protocols;}limits() is HttpLimits{limits;}timeouts() is ClientTimeouts{timeouts;}
+    connections() is int{connections;}access() is EndpointAllowing{access;}
+}
+// The currently available transport is deliberately selected here. A policy
+// value can describe H2, but it cannot silently become an HTTP1 conversation.
+object Http1ClientProtocols {
+    Http1ClientProtocols(policy is ClientPolicy,tls is TlsClientPolicy){
+        confirm policy.protocols().size()==1 && policy.protocols().membership(HttpVersion.http_1_1)
+            else throw UnsupportedHttpVersion();
+        for tls.protocols()->protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion();}
+    }
+    version() is HttpVersion{HttpVersion.http_1_1;}
+}
+object InvalidClientPolicy does Error {
+    has reason is string;InvalidClientPolicy(reason is string){self.reason=reason;}
+    reason() is string{reason;}text() is string{"invalid HTTP client policy: "+reason;}
+}
+test "default client policy is explicit and HTTP1-only" {
+    let policy=ClientPolicy();test.ok(policy.protocols().membership(HttpVersion.http_1_1));
+    test.ok(policy.connections()==8 && policy.limits().http1().body_bytes()==1073741824);
+}

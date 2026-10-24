@@ -1,0 +1,23 @@
+// Прочитать и записать INI-конфигурацию
+//
+// Сохранить привычный INI-файл приложения: IniDocument, ParsedIni и IniString представляют структуру и текст.
+//
+// Запуск: ./examples/cookbook/run lab example-ini-codec
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-ini-codec
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "config/ini" take ParsedIni, IniString;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let settings = ParsedIni("# explicit Okkama INI\n[settings]\nname=Ada\npath=C:\\tmp");
+        IniString(settings).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

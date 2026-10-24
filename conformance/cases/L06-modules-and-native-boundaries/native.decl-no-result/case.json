@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.native.decl-no-result",
+  "title": "native declaration rejected: native declarations require an explicit result",
+  "purpose": "Invalid native declarations never execute.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "NATIVE.DECL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The grammar's context-sensitive restrictions list these native rules; a parser or the analyzer may report them."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.3",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.3 / grammar: native declarations require an explicit result."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,29 @@
+module example v1.0.0;
+
+import "numbers/bigint" take
+    BigInt, BigSum, BigProduct, BigQuotient, BigRemainder, BigPower;
+
+object ExampleResult {
+    ExampleResult();
+    value() is @string {
+        let amount = BigInt("100000000000000000001");
+        let divisor = BigInt("3");
+        let quotient = BigQuotient(left: amount, right: divisor).value();
+        let remainder = BigRemainder(left: amount, right: divisor).value();
+        let reconstructed = BigSum(
+            left: BigProduct(left: quotient, right: divisor).value(),
+            right: remainder,
+        );
+        [
+            quotient.string(),
+            remainder.string(),
+            reconstructed.value().string(),
+            BigPower(base: BigInt("2"), exponent: 100, maximum_bits: 101).value().string(),
+        ];
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

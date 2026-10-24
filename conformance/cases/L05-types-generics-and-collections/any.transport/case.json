@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.any.transport",
+  "title": "any values can be passed, stored, returned, iterated and unpacked",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.ANY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3\n2\n3\n2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.2: any boxes may be passed, stored, returned, iterated and unpacked; repeated any boundaries do not nest; an explicit @any boundary boxes heterogeneous literals."
+  },
+  "status": "mandatory"
+}

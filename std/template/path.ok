@@ -1,0 +1,135 @@
+module template/path v1.0.0;
+import "collections/sequence" take Sequencing;
+import "collections/list" take List, EmptyList;
+import "compare" take Comparing, Order;
+
+// Immutable named template path: nonempty sequence of nonempty exact strings.
+// TemplatePath(["user","name"]).string() -> "user.name".
+// Default budgets: 64 segments, 4096 Unicode scalars including separator dots;
+// optional maximum_segments/maximum_length override both, and must be >=0.
+// Source size() is observed once, bounds checked before item access, then indices
+// read once in order. The first invalid item stops reading. Source exceptions
+// propagate unchanged. Borrowed sources are never closed; snapshots outlive them.
+// No native state, I/O, environment access, reflection or owned resource.
+//
+// segments() retains identity; string() is diagnostic, not an identity encoding.
+// ["a.b"] and ["a","b"] have the same string but differ under order(). Direct
+// segments may contain literal dots, whitespace or Unicode normalization forms.
+// order() compares segments lexicographically, then length for equal prefixes.
+// Repeated observations never revisit the source. No trimming/case folding.
+//
+// FromString binds source lazily; negative configuration fails in construction.
+// value() checks length before splitting literal dots, then validates segments.
+// Empty source/segments and "." are invalid; template syntax reserves "." for
+// the current item. Parsing does not change the directly supplied segment API.
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/path.ok
+object TemplatePath does Comparing<TemplatePath> {
+    has origin is @string;
+    TemplatePath(segments is Sequencing<string>) {
+        origin = TemplatePathSnapshot(segments, 64, 4096).items();
+    }
+    TemplatePath(segments is Sequencing<string>, maximum_segments is int, maximum_length is int) {
+        origin = TemplatePathSnapshot(segments, maximum_segments, maximum_length).items();
+    }
+    segments() is Sequencing<string> { origin; }
+    string() is string { origin.join("."); }
+    order(other is TemplatePath) is Order {
+        let right = other.segments();
+        let count = if origin.size() < right.size() {origin.size();} else {right.size();};
+        let prefix = (0..count).reduce(Order.equal) -> previous, index {
+            if previous == Order.equal {origin[index].order(right.item(index));}
+            else {previous;}
+        };
+        if prefix == Order.equal {origin.size().order(right.size());} else {prefix;}
+    }
+}
+object TemplatePathFromString {
+    has origin is string;
+    has maximum_segments, maximum_length is int;
+    TemplatePathFromString(origin is string) {
+        self.origin = origin; maximum_segments = 64; maximum_length = 4096;
+    }
+    TemplatePathFromString(origin is string, maximum_segments is int, maximum_length is int) {
+        confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit();
+        self.origin = origin; self.maximum_segments = maximum_segments; self.maximum_length = maximum_length;
+    }
+    #projected
+    value() is TemplatePath {
+        confirm origin.length() <= maximum_length else throw TemplatePathLimitExceeded();
+        confirm origin != "" && origin != "." else throw InvalidTemplatePath("empty or reserved template path");
+        TemplatePath(origin.split("."), maximum_segments, maximum_length);
+    }
+}
+
+// Internal snapshot collaborators. Public only because modules have no private
+// declaration visibility. Revisions retain immutable list tails; no mutation.
+// Validate each item and remaining length before retaining it.
+object TemplatePathSnapshot {
+    has origin is @string;
+    TemplatePathSnapshot(source is Sequencing<string>, maximum_segments is int, maximum_length is int) {
+        confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit();
+        let size = source.size();
+        confirm size >= 0 else throw InvalidTemplatePathSize();
+        confirm size > 0 else throw InvalidTemplatePath("empty template path");
+        confirm size <= maximum_segments else throw TemplatePathLimitExceeded();
+        let parts = (0..size).reduce(TemplatePathParts(maximum_length)) -> previous, index {
+            previous.following(source.item(index));
+        };
+        origin = parts.items();
+    }
+    items() is @string { origin; }
+}
+object TemplatePathParts {
+    has maximum is int;
+    has used is int = 0;
+    has origin is List<string>;
+    TemplatePathParts(maximum is int) {
+        confirm maximum >= 0 else throw InvalidTemplatePathLimit();
+        self.maximum = maximum;
+        let empty is List<string> = EmptyList();
+        origin = empty;
+    }
+    following(segment is string) is ^TemplatePathParts {
+        confirm segment != "" else throw InvalidTemplatePath("empty template path segment");
+        let gap = if origin.size() > 0 {1;} else {0;};
+        confirm gap <= maximum - used && segment.length() <= maximum - used - gap
+            else throw TemplatePathLimitExceeded();
+        ^used = used + gap + segment.length();
+        ^origin = origin.prefix(segment);
+    }
+    items() is @string {
+        let reversed is @string = origin.map() -> segment {segment;};
+        (0..reversed.size()).map() -> index {reversed[reversed.size()-1-index];};
+    }
+}
+object InvalidTemplatePath does Error {
+    has reason is string;
+    InvalidTemplatePath(reason is string) {self.reason = reason;}
+    text() is string {reason;}
+}
+object InvalidTemplatePathSize does Error {
+    InvalidTemplatePathSize();
+    text() is string {"template path source size must be nonnegative";}
+}
+object InvalidTemplatePathLimit does Error {
+    InvalidTemplatePathLimit();
+    text() is string {"template path budgets must be nonnegative";}
+}
+object TemplatePathLimitExceeded does Error {
+    TemplatePathLimitExceeded();
+    text() is string {"template path budget exceeded";}
+}
+
+test "template path coordinates and comparison are nominal" {
+    let path = TemplatePathFromString("user.name").value();
+    test.is(path.string(), "user.name");
+    test.is(path.segments().size(), 2);
+    test.is(TemplatePath(["a.b"]).order(TemplatePath(["a","b"])), Order.greater);
+}
+test "template paths reject syntax and resource bounds" {
+    test.ok(try {TemplatePathFromString(".").value();false;} catch error is InvalidTemplatePath {true;});
+    test.ok(try {TemplatePath([""]);false;} catch error is InvalidTemplatePath {true;});
+    test.is(TemplatePath(["é","😀"], 2, 3).string(), "é.😀");
+    test.ok(try {TemplatePath(["é","😀"], 2, 2);false;} catch error is TemplatePathLimitExceeded {true;});
+    test.ok(try {TemplatePath(["a"], -1, 3);false;} catch error is InvalidTemplatePathLimit {true;});
+}

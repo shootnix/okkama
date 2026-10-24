@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "mail/imap" take ParsedImapCapabilities, ImapFeature;
+import "encoding/utf" take Utf8Encoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let caps=ParsedImapCapabilities(Utf8Encoded("* CAPABILITY IMAP4rev1 STARTTLS AUTH=PLAIN IDLE X-Local=Value\r\n").bytes()).capabilities();
+    Stdout().writeln(caps.authentication().first());
+    Stdout().writeln(caps.tokens().last().string());
+    Stdout().writeln(if caps.features().membership(ImapFeature.start_tls) {"STARTTLS advertised";} else {"STARTTLS absent";});
+    0;
+}

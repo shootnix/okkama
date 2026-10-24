@@ -1,0 +1,22 @@
+// Блог: отдельное веб-приложение Okkama.
+// Запуск из любой папки: /path/to/okkama/examples/cookbook/web/blog/run DATABASE [PORT].
+// Из корня: ./examples/cookbook/web/blog/run /tmp/blog.sqlite 8082
+// Откройте http://127.0.0.1:8082/; Ctrl+C завершает сервер.
+// DATABASE — сохраняемая SQLite-база, таблицы создаются при запуске; PORT=0 выбирает свободный порт.
+// HTML-страницы и JSON API используют одно хранилище. Подробный сценарий и маршруты: README.md.
+
+module cookbook/web/blog v1.0.0;
+import "../../support/arguments" take Arguments;
+import "../../support/http" take LocalWeb;
+import "model" take BlogPosts;
+import "pages" take BlogPages;
+import "web/routing" take WebRoutes,Get,Post;
+
+async main() is int {
+    let args=Arguments();
+    let storage=BlogPosts(args.text(0));
+    await storage.initialize();
+    let pages=BlogPages(storage);
+    await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/posts/:id",pages.article),Get("/api/posts",pages.api),Post("/api/posts",pages.publish)],pages.missing),args.integer(1,8082));
+    0;
+}

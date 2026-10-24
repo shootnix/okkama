@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "time/duration" take Duration, DurationUnit, DurationString, InvalidDuration;
+import "time/date" take Date, ShiftedDate, DaysBetween, DateOrdinal, Weekday, InvalidDate;
+import "time/iso" take IsoDate, DateFromIso, InvalidIsoDate;
+
+main() is int {
+    let c = Checks();
+    c = c.same_bool("2026-08-11 is a Tuesday", Date(year: 2026, month: 8, day: 11).weekday() == Weekday.tuesday, true);
+    c = c.same_int("leap February span", value DaysBetween(left: Date(year: 2024, month: 2, day: 28), right: Date(year: 2024, month: 3, day: 1)), 2);
+    c = c.same_text("century leap day", IsoDate(origin: value ShiftedDate(origin: Date(year: 2000, month: 2, day: 28), days: 1)).string(), "2000-02-29");
+    c = c.same_int("first ordinal", value DateOrdinal(origin: Date(year: 1, month: 1, day: 1)), 1);
+    c = c.same_int("ordinal 2026-01-01", value DateOrdinal(origin: Date(year: 2026, month: 1, day: 1)), 739617);
+    c = c.same_bool("day one is Monday", Date(year: 1, month: 1, day: 1).weekday() == Weekday.monday, true);
+    c = c.same_text("invalid date", try { let probe = Date(year: 2023, month: 2, day: 29).day(); "no error"; } catch e is InvalidDate { "InvalidDate"; }, "InvalidDate");
+    c = c.same_text("iso parse", IsoDate(origin: value DateFromIso(origin: "2026-08-11")).string(), "2026-08-11");
+    c = c.same_text("iso strict", try { let probe = (value DateFromIso(origin: "2026-8-11")).day(); "no error"; } catch e is InvalidIsoDate { "InvalidIsoDate"; }, "InvalidIsoDate");
+    c.done();
+}

@@ -1,0 +1,63 @@
+module billing v1.0.0;
+
+import "conformance/check" take Checks;
+
+enum Kind = (charge, payment, refund, adjustment);
+
+object Event {
+    has id is string;
+    has kind is Kind;
+    has cents is int;
+    Event(:id, :kind, :cents);
+    id() is string { id; }
+    kind() is Kind { kind; }
+    cents() is int { cents; }
+}
+
+object Totals {
+    has seen is @string;
+    has charged, paid, refunded, adjusted is int;
+    Totals(seen is @string, charged is int, paid is int, refunded is int, adjusted is int) {
+        self.seen = seen;
+        self.charged = charged;
+        self.paid = paid;
+        self.refunded = refunded;
+        self.adjusted = adjusted;
+    }
+    applied(event is Event) is ^Totals {
+        let duplicate = seen.filter() -> s { s == event.id(); };
+        if duplicate.size() == 0 {
+            ^seen = @string(seen..., event.id());
+            match event.kind() {
+                case Kind.charge { ^charged = charged + event.cents(); }
+                case Kind.payment { ^paid = paid + event.cents(); }
+                case Kind.refund { ^refunded = refunded + event.cents(); }
+                else { ^adjusted = adjusted + event.cents(); }
+            }
+        }
+    }
+    summary() is @int { [charged, paid, refunded, adjusted, paid - refunded, charged - adjusted]; }
+}
+
+main() is int {
+    let events is @Event = [
+        Event(id: "c1", kind: Kind.charge, cents: 1200),
+        Event(id: "c2", kind: Kind.charge, cents: 990),
+        Event(id: "p1", kind: Kind.payment, cents: 1200),
+        Event(id: "c3", kind: Kind.charge, cents: 780),
+        Event(id: "p2", kind: Kind.payment, cents: 1770),
+        Event(id: "p2", kind: Kind.payment, cents: 1770),
+        Event(id: "r1", kind: Kind.refund, cents: 500),
+        Event(id: "a1", kind: Kind.adjustment, cents: 100),
+    ];
+    let empty is @string = [];
+    let incremental = Totals(empty, 0, 0, 0, 0);
+    for events -> event {
+        incremental = incremental.applied(event);
+    }
+    let rebuilt = events.reduce(Totals(empty, 0, 0, 0, 0)) -> acc, event { acc.applied(event); };
+    let c = Checks();
+    c = c.same_ints("charged paid refunded adjusted cash adjusted-charge", incremental.summary(), [2970, 2970, 500, 100, 2470, 2870]);
+    c = c.same_ints("rebuild equals incremental", rebuilt.summary(), incremental.summary());
+    c.done();
+}

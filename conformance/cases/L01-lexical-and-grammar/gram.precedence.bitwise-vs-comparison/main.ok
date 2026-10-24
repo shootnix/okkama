@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(if 1 | 2 == 3 { "grouped"; } else { "c-like"; });
+    out.writeln((6 & 3 | 8).string());
+    out.writeln((5 ^ 1 & 3).string());
+    out.writeln(if 1 < 2 == 2 < 3 { "eq"; } else { "ne"; });
+    out.writeln(if !true == false { "not-first"; } else { "?"; });
+    0;
+}

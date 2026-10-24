@@ -1,0 +1,55 @@
+module terminal/capability v1.0.0;
+import "os/environment" take Environment;
+import "strings/parse" take ParsedInt;
+
+enum TerminalColorDepth=(disabled,basic,indexed,true_color);
+enum ColorPolicy=(automatic,never,always);
+object TerminalSize{
+    has width,height is int;
+    TerminalSize(columns is int,rows is int){
+        confirm columns>=0 && rows>=0 && columns<=65535 && rows<=65535
+            else throw InvalidTerminalSize();
+        width=columns;height=rows;
+    }
+    columns() is int{width;}
+    rows() is int{height;}
+}
+object TerminalCapabilities{
+    has input,output is bool;
+    has depth is TerminalColorDepth;
+    has geometry is TerminalSize;
+    TerminalCapabilities(input_interactive is bool,output_interactive is bool,colors is TerminalColorDepth,size is TerminalSize){
+        input=input_interactive;output=output_interactive;depth=colors;geometry=size;
+    }
+    input_interactive() is bool{input;}
+    output_interactive() is bool{output;}
+    colors() is TerminalColorDepth{depth;}
+    size() is TerminalSize{geometry;}
+}
+object DetectedTerminalCapabilities{
+    has origin is TerminalCapabilities;
+    DetectedTerminalCapabilities(input is bool,output is bool,native_depth is TerminalColorDepth,columns is int,rows is int,environment is Environment,policy is ColorPolicy){
+        let term=if environment.membership("TERM"){environment.variable("TERM");}else{"";};
+        let disabled=policy==ColorPolicy.never || (policy==ColorPolicy.automatic && (!output || native_depth==TerminalColorDepth.disabled || environment.membership("NO_COLOR") || term=="dumb"));
+        let depth=if disabled{TerminalColorDepth.disabled;}else{
+            if native_depth==TerminalColorDepth.true_color || (environment.membership("COLORTERM") && (environment.variable("COLORTERM")=="truecolor" || environment.variable("COLORTERM")=="24bit")){TerminalColorDepth.true_color;}
+            else{if native_depth==TerminalColorDepth.indexed || term.split("256color").size()>1{TerminalColorDepth.indexed;}else{TerminalColorDepth.basic;}}
+        };
+        let width=if columns>0{columns;}else{TerminalFallback(environment,"COLUMNS").value();};
+        let height=if rows>0{rows;}else{TerminalFallback(environment,"LINES").value();};
+        origin=TerminalCapabilities(input,output,depth,TerminalSize(width,height));
+    }
+    value() is TerminalCapabilities{origin;}
+}
+object TerminalFallback{
+    has environment is Environment;has name is string;
+    TerminalFallback(environment is Environment,name is string){self.environment=environment;self.name=name;}
+    value() is int{
+        if environment.membership(name){
+            let text=environment.variable(name);
+            let parsed=try{ParsedInt(text).value();}catch e is Error{0;};
+            if parsed>0 && parsed<=65535{parsed;}else{0;}
+        }else{0;}
+    }
+}
+object InvalidTerminalSize does Error{InvalidTerminalSize();text() is string{"terminal dimensions must be in 0..65535; zero is unknown";}}

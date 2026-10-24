@@ -1,0 +1,161 @@
+module testing/report v1.0.0;
+import "testing/result" take TestReport,TestResult,TestFailure,TestFailureText,TestCounts,TestStatus,InvalidTestResult;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "encoding/hex" take HexEncoded;
+import "encoding/base64" take Base64Encoded;
+import "json/value" take JsonValue,JsonObject,JsonArray,JsonMember,JsonText,JsonNumber,JsonBoolean,JsonNull;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "xml/name" take XmlName;
+import "xml/node" take XmlNode,XmlText,XmlAttribute,XmlElement,XmlDocument;
+object TestStatusName {
+    has origin is TestStatus;TestStatusName(origin is TestStatus){self.origin=origin;}
+    string() is string{match origin{case TestStatus.passed{"passed";}case TestStatus.failed{"failed";}case TestStatus.skipped{"skipped";}case TestStatus.timed_out{"timed_out";}else{"crashed";}}}
+}
+object ReportText {
+    has origin is string;ReportText(origin is string){self.origin=origin;}
+    string() is string{
+        let fragments is @string=(0..origin.length()).map()->index{
+            let scalar=origin.slice(index,index+1);let bytes=Utf8Encoded(scalar).bytes();
+            if scalar=="\\"{"\\\\";}else{if scalar=="\n"{"\\n";}else{if scalar=="\r"{"\\r";}else{if scalar=="\t"{"\\t";}else{
+                if bytes[0].int()<32 || bytes[0].int()==127 || (bytes.size()==2 && bytes[0].int()==194 && bytes[1].int()<=159){"\\x"+HexEncoded(bytes).string();}
+                else{if bytes.size()==3 && bytes[0].int()==226 && bytes[1].int()==128 && (bytes[2].int()==168 || bytes[2].int()==169){"\\x"+HexEncoded(bytes).string();}else{scalar;}}
+            }}}}
+        };fragments.join("");
+    }
+}
+object HumanTestReport {
+    has origin is TestReport;has width is int;
+    HumanTestReport(origin is TestReport,width is int){confirm width>=20 && width<=512 else throw InvalidTestResult("human width must be 20..512 scalars");self.origin=origin;self.width=width;}
+    string() is string{
+        let results=origin.results();let counts=origin.counts();
+        let records is @string=(0..results.size()).map()->index{
+            let result=results.item(index);let failures=result.failures();
+            let problems is @string=(0..failures.size()).map()->at{self.line("  "+ReportText(TestFailureText(failures.item(at)).string()).string());};
+            self.line(TestStatusName(result.status()).string()+" "+ReportText(result.name()).string()+(if result.skip_reason()!=""{" ("+ReportText(result.skip_reason()).string()+")";}else{"";}))+problems.join("")
+                +self.bytes("stdout",result.output().output())+self.bytes("stderr",result.output().errors())
+                +(if result.output().truncated(){"  captured output truncated\n";}else{"";});
+        };
+        "seed="+origin.seed().string()+"\n"+records.join("")+counts.passes().string()+" passed, "+counts.failures().string()+" failed, "+counts.skips().string()+" skipped\n";
+    }
+    private:
+    line(text is string) is string{(if text.length()>width{text.slice(0,width-3)+"...";}else{text;})+"\n";}
+    bytes(label is string,bytes is @byte) is string{
+        if bytes.size()==0{return "";}let count=if bytes.size()<64{bytes.size();}else{64;};
+        let prefix is @byte=(0..count).map()->index{bytes[index];};
+        self.line("  "+label+"(hex)="+HexEncoded(prefix).string()+(if count<bytes.size(){"... "+bytes.size().string()+" bytes";}else{"";}));
+    }
+}
+object TapTestReport {
+    has origin is TestReport;TapTestReport(origin is TestReport){self.origin=origin;}
+    string() is string{
+        let results=origin.results();let lines is @string=(0..results.size()).map()->index{
+            let result=results.item(index);let status=result.status();let failures=result.failures();
+            let diagnostics is @string=(0..failures.size()).map()->at{"# "+ReportText(TestFailureText(failures.item(at)).string()).string()+"\n";};
+            (if status==TestStatus.passed || status==TestStatus.skipped{"ok ";}else{"not ok ";})+(index+1).string()+" - "+ReportText(result.name()).string().split("#").join("\\#")
+                +(if status==TestStatus.skipped{" # SKIP"+(if result.skip_reason()!=""{" "+ReportText(result.skip_reason()).string();}else{"";});}else{"";})+"\n"+diagnostics.join("")
+                +"# status="+TestStatusName(status).string()+" duration_ns="+result.duration().nanoseconds().string()+"\n"
+                +"# stdout(hex)="+HexEncoded(result.output().output()).string()+"\n# stderr(hex)="+HexEncoded(result.output().errors()).string()+"\n"
+                +(if result.output().truncated(){"# captured output truncated\n";}else{"";});
+        };
+        "TAP version 13\n1.."+results.size().string()+(if results.size()==0{" # SKIP empty report";}else{"";})+"\n# seed="+origin.seed().string()+"\n"+lines.join("");
+    }
+}
+object JsonTestReport {
+    has origin is TestReport;JsonTestReport(origin is TestReport){self.origin=origin;}
+    string() is string{
+        let results=origin.results();let counts=origin.counts();
+        let values is @JsonValue=(0..results.size()).map()->index{self.result(results.item(index));};
+        CompactJson(origin:JsonObject([
+            JsonMember("seed",JsonNumber(Decimal(origin.seed().string()))),
+            JsonMember("start_unix_ns",JsonText(origin.start().unix_duration().nanoseconds().string())),
+            JsonMember("duration_ns",JsonText(origin.duration().nanoseconds().string())),
+            JsonMember("counts",JsonObject([JsonMember("passes",JsonNumber(Decimal(counts.passes().string()))),JsonMember("failures",JsonNumber(Decimal(counts.failures().string()))),JsonMember("skips",JsonNumber(Decimal(counts.skips().string()))),JsonMember("total",JsonNumber(Decimal(counts.total().string())))])),
+            JsonMember("results",JsonArray(values)),
+        ])).string();
+    }
+    private:
+    result(result is TestResult) is JsonValue{
+        let failures=result.failures();let problems is @JsonValue=(0..failures.size()).map()->index{self.failure(failures.item(index));};
+        JsonObject([JsonMember("name",JsonText(result.name())),JsonMember("status",JsonText(TestStatusName(result.status()).string())),
+            JsonMember("duration_ns",JsonText(result.duration().nanoseconds().string())),JsonMember("failures",JsonArray(problems)),
+            JsonMember("stdout_base64",JsonText(Base64Encoded(result.output().output()).string())),
+            JsonMember("stderr_base64",JsonText(Base64Encoded(result.output().errors()).string())),JsonMember("truncated",JsonBoolean(result.output().truncated())),JsonMember("skip_reason",JsonText(result.skip_reason()))]);
+    }
+    failure(failure is TestFailure) is JsonValue{
+        let position is JsonValue=if failure.located(){let place=failure.position();JsonObject([JsonMember("module",JsonText(place.source())),JsonMember("line",JsonNumber(Decimal(place.line().string()))),JsonMember("column",JsonNumber(Decimal(place.column().string())))]);}else{JsonNull();};
+        let reasons=failure.causes();
+        let members is @JsonMember=[JsonMember("message",JsonText(failure.message())),JsonMember("position",position)];
+        if reasons.size()==0{JsonObject(members);}else{
+            JsonObject([members[0],members[1],JsonMember("cause",self.failure(reasons.item(0)))]);
+        }
+    }
+}
+
+// JUnit has several consumer dialects. This profile uses a testsuite root,
+// case-level capture properties and Base64 system-out/system-err. It preserves
+// nanosecond durations without float formatting or invalid XML byte decoding.
+object JUnitTestReport {
+    has origin is TestReport;has suite is string;
+    JUnitTestReport(origin is TestReport,suite is string){
+        confirm suite.length()>0 && suite.length()<=4096 else throw InvalidTestResult("JUnit suite length must be 1..4096");self.origin=origin;self.suite=suite;
+    }
+    string() is string {
+        let results=origin.results();let counts=origin.counts();
+        let failed=(0..results.size()).reduce(0)->count,index{count+(if results.item(index).status()==TestStatus.failed{1;}else{0;});};
+        let properties=XmlElement(XmlName("properties"),[
+            self.property("seed",origin.seed().string()),self.property("start_unix_ns",origin.start().unix_duration().nanoseconds().string()),self.property("captured-output-encoding","base64")
+        ]);
+        let children is @XmlNode=(0..results.size()+1).map()->index{if index==0{properties;}else{self.result(results.item(index-1));}};
+        XmlDocument(XmlElement(XmlName("testsuite"),[
+            XmlAttribute(XmlName("name"),JUnitReportText(suite).string()),XmlAttribute(XmlName("tests"),counts.total().string()),
+            XmlAttribute(XmlName("failures"),failed.string()),XmlAttribute(XmlName("errors"),(counts.failures()-failed).string()),
+            XmlAttribute(XmlName("skipped"),counts.skips().string()),XmlAttribute(XmlName("time"),JUnitSeconds(origin.duration()).string())
+        ],children)).xml();
+    }
+    private:
+    property(name is string,value is string) is XmlElement {
+        XmlElement(XmlName("property"),[XmlAttribute(XmlName("name"),name),XmlAttribute(XmlName("value"),value)],[]);
+    }
+    result(result is TestResult) is XmlElement {
+        let status=result.status();let failures=result.failures();
+        let messages is @string=(0..failures.size()).map()->index{
+            let failure=failures.item(index);
+            (if failure.located(){let place=failure.position();JUnitReportText(place.source()).string()+":"+place.line().string()+":"+place.column().string()+": ";}else{"";})+JUnitReportText(TestFailureText(failure).string()).string();
+        };
+        let terminal is @XmlNode=if status==TestStatus.passed{[];}else{
+            if status==TestStatus.skipped{[XmlElement(XmlName("skipped"),[XmlAttribute(XmlName("message"),JUnitReportText(result.skip_reason()).string())],[])];}else{
+                let label=TestStatusName(status).string();let tag=if status==TestStatus.failed{"failure";}else{"error";};
+                [XmlElement(XmlName(tag),[XmlAttribute(XmlName("type"),label)],[XmlText(if messages.size()==0{label;}else{messages.join("\n");})])];
+            }
+        };
+        let output=result.output();
+        let capture is @XmlNode=[
+            XmlElement(XmlName("properties"),[self.property("captured-output-truncated",if output.truncated(){"true";}else{"false";})]),
+            XmlElement(XmlName("system-out"),[XmlText(Base64Encoded(output.output()).string())]),
+            XmlElement(XmlName("system-err"),[XmlText(Base64Encoded(output.errors()).string())])
+        ];
+        let children is @XmlNode=(0..terminal.size()+capture.size()).map()->index{if index<terminal.size(){terminal[index];}else{capture[index-terminal.size()];}};
+        XmlElement(XmlName("testcase"),[XmlAttribute(XmlName("name"),JUnitReportText(result.name()).string()),XmlAttribute(XmlName("classname"),JUnitReportText(suite).string()),XmlAttribute(XmlName("time"),JUnitSeconds(result.duration()).string())],children);
+    }
+}
+object JUnitReportText {
+    has origin is string;JUnitReportText(origin is string){self.origin=origin;}
+    string() is string{
+        let fffe=Utf8Decoded([byte(239),byte(191),byte(190)]).string();
+        let ffff=Utf8Decoded([byte(239),byte(191),byte(191)]).string();
+        ReportText(origin).string().replace(fffe,"\\uFFFE").replace(ffff,"\\uFFFF");
+    }
+}
+object JUnitSeconds {
+    has origin is Duration;JUnitSeconds(origin is Duration){self.origin=origin;}
+    string() is string {
+        let digits=origin.nanoseconds().string();
+        if digits.length()<=9{let zeroes is @string=(0..9-digits.length()).map()->index{"0";};"0."+zeroes.join("")+digits;}
+        else{digits.slice(0,digits.length()-9)+"."+digits.slice(digits.length()-9,digits.length());}
+    }
+}
+
+test "empty TAP report carries an explicit skipped plan" {let duration=Duration(0.rat(),DurationUnit.second);test.is(TapTestReport(TestReport(Instant(duration),duration,0,[])).string(),"TAP version 13\n1..0 # SKIP empty report\n# seed=0\n");}

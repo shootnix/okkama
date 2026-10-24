@@ -1,0 +1,18 @@
+// Выбрать обработчик по классу HTTP-ответа
+//
+// Классифицировать ответ сервера: Status хранит код и предоставляет класс ответа.
+//
+// Запуск: ./examples/cookbook/run lab example-http-status
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-status
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/status" take Status, StatusClass;
+import "io/stdout" take Stdout;
+main() is int {
+    let status=Status(422);Stdout().writeln(status.code().string()+" "+status.phrase());
+    let extension=Status(599);
+    Stdout().writeln("extension class is server_error: "+(extension.class()==StatusClass.server_error).string());
+    0;
+}

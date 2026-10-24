@@ -1,0 +1,31 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Versioned<T> {
+    revised(value is T) is ^Versioned<T>;
+    current() is T;
+}
+
+object Cell<T> does Versioned<T> {
+    has value is T;
+    has version is int = 0;
+    Cell(:value);
+    revised(value is T) is ^Cell<T> {
+        ^value = value;
+        ^version = version + 1;
+    }
+    current() is T { value; }
+    version() is int { version; }
+}
+
+main() is int {
+    let out = Stdout();
+    let typed is Versioned<int> = Cell(value: 1);
+    let updated = typed.revised(2);
+    out.writeln(updated.current().string());
+    let concrete = Cell(value: "a").revised("b").revised("c");
+    out.writeln(concrete.current() + " v" + concrete.version().string());
+    0;
+}
+

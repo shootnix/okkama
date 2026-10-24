@@ -1,0 +1,14 @@
+module runtime/single_byte v1.0.0;
+
+// Portable ASCII and ISO-8859-1 boundary for encoding/single_byte.
+// Backend locale, native code pages and operating-system defaults never
+// participate in these operations.
+
+native ascii_representable_prefix(origin is string) is int;
+native ascii_encode(origin is string) is @byte;
+native ascii_valid_prefix(origin is @byte) is int;
+native ascii_decode(origin is @byte) is string;
+
+native latin1_representable_prefix(origin is string) is int;
+native latin1_encode(origin is string) is @byte;
+native latin1_decode(origin is @byte) is string;

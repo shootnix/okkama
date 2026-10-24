@@ -1,0 +1,22 @@
+// Передать пользовательский текст в URL
+//
+// Вставить пользовательское значение в компонент URL: PercentEncoded и PercentDecoded учитывают выбранный UrlComponent.
+//
+// Запуск: ./examples/cookbook/run lab example-url-percent
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-url-percent
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let encoded=PercentEncoded("чай & кофе",UrlComponent.data).string();
+    Stdout().writeln(encoded);
+    Stdout().writeln(PercentDecoded(encoded).string());
+    Stdout().writeln(PercentDecoded("%252F+%2F").string());
+    try {PercentDecoded("чай%XZ").bytes();}
+    catch failure is InvalidPercentEncoding {Stdout().writeln(failure.text());}
+    0;
+}

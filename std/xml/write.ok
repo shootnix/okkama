@@ -1,0 +1,20 @@
+module xml/write v1.0.0;
+import "xml/name" take InvalidXml;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches,FirstRegexMatch;
+object XmlCharacters {
+    XmlCharacters(origin is string){
+        confirm origin.length()<=33554432 else throw InvalidXml(0,"XML text exceeds 32 Mi scalars");
+        let invalid=Regex("[\\x{0}-\\x{8}\\x{B}\\x{C}\\x{E}-\\x{1F}\\x{FFFE}\\x{FFFF}]");
+        if RegexMatches(origin,invalid).found(){throw InvalidXml(FirstRegexMatch(origin,invalid).range().start(),"character forbidden by XML 1.0");}
+    }
+}
+object EscapedXml {
+    has origin is string;has attribute is bool;
+    EscapedXml(origin is string,attribute is bool){XmlCharacters(origin);self.origin=origin;self.attribute=attribute;}
+    string() is string {
+        let escaped=origin.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\r","&#13;");
+        let text=if attribute{escaped.replace("\"","&quot;").replace("\t","&#9;").replace("\n","&#10;");}else{escaped;};
+        confirm text.length()<=33554432 else throw InvalidXml(0,"escaped XML exceeds 32 Mi scalars");text;
+    }
+}

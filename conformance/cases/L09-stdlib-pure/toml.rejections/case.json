@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.toml.rejections",
+  "title": "TOML conflicts and overflow are rejected with coordinates",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TOML.PARSE",
+      "aspects": [
+        "invalid",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - duplicate key\nok 2 - integer overflow\nok 3 - unterminated string\nchecks: 3, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/toml/parse.ok",
+    "TOML 1.0.0"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "TOML 1.0 forbids redefining a key (reported on line 2) and requires integers to fit signed 64-bit; std/toml reports InvalidToml with source coordinates."
+  },
+  "status": "mandatory"
+}

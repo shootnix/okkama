@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Scale {
+    has factor is int;
+    Scale(:factor);
+    operation() is (int) is int {
+        (v is int) is int { v * self.factor; };
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let doubler = Scale(factor: 3).operation();
+    out.writeln(doubler(7).string());
+    0;
+}

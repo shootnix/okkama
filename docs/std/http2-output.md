@@ -1,0 +1,13 @@
+# Internal HTTP2 connection output
+
+`Http2ConnectionOutput(output,maximum,byte_limit)` is a lazy, single-use wire writer with synchronous bounded admission. maximum is 1..256 jobs; byte_limit is 9..1048576 serialized bytes including all nine-byte frame headers. Active work remains charged until its wire operation settles. Admission beyond either bound throws `Http2OutputLimit`; it never waits in the sole reader. Overflow is a connection-owner failure requiring transport disposal.
+
+`submit(frames)` admits a prevalidated nonempty batch of at most 1024 frames and returns `Http2OutputTicket`. `headers(stream,fields,budget,fragment,end_stream)` preflights HPACK and fragmentation with the same internal `Http2EncodedHeaderFrames` as direct block writing. `frame(frame)` implements the input loop's control-queue role. `run()` serializes complete batches, so CONTINUATION cannot interleave with sibling headers or control output. These internal collaborators require the owning scheduler to obey peer frame size, stream state and DATA credit; raw submission does not establish those invariants.
+
+A ticket's `result()` observes completion. Cancelling that waiter or `ticket.cancel()` cancels only the ticket. Unstarted work is skipped; already started batches finish fully even after ticket cancellation. The owner can enqueue RST_STREAM behind the block without corrupting siblings. A cancelled ticket may already have emitted bytes; it is not a rollback signal. `finish()` stops admission and drains queued work. Connection cancellation or write failure settles all outstanding tickets as `Http2OutputStopped` and drains active I/O; the caller must then dispose the physical transport. `run()` preserves its original failure, while ticket failures deliberately use the fixed stopped classification. The writer borrows transport and never closes it implicitly.
+
+Output storage uses a bounded array FIFO (at most 256 jobs); no unbounded connection history is kept. This is not yet a fair DATA scheduler or complete H2 session. 491 eight cases plus 483/490 compatibility: three files / 25 assertions PASS after shared-header preflight refactor. Std-only, no full rerun.
+
+`examples/std-v4/http2-duplex.ok` runs the consuming reader and queued writer together over real loopback TCP. Two GET streams receive fragmented response heads in reverse order, padded DATA and PING ACK before EOF. 492 three CLI assertions PASS; this does not establish application body leases or live flow control.
+
+Internal submit/headers overloads accept Http2OutputStarting to commit flow or mark a stream opened immediately before physical emission. Capacity-generation events let DATA producers suspend without blocking control publication.

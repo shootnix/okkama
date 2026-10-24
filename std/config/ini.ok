@@ -1,0 +1,344 @@
+module config/ini v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "runtime/ini" take IniParseState, IniWriteState, ini_parse_state,
+    ini_parse_valid, ini_parse_line, ini_parse_column, ini_parse_message,
+    ini_section_count, ini_section_name, ini_entry_count, ini_entry_name,
+    ini_entry_value, ini_write_state, ini_write_section, ini_write_entry,
+    ini_write_status, ini_write_name, ini_write_parent, ini_write_string;
+
+// Immutable INI bindings, sections and documents with a bounded text codec.
+// The model never infers grammar from a name/value.
+//
+//     let settings = IniSection("settings", [IniEntry("name", "Ada")]);
+//     let document = IniDocument([settings]);
+//     document.section("settings").value("name"); // "Ada"
+//     document.print(observer); // explicit nominal protocol, no hidden I/O
+//
+// Names/values are exact Unicode strings. Empty names, dots, whitespace,
+// case distinctions and normalization variants remain distinct. DEFAULT is an
+// ordinary section, never an ambient parent. Duplicate names are typed errors.
+// Entries replace the old map-shaped API with ordered nominal binding objects.
+//
+// Section/document constructors snapshot size() once, then item(0..size-1) once
+// in order. Bounds are checked before reading items. Defaults: 1024 entries or
+// 128 sections; an explicit final argument replaces the nonnegative bound.
+// InvalidIniLimit precedes source observation, InvalidIniSize rejects negative
+// size, IniLimitExceeded rejects cardinality above the bound; zero admits empty.
+// Sources are borrowed and never closed. Immutable children remain reachable
+// through the snapshot, while the original sequence is not revisited. Failures
+// from size/item and observers propagate unchanged. No owned resource/destroy.
+//
+// Duplicate checking is O(n²) within the bound, lookup O(n). Strings are retained
+// coordinates; container budgets do not limit string length. Parsing and
+// rendering have independent text budgets (docs/std/ini-guide.md).
+//
+// print() emits each section header followed by entries in order. Empty sections
+// still emit section(name); an empty document emits nothing. Every call repeats
+// the same protocol. Observer errors stop emission. No JSON, reflection or casts.
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/config/ini.ok
+
+role IniContent {
+    print(to is IniWriting) is void;
+}
+role IniWriting {
+    section(name is string) is void;
+    entry(name is string, value is string) is void;
+    fake {
+        section(name is string) is void { test.is(name, "settings"); }
+        entry(name is string, value is string) is void {
+            if name == "name" { test.is(value, "Ada"); }
+            else { test.is(name, "enabled"); test.is(value, "true"); }
+        }
+    }
+}
+
+object IniEntry {
+    has key is string;
+    has origin is string;
+    IniEntry(name is string, value is string) { key = name; origin = value; }
+    name() is string { key; }
+    value() is string { origin; }
+    print(to is IniWriting) is void { to.entry(key, origin); }
+}
+
+object IniSection does IniContent {
+    has label is string;
+    has origin is @IniEntry;
+    IniSection(name is string, entries is Sequencing<IniEntry>) {
+        label = name;
+        let size = entries.size();
+        confirm size >= 0 else throw InvalidIniSize();
+        confirm size <= 1024 else throw IniLimitExceeded();
+        let snapshot is @IniEntry = (0..size).map() -> index { entries.item(index); };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateIniEntry(name, snapshot[index].name());
+            }
+        }
+    }
+    IniSection(name is string, entries is Sequencing<IniEntry>, maximum_entries is int) {
+        confirm maximum_entries >= 0 else throw InvalidIniLimit();
+        label = name;
+        let size = entries.size();
+        confirm size >= 0 else throw InvalidIniSize();
+        confirm size <= maximum_entries else throw IniLimitExceeded();
+        let snapshot is @IniEntry = (0..size).map() -> index { entries.item(index); };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateIniEntry(name, snapshot[index].name());
+            }
+        }
+    }
+    name() is string { label; }
+    entries() is Sequencing<IniEntry> { origin; }
+    membership(name is string) is bool { self.index(name) >= 0; }
+    value(name is string) is string {
+        let at = self.index(name);
+        confirm at >= 0 else throw MissingIniEntry(label, name);
+        origin[at].value();
+    }
+    print(to is IniWriting) is void {
+        to.section(label);
+        for origin -> entry { entry.print(to); }
+    }
+    private:
+    index(name is string) is int {
+        (0..origin.size()).reduce(-1) -> found, index {
+            if origin[index].name() == name { index; } else { found; }
+        };
+    }
+}
+
+object IniDocument does IniContent {
+    has origin is @IniSection;
+    IniDocument(sections is Sequencing<IniSection>) {
+        let size = sections.size();
+        confirm size >= 0 else throw InvalidIniSize();
+        confirm size <= 128 else throw IniLimitExceeded();
+        let snapshot is @IniSection = (0..size).map() -> index { sections.item(index); };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateIniSection(snapshot[index].name());
+            }
+        }
+    }
+    IniDocument(sections is Sequencing<IniSection>, maximum_sections is int) {
+        confirm maximum_sections >= 0 else throw InvalidIniLimit();
+        let size = sections.size();
+        confirm size >= 0 else throw InvalidIniSize();
+        confirm size <= maximum_sections else throw IniLimitExceeded();
+        let snapshot is @IniSection = (0..size).map() -> index { sections.item(index); };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateIniSection(snapshot[index].name());
+            }
+        }
+    }
+    sections() is Sequencing<IniSection> { origin; }
+    section(name is string) is IniSection {
+        let at = (0..origin.size()).reduce(-1) -> found, index {
+            if origin[index].name() == name { index; } else { found; }
+        };
+        confirm at >= 0 else throw MissingIniSection(name);
+        origin[at];
+    }
+    print(to is IniWriting) is void {
+        for origin -> section { section.print(to); }
+    }
+}
+
+// Lazy bounded parser. Defaults: 1 Mi Unicode scalars, 128 sections, 10000 total
+// entries; each section <=1024 entries. Negative configuration fails immediately.
+// LF/CRLF, blank lines, whole-line #/; comments, explicit [section], name=value.
+// Bare tokens trim ASCII space/tab. Double quotes support backslash/quote,
+// b/t/n/f/r, uXXXX/UXXXXXXXX scalar escapes. No multiline or inline comments.
+// Raw controls except tab, duplicate decoded names and trailing material fail.
+// Failures retain one-based original scalar line/column, cached across calls.
+// Returned values own their coordinates and outlive this parser. No file I/O.
+object ParsedIni does IniContent {
+    has state is IniParseState;
+    ParsedIni(origin is string) { state = ini_parse_state(origin, 1048576, 128, 10000); }
+    ParsedIni(origin is string, maximum_input is int, maximum_sections is int, maximum_entries is int) {
+        confirm maximum_input >= 0 && maximum_sections >= 0 && maximum_entries >= 0
+            else throw InvalidIniLimit();
+        state = ini_parse_state(origin, maximum_input, maximum_sections, maximum_entries);
+    }
+    value() is IniDocument {
+        confirm ini_parse_valid(state) else throw InvalidIni(
+            ini_parse_line(state), ini_parse_column(state), ini_parse_message(state));
+        let sections is @IniSection = (0..ini_section_count(state)).map() -> section {
+            let entries is @IniEntry = (0..ini_entry_count(state, section)).map() -> entry {
+                IniEntry(ini_entry_name(state, section, entry), ini_entry_value(state, section, entry));
+            };
+            IniSection(ini_section_name(state, section), entries);
+        };
+        IniDocument(sections, sections.size());
+    }
+    print(to is IniWriting) is void { self.value().print(to); }
+}
+
+// Lazy canonical text through the nominal print protocol. Each string() starts
+// a new emission; the origin is borrowed, never closed. Every coordinate is
+// double-quoted; ASCII controls are escaped, ordinary Unicode remains literal.
+// Headers/bindings end LF; empty document gives "". Default output bound is
+// 1048576 Unicode scalars; zero permits only empty output. No partial result.
+// A custom emitter must start a section before entries and cannot emit duplicate
+// names. Even if it catches an observer exception, string() repeats that failure.
+object IniString {
+    has origin is IniContent;
+    has maximum is int;
+    IniString(origin is IniContent) { self.origin = origin; maximum = 1048576; }
+    IniString(origin is IniContent, maximum_output is int) {
+        confirm maximum_output >= 0 else throw InvalidIniLimit();
+        self.origin = origin;
+        maximum = maximum_output;
+    }
+    string() is string {
+        let emission = IniTextEmission(maximum);
+        origin.print(emission);
+        emission.string();
+    }
+}
+
+// Internal protocol adapter: public domain exceptions shield the private ABI.
+object IniTextEmission does IniWriting {
+    has state is IniWriteState;
+    IniTextEmission(maximum is int) { state = ini_write_state(maximum); }
+    section(name is string) is void { ini_write_section(state, name); self.valid(); }
+    entry(name is string, value is string) is void { ini_write_entry(state, name, value); self.valid(); }
+    string() is string { self.valid(); ini_write_string(state); }
+    private:
+    valid() is void {
+        match ini_write_status(state) {
+            case 0 {}
+            case 2 { throw DuplicateIniSection(ini_write_name(state)); }
+            case 3 { throw DuplicateIniEntry(ini_write_parent(state), ini_write_name(state)); }
+            case 4 { throw IniOutputLimitExceeded(); }
+            else { throw InvalidIniEmission(); }
+        }
+    }
+}
+object InvalidIni does Error {
+    has row is int;
+    has position is int;
+    has message is string;
+    InvalidIni(line is int, column is int, message is string) {
+        row = line; position = column; self.message = message;
+    }
+    line() is int { row; }
+    column() is int { position; }
+    text() is string { message; }
+}
+object InvalidIniEmission does Error {
+    InvalidIniEmission();
+    text() is string { "invalid INI emission"; }
+}
+object IniOutputLimitExceeded does Error {
+    IniOutputLimitExceeded();
+    text() is string { "INI output limit exceeded"; }
+}
+
+object MissingIniSection does Error {
+    has key is string;
+    MissingIniSection(name is string) { key = name; }
+    name() is string { key; }
+    text() is string { "missing INI section: " + key; }
+}
+object DuplicateIniSection does Error {
+    has key is string;
+    DuplicateIniSection(name is string) { key = name; }
+    name() is string { key; }
+    text() is string { "duplicate INI section: " + key; }
+}
+object MissingIniEntry does Error {
+    has parent is string;
+    has key is string;
+    MissingIniEntry(section is string, name is string) { parent = section; key = name; }
+    section() is string { parent; }
+    name() is string { key; }
+    text() is string { "missing INI entry in " + parent + ": " + key; }
+}
+object DuplicateIniEntry does Error {
+    has parent is string;
+    has key is string;
+    DuplicateIniEntry(section is string, name is string) { parent = section; key = name; }
+    section() is string { parent; }
+    name() is string { key; }
+    text() is string { "duplicate INI entry in " + parent + ": " + key; }
+}
+object InvalidIniLimit does Error {
+    InvalidIniLimit();
+    text() is string { "INI container limit must be nonnegative"; }
+}
+object InvalidIniSize does Error {
+    InvalidIniSize();
+    text() is string { "INI source size must be nonnegative"; }
+}
+object IniLimitExceeded does Error {
+    IniLimitExceeded();
+    text() is string { "INI container limit exceeded"; }
+}
+
+
+test "INI ordered section and binding coordinates" {
+    let section = IniSection("settings", [IniEntry("name", "Ada"), IniEntry("enabled", "true")]);
+    let document = IniDocument([section]);
+    test.is(document.sections().size(), 1);
+    test.is(document.section("settings").name(), "settings");
+    test.is(section.entries().first().name(), "name");
+    test.is(section.entries().last().value(), "true");
+    test.ok(section.membership("name"));
+    test.is(section.membership("Name"), false);
+    test.is(section.value("name"), "Ada");
+    document.print(IniWriting.fake());
+}
+test "INI literal names have no normalization or ambient default" {
+    let document = IniDocument([IniSection("", []), IniSection("DEFAULT", []), IniSection("a.b", [])]);
+    test.is(document.section("").name(), "");
+    test.is(document.section("a.b").entries().size(), 0);
+    let section = IniSection("settings", [IniEntry("A", "1"), IniEntry("a", "2"), IniEntry("é", "3"), IniEntry("é", "4")]);
+    test.is(section.entries().size(), 4);
+    test.is(section.value("A"), "1");
+    test.is(section.value("a"), "2");
+}
+test "INI missing and duplicate coordinates remain typed" {
+    test.is(try {IniDocument([]).section("lost"); "";} catch error is MissingIniSection {error.name();}, "lost");
+    test.is(try {IniSection("s", []).value("lost"); "";} catch error is MissingIniEntry {error.section()+":"+error.name();}, "s:lost");
+    test.is(try {IniDocument([IniSection("", []), IniSection("", [])]); "bad";} catch error is DuplicateIniSection {error.name();}, "");
+    test.is(try {IniSection("s", [IniEntry("k", "1"), IniEntry("k", "2")]); "";} catch error is DuplicateIniEntry {error.section()+":"+error.name();}, "s:k");
+}
+test "INI container budgets and empty emission" {
+    test.is(IniDocument([], 0).sections().size(), 0);
+    test.is(IniSection("", [], 0).entries().size(), 0);
+    test.ok(try {IniDocument([], -1); false;} catch error is InvalidIniLimit {true;});
+    test.ok(try {IniSection("", [], -1); false;} catch error is InvalidIniLimit {true;});
+    test.ok(try {IniDocument([IniSection("s", [])], 0); false;} catch error is IniLimitExceeded {true;});
+    test.ok(try {IniSection("", [IniEntry("", "")], 0); false;} catch error is IniLimitExceeded {true;});
+    IniDocument([]).print(IniWriting.fake());
+}
+
+test "INI parser and canonical renderer round trip through content protocol" {
+    let parsed = ParsedIni("[settings]\nname=Ada\nenabled=true");
+    test.is(parsed.value().section("settings").value("name"), "Ada");
+    parsed.print(IniWriting.fake());
+    let text = IniString(parsed).string();
+    test.is(text, "[\"settings\"]\n\"name\"=\"Ada\"\n\"enabled\"=\"true\"\n");
+    test.is(ParsedIni(text).value().section("settings").value("enabled"), "true");
+    test.is(IniString(IniDocument([]), 0).string(), "");
+}
+test "INI syntax and codec budgets remain typed failures" {
+    for ["orphan=x", "[s]\nx=1\nx=2", "[s]\n[s]", "[s]\nx=\"unterminated"] -> source {
+        test.ok(try {ParsedIni(source).value();false;} catch error is InvalidIni {true;});
+    }
+    test.ok(try {ParsedIni("[s]\nx=y", 6, 1, 1).value();false;} catch error is InvalidIni {true;});
+    test.ok(try {IniString(IniSection("s", []), 1).string();false;} catch error is IniOutputLimitExceeded {true;});
+}

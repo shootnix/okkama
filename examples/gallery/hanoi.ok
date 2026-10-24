@@ -1,0 +1,34 @@
+// Ханойская башня
+// Задача: Перенести четыре диска и проверить минимальное число ходов.
+// Запуск из корня: ./examples/gallery/run hanoi
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: рекурсия возвращает план; move — отдельное неизменяемое значение.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/hanoi.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/hanoi v1.0.0;
+import "io/stdout" take Stdout;
+object Move {
+    has disk is int;has origin,destination is string;
+    Move(disk is int,origin is string,destination is string){self.disk=disk;self.origin=origin;self.destination=destination;}
+    string() is string{"disk "+disk.string()+" "+origin+" -> "+destination;}
+}
+object Hanoi {
+    Hanoi();
+    plan(disks is int,origin is string,destination is string,spare is string) is @Move {
+        confirm disks>=0 && disks<=12;
+        if disks==0{let empty is @Move=[];return empty;}
+        let before=self.plan(disks-1,origin,spare,destination);
+        let after=self.plan(disks-1,spare,destination,origin);
+        (0..before.size()+1+after.size()).map()->i{
+            if i<before.size(){before[i];}else{
+                if i==before.size(){Move(disks,origin,destination);}else{after[i-before.size()-1];}
+            }
+        };
+    }
+}
+main() is int {
+    let moves=Hanoi().plan(4,"A","C","B");confirm moves.size()==15;
+    for (0..moves.size())->i{Stdout().writeln((i+1).string()+": "+moves[i].string());}
+    Stdout().writeln("Solved in "+moves.size().string()+" moves.");0;
+}

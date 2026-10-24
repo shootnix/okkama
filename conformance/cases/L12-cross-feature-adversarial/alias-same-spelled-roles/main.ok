@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "billing/money" as money;
+import "inventory/money" as stock;
+
+object Price does money.Amount {
+    Price();
+    cents() is int { 250; }
+}
+
+main() is int {
+    let p is money.Amount = Price();
+    Stdout().writeln(p.cents().string());
+    Stdout().writeln(stock.Amount2().units().string());
+    0;
+}

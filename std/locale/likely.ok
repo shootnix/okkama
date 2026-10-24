@@ -1,0 +1,40 @@
+module locale/likely v1.0.0;
+import "locale/tag" take Locale,LocaleFromLanguageTag,MissingLocaleSubtag;
+import "locale/internal/likely" take CldrLikely;
+// CLDR add-likely-subtags, explicitly requested. Existing coordinates survive;
+// 'und' supplies the unknown language coordinate. Variants are preserved.
+object LikelyLocale {
+    has origin is Locale;LikelyLocale(origin is Locale){self.origin=origin;}
+    #projected
+    value() is Locale {
+        let language=try{origin.language();}catch e is MissingLocaleSubtag{"";};
+        if language==""{return origin;}
+        let script=try {origin.script();} catch e is MissingLocaleSubtag {"";};
+        let region=try {origin.region();} catch e is MissingLocaleSubtag {"";};
+        let table=CldrLikely();
+        let requests is @string=[
+            language+(if script=="" {"";} else {"-"+script;})+(if region=="" {"";} else {"-"+region;}),
+            language+(if script=="" {"";} else {"-"+script;}),
+            language+(if region=="" {"";} else {"-"+region;}),language,
+            "und"+(if script=="" {"";} else {"-"+script;})+(if region=="" {"";} else {"-"+region;}),
+            "und"+(if script=="" {"";} else {"-"+script;}),
+            "und"+(if region=="" {"";} else {"-"+region;}),"und",
+        ];
+        for requests->key {
+            let found=table.lookup(key);
+            if found!="" {
+                let inferred=LocaleFromLanguageTag(found).value();
+                let extlangs=origin.extlangs();let extended is @string=(0..extlangs.size()).map()->index{extlangs.item(index);};
+                let expanded=Locale(if language=="und" {inferred.language();} else {language;},
+                    if script=="" {inferred.script();} else {script;},
+                    if region=="" {inferred.region();} else {region;},origin.variants());
+                let base=expanded.string();let primary=expanded.language();
+                let retained=primary+(if extended.size()==0{"";}else{"-"+extended.join("-");})+base.slice(primary.length(),base.length());
+                return LocaleFromLanguageTag(retained+origin.suffix()).value();
+            }
+        }
+        origin;
+    }
+}
+
+test "likely expansion is explicit and keeps supplied region" {test.is(LikelyLocale(Locale("zh","TW")).value().string(),"zh-Hant-TW");}

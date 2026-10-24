@@ -1,0 +1,27 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/channel" take Channel, Sending, Receiving, ChannelClosed, InvalidChannelCapacity;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/collect" take AllFutures, Raced, NoFutures;
+import "async/cancellation" take Cancellation, Cancelling;
+import "async/atomic" take Atomic;
+
+object Sleeper {
+    has gate is Event;
+    Sleeper(:gate);
+    async run() is int {
+        defer Stdout().writeln("sleeper cleanup");
+        await gate.wait();
+        1;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let gate is Event = Event();
+    let child = spawn Sleeper(gate: gate).run();
+    out.writeln("main done");
+    0;
+}

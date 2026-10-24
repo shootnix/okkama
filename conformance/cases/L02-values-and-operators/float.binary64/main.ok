@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(if 0.1 + 0.2 == 0.3 { "equal"; } else { "not equal"; });
+    out.writeln(if 0.1 + 0.2 > 0.3 { "greater"; } else { "?"; });
+    out.writeln(if float(9007199254740993) == float(9007199254740992) { "rounded"; } else { "exact"; });
+    0;
+}

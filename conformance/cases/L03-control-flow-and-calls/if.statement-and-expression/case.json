@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.if.statement-and-expression",
+  "title": "if statements and complete if expressions",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.IF",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "big\nbig\n11\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.11",
+    "docs/okkama-spec-11072026.md#9.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.11: if with both branches is an expression (grammar if_expr = if expr block else block); a false else-less if statement does nothing."
+  },
+  "status": "mandatory"
+}

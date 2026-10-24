@@ -1,0 +1,11 @@
+module db/sqlite/script v1.0.0;
+import "db/statement" take Execution;
+import "collections/sequence" take Sequencing;
+import "encoding/utf" take Utf8Encoded;
+role SqliteScripting{async script(source is string) is Sequencing<Execution>;}
+object SqliteScript{
+    has origin is SqliteScripting;has source is string;
+    SqliteScript(origin is SqliteScripting,source is string){confirm Utf8Encoded(source).bytes().size()<=1048576 else throw InvalidSqliteScript();self.origin=origin;self.source=source;}
+    async executions() is Sequencing<Execution>{await origin.script(source);}
+}
+object InvalidSqliteScript does Error{InvalidSqliteScript();text() is string{"SQLite script exceeds byte budget";}}

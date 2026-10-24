@@ -1,0 +1,28 @@
+// Книжный магазин: HTML-страницы и обработчики JSON API.
+// Получает хранилище через конструктор StorePages; маршруты собирает main.ok.
+// Пользовательский текст экранируется перед включением в HTML; изменения принимаются POST-запросами.
+// Для запуска сервера и примеров HTTP см. README.md.
+
+module cookbook/web/bookstore/pages v1.0.0;
+import "../../support/http" take Page;
+import "model" take BookShelf;
+import "web/request" take WebRequest;
+import "web/reply" take Json;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult;
+import "html/entities" take EscapedHtml;
+import "json/read" take JsonView;
+
+object StorePages {
+    has shelf is BookShelf;StorePages(shelf is BookShelf){self.shelf=shelf;}
+    async index(request is WebRequest) is HandlingResult{
+        let entries=JsonView(await shelf.books()).items();let cards=entries.map()->book{
+            "<li><strong>"+EscapedHtml(book.text("title")).string()+"</strong> — "+book.int("price_cents").string()+" центов; в наличии "+book.int("stock").string()+" <button data-book="+book.int("id").string()+">Купить</button></li>";
+        };
+        Page("Книжный магазин Okkama","<nav><a href=/api/books>Каталог JSON</a> · <a href=/api/orders>Заказы</a></nav><ul>"+cards.join("")+"</ul><p id=result></p><script>document.querySelectorAll('[data-book]').forEach(b=>b.onclick=async()=>{const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({book:Number(b.dataset.book),quantity:1})});document.querySelector('#result').textContent=await r.text();if(r.ok)setTimeout(()=>location.reload(),800)});</script>").reply();
+    }
+    async books(request is WebRequest) is HandlingResult{Json(200,await shelf.books());}
+    async orders(request is WebRequest) is HandlingResult{Json(200,await shelf.orders());}
+    async buy(request is WebRequest) is HandlingResult{let body=await request.json(16384);Json(201,await shelf.purchase(body.int("book"),body.int("quantity")));}
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"Страница не найдена");}
+}

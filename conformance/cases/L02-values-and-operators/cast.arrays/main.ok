@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let ints = @int(1, 2.9, byte(3));
+    out.writeln(ints.size().string() + " " + ints[1].string());
+    let empty = @byte();
+    out.writeln(empty.size().string());
+    let texts = @string(1, true, 2.5);
+    out.writeln(texts.join(","));
+    let nums is @int = [4, 5];
+    let more is @int = [6];
+    let joined = @int(0, nums..., more..., 9);
+    let joined_text is @string = joined.map() -> v { v.string(); };
+    out.writeln(joined_text.join(","));
+    let framed = @byte(0, nums..., 255);
+    out.writeln(framed.size().string());
+    0;
+}

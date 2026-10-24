@@ -1,0 +1,60 @@
+module http/http1_message_writing v1.0.0;
+import "http/message" take Request,Response,InvalidHttpMessage;
+import "http/http1_head" take Http1RequestHead,Http1ResponseHead,Http1Limits,ParsedHttp1RequestHead;
+import "http/http1_framing" take Http1RequestFraming,Http1ResponseFraming,Http1BodyPlan,Http1BodyKind;
+import "http/http1_writing" take Http1RequestHeadWriting,Http1ResponseHeadWriting;
+import "http/http1_body_writing" take Http1BodyWriting;
+import "http/http1_body_check" take Http1BodyCheck;
+import "http/header" take Headers;
+import "http/method" take Method;
+import "http/body" take BodyOpening,EmptyBody;
+import "net/stream" take AsyncWriting;
+import "async/scope" take FutureScope,Supervising;
+import "net/unix" take UnixPaired;
+import "http/http1_reading" take Http1RequestHeadReading;
+
+object Http1RequestWriting {
+    has pending is Future<AsyncWriting>;
+    Http1RequestWriting(origin is AsyncWriting,request is Request){pending=Http1MessageOutput().request(origin,request,Http1Limits());}
+    Http1RequestWriting(origin is AsyncWriting,request is Request,limits is Http1Limits){pending=Http1MessageOutput().request(origin,request,limits);}
+    result() is Future<AsyncWriting>{pending;}
+}
+object Http1ResponseWriting {
+    has pending is Future<AsyncWriting>;
+    Http1ResponseWriting(origin is AsyncWriting,response is Response,method is Method){pending=Http1MessageOutput().response(origin,response,method,Http1Limits());}
+    Http1ResponseWriting(origin is AsyncWriting,response is Response,method is Method,limits is Http1Limits){pending=Http1MessageOutput().response(origin,response,method,limits);}
+    result() is Future<AsyncWriting>{pending;}
+}
+object Http1MessageOutput {
+    Http1MessageOutput();
+    request(origin is AsyncWriting,request is Request,limits is Http1Limits) is Future<AsyncWriting> {
+        let head=Http1RequestHead(request.method(),request.target(),request.headers(),request.version());let plan=Http1RequestFraming(head,limits).plan();
+        let writing=Http1RequestHeadWriting(origin,head,limits);
+        self.writing(writing.result(),request.body(),plan,head.headers(),limits,true);
+    }
+    response(origin is AsyncWriting,response is Response,method is Method,limits is Http1Limits) is Future<AsyncWriting> {
+        let head=Http1ResponseHead(response.status(),response.headers(),response.version());let plan=Http1ResponseFraming(head,method,limits).plan();
+        let writing=Http1ResponseHeadWriting(origin,head,method,limits);
+        self.writing(writing.result(),response.body(),plan,head.headers(),limits,false);
+    }
+    writing(head is Future<AsyncWriting>,body is BodyOpening,plan is Http1BodyPlan,fields is Headers,limits is Http1Limits,request is bool) is Future<AsyncWriting> {
+        confirm plan.kind()!=Http1BodyKind.tunnel && plan.kind()!=Http1BodyKind.upgrade else throw InvalidHttpMessage("upgraded response requires dedicated protocol handling");
+        let operation=Http1MessageWriteOperation(head,body,plan,fields,limits,request);
+        let scope is FutureScope<AsyncWriting,AsyncWriting>=FutureScope(action:operation.write);scope.result();
+    }
+}
+object Http1MessageWriteOperation {
+    has head is Future<AsyncWriting>;has body is BodyOpening;has plan is Http1BodyPlan;has fields is Headers;has limits is Http1Limits;has request is bool;
+    Http1MessageWriteOperation(head is Future<AsyncWriting>,body is BodyOpening,plan is Http1BodyPlan,fields is Headers,limits is Http1Limits,request is bool){self.head=head;self.body=body;self.plan=plan;self.fields=fields;self.limits=limits;self.request=request;}
+    async write(group is Supervising<AsyncWriting>) is AsyncWriting {
+        Http1BodyCheck(body,plan,limits,request).known();
+        group.start(head);let origin=await head;
+        let writing=Http1BodyWriting(origin,body,plan,fields,limits,4096).result();group.start(writing);await writing;
+    }
+}
+async test "complete empty request round-trips over a borrowed stream" {
+    let pair=await UnixPaired().result();let output=pair.first();let input=pair.second();defer output.close();defer input.close();
+    let head=ParsedHttp1RequestHead("GET / HTTP/1.1\r\nHost: a\r\n\r\n").value();
+    await Http1RequestWriting(output.output(),head.request(EmptyBody())).result();
+    let parsed=await Http1RequestHeadReading(input.input()).result();test.is(parsed.head().target().string(),"/");test.ok(!output.closed());
+}

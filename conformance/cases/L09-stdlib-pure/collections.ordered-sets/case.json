@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.collections.ordered-sets",
+  "title": "ordered sets keep first occurrences and deterministic order",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.COLLECTIONS.SET",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - deduplicated order\nok 2 - size\nok 3 - membership\nok 4 - union order\nok 5 - intersection keeps left order\nok 6 - difference\nchecks: 6, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/set.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "collections/set: OrderedSet keeps the first occurrence; Union traverses left then unseen right values; Intersection/Difference retain left order."
+  },
+  "status": "mandatory"
+}

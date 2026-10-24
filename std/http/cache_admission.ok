@@ -1,0 +1,76 @@
+module http/cache_admission v1.0.0;
+import "http/message" take Request;
+import "http/cache_memory" take CachedHttpEntry;
+import "encoding/single_byte" take Latin1Encoded;
+import "encoding/hex" take HexEncoded;
+import "runtime/crypto" as native_crypto;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "io/stream" take Closing;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/lock" take Lock,LockGuard;
+// Short-lived admission keys never contain wire credentials. A digest collision
+// can only serialize extra calls: cache identity/Vary checks remain independent.
+object CacheAdmissionKey {
+    has value is string;
+    CacheAdmissionKey(request is Request){let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        writer.write(ByteSnapshot(Latin1Encoded(request.method().string()+"\n"+request.target().string()+"\n").bytes()));
+        for request.headers().entries() -> field{writer.write(ByteSnapshot(Latin1Encoded(field.name().lowercase()+":"+field.value()+"\n").bytes()));}
+        value=HexEncoded(native_crypto.digest("sha256",buffer.content().bytes())).string();
+    }
+    value() is string{value;}
+}
+object CacheAdmissions {
+    has entries is Atomic<@CacheAdmissionSlot>;
+    CacheAdmissions(){let empty is @CacheAdmissionSlot=[];entries=Atomic(empty);}
+    booking(request is Request) is CacheAdmissionBooking{
+        let key=CacheAdmissionKey(request).value();let current=entries.value();
+        for current -> slot{if slot.key()==key{slot.join();return CacheAdmissionBooking(self,slot);}}
+        confirm current.size()<256 else throw CacheAdmissionExceeded();let slot=CacheAdmissionSlot(key);
+        let revised is @CacheAdmissionSlot=(0..current.size()+1).map()->index{if index<current.size(){current[index];}else{slot;}};entries.replace(revised);CacheAdmissionBooking(self,slot);
+    }
+    released(slot is CacheAdmissionSlot) is void{
+        slot.leave();if slot.users()==0{let remaining is @CacheAdmissionSlot=entries.value().filter()->item{item.key()!=slot.key();};entries.replace(remaining);slot.retire();}
+    }
+    size() is int{entries.value().size();}
+}
+object CacheAdmissionSlot {
+    has key is string;has lock is Lock;has users is Atomic<int>;has publication is Atomic<int>;has published is Atomic<@CacheValidatedEntry>;
+    CacheAdmissionSlot(key is string){self.key=key;lock=Lock();users=Atomic(1);publication=Atomic(0);let empty is @CacheValidatedEntry=[];published=Atomic(empty);}
+    publication() is int{publication.value();}
+    publish(entry is CachedHttpEntry,revision is int) is void{published.replace([CacheValidatedEntry(entry,revision)]);publication.replace(publication.value()+1);}
+    following(revision is int) is @CacheValidatedEntry{if publication.value()>revision{published.value();}else{let empty is @CacheValidatedEntry=[];empty;}}
+    retire() is void{published.close();publication.close();}
+    key() is string{key;}users() is int{users.value();}
+    join() is void{confirm users.value()<256 else throw CacheAdmissionExceeded();users.replace(users.value()+1);}
+    leave() is void{users.replace(users.value()-1);}
+    async guard() is LockGuard{await lock.guard();}
+}
+object CacheAdmissionBooking does Closing {
+    has origin is CacheAdmissions;has slot is CacheAdmissionSlot;has stopped is Event;has joined is int;
+    CacheAdmissionBooking(origin is CacheAdmissions,slot is CacheAdmissionSlot){self.origin=origin;self.slot=slot;joined=slot.publication();stopped=Event();}
+    published() is @CacheValidatedEntry{slot.following(joined);}
+    publish(entry is CachedHttpEntry,revision is int) is void{slot.publish(entry,revision);}
+    async guard() is LockGuard{await slot.guard();}
+    closed() is bool{stopped.ready();}close() is void{if !stopped.ready(){stopped.set();origin.released(slot);}}
+}
+object CacheAdmissionLease does Closing {
+    has booking is CacheAdmissionBooking;has guard is LockGuard;has stopped is Event;
+    CacheAdmissionLease(booking is CacheAdmissionBooking,guard is LockGuard){self.booking=booking;self.guard=guard;stopped=Event();}
+    published() is @CacheValidatedEntry{booking.published();}
+    publish(entry is CachedHttpEntry,revision is int) is void{booking.publish(entry,revision);}
+    closed() is bool{stopped.ready();}close() is void{if !stopped.ready(){stopped.set();defer booking.close();guard.close();}}
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+object CacheAdmissionAnchor {
+    has leases is @Closing;has retained is Event;
+    CacheAdmissionAnchor(leases is @Closing,retained is Event){self.leases=leases;self.retained=retained;}
+    close() is void{if !retained.ready(){for leases -> lease{lease.close();}}}
+}
+object CacheAdmissionExceeded does Error{CacheAdmissionExceeded();text() is string{"HTTP cache admission limit exceeded";}}
+
+object CacheValidatedEntry {
+    has entry is CachedHttpEntry;has revision is int;CacheValidatedEntry(entry is CachedHttpEntry,revision is int){self.entry=entry;self.revision=revision;}
+    entry() is CachedHttpEntry{entry;}revision() is int{revision;}
+}

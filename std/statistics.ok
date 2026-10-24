@@ -1,0 +1,459 @@
+module statistics v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing, EmptySequence;
+import "collections/frequencies" take Frequencies;
+import "collections/combining" take UnequalSizes;
+import "error" take OutOfRange;
+import "size" take Sizing;
+import "runtime/math_aggregate" take aggregate_square_root;
+import "runtime/statistics" take
+    statistics_mean,
+    statistics_geometric_mean,
+    statistics_harmonic_mean,
+    statistics_median,
+    statistics_quantiles,
+    statistics_variance,
+    statistics_paired_valid,
+    statistics_paired;
+
+// Descriptive statistics over finite builtin floats.
+//
+//     let average is float = value Mean(values: measurements);
+//     let middle is float = value Median(values: measurements);
+//     let spread is float = value SampleDeviation(values: measurements);
+//     let quartiles is @float = Quantiles(
+//         values: measurements,
+//         count: 4,
+//     ).values();
+//
+// Quantiles defaults to the exclusive method, suitable when the sample is
+// drawn from a larger population. QuantileMethod.inclusive treats the sample
+// minimum and maximum as the population bounds.
+//
+//     Quantiles(
+//         values: measurements,
+//         count: 4,
+//         method: QuantileMethod.inclusive,
+//     ).values();
+//
+// Modes preserves first-appearance order among tied values. FittedLine
+// is the result value itself:
+//
+//     let fit = FittedLine(left: x, right: y);
+//     fit.prediction(at: 4.0);
+//     fit.residual(at: 4.0, observed: 10.0);
+//     fit.slope();
+//     fit.intercept();
+//
+// Empty or undersized samples throw StatisticsError. Paired inputs must have
+// equal sizes. GeometricMean and HarmonicMean accept zero but reject negative
+// values. Correlation rejects a constant input; regression rejects constant
+// left-hand values.
+//
+// The current builtin float contract is finite, so NaN cannot cross the
+// language/runtime boundary. If that contract later admits NaN, these objects
+// must propagate or reject it explicitly; they must never silently filter it.
+
+enum QuantileMethod = (exclusive, inclusive);
+
+object FloatSample {
+    has origin is @float;
+
+    FloatSample(values is Iterating<float>) {
+        let empty is @float = [];
+        origin = if values.cursor().available() {
+            values.map() -> item { item; };
+        }
+        else {
+            empty;
+        };
+    }
+
+    values() is @float { origin; }
+    size() is int { origin.size(); }
+}
+
+object Mean {
+    has origin is FloatSample;
+
+    Mean(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0
+            else throw StatisticsError("mean requires at least one value");
+        statistics_mean(origin.values());
+    }
+}
+
+object GeometricMean {
+    has origin is FloatSample;
+
+    GeometricMean(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0 else throw StatisticsError(
+            "geometric mean requires at least one value"
+        );
+        confirm origin.values().reduce(true) -> valid, item {
+            valid && item >= 0.0;
+        }
+            else throw StatisticsError(
+                "geometric mean does not accept negative values"
+            );
+        statistics_geometric_mean(origin.values());
+    }
+}
+
+object HarmonicMean {
+    has origin is FloatSample;
+
+    HarmonicMean(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0 else throw StatisticsError(
+            "harmonic mean requires at least one value"
+        );
+        confirm origin.values().reduce(true) -> valid, item {
+            valid && item >= 0.0;
+        }
+            else throw StatisticsError(
+                "harmonic mean does not accept negative values"
+            );
+        statistics_harmonic_mean(origin.values());
+    }
+}
+
+object Median {
+    has origin is FloatSample;
+
+    Median(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0
+            else throw StatisticsError("median requires at least one value");
+        statistics_median(origin.values(), "middle");
+    }
+}
+
+object MedianLow {
+    has origin is FloatSample;
+
+    MedianLow(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0
+            else throw StatisticsError("median requires at least one value");
+        statistics_median(origin.values(), "low");
+    }
+}
+
+object MedianHigh {
+    has origin is FloatSample;
+
+    MedianHigh(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0
+            else throw StatisticsError("median requires at least one value");
+        statistics_median(origin.values(), "high");
+    }
+}
+
+object Quantiles {
+    has origin is FloatSample;
+    has amount is int;
+    has method is QuantileMethod;
+
+    Quantiles(values is Iterating<float>, count is int) {
+        origin = FloatSample(values: values);
+        amount = count;
+        method = QuantileMethod.exclusive;
+    }
+
+    Quantiles(
+        values is Iterating<float>,
+        count is int,
+        method is QuantileMethod,
+    ) {
+        origin = FloatSample(values: values);
+        amount = count;
+        self.method = method;
+    }
+
+    values() is @float {
+        confirm amount >= 2
+            else throw StatisticsError("quantile count must be at least two");
+        confirm origin.size() >= 2 else throw StatisticsError(
+            "quantiles require at least two values"
+        );
+        statistics_quantiles(origin.values(), amount, self.method_name());
+    }
+
+    private:
+
+    method_name() is string {
+        if method == QuantileMethod.exclusive {
+            "exclusive";
+        }
+        else {
+            "inclusive";
+        }
+    }
+}
+
+object Mode<T> {
+    has origin is Modes<T>;
+
+    Mode(values is Iterating<T>) {
+        origin = Modes(values: values);
+    }
+
+    #projected
+    value() is T {
+        confirm origin.size() > 0
+            else throw StatisticsError("mode requires at least one value");
+        origin.first();
+    }
+}
+
+object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
+    has origin is @T;
+
+    Modes(values is Iterating<T>) {
+        let frequencies = Frequencies(values: values);
+        let largest is int = frequencies.reduce(0) -> amount, frequency {
+            if frequency.amount() > amount { frequency.amount(); } else { amount; }
+        };
+        let empty is @T = [];
+        origin = if largest == 0 {
+            empty;
+        }
+        else {
+            frequencies
+                .filter() -> frequency { frequency.amount() == largest; }
+                .map() -> frequency { frequency.item(); };
+        };
+    }
+
+    cursor() is Cursor<T> {
+        ModesCursor(values: origin, position: 0);
+    }
+
+    size() is int {
+        origin.size();
+    }
+
+    item(index is int) is T {
+        confirm index >= 0 && index < self.size()
+            else throw OutOfRange("mode index is outside the sequence");
+        origin[index];
+    }
+
+    first() is T {
+        confirm self.size() > 0 else throw EmptySequence();
+        origin[0];
+    }
+
+    last() is T {
+        confirm self.size() > 0 else throw EmptySequence();
+        origin[self.size() - 1];
+    }
+}
+
+object ModesCursor<T> does Cursor<T> {
+    has origin is @T;
+    has position is int;
+
+    ModesCursor(values is @T, position is int) {
+        origin = values;
+        self.position = position;
+    }
+
+    available() is bool {
+        position < origin.size();
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        origin[position];
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        ModesCursor(values: origin, position: position + 1);
+    }
+}
+
+object SampleVariance {
+    has origin is FloatSample;
+
+    SampleVariance(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() >= 2 else throw StatisticsError(
+            "sample variance requires at least two values"
+        );
+        statistics_variance(origin.values(), true);
+    }
+}
+
+object PopulationVariance {
+    has origin is FloatSample;
+
+    PopulationVariance(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0 else throw StatisticsError(
+            "population variance requires at least one value"
+        );
+        statistics_variance(origin.values(), false);
+    }
+}
+
+object SampleDeviation {
+    has origin is FloatSample;
+
+    SampleDeviation(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() >= 2 else throw StatisticsError(
+            "sample deviation requires at least two values"
+        );
+        aggregate_square_root(statistics_variance(origin.values(), true));
+    }
+}
+
+object PopulationDeviation {
+    has origin is FloatSample;
+
+    PopulationDeviation(values is Iterating<float>) {
+        origin = FloatSample(values: values);
+    }
+
+    #projected
+    value() is float {
+        confirm origin.size() > 0 else throw StatisticsError(
+            "population deviation requires at least one value"
+        );
+        aggregate_square_root(statistics_variance(origin.values(), false));
+    }
+}
+
+object Covariance {
+    has left is FloatSample;
+    has right is FloatSample;
+
+    Covariance(left is Iterating<float>, right is Iterating<float>) {
+        self.left = FloatSample(values: left);
+        self.right = FloatSample(values: right);
+    }
+
+    #projected
+    value() is float {
+        confirm left.size() == right.size() else throw UnequalSizes();
+        confirm left.size() >= 2 else throw StatisticsError(
+            "covariance requires at least two pairs"
+        );
+        statistics_paired(left.values(), right.values(), "covariance");
+    }
+}
+
+object Correlation {
+    has left is FloatSample;
+    has right is FloatSample;
+
+    Correlation(left is Iterating<float>, right is Iterating<float>) {
+        self.left = FloatSample(values: left);
+        self.right = FloatSample(values: right);
+    }
+
+    #projected
+    value() is float {
+        confirm left.size() == right.size() else throw UnequalSizes();
+        confirm left.size() >= 2 else throw StatisticsError(
+            "correlation requires at least two pairs"
+        );
+        confirm statistics_paired_valid(
+            left.values(), right.values(), "correlation"
+        )
+            else throw StatisticsError(
+                "correlation is undefined for a constant input"
+            );
+        statistics_paired(left.values(), right.values(), "correlation");
+    }
+}
+
+object FittedLine {
+    has gradient is float;
+    has offset is float;
+
+    FittedLine(left is Iterating<float>, right is Iterating<float>) {
+        let x = FloatSample(values: left);
+        let y = FloatSample(values: right);
+        confirm x.size() == y.size() else throw UnequalSizes();
+        confirm x.size() >= 2 else throw StatisticsError(
+            "linear regression requires at least two pairs"
+        );
+        confirm statistics_paired_valid(x.values(), y.values(), "slope")
+            else throw StatisticsError(
+            "linear regression requires distinct left-hand values"
+        );
+        gradient = statistics_paired(x.values(), y.values(), "slope");
+        offset = statistics_paired(x.values(), y.values(), "intercept");
+    }
+
+    prediction(at is float) is float { gradient * at + offset; }
+
+    residual(at is float, observed is float) is float {
+        observed - self.prediction(at);
+    }
+
+    slope() is float {
+        gradient;
+    }
+
+    intercept() is float {
+        offset;
+    }
+}
+
+object StatisticsError does Error {
+    has message is string;
+
+    StatisticsError(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}

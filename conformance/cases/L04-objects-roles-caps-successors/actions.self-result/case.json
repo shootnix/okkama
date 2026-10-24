@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.actions.self-result",
+  "title": "an action may return its receiver",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.ACTIONS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "OBJ.EQUALITY",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "205\nsame\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6",
+    "docs/okkama-spec-11072026.md#8.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.6: returning the receiver requires an explicit result type and `self`; objects compare by type and fields."
+  },
+  "status": "mandatory"
+}

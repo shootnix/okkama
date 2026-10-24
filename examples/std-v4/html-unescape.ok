@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "html/entities" take EscapedHtml, UnescapedHtml;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let output = Stdout();
+    output.writeln(UnescapedHtml("<b>&copy; &amp; &#x1F600;</b>").string());
+    output.writeln(UnescapedHtml("&amp;lt;").string());
+    output.writeln(UnescapedHtml(EscapedHtml("<Ada & Bob>").string()).string());
+    0;
+}

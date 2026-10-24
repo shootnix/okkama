@@ -1,0 +1,145 @@
+module http/http1_body_writing v1.0.0;
+import "http/body" take BodyOpening,BodyReading,UnknownBodyLength;
+import "http/http1_framing" take Http1BodyPlan,Http1BodyKind;
+import "http/http1_chunk" take ParsedHttp1Trailers;
+import "http/http1_head" take Http1Limits,Http1LimitExceeded;
+import "http/header" take Headers;
+import "http/message" take InvalidHttpMessage;
+import "net/stream" take AsyncWriting;
+import "io/stream" take ByteSource;
+import "io/decorators" take ByteSnapshot,InvalidReading;
+import "io/buffer" take ByteBuffer;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "numbers/bigint" take BigInt,BigQuotient,BigRemainder;
+import "strings/parse" take ParsedInt;
+import "compare" take Order;
+import "async/atomic" take Atomic;
+import "async/scope" take FutureGroup;
+
+object Http1BodyWriting {
+    has pending is Future<AsyncWriting>;
+    Http1BodyWriting(origin is AsyncWriting,body is BodyOpening,plan is Http1BodyPlan,head is Headers){pending=Http1BodyWriteOperation(origin,body,plan,head,Http1Limits(),4096).write();}
+    Http1BodyWriting(origin is AsyncWriting,body is BodyOpening,plan is Http1BodyPlan,head is Headers,limits is Http1Limits,chunk_bytes is int){pending=Http1BodyWriteOperation(origin,body,plan,head,limits,chunk_bytes).write();}
+    result() is Future<AsyncWriting>{pending;}
+}
+// One current group per direction, replaced only after its operation has been
+// awaited. Completed chunks/futures are not retained across the complete body.
+object Http1BodyWriteOperation {
+    has body is BodyOpening;has plan is Http1BodyPlan;has head is Headers;has limits is Http1Limits;has chunk_bytes is int;
+    has destination is Atomic<AsyncWriting>;
+    has reads is Atomic<@FutureGroup<@byte>>;has writes is Atomic<@FutureGroup<AsyncWriting>>;
+    Http1BodyWriteOperation(origin is AsyncWriting,body is BodyOpening,plan is Http1BodyPlan,head is Headers,limits is Http1Limits,chunk_bytes is int){
+        confirm chunk_bytes>=1 && chunk_bytes<=65536 else throw InvalidHttpMessage("HTTP1 write chunk must be 1..65536");
+        let kind=plan.kind();confirm kind!=Http1BodyKind.tunnel && kind!=Http1BodyKind.upgrade else throw InvalidHttpMessage("upgraded bytes require a dedicated protocol writer");
+        if kind==Http1BodyKind.fixed {confirm plan.length().order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded("body_bytes");}
+        self.body=body;self.plan=plan;self.head=head;self.limits=limits;self.chunk_bytes=chunk_bytes;destination=Atomic(origin);
+        let empty_reads is @FutureGroup<@byte>=[];let empty_writes is @FutureGroup<AsyncWriting>=[];reads=Atomic(empty_reads);writes=Atomic(empty_writes);
+    }
+    async write() is AsyncWriting {
+        let kind=plan.kind();if kind==Http1BodyKind.empty {return destination.value();}
+        let cleanup=Http1BodyWriteCleanup(reads,writes);defer await cleanup.close();
+        let known is @BigInt=try{[body.length()];}catch e is UnknownBodyLength{let empty is @BigInt=[];empty;};
+        if known.size()>0 {
+            confirm known[0].sign()>=0 else throw InvalidHttpMessage("negative body source length");
+            confirm known[0].order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded("body_bytes");
+            if kind==Http1BodyKind.fixed {confirm known[0].order(plan.length())==Order.equal else throw InvalidHttpMessage("body source length contradicts framing");}
+        }
+        let reader=body.reading();defer reader.close();let used=Atomic(0);let metadata=Atomic(0);
+        let required=if kind==Http1BodyKind.fixed {ParsedInt(plan.length().string()).value();}else{limits.body_bytes();};
+        loop {
+            let remaining=required-used.value();
+            let requested=if remaining>0 {if remaining<chunk_bytes {remaining;}else{chunk_bytes;}}else{1;};
+            let chunk=await self.reading(reader,requested);
+            confirm chunk.size()<=requested else throw InvalidReading("HTTP1 output body source exceeded requested bytes");
+            if chunk.size()==0 {
+                if kind==Http1BodyKind.fixed {confirm used.value()==required else throw InvalidHttpMessage("EOF before declared output body length");}
+                let end=reader.trailers();
+                if kind==Http1BodyKind.chunked {
+                    let wire=Http1TrailerWire(end,head,limits).bytes();
+                    confirm wire.size()<=limits.head_bytes()-metadata.value() else throw Http1LimitExceeded("chunk_metadata_bytes");
+                    let sent=await self.writing(ByteSnapshot(wire));destination.replace(sent);
+                }else{confirm end.entries().size()==0 else throw InvalidHttpMessage("trailers require chunked HTTP1 output");}
+                return destination.value();
+            }
+            if kind==Http1BodyKind.fixed {confirm chunk.size()<=remaining else throw InvalidHttpMessage("output body exceeds declared length");}
+            else{confirm chunk.size()<=remaining else throw Http1LimitExceeded("body_bytes");}
+            used.replace(used.value()+chunk.size());
+            let wire=if kind==Http1BodyKind.chunked {Http1ChunkWire(chunk,limits).bytes();}else{chunk;};
+            if kind==Http1BodyKind.chunked {
+                let overhead=wire.size()-chunk.size();confirm overhead<=limits.head_bytes()-metadata.value() else throw Http1LimitExceeded("chunk_metadata_bytes");metadata.replace(metadata.value()+overhead);
+            }
+            let sent=await self.writing(ByteSnapshot(wire));destination.replace(sent);
+        }
+    }
+    reading(origin is BodyReading,count is int) is Future<@byte> {
+        let group is FutureGroup<@byte>=FutureGroup();reads.replace([group]);let pending=origin.bytes(count);group.start(pending);pending;
+    }
+    writing(source is ByteSource) is Future<AsyncWriting> {
+        let group is FutureGroup<AsyncWriting>=FutureGroup();writes.replace([group]);let pending=destination.value().write(source);group.start(pending);pending;
+    }
+}
+object Http1BodyWriteCleanup {
+    has reads is Atomic<@FutureGroup<@byte>>;has writes is Atomic<@FutureGroup<AsyncWriting>>;
+    Http1BodyWriteCleanup(reads is Atomic<@FutureGroup<@byte>>,writes is Atomic<@FutureGroup<AsyncWriting>>){self.reads=reads;self.writes=writes;}
+    async close() is void {
+        let reading is @FutureGroup<@byte>=reads.value().filter()->group{group.active()>0;};
+        let writing is @FutureGroup<AsyncWriting>=writes.value().filter()->group{group.active()>0;};
+        let read_end=Http1ReadSettlement(reading);let write_end=Http1WriteSettlement(writing);
+        defer await read_end.close();defer await write_end.close();
+        for writing -> group {group.cancel();}for reading -> group {group.cancel();}
+    }
+}
+object Http1ReadSettlement {
+    has groups is @FutureGroup<@byte>;Http1ReadSettlement(groups is @FutureGroup<@byte>){self.groups=groups;}
+    async close() is void{for groups -> group{await group.wait();}}
+}
+object Http1WriteSettlement {
+    has groups is @FutureGroup<AsyncWriting>;Http1WriteSettlement(groups is @FutureGroup<AsyncWriting>){self.groups=groups;}
+    async close() is void{for groups -> group{await group.wait();}}
+}
+object Http1ChunkWire {
+    has origin is @byte;has limits is Http1Limits;
+    Http1ChunkWire(origin is @byte,limits is Http1Limits){confirm origin.size()>0 && origin.size()<=65536 else throw InvalidHttpMessage("bounded nonempty output chunk required");self.origin=origin;self.limits=limits;}
+    bytes() is @byte {
+        let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        let size=Http1HexSize(origin.size()).string();confirm size.length()<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+        writer.write(ByteSnapshot(Latin1Encoded(size+"\r\n").bytes()));writer.write(ByteSnapshot(origin));writer.write(ByteSnapshot([13.byte(),10.byte()]));buffer.content().bytes();
+    }
+}
+object Http1HexSize {
+    has origin is int;Http1HexSize(origin is int){confirm origin>=1 && origin<=65536 else throw InvalidHttpMessage("bounded output chunk size required");self.origin=origin;}
+    string() is string {
+        let digits=Http1HexDigits(BigInt(origin.string()),"");
+        loop {
+            let value=digits.number();last if value.sign()==0;
+            let remainder=BigRemainder(left:value,right:BigInt("16")).value();let index=ParsedInt(remainder.string()).value();
+            digits=digits.following(BigQuotient(left:value,right:BigInt("16")).value(),"0123456789abcdef".slice(index,index+1)+digits.string());
+        }
+        digits.string();
+    }
+}
+object Http1HexDigits {
+    has number is BigInt;has origin is string;Http1HexDigits(number is BigInt,origin is string){self.number=number;self.origin=origin;}
+    following(number is BigInt,origin is string) is ^Http1HexDigits{^number=number;^origin=origin;}
+    number() is BigInt{number;}string() is string{origin;}
+}
+object Http1TrailerWire {
+    has origin,head is Headers;has limits is Http1Limits;
+    Http1TrailerWire(origin is Headers,head is Headers,limits is Http1Limits){self.origin=origin;self.head=head;self.limits=limits;}
+    bytes() is @byte {
+        let entries=origin.entries();confirm entries.size()<=limits.fields() else throw Http1LimitExceeded("fields");
+        let total=(0..entries.size()).reduce(2)->used,index{
+            let field=entries.item(index);let width=field.name().string().length()+field.value().length()+2;
+            confirm width<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+            confirm width+2<=limits.head_bytes()-used else throw Http1LimitExceeded("trailer_bytes");used+width+2;
+        };
+        confirm total<=limits.head_bytes() else throw Http1LimitExceeded("trailer_bytes");
+        let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        for (0..entries.size()) -> index{let field=entries.item(index);writer.write(ByteSnapshot(Latin1Encoded(field.name().string()+": "+field.value()+"\r\n").bytes()));}
+        writer.write(ByteSnapshot([13.byte(),10.byte()]));let raw=buffer.content().bytes();ParsedHttp1Trailers(Latin1Decoded(raw).string(),head,limits).value();
+        let final=ByteBuffer([48.byte(),13.byte(),10.byte()]);defer final.closing().close();final.writing().write(ByteSnapshot(raw));final.content().bytes();
+    }
+}
+test "output chunk sizes use exact lowercase hex" {
+    test.is(Http1HexSize(65536).string(),"10000");test.is(Http1HexSize(15).string(),"f");
+}

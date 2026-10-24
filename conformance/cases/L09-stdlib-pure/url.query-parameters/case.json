@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.url.query-parameters",
+  "title": "query parameters keep order and duplicates",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.URL.QUERY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - repeated name\nok 2 - first value\nok 3 - absent name\nok 4 - percent decoding\nok 5 - missing parameter\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/url/query.ok",
+    "RFC 3986 section 3.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "url/query: parameters are decoded once, keep source order and duplicates; a missing name throws MissingQueryParameter."
+  },
+  "status": "mandatory"
+}

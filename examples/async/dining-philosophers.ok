@@ -1,0 +1,459 @@
+module example/async/dining_philosophers v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+import "io/stdout" take Stdout;
+
+/*
+Five philosophers share five forks. A philosopher needs both the fork on the
+left and the fork on the right to eat, so neighbours can never dine together.
+
+Okkama has no mutable state, so the forks cannot be shared variables guarded
+by locks. Instead one async task — the waiter — owns the whole table as a
+single immutable value and rebinds it to a successor on every transition.
+Philosophers own nothing; they ask, and they wait.
+
+Both classic hazards are answered by construction:
+
+  * deadlock     — a philosopher never picks up one fork and then reaches for
+                   the second. The waiter hands out both forks together or
+                   none at all, so nobody can hold a fork while waiting.
+  * starvation   — hungry philosophers take a ticket. A seat may be served
+                   ahead of an older ticket only when the two do not share a
+                   fork, so the oldest ticket is never overtaken by a rival.
+                   It is therefore served as soon as its neighbours put their
+                   forks down, which they always do.
+*/
+
+enum Intent = (hungry, sated, closing);
+
+object Signal {
+    has intent is Intent;
+    has seat is int;
+    Signal(:intent, :seat);
+
+    intent() is Intent { intent; }
+    seat() is int { seat; }
+}
+
+object Permission {
+    has left is int;
+    has right is int;
+    Permission(:left, :right);
+
+    left() is int { left; }
+    right() is int { right; }
+}
+
+/*
+The table is a value, not a place: every transition produces a new table
+instead of editing one. The constructor validates its input, but note that it does
+NOT run again for a successor, so it cannot police transitions on its own —
+`seated` checks its own precondition, and the waiter re-checks `exclusive()`
+on every state it publishes.
+*/
+object Table {
+    has seats is int;
+    has eating is @bool;
+    has tickets is @int;
+    has ticket_counter is int;
+    has served is int;
+
+    Table(count is int) {
+        seats = count;
+        eating = (0..count).map() -> seat { false; };
+        tickets = (0..count).map() -> seat { 0; };
+        ticket_counter = 1;
+        served = 0;
+
+        confirm self.seats >= 2
+            else panic "A table needs at least two seats";
+    }
+
+    served() is int { served; }
+
+    // Seat n eats with fork n on its left and fork n+1 on its right, so a
+    // fork lies between the seat of the same number and the one before it.
+    left(seat is int) is int { seat; }
+    right(seat is int) is int { (seat + 1) % seats; }
+
+    free(fork is int) is bool {
+        !eating[fork] && !eating[(fork + seats - 1) % seats];
+    }
+
+    exclusive() is bool {
+        let clashes is @int = (0..seats).filter() -> seat {
+            eating[seat] && eating[(seat + 1) % seats];
+        };
+        clashes.size() == 0;
+    }
+
+    // A hungry seat is admitted when both its forks are down and no older
+    // ticket wants either of them. Dropping that last clause would still
+    // avoid deadlock, but a seat could then be overtaken forever.
+    //
+    // The clause is deliberately conservative: a seat waits behind an older
+    // neighbour even when that neighbour cannot eat yet either. That costs
+    // some parallelism when everyone is hungry at once, and buys the
+    // guarantee that the oldest ticket is never overtaken by anybody.
+    admits(seat is int) is bool {
+        tickets[seat] > 0
+            && self.free(self.left(seat))
+            && self.free(self.right(seat))
+            && !self.outranked(seat);
+    }
+
+    // Every admitted seat is checked against the same table, so two rivals
+    // can never be admitted in one round: the younger ticket is outranked.
+    admitted() is @int {
+        (0..seats).filter() -> seat { self.admits(seat); };
+    }
+
+    picture() is string {
+        let marks is @string = (0..seats).map() -> seat {
+            if eating[seat] { "E"; }
+            else if tickets[seat] > 0 { "?"; }
+            else { "."; }
+        };
+        marks.join("");
+    }
+
+    arrived(seat is int) is ^Table {
+        confirm tickets[seat] == 0
+            else panic "A philosopher asked for forks twice";
+        ^tickets = (0..seats).map() -> other {
+            if other == seat { ticket_counter; } else { tickets[other]; }
+        };
+        ^ticket_counter = ticket_counter + 1;
+    }
+
+    seated(chosen is @int) is ^Table {
+        for chosen -> seat {
+            confirm self.free(self.left(seat)) && self.free(self.right(seat))
+                else panic "The waiter gave away a fork that was in use";
+        }
+
+        ^eating = (0..seats).map() -> seat {
+            eating[seat] || self.holds(chosen, seat);
+        };
+        ^tickets = (0..seats).map() -> seat {
+            if self.holds(chosen, seat) { 0; } else { tickets[seat]; }
+        };
+        ^served = served + chosen.size();
+    }
+
+    finished(seat is int) is ^Table {
+        confirm eating[seat]
+            else panic "A philosopher put down forks it never took";
+        ^eating = (0..seats).map() -> other {
+            if other == seat { false; } else { eating[other]; }
+        };
+    }
+
+private:
+
+    outranked(seat is int) is bool {
+        (0..seats).reduce(false) -> found, other {
+            found || (
+                tickets[other] > 0
+                    && tickets[other] < tickets[seat]
+                    && self.rivals(seat, other)
+            );
+        };
+    }
+
+    // Two seats are rivals when any of their forks coincide. On a round
+    // table that is simply "sitting next to each other", but saying it in
+    // terms of forks keeps the rule true for any number of seats.
+    rivals(one is int, another is int) is bool {
+        self.left(one) == self.left(another)
+            || self.left(one) == self.right(another)
+            || self.right(one) == self.left(another)
+            || self.right(one) == self.right(another);
+    }
+
+    holds(chosen is @int, seat is int) is bool {
+        chosen.reduce(false) -> found, value { found || value == seat; };
+    }
+}
+
+/*
+The only task allowed to know the table. It serializes every transition, so
+the philosophers need no locks — they cannot reach the state to corrupt it.
+*/
+object Waiter {
+    has commands is Receiving<Signal>;
+    has permits is @Sending<Permission>;
+    Waiter(:commands, :permits);
+
+    async run() is int {
+        let table = Table(count: permits.size());
+        Stdout().writeln(@string(
+            "waiter    | lays out ", permits.size(), " forks"
+        )...);
+
+        loop {
+            let signal = await commands.item();
+
+            if signal.intent() == Intent.hungry {
+                table = table.arrived(signal.seat());
+            }
+            else if signal.intent() == Intent.sated {
+                table = table.finished(signal.seat());
+            }
+            else {
+                last table.served();
+            }
+
+            // One admission round per signal. Both fork updates and the
+            // ticket clearing land in a single successor, so no intermediate
+            // table with a half-served seat is ever observable.
+            let chosen is @int = table.admitted();
+            table = table.seated(chosen);
+
+            // Successors do not re-run constructors, so the invariant is asserted
+            // here, on every single state this loop ever publishes.
+            confirm table.exclusive()
+                else panic "Two neighbours are holding the same fork";
+
+            for chosen -> seat {
+                await permits[seat].send(
+                    Permission(
+                        left: table.left(seat),
+                        right: table.right(seat)
+                    )
+                );
+            }
+
+            Stdout().writeln(@string("waiter    | table ", table.picture())...);
+        }
+    }
+}
+
+/*
+Thinking and eating take real time, and the async sleep hands the scheduler to
+the other tasks rather than blocking them. That is what makes the run a real
+test instead of a lockstep walk: several philosophers are genuinely hungry at
+the same moment, and two of them dine at once whenever they are not adjacent.
+*/
+object Philosopher {
+    has seat is int;
+    has name is string;
+    has courses is int;
+    has thinking is Duration;
+    has eating is Duration;
+    has waiter is Sending<Signal>;
+    has permits is Receiving<Permission>;
+    Philosopher(:seat, :name, :courses, :thinking, :eating, :waiter, :permits);
+
+    async dine() is int {
+        let clock = SystemClock();
+
+        for 1..=courses -> course {
+            Stdout().writeln(@string(name, " | thinks before course ", course)...);
+            await clock.wait(thinking);
+
+            await waiter.send(Signal(intent: Intent.hungry, seat: seat));
+            let permission = await permits.item();
+
+            Stdout().writeln(@string(
+                name, " | eats with forks ",
+                permission.left(), " and ", permission.right()
+            )...);
+            await clock.wait(eating);
+
+            await waiter.send(Signal(intent: Intent.sated, seat: seat));
+        }
+
+        Stdout().writeln(@string(name, " | leaves the table")...);
+        courses;
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let courses = 3;
+
+        let commands is Channel<Signal> = Channel(capacity: 5);
+
+        // One private reply channel per seat, so a permission can never reach
+        // the wrong philosopher.
+        let first is Channel<Permission> = Channel(capacity: 1);
+        let second is Channel<Permission> = Channel(capacity: 1);
+        let third is Channel<Permission> = Channel(capacity: 1);
+        let fourth is Channel<Permission> = Channel(capacity: 1);
+        let fifth is Channel<Permission> = Channel(capacity: 1);
+
+        let permits is @Sending<Permission> = [
+            first.sending(),
+            second.sending(),
+            third.sending(),
+            fourth.sending(),
+            fifth.sending()
+        ];
+
+        let waiter = spawn Waiter(
+            commands: commands.receiving(),
+            permits: permits
+        ).run();
+
+        // Deliberately uneven appetites, so the seats never fall into a
+        // convenient lockstep rotation that would hide a scheduling mistake.
+        let aristotle = spawn Philosopher(
+            seat: 0,
+            name: "Aristotle",
+            courses: courses,
+            thinking: Duration(value: 40.rat(), unit: DurationUnit.millisecond),
+            eating: Duration(value: 90.rat(), unit: DurationUnit.millisecond),
+            waiter: commands.sending(),
+            permits: first.receiving()
+        ).dine();
+        let confucius = spawn Philosopher(
+            seat: 1,
+            name: "Confucius",
+            courses: courses,
+            thinking: Duration(value: 70.rat(), unit: DurationUnit.millisecond),
+            eating: Duration(value: 60.rat(), unit: DurationUnit.millisecond),
+            waiter: commands.sending(),
+            permits: second.receiving()
+        ).dine();
+        let descartes = spawn Philosopher(
+            seat: 2,
+            name: "Descartes",
+            courses: courses,
+            thinking: Duration(value: 30.rat(), unit: DurationUnit.millisecond),
+            eating: Duration(value: 110.rat(), unit: DurationUnit.millisecond),
+            waiter: commands.sending(),
+            permits: third.receiving()
+        ).dine();
+        let heidegger = spawn Philosopher(
+            seat: 3,
+            name: "Heidegger",
+            courses: courses,
+            thinking: Duration(value: 90.rat(), unit: DurationUnit.millisecond),
+            eating: Duration(value: 50.rat(), unit: DurationUnit.millisecond),
+            waiter: commands.sending(),
+            permits: fourth.receiving()
+        ).dine();
+        let nietzsche = spawn Philosopher(
+            seat: 4,
+            name: "Nietzsche",
+            courses: courses,
+            thinking: Duration(value: 50.rat(), unit: DurationUnit.millisecond),
+            eating: Duration(value: 80.rat(), unit: DurationUnit.millisecond),
+            waiter: commands.sending(),
+            permits: fifth.receiving()
+        ).dine();
+
+        let one = await aristotle;
+        let two = await confucius;
+        let three = await descartes;
+        let four = await heidegger;
+        let five = await nietzsche;
+        let eaten = one + two + three + four + five;
+
+        await commands.sending().send(Signal(intent: Intent.closing, seat: 0));
+        let served = await waiter;
+
+        commands.sending().close();
+        first.sending().close();
+        second.sending().close();
+        third.sending().close();
+        fourth.sending().close();
+        fifth.sending().close();
+
+        Stdout().writeln(@string("courses eaten by philosophers: ", eaten)...);
+        Stdout().writeln(@string("meals served by the waiter:    ", served)...);
+
+        if eaten == served && served == 5 * courses {
+            Stdout().writeln(@string("every philosopher dined, no fork was ever shared")...);
+            42;
+        }
+        else {
+            Stdout().writeln(@string("the table is inconsistent")...);
+            0;
+        }
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}
+
+/*
+A timed run only ever samples the interleavings the scheduler happened to
+pick, so the arbitration rules are pinned down here instead, where the states
+are built by hand and nothing depends on timing. Seat n eats with forks n and
+n+1, which makes seats 1 and 2 rivals over fork 2, while seats 0 and 2 share
+nothing.
+*/
+
+test "an empty table admits nobody, because nobody is hungry" {
+    let table = Table(count: 5);
+    test.is(table.admitted(), []);
+    test.ok(table.exclusive());
+}
+
+test "a hungry seat is admitted when both of its forks are down" {
+    let table = Table(count: 5).arrived(2);
+    test.is(table.admitted(), [2]);
+}
+
+test "rival seats are never admitted in the same round" {
+    let table = Table(count: 5).arrived(1).arrived(2);
+    test.is(table.admitted(), [1]);
+}
+
+test "seats that share no fork dine at the same time" {
+    let table = Table(count: 5).arrived(0).arrived(2);
+    test.is(table.admitted(), [0, 2]);
+}
+
+test "an older ticket is never overtaken by a hungry rival" {
+    // Seat 2 asks first, so seat 1 must wait even though fork 1 and fork 2
+    // are both still on the cloth.
+    let table = Table(count: 5).arrived(2).arrived(1);
+    test.is(table.admitted(), [2]);
+}
+
+test "a ticket that cannot be served yet does not hold up a stranger" {
+    // Seat 1 is eating, so seat 0 waits for fork 1. Seat 3 asks later and
+    // shares nothing with seat 0, so it goes straight in.
+    let busy = Table(count: 5).arrived(1).seated([1]);
+    let waiting = busy.arrived(0).arrived(3);
+    test.is(waiting.admitted(), [3]);
+}
+
+test "the oldest ticket is served the moment its forks come back" {
+    let busy = Table(count: 5).arrived(1).seated([1]);
+    let waiting = busy.arrived(0).arrived(3);
+    let freed = waiting.seated([3]).finished(1);
+    test.is(freed.admitted(), [0]);
+}
+
+test "a full house still seats somebody, so the table cannot deadlock" {
+    let table = Table(count: 5)
+        .arrived(0).arrived(1).arrived(2).arrived(3).arrived(4);
+    let chosen is @int = table.admitted();
+    test.ok(chosen.size() > 0);
+    test.ok(table.seated(chosen).exclusive());
+}
+
+test "every seat keeps its ticket until it is actually served" {
+    let table = Table(count: 5).arrived(0).arrived(1).arrived(2);
+    let served = table.seated([0]);
+    // Seat 0 ate, so its ticket is cleared; seats 1 and 2 still hold theirs
+    // and seat 2 is now the oldest waiting ticket that can be served.
+    test.is(served.picture(), "E??..");
+    test.is(served.admitted(), []);
+    test.is(served.finished(0).admitted(), [1]);
+}
+
+test "meals are counted only when forks are handed over" {
+    let table = Table(count: 5).arrived(0).arrived(2);
+    test.is(table.served(), 0);
+    test.is(table.seated([0, 2]).served(), 2);
+}

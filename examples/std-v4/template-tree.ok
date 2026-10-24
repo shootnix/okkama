@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "template/tree" take TemplateTree;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let nodes=TemplateTree("{{#users}}Hello {{name}}!{{/users}}{{>footer}}").nodes();
+    Stdout().writeln(nodes[0].text());
+    Stdout().writeln(nodes[0].children().size().string());
+    Stdout().writeln(nodes[1].text());
+    0;
+}

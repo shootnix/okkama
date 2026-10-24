@@ -1,0 +1,71 @@
+module db/read v1.0.0;
+
+import "db/row" take Row;
+import "db/value" take ObservedDbValue,DbValueKind,InvalidDbValue;
+import "numbers/bigint" take BigInt;
+import "strings/parse" take ParsedInt;
+import "compare" take Order;
+
+// Strict named projections. MissingColumn and AmbiguousColumn propagate unchanged.
+// NULL is never replaced with a default; flag accepts INTEGER 0/1, not BOOLEAN.
+object RowReader {
+    has origin is Row;
+
+    RowReader(origin is Row) { self.origin = origin; }
+
+    int(name is string) is int {
+        let value = origin.value(name);
+        try {
+            let exact = ObservedDbValue(value).integer();
+            confirm exact.order(BigInt("9223372036854775807")) != Order.greater
+                && exact.order(BigInt("-9223372036854775808")) != Order.less
+                else throw InvalidDbValue("integer outside int range");
+            ParsedInt(exact.string()).value();
+        }
+        catch failure is Error {
+            throw RowValueFailure(name, "int", value.kind(), failure);
+        }
+    }
+
+    text(name is string) is string {
+        let value = origin.value(name);
+        try {
+            ObservedDbValue(value).text();
+        }
+        catch failure is Error {
+            throw RowValueFailure(name, "text", value.kind(), failure);
+        }
+    }
+
+    flag(name is string) is bool {
+        let value = origin.value(name);
+        try {
+            let exact = ObservedDbValue(value).integer().string();
+            confirm exact == "0" || exact == "1"
+                else throw InvalidDbValue("flag requires integer 0 or 1");
+            exact == "1";
+        }
+        catch failure is Error {
+            throw RowValueFailure(name, "flag", value.kind(), failure);
+        }
+    }
+}
+
+object RowValueFailure does Error {
+    has name,wanted is string;
+    has found is DbValueKind;
+    has original is Error;
+
+    RowValueFailure(column is string, expected is string, actual is DbValueKind, cause is Error) {
+        name = column;
+        wanted = expected;
+        found = actual;
+        original = cause;
+    }
+
+    column() is string { name; }
+    expected() is string { wanted; }
+    actual_kind() is DbValueKind { found; }
+    cause() is Error { original; }
+    text() is string { "database column " + name + " cannot be read as " + wanted; }
+}

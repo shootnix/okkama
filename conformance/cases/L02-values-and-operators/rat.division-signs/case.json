@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.rat.division-signs",
+  "title": "rational sign normalisation",
+  "purpose": "Observe the values produced by the operation.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-DIVISION",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.RAT",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-3/2\n-3/2\n3/2\n0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 8.3: rat keeps the denominator positive and normalises by gcd; 0/5 is 0."
+  },
+  "status": "mandatory"
+}

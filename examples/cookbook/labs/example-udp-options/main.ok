@@ -1,0 +1,20 @@
+// Настроить UDP перед обменом пакетами
+//
+// Отправить датаграмму и получить адрес отправителя: UdpSocket, UdpConnection и Datagram сохраняют границу пакета.
+//
+// Запуск: ./examples/cookbook/run lab example-udp-options
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-udp-options
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/udp" take UdpOptions;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let options=UdpOptions(address_reuse:true,broadcast:false,dual_stack:false);
+    Stdout().writeln(if options.address_reuse() {"reuse requested";} else {"reuse disabled";});
+    Stdout().writeln(if options.broadcast() {"broadcast requested";} else {"broadcast disabled";});
+    Stdout().writeln(if options.dual_stack() {"dual stack requested";} else {"dual stack disabled";});
+    0;
+}

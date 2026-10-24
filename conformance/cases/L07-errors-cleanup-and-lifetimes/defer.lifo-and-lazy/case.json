@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.defer.lifo-and-lazy",
+  "title": "defers run LIFO at scope exit with values from exit time",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "DEFER.ORDER",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "body end\nsecond registered\nfirst registered: 2\nafter block\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#11.1 (static successor consumption)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 19: defer registers without evaluating; at scope exit it runs LIFO using bindings after intervening rebinds (counter is 2)."
+  },
+  "status": "mandatory"
+}

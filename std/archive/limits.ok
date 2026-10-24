@@ -1,0 +1,172 @@
+module archive/limits v1.0.0;
+
+import "archive/path" take ArchivePath;
+import "error" take InvalidArgument, InvalidState;
+
+// Immutable archive admission policy. All four bounds are positive, independent
+// int values; validation order is entries, entry_size, total_size, path_length.
+// Sizes count expanded payload bytes. Path length counts Unicode code points,
+// including slashes, before ArchivePath validation/construction. No decoding,
+// normalization, I/O, payload allocation or owned resources.
+//
+//     let policy = ArchiveLimits(10, 1024, 4096, 255);
+//     let active = policy.budget().entered("assets/icon.bin", 2);
+//     let counted = active.expanded(2); // BEFORE retaining the actual bytes
+//     let ready = counted.completed(); // total allowance remains spent
+//
+// budget() issues independent immutable accounting. Callers retain successors;
+// reusing an earlier value deliberately forks an independent budget. Format
+// readers still must enforce this policy at admission/allocation boundaries.
+// Raw input, metadata decoding and temporary codec memory need separate bounds.
+object ArchiveLimits {
+    has count_limit, entry_limit, total_limit, path_limit is int;
+
+    ArchiveLimits(entries is int, entry_size is int, total_size is int, path_length is int) {
+        confirm entries > 0 else throw InvalidArchiveLimit("entries", entries);
+        confirm entry_size > 0 else throw InvalidArchiveLimit("entry_size", entry_size);
+        confirm total_size > 0 else throw InvalidArchiveLimit("total_size", total_size);
+        confirm path_length > 0 else throw InvalidArchiveLimit("path_length", path_length);
+        count_limit = entries;
+        entry_limit = entry_size;
+        total_limit = total_size;
+        path_limit = path_length;
+    }
+
+    entries() is int { count_limit; }
+    entry_size() is int { entry_limit; }
+    total_size() is int { total_limit; }
+    path_length() is int { path_limit; }
+    path(origin is string) is ArchivePath {
+        confirm origin.length() <= path_limit else throw ArchiveLimitExceeded("path_length", path_limit);
+        ArchivePath(origin);
+    }
+    budget() is ArchiveBudget { ArchiveBudget(self); }
+}
+
+// Serial entry accounting: idle -> entered -> expanded* -> completed -> idle.
+// Entry admission checks phase, nonnegative declaration, remaining count, path,
+// declared entry bytes and remaining total. Only count is spent at admission.
+// Expanded chunks spend actual entry/total bytes BEFORE retention; headers are
+// only early rejection hints. Declared/actual equality belongs to format parsers.
+// Empty entries cost a slot; completing/draining never restores total/count.
+// Compare before subtracting, so counters cannot wrap even at INT64_MAX.
+//
+// expanded/completed/path/entry_remaining require an active entry. entered
+// requires idle. Phase misuse is InvalidState; negative sizes are InvalidArgument.
+// Failures leave the old value unchanged. No payload or stream is retained;
+// only the active validated path is kept until completed().
+object ArchiveBudget {
+    has policy is ArchiveLimits;
+    has count_left, total_left, entry_left is int;
+    has current is @ArchivePath;
+
+    ArchiveBudget(limits is ArchiveLimits) {
+        policy = limits;
+        count_left = limits.entries();
+        total_left = limits.total_size();
+        entry_left = 0;
+        current = [];
+    }
+
+    entries_remaining() is int { count_left; }
+    total_remaining() is int { total_left; }
+    entry_remaining() is int {
+        confirm current.size() > 0 else throw InvalidState("archive budget has no active entry");
+        entry_left;
+    }
+    path() is ArchivePath {
+        confirm current.size() > 0 else throw InvalidState("archive budget has no active entry");
+        current[0];
+    }
+
+    entered(origin is string, declared_size is int) is ^ArchiveBudget {
+        confirm current.size() == 0 else throw InvalidState("archive budget already has an active entry");
+        confirm declared_size >= 0 else throw InvalidArgument("declared archive entry size must be nonnegative");
+        confirm count_left > 0 else throw ArchiveLimitExceeded("entries", policy.entries());
+        let member = policy.path(origin);
+        confirm declared_size <= policy.entry_size()
+            else throw ArchiveLimitExceeded("entry_size", policy.entry_size());
+        confirm declared_size <= total_left else throw ArchiveLimitExceeded("total_size", policy.total_size());
+        ^count_left = count_left - 1;
+        ^entry_left = policy.entry_size();
+        ^current = [member];
+    }
+
+    expanded(amount is int) is ^ArchiveBudget {
+        confirm current.size() > 0 else throw InvalidState("archive budget has no active entry");
+        confirm amount >= 0 else throw InvalidArgument("expanded archive size must be nonnegative");
+        confirm amount <= entry_left else throw ArchiveLimitExceeded("entry_size", policy.entry_size());
+        confirm amount <= total_left else throw ArchiveLimitExceeded("total_size", policy.total_size());
+        ^entry_left = entry_left - amount;
+        ^total_left = total_left - amount;
+    }
+
+    completed() is ^ArchiveBudget {
+        confirm current.size() > 0 else throw InvalidState("archive budget has no active entry");
+        ^current = [];
+        ^entry_left = 0;
+    }
+}
+
+// Stable diagnostics retain the policy's original configured maximum, never
+// a changing remaining count. Limits use entries/entry_size/total_size/path_length.
+object ArchiveLimitExceeded does Error {
+    has name is string;
+    has bound is int;
+    ArchiveLimitExceeded(limit is string, maximum is int) { name = limit; bound = maximum; }
+    limit() is string { name; }
+    maximum() is int { bound; }
+    text() is string { "archive limit exceeded: " + name + " (maximum " + bound.string() + ")"; }
+}
+
+object InvalidArchiveLimit does Error {
+    has name is string;
+    has bound is int;
+    InvalidArchiveLimit(limit is string, maximum is int) { name = limit; bound = maximum; }
+    limit() is string { name; }
+    maximum() is int { bound; }
+    text() is string { "archive limit " + name + " must be positive, got " + bound.string(); }
+}
+
+test "archive limits validate positive coordinates and Unicode path length" {
+    let policy = ArchiveLimits(2, 4, 6, 3);
+    test.is(policy.path("é/😀").string(), "é/😀");
+    test.is(try { policy.path("../x"); "bad"; } catch error is ArchiveLimitExceeded { error.limit(); }, "path_length");
+    test.ok(try { ArchiveLimits(0, 1, 1, 1); false; } catch error is InvalidArchiveLimit { error.maximum() == 0; });
+    test.ok(try { ArchiveLimits(1, 1, 1, -1); false; } catch error is InvalidArchiveLimit { error.limit() == "path_length"; });
+}
+
+test "archive budget spends actual bytes cumulatively across entries" {
+    let initial = ArchiveLimits(2, 4, 6, 8).budget();
+    let first = initial.entered("a", 0).expanded(4).completed();
+    let second = first.entered("b", 0).expanded(2);
+    test.is(initial.total_remaining(), 6);
+    test.is(first.total_remaining(), 2);
+    test.is(second.total_remaining(), 0);
+    test.is(second.entries_remaining(), 0);
+    test.is(try { let rejected = second.expanded(1); [rejected]; "bad"; }
+        catch error is ArchiveLimitExceeded { error.limit(); }, "total_size");
+    let done = second.completed();
+    test.is(done.entries_remaining(), 0);
+    test.ok(try { let rejected = done.entered("c", 0); [rejected]; false; }
+        catch error is ArchiveLimitExceeded { error.limit() == "entries"; });
+}
+
+test "archive accounting phase and failed transitions preserve prior values" {
+    let idle = ArchiveLimits(2, 4, 8, 8).budget();
+    let active = idle.entered("a", 0);
+    let left = active.expanded(1);
+    let right = active.expanded(4);
+    test.is(active.total_remaining(), 8);
+    test.is(left.total_remaining(), 7);
+    test.is(right.total_remaining(), 4);
+    test.ok(try { let rejected = active.entered("b", 0); [rejected]; false; } catch error is Error { true; });
+    test.ok(try { let rejected = idle.expanded(1); [rejected]; false; } catch error is Error { true; });
+    test.ok(try { let rejected = active.expanded(-1); [rejected]; false; } catch error is Error { true; });
+    test.is(active.path().string(), "a");
+}
+
+test "archive diagnostics report configured limits" {
+    test.is(ArchiveLimitExceeded("entry_size", 5).text(), "archive limit exceeded: entry_size (maximum 5)");
+    test.is(InvalidArchiveLimit("entries", 0).text(), "archive limit entries must be positive, got 0");
+}

@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "fs/file" take File, FileMode, FileEntry, FileContent, FileSystemFailure;
+import "fs/path" take Path;
+import "fs/directory" take Directory, DirectoryEntries;
+import "fs/temp" take TemporaryDirectory;
+import "encoding/utf" take Utf8Decoded;
+
+main() is int {
+    let out = Stdout();
+    let dir = Directory(path: Path("tree"));
+    dir.create();
+    for ["b.txt", "a.txt", "c.txt"] -> name {
+        let f = File(mode: FileMode.writing, path: Path("tree").child(name));
+        f.text().write(name);
+        f.close();
+    }
+    for DirectoryEntries(origin: dir) -> entry {
+        out.writeln(entry.path().string());
+    }
+    0;
+}

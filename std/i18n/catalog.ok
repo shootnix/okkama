@@ -1,0 +1,115 @@
+module i18n/catalog v1.0.0;
+import "locale/tag" take Locale;
+import "i18n/plural" take PluralNumber,PluralCategory,PluralKind,PluralCategoryOf;
+import "collections/sequence" take Sequencing;
+import "collections/ordering" take SortedBy;
+import "compare" take Comparing,Order;
+object MessageKey does Comparing<MessageKey> {
+    has context, identity is string;
+    has present is bool;
+    MessageKey(context is string,identity is string){
+        confirm identity.length()>0 && identity.length()<=1024 && context.length()<=1024 else throw InvalidMessageKey();
+        self.context=context;self.identity=identity;present=context!="";
+    }
+    MessageKey(context is string,identity is string,has_context is bool){
+        confirm identity.length()>0 && identity.length()<=1024 && context.length()<=1024 && (has_context || context=="") else throw InvalidMessageKey();
+        self.context=context;self.identity=identity;present=has_context;
+    }
+    context() is string {context;}identity() is string {identity;}has_context() is bool{present;}
+    order(other is MessageKey) is Order {
+        let order=context.order(other.context());if order!=Order.equal{return order;}
+        if present!=other.has_context(){return if present{Order.greater;}else{Order.less;};}
+        identity.order(other.identity());
+    }
+}
+object InvalidMessageKey does Error {InvalidMessageKey();text() is string {"message key requires nonempty identity and at most 1024 scalars per coordinate";}}
+role MessageEntry {
+    key() is MessageKey;plural() is bool;text() is string;
+    forms() is Sequencing<PluralForm>;kind() is PluralKind;
+}
+object PluralForm {
+    has category is PluralCategory;has text is string;
+    PluralForm(category is PluralCategory,text is string){confirm text.length()<=65536 else throw InvalidMessageCatalog("translation length");self.category=category;self.text=text;}
+    category() is PluralCategory {category;}text() is string {text;}
+}
+object SingularMessage does MessageEntry {
+    has key is MessageKey;has text is string;
+    SingularMessage(key is MessageKey,text is string){confirm text.length()<=65536 else throw InvalidMessageCatalog("translation length");self.key=key;self.text=text;}
+    key() is MessageKey {key;}plural() is bool {false;}text() is string {text;}
+    forms() is Sequencing<PluralForm> {throw WrongMessageEntry(true,false);}
+    kind() is PluralKind {throw WrongMessageEntry(true,false);}
+}
+object PluralMessage does MessageEntry {
+    has key is MessageKey;has forms is @PluralForm;has kind is PluralKind;
+    PluralMessage(key is MessageKey,forms is Sequencing<PluralForm>){self.key=key;self.forms=PluralFormSnapshot(forms).values();kind=PluralKind.cardinal;}
+    PluralMessage(key is MessageKey,forms is Sequencing<PluralForm>,kind is PluralKind){self.key=key;self.forms=PluralFormSnapshot(forms).values();self.kind=kind;}
+    key() is MessageKey {key;}plural() is bool {true;}text() is string {throw WrongMessageEntry(false,true);}
+    forms() is Sequencing<PluralForm> {forms;}kind() is PluralKind {kind;}
+}
+object PluralFormSnapshot {
+    has values is @PluralForm;
+    PluralFormSnapshot(source is Sequencing<PluralForm>){
+        let size=source.size();confirm size>=1 && size<=6 else throw InvalidMessageCatalog("expected 1..6 plural forms");
+        let values is @PluralForm=(0..size).map()->index{let form=source.item(index);PluralForm(form.category(),form.text());};
+        for (0..size)->index {for (0..index)->prior {confirm values[index].category()!=values[prior].category() else throw InvalidMessageCatalog("duplicate plural category");}}
+        confirm values.reduce(false)->found,form{found || form.category()==PluralCategory.other;} else throw InvalidMessageCatalog("plural message requires other");
+        self.values=values;
+    }
+    values() is @PluralForm {values;}
+}
+role Translating {
+    membership(key is MessageKey) is bool;text(key is MessageKey) is string;
+    plural(key is MessageKey,count is PluralNumber) is string;
+}
+object MessageCatalog does Translating {
+    has locale is Locale;has entries is SortedBy<MessageEntry,MessageKey>;
+    MessageCatalog(locale is Locale,entries is Sequencing<MessageEntry>){
+        let size=entries.size();confirm size>=0 && size<=4096 else throw InvalidMessageCatalog("entry count");
+        let snapshot is @MessageEntry=(0..size).map()->index{
+            let entry=entries.item(index);let key=entry.key();let copied=MessageKey(key.context(),key.identity(),key.has_context());
+            if entry.plural(){PluralMessage(copied,entry.forms(),entry.kind());}else{SingularMessage(copied,entry.text());}
+        };
+        let sorted is SortedBy<MessageEntry,MessageKey>=SortedBy(origin:snapshot,key:(entry is MessageEntry) is MessageKey{entry.key();});
+        for (0..size)->index{if index>0 {confirm sorted.item(index-1).key().order(sorted.item(index).key())!=Order.equal else throw InvalidMessageCatalog("duplicate message key");}}
+        let scalars=snapshot.reduce(0)->total,entry{total+(if entry.plural(){let forms=entry.forms();(0..forms.size()).reduce(0)->sum,index{sum+forms.item(index).text().length();};}else{entry.text().length();});};
+        confirm scalars<=1048576 else throw InvalidMessageCatalog("aggregate translation length");
+        self.locale=locale;self.entries=sorted;
+    }
+    locale() is Locale {locale;}
+    membership(key is MessageKey) is bool {self.index(key,0,entries.size())>=0;}
+    text(key is MessageKey) is string {self.entry(key).text();}
+    plural(key is MessageKey,count is PluralNumber) is string {
+        let entry=self.entry(key);let forms=entry.forms();let category=PluralCategoryOf(count,locale,entry.kind()).value();
+        for (0..forms.size())->index {let form=forms.item(index);if form.category()==category{return form.text();}}
+        for (0..forms.size())->index {let form=forms.item(index);if form.category()==PluralCategory.other{return form.text();}}
+        throw InvalidMessageCatalog("missing other after snapshot");
+    }
+    private:
+    entry(key is MessageKey) is MessageEntry {let index=self.index(key,0,entries.size());confirm index>=0 else throw MissingMessage(key);entries.item(index);}
+    index(key is MessageKey,start is int,stop is int) is int {
+        if start>=stop{return -1;}let middle=start+((stop-start)/2).int();let order=key.order(entries.item(middle).key());
+        if order==Order.equal{return middle;}if order==Order.less{self.index(key,start,middle);}else{self.index(key,middle+1,stop);}
+    }
+}
+object FallbackTranslation does Translating {
+    has primary,fallback is Translating;
+    FallbackTranslation(primary is Translating,fallback is Translating){self.primary=primary;self.fallback=fallback;}
+    membership(key is MessageKey) is bool {primary.membership(key) || fallback.membership(key);}
+    text(key is MessageKey) is string {if primary.membership(key){primary.text(key);}else{fallback.text(key);}}
+    plural(key is MessageKey,count is PluralNumber) is string {if primary.membership(key){primary.plural(key,count);}else{fallback.plural(key,count);}}
+}
+object MissingMessage does Error {
+    has key is MessageKey;MissingMessage(key is MessageKey){self.key=key;}key() is MessageKey{key;}
+    text() is string {"missing message: "+key.context()+":"+key.identity();}
+}
+object WrongMessageEntry does Error {
+    has expected,actual is bool;WrongMessageEntry(expected_plural is bool,actual_plural is bool){expected=expected_plural;actual=actual_plural;}
+    expected_plural() is bool {expected;}actual_plural() is bool {actual;}
+    text() is string {"wrong singular/plural message projection";}
+}
+object InvalidMessageCatalog does Error {
+    has reason is string;InvalidMessageCatalog(reason is string){self.reason=reason;}text() is string {"invalid message catalog: "+reason;}
+}
+test "catalog retains exact translation including empty text" {
+    let key=MessageKey("","hello");test.is(MessageCatalog(Locale("en"),[SingularMessage(key,"")]).text(key),"");
+}

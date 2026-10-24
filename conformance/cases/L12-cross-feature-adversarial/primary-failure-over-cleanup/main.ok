@@ -1,0 +1,42 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "db/sqlite" take SqliteMemory;
+import "db/transaction" take TransactionOptions;
+import "db/statement" take Statement;
+import "db/value" take DbText;
+import "db/error" take DbFailure;
+
+object CleanupFailed does Error {
+    CleanupFailed();
+    text() is string { "cleanup failed"; }
+}
+
+object Cleaner {
+    Cleaner();
+    fail() is void {
+        Stdout().writeln("cleanup ran");
+        throw CleanupFailed();
+    }
+}
+
+async main() is int {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE users(email TEXT UNIQUE)"));
+    await connection.execution(Statement("INSERT INTO users VALUES(?)", [DbText("a@x")]));
+    let outcome = try {
+        let tx = await connection.transaction(TransactionOptions());
+        defer Cleaner().fail();
+        await tx.execution(Statement("INSERT INTO users VALUES(?)", [DbText("a@x")]));
+        let done = await tx.commit();
+        "committed";
+    } catch e is DbFailure {
+        "primary database failure";
+    } catch e is CleanupFailed {
+        "cleanup failure won";
+    };
+    Stdout().writeln(outcome);
+    0;
+}

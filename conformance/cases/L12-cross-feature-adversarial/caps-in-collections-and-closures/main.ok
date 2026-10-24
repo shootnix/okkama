@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Customer {
+    has name is string;
+    Customer(:name);
+    cap Card {
+        label is string { "[" + name + "]"; }
+    }
+}
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+main() is int {
+    let cards is @Customer::Card = [Customer(name: "a")::Card, Customer(name: "b")::Card];
+    let labels = cards.map() -> c { c::label; };
+    Stdout().writeln(labels.join(","));
+    let boxed = Box(value: Customer(name: "c")::Card);
+    Stdout().writeln(boxed.get()::label);
+    let reader = (card is Customer::Card) is string { card::label; };
+    Stdout().writeln(reader(Customer(name: "d")::Card));
+    0;
+}

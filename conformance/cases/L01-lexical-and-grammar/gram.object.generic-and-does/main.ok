@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+role Holder<T> {
+    get() is T;
+}
+
+role Named {
+    name() is string;
+}
+
+object Pair<A, B> does Holder<A>, Named {
+    has first is A;
+    has second is B;
+    Pair(:first, :second);
+    get() is A { first; }
+    name() is string { "pair"; }
+}
+
+main() is int {
+    0;
+}

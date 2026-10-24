@@ -1,0 +1,19 @@
+// Загрузить переводы из PO
+//
+// Подключить переводы из PO или MO: gettext-представления разбирают каталог и сохраняют правила форм.
+//
+// Запуск: ./examples/cookbook/run lab example-gettext-po
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-gettext-po
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "i18n/gettext" take ParsedPo,PoString;
+import "io/stdout" take Stdout;
+main() is int {
+    let source="# translator\nmsgctxt \"menu\"\nmsgid \"Open\"\nmsgstr \"Открыть\"\n";
+    let document=ParsedPo(source).value();
+    Stdout().writeln(document.entries().item(0).translations()[0]);
+    Stdout().writeln(PoString(document).string());
+    0;
+}

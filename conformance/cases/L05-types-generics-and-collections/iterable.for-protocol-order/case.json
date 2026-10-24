@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.iterable.for-protocol-order",
+  "title": "for drives the cursor in available, item, body, successor order",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ITERABLE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "CTRL.FOR",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "available 2\nitem 2\nbody 2\nsuccessor 2\navailable 1\nitem 1\nbody 1\nsuccessor 1\navailable 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.9: for obtains one cursor, checks available() before each item, binds one item, then calls the successor; false available() ends iteration without item/successor."
+  },
+  "status": "mandatory",
+  "notes": "Role and action names follow the active std (Iterating/item/successor); see D-036."
+}

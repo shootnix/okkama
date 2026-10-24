@@ -1,0 +1,17 @@
+module app v1.0.0;
+import "archive/zip" take ZipMethod, ZipCompression;
+import "io/stdout" take Stdout;
+
+// These are validated writing choices, not codec instances. No bytes are
+// compressed and no host compression library is queried by this example.
+main() is int {
+    let stored=ZipCompression(ZipMethod.stored);
+    let deflate=ZipCompression(ZipMethod.deflated);
+    let fast=ZipCompression(ZipMethod.zstandard,-1);
+    Stdout().writeln("stored level: "+stored.level().string());
+    Stdout().writeln("deflate default: "+deflate.level().string());
+    Stdout().writeln("zstandard choice: "+fast.level().string());
+    confirm ZipCompression(ZipMethod.zstandard,0)==ZipCompression(ZipMethod.zstandard)
+        else panic "default alias did not resolve";
+    0;
+}

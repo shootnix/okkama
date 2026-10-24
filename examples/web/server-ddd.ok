@@ -1,0 +1,377 @@
+module shop v1.0.0;
+// DDD-shaped web service on std web/*: 127.0.0.1:8000, SQLite in memory.
+// One file for reading; in a project each layer is its own module and
+// dependencies point inwards only:
+//
+//   shop/users/domain          values, entity, repository role, domain errors
+//   shop/users/application     commands and the UserService use cases
+//   shop/users/infrastructure  SQLite and in-memory UserRepository adapters
+//   shop/users/http            forms, presenters, controller, exception scope, routes
+//   shop/main                  composition root
+//
+// Run from okkama-pl: OKKAMA_STDLIB_DIR=$(cd ../std && pwd) perl bin/okkama ../examples/web/server-ddd.ok
+//   curl -i -H 'Content-Type: application/json' -d '{"name":"Ada","email":"ada@example.test"}' http://127.0.0.1:8000/api/users
+//   curl -i http://127.0.0.1:8000/api/users/1
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes,Scope,Get,Post,Put,ExceptionScope;
+import "web/request" take WebRequest,RequestJson;
+import "web/reply" take Json,Created,NoContent;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult;
+import "json/value" take JsonValue,JsonObject,JsonMember,JsonText;
+import "db/sqlite" take SqliteMemory;
+import "db/sqlite/script" take SqliteScript;
+import "db/prepared" take Prepared,DbPreparing;
+import "db/value" take DbInteger,DbText,ObservedDbValue;
+import "db/row" take Row,RowsEnded;
+import "numbers/bigint" take BigInt,InvalidBigInt;
+import "async/atomic" take Atomic;
+import "io/stdout" take Stdout;
+
+// =============================================================================
+// shop/users/domain: pure model. No HTTP, JSON or SQL here.
+// =============================================================================
+
+object UserId {
+    has number is BigInt;
+
+    UserId(:number) {
+        confirm number.sign() > 0 else throw InvalidUserId(origin: number.string());
+    }
+
+    number() is BigInt { number; }
+    string() is string { number.string(); }
+}
+
+// Parsed* follows the std convention: text from the outside becomes a value or a typed error.
+object ParsedUserId {
+    has origin is string;
+
+    ParsedUserId(:origin);
+
+    value() is UserId {
+        let number = try { BigInt(origin); } catch failure is InvalidBigInt { throw InvalidUserId(origin: origin); };
+        UserId(number: number);
+    }
+}
+
+object UserName {
+    has origin is string;
+
+    UserName(:origin) {
+        confirm origin.length() > 0 && origin.length() <= 100 else throw InvalidUserName(origin: origin);
+    }
+
+    string() is string { origin; }
+}
+
+object Email {
+    has origin is string;
+
+    Email(:origin) {
+        confirm origin.split("@").size() == 2 && origin.length() <= 254 else throw InvalidEmail(origin: origin);
+    }
+
+    string() is string { origin; }
+}
+
+// Entity: identity plus behavior. State changes only through successors.
+object User {
+    has id is UserId;
+    has name is UserName;
+    has email is Email;
+
+    User(:id, :name, :email);
+
+    id() is UserId { id; }
+    name() is UserName { name; }
+    email() is Email { email; }
+
+    renamed(to is UserName) is ^User { ^name = to; }
+}
+
+// Port: the domain says what it needs, infrastructure decides how.
+role UserRepository {
+    async user(id is UserId) is User;
+    async email_taken(email is Email) is bool;
+    async added(name is UserName, email is Email) is User;
+    async saved(user is User) is void;
+}
+
+object InvalidUserId does Error { has origin is string; InvalidUserId(:origin); text() is string { "invalid user id: " + origin; } }
+object InvalidUserName does Error { has origin is string; InvalidUserName(:origin); text() is string { "user name must be 1..100 characters"; } }
+object InvalidEmail does Error { has origin is string; InvalidEmail(:origin); text() is string { "invalid email: " + origin; } }
+object UserNotFound does Error { has id is UserId; UserNotFound(:id); text() is string { "user " + id.string() + " not found"; } }
+object EmailTaken does Error { has email is Email; EmailTaken(:email); text() is string { "email " + email.string() + " is already registered"; } }
+
+// =============================================================================
+// shop/users/application: use cases. They speak domain types, never HTTP.
+// =============================================================================
+
+object RegisterUser {
+    has name is UserName;
+    has email is Email;
+
+    RegisterUser(:name, :email);
+
+    name() is UserName { name; }
+    email() is Email { email; }
+}
+
+object RenameUser {
+    has id is UserId;
+    has name is UserName;
+
+    RenameUser(:id, :name);
+
+    id() is UserId { id; }
+    name() is UserName { name; }
+}
+
+object UserService {
+    has users is UserRepository;
+
+    UserService(:users);
+
+    async user(id is UserId) is User { await users.user(id); }
+
+    async registered(command is RegisterUser) is User {
+        if await users.email_taken(command.email()) { throw EmailTaken(email: command.email()); }
+        await users.added(command.name(), command.email());
+    }
+
+    async renamed(command is RenameUser) is User {
+        let current = await users.user(command.id());
+        let renamed = current.renamed(command.name());
+        await users.saved(renamed);
+        renamed;
+    }
+}
+
+// =============================================================================
+// shop/users/infrastructure: adapters for the UserRepository port.
+// =============================================================================
+
+object SqliteUserRepository does UserRepository {
+    has db is DbPreparing;
+
+    SqliteUserRepository(:db);
+
+    async user(id is UserId) is User {
+        let statement = await Prepared(db, "SELECT id, name, email FROM users WHERE id = ?").statement();
+        defer statement.close();
+        let rows = await statement.rows([DbInteger(id.number())]);
+        defer rows.close();
+        let row = try { await rows.row(); } catch failure is RowsEnded { throw UserNotFound(id: id); };
+        UserRow(row: row).user();
+    }
+
+    async email_taken(email is Email) is bool {
+        let statement = await Prepared(db, "SELECT count(*) AS total FROM users WHERE email = ?").statement();
+        defer statement.close();
+        let rows = await statement.rows([DbText(email.string())]);
+        defer rows.close();
+        ObservedDbValue((await rows.row()).value("total")).integer().sign() > 0;
+    }
+
+    async added(name is UserName, email is Email) is User {
+        let statement = await Prepared(db, "INSERT INTO users(name, email) VALUES(?, ?) RETURNING id, name, email").statement();
+        defer statement.close();
+        let rows = await statement.rows([DbText(name.string()), DbText(email.string())]);
+        defer rows.close();
+        UserRow(row: await rows.row()).user();
+    }
+
+    async saved(user is User) is void {
+        let statement = await Prepared(db, "UPDATE users SET name = ?, email = ? WHERE id = ?").statement();
+        defer statement.close();
+        await statement.execution([DbText(user.name().string()), DbText(user.email().string()), DbInteger(user.id().number())]);
+    }
+}
+
+// Row -> entity mapping lives next to the SQL that produced the row.
+object UserRow {
+    has row is Row;
+
+    UserRow(:row);
+
+    user() is User {
+        User(
+            id: UserId(number: ObservedDbValue(row.value("id")).integer()),
+            name: UserName(origin: ObservedDbValue(row.value("name")).text()),
+            email: Email(origin: ObservedDbValue(row.value("email")).text())
+        );
+    }
+}
+
+// Same port, no database: used by tests and local runs.
+object MemoryUserRepository does UserRepository {
+    has stored is Atomic<@User>;
+
+    MemoryUserRepository() {
+        let empty is @User = [];
+        stored = Atomic(empty);
+    }
+
+    async user(id is UserId) is User {
+        let current = stored.value();
+        let index = if current.size() == 0 { -1; } else {
+            for (0..current.size()) -> index { last index if current[index].id().string() == id.string(); -1; }
+        };
+        confirm index >= 0 else throw UserNotFound(id: id);
+        current[index];
+    }
+
+    async email_taken(email is Email) is bool {
+        stored.value().reduce(false) -> taken, user { taken || user.email().string() == email.string(); };
+    }
+
+    async added(name is UserName, email is Email) is User {
+        let current = stored.value();
+        let user = User(id: UserId(number: BigInt((current.size() + 1).string())), name: name, email: email);
+        let following is @User = (0..current.size() + 1).map() -> index { if index < current.size() { current[index]; } else { user; } };
+        stored.replace(following);
+        user;
+    }
+
+    async saved(user is User) is void {
+        let following is @User = stored.value().map() -> existing { if existing.id().string() == user.id().string() { user; } else { existing; } };
+        stored.replace(following);
+    }
+}
+
+// =============================================================================
+// shop/users/http: the delivery layer. HTTP status codes, JSON shapes and the
+// domain-error -> Exception mapping live here and nowhere else.
+// =============================================================================
+
+// Input DTO: request JSON in, application command out. Domain values validate.
+object RegistrationForm {
+    has origin is RequestJson;
+
+    RegistrationForm(:origin);
+
+    command() is RegisterUser {
+        RegisterUser(
+            name: UserName(origin: origin.text("name")),
+            email: Email(origin: origin.text("email"))
+        );
+    }
+}
+
+// Output DTO: entity in, JSON out. The entity never learns its wire shape.
+object UserJson {
+    has user is User;
+
+    UserJson(:user);
+
+    value() is JsonValue {
+        JsonObject([
+            JsonMember("id", JsonText(user.id().string())),
+            JsonMember("name", JsonText(user.name().string())),
+            JsonMember("email", JsonText(user.email().string()))
+        ]);
+    }
+}
+
+// Controller: parse input, call one use case, present the result. No error handling:
+// every failure is translated by UserExceptions, the scope the routes are mounted in.
+object UsersController {
+    has users is UserService;
+
+    UsersController(:users);
+
+    async show(request is WebRequest) is HandlingResult {
+        let user = await users.user(ParsedUserId(origin: request.path("id")).value());
+        Json(200, UserJson(user: user).value());
+    }
+
+    async register(request is WebRequest) is HandlingResult {
+        let command = RegistrationForm(origin: await request.json(16384)).command();
+        let user = await users.registered(command);
+        Created("/api/users/" + user.id().string(), UserJson(user: user).value());
+    }
+
+    async rename(request is WebRequest) is HandlingResult {
+        let body = await request.json(1024);
+        let command = RenameUser(
+            id: ParsedUserId(origin: request.path("id")).value(),
+            name: UserName(origin: body.text("name"))
+        );
+        Json(200, UserJson(user: await users.renamed(command)).value());
+    }
+}
+
+// The users context's error vocabulary, translated in one place.
+object UserExceptions does ExceptionScope {
+    UserExceptions();
+
+    async scoped(request is WebRequest, endpoint is async (WebRequest) is HandlingResult) is HandlingResult {
+        try { await endpoint(request); }
+        catch failure is InvalidUserId { Exception(400, failure.text()); }
+        catch failure is InvalidUserName { Exception(422, failure.text()); }
+        catch failure is InvalidEmail { Exception(422, failure.text()); }
+        catch failure is UserNotFound { Exception(404, failure.text()); }
+        catch failure is EmailTaken { Exception(409, failure.text()); }
+    }
+}
+
+// The context publishes one Scope. The application decides where to mount it.
+object UsersHttp {
+    has controller is UsersController;
+
+    UsersHttp(:controller);
+
+    scope() is Scope {
+        Scope("/users", UserExceptions(), [
+            Post("", controller.register),
+            Get("/:id", controller.show),
+            Put("/:id/name", controller.rename)
+        ]);
+    }
+}
+
+object SystemController {
+    SystemController();
+
+    async health(request is WebRequest) is HandlingResult { NoContent(); }
+    async missing(request is WebRequest) is HandlingResult { Exception(404, "no route for " + request.request().target().string()); }
+}
+
+// =============================================================================
+// shop/main: composition root. The only place that knows concrete classes.
+// =============================================================================
+
+async main() is int {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await SqliteScript(connection, "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE);").executions();
+
+    let users = UserService(users: SqliteUserRepository(db: connection));
+    let system = SystemController();
+
+    let routes = WebRoutes(
+        [
+            Get("/health", system.health),
+            Scope("/api", [
+                UsersHttp(controller: UsersController(users: users)).scope()
+            ])
+        ],
+        system.missing
+    );
+
+    Stdout().writeln("listening on http://127.0.0.1:8000");
+    await WebApplication(routes).listen("127.0.0.1", 8000);
+    0;
+}
+
+// Use cases are tested through the port with the in-memory adapter: no HTTP, no SQL.
+async test "registering the same email twice is a domain error" {
+    let users = UserService(users: MemoryUserRepository());
+    let command = RegisterUser(name: UserName(origin: "Ada"), email: Email(origin: "ada@example.test"));
+    let first = await users.registered(command);
+    test.is(first.id().string(), "1");
+    let repeated = try { await users.registered(command); false; } catch failure is EmailTaken { true; };
+    test.ok(repeated);
+}

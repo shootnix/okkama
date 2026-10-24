@@ -1,0 +1,40 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+object Taker {
+    Taker();
+    ints(values is @int) is int { values.size(); }
+    boxed(box is Box<int>) is int { box.get(); }
+    anything(values is @any) is int { values.size(); }
+}
+
+object Relay {
+    Relay();
+    count(values is @any) is int { values.size(); }
+    echo(value is any) is any { value; }
+}
+
+main() is int {
+    let out = Stdout();
+    let value is any = 42;
+    let again is any = value;
+    let row is %string:any = ["id": 7, "name": "Ada"];
+    let mixed is @any = [1, "two", 3.0];
+    out.writeln(Relay().count(mixed).string());
+    out.writeln(row.size().string());
+    let echoed = Relay().echo(again);
+    for mixed -> item {
+        Relay().echo(item);
+    }
+    let copy is @any = mixed...;
+    out.writeln(copy.size().string());
+    out.writeln(Taker().anything([1, "x"]).string());
+    0;
+}

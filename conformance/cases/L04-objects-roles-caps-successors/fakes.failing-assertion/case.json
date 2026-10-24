@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fakes.failing-assertion",
+  "title": "a failing assertion makes the test run exit 1",
+  "purpose": "Run embedded tests and observe the exit status.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "ROLE.FAKES",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 1,
+    "stdout": "ignore",
+    "justification": "The embedded test runner's report format is not normative (spec 14 fixes only the exit status)."
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#14"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 14: the title is \"fake:Dune\", so the assertion fails; the CLI returns 1 when any test fails."
+  },
+  "status": "mandatory"
+}

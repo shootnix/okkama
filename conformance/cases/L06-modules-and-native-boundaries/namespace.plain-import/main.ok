@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "lib/shapes";
+import "lib/boxes";
+
+main() is int {
+    let out = Stdout();
+    let s is shapes.Square = shapes.Square(side: 4);
+    let b is boxes.Box<int> = boxes.Box(value: 5);
+    out.writeln((s.area() + b.get()).string());
+    0;
+}

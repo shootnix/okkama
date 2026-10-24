@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let prices is %string:int = ["b": 2, "a": 1, "c": 3];
+    let keys = prices.map() -> k, v { k + "=" + v.string(); };
+    out.writeln(keys.join(","));
+    let cheap = prices.filter() -> k, v { v < 3; };
+    out.writeln(cheap.size().string() + " " + cheap.has("c").string());
+    let total = prices.reduce(0) -> acc, k, v { acc + v; };
+    out.writeln(total.string());
+    let squares = (1..=3).map() -> n { n * n; };
+    out.writeln(squares[2].string());
+    0;
+}

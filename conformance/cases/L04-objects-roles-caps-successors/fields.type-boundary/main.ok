@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box {
+    has n is int;
+    Box(raw is string) {
+        n = raw;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let text = "seven";
+    let b = Box(raw: text);
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,26 @@
+// Создать идентификатор и воспроизводимую выборку
+//
+// Документу нужен UUID, а тестовым задержкам — стабильная случайная последовательность.
+//
+// Запуск: ./examples/cookbook/run lab recipe-random-ids
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-random-ids
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/random_ids v1.0.0;
+import "random/source" take PcgRandom,SecureRandom;
+import "random/distribution" take UniformIntegers;
+import "uuid/generation" take Uuid4s;
+import "uuid/value" take Uuid;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let generator = PcgRandom(seed: 42);
+    let delay = UniformIntegers(random: generator, start: 10, stop: 20);
+    let sampled = delay.sample();
+    confirm sampled >= 10 && sampled < 20;
+    let id = Uuid4s(random: SecureRandom()).sample();
+    confirm Uuid(id.string()) == id;
+    Stdout().writeln(id.string());
+    0;
+}

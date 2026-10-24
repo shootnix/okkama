@@ -1,0 +1,33 @@
+// LocalFiles: ограниченный файловый ввод и текстовый вывод
+// Читает байты с лимитом, явно декодирует UTF-8, пишет либо дописывает указанный файл.
+// Пример: import "../support/files" take LocalFiles; LocalFiles().text("path.txt");
+// bytes(path,limit) возвращает независимый снимок. Каждый открытый File закрывается в своей операции.
+// Это модуль приложения; запускайте использующую его программу через ../run.
+
+module cookbook/files v1.0.0;
+import "fs/file" take File,FileMode,FileEntry;
+import "fs/path" take Path;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Decoded,Utf8Encoded;
+object LocalFiles {
+    LocalFiles();
+    bytes(path is string,limit is int) is @byte {
+        let file=File(mode:FileMode.reading,path:Path(path),binary:true);defer file.close();
+        let buffer=ByteBuffer();defer buffer.closing().close();
+        loop{let chunk=file.binary().bytes(4096);last if chunk.size()==0;
+            confirm buffer.content().size()+chunk.size()<=limit else throw LocalInputLimit(path);
+            buffer.writing().write(ByteSnapshot(chunk));}
+        buffer.content().bytes();
+    }
+    text(path is string) is string{Utf8Decoded(self.bytes(path,2097152)).string();}
+    write(path is string,text is string) is void{
+        let file=File(mode:FileMode.writing,path:Path(path),binary:true);defer file.close();
+        file.binary().write(ByteSnapshot(Utf8Encoded(text).bytes()));
+    }
+    append(path is string,text is string) is void{
+        let file=File(mode:FileMode.appending,path:Path(path),binary:true);defer file.close();
+        file.binary().write(ByteSnapshot(Utf8Encoded(text).bytes()));
+    }
+}
+object LocalInputLimit does Error{has path is string;LocalInputLimit(path is string){self.path=path;}text() is string{"input exceeds its byte budget: "+path;}}

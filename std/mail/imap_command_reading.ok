@@ -1,0 +1,192 @@
+module mail/imap_command_reading v1.0.0;
+import "mail/imap_response" take ParsedImapResponse;
+import "encoding/utf" take Utf8Encoded;
+
+import "net/stream" take AsyncReading;
+import "mail/imap_reading" take ImapResponseReading;
+import "mail/imap_response" take ImapResponse, ImapResponseKind, ImapResponseLimits, ImapResponseHeader;
+import "collections/sequence" take Sequencing;
+import "mime/media_type" take MimeItems, MimePosition;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+import "async/event" take Event;
+
+role ImapContinuationWriting {
+    async write() is int;
+}
+role ImapResponseObserving {
+    async observed(response is ImapResponse) is int;
+}
+object ImapNoObservation does ImapResponseObserving {
+    ImapNoObservation();
+    async observed(response is ImapResponse) is int {0;}
+}
+object ImapReplyMode {
+    has continuing is ImapContinuationWriting;has logout is bool;has observing is ImapResponseObserving;
+    ImapReplyMode() {continuing=ImapNoContinuation();logout=false;observing=ImapNoObservation();}
+    ImapReplyMode(continuing is ImapContinuationWriting, logout is bool) {self.continuing=continuing;self.logout=logout;observing=ImapNoObservation();}
+    ImapReplyMode(continuing is ImapContinuationWriting, logout is bool, observing is ImapResponseObserving) {
+        self.continuing=continuing;self.logout=logout;self.observing=observing;
+    }
+    continuation() is ImapContinuationWriting {continuing;}
+    logout() is bool {logout;}
+    observer() is ImapResponseObserving {observing;}
+}
+object ImapNoContinuation does ImapContinuationWriting {
+    ImapNoContinuation();
+    async write() is int {throw UnexpectedImapContinuation();}
+}
+
+// One serialized command's output, including unsolicited responses. No command
+// is sent here. The caller supplies its exact expected tag and owns the stream.
+// NO/BAD are completed outcomes, not transport failures. BYE, unexpected tags,
+// continuation, EOF, cancellation or limit failure require discarding alignment.
+object ImapTag {
+    has value is string;
+    ImapTag(origin is string) {
+        confirm origin.length()>0 && origin.length()<=128 else throw InvalidArgument("IMAP tag length outside 1..128");
+        let header=ImapResponseHeader(origin+" OK ");
+        confirm header.kind()==ImapResponseKind.tagged && header.tag()==origin else throw InvalidArgument("invalid IMAP command tag");
+        value=origin;
+    }
+    string() is string {value;}
+}
+object ImapCommandLimits {
+    has responses, wire_bytes, chunk_bytes is int;has response is ImapResponseLimits;
+    ImapCommandLimits() {responses=4096;wire_bytes=67108864;chunk_bytes=4096;response=ImapResponseLimits();}
+    ImapCommandLimits(responses is int, wire_bytes is int, chunk_bytes is int, response is ImapResponseLimits) {
+        confirm responses>=0 && wire_bytes>=0 && chunk_bytes>0 else throw InvalidArgument("invalid IMAP command limits");
+        self.responses=responses;self.wire_bytes=wire_bytes;self.chunk_bytes=chunk_bytes;self.response=response;
+    }
+    responses() is int {responses;}
+    wire_bytes() is int {wire_bytes;}
+    chunk_bytes() is int {chunk_bytes;}
+    response() is ImapResponseLimits {response;}
+}
+object ImapCommandReading {
+    has pending is Future<ImapCommandRead>;
+    ImapCommandReading(origin is AsyncReading, tag is ImapTag) {
+        pending=ImapCommandInput(origin,tag,[],ImapCommandLimits()).read();
+    }
+    ImapCommandReading(origin is AsyncReading, tag is ImapTag, prefix is @byte, limits is ImapCommandLimits) {
+        pending=ImapCommandInput(origin,tag,prefix,limits).read();
+    }
+    result() is Future<ImapCommandRead> {pending;}
+}
+object ImapCommandRead {
+    has responses is @ImapResponse;has completion is ImapResponse;has tail is @byte;has count is int;
+    ImapCommandRead(responses is @ImapResponse, completion is ImapResponse, remainder is @byte, consumed is int) {
+        confirm completion.kind()==ImapResponseKind.tagged && consumed>=completion.bytes().size()
+            else throw InvalidArgument("invalid IMAP command completion");
+        self.responses=responses;self.completion=completion;tail=remainder;count=consumed;
+    }
+    responses() is Sequencing<ImapResponse> {responses;}
+    completion() is ImapResponse {completion;}
+    remainder() is @byte {tail;}
+    consumed() is int {count;}
+    successful() is bool {completion.name()=="OK";}
+    require_success() is ImapCommandRead {
+        confirm self.successful() else throw ImapCommandRejected(completion);
+        self;
+    }
+}
+object ImapCommandInput {
+    has origin is AsyncReading;has tag is ImapTag;has prefix is @byte;has limits is ImapCommandLimits;has mode is ImapReplyMode;
+    ImapCommandInput(origin is AsyncReading, tag is ImapTag, prefix is @byte, limits is ImapCommandLimits) {
+        confirm prefix.size()<=limits.wire_bytes() else throw ImapCommandLimitExceeded("prefix_bytes");
+        self.origin=origin;self.tag=tag;self.prefix=prefix;self.limits=limits;mode=ImapReplyMode();
+    }
+    ImapCommandInput(origin is AsyncReading, tag is ImapTag, prefix is @byte, limits is ImapCommandLimits, mode is ImapReplyMode) {
+        confirm prefix.size()<=limits.wire_bytes() else throw ImapCommandLimitExceeded("prefix_bytes");
+        self.origin=origin;self.tag=tag;self.prefix=prefix;self.limits=limits;self.mode=mode;
+    }
+    async read() is ImapCommandRead {
+        let collected is MimeItems<ImapResponse>=MimeItems();let count=MimePosition(0);let used=MimePosition(0);
+        let tail=ImapCommandTail(prefix);let continued=Event();
+        loop {
+            confirm count.index()<limits.responses() else throw ImapCommandLimitExceeded("responses");
+            let remaining=limits.wire_bytes()-used.index();
+            confirm remaining>0 else throw ImapCommandLimitExceeded("wire_bytes");
+            let per=limits.response();let maximum=if remaining<per.wire_bytes() {remaining;} else {per.wire_bytes();};
+            let bounded=ImapResponseLimits(per.line_bytes(),per.literal_bytes(),maximum,per.literals());
+            // A previous read can contain bytes beyond this command. Feed only
+            // the bounded prefix and retain the rest explicitly without loss.
+            let split=ImapCommandPrefix(tail.bytes(),maximum);
+            let read=await ImapResponseReading(origin,split.head(),bounded,limits.chunk_bytes()).result();
+            let response=read.response();used=used.following(used.index()+read.consumed());count=count.following(count.index()+1);
+            tail=tail.following(ImapCommandPrefixJoin(read.remainder(),split.tail()).bytes());
+            if response.kind()==ImapResponseKind.tagged {
+                confirm response.tag()==tag.string() else throw UnexpectedImapTag(tag,response.tag());
+                return ImapCommandRead(collected.entries(),response,tail.bytes(),used.index());
+            }
+            if response.kind()==ImapResponseKind.continuation {
+                confirm !continued.ready() else throw UnexpectedImapContinuation();
+                continued.set();await mode.continuation().write();next;
+            }
+            confirm response.name()!="BYE" || mode.logout() else throw ImapServerClosed(response);
+            await mode.observer().observed(response);
+            collected=collected.following(response);
+        }
+    }
+}
+object ImapCommandTail {
+    has value is @byte;
+    ImapCommandTail(origin is @byte) {value=origin;}
+    bytes() is @byte {value;}
+    following(origin is @byte) is ^ImapCommandTail {^value=origin;}
+}
+object ImapCommandPrefix {
+    has head, tail is @byte;
+    ImapCommandPrefix(origin is @byte, maximum is int) {
+        let size=if origin.size()<maximum {origin.size();} else {maximum;};
+        let first is @byte=(0..size).map() -> index {origin[index];};
+        let rest is @byte=(size..origin.size()).map() -> index {origin[index];};
+        head=first;tail=rest;
+    }
+    head() is @byte {head;}
+    tail() is @byte {tail;}
+}
+object ImapCommandPrefixJoin {
+    has first, second is @byte;
+    ImapCommandPrefixJoin(first is @byte, second is @byte) {self.first=first;self.second=second;}
+    bytes() is @byte {
+        let buffer=ByteBuffer(first);defer buffer.closing().close();buffer.writing().write(ByteSnapshot(second));buffer.content().bytes();
+    }
+}
+object ImapCommandLimitExceeded does Error {
+    has limit is string;
+    ImapCommandLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"IMAP command "+limit+" limit exceeded";}
+}
+object ImapCommandRejected does Error {
+    has response is ImapResponse;
+    ImapCommandRejected(response is ImapResponse) {self.response=response;}
+    response() is ImapResponse {response;}
+    text() is string {"IMAP command "+response.tag()+" rejected with "+response.name();}
+}
+object UnexpectedImapTag does Error {
+    has expected is ImapTag;has actual is string;
+    UnexpectedImapTag(expected is ImapTag, actual is string) {self.expected=expected;self.actual=actual;}
+    expected() is ImapTag {expected;}
+    actual() is string {actual;}
+    text() is string {"unexpected IMAP completion tag";}
+}
+object UnexpectedImapContinuation does Error {
+    UnexpectedImapContinuation();
+    text() is string {"unexpected IMAP continuation while awaiting command completion";}
+}
+object ImapServerClosed does Error {
+    has response is ImapResponse;
+    ImapServerClosed(response is ImapResponse) {self.response=response;}
+    response() is ImapResponse {response;}
+    text() is string {"IMAP server sent BYE";}
+}
+
+test "tagged rejection remains a completed aligned outcome" {
+    let wire=Utf8Encoded("O1 NO rejected\r\n").bytes();let response=ParsedImapResponse(wire).response();
+    let result=ImapCommandRead([],response,[7.byte()],wire.size());
+    test.is(result.successful(),false);test.is(result.remainder(),[7.byte()]);
+    let rejected=try {result.require_success();false;} catch failure is ImapCommandRejected {true;};test.is(rejected,true);
+}

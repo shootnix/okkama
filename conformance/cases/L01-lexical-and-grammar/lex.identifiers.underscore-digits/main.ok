@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+object Cash {
+    has total_cents2 is int;
+    Cash(:total_cents2);
+    cents_value() is int { total_cents2; }
+}
+
+main() is int {
+    let _private_local = 2;
+    let value_1 = Cash(total_cents2: 40).cents_value();
+    value_1 + _private_local;
+}

@@ -1,0 +1,27 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+object Counter {
+    has n is int = Tracer().mark("default evaluated", 10);
+    Counter(start is int) {
+        Stdout().writeln("body sees " + self.n.string());
+        self.n = self.n + start;
+    }
+    n() is int { n; }
+}
+
+main() is int {
+    let out = Stdout();
+    let c = Counter(5);
+    out.writeln(c.n().string());
+    0;
+}

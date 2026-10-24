@@ -1,0 +1,50 @@
+// Простые числа и большие факториалы
+// Задача: Найти простые числа, факториалы и времена остановки Коллатца.
+// Запуск из корня: ./examples/gallery/run primes
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: проверка делителей, BigInt, fold и преемник для последовательности.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/primes.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/primes v1.0.0;
+import "numbers/bigint" take BigInt,BigProduct,BigPower,BigDifference;
+import "io/stdout" take Stdout;
+object NumberTheory {
+    NumberTheory();
+    prime(number is int) is bool {
+        if number<2{return false;}
+        if number%2==0{return number==2;}
+        let range=Divisor(3);
+        loop{
+            let d=range.value();if d*d>number{return true;}
+            if number%d==0{return false;}range=range.following();
+        }
+    }
+}
+object Divisor {
+    has value is int;Divisor(value is int){self.value=value;}
+    value() is int{value;}following() is ^Divisor{^value=value+2;}
+}
+object Collatz {
+    has value,steps is int;Collatz(value is int){self.value=value;steps=0;}
+    finished() is bool{value==1;}steps() is int{steps;}
+    following() is ^Collatz{^value=if value%2==0{(value/2).int();}else{3*value+1;};^steps=steps+1;}
+}
+main() is int {
+    let math=NumberTheory();let primes=(2..174).filter()->n{math.prime(n);};
+    Stdout().writeln((0..20).map()->i{primes[i].string();}.join(" "));
+    confirm primes[19]==71;
+    for [10,25,50]->n{
+        let factorial=(1..n+1).reduce(BigInt("1"))->product,k{BigProduct(left:product,right:BigInt(k.string())).value();};
+        Stdout().writeln(n.string()+"! = "+factorial.string());
+    }
+    for [2,3,5,7,13,17,19,31]->exponent{
+        let value=BigDifference(left:BigPower(BigInt("2"),exponent).value(),right:BigInt("1")).value();
+        Stdout().writeln("2^"+exponent.string()+"-1 = "+value.string());
+    }
+    for [6,27,97]->n{
+        let state=Collatz(n);loop{last if state.finished();state=state.following();}
+        Stdout().writeln("Collatz "+n.string()+": "+state.steps().string());
+        if n==27{confirm state.steps()==111;}
+    }0;
+}

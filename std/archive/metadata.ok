@@ -1,0 +1,141 @@
+module archive/metadata v1.0.0;
+
+import "numbers/bigint" take BigInt;
+import "fs/stat" take PermissionMode;
+import "time/local_datetime" take LocalDateTime;
+import "time/date" take Date;
+import "time/day" take TimeOfDay;
+import "time/duration" take Duration, DurationUnit;
+
+// Immutable ownership coordinates at the archive-format boundary. Names remain
+// exact (including empty strings); numeric identities must be nonnegative and
+// retain arbitrary precision. Zero is a real ID, never a missing-value marker.
+// No account lookup, name/ID reconciliation, normalization or filesystem I/O.
+// Format-specific numeric widths and name encodings are checked by adapters.
+object ArchiveOwnership {
+    has user_name, group_name is string;
+    has user_id, group_id is BigInt;
+
+    ArchiveOwnership(user is string, group is string, user_identity is BigInt, group_identity is BigInt) {
+        confirm user_identity.sign() >= 0 && group_identity.sign() >= 0
+            else throw InvalidArchiveOwnership();
+        user_name = user;
+        group_name = group;
+        user_id = user_identity;
+        group_id = group_identity;
+    }
+
+    user() is string { user_name; }
+    group() is string { group_name; }
+    user_identity() is BigInt { user_id; }
+    group_identity() is BigInt { group_id; }
+}
+
+// Immutable archive metadata snapshot. The supplied calendar, comment, mode
+// and ownership are retained, not inferred from the host. Constructor overloads
+// bind calendar/comment alone, with mode, or with mode and ownership; absent observations
+// throw MissingArchiveMode/MissingArchiveOwnership. Private zero-or-one arrays
+// represent presence without fake values, null or magic numeric identities.
+// No mutation, account lookup, permission application or owned resources.
+//
+//     let time = ArchiveModificationFromEpoch(0.rat()).value();
+//     let info = ArchiveMetadata(time, "member comment");
+//     info.modification(); // unchanged UTC epoch calendar
+//     info.mode();         // throws MissingArchiveMode
+//
+// ZIP local calendar fields bind directly: no implicit offset, process zone or
+// daylight-saving resolution. TAR epoch seconds are explicitly converted with
+// ArchiveModificationFromEpoch. Comment Unicode and nanoseconds remain exact;
+// format adapters enforce their own field ranges and encoding restrictions.
+object ArchiveMetadata {
+    has permission is @PermissionMode;
+    has owners is @ArchiveOwnership;
+    has modified is LocalDateTime;
+    has note is string;
+
+    ArchiveMetadata(modified is LocalDateTime, comment is string) {
+        permission = [];
+        owners = [];
+        self.modified = modified;
+        note = comment;
+    }
+    ArchiveMetadata(mode is PermissionMode, modified is LocalDateTime, comment is string) {
+        permission = [mode];
+        owners = [];
+        self.modified = modified;
+        note = comment;
+    }
+    ArchiveMetadata(mode is PermissionMode, modified is LocalDateTime, ownership is ArchiveOwnership, comment is string) {
+        permission = [mode];
+        owners = [ownership];
+        self.modified = modified;
+        note = comment;
+    }
+
+    mode() is PermissionMode {
+        confirm permission.size() > 0 else throw MissingArchiveMode();
+        permission[0];
+    }
+    ownership() is ArchiveOwnership {
+        confirm owners.size() > 0 else throw MissingArchiveOwnership();
+        owners[0];
+    }
+    modification() is LocalDateTime { modified; }
+    comment() is string { note; }
+}
+
+// Exact epoch seconds represented as UTC calendar fields for archive metadata.
+// Constructor binds a Duration: nonintegral nanoseconds throw InvalidDuration.
+// value() performs pure calendar arithmetic; outside 1..9999 throws InvalidDate.
+// Negative/fractional seconds are supported, with no clock or timezone lookup.
+object ArchiveModificationFromEpoch {
+    has elapsed is Duration;
+    ArchiveModificationFromEpoch(seconds is rat) {
+        elapsed = Duration(seconds, DurationUnit.second);
+    }
+    #projected
+    value() is LocalDateTime {
+        LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0)).plus(elapsed);
+    }
+}
+
+object MissingArchiveMode does Error {
+    MissingArchiveMode();
+    text() is string { "archive mode is absent"; }
+}
+object MissingArchiveOwnership does Error {
+    MissingArchiveOwnership();
+    text() is string { "archive ownership is absent"; }
+}
+object InvalidArchiveOwnership does Error {
+    InvalidArchiveOwnership();
+    text() is string { "archive ownership identities must be nonnegative"; }
+}
+
+test "archive metadata retains calendar and comment with explicit absence" {
+    let date = ArchiveModificationFromEpoch(0.rat()).value();
+    let info = ArchiveMetadata(date, " комментарий 😀 ");
+    test.is(info.modification(), date);
+    test.is(info.comment(), " комментарий 😀 ");
+    test.ok(try { info.mode(); false; } catch error is MissingArchiveMode { true; });
+    test.ok(try { info.ownership(); false; } catch error is MissingArchiveOwnership { true; });
+    test.is(info.comment(), " комментарий 😀 ");
+}
+
+test "archive epoch conversion preserves negative fractional seconds" {
+    let time = ArchiveModificationFromEpoch(rat(-1, 2)).value();
+    test.is(time.date().year(), 1969);
+    test.is(time.date().month(), 12);
+    test.is(time.date().day(), 31);
+    test.is(time.time().hour(), 23);
+    test.is(time.time().second(), 59);
+    test.is(time.time().nanosecond(), 500000000);
+    test.ok(try { ArchiveModificationFromEpoch(rat(1, 3)); false; } catch error is Error { true; });
+    test.ok(try { ArchiveModificationFromEpoch(253402300800.rat()).value(); false; } catch error is Error { true; });
+}
+
+test "archive metadata diagnostics are stable values" {
+    test.is(MissingArchiveMode().text(), "archive mode is absent");
+    test.is(MissingArchiveOwnership().text(), "archive ownership is absent");
+    test.is(InvalidArchiveOwnership().text(), "archive ownership identities must be nonnegative");
+}

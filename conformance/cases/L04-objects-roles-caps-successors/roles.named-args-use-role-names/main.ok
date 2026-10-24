@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Greeter {
+    greet(person is string) is string;
+}
+
+object Polite does Greeter {
+    Polite();
+    greet(name is string) is string { "Hello, " + name; }
+}
+
+main() is int {
+    let out = Stdout();
+    let g is Greeter = Polite();
+    out.writeln(g.greet(person: "Ada"));
+    0;
+}

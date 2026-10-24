@@ -1,0 +1,39 @@
+// Повторно использовать завершённый ответ API
+//
+// Подключить кеш к готовому клиенту: Caching публикует ответ после корректного завершения чтения тела.
+//
+// Запуск: ./examples/cookbook/run lab example-http-cache
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-http-cache
+// Входы стенда, передаваемые через окружение: OKKAMA_CACHE_URL.
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "http/cache" take Caching;
+import "http/cache_memory" take MemoryHttpCache;
+import "http/client" take HttpClient;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take ListedNetworks;
+import "net/ip" take IpAddress,IpNetwork;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "collections/set" take Set,OrderedSet;
+import "http/version" take HttpVersion;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/header" take Headers,HeaderName;
+import "http/target" take AbsoluteTarget;
+import "url/value" take ParsedUrl;
+import "os/environment" take Environment;
+import "time/clock" take SystemClock;
+import "numbers/bigint" take BigInt;
+import "io/stdout" take Stdout;
+async main() is int{
+    let clock=SystemClock();let cache=MemoryHttpCache(clock,BigInt("8192"));defer cache.close();
+    let versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1]);let policy=ClientPolicy(versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let direct=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,clock);defer direct.close();let client=Caching(direct,cache,clock);
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl(Environment().variable("OKKAMA_CACHE_URL")).value()),Headers([]));
+    for (0..2) -> index{let result=await client.response(request);confirm result.response().status().code()==200;let body=result.response().body().reading();defer body.close();confirm await body.bytes(1)==[65.byte()];confirm (await body.bytes(1)).size()==0;if index==1{confirm result.response().headers().membership(HeaderName("Age"));}}
+    confirm cache.size()==1;Stdout().writeln("HTTP cache passed");0;
+}

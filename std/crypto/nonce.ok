@@ -1,0 +1,78 @@
+module crypto/nonce v1.0.0;
+
+import "crypto/error" take HostOperation, DecimalArgument, InvalidCryptoInput;
+
+// Entropy is the explicit randomness capability of crypto/*: keys, salts,
+// nonces and randomized signatures draw from the Entropy they are given and
+// never from ambient state. SystemEntropy is the host CSPRNG (getrandom).
+// Entropy.fake() is a deterministic test source, never secure.
+//
+//     let entropy = SystemEntropy();
+//     let nonce = RandomNonce(entropy, 12).bytes();
+//
+// RandomNonce draws `size` fresh bytes on every bytes() call (1..1024).
+// CounterNonce is the deterministic AEAD nonce prefix || big-endian counter,
+// exactly `size` bytes; the counter must fit the remaining width. The caller
+// owns counter uniqueness per key: a repeated (key, nonce) pair breaks AEAD.
+role Entropy {
+    bytes(size is int) is @byte;
+
+    fake {
+        has origin is int = 0;
+        bytes(size is int) is @byte {
+            (0..size).map() -> index { ((index * 167 + 13) % 256).byte(); };
+        }
+    }
+}
+
+object SystemEntropy does Entropy {
+    SystemEntropy();
+    bytes(size is int) is @byte {
+        confirm size >= 0 && size <= 16777216 else throw InvalidCryptoInput("entropy size must be 0..16777216");
+        if size == 0 { []; } else { HostOperation("random", [DecimalArgument(size).bytes()]).bytes(); }
+    }
+}
+
+object RandomNonce {
+    has entropy is Entropy;
+    has size is int;
+    RandomNonce(entropy is Entropy, size is int) {
+        confirm size >= 1 && size <= 1024 else throw InvalidCryptoInput("nonce size must be 1..1024");
+        self.entropy = entropy;
+        self.size = size;
+    }
+    bytes() is @byte { entropy.bytes(size); }
+}
+
+object CounterNonce {
+    has prefix is @byte;
+    has counter is int;
+    has size is int;
+    CounterNonce(prefix is @byte, counter is int, size is int) {
+        confirm size >= 1 && size <= 1024 && prefix.size() < size else throw InvalidCryptoInput("nonce prefix must be shorter than the nonce");
+        confirm counter >= 0 && counter < (1 << (8 * (size - prefix.size()))) else throw InvalidCryptoInput("nonce counter does not fit");
+        self.prefix = prefix;
+        self.counter = counter;
+        self.size = size;
+    }
+    bytes() is @byte {
+        let start = prefix.size();
+        (0..size).map() -> index {
+            if index < start { prefix[index]; } else { ((counter >> (8 * (size - 1 - index))) & 255).byte(); }
+        };
+    }
+}
+
+test "system entropy is fresh and sized" {
+    let entropy = SystemEntropy();
+    test.is(entropy.bytes(32).size(), 32);
+    test.ok(entropy.bytes(32) != entropy.bytes(32));
+    test.is(entropy.bytes(0).size(), 0);
+    test.ok(try { entropy.bytes(-1); false; } catch e is InvalidCryptoInput { true; });
+}
+
+test "counter nonces are prefix and big-endian counter" {
+    test.is(CounterNonce([1.byte()], 258, 4).bytes(), [1.byte(), 0.byte(), 1.byte(), 2.byte()]);
+    test.ok(try { CounterNonce([1.byte()], 256, 2); false; } catch e is InvalidCryptoInput { true; });
+    test.is(RandomNonce(Entropy.fake(), 12).bytes().size(), 12);
+}

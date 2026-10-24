@@ -1,0 +1,18 @@
+module runtime/unicode_character v1.0.0;
+
+// Portable Unicode 16.0.0 Character Database boundary for
+// unicode/character. A backend may use vendored tables, platform libraries or
+// VM intrinsics, but it must expose the same observable Unicode 16.0.0 data.
+// Applications should use UnicodeCharacter instead of these raw actions.
+
+native character_name(origin is char) is string;
+native category_code(origin is char) is string;
+native character_combining_class(origin is char) is int;
+native character_is_numeric(origin is char) is bool;
+native character_numeric_value(origin is char) is float;
+
+// Unicode 16.0 grapheme and display-property bulk observations. Ambiguous
+// characters are narrow; emoji presentation clusters and W/F characters wide.
+native display_clusters(origin is string) is @string;
+native display_widths(origin is string) is @int;
+native display_invalid_index(origin is string) is int;

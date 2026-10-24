@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "net/multicast" take MulticastOptions;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let options=MulticastOptions(hop_limit:1,loopback:false);
+    Stdout().writeln("hop limit: "+options.hop_limit().string());
+    Stdout().writeln(if options.loopback() {"local delivery requested";} else {"local delivery disabled";});
+    0;
+}

@@ -1,0 +1,18 @@
+module db/sqlite/backup v1.0.0;
+import "fs/path" take Path;
+import "numbers/bigint" take BigInt;
+import "time/clock" take Timing;
+import "time/duration" take Duration;
+import "compare" take Order;
+role SqliteBackupMaking{async backup(target is Path,pages is int,clock is Timing,timeout is Duration) is BackupReport;}
+object SqliteBackup{
+    has origin is SqliteBackupMaking;has target is Path;has pages is int;has clock is Timing;has timeout is Duration;
+    SqliteBackup(origin is SqliteBackupMaking,target is Path,pages is int,clock is Timing,timeout is Duration){confirm pages>=1 && pages<=256 && timeout.seconds()>0.rat() else throw InvalidSqliteBackup();self.origin=origin;self.target=target;self.pages=pages;self.clock=clock;self.timeout=timeout;}
+    async result() is BackupReport{await origin.backup(target,pages,clock,timeout);}
+}
+object BackupReport{
+    has copies,total is BigInt;
+    BackupReport(copies is BigInt,total is BigInt){confirm copies.order(BigInt("0"))!=Order.less && total.order(copies)!=Order.less else throw InvalidSqliteBackup();self.copies=copies;self.total=total;}
+    copies() is BigInt{copies;}total() is BigInt{total;}
+}
+object InvalidSqliteBackup does Error{InvalidSqliteBackup();text() is string{"invalid SQLite backup options or report";}}

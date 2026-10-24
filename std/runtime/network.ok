@@ -1,0 +1,110 @@
+module runtime/network v1.0.0;
+
+// Private native substrate for Stage 20 networking. SocketState is an opaque,
+// runtime-owned capability. Every state created here is non-blocking; public
+// net/* modules never expose this object or its numeric family/type protocol.
+
+native object SocketState;
+native object MembershipState;
+native object ListenerState;
+native object PairState;
+native object TcpListenerState;
+
+// Private system resolver results: numeric address, requested port, IPv6 scope.
+// Both directions use IO::Async worker requests; no sockaddr/flags are public.
+native async dns_addresses(host is string, port is int) is @@string;
+native async dns_name(address is string) is string;
+
+native socket(family is int, socket_type is int, protocol is int) is SocketState;
+native close(origin is SocketState) is bool;
+
+// Atomic nonblocking UDP acquisition: configure options before binding and close
+// every unpublished descriptor on failure. Numeric endpoint envelope comes from
+// runtime/net.ip_parse; scoped IPv6 lookup uses AI_NUMERICHOST/AI_NUMERICSERV.
+// local_endpoint returns [numeric address, decimal port, decimal scope or ""].
+// Handles remain opaque; closed() is an observation of their shared tombstone.
+native udp_bound(address is @byte, zone is string, reuse is bool,
+    broadcast is bool, dual_stack is bool) is SocketState;
+native local_endpoint(origin is SocketState) is @string;
+native closed(origin is SocketState) is bool;
+
+// One ordinary UDP packet, with a fixed native receive buffer <= 65536 bytes.
+// The private versioned envelope preserves source scope, prefix and truncation.
+// Cancellation removes readiness; close wakes the pending receive.
+native async udp_receive(origin is SocketState, limit is int) is @byte;
+native packet_source(origin is @byte) is @string;
+native packet_bytes(origin is @byte) is @byte;
+native packet_truncated(origin is @byte) is bool;
+
+// Submit exactly one ordinary UDP packet; success is the full payload count.
+// IP limits are checked before the host call; host EMSGSIZE uses the operation's
+// message_too_large code. No retry of a short result, no splitting or DNS.
+native async udp_send(origin is SocketState, target is @byte, zone is string,
+    payload is @byte) is int;
+
+// Connection acquisition uses an unpublished owned state. Connect is one-shot;
+// its cancellation or host failure closes that state. Connected packet actions
+// cannot override the peer, and unconnected packet actions reject this state.
+native async udp_connect(origin is SocketState, target is @byte, zone is string) is bool;
+native peer_endpoint(origin is SocketState) is @string;
+native async udp_connected_send(origin is SocketState, payload is @byte) is int;
+native async udp_connected_receive(origin is SocketState, limit is int) is @byte;
+
+// Synchronous any-source membership acquisition on an existing UDP owner.
+// First success pins multicast send settings; failed acquisition rolls back.
+// Socket close ends memberships; later membership close is idempotent.
+native multicast_join(origin is SocketState, group is @byte, name is string,
+    index is int, hops is int, loopback is bool) is MembershipState;
+native multicast_closed(origin is MembershipState) is bool;
+native multicast_close(origin is MembershipState) is bool;
+
+// No I/O: reject empty/NUL/overlong filesystem paths before host packing.
+// Capacity is host-specific and reserves a terminating NUL. The provider's
+// private sockaddr helper must be reused by future Unix bind/connect actions.
+native unix_path_valid(origin is @byte) is bool;
+
+native unix_pair() is PairState;
+native unix_pair_socket(origin is PairState, second is bool) is SocketState;
+native unix_pair_release(origin is PairState) is bool;
+native unix_pair_close(origin is PairState) is bool;
+native unix_endpoint(origin is SocketState, peer is bool) is @byte;
+native async stream_read(origin is SocketState, limit is int) is @byte;
+native async stream_write(origin is SocketState, payload is @byte) is bool;
+native stream_shutdown(origin is SocketState, output is bool) is bool;
+native stream_half_closed(origin is SocketState, output is bool) is bool;
+native async tcp_connect(address is @byte, zone is string, keep_alive is bool, no_delay is bool) is SocketState;
+native tcp_bound(address is @byte, zone is string, reuse is bool, dual_stack is bool) is TcpListenerState;
+native tcp_start_listening(origin is TcpListenerState, backlog is int) is bool;
+native tcp_listener_endpoint(origin is TcpListenerState) is @string;
+native tcp_endpoint(origin is SocketState, peer is bool) is @string;
+native async tcp_accept(origin is TcpListenerState, keep_alive is bool, no_delay is bool) is SocketState;
+native tcp_listener_close(origin is TcpListenerState) is bool;
+native tcp_listener_closed(origin is TcpListenerState) is bool;
+native async unix_connect(path is @byte) is SocketState;
+native unix_listen(path is @byte, backlog is int) is ListenerState;
+native unix_listener_path(origin is ListenerState) is @byte;
+native async unix_accept(origin is ListenerState) is SocketState;
+native unix_listener_close(origin is ListenerState) is bool;
+native unix_listener_closed(origin is ListenerState) is bool;
+
+test "managed socket closure is shared and idempotent" {
+    let state=socket(1,2,2);
+    test.ok(!closed(state));
+    close(state);close(state);
+    test.ok(closed(state));
+}
+
+test "packet accessors reject malformed private envelopes" {
+    let empty is @byte=[];
+    let rejected=try {packet_bytes(empty);false;}
+        catch failure is NativeFailure {failure.code()=="invalid_data";};
+    test.ok(rejected);
+}
+
+test "unconnected socket has no peer observation" {
+    let state=socket(1,2,2);
+    let rejected=try {peer_endpoint(state);false;}
+        catch failure is NativeFailure {failure.code()=="not_connected";};
+    close(state);
+    test.ok(rejected);
+}

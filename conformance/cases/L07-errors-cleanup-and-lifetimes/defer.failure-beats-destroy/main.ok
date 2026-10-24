@@ -1,0 +1,44 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NotFound does Error {
+    has key is string;
+    NotFound(:key);
+    text() is string { "not found: " + key; }
+}
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+object Thrower {
+    Thrower();
+    fail(key is string) is void {
+        throw NotFound(key: key);
+    }
+}
+
+object Fragile {
+    Fragile();
+    destroy {
+        Stdout().writeln("fragile destroy");
+        throw Denied();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let r = try {
+        let bad = Fragile();
+        defer Thrower().fail("defer");
+        "completed";
+    } catch e is NotFound {
+        "defer wins";
+    } catch e is Denied {
+        "destroy wins";
+    };
+    out.writeln(r);
+    0;
+}

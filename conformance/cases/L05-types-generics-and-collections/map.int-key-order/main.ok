@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let byint is %int:string = [10: "ten", 9: "nine", 100: "hundred", -1: "minus"];
+    let ks is @string = byint.keys().map() -> k { k.string(); };
+    out.writeln(ks.join(","));
+    out.writeln(byint.values().join(","));
+    0;
+}

@@ -1,0 +1,65 @@
+module app v1.0.0;
+import "http/internal/http2_preface" take Http2ClientPreface;
+import "http/http2_settings" take Http2Settings,Http2SettingsWire;
+import "http/internal/http2_reading" take Http2FrameReading;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader;
+import "http/internal/http2_headers" take Http2HeaderBlockReading,Http2HeaderBlockWriting;
+import "http/internal/http2_fields" take Http2RequestFields,Http2ResponseFields,ParsedHttp2Response,ParsedHttp2Request;
+import "http/internal/hpack" take HpackDecoder,HpackBudget;
+import "http/message" take Request,Response;
+import "http/header" take Headers,Header,HeaderName;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/target" take AbsoluteTarget;
+import "http/body" take EmptyBody;
+import "http/version" take HttpVersion;
+import "url/value" take ParsedUrl;
+import "net/tcp" take TcpListening,TcpConnecting,TcpAcceptance;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "async/atomic" take Atomic;
+import "io/stdout" take Stdout;
+
+// Explicit prior-knowledge loopback wire example. Internal collaborators are
+// demonstrated here; public H2 client/flow/multiplexing are not implemented yet.
+object Peer {
+    has listener is TcpAcceptance;Peer(listener is TcpAcceptance){self.listener=listener;}
+    async run() is bool{
+        let connection=await listener.connection();defer connection.close();
+        let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();let offset=Atomic(0);
+        loop{
+            if offset.value()==magic.size(){last;}
+            let chunk=await connection.input().bytes(magic.size()-offset.value());confirm chunk.size()>0;
+            for chunk -> octet{confirm octet==magic[offset.value()];offset.replace(offset.value()+1);}
+        }
+        let settings=await Http2FrameReading(connection.input()).result();confirm settings.header().kind().int()==4 && settings.header().flags().int()==0;
+        let payload=Http2SettingsWire(Http2Settings(),false).bytes();
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),0.byte(),0,payload.size()),payload).bytes()));
+        await connection.output().write(ByteSnapshot(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes()));
+        let acknowledgment=await Http2FrameReading(connection.input()).result();confirm acknowledgment.header().kind().int()==4 && acknowledgment.header().flags().int()==1;
+        let first=await Http2FrameReading(connection.input()).result();
+        let request=await Http2HeaderBlockReading(first,connection.input(),HpackDecoder(),HpackBudget()).result();
+        confirm request.fields()[0].value()=="GET" && request.fields()[3].value()=="/sample?" && request.end_stream();
+        let incoming=ParsedHttp2Request(request.fields(),request.stream()).request(EmptyBody());
+        confirm incoming.target().url().parts().path()=="/sample" && incoming.target().url().parts().query().present();
+        let response=Response(Status(200),Headers([Header(HeaderName("X-Echo"),"one"),Header(HeaderName("X-Echo"),"two")]),EmptyBody(),HttpVersion.http_2);
+        await Http2HeaderBlockWriting(connection.output(),1,Http2ResponseFields(response,1).fields(),HpackBudget(),4,true).result();true;
+    }
+}
+async main() is int{
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let peer=Peer(listener);let action is async () is bool=peer.run;let serving=spawn action();
+    let connection=await TcpConnecting(listener.local_endpoint()).connection();defer connection.close();
+    await Http2ClientPreface(connection.input(),connection.output(),Http2Settings()).result();
+    let acknowledgment=await Http2FrameReading(connection.input()).result();confirm acknowledgment.header().kind().int()==4 && acknowledgment.header().flags().int()==1;
+    let url=ParsedUrl("http://127.0.0.1:"+listener.local_endpoint().port().string()+"/sample?").value();
+    let request=Request(Method("GET"),AbsoluteTarget(url),Headers([]),EmptyBody(),HttpVersion.http_2);
+    await Http2HeaderBlockWriting(connection.output(),1,Http2RequestFields(request,1).fields(),HpackBudget(),4,true).result();
+    let first=await Http2FrameReading(connection.input()).result();
+    let block=await Http2HeaderBlockReading(first,connection.input(),HpackDecoder(),HpackBudget()).result();
+    let response=ParsedHttp2Response(block.fields(),block.stream(),block.end_stream());
+    confirm response.status().code()==200 && response.headers().values(HeaderName("X-Echo")).size()==2 && block.end_stream();
+    confirm await serving;Stdout().writeln("HTTP2 preface and fragmented request/response HEADERS verified over loopback");0;
+}

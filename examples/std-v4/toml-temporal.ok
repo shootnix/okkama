@@ -1,0 +1,14 @@
+module app v1.0.0;
+import "toml/value" take TomlLocalDate, TomlLocalTime, TomlLocalDateTime, TomlOffset, TomlOffsetDateTime;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let local = TomlLocalDateTime(TomlLocalDate(1979, 5, 27), TomlLocalTime(0, 32, 0, 999999000));
+        TomlOffsetDateTime(local, TomlOffset(-420)).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

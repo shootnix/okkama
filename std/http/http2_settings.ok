@@ -1,0 +1,42 @@
+module http/http2_settings v1.0.0;
+import "encoding/binary" take IntegerBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+
+// Local bounded receive advertisements, not received peer settings and not an
+// H2 session. Zero table/window/stream cap is meaningful and permitted.
+object Http2Settings {
+    has header_table,initial_window,frame_size,streams is int;
+    Http2Settings(){header_table=4096;initial_window=65535;frame_size=16384;streams=100;}
+    Http2Settings(header_table is int,initial_window is int,frame_size is int,streams is int){
+        confirm header_table>=0 && header_table<=1048576 && initial_window>=0 && initial_window<=2147483647
+            && frame_size>=16384 && frame_size<=16777215 && streams>=0 && streams<=65535
+            else throw InvalidHttp2Settings();
+        self.header_table=header_table;self.initial_window=initial_window;self.frame_size=frame_size;self.streams=streams;
+    }
+    header_table() is int{header_table;}initial_window() is int{initial_window;}frame_size() is int{frame_size;}streams() is int{streams;}
+}
+// Internal wire collaborator; not a public frame/HPACK API.
+object Http2SettingsWire {
+    has origin is Http2Settings;has client is bool;
+    Http2SettingsWire(origin is Http2Settings,client is bool){self.origin=origin;self.client=client;}
+    bytes() is @byte{
+        let rows is @Http2Setting=if client{
+            [Http2Setting(1,origin.header_table()),Http2Setting(2,0),Http2Setting(3,origin.streams()),Http2Setting(4,origin.initial_window()),Http2Setting(5,origin.frame_size())];
+        }else{[Http2Setting(1,origin.header_table()),Http2Setting(3,origin.streams()),Http2Setting(4,origin.initial_window()),Http2Setting(5,origin.frame_size())];};
+        let chunks is @@byte=rows.map()->row{row.bytes();};
+        (0..chunks.size()*6).map()->index{chunks[(index/6).int()][index%6];};
+    }
+}
+object Http2Setting {
+    has identifier,value is int;Http2Setting(identifier is int,value is int){self.identifier=identifier;self.value=value;}
+    bytes() is @byte{
+        let key=IntegerBytes(identifier,2,Signedness.unsigned,ByteOrder.big).bytes();
+        let data=IntegerBytes(value,4,Signedness.unsigned,ByteOrder.big).bytes();
+        (0..6).map()->index{if index<2{key[index];}else{data[index-2];}};
+    }
+}
+object InvalidHttp2Settings does Error{InvalidHttp2Settings();text() is string{"invalid local HTTP2 settings";}}
+test "zero stream/window/table caps remain explicit" {
+    let settings=Http2Settings(0,0,16384,0);test.ok(settings.streams()==0 && settings.initial_window()==0);
+    test.ok(Http2SettingsWire(settings,true).bytes().size()==30);
+}

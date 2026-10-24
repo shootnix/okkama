@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "time/rfc3339" take Rfc3339, InstantFromRfc3339, InvalidRfc3339;
+import "time/duration" take Duration, DurationUnit;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("unix nanoseconds", (value InstantFromRfc3339(origin: "2026-08-11T12:30:45.125+05:00")).unix_duration().nanoseconds().string(), "1786433445125000000");
+    c = c.same_text("UTC rendering", Rfc3339(origin: value InstantFromRfc3339(origin: "2026-08-11T12:30:45.125+05:00"), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string(), "2026-08-11T07:30:45.125Z");
+    c = c.same_text("offset rendering", Rfc3339(origin: value InstantFromRfc3339(origin: "2026-08-11T07:30:45.125Z"), offset: Duration(value: 5.rat(), unit: DurationUnit.hour)).string(), "2026-08-11T12:30:45.125+05:00");
+    c = c.same_text("unknown offset is zero", Rfc3339(origin: value InstantFromRfc3339(origin: "2026-08-11T07:30:45-00:00"), offset: Duration(value: 0.rat(), unit: DurationUnit.second)).string(), "2026-08-11T07:30:45Z");
+    c = c.same_text("lowercase t rejected", try { let probe = value InstantFromRfc3339(origin: "2026-08-11t07:30:45Z"); "no error"; } catch e is InvalidRfc3339 { "InvalidRfc3339"; }, "InvalidRfc3339");
+    c.done();
+}

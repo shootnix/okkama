@@ -1,0 +1,102 @@
+module http/websocket_session v1.0.0;
+import "http/websocket" take WebSocketConnection,WebSocketMessage,WebSocketLimits,WebSocketClose,WebSocketClosed,WebSocketFailure;
+import "http/internal/websocket_output" take WebSocketOutput,WebSocketOutputSettlement;
+import "http/internal/websocket_reading" take WebSocketFrameReading;
+import "http/internal/websocket_messages" take WebSocketMessageAssembly,ParsedWebSocketClose;
+import "http/internal/websocket_frame" take WebSocketFrame;
+import "http/internal/wire_bytes" take HttpWireBytes;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "io/stream" take Closing;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/binary" take IntegerBytes,Signedness;
+import "encoding/utf" take ByteOrder;
+import "random/source" take Randomizing;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "async/channel" take Channel,Sending,ChannelClosed;
+import "async/timeout" take Within,TimedOut;
+import "time/clock" take Timing;
+import "time/duration" take Duration;
+
+// Dedicated upgraded transport owner. Constructors bind only; first started()
+// or public operation starts its supervised reader and writer. close() aborts;
+// role close(code,reason) performs a bounded graceful handshake.
+object WebSocketSession does WebSocketConnection,Closing {
+    has state is WebSocketSessionState;
+    WebSocketSession(input is AsyncReading,output is AsyncWriting,owner is Closing,client is bool,random is Randomizing,limits is WebSocketLimits,close_timeout is Duration,clock is Timing){state=WebSocketSessionState(input,output,owner,client,random,limits,close_timeout,clock);}
+    async started() is bool{state.start();true;}
+    closed() is bool{state.closed();}close() is void{state.abort();}
+    async settled() is bool{await state.settled();}
+    async message() is WebSocketMessage{state.start();await state.message();}
+    async send(origin is WebSocketMessage) is WebSocketConnection{state.start();await state.send(origin);self;}
+    async ping(origin is @byte) is WebSocketConnection{state.start();await state.ping(origin);self;}
+    async close(code is int,reason is string) is WebSocketConnection{state.start();await state.finish(code,reason);self;}
+    destroy{self.close();}
+}
+object WebSocketSessionState {
+    has input is AsyncReading;has output is WebSocketOutput;has owner is Closing;has client is bool;has limits is WebSocketLimits;
+    has incoming is Channel<WebSocketMessage>;has failure is Atomic<Error>;has loops,disposal is FutureGroup<bool>;
+    has started,stopped,closing,close_sent,peer_closed,closing_started is Event;has close_timeout is Duration;has clock is Timing;
+    WebSocketSessionState(input is AsyncReading,output is AsyncWriting,owner is Closing,client is bool,random is Randomizing,limits is WebSocketLimits,close_timeout is Duration,clock is Timing){
+        confirm close_timeout.seconds()>0.rat() else throw WebSocketFailure("positive close deadline required");confirm !owner.closed() else throw WebSocketClosed(1006,"");
+        self.input=input;self.output=WebSocketOutput(output,client,random,limits);self.owner=owner;self.client=client;self.limits=limits;incoming=Channel(limits.queue());
+        let initial is Error=WebSocketClosed(1006,"");failure=Atomic(initial);loops=FutureGroup();disposal=FutureGroup();started=Event();stopped=Event();closing=Event();close_sent=Event();peer_closed=Event();closing_started=Event();self.close_timeout=close_timeout;self.clock=clock;
+    }
+    closed() is bool{stopped.ready() || owner.closed();}
+    start() is void{if !started.ready(){confirm !self.closed() else throw failure.value();started.set();loops.start(self.reading());loops.start(self.writing());}}
+    abort() is void{self.shutdown(WebSocketClosed(1006,""));}
+    shutdown(reason is Error) is void{
+        if !stopped.ready(){stopped.set();failure.replace(reason);incoming.sending().close();output.abort();loops.cancel();disposal.start(self.disposing());closing_started.set();}
+    }
+    async disposing() is bool{defer owner.close();if loops.active()>0{await loops.wait();}true;}
+    async settled() is bool{if started.ready(){await closing_started.wait();}if disposal.active()>0{await disposal.wait();}true;}
+    async writing() is bool{
+        let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.run();group.start(pending);
+        try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);true;}catch e is NativeFailure{self.shutdown(WebSocketClosed(1006,""));throw;}
+    }
+    async reading() is bool{
+        let assembly=WebSocketMessageAssembly(limits);defer assembly.close();
+        try{
+            loop{
+                let group is FutureGroup<WebSocketFrame>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=WebSocketFrameReading(input,!client,limits.frame_bytes()).result();group.start(pending);let frame=await pending;
+                if frame.opcode()==8{
+                    let received=ParsedWebSocketClose(frame.payload(),client).value();let responding=!closing.ready();if responding{closing.set();output.closing();}failure.replace(received);incoming.sending().close();
+                    if responding{let echo is Within<bool>=Within(output.control(8,frame.payload()).result(),close_timeout,clock);await echo.result();close_sent.set();}else{await close_sent.wait();}
+                    peer_closed.set();self.shutdown(received);return true;
+                }
+                if frame.opcode()==9{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pong=output.control(10,frame.payload()).result();group.start(pong);await pong;next;}
+                if frame.opcode()==10{next;}
+                if closing.ready(){next;}
+                for assembly.accept(frame) -> message{
+                    let group is FutureGroup<Sending<WebSocketMessage>>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let sending=incoming.sending().send(message);group.start(sending);try{await sending;}catch e is ChannelClosed{if !closing.ready(){throw;}}
+                }
+            }
+        }catch e is Cancelled{throw;}catch e is WebSocketFailure{
+            if !self.closed() && !closing.ready(){closing.set();output.closing();try{let bounded is Within<bool>=Within(output.control(8,IntegerBytes(1002,2,Signedness.unsigned,ByteOrder.big).bytes()).result(),close_timeout,clock);await bounded.result();}catch e is Error{}catch e is NativeFailure{}}
+            self.shutdown(e);true;
+        }catch e is Error{self.shutdown(e);true;}catch e is NativeFailure{self.shutdown(WebSocketClosed(1006,""));throw;}
+    }
+    async message() is WebSocketMessage{
+        let group is FutureGroup<WebSocketMessage>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let receiving=incoming.receiving().item();group.start(receiving);
+        try{await receiving;}catch e is ChannelClosed{throw failure.value();}
+    }
+    async send(message is WebSocketMessage) is bool{
+        confirm !self.closed() && !closing.ready() else throw failure.value();let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.message(message).result();group.start(pending);await pending;
+    }
+    async ping(payload is @byte) is bool{
+        confirm !self.closed() && !closing.ready() else throw failure.value();let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.control(9,payload).result();group.start(pending);await pending;
+    }
+    async handshake(code is int,reason is string) is bool{
+        if !closing.ready(){let value=WebSocketClose(code,reason);confirm client || code!=1010 else throw WebSocketFailure("server cannot emit client-only close code");closing.set();output.closing();failure.replace(WebSocketClosed(code,reason));incoming.sending().close();
+            let payload=HttpWireBytes([IntegerBytes(value.code(),2,Signedness.unsigned,ByteOrder.big).bytes(),Utf8Encoded(value.reason()).bytes()],125).bytes();
+            let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=output.control(8,payload).result();group.start(pending);await pending;close_sent.set();
+        }
+        await peer_closed.wait();true;
+    }
+    async finish(code is int,reason is string) is bool{
+        let cleanup=WebSocketSessionFinish(self);defer await cleanup.close();
+        if !self.closed(){let group is FutureGroup<bool>=FutureGroup();let settled=WebSocketOutputSettlement(group);defer await settled.close();let bounded is Within<bool>=Within(self.handshake(code,reason),close_timeout,clock);let pending=bounded.result();group.start(pending);await pending;}true;
+    }
+}
+object WebSocketSessionFinish {has owner is WebSocketSessionState;WebSocketSessionFinish(owner is WebSocketSessionState){self.owner=owner;}async close() is void{owner.abort();await owner.settled();}}

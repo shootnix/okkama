@@ -1,0 +1,76 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.spawn.event-barrier",
+  "title": "tasks released by an event run after it is set",
+  "purpose": "Observe asynchronous behaviour through causal events (partial order).",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.SPAWN-TASK",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "STD.ASYNC.EVENT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "partial_order": {
+        "lines": [
+          "setting",
+          "released 1",
+          "released 2",
+          "3"
+        ],
+        "before": [
+          [
+            "setting",
+            "released 1"
+          ],
+          [
+            "setting",
+            "released 2"
+          ],
+          [
+            "released 1",
+            "3"
+          ],
+          [
+            "released 2",
+            "3"
+          ]
+        ]
+      },
+      "justification": "Cooperative scheduling order between independently runnable tasks is not specified; only the causal order enforced by the program (event, channel, await) is asserted."
+    }
+  },
+  "spec_refs": [
+    "std/async/event.ok",
+    "docs/okkama-spec-11072026.md#18.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async/event: wait() suspends until set(); set() releases every waiter; repeated set() is harmless. Both releases follow `setting` and precede the awaited sum; their mutual order is unspecified."
+  },
+  "status": "mandatory"
+}

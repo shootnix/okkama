@@ -1,0 +1,20 @@
+module example v1.0.0;
+
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+// Completion has no business result. The caller can retain the pending
+// operation and await it more than once, but cannot capture its await result.
+object Commit {
+    Commit();
+    async run() is void {
+        await SystemClock().wait(Duration(value: 0.rat(), unit: DurationUnit.nanosecond));
+    }
+}
+
+async main() is int {
+    let pending = Commit().run();
+    await pending;
+    await pending;
+    return 0;
+}

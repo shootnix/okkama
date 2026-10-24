@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.match.no-matching-case",
+  "title": "a match statement with no matching case and no else does nothing",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.MATCH",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "after\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.8: an unmatched statement-form match without else selects no branch."
+  },
+  "status": "mandatory"
+}

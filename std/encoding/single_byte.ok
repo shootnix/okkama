@@ -1,0 +1,132 @@
+module encoding/single_byte v1.0.0;
+
+import "runtime/single_byte" take
+    ascii_representable_prefix, ascii_encode,
+    ascii_valid_prefix, ascii_decode,
+    latin1_representable_prefix, latin1_encode, latin1_decode;
+
+// Immutable ASCII and ISO-8859-1 codecs.
+//
+//     AsciiEncoded(origin: "hello").bytes();
+//     // [104, 101, 108, 108, 111]
+//
+//     Latin1Decoded(origin: [byte(99), byte(97), byte(102), byte(233)])
+//         .string();
+//     // "café"
+//
+// Latin-1 means ISO-8859-1 exactly, never Windows-1252 or a locale-selected
+// code page. Consequently every byte decodes, including 0x80..0x9F as the
+// corresponding Unicode control characters.
+//
+// Encoding errors report a Unicode-scalar offset in the source string. An
+// ASCII decoding error reports a byte offset. Codecs never replace, skip,
+// normalize or transliterate values.
+
+object AsciiEncoded {
+    has origin is string;
+
+    AsciiEncoded(origin is string) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        let offset is int = ascii_representable_prefix(origin);
+        confirm offset == origin.length()
+            else throw UnrepresentableAsciiCharacter(offset);
+        ascii_encode(origin);
+    }
+}
+
+object AsciiDecoded {
+    has origin is @byte;
+
+    AsciiDecoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        let offset is int = ascii_valid_prefix(origin);
+        confirm offset == origin.size() else throw InvalidAsciiByte(offset);
+        ascii_decode(origin);
+    }
+}
+
+object Latin1Encoded {
+    has origin is string;
+
+    Latin1Encoded(origin is string) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        let offset is int = latin1_representable_prefix(origin);
+        confirm offset == origin.length()
+            else throw UnrepresentableLatin1Character(offset);
+        latin1_encode(origin);
+    }
+}
+
+object Latin1Decoded {
+    has origin is @byte;
+
+    Latin1Decoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        latin1_decode(origin);
+    }
+}
+
+object UnrepresentableAsciiCharacter does Error {
+    has invalid_offset is int;
+
+    UnrepresentableAsciiCharacter(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "character is not representable in ASCII at scalar offset "
+            + invalid_offset.string();
+    }
+}
+
+object UnrepresentableLatin1Character does Error {
+    has invalid_offset is int;
+
+    UnrepresentableLatin1Character(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "character is not representable in Latin-1 at scalar offset "
+            + invalid_offset.string();
+    }
+}
+
+object InvalidAsciiByte does Error {
+    has invalid_offset is int;
+
+    InvalidAsciiByte(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid ASCII byte at byte offset " + invalid_offset.string();
+    }
+}

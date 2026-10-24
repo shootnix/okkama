@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    if false {
+        out.writeln("never");
+    }
+    let size = 7;
+    let label = if size > 5 { "big"; } else { "small"; };
+    out.writeln(label);
+    let nested = if size > 10 { "huge"; } else { if size > 5 { "big"; } else { "small"; } };
+    out.writeln(nested);
+    out.writeln((if true { 1; } else { 2; } + 10).string());
+    0;
+}

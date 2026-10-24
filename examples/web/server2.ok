@@ -1,0 +1,146 @@
+module app v1.0.0;
+import "http/server" take HttpServer;
+import "http/server_policy" take ServerPolicy;
+import "http/routing" take Routes,Route,RoutePattern;
+import "http/handler" take Handling,HandlingResult,ResponseHandling;
+import "http/request_context" take HttpRequestContext;
+import "http/message" take Request,Response;
+import "http/method" take Method;
+import "http/status" take Status;
+import "http/header" take Headers,Header,HeaderName;
+import "http/body" take ByteBody;
+import "net/tcp" take TcpListening;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+// Long-running HTTP1.1 web server on 127.0.0.1:8000: immutable Routes dispatch
+// literal, :parameter and *wildcard paths to Handling objects; unknown paths use
+// the fallback, known paths with another method get 405 from Routes itself.
+// Run from okkama-pl: OKKAMA_STDLIB_DIR=$(cd ../std && pwd) perl bin/okkama ../examples/web/server.ok
+
+// Text reply with explicit Content-Length, so keep-alive connections stay reusable.
+object TextReply {
+    has status is int;
+    has content_type is string;
+    has text is string;
+    
+    TextReply(status is int, text is string) {
+        self.status = status;
+        content_type = "text/plain; charset=utf-8";
+        self.text = text;
+    }
+    TextReply(status is int, content_type is string, text is string) {
+        self.status = status;
+        self.content_type = content_type;
+        self.text = text;
+    }
+    
+    handling() is HandlingResult {
+        let bytes = Utf8Encoded(text).bytes();
+        ResponseHandling(
+            Response(
+                Status(status),
+                Headers(
+                    [
+                        Header(HeaderName("Content-Type"), content_type),
+                        Header(HeaderName("Content-Length"), bytes.size().string())
+                    ]
+                ),
+                ByteBody(bytes)
+            )
+        );
+    }
+}
+
+object RootCtontroller {
+    RootCtontroller();
+
+    async index(request is Request,context is HttpRequestContext) is HandlingResult {
+        TextReply(200,"Okkama web server\n\nGET  /hello/:name\nGET  /users/:id/posts/:post\nGET  /files/*path\nPOST /echo\n").handling();
+    }
+
+    async echo(request is Request,context is HttpRequestContext) is HandlingResult {
+        let reader=request.body().reading();defer reader.close();
+        let received=ByteBuffer();
+        loop {
+            let chunk=await reader.bytes(4096);
+            last if chunk.size()==0;
+            if received.content().size()+chunk.size()>65536 {return TextReply(413,"body too large\n").handling();}
+            received.writing().write(ByteSnapshot(chunk));
+        }
+        TextReply(200,"echo: "+Utf8Decoded(received.content().bytes()).string()+"\n").handling();
+    }
+
+    async not_found(request is Request,context is HttpRequestContext) is HandlingResult {
+        TextReply(404,"not found: "+request.target().string()+"\n").handling();
+    }
+}
+
+object HelloController {
+    HelloController();
+
+    async by_name(request is Request,context is HttpRequestContext) is HandlingResult {
+        TextReply(200,"Hello, "+context.parameters()["name"]+"!\n").handling();
+    }
+}
+
+object UsersController {
+    UsersController();
+
+    async get_posts(request is Request,context is HttpRequestContext) is HandlingResult {
+        let parameters=context.parameters();
+        TextReply(
+            200,
+            "application/json",
+            "{\"user\":\""+parameters["id"]+"\",\"post\":\""+parameters["post"]+"\"}\n"
+        ).handling();
+    }
+}
+
+object FilesController {
+    FilesController();
+
+    async list(request is Request,context is HttpRequestContext) is HandlingResult {
+        TextReply(200,"requested file: /"+context.parameters()["path"]+"\n").handling();
+    }
+}
+
+// Handling is a role, not an action type: a bound controller action becomes a
+// route handler through this adapter.
+object ActionHandling does Handling {
+    has action is async (Request, HttpRequestContext) is HandlingResult;
+
+    ActionHandling(:action);
+
+    async handling(request is Request,context is HttpRequestContext) is HandlingResult {
+        await action(request, context);
+    }
+}
+
+async main() is int {
+    let root_ctrl = RootCtontroller();
+    let hello_ctrl = HelloController();
+    let users_ctrl = UsersController();
+    let files_ctrl = FilesController();
+
+    let routes = Routes(
+        [
+            Route(Method("GET"), RoutePattern("/"), ActionHandling(action: root_ctrl.index)),
+            Route(Method("GET"), RoutePattern("/hello/:name"), ActionHandling(action: hello_ctrl.by_name)),
+            Route(Method("GET"), RoutePattern("/users/:id/posts/:post"), ActionHandling(action: users_ctrl.get_posts)),
+            Route(Method("GET"), RoutePattern("/files/*path"), ActionHandling(action: files_ctrl.list)),
+            Route(Method("POST"), RoutePattern("/echo"), ActionHandling(action: root_ctrl.echo))
+        ],
+        ActionHandling(action: root_ctrl.not_found)
+    );
+    let listener = await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),8000)).acceptance();
+    let server = HttpServer(listener, routes, ServerPolicy(), SystemClock());
+    Stdout().writeln("listening on http://127.0.0.1:" + server.local_endpoint().port().string());
+    await server.serve();
+    
+    0;
+}

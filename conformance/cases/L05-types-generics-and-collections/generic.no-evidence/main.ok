@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Bucket<T> {
+    has values is @T;
+    Bucket(:values);
+}
+
+main() is int {
+    let out = Stdout();
+    let bucket = Bucket(values: []);
+    out.writeln("unreachable");
+    0;
+}

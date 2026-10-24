@@ -1,0 +1,72 @@
+module bench/roles v1.0.0;
+
+// Роли: полиморфный вызов через роль над 300000 фигурами четырёх видов
+// (позднее связывание, как интерфейсы JVM).
+import "io/stdout" take Stdout;
+
+role Shape {
+    area() is int;
+    perimeter() is int;
+    weight() is int;
+}
+
+object Rect does Shape {
+    has w, h is int;
+    Rect(w is int, h is int) { self.w = w; self.h = h; }
+    area() is int { w * h; }
+    perimeter() is int { 2 * (w + h); }
+    weight() is int { 1; }
+}
+
+object Square does Shape {
+    has side is int;
+    Square(side is int) { self.side = side; }
+    area() is int { side * side; }
+    perimeter() is int { 4 * side; }
+    weight() is int { 2; }
+}
+
+object Triangle does Shape {
+    has a, b, c is int;
+    Triangle(a is int, b is int, c is int) { self.a = a; self.b = b; self.c = c; }
+    area() is int { a * b % 1000; }
+    perimeter() is int { a + b + c; }
+    weight() is int { 3; }
+}
+
+object Circle does Shape {
+    has r is int;
+    Circle(r is int) { self.r = r; }
+    area() is int { 314 * r * r % 100000; }
+    perimeter() is int { 628 * r % 10000; }
+    weight() is int { 4; }
+}
+
+object Factory {
+    Factory();
+
+    shape(i is int) is Shape {
+        let kind = i % 4;
+        if kind == 0 { Rect(i % 17 + 1, i % 23 + 1); }
+        else if kind == 1 { Square(i % 31 + 1); }
+        else if kind == 2 { Triangle(i % 11 + 3, i % 13 + 4, i % 7 + 5); }
+        else { Circle(i % 19 + 1); }
+    }
+}
+
+object Report {
+    Report();
+
+    score(shapes is @Shape) is int {
+        shapes.reduce(0) -> total, shape { total + shape.area() * shape.weight() + shape.perimeter(); };
+    }
+}
+
+main() is int {
+    let factory = Factory();
+    let shapes is @Shape = (0..300000).map() -> i { factory.shape(i); };
+    let report = Report();
+    let total = (0..3).reduce(0) -> sum, round { sum + report.score(shapes); };
+    Stdout().writeln(shapes.size().string() + " " + total.string());
+    0;
+}

@@ -1,0 +1,145 @@
+module io/stdin v1.0.0;
+
+import "io/stream" take
+    Reading,
+    ReadingText,
+    Closing,
+    InvalidReadLimit;
+import "encoding/utf" take Utf8Decoded;
+import "runtime/stdio" take stdin_read;
+import "runtime/input_state" take
+    Utf8InputState,
+    input_state_create,
+    input_state_append,
+    input_state_size,
+    input_state_line_offset,
+    input_state_take,
+    input_state_eof,
+    input_state_finish,
+    input_state_closed,
+    input_state_close;
+
+// Raw process input and a strict UTF-8 text decorator.
+//
+//     let input = Utf8Input(origin: Stdin());
+//     let command is string = input.line();
+//     let remainder is string = input.text();
+//     input.close();
+//
+// Stdin.bytes(limit) returns at most limit unmodified bytes. limit must be
+// positive; [] is stable EOF. Every Stdin value observes the same process
+// stream.
+//
+// Utf8Input buffers bytes read ahead from its non-owned Reading. line() splits
+// on LF, removes that LF and one immediately preceding CR, and preserves every
+// other character. A final non-empty line is returned without requiring a
+// terminator. text() returns all remaining decoded text without newline
+// normalization. Both operations use strict UTF-8 and throw EndOfInput only
+// when upstream EOF is known and the private buffer is empty.
+//
+// close() is idempotent, clears the decoder buffer and does not close the
+// wrapped Reading. Reading after close throws ClosedInput.
+
+object Stdin does Reading {
+    Stdin();
+
+    bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        stdin_read(limit);
+    }
+}
+
+object Utf8Input does ReadingText, Closing {
+    has origin is Reading;
+    has state is Utf8InputState;
+
+    Utf8Input(origin is Reading) {
+        self.origin = origin;
+        state = input_state_create();
+    }
+
+    line() is string {
+        self.open();
+        self.fill_line();
+        let offset is int = input_state_line_offset(state);
+        if offset >= 0 {
+            let raw is @byte = input_state_take(state, offset + 1);
+            let end is int = if offset > 0 && raw[offset - 1] == byte(13) {
+                offset - 1;
+            } else {
+                offset;
+            };
+            Utf8Decoded(origin: raw.slice(0, end)).string();
+        }
+        else {
+            let size is int = input_state_size(state);
+            confirm size > 0 else throw EndOfInput();
+            Utf8Decoded(origin: input_state_take(state, size)).string();
+        }
+    }
+
+    text() is string {
+        self.open();
+        self.fill_text();
+        let size is int = input_state_size(state);
+        confirm size > 0 else throw EndOfInput();
+        Utf8Decoded(origin: input_state_take(state, size)).string();
+    }
+
+    closed() is bool {
+        input_state_closed(state);
+    }
+
+    close() is void {
+        input_state_close(state);
+    }
+
+    private:
+
+    open() is void {
+        confirm !self.closed() else throw ClosedInput();
+    }
+
+    fill_line() is void {
+        loop {
+            last if input_state_line_offset(state) != -1
+                || input_state_eof(state);
+            self.read_more();
+        }
+    }
+
+    fill_text() is void {
+        loop {
+            last if input_state_eof(state);
+            self.read_more();
+        }
+    }
+
+    read_more() is void {
+        let chunk is @byte = origin.bytes(4096);
+        if chunk.size() == 0 {
+            input_state_finish(state);
+        }
+        else {
+            input_state_append(state, chunk);
+        }
+    }
+}
+
+object EndOfInput does Error {
+    EndOfInput();
+
+    #projected
+    text() is string {
+        "end of input";
+    }
+}
+
+object ClosedInput does Error {
+    ClosedInput();
+
+    #projected
+    text() is string {
+        "input is closed";
+    }
+}

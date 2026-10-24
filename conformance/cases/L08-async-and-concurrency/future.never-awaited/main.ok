@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Exploder {
+    Exploder();
+    async run() is int {
+        panic "this body must not start";
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let pending = Exploder().run();
+    out.writeln("not started");
+    0;
+}

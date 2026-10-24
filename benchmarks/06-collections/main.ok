@@ -1,0 +1,26 @@
+module bench/collections v1.0.0;
+
+// Коллекции: map/filter/reduce над массивами, сортировка, словари и частоты.
+import "collections/ordering" take Sorted;
+import "collections/frequencies" take Frequencies;
+import "io/stdout" take Stdout;
+
+object Data {
+    Data();
+
+    values(count is int) is @int {
+        (0..count).map() -> i { (i * 7919 + 13) % 10007; };
+    }
+}
+
+main() is int {
+    let values = Data().values(200000);
+    let evens = values.filter() -> n { n % 2 == 0; };
+    let squares = evens.map() -> n { n * n % 1000003; };
+    let sum = squares.reduce(0) -> total, n { total + n; };
+    let sorted = Sorted(values.slice(0, 50000)).map() -> n { n; };
+    let buckets = Frequencies(values.slice(0, 4000).map() -> n { n % 97; });
+    let index = [ "low": values.filter() -> n { n < 5000; }.size(), "high": values.filter() -> n { n >= 5000; }.size() ];
+    Stdout().writeln(sum.string() + " " + sorted[0].string() + " " + sorted[49999].string() + " " + buckets.size().string() + " " + buckets.amount(0).string() + " " + index["low"].string() + " " + index["high"].string());
+    0;
+}

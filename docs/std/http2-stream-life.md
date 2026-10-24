@@ -1,0 +1,9 @@
+# Internal HTTP2 stream lifecycle
+
+http/internal/http2_life::Http2StreamLife(stream) tracks idle/open/local_ended/remote_ended/closed independently for a positive uint31 ID. local_headers/remote_headers open streams, local_data/remote_data require non-idle state, end flags advance the respective half-close, and reset closes only that stream. DATA/reset on idle is a connection PROTOCOL_ERROR; new remote content after remote half-close is stream STREAM_CLOSED (5). Push-reserved states are absent because push is disabled. Actual message/trailer order, parity/admission and wire emission are checked by the owning connection.
+
+Closed state uses the minimal-processing option permitted by [RFC 9113 section 5.1](https://www.rfc-editor.org/rfc/rfc9113.html#section-5.1): late content/reset keeps it closed. Owner still advances HPACK and charges DATA to the connection window before discarding application data. discarding() must be inspected before applying the received frame: a final accepted DATA frame changes state to closed but its payload must still be delivered. This model has no acknowledgment-based tightening of closed-frame acceptance or arbitrary grace timer.
+
+Http2ClientStreamIds allocates monotone odd IDs starting at 1; explicit positive odd start permits a pre-established sequence/boundary test. highest() observes the previous cutoff. Exhaustion after 2147483647 throws Http2StreamIdsExhausted instead of wrapping/reusing zero or an old ID. GOAWAY/capacity checks and actual registry publication remain external responsibilities.
+
+489 five lifecycle/ID cases; control compatibility 487/489 ten assertions PASS. Shared end-transition helper refactored after GREEN; inline/example PASS. No provider/VM changes and no full rerun. This is a state machine collaborator, not verified live sibling cancellation/multiplexing.

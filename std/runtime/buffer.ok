@@ -1,0 +1,13 @@
+module runtime/buffer v1.0.0;
+
+// Opaque mutable storage shared by the capability views from io/buffer.
+
+native object BufferState;
+
+native buffer_state_create(initial is @byte) is BufferState;
+native buffer_state_read(state is BufferState, limit is int) is @byte;
+native buffer_state_append(state is BufferState, value is @byte) is int;
+native buffer_state_bytes(state is BufferState) is @byte;
+native buffer_state_size(state is BufferState) is int;
+native buffer_state_closed(state is BufferState) is bool;
+native buffer_state_close(state is BufferState) is bool;

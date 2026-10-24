@@ -1,0 +1,3236 @@
+{
+  "node": "Program",
+  "module": {
+    "node": "ModuleDecl",
+    "path": [
+      "syntax",
+      "tour"
+    ],
+    "version": "v1.2.3"
+  },
+  "imports": [
+    {
+      "node": "ImportDecl",
+      "path": "io/stdout",
+      "alias": null,
+      "take": [
+        "Stdout"
+      ]
+    },
+    {
+      "node": "ImportDecl",
+      "path": "async/channel",
+      "alias": "channels",
+      "take": [
+        "Channel",
+        "Sending"
+      ]
+    },
+    {
+      "node": "ImportDecl",
+      "path": "runtime/time",
+      "alias": null,
+      "take": []
+    }
+  ],
+  "items": [
+    {
+      "node": "EnumDecl",
+      "name": "Color",
+      "cases": [
+        "red",
+        "green",
+        "blue"
+      ]
+    },
+    {
+      "node": "EnumDecl",
+      "name": "Nothing",
+      "cases": []
+    },
+    {
+      "node": "NativeActionDecl",
+      "async": true,
+      "name": "sleep_ms",
+      "params": [
+        {
+          "node": "Param",
+          "name": "duration",
+          "variadic": false,
+          "type": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          }
+        }
+      ],
+      "result": {
+        "node": "VoidResult"
+      }
+    },
+    {
+      "node": "NativeActionDecl",
+      "async": false,
+      "name": "clock_ticks",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      }
+    },
+    {
+      "node": "NativeObjectDecl",
+      "name": "Handle"
+    },
+    {
+      "node": "RoleDecl",
+      "name": "Comparing",
+      "generics": [
+        {
+          "node": "GenericParam",
+          "name": "T",
+          "bound": null
+        }
+      ],
+      "members": [
+        {
+          "node": "ActionSignature",
+          "async": false,
+          "name": "order",
+          "params": [
+            {
+              "node": "Param",
+              "name": "other",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "T"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          }
+        },
+        {
+          "node": "ActionSignature",
+          "async": true,
+          "name": "refresh",
+          "params": [],
+          "result": {
+            "node": "SuccessorResult",
+            "type": {
+              "node": "NamedType",
+              "path": [
+                "Comparing"
+              ],
+              "args": [
+                {
+                  "node": "NamedType",
+                  "path": [
+                    "T"
+                  ],
+                  "args": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "node": "ActionSignature",
+          "async": false,
+          "name": "has",
+          "params": [
+            {
+              "node": "Param",
+              "name": "expected",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "T"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "bool"
+            ],
+            "args": []
+          }
+        },
+        {
+          "node": "FakeDecl",
+          "body": {
+            "node": "FakeBody",
+            "members": [
+              {
+                "node": "HasDecl",
+                "names": [
+                  "calls"
+                ],
+                "type": {
+                  "node": "NamedType",
+                  "path": [
+                    "int"
+                  ],
+                  "args": []
+                },
+                "default": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "0"
+                }
+              },
+              {
+                "node": "ShorthandConstructor",
+                "name": "Comparing",
+                "fields": [],
+                "body": null
+              },
+              {
+                "node": "ActionDecl",
+                "async": false,
+                "visibility": "public",
+                "projection": null,
+                "name": "order",
+                "params": [
+                  {
+                    "node": "Param",
+                    "name": "other",
+                    "variadic": false,
+                    "type": {
+                      "node": "NamedType",
+                      "path": [
+                        "T"
+                      ],
+                      "args": []
+                    }
+                  }
+                ],
+                "result": {
+                  "node": "NamedType",
+                  "path": [
+                    "int"
+                  ],
+                  "args": []
+                },
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "ExpressionStatement",
+                      "expression": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "0"
+                      },
+                      "condition": null
+                    }
+                  ]
+                }
+              },
+              {
+                "node": "ActionDecl",
+                "async": true,
+                "visibility": "public",
+                "projection": null,
+                "name": "refresh",
+                "params": [],
+                "result": {
+                  "node": "SuccessorResult",
+                  "type": {
+                    "node": "NamedType",
+                    "path": [
+                      "Comparing"
+                    ],
+                    "args": [
+                      {
+                        "node": "NamedType",
+                        "path": [
+                          "T"
+                        ],
+                        "args": []
+                      }
+                    ]
+                  }
+                },
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "SuccessorAssignStatement",
+                      "name": "calls",
+                      "value": {
+                        "node": "Binary",
+                        "operator": "+",
+                        "left": {
+                          "node": "NameExpression",
+                          "name": "calls"
+                        },
+                        "right": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "1"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "node": "ActionDecl",
+                "async": false,
+                "visibility": "public",
+                "projection": null,
+                "name": "has",
+                "params": [
+                  {
+                    "node": "Param",
+                    "name": "expected",
+                    "variadic": false,
+                    "type": {
+                      "node": "NamedType",
+                      "path": [
+                        "T"
+                      ],
+                      "args": []
+                    }
+                  }
+                ],
+                "result": {
+                  "node": "NamedType",
+                  "path": [
+                    "bool"
+                  ],
+                  "args": []
+                },
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "ExpressionStatement",
+                      "expression": {
+                        "node": "BoolLiteral",
+                        "value": false
+                      },
+                      "condition": null
+                    }
+                  ]
+                }
+              },
+              {
+                "node": "DestroyDecl",
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "ExpressionStatement",
+                      "expression": {
+                        "node": "NameExpression",
+                        "name": "calls"
+                      },
+                      "condition": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "node": "TestDecl",
+          "async": false,
+          "name": "role test",
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "Get",
+                    "object": {
+                      "node": "NameExpression",
+                      "name": "test"
+                    },
+                    "name": "ok"
+                  },
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "BoolLiteral",
+                        "value": true
+                      }
+                    }
+                  ]
+                },
+                "condition": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "node": "ObjectDecl",
+      "name": "Account",
+      "generics": [
+        {
+          "node": "GenericParam",
+          "name": "T",
+          "bound": {
+            "node": "NamedType",
+            "path": [
+              "Comparing"
+            ],
+            "args": [
+              {
+                "node": "NamedType",
+                "path": [
+                  "T"
+                ],
+                "args": []
+              }
+            ]
+          }
+        },
+        {
+          "node": "GenericParam",
+          "name": "U",
+          "bound": null
+        }
+      ],
+      "roles": [
+        {
+          "node": "NamedType",
+          "path": [
+            "Comparing"
+          ],
+          "args": [
+            {
+              "node": "NamedType",
+              "path": [
+                "T"
+              ],
+              "args": []
+            }
+          ]
+        },
+        {
+          "node": "NamedType",
+          "path": [
+            "io",
+            "Printable"
+          ],
+          "args": []
+        }
+      ],
+      "members": [
+        {
+          "node": "HasDecl",
+          "names": [
+            "owner",
+            "nickname"
+          ],
+          "type": {
+            "node": "NamedType",
+            "path": [
+              "string"
+            ],
+            "args": []
+          },
+          "default": null
+        },
+        {
+          "node": "HasDecl",
+          "names": [
+            "balance"
+          ],
+          "type": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          },
+          "default": {
+            "node": "IntLiteral",
+            "radix": "decimal",
+            "digits": "0"
+          }
+        },
+        {
+          "node": "HasDecl",
+          "names": [
+            "callback"
+          ],
+          "type": {
+            "node": "ActionType",
+            "async": false,
+            "params": [
+              {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              },
+              {
+                "node": "NamedType",
+                "path": [
+                  "string"
+                ],
+                "args": []
+              }
+            ],
+            "result": {
+              "node": "VoidResult"
+            }
+          },
+          "default": null
+        },
+        {
+          "node": "HasDecl",
+          "names": [
+            "loader"
+          ],
+          "type": {
+            "node": "ActionType",
+            "async": true,
+            "params": [
+              {
+                "node": "NamedType",
+                "path": [
+                  "Request"
+                ],
+                "args": []
+              }
+            ],
+            "result": {
+              "node": "NamedType",
+              "path": [
+                "Response"
+              ],
+              "args": []
+            }
+          },
+          "default": null
+        },
+        {
+          "node": "HasDecl",
+          "names": [
+            "pairs"
+          ],
+          "type": {
+            "node": "MapType",
+            "key": {
+              "node": "NamedType",
+              "path": [
+                "string"
+              ],
+              "args": []
+            },
+            "value": {
+              "node": "ArrayType",
+              "element": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            }
+          },
+          "default": null
+        },
+        {
+          "node": "HasDecl",
+          "names": [
+            "nested"
+          ],
+          "type": {
+            "node": "NamedType",
+            "path": [
+              "Box"
+            ],
+            "args": [
+              {
+                "node": "NamedType",
+                "path": [
+                  "Box"
+                ],
+                "args": [
+                  {
+                    "node": "NamedType",
+                    "path": [
+                      "int"
+                    ],
+                    "args": []
+                  }
+                ]
+              }
+            ]
+          },
+          "default": null
+        },
+        {
+          "node": "HasDecl",
+          "names": [
+            "untyped"
+          ],
+          "type": null,
+          "default": {
+            "node": "StringLiteral",
+            "form": "quoted",
+            "value": "default"
+          }
+        },
+        {
+          "node": "ShorthandConstructor",
+          "name": "Account",
+          "fields": [
+            "owner",
+            "nickname"
+          ],
+          "body": null
+        },
+        {
+          "node": "ShorthandConstructor",
+          "name": "Account",
+          "fields": [],
+          "body": null
+        },
+        {
+          "node": "FullConstructor",
+          "name": "Account",
+          "params": [
+            {
+              "node": "Param",
+              "name": "owner",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "string"
+                ],
+                "args": []
+              }
+            },
+            {
+              "node": "Param",
+              "name": "rest",
+              "variadic": true,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "string"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "SelfFieldBindStatement",
+                "name": "owner",
+                "value": {
+                  "node": "NameExpression",
+                  "name": "owner"
+                }
+              },
+              {
+                "node": "FieldBindStatement",
+                "name": "nickname",
+                "value": {
+                  "node": "Index",
+                  "object": {
+                    "node": "NameExpression",
+                    "name": "rest"
+                  },
+                  "index": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "0"
+                  },
+                  "fallback": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "none"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "node": "ShorthandConstructor",
+          "name": "Account",
+          "fields": [
+            "balance"
+          ],
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ConfirmStatement",
+                "condition": {
+                  "node": "Binary",
+                  "operator": ">=",
+                  "left": {
+                    "node": "NameExpression",
+                    "name": "balance"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "0"
+                  }
+                },
+                "fallback": {
+                  "node": "ConfirmThrow",
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "NameExpression",
+                      "name": "Negative"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "NameExpression",
+                          "name": "balance"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "node": "DestroyDecl",
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "NameExpression",
+                  "name": "owner"
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "CapDecl",
+          "owner": null,
+          "name": "Summary",
+          "fields": [
+            {
+              "node": "ComputedField",
+              "name": "label",
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "string"
+                ],
+                "args": []
+              },
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "+",
+                      "left": {
+                        "node": "Binary",
+                        "operator": "+",
+                        "left": {
+                          "node": "NameExpression",
+                          "name": "owner"
+                        },
+                        "right": {
+                          "node": "StringLiteral",
+                          "form": "quoted",
+                          "value": " "
+                        }
+                      },
+                      "right": {
+                        "node": "NameExpression",
+                        "name": "nickname"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            },
+            {
+              "node": "ComputedField",
+              "name": "public_balance",
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              },
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "NameExpression",
+                      "name": "balance"
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": {
+            "node": "ProjectionDirective",
+            "alias": null
+          },
+          "name": "total",
+          "params": [],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "NameExpression",
+                  "name": "balance"
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": {
+            "node": "ProjectionDirective",
+            "alias": "described"
+          },
+          "name": "describe",
+          "params": [],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "string"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Get",
+                  "object": {
+                    "node": "SelfExpression"
+                  },
+                  "name": "owner"
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "ActionDecl",
+          "async": true,
+          "visibility": "public",
+          "projection": null,
+          "name": "load",
+          "params": [
+            {
+              "node": "Param",
+              "name": "id",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "ArrayType",
+            "element": {
+              "node": "NamedType",
+              "path": [
+                "T"
+              ],
+              "args": []
+            }
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Await",
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "NameExpression",
+                      "name": "fetch"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": null,
+                        "value": {
+                          "node": "NameExpression",
+                          "name": "id"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": null,
+          "name": "order",
+          "params": [
+            {
+              "node": "Param",
+              "name": "other",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "T"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "int"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "0"
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": null,
+          "name": "is",
+          "params": [
+            {
+              "node": "Param",
+              "name": "actual",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "any"
+                ],
+                "args": []
+              }
+            },
+            {
+              "node": "Param",
+              "name": "expected",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "any"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "VoidResult"
+          },
+          "body": {
+            "node": "Block",
+            "statements": []
+          }
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": null,
+          "name": "has",
+          "params": [
+            {
+              "node": "Param",
+              "name": "expected",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "T"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "NamedType",
+            "path": [
+              "bool"
+            ],
+            "args": []
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "BoolLiteral",
+                  "value": true
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "ActionDecl",
+          "async": false,
+          "visibility": "public",
+          "projection": null,
+          "name": "deposit",
+          "params": [
+            {
+              "node": "Param",
+              "name": "amount",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            }
+          ],
+          "result": {
+            "node": "SuccessorResult",
+            "type": {
+              "node": "NamedType",
+              "path": [
+                "Account"
+              ],
+              "args": [
+                {
+                  "node": "NamedType",
+                  "path": [
+                    "T"
+                  ],
+                  "args": []
+                },
+                {
+                  "node": "NamedType",
+                  "path": [
+                    "U"
+                  ],
+                  "args": []
+                }
+              ]
+            }
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "SuccessorAssignStatement",
+                "name": "balance",
+                "value": {
+                  "node": "Binary",
+                  "operator": "+",
+                  "left": {
+                    "node": "NameExpression",
+                    "name": "balance"
+                  },
+                  "right": {
+                    "node": "NameExpression",
+                    "name": "amount"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "node": "TestDecl",
+          "async": false,
+          "name": "object test",
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "Get",
+                    "object": {
+                      "node": "NameExpression",
+                      "name": "test"
+                    },
+                    "name": "is"
+                  },
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "1"
+                      }
+                    },
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "1"
+                      }
+                    }
+                  ]
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "TestDecl",
+          "async": true,
+          "name": "async object test",
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "Await",
+                  "value": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "NameExpression",
+                      "name": "nothing"
+                    },
+                    "arguments": []
+                  }
+                },
+                "condition": null
+              }
+            ]
+          }
+        },
+        {
+          "node": "PrivateSection",
+          "actions": [
+            {
+              "node": "ActionDecl",
+              "async": false,
+              "visibility": "private",
+              "projection": null,
+              "name": "helper",
+              "params": [],
+              "result": {
+                "node": "VoidResult"
+              },
+              "body": {
+                "node": "Block",
+                "statements": []
+              }
+            },
+            {
+              "node": "ActionDecl",
+              "async": false,
+              "visibility": "private",
+              "projection": {
+                "node": "ProjectionDirective",
+                "alias": "secret"
+              },
+              "name": "hidden",
+              "params": [],
+              "result": {
+                "node": "NamedType",
+                "path": [
+                  "string"
+                ],
+                "args": []
+              },
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "StringLiteral",
+                      "form": "quoted",
+                      "value": "x"
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "node": "CapDecl",
+      "owner": "Account",
+      "name": "Audit",
+      "fields": [
+        {
+          "node": "ComputedField",
+          "name": "trail",
+          "type": {
+            "node": "ArrayType",
+            "element": {
+              "node": "NamedType",
+              "path": [
+                "string"
+              ],
+              "args": []
+            }
+          },
+          "body": {
+            "node": "Block",
+            "statements": [
+              {
+                "node": "ExpressionStatement",
+                "expression": {
+                  "node": "ArrayLiteral",
+                  "elements": [
+                    {
+                      "node": "OwnerField",
+                      "owner": "Account",
+                      "name": "owner"
+                    }
+                  ]
+                },
+                "condition": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "node": "TestDecl",
+      "async": false,
+      "name": "module test",
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "NameExpression",
+                  "name": "test"
+                },
+                "name": "ok"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "Binary",
+                    "operator": "==",
+                    "left": {
+                      "node": "Call",
+                      "callee": {
+                        "node": "Get",
+                        "object": {
+                          "node": "Call",
+                          "callee": {
+                            "node": "Get",
+                            "object": {
+                              "node": "NameExpression",
+                              "name": "Comparing"
+                            },
+                            "name": "fake"
+                          },
+                          "arguments": []
+                        },
+                        "name": "has"
+                      },
+                      "arguments": [
+                        {
+                          "node": "Argument",
+                          "name": null,
+                          "value": {
+                            "node": "IntLiteral",
+                            "radix": "decimal",
+                            "digits": "1"
+                          }
+                        }
+                      ]
+                    },
+                    "right": {
+                      "node": "BoolLiteral",
+                      "value": false
+                    }
+                  }
+                }
+              ]
+            },
+            "condition": null
+          }
+        ]
+      }
+    },
+    {
+      "node": "TestDecl",
+      "async": true,
+      "name": "module async test",
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "LetStatement",
+            "name": "value",
+            "type": null,
+            "value": {
+              "node": "Await",
+              "value": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "NameExpression",
+                      "name": "Account"
+                    },
+                    "arguments": []
+                  },
+                  "name": "load"
+                },
+                "arguments": [
+                  {
+                    "node": "Argument",
+                    "name": null,
+                    "value": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "1"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "node": "ActionDecl",
+      "async": true,
+      "visibility": "public",
+      "projection": null,
+      "name": "main",
+      "params": [],
+      "result": {
+        "node": "NamedType",
+        "path": [
+          "int"
+        ],
+        "args": []
+      },
+      "body": {
+        "node": "Block",
+        "statements": [
+          {
+            "node": "LetStatement",
+            "name": "out",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "Stdout"
+              },
+              "arguments": []
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "count",
+            "type": {
+              "node": "NamedType",
+              "path": [
+                "int"
+              ],
+              "args": []
+            },
+            "value": {
+              "node": "Binary",
+              "operator": "-",
+              "left": {
+                "node": "Binary",
+                "operator": "+",
+                "left": {
+                  "node": "Binary",
+                  "operator": "+",
+                  "left": {
+                    "node": "IntLiteral",
+                    "radix": "hexadecimal",
+                    "digits": "1F"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "binary",
+                    "digits": "1010"
+                  }
+                },
+                "right": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "1000"
+                }
+              },
+              "right": {
+                "node": "Binary",
+                "operator": "%",
+                "left": {
+                  "node": "Binary",
+                  "operator": "/",
+                  "left": {
+                    "node": "Binary",
+                    "operator": "*",
+                    "left": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "7"
+                    },
+                    "right": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "3"
+                    }
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "2"
+                  }
+                },
+                "right": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "4"
+                }
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "ratio",
+            "type": null,
+            "value": {
+              "node": "FloatLiteral",
+              "value": "3.14"
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "letter",
+            "type": null,
+            "value": {
+              "node": "CharLiteral",
+              "value": "x"
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "escaped",
+            "type": null,
+            "value": {
+              "node": "StringLiteral",
+              "form": "quoted",
+              "value": "tab\there \"quoted\" \\ end"
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "raw",
+            "type": null,
+            "value": {
+              "node": "StringLiteral",
+              "form": "fenced",
+              "value": "raw \"text\" \\n stays"
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "flags",
+            "type": null,
+            "value": {
+              "node": "Binary",
+              "operator": "||",
+              "left": {
+                "node": "Unary",
+                "operator": "!",
+                "operand": {
+                  "node": "BoolLiteral",
+                  "value": true
+                }
+              },
+              "right": {
+                "node": "Binary",
+                "operator": "&&",
+                "left": {
+                  "node": "BoolLiteral",
+                  "value": false
+                },
+                "right": {
+                  "node": "Unary",
+                  "operator": "!",
+                  "operand": {
+                    "node": "Grouping",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "!=",
+                      "left": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "1"
+                      },
+                      "right": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "2"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "bits",
+            "type": null,
+            "value": {
+              "node": "Binary",
+              "operator": "|",
+              "left": {
+                "node": "Binary",
+                "operator": "&",
+                "left": {
+                  "node": "Unary",
+                  "operator": "~",
+                  "operand": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  }
+                },
+                "right": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "3"
+                }
+              },
+              "right": {
+                "node": "Binary",
+                "operator": "^",
+                "left": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "4"
+                },
+                "right": {
+                  "node": "Binary",
+                  "operator": ">>>",
+                  "left": {
+                    "node": "Binary",
+                    "operator": ">>",
+                    "left": {
+                      "node": "Binary",
+                      "operator": "<<",
+                      "left": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "5"
+                      },
+                      "right": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "1"
+                      }
+                    },
+                    "right": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "1"
+                    }
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "compare",
+            "type": null,
+            "value": {
+              "node": "Binary",
+              "operator": "&&",
+              "left": {
+                "node": "Binary",
+                "operator": "==",
+                "left": {
+                  "node": "Binary",
+                  "operator": "<",
+                  "left": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "2"
+                  }
+                },
+                "right": {
+                  "node": "Binary",
+                  "operator": ">",
+                  "left": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "3"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "4"
+                  }
+                }
+              },
+              "right": {
+                "node": "Binary",
+                "operator": "!=",
+                "left": {
+                  "node": "Binary",
+                  "operator": "<=",
+                  "left": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "5"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "6"
+                  }
+                },
+                "right": {
+                  "node": "Binary",
+                  "operator": ">=",
+                  "left": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "7"
+                  },
+                  "right": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "8"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "range",
+            "type": null,
+            "value": {
+              "node": "Range",
+              "operator": "..",
+              "start": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "1"
+              },
+              "end": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "10"
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "inclusive",
+            "type": null,
+            "value": {
+              "node": "Range",
+              "operator": "..=",
+              "start": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "1"
+              },
+              "end": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "10"
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "list",
+            "type": {
+              "node": "ArrayType",
+              "element": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
+              }
+            },
+            "value": {
+              "node": "ArrayLiteral",
+              "elements": [
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "1"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "2"
+                },
+                {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "3"
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "empty_list",
+            "type": null,
+            "value": {
+              "node": "ArrayLiteral",
+              "elements": []
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "table",
+            "type": null,
+            "value": {
+              "node": "MapLiteral",
+              "entries": [
+                {
+                  "node": "MapEntry",
+                  "key": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "a"
+                  },
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  }
+                },
+                {
+                  "node": "MapEntry",
+                  "key": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "b"
+                  },
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "2"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "empty_table",
+            "type": null,
+            "value": {
+              "node": "MapLiteral",
+              "entries": []
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "first",
+            "type": null,
+            "value": {
+              "node": "Index",
+              "object": {
+                "node": "NameExpression",
+                "name": "list"
+              },
+              "index": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "0"
+              },
+              "fallback": {
+                "node": "Unary",
+                "operator": "-",
+                "operand": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "1"
+                }
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "picked",
+            "type": null,
+            "value": {
+              "node": "Index",
+              "object": {
+                "node": "NameExpression",
+                "name": "table"
+              },
+              "index": {
+                "node": "StringLiteral",
+                "form": "quoted",
+                "value": "a"
+              },
+              "fallback": null
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "cast",
+            "type": null,
+            "value": {
+              "node": "ArrayCast",
+              "target": "byte",
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "104"
+                  }
+                },
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "105"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "spread",
+            "type": null,
+            "value": {
+              "node": "ArrayCast",
+              "target": "string",
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "Unpack",
+                    "operand": {
+                      "node": "NameExpression",
+                      "name": "list"
+                    }
+                  }
+                },
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "4"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "single",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "byte"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "112"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "projected",
+            "type": null,
+            "value": {
+              "node": "Projection",
+              "prefix": "described",
+              "construction": {
+                "node": "Call",
+                "callee": {
+                  "node": "NameExpression",
+                  "name": "Account"
+                },
+                "arguments": [
+                  {
+                    "node": "Argument",
+                    "name": "owner",
+                    "value": {
+                      "node": "StringLiteral",
+                      "form": "quoted",
+                      "value": "ada"
+                    }
+                  },
+                  {
+                    "node": "Argument",
+                    "name": "nickname",
+                    "value": {
+                      "node": "StringLiteral",
+                      "form": "quoted",
+                      "value": "a"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "qualified",
+            "type": null,
+            "value": {
+              "node": "Projection",
+              "prefix": "total",
+              "construction": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "NameExpression",
+                    "name": "channels"
+                  },
+                  "name": "Channel"
+                },
+                "arguments": [
+                  {
+                    "node": "Argument",
+                    "name": "capacity",
+                    "value": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "1"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "doubled",
+            "type": null,
+            "value": {
+              "node": "Functional",
+              "operation": "map",
+              "receiver": {
+                "node": "NameExpression",
+                "name": "list"
+              },
+              "arguments": [],
+              "bindings": [
+                "item"
+              ],
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "*",
+                      "left": {
+                        "node": "NameExpression",
+                        "name": "item"
+                      },
+                      "right": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "2"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "evens",
+            "type": null,
+            "value": {
+              "node": "Functional",
+              "operation": "filter",
+              "receiver": {
+                "node": "NameExpression",
+                "name": "list"
+              },
+              "arguments": [],
+              "bindings": [
+                "item"
+              ],
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "==",
+                      "left": {
+                        "node": "Binary",
+                        "operator": "%",
+                        "left": {
+                          "node": "NameExpression",
+                          "name": "item"
+                        },
+                        "right": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "2"
+                        }
+                      },
+                      "right": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "0"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "sum",
+            "type": null,
+            "value": {
+              "node": "Functional",
+              "operation": "reduce",
+              "receiver": {
+                "node": "NameExpression",
+                "name": "list"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "0"
+                  }
+                }
+              ],
+              "bindings": [
+                "acc",
+                "item"
+              ],
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "Binary",
+                      "operator": "+",
+                      "left": {
+                        "node": "NameExpression",
+                        "name": "acc"
+                      },
+                      "right": {
+                        "node": "NameExpression",
+                        "name": "item"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "callback",
+            "type": null,
+            "value": {
+              "node": "AnonymousAction",
+              "params": [
+                {
+                  "node": "Param",
+                  "name": "value",
+                  "variadic": false,
+                  "type": {
+                    "node": "NamedType",
+                    "path": [
+                      "int"
+                    ],
+                    "args": []
+                  }
+                },
+                {
+                  "node": "Param",
+                  "name": "label",
+                  "variadic": false,
+                  "type": {
+                    "node": "NamedType",
+                    "path": [
+                      "string"
+                    ],
+                    "args": []
+                  }
+                }
+              ],
+              "result": {
+                "node": "VoidResult"
+              },
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "StreamWrite",
+                      "sink": {
+                        "node": "NameExpression",
+                        "name": "out"
+                      },
+                      "source": {
+                        "node": "NameExpression",
+                        "name": "label"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "maker",
+            "type": null,
+            "value": {
+              "node": "AnonymousAction",
+              "params": [],
+              "result": {
+                "node": "ActionType",
+                "async": false,
+                "params": [
+                  {
+                    "node": "NamedType",
+                    "path": [
+                      "int"
+                    ],
+                    "args": []
+                  }
+                ],
+                "result": {
+                  "node": "NamedType",
+                  "path": [
+                    "int"
+                  ],
+                  "args": []
+                }
+              },
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "AnonymousAction",
+                      "params": [
+                        {
+                          "node": "Param",
+                          "name": "x",
+                          "variadic": false,
+                          "type": {
+                            "node": "NamedType",
+                            "path": [
+                              "int"
+                            ],
+                            "args": []
+                          }
+                        }
+                      ],
+                      "result": {
+                        "node": "NamedType",
+                        "path": [
+                          "int"
+                        ],
+                        "args": []
+                      },
+                      "body": {
+                        "node": "Block",
+                        "statements": [
+                          {
+                            "node": "ExpressionStatement",
+                            "expression": {
+                              "node": "NameExpression",
+                              "name": "x"
+                            },
+                            "condition": null
+                          }
+                        ]
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "chosen",
+            "type": null,
+            "value": {
+              "node": "IfExpression",
+              "condition": {
+                "node": "NameExpression",
+                "name": "flags"
+              },
+              "then": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "1"
+                    },
+                    "condition": null
+                  }
+                ]
+              },
+              "else": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "2"
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "named",
+            "type": null,
+            "value": {
+              "node": "MatchExpression",
+              "subject": {
+                "node": "NameExpression",
+                "name": "letter"
+              },
+              "cases": [
+                {
+                  "node": "MatchCase",
+                  "patterns": [
+                    {
+                      "node": "CharLiteral",
+                      "value": "x"
+                    },
+                    {
+                      "node": "CharLiteral",
+                      "value": "y"
+                    }
+                  ],
+                  "body": {
+                    "node": "Block",
+                    "statements": [
+                      {
+                        "node": "ExpressionStatement",
+                        "expression": {
+                          "node": "StringLiteral",
+                          "form": "quoted",
+                          "value": "near"
+                        },
+                        "condition": null
+                      }
+                    ]
+                  }
+                }
+              ],
+              "else": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "StringLiteral",
+                      "form": "quoted",
+                      "value": "far"
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "found",
+            "type": null,
+            "value": {
+              "node": "LoopExpression",
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "LastStatement",
+                    "value": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "42"
+                    },
+                    "condition": {
+                      "node": "BoolLiteral",
+                      "value": true
+                    }
+                  },
+                  {
+                    "node": "NextStatement",
+                    "condition": {
+                      "node": "BoolLiteral",
+                      "value": false
+                    }
+                  },
+                  {
+                    "node": "LastStatement",
+                    "value": null,
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "caught",
+            "type": null,
+            "value": {
+              "node": "TryExpression",
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ThrowStatement",
+                    "value": {
+                      "node": "Call",
+                      "callee": {
+                        "node": "NameExpression",
+                        "name": "Problem"
+                      },
+                      "arguments": [
+                        {
+                          "node": "Argument",
+                          "name": null,
+                          "value": {
+                            "node": "StringLiteral",
+                            "form": "quoted",
+                            "value": "bad"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "catches": [
+                {
+                  "node": "CatchClause",
+                  "name": "problem",
+                  "type": {
+                    "node": "NamedType",
+                    "path": [
+                      "Problem"
+                    ],
+                    "args": []
+                  },
+                  "body": {
+                    "node": "Block",
+                    "statements": [
+                      {
+                        "node": "ExpressionStatement",
+                        "expression": {
+                          "node": "Call",
+                          "callee": {
+                            "node": "Get",
+                            "object": {
+                              "node": "NameExpression",
+                              "name": "problem"
+                            },
+                            "name": "text"
+                          },
+                          "arguments": []
+                        },
+                        "condition": null
+                      }
+                    ]
+                  }
+                },
+                {
+                  "node": "CatchClause",
+                  "name": "other",
+                  "type": {
+                    "node": "ArrayType",
+                    "element": {
+                      "node": "NamedType",
+                      "path": [
+                        "string"
+                      ],
+                      "args": []
+                    }
+                  },
+                  "body": {
+                    "node": "Block",
+                    "statements": [
+                      {
+                        "node": "ExpressionStatement",
+                        "expression": {
+                          "node": "StringLiteral",
+                          "form": "quoted",
+                          "value": "list"
+                        },
+                        "condition": null
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "summary",
+            "type": {
+              "node": "NestedType",
+              "owner": {
+                "node": "NamedType",
+                "path": [
+                  "Account"
+                ],
+                "args": []
+              },
+              "name": "Summary"
+            },
+            "value": {
+              "node": "Select",
+              "object": {
+                "node": "Call",
+                "callee": {
+                  "node": "NameExpression",
+                  "name": "Account"
+                },
+                "arguments": []
+              },
+              "name": "Summary"
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "label",
+            "type": null,
+            "value": {
+              "node": "Select",
+              "object": {
+                "node": "NameExpression",
+                "name": "summary"
+              },
+              "name": "label"
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "pending",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "NameExpression",
+                    "name": "Account"
+                  },
+                  "arguments": []
+                },
+                "name": "load"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "result",
+            "type": null,
+            "value": {
+              "node": "Await",
+              "value": {
+                "node": "NameExpression",
+                "name": "pending"
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "task",
+            "type": null,
+            "value": {
+              "node": "Spawn",
+              "call": {
+                "node": "Call",
+                "callee": {
+                  "node": "Get",
+                  "object": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "NameExpression",
+                      "name": "Worker"
+                    },
+                    "arguments": [
+                      {
+                        "node": "Argument",
+                        "name": "id",
+                        "value": {
+                          "node": "IntLiteral",
+                          "radix": "decimal",
+                          "digits": "1"
+                        }
+                      }
+                    ]
+                  },
+                  "name": "run"
+                },
+                "arguments": [
+                  {
+                    "node": "Argument",
+                    "name": null,
+                    "value": {
+                      "node": "NameExpression",
+                      "name": "count"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "process",
+            "type": null,
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "spawn"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  }
+                },
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "2"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "StreamWrite",
+              "sink": {
+                "node": "StreamWrite",
+                "sink": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "source": {
+                  "node": "Binary",
+                  "operator": "+",
+                  "left": {
+                    "node": "StringLiteral",
+                    "form": "quoted",
+                    "value": "count: "
+                  },
+                  "right": {
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "NameExpression",
+                        "name": "count"
+                      },
+                      "name": "string"
+                    },
+                    "arguments": []
+                  }
+                }
+              },
+              "source": {
+                "node": "StringLiteral",
+                "form": "endl",
+                "value": "\n"
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "StreamWrite",
+              "sink": {
+                "node": "StreamWrite",
+                "sink": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "source": {
+                  "node": "Unpack",
+                  "operand": {
+                    "node": "NameExpression",
+                    "name": "spread"
+                  }
+                }
+              },
+              "source": {
+                "node": "StringLiteral",
+                "form": "endl",
+                "value": "\n"
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "DeferStatement",
+            "value": {
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "NameExpression",
+                  "name": "out"
+                },
+                "name": "flush"
+              },
+              "arguments": []
+            }
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "Call",
+              "callee": {
+                "node": "NameExpression",
+                "name": "log"
+              },
+              "arguments": [
+                {
+                  "node": "Argument",
+                  "name": null,
+                  "value": {
+                    "node": "NameExpression",
+                    "name": "count"
+                  }
+                }
+              ]
+            },
+            "condition": {
+              "node": "Binary",
+              "operator": ">",
+              "left": {
+                "node": "NameExpression",
+                "name": "count"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "0"
+              }
+            }
+          },
+          {
+            "node": "BlockStatement",
+            "statements": [
+              {
+                "node": "LetStatement",
+                "name": "inner",
+                "type": null,
+                "value": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "1"
+                }
+              }
+            ]
+          },
+          {
+            "node": "IfStatement",
+            "condition": {
+              "node": "Binary",
+              "operator": ">",
+              "left": {
+                "node": "NameExpression",
+                "name": "count"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "10"
+              }
+            },
+            "then": {
+              "node": "Block",
+              "statements": [
+                {
+                  "node": "ExpressionStatement",
+                  "expression": {
+                    "node": "StreamWrite",
+                    "sink": {
+                      "node": "NameExpression",
+                      "name": "out"
+                    },
+                    "source": {
+                      "node": "StringLiteral",
+                      "form": "quoted",
+                      "value": "big"
+                    }
+                  },
+                  "condition": null
+                }
+              ]
+            },
+            "else": {
+              "node": "IfStatement",
+              "condition": {
+                "node": "Binary",
+                "operator": ">",
+                "left": {
+                  "node": "NameExpression",
+                  "name": "count"
+                },
+                "right": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "5"
+                }
+              },
+              "then": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "StreamWrite",
+                      "sink": {
+                        "node": "NameExpression",
+                        "name": "out"
+                      },
+                      "source": {
+                        "node": "StringLiteral",
+                        "form": "quoted",
+                        "value": "medium"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              },
+              "else": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "ExpressionStatement",
+                    "expression": {
+                      "node": "StreamWrite",
+                      "sink": {
+                        "node": "NameExpression",
+                        "name": "out"
+                      },
+                      "source": {
+                        "node": "StringLiteral",
+                        "form": "quoted",
+                        "value": "small"
+                      }
+                    },
+                    "condition": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "node": "MatchStatement",
+            "subject": {
+              "node": "NameExpression",
+              "name": "count"
+            },
+            "cases": [
+              {
+                "node": "MatchCase",
+                "patterns": [
+                  {
+                    "node": "IntLiteral",
+                    "radix": "decimal",
+                    "digits": "1"
+                  }
+                ],
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "ExpressionStatement",
+                      "expression": {
+                        "node": "StreamWrite",
+                        "sink": {
+                          "node": "NameExpression",
+                          "name": "out"
+                        },
+                        "source": {
+                          "node": "StringLiteral",
+                          "form": "quoted",
+                          "value": "one"
+                        }
+                      },
+                      "condition": null
+                    }
+                  ]
+                }
+              }
+            ],
+            "else": null
+          },
+          {
+            "node": "ForStatement",
+            "source": {
+              "node": "NameExpression",
+              "name": "list"
+            },
+            "bindings": [
+              {
+                "node": "ForBinding",
+                "name": "item",
+                "batch": null
+              }
+            ],
+            "body": {
+              "node": "Block",
+              "statements": [
+                {
+                  "node": "NextStatement",
+                  "condition": {
+                    "node": "Binary",
+                    "operator": "==",
+                    "left": {
+                      "node": "NameExpression",
+                      "name": "item"
+                    },
+                    "right": {
+                      "node": "IntLiteral",
+                      "radix": "decimal",
+                      "digits": "2"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "node": "ForStatement",
+            "source": {
+              "node": "NameExpression",
+              "name": "table"
+            },
+            "bindings": [
+              {
+                "node": "ForBinding",
+                "name": "key",
+                "batch": null
+              },
+              {
+                "node": "ForBinding",
+                "name": "value",
+                "batch": null
+              }
+            ],
+            "body": {
+              "node": "Block",
+              "statements": [
+                {
+                  "node": "ExpressionStatement",
+                  "expression": {
+                    "node": "NameExpression",
+                    "name": "key"
+                  },
+                  "condition": null
+                }
+              ]
+            }
+          },
+          {
+            "node": "ForStatement",
+            "source": {
+              "node": "NameExpression",
+              "name": "list"
+            },
+            "bindings": [
+              {
+                "node": "ForBinding",
+                "name": "chunk",
+                "batch": {
+                  "node": "IntLiteral",
+                  "radix": "decimal",
+                  "digits": "2"
+                }
+              }
+            ],
+            "body": {
+              "node": "Block",
+              "statements": [
+                {
+                  "node": "ExpressionStatement",
+                  "expression": {
+                    "node": "NameExpression",
+                    "name": "chunk"
+                  },
+                  "condition": null
+                }
+              ]
+            }
+          },
+          {
+            "node": "ExpressionStatement",
+            "expression": {
+              "node": "LoopExpression",
+              "body": {
+                "node": "Block",
+                "statements": [
+                  {
+                    "node": "LastStatement",
+                    "value": null,
+                    "condition": null
+                  }
+                ]
+              }
+            },
+            "condition": null
+          },
+          {
+            "node": "TryStatement",
+            "body": {
+              "node": "Block",
+              "statements": [
+                {
+                  "node": "ExpressionStatement",
+                  "expression": {
+                    "node": "Panic",
+                    "value": {
+                      "node": "Call",
+                      "callee": {
+                        "node": "NameExpression",
+                        "name": "Problem"
+                      },
+                      "arguments": [
+                        {
+                          "node": "Argument",
+                          "name": null,
+                          "value": {
+                            "node": "StringLiteral",
+                            "form": "quoted",
+                            "value": "fatal"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "condition": null
+                }
+              ]
+            },
+            "catches": [
+              {
+                "node": "CatchClause",
+                "name": "error",
+                "type": {
+                  "node": "NamedType",
+                  "path": [
+                    "Problem"
+                  ],
+                  "args": []
+                },
+                "body": {
+                  "node": "Block",
+                  "statements": [
+                    {
+                      "node": "ThrowStatement",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "node": "ConfirmStatement",
+            "condition": {
+              "node": "Binary",
+              "operator": ">",
+              "left": {
+                "node": "NameExpression",
+                "name": "count"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "0"
+              }
+            },
+            "fallback": null
+          },
+          {
+            "node": "ConfirmStatement",
+            "condition": {
+              "node": "Binary",
+              "operator": "<",
+              "left": {
+                "node": "NameExpression",
+                "name": "count"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "100"
+              }
+            },
+            "fallback": {
+              "node": "ConfirmPanic",
+              "value": {
+                "node": "StringLiteral",
+                "form": "quoted",
+                "value": "too many"
+              }
+            }
+          },
+          {
+            "node": "FieldBindStatement",
+            "name": "count",
+            "value": {
+              "node": "Binary",
+              "operator": "+",
+              "left": {
+                "node": "NameExpression",
+                "name": "count"
+              },
+              "right": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "1"
+              }
+            }
+          },
+          {
+            "node": "SelfFieldBindStatement",
+            "name": "field",
+            "value": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "1"
+            }
+          },
+          {
+            "node": "SuccessorAssignStatement",
+            "name": "balance",
+            "value": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "2"
+            }
+          },
+          {
+            "node": "ReturnStatement",
+            "value": {
+              "node": "IntLiteral",
+              "radix": "decimal",
+              "digits": "0"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

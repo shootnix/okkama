@@ -1,0 +1,25 @@
+// Использовать JSON как слой настроек
+//
+// Настройки порта заданы документом и должны читаться тем же способом, что аргументы команды.
+//
+// Запуск: ./examples/cookbook/run lab recipe-json-settings
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-json-settings
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/json_settings v1.0.0;
+import "config/document" take JsonSettings;
+import "config/source" take SettingSource,SettingSourceKind;
+import "config/key" take SettingKey;
+import "config/value" take ScalarSetting;
+import "json/value" take JsonObject,JsonMember,JsonText;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let document = JsonObject([JsonMember("port", JsonText("8080"))]);
+    let settings = JsonSettings(document, SettingSource(SettingSourceKind.document, "service.json"));
+    let port = ScalarSetting(settings, SettingKey(["port"])).value();
+    confirm port == "8080";
+    Stdout().writeln(port);
+    0;
+}

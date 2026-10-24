@@ -1,0 +1,59 @@
+module crypto/ed25519 v1.0.0;
+
+import "crypto/key" take PublicKey, VerifyingKey, SigningKey;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take Entropy;
+import "crypto/error" take HostOperation, InvalidCryptoInput;
+import "encoding/hex" take HexEncoded, HexDecoded;
+
+// Ed25519 signatures (RFC 8032, pure, deterministic). A private key is its
+// 32-byte seed held as SecretBytes (Ed25519PrivateKey(seed: ...));
+// Ed25519PrivateKey(entropy: ...) draws a fresh seed. The two constructors
+// have one parameter each, so they are selected by argument name. Signing needs no randomness. Verification is strict (canonical S,
+// no small-order public keys) and answers false for invalid signatures.
+// Ed25519PublicKey holds the raw 32-byte key; bytes() is its SPKI DER.
+//
+//     let key = Ed25519PrivateKey(entropy: SystemEntropy());
+//     key.public_key().verified(message, key.signature(message)); // true
+object Ed25519PrivateKey does SigningKey {
+    has seed is SecretBytes;
+    Ed25519PrivateKey(seed is SecretBytes) {
+        confirm seed.size() == 32 else throw InvalidCryptoInput("Ed25519 seed must be 32 bytes");
+        self.seed = seed;
+    }
+    Ed25519PrivateKey(entropy is Entropy) { seed = SecretBytes(entropy.bytes(32)); }
+    pkcs8() is SecretBytes { SecretBytes(HostOperation("ed25519-pkcs8", [seed.export_bytes()]).bytes()); }
+    public_key() is VerifyingKey { Ed25519PublicKey(HostOperation("ed25519-public", [seed.export_bytes()]).bytes()); }
+    signature(message is @byte) is @byte { HostOperation("ed25519-sign", [seed.export_bytes(), message]).bytes(); }
+}
+
+object Ed25519PublicKey does PublicKey, VerifyingKey {
+    has raw is @byte;
+    Ed25519PublicKey(raw is @byte) {
+        confirm raw.size() == 32 else throw InvalidCryptoInput("Ed25519 public key must be 32 bytes");
+        self.raw = raw;
+    }
+    raw() is @byte { raw; }
+    bytes() is @byte { HostOperation("ed25519-spki", [raw]).bytes(); }
+    verified(message is @byte, signature is @byte) is bool {
+        signature.size() == 64 && HostOperation("ed25519-verify", [raw, message, signature]).truth();
+    }
+}
+
+test "Ed25519 matches RFC 8032 test 1" {
+    let key = Ed25519PrivateKey(seed: SecretBytes(HexDecoded("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").bytes()));
+    test.is(HexEncoded(key.signature([]).slice(0, 8)).string(), "e5564300c360ac72");
+    let public = Ed25519PublicKey(HexDecoded("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a").bytes());
+    test.ok(public.verified([], key.signature([])));
+    test.ok(!public.verified([1.byte()], key.signature([])));
+    test.ok(!public.verified([], [1.byte()]));
+    test.is(key.public_key().bytes(), public.bytes());
+    test.is(public.bytes().size(), 44);
+}
+
+test "generated Ed25519 keys export PKCS#8" {
+    let key = Ed25519PrivateKey(entropy: Entropy.fake());
+    test.is(key.pkcs8().size(), 48);
+    test.ok(key.public_key().verified([7.byte()], key.signature([7.byte()])));
+    test.ok(try { Ed25519PrivateKey(seed: SecretBytes([1.byte()])); false; } catch e is InvalidCryptoInput { true; });
+}

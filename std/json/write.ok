@@ -1,0 +1,259 @@
+module json/write v1.0.0;
+
+import "json/value" take JsonValue, JsonWriting, JsonMember;
+import "collections/sequence" take Sequencing;
+import "math/decimal" take Decimal;
+import "io/stream" take WritingText;
+import "io/buffer" take ByteBuffer;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches;
+
+// Explicit JSON printing, with no inspection of arbitrary object fields.
+object CompactJson {
+    has origin is JsonValue;
+    CompactJson(:origin);
+
+    #projected
+    string() is string {
+        let output = ByteBuffer();
+        origin.print(JsonTextOutput(destination: Utf8Output(origin: output.writing())));
+        Utf8Decoded(origin: output.content().bytes()).string();
+    }
+}
+
+object JsonTextOutput does JsonWriting {
+    has destination is WritingText;
+    JsonTextOutput(:destination);
+
+    null_value() is void { destination.write("null"); }
+    boolean(value is bool) is void {
+        destination.write(if value { "true"; } else { "false"; });
+    }
+    number(value is Decimal) is void { destination.write(JsonNumberSpelling(value).string()); }
+    text(value is string) is void {
+        destination.write("\"");
+        for RegexMatches(value,Regex("[^\\\\\"\\x{0}-\\x{1f}]+|[\\\\\"\\x{0}-\\x{1f}]")) -> part {
+            let scalar = part.text();
+            if scalar.length()>1 {destination.write(scalar);next;}
+            let bytes = Utf8Encoded(origin: scalar).bytes();
+            if scalar == "\"" { destination.write("\\\""); }
+            else if scalar == "\\" { destination.write("\\\\"); }
+            else if scalar == "\n" { destination.write("\\n"); }
+            else if scalar == "\r" { destination.write("\\r"); }
+            else if scalar == "\t" { destination.write("\\t"); }
+            else if bytes[0].int() < 32 {
+                let code = bytes[0].int();
+                let digits = "0123456789abcdef";
+                destination.write("\\u00", digits.slice((code / 16).int(), (code / 16).int() + 1),
+                    digits.slice(code % 16, code % 16 + 1));
+            }
+            else { destination.write(scalar); }
+        }
+        destination.write("\"");
+    }
+    elements(values is Sequencing<JsonValue>) is void {
+        destination.write("[");
+        for (0..values.size()) -> index {
+            if index > 0 { destination.write(","); }
+            values.item(index).print(self);
+        }
+        destination.write("]");
+    }
+    members(members is Sequencing<JsonMember>) is void {
+        destination.write("{");
+        for (0..members.size()) -> index {
+            if index > 0 { destination.write(","); }
+            let member = members.item(index);
+            self.text(member.name());
+            destination.write(":");
+            member.value().print(self);
+        }
+        destination.write("}");
+    }
+}
+
+// Bounded pretty representation. Root depth is one; limits count UTF-8 bytes.
+object PrettyJson {
+    has origin is JsonValue;
+    has indentation is int;
+    has maximum_depth is int;
+    has maximum_bytes is int;
+
+    PrettyJson(origin is JsonValue, indentation is int) {
+        self.origin = origin;
+        self.indentation = indentation;
+        maximum_depth = 128;
+        maximum_bytes = 1048576;
+
+        confirm self.indentation >= 0 else throw InvalidJsonIndentation(self.indentation);
+        confirm self.maximum_depth > 0 && self.maximum_bytes > 0
+            else throw InvalidJsonPrintLimits();
+    }
+    PrettyJson(:origin, :indentation, :maximum_depth, :maximum_bytes) {
+        confirm self.indentation >= 0 else throw InvalidJsonIndentation(self.indentation);
+        confirm self.maximum_depth > 0 && self.maximum_bytes > 0
+            else throw InvalidJsonPrintLimits();
+    }
+
+    #projected
+    string() is string {
+        let buffer = ByteBuffer();
+        let output = JsonBoundedText(buffer: buffer, maximum_bytes: maximum_bytes);
+        origin.print(PrettyJsonOutput(destination: output, indentation: indentation,
+            level: 0, maximum_depth: maximum_depth));
+        Utf8Decoded(origin: buffer.content().bytes()).string();
+    }
+}
+
+object JsonBoundedText does WritingText {
+    has buffer is ByteBuffer;
+    has maximum_bytes is int;
+    JsonBoundedText(:buffer, :maximum_bytes);
+
+    write(values is ...string) is void {
+        let parts is @string = values...;
+        for parts -> part {
+            let bytes = Utf8Encoded(origin: part).bytes();
+            confirm bytes.size() <= maximum_bytes - buffer.content().size()
+                else throw JsonPrintBytesExceeded();
+            Utf8Output(origin: buffer.writing()).write(part);
+        }
+    }
+    writeln(values is ...string) is void {
+        let parts is @string = values...;
+        for parts -> part { self.write(part); }
+        self.write("\n");
+    }
+    padding(level is int, indentation is int) is void {
+        let remaining = maximum_bytes - buffer.content().size();
+        if level > 0 {
+            confirm indentation.rat() <= remaining / level else throw JsonPrintBytesExceeded();
+        }
+        for (0..level) -> unused_level {
+            for (0..indentation) -> unused_space { self.write(" "); }
+        }
+    }
+}
+
+object PrettyJsonOutput does JsonWriting {
+    has destination is JsonBoundedText;
+    has indentation is int;
+    has level is int;
+    has maximum_depth is int;
+    PrettyJsonOutput(:destination, :indentation, :level, :maximum_depth);
+
+    null_value() is void { JsonTextOutput(destination: destination).null_value(); }
+    boolean(value is bool) is void { JsonTextOutput(destination: destination).boolean(value); }
+    number(value is Decimal) is void { JsonTextOutput(destination: destination).number(value); }
+    text(value is string) is void { JsonTextOutput(destination: destination).text(value); }
+    elements(values is Sequencing<JsonValue>) is void {
+        destination.write("[");
+        for (0..values.size()) -> index {
+            if index > 0 { destination.write(","); }
+            destination.write("\n");
+            destination.padding(level + 1, indentation);
+            self.child(values.item(index));
+        }
+        if values.size() > 0 {
+            destination.write("\n");
+            destination.padding(level, indentation);
+        }
+        destination.write("]");
+    }
+    members(members is Sequencing<JsonMember>) is void {
+        destination.write("{");
+        for (0..members.size()) -> index {
+            if index > 0 { destination.write(","); }
+            destination.write("\n");
+            destination.padding(level + 1, indentation);
+            let member = members.item(index);
+            self.text(member.name());
+            destination.write(": ");
+            self.child(member.value());
+        }
+        if members.size() > 0 {
+            destination.write("\n");
+            destination.padding(level, indentation);
+        }
+        destination.write("}");
+    }
+    private:
+    child(value is JsonValue) is void {
+        confirm level < maximum_depth - 1 else throw JsonPrintDepthExceeded();
+        value.print(PrettyJsonOutput(destination: destination, indentation: indentation,
+            level: level + 1, maximum_depth: maximum_depth));
+    }
+}
+
+object InvalidJsonIndentation does Error {
+    has amount is int;
+    InvalidJsonIndentation(indentation is int) { amount = indentation; }
+    indentation() is int { amount; }
+    text() is string { "JSON indentation must be non-negative"; }
+}
+object InvalidJsonPrintLimits does Error {
+    InvalidJsonPrintLimits();
+    text() is string { "JSON print limits must be positive"; }
+}
+object JsonPrintDepthExceeded does Error {
+    JsonPrintDepthExceeded();
+    text() is string { "JSON print depth limit exceeded"; }
+}
+object JsonPrintBytesExceeded does Error {
+    JsonPrintBytesExceeded();
+    text() is string { "JSON print byte limit exceeded"; }
+}
+
+// Interoperable number spelling. Decimal's canonical form is scientific
+// (1000 is "1e3"), which many JSON readers turn into floating point. Values are
+// written positionally while that stays short: integers up to 21 digits and
+// fractions down to 1e-6, the same thresholds
+// as JavaScript's Number#toString. Beyond them the exact canonical form is kept,
+// so 1e1000000 is never expanded. The value written is always exact.
+object JsonNumberSpelling {
+    has origin is Decimal;
+
+    JsonNumberSpelling(origin is Decimal) { self.origin = origin; }
+
+    string() is string {
+        let exponent = origin.exponent();
+        let signed = origin.coefficient().string();
+        let negative = signed.slice(0, 1) == "-";
+        let digits = if negative { signed.slice(1, signed.length()); } else { signed; };
+        let sign = if negative { "-"; } else { ""; };
+        if exponent >= 0 {
+            if digits.length() + exponent <= 21 { sign + digits + JsonZeros(exponent).string(); } else { origin.string(); }
+        }
+        else {
+            let point = digits.length() + exponent;
+            if point > 0 {
+                sign + digits.slice(0, point) + "." + digits.slice(point, digits.length());
+            }
+            else {
+                if -point <= 5 { sign + "0." + JsonZeros(-point).string() + digits; } else { origin.string(); }
+            }
+        }
+    }
+}
+
+object JsonZeros {
+    has count is int;
+    JsonZeros(count is int) { self.count = count; }
+    string() is string { (0..count).reduce("") -> zeros, index { zeros + "0"; }; }
+}
+
+test "numbers are written positionally while short and exactly otherwise" {
+    test.is(JsonNumberSpelling(Decimal("404")).string(), "404");
+    test.is(JsonNumberSpelling(Decimal("1000")).string(), "1000");
+    test.is(JsonNumberSpelling(Decimal("-12000")).string(), "-12000");
+    test.is(JsonNumberSpelling(Decimal("0")).string(), "0");
+    test.is(JsonNumberSpelling(Decimal("1.5")).string(), "1.5");
+    test.is(JsonNumberSpelling(Decimal("-0.005")).string(), "-0.005");
+    test.is(JsonNumberSpelling(Decimal("0.000001")).string(), "0.000001");
+    test.is(JsonNumberSpelling(Decimal("0.0000001")).string(), "1e-7");
+    test.is(JsonNumberSpelling(Decimal("123456789012345678901")).string(), "123456789012345678901");
+    test.is(JsonNumberSpelling(Decimal("1e21")).string(), "1e21");
+    test.is(JsonNumberSpelling(Decimal("1e1000000")).string(), "1e1000000");
+}

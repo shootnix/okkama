@@ -1,0 +1,178 @@
+module encoding/binary v1.0.0;
+
+import "encoding/utf" take ByteOrder;
+import "error" take InvalidArgument;
+import "runtime/binary" take
+    binary_integer_fits,
+    binary_integer_bytes,
+    binary_integer_from_bytes_fits,
+    binary_integer_from_bytes,
+    binary_float_fits,
+    binary_float_bytes,
+    binary_float_finite,
+    binary_float_from_bytes;
+
+// Explicit fixed-width numeric binary representations.
+//
+//     let network is @byte = IntegerBytes(
+//         value: -2,
+//         size: 2,
+//         signedness: Signedness.signed,
+//         order: ByteOrder.big,
+//     ).bytes(); // [255, 254]
+//
+//     let measurement is float = FloatFromBytes(
+//         origin: [byte(64), byte(32), byte(0), byte(0)],
+//         width: FloatWidth.bits32,
+//         order: ByteOrder.big,
+//     ).value(); // 2.5
+//
+// Signed integers use two's complement; unsigned integers use ordinary
+// magnitude. Encoding is exact and never truncates, wraps or saturates.
+// Decoding must fit Okkama's signed 64-bit int, although redundant leading
+// zero or sign-extension bytes are accepted. Integer widths are positive.
+//
+// Floats use IEEE 754 binary32 or binary64 with explicit byte order. binary32
+// encoding rounds to nearest with ties to even. Okkama floats are finite, so
+// decoding an infinity or NaN is rejected. Signed zero and subnormal values
+// retain their IEEE representation. No API uses machine-native byte order.
+//
+// A generic BinaryLayout/Packed/Unpacked layer is intentionally absent. Until
+// the language has typed heterogeneous product values, such an API would need
+// either an untyped value bag or a string format DSL. Callers compose these
+// typed scalar representations into protocol-specific objects instead.
+
+enum Signedness = (signed, unsigned);
+enum FloatWidth = (bits32, bits64);
+
+object IntegerFromBytes {
+    has origin is @byte;
+    has signedness is Signedness;
+    has order is ByteOrder;
+
+    IntegerFromBytes(origin is @byte, signedness is Signedness, order is ByteOrder) {
+        self.origin = origin;
+        self.signedness = signedness;
+        self.order = order;
+    }
+
+    #projected
+    value() is int {
+        confirm origin.size() > 0
+            else throw InvalidArgument("integer input width must be positive");
+        let sign is string = self.signedness_name();
+        let order_name is string = self.order_name();
+        confirm binary_integer_from_bytes_fits(origin, sign, order_name)
+            else throw InvalidArgument("decoded integer is outside the int range");
+        binary_integer_from_bytes(origin, sign, order_name);
+    }
+
+    private:
+
+    signedness_name() is string {
+        if signedness == Signedness.signed { "signed"; } else { "unsigned"; }
+    }
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object IntegerBytes {
+    has origin is int;
+    has size is int;
+    has signedness is Signedness;
+    has order is ByteOrder;
+
+    IntegerBytes(value is int, size is int, signedness is Signedness, order is ByteOrder) {
+        origin = value;
+        self.size = size;
+        self.signedness = signedness;
+        self.order = order;
+    }
+
+    bytes() is @byte {
+        confirm size > 0
+            else throw InvalidArgument("integer byte size must be positive");
+        let sign is string = self.signedness_name();
+        confirm binary_integer_fits(origin, size, sign)
+            else throw InvalidArgument("integer does not fit the requested binary width");
+        binary_integer_bytes(origin, size, sign, self.order_name());
+    }
+
+    private:
+
+    signedness_name() is string {
+        if signedness == Signedness.signed { "signed"; } else { "unsigned"; }
+    }
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object FloatFromBytes {
+    has origin is @byte;
+    has width is FloatWidth;
+    has order is ByteOrder;
+
+    FloatFromBytes(origin is @byte, width is FloatWidth, order is ByteOrder) {
+        self.origin = origin;
+        self.width = width;
+        self.order = order;
+    }
+
+    #projected
+    value() is float {
+        let bits is int = self.width_bits();
+        confirm origin.size() == self.width_size()
+            else throw InvalidArgument("floating-point input width does not match FloatWidth");
+        let order_name is string = self.order_name();
+        confirm binary_float_finite(origin, bits, order_name)
+            else throw InvalidArgument("binary floating-point value must be finite");
+        binary_float_from_bytes(origin, bits, order_name);
+    }
+
+    private:
+
+    width_bits() is int {
+        if width == FloatWidth.bits32 { 32; } else { 64; }
+    }
+
+    width_size() is int {
+        if width == FloatWidth.bits32 { 4; } else { 8; }
+    }
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object FloatBytes {
+    has origin is float;
+    has width is FloatWidth;
+    has order is ByteOrder;
+
+    FloatBytes(value is float, width is FloatWidth, order is ByteOrder) {
+        origin = value;
+        self.width = width;
+        self.order = order;
+    }
+
+    bytes() is @byte {
+        let bits is int = self.width_bits();
+        confirm binary_float_fits(origin, bits)
+            else throw InvalidArgument("float does not fit the requested binary width");
+        binary_float_bytes(origin, bits, self.order_name());
+    }
+
+    private:
+
+    width_bits() is int {
+        if width == FloatWidth.bits32 { 32; } else { 64; }
+    }
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}

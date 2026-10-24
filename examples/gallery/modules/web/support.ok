@@ -1,0 +1,53 @@
+// Общий стенд веб-примеров: один локальный сервер и настоящий HTTP/1-клиент.
+// DemoServer(routes).server() выбирает свободный loopback-порт; владелец закрывает сервер и ждёт FutureGroup.
+// DemoClient(server).request(method,path,payload,type,headers) возвращает независимый ReplySnapshot.
+// Внешние соединения не создаются. Тела ограничены 2 MiB, каждый транспорт и reader закрываются через defer.
+// Запуск потребителей: ./examples/gallery/run modules/web/rest-api (также forms, web-features, service).
+module gallery/web/support v1.0.0;
+import "web/app" take WebApplication;
+import "web/routing" take WebRoutes;
+import "http/server" take HttpServer;
+import "http/http1_session" take Http1Session;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/target" take ParsedRequestTarget;
+import "http/header" take Headers,Header,HeaderName;
+import "http/body" take BodyOpening,ByteBody;
+import "net/tcp" take TcpConnecting;
+import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+object DemoServer {
+    has routes is WebRoutes;DemoServer(routes is WebRoutes){self.routes=routes;}
+    async server() is HttpServer{await WebApplication(routes).server("127.0.0.1",0);}
+}
+object ReplySnapshot {
+    has status is int;has bytes is @byte;has headers is Headers;
+    ReplySnapshot(status is int,bytes is @byte,headers is Headers){self.status=status;self.bytes=bytes;self.headers=headers;}
+    status() is int{status;}text() is string{Utf8Decoded(bytes).string();}
+    bytes() is @byte{bytes;}
+    header(name is string) is string{headers.first(HeaderName(name));}
+    show(label is string) is void{Stdout().writeln(label+": "+status.string()+" "+self.text().replace("\n"," | "));}
+}
+object DemoClient {
+    has server is HttpServer;DemoClient(server is HttpServer){self.server=server;}
+    async get(path is string) is ReplySnapshot{await self.request("GET",path,"","text/plain",Headers([]));}
+    async request(verb is string,path is string,payload is string,type is string,extra is Headers) is ReplySnapshot{
+        await self.binary(verb,path,Utf8Encoded(payload).bytes(),type,extra);
+    }
+    async binary(verb is string,path is string,wire is @byte,type is string,extra is Headers) is ReplySnapshot{
+        let connection=await TcpConnecting(server.local_endpoint()).connection();
+        let session=Http1Session(connection.input(),connection.output(),connection);defer session.close();
+        let headers=extra.addition(Header(HeaderName("Host"),"127.0.0.1:"+server.local_endpoint().port().string()))
+            .addition(Header(HeaderName("Connection"),"close"))
+            .addition(Header(HeaderName("Content-Length"),wire.size().string()))
+            .addition(Header(HeaderName("Content-Type"),type));
+        let method=Method(verb);
+        let request=Request(method,ParsedRequestTarget(path,method).value(),headers,ByteBody(wire));
+        let exchange=await session.exchange(request);let response=exchange.response();
+        let reader=response.body().reading();defer reader.close();let content=ByteBuffer();defer content.closing().close();
+        loop{let bytes=await reader.bytes(8192);last if bytes.size()==0;confirm content.content().size()+bytes.size()<=2097152;content.writing().write(ByteSnapshot(bytes));}
+        ReplySnapshot(response.status().code(),content.content().bytes(),response.headers());
+    }
+}

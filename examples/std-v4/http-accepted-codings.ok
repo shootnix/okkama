@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/negotiation" take AcceptedContentCodings;
+import "http/content_coding" take ContentCoding;
+import "io/stdout" take Stdout;
+main() is int {
+    let accepted=AcceptedContentCodings("gzip;q=0, br;q=0.8, *;q=0.5");
+    let selected=accepted.preference([ContentCoding("gzip"),ContentCoding("br")]);
+    Stdout().writeln(accepted.string());Stdout().writeln(selected.string());
+    0;
+}

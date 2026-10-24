@@ -1,0 +1,304 @@
+module os/process v1.0.0;
+
+import "io/stream" take
+    ByteSource,
+    Writing,
+    Reading,
+    Closing,
+    IncompleteWrite,
+    InvalidReadLimit;
+import "os/command" take Commanding;
+import "runtime/process" take
+    ProcessState,
+    process_state_create,
+    process_state_start,
+    process_state_started,
+    process_state_id,
+    process_state_running,
+    process_state_exit,
+    process_state_signal,
+    process_state_close,
+    process_state_input_write,
+    process_state_input_flush,
+    process_state_input_closed,
+    process_state_input_close,
+    process_state_output_read,
+    process_state_errors_read;
+
+// Process owns one shared lazy runtime state. Constructing Process and its
+// stream views does not spawn. id(), running(), exit(), signal() and every
+// stream operation start the command exactly once. close() is the exception:
+// closing an unstarted Process never launches it.
+//
+// Close stdin to deliver EOF without terminating the child:
+//
+//     let process = Process(command: command);
+//     let input = ProcessInput(origin: process);
+//     input.write(payload);
+//     input.close();
+//     let exit = await process.exit();
+//
+// Direct users must drain stdout and stderr concurrently with waiting when a
+// child can produce substantial output. CommandCapture provides that higher-
+// level orchestration. Process.close() is idempotent; it forcefully stops and
+// reaps a running child and discards unread pipe data.
+
+enum Signal = (interrupt, terminate, kill);
+
+enum ExitKind = (exited, interrupted, terminated, killed, other);
+
+object Exit {
+    has classification is ExitKind;
+    has exit_code is int;
+
+    Exit(kind is ExitKind, code is int) {
+        classification = kind;
+        exit_code = code;
+    }
+
+    kind() is ExitKind { classification; }
+
+    code() is int {
+        confirm classification == ExitKind.exited else throw MissingExitCode();
+        exit_code;
+    }
+
+    success() is bool {
+        classification == ExitKind.exited && exit_code == 0;
+    }
+}
+
+object Process {
+    has origin is Commanding;
+    has state is ProcessState;
+
+    Process(command is Commanding) {
+        origin = command;
+        state = process_state_create();
+    }
+
+    id() is int {
+        self.start();
+        try {
+            process_state_id(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+
+    running() is bool {
+        self.start();
+        try {
+            process_state_running(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+
+    async exit() is Exit {
+        self.start();
+        let status is %string:int = try {
+            await process_state_exit(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        };
+        let kind is ExitKind = if status["state"] == 1 {
+            ExitKind.exited;
+        }
+        else {
+            match status["code"] {
+                case 1 { ExitKind.terminated; }
+                case 2 { ExitKind.killed; }
+                case 3 { ExitKind.interrupted; }
+                else { ExitKind.other; }
+            }
+        };
+        Exit(kind: kind, code: status["code"]);
+    }
+
+    signal(value is Signal) is void {
+        self.start();
+        let code is int = if value == Signal.interrupt {
+            0;
+        }
+        else {
+            if value == Signal.terminate {
+                1;
+            }
+            else {
+                2;
+            }
+        };
+        try {
+            process_state_signal(state, code);
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "unsupported" {
+                throw UnsupportedSignal(value);
+            }
+            else {
+                throw ProcessFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    close() is void {
+        try {
+            process_state_close(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+
+    input_write(source is ByteSource) is void {
+        self.start();
+        let content is @byte = source.bytes();
+        let written is int = try {
+            process_state_input_write(state, content);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        };
+        confirm written == content.size() else throw IncompleteWrite(written);
+    }
+    input_flush() is void {
+        self.start();
+        try {
+            process_state_input_flush(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+    input_closed() is bool {
+        try {
+            process_state_input_closed(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+    input_close() is void {
+        if !self.input_closed() {
+            self.start();
+            try {
+                process_state_input_close(state);
+            }
+            catch failure is NativeFailure {
+                throw ProcessFailure(failure.code(), failure.message());
+            }
+        }
+    }
+    output_bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        self.start();
+        try {
+            process_state_output_read(state, limit);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+    error_bytes(limit is int) is @byte {
+        confirm limit > 0 else throw InvalidReadLimit(limit);
+        self.start();
+        try {
+            process_state_errors_read(state, limit);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+    private:
+    start() is void {
+        if !self.started() {
+            try {
+                process_state_start(
+                    state,
+                    origin.program().string(),
+                    origin.arguments(),
+                    origin.directory().path().string(),
+                    origin.environment().variables(),
+                );
+            }
+            catch failure is NativeFailure {
+                throw ProcessFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    started() is bool {
+        try {
+            process_state_started(state);
+        }
+        catch failure is NativeFailure {
+            throw ProcessFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object ProcessInput does Writing, Closing {
+    has owner is Process;
+    ProcessInput(origin is Process){owner=origin;}
+
+    write(source is ByteSource) is void { owner.input_write(source); }
+
+    flush() is void { owner.input_flush(); }
+
+    closed() is bool { owner.input_closed(); }
+
+    close() is void { owner.input_close(); }
+}
+
+object ProcessOutput does Reading {
+    has owner is Process;
+    ProcessOutput(origin is Process){owner=origin;}
+
+    bytes(limit is int) is @byte { owner.output_bytes(limit); }
+}
+
+object ProcessErrors does Reading {
+    has owner is Process;
+    ProcessErrors(origin is Process){owner=origin;}
+
+    bytes(limit is int) is @byte { owner.error_bytes(limit); }
+}
+
+object MissingExitCode does Error {
+    MissingExitCode();
+
+    #projected
+    text() is string { "process did not exit with a code"; }
+}
+
+object UnsupportedSignal does Error {
+    has origin is Signal;
+
+    UnsupportedSignal(signal is Signal) {
+        origin = signal;
+    }
+
+    signal() is Signal { origin; }
+
+    #projected
+    text() is string { "process signal is unsupported by this runtime"; }
+}
+
+object ProcessFailure does Error {
+    has failure_code is string;
+    has message is string;
+
+    ProcessFailure(code is string, message is string) {
+        failure_code = code;
+        self.message = message;
+    }
+
+    code() is string { failure_code; }
+
+    #projected
+    text() is string { message; }
+}

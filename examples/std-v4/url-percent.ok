@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let encoded=PercentEncoded("чай & кофе",UrlComponent.data).string();
+    Stdout().writeln(encoded);
+    Stdout().writeln(PercentDecoded(encoded).string());
+    Stdout().writeln(PercentDecoded("%252F+%2F").string());
+    try {PercentDecoded("чай%XZ").bytes();}
+    catch failure is InvalidPercentEncoding {Stdout().writeln(failure.text());}
+    0;
+}

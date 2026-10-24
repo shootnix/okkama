@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.future-successor-obligation",
+  "title": "an awaited successor future transfers its must-use obligation",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.FUTURE-SUCCESSOR",
+      "aspects": [
+        "normal",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.1 (static successor consumption)"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.1: awaiting a Future<^T> transfers its obligation to the successor result, which is then consumed."
+  },
+  "status": "mandatory"
+}

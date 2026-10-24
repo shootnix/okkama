@@ -1,0 +1,30 @@
+// DirStat: группировка снимков по расширению, без повторного чтения файловой системы.
+// Tally().kinds(files) возвращает отсортированные @KindTotal, размер по убыванию.
+// Вход — @ScannedFile из scan.ok; запуск программы: ./examples/gallery/run dirstat/dirstat PATH.
+module gallery/dirstat/tally v1.0.0;
+import "scan" take ScannedFile;
+import "collections/set" take OrderedSet;
+import "collections/ordering" take Sorted;
+import "compare" take Comparing,Order;
+import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber;
+import "math/decimal" take Decimal;
+object KindTotal does Comparing<KindTotal> {
+    has extension is string;has files,bytes is int;
+    KindTotal(extension is string,files is int,bytes is int){self.extension=extension;self.files=files;self.bytes=bytes;}
+    extension() is string{extension;}files() is int{files;}bytes() is int{bytes;}
+    order(other is KindTotal) is Order{
+        let by_size=other.bytes().order(bytes);if by_size==Order.equal{extension.order(other.extension());}else{by_size;}
+    }
+    json() is JsonObject{JsonObject([JsonMember("extension",JsonText(extension)),JsonMember("files",JsonNumber(Decimal(files.string()))),JsonMember("bytes",JsonNumber(Decimal(bytes.string())))]);}
+}
+object Tally {
+    Tally();
+    kinds(files is @ScannedFile) is @KindTotal {
+        let extensions is @string=files.map()->file{file.extension();};
+        let groups is @KindTotal=OrderedSet(extensions).map()->extension{
+            let own=files.filter()->file{file.extension()==extension;};
+            let bytes=own.reduce(0)->sum,file{sum+file.bytes();};KindTotal(extension,own.size(),bytes);
+        };
+        let result is @KindTotal=Sorted(groups).map()->group{group;};result;
+    }
+}

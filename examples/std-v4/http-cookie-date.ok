@@ -1,0 +1,10 @@
+module app v1.0.0;
+import "http/cookie_date" take ParsedCookieDate;
+import "http/date" take HttpDate;
+import "io/stdout" take Stdout;
+main() is int {
+    let expiry=ParsedCookieDate("Wednesday, 09-Jun-21 10:18:14 GMT").value();
+    Stdout().writeln(HttpDate(expiry).string());
+    confirm HttpDate(expiry).string()=="Wed, 09 Jun 2021 10:18:14 GMT";
+    0;
+}

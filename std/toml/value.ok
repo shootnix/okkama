@@ -1,0 +1,470 @@
+module toml/value v1.0.0;
+
+import "collections/sequence" take Sequencing;
+
+// Immutable TOML values; not a TOML document parser or printer.
+//
+//     let settings = TomlTable([
+//         TomlMember("name", TomlString("Ada")),
+//         TomlMember("enabled", TomlBoolean(true)),
+//     ]);
+//     settings.value("name").accept(observer);
+//
+// accept() invokes exactly one typed TomlVisitor callback. It does not descend
+// automatically into arrays or tables; the observer controls traversal and its
+// exceptions propagate. No JSON conversion, kind-switch/downcast, reflection,
+// I/O or implicit printing. Scalar coordinates retain their exact runtime type.
+// Temporal coordinates include year zero, nanoseconds, leap-second notation
+// and unknown zero offsets. They do not implicitly convert to host instants.
+// See docs/std/toml-values-guide.md for the distinction and parser contract.
+//
+// TomlArray/TomlTable snapshot size() once and item(i) once in increasing index
+// order at construction. The source is borrowed and never closed. values() or
+// members() returns the retained immutable snapshot, so repeated observation
+// never traverses the original sequence. Snapshots are shallow nominal values;
+// arbitrary custom TomlValue implementations are not inspected or frozen.
+//
+// Defaults: 10000 array items, 1024 table members; a second constructor argument
+// replaces the bound. InvalidTomlLimit rejects negative bounds before source
+// observation, InvalidTomlSize rejects negative size(), TomlLimitExceeded rejects
+// size above the budget before item reads. Zero allows empty containers.
+// Bounds constrain cardinality, not scalar length or total nested graph size.
+//
+// TomlMember binds an exact Unicode name to a TomlValue. Empty names and literal
+// dots are valid. Tables preserve insertion order; duplicate exact names fail
+// with DuplicateTomlMember. No case folding or Unicode normalization. Dotted
+// source syntax is a parser concern. value(name) throws MissingTomlMember for
+// absence; membership(name) returns false. Neither container claims to be a
+// sequence/map itself. Duplicate validation is O(n²), lookup O(n), bounded by
+// the configured member count. No resources or destroy/close hooks are owned.
+//
+// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/toml/value.ok
+
+role TomlValue {
+    accept(to is TomlVisitor) is void;
+}
+
+role TomlVisitor {
+    text(value is string) is void;
+    integer(value is int) is void;
+    real(value is float) is void;
+    infinity(negative is bool) is void;
+    not_a_number() is void;
+    boolean(value is bool) is void;
+    elements(values is Sequencing<TomlValue>) is void;
+    members(values is Sequencing<TomlMember>) is void;
+    local_date(value is TomlLocalDate) is void;
+    local_time(value is TomlLocalTime) is void;
+    local_datetime(value is TomlLocalDateTime) is void;
+    offset_datetime(value is TomlOffsetDateTime) is void;
+
+    // Test-only observer with independent expected coordinates. Assertions use
+    // the language's dynamically scoped test capability; no production helper
+    // class or reflection hook is needed to exercise the nominal protocol.
+    fake {
+        infinity(negative is bool) is void { test.ok(negative); }
+        not_a_number() is void { test.ok(true); }
+        local_date(value is TomlLocalDate) is void { test.is(value.string(), "0000-02-29"); }
+        local_time(value is TomlLocalTime) is void { test.is(value.string(), "23:59:60.1234"); }
+        local_datetime(value is TomlLocalDateTime) is void { test.is(value.string(), "0000-02-29T23:59:60.1234"); }
+        offset_datetime(value is TomlOffsetDateTime) is void { test.is(value.string(), "0000-02-29T23:59:60.1234-00:00"); }
+        text(value is string) is void { test.is(value, "é\n"); }
+        integer(value is int) is void { test.is(value, 9007199254740993); }
+        real(value is float) is void { test.is(value, 1.25); }
+        boolean(value is bool) is void { test.is(value, true); }
+        elements(values is Sequencing<TomlValue>) is void {
+            test.is(values.size(), 2);
+            values.first().accept(TomlVisitor.fake());
+            values.last().accept(TomlVisitor.fake());
+        }
+        members(values is Sequencing<TomlMember>) is void {
+            test.is(values.size(), 2);
+            test.is(values.first().name(), "");
+            test.is(values.last().name(), "a.b");
+        }
+    }
+}
+
+object TomlString does TomlValue {
+    has origin is string;
+    TomlString(value is string) { origin = value; }
+    accept(to is TomlVisitor) is void { to.text(origin); }
+}
+object TomlInteger does TomlValue {
+    has origin is int;
+    TomlInteger(value is int) { origin = value; }
+    accept(to is TomlVisitor) is void { to.integer(origin); }
+}
+object TomlFloat does TomlValue {
+    has origin is float;
+    TomlFloat(value is float) { origin = value; }
+    accept(to is TomlVisitor) is void { to.real(origin); }
+}
+// Okkama builtin floats are finite. TOML's explicit special values therefore
+// remain distinct immutable TomlValue objects and never masquerade as a native
+// Float. Infinity preserves its sign; NaN sign/payload are unspecified by TOML
+// and canonicalized. accept() invokes one dedicated callback, without arithmetic
+// or implicit conversion. Finite TomlFloat continues to preserve binary64 bits.
+object TomlInfinity does TomlValue {
+    has sign is bool;
+    TomlInfinity(negative is bool) { sign = negative; }
+    string() is string { if sign { "-inf"; } else { "inf"; } }
+    accept(to is TomlVisitor) is void { to.infinity(sign); }
+}
+object TomlNaN does TomlValue {
+    TomlNaN();
+    string() is string { "nan"; }
+    accept(to is TomlVisitor) is void { to.not_a_number(); }
+}
+
+object TomlBoolean does TomlValue {
+    has origin is bool;
+    TomlBoolean(value is bool) { origin = value; }
+    accept(to is TomlVisitor) is void { to.boolean(origin); }
+}
+object TomlMember {
+    has key is string;
+    has origin is TomlValue;
+    TomlMember(name is string, value is TomlValue) { key = name; origin = value; }
+    name() is string { key; }
+    value() is TomlValue { origin; }
+}
+
+object TomlArray does TomlValue {
+    has origin is @TomlValue;
+    TomlArray(values is Sequencing<TomlValue>) {
+        let size = values.size();
+        confirm size >= 0 else throw InvalidTomlSize();
+        confirm size <= 10000 else throw TomlLimitExceeded();
+        let snapshot is @TomlValue = (0..size).map() -> index { values.item(index); };
+        origin = snapshot;
+    }
+    TomlArray(values is Sequencing<TomlValue>, maximum_items is int) {
+        confirm maximum_items >= 0 else throw InvalidTomlLimit();
+        let size = values.size();
+        confirm size >= 0 else throw InvalidTomlSize();
+        confirm size <= maximum_items else throw TomlLimitExceeded();
+        let snapshot is @TomlValue = (0..size).map() -> index { values.item(index); };
+        origin = snapshot;
+    }
+    values() is Sequencing<TomlValue> { origin; }
+    accept(to is TomlVisitor) is void { to.elements(origin); }
+}
+
+object TomlTable does TomlValue {
+    has origin is @TomlMember;
+    TomlTable(members is Sequencing<TomlMember>) {
+        let size = members.size();
+        confirm size >= 0 else throw InvalidTomlSize();
+        confirm size <= 1024 else throw TomlLimitExceeded();
+        let snapshot is @TomlMember = (0..size).map() -> index { members.item(index); };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateTomlMember(snapshot[index].name());
+            }
+        }
+    }
+    TomlTable(members is Sequencing<TomlMember>, maximum_members is int) {
+        confirm maximum_members >= 0 else throw InvalidTomlLimit();
+        let size = members.size();
+        confirm size >= 0 else throw InvalidTomlSize();
+        confirm size <= maximum_members else throw TomlLimitExceeded();
+        let snapshot is @TomlMember = (0..size).map() -> index { members.item(index); };
+        origin = snapshot;
+        for (0..snapshot.size()) -> index {
+            for (0..index) -> previous {
+                confirm snapshot[previous].name() != snapshot[index].name()
+                    else throw DuplicateTomlMember(snapshot[index].name());
+            }
+        }
+    }
+    members() is Sequencing<TomlMember> { origin; }
+    membership(name is string) is bool { self.index(name) >= 0; }
+    value(name is string) is TomlValue {
+        let index = self.index(name);
+        confirm index >= 0 else throw MissingTomlMember(name);
+        origin[index].value();
+    }
+    accept(to is TomlVisitor) is void { to.members(origin); }
+
+    private:
+    index(name is string) is int {
+        (0..origin.size()).reduce(-1) -> found, index {
+            if origin[index].name() == name { index; } else { found; }
+        };
+    }
+
+}
+
+object MissingTomlMember does Error {
+    has key is string;
+    MissingTomlMember(name is string) { key = name; }
+    name() is string { key; }
+    text() is string { "missing TOML member: " + key; }
+}
+object DuplicateTomlMember does Error {
+    has key is string;
+    DuplicateTomlMember(name is string) { key = name; }
+    name() is string { key; }
+    text() is string { "duplicate TOML member: " + key; }
+}
+object InvalidTomlLimit does Error {
+    InvalidTomlLimit();
+    text() is string { "TOML container limit must be nonnegative"; }
+}
+object InvalidTomlSize does Error {
+    InvalidTomlSize();
+    text() is string { "TOML source size must be nonnegative"; }
+}
+object TomlLimitExceeded does Error {
+    TomlLimitExceeded();
+    text() is string { "TOML container limit exceeded"; }
+}
+
+// Syntax-level Gregorian dates include year 0000, unlike time/date.Date.
+// Coordinates are validated at construction; rendering is independent of locale.
+object TomlLocalDate does TomlValue {
+    has yyyy, mm, dd is int;
+    TomlLocalDate(year is int, month is int, day is int) {
+        confirm year >= 0 && year <= 9999 && month >= 1 && month <= 12
+            else throw InvalidTomlDate();
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        let maximum = match month {
+            case 2 { if leap {29;} else {28;} }
+            case 4,6,9,11 {30;}
+            else {31;}
+        };
+        confirm day >= 1 && day <= maximum else throw InvalidTomlDate();
+        yyyy = year;
+        mm = month;
+        dd = day;
+    }
+    year() is int { yyyy; }
+    month() is int { mm; }
+    day() is int { dd; }
+    string() is string {
+        let year = yyyy.string();
+        let month = mm.string();
+        let day = dd.string();
+        ("0000" + year).slice(year.length(), year.length() + 4) + "-"
+            + ("00" + month).slice(month.length(), month.length() + 2) + "-"
+            + ("00" + day).slice(day.length(), day.length() + 2);
+    }
+    accept(to is TomlVisitor) is void { to.local_date(self); }
+}
+
+// The second coordinate can be 60 to preserve leap-second notation. This is
+// NOT a claim that the coordinates identify a real scheduled leap event.
+// Nanoseconds are integral; parsing longer fractions must truncate, not round.
+object TomlLocalTime does TomlValue {
+    has hh, mm, ss, ns is int;
+    TomlLocalTime(hour is int, minute is int, second is int, nanosecond is int) {
+        confirm hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+            && second >= 0 && second <= 60 && nanosecond >= 0 && nanosecond <= 999999999
+            else throw InvalidTomlTime();
+        hh = hour;
+        mm = minute;
+        ss = second;
+        ns = nanosecond;
+    }
+    hour() is int { hh; }
+    minute() is int { mm; }
+    second() is int { ss; }
+    nanosecond() is int { ns; }
+    string() is string {
+        let hour = hh.string();
+        let minute = mm.string();
+        let second = ss.string();
+        let fraction = ns.string();
+        let digits = ("000000000" + fraction).slice(fraction.length(), fraction.length() + 9);
+        let end = (0..9).reduce(0) -> ending, index {
+            if digits.slice(index, index + 1) != "0" {index + 1;} else {ending;}
+        };
+        ("00" + hour).slice(hour.length(), hour.length() + 2) + ":"
+            + ("00" + minute).slice(minute.length(), minute.length() + 2) + ":"
+            + ("00" + second).slice(second.length(), second.length() + 2)
+            + if ns == 0 {"";} else {"." + digits.slice(0, end);};
+    }
+    accept(to is TomlVisitor) is void { to.local_time(self); }
+}
+
+object TomlLocalDateTime does TomlValue {
+    has date_value is TomlLocalDate;
+    has time_value is TomlLocalTime;
+    TomlLocalDateTime(date is TomlLocalDate, time is TomlLocalTime) {
+        date_value = date;
+        time_value = time;
+    }
+    date() is TomlLocalDate { date_value; }
+    time() is TomlLocalTime { time_value; }
+    string() is string { date_value.string() + "T" + time_value.string(); }
+    accept(to is TomlVisitor) is void { to.local_datetime(self); }
+}
+
+// Offset provenance is separate from numeric displacement: unknown zero must
+// not silently become known UTC. No implicit host-zone/instant conversion.
+object TomlOffset {
+    has amount is int;
+    has certain is bool;
+    TomlOffset(minutes is int) {
+        confirm minutes > -1440 && minutes < 1440 else throw InvalidTomlOffset();
+        amount = minutes;
+        certain = true;
+    }
+    TomlOffset(minutes is int, known is bool) {
+        confirm minutes > -1440 && minutes < 1440 && (known || minutes == 0)
+            else throw InvalidTomlOffset();
+        amount = minutes;
+        certain = known;
+    }
+    minutes() is int { amount; }
+    known() is bool { certain; }
+    string() is string {
+        if !certain { "-00:00"; }
+        else if amount == 0 { "Z"; }
+        else {
+            let magnitude = if amount < 0 {-amount;} else {amount;};
+            let hour = (magnitude / 60).int().string();
+            let minute = (magnitude % 60).string();
+            (if amount < 0 {"-";} else {"+";})
+                + ("00" + hour).slice(hour.length(), hour.length() + 2) + ":"
+                + ("00" + minute).slice(minute.length(), minute.length() + 2);
+        }
+    }
+}
+
+object TomlOffsetDateTime does TomlValue {
+    has date_time is TomlLocalDateTime;
+    has displacement is TomlOffset;
+    TomlOffsetDateTime(local is TomlLocalDateTime, offset is TomlOffset) {
+        date_time = local;
+        displacement = offset;
+    }
+    local() is TomlLocalDateTime { date_time; }
+    offset() is TomlOffset { displacement; }
+    string() is string { date_time.string() + displacement.string(); }
+    accept(to is TomlVisitor) is void { to.offset_datetime(self); }
+}
+
+object InvalidTomlDate does Error {
+    InvalidTomlDate();
+    text() is string { "invalid TOML date coordinates"; }
+}
+object InvalidTomlTime does Error {
+    InvalidTomlTime();
+    text() is string { "invalid TOML time coordinates"; }
+}
+object InvalidTomlOffset does Error {
+    InvalidTomlOffset();
+    text() is string { "invalid TOML offset coordinates"; }
+}
+
+test "typed scalar dispatch" {
+    let to = TomlVisitor.fake();
+    let values is @TomlValue = [TomlString("é\n"), TomlInteger(9007199254740993), TomlFloat(1.25), TomlBoolean(true)];
+    for values -> value { value.accept(to); }
+}
+
+test "mixed array retains order and dispatches snapshot" {
+    let array = TomlArray([TomlString("é\n"), TomlBoolean(true)], 2);
+    test.is(array.values().size(), 2);
+    array.values().first().accept(TomlVisitor.fake());
+    array.values().last().accept(TomlVisitor.fake());
+    array.accept(TomlVisitor.fake());
+    test.is(TomlArray([]).values().size(), 0);
+    test.is(TomlArray([], 0).values().size(), 0);
+}
+
+test "ordered literal table names and typed lookup" {
+    let table = TomlTable([TomlMember("", TomlInteger(9007199254740993)), TomlMember("a.b", TomlBoolean(true))]);
+    test.ok(table.membership(""));
+    test.ok(table.membership("a.b"));
+    test.ok(!table.membership("a"));
+    test.is(table.members().first().name(), "");
+    test.is(table.members().last().name(), "a.b");
+    table.value("").accept(TomlVisitor.fake());
+    table.value("a.b").accept(TomlVisitor.fake());
+    table.accept(TomlVisitor.fake());
+    test.is(TomlTable([], 0).members().size(), 0);
+    try { table.value("missing"); test.fail("missing name accepted"); }
+    catch error is MissingTomlMember { test.is(error.name(), "missing"); test.is(error.text(), "missing TOML member: missing"); }
+}
+
+test "duplicate keys reject and distinct Unicode names survive" {
+    try { TomlTable([TomlMember("x", TomlBoolean(true)), TomlMember("x", TomlBoolean(false))]); test.fail("duplicate accepted"); }
+    catch error is DuplicateTomlMember { test.is(error.name(), "x"); test.is(error.text(), "duplicate TOML member: x"); }
+    let table = TomlTable([TomlMember("A", TomlBoolean(true)), TomlMember("a", TomlBoolean(false)), TomlMember("é", TomlBoolean(true)), TomlMember("é", TomlBoolean(false))]);
+    test.is(table.members().size(), 4);
+}
+
+test "container budgets reject before traversal" {
+    try { TomlArray([], -1); test.fail("negative array limit accepted"); }
+    catch error is InvalidTomlLimit { test.is(error.text(), "TOML container limit must be nonnegative"); }
+    try { TomlTable([], -1); test.fail("negative table limit accepted"); }
+    catch error is InvalidTomlLimit { test.ok(true); }
+    try { TomlArray([TomlBoolean(true)], 0); test.fail("array limit ignored"); }
+    catch error is TomlLimitExceeded { test.is(error.text(), "TOML container limit exceeded"); }
+    try { TomlTable([TomlMember("x", TomlBoolean(true))], 0); test.fail("table limit ignored"); }
+    catch error is TomlLimitExceeded { test.ok(true); }
+}
+
+test "temporal coordinates preserve year zero and leap notation" {
+    let date = TomlLocalDate(0, 2, 29);
+    test.is([date.year(), date.month(), date.day()], [0, 2, 29]);
+    test.is(date.string(), "0000-02-29");
+    let time = TomlLocalTime(23, 59, 60, 123400000);
+    test.is([time.hour(), time.minute(), time.second(), time.nanosecond()], [23, 59, 60, 123400000]);
+    test.is(time.string(), "23:59:60.1234");
+    let local = TomlLocalDateTime(date, time);
+    test.is(local.date(), date);
+    test.is(local.time(), time);
+    test.is(local.string(), "0000-02-29T23:59:60.1234");
+    let stamp = TomlOffsetDateTime(local, TomlOffset(0, false));
+    test.is(stamp.local(), local);
+    test.is(stamp.offset().minutes(), 0);
+    test.ok(!stamp.offset().known());
+    test.is(stamp.string(), "0000-02-29T23:59:60.1234-00:00");
+    let values is @TomlValue = [date, time, local, stamp];
+    for values -> value { value.accept(TomlVisitor.fake()); }
+}
+
+test "temporal canonical boundaries and precision" {
+    test.is(TomlLocalDate(9999, 12, 31).string(), "9999-12-31");
+    test.is(TomlLocalTime(0, 0, 0, 0).string(), "00:00:00");
+    test.is(TomlLocalTime(1, 2, 3, 1).string(), "01:02:03.000000001");
+    test.is(TomlLocalTime(1, 2, 3, 999999999).string(), "01:02:03.999999999");
+    test.is(TomlOffset(0).string(), "Z");
+    test.is(TomlOffset(1439).string(), "+23:59");
+    test.is(TomlOffset(-1439).string(), "-23:59");
+    test.is(TomlOffset(-30).string(), "-00:30");
+    test.ok(TomlOffset(0).known());
+}
+
+test "invalid temporal coordinates fail at construction" {
+    for [[-1,1,1], [10000,1,1], [2024,0,1], [2024,13,1], [2024,1,0],
+        [2024,1,32], [1900,2,29], [2023,2,29], [2024,4,31]] -> args {
+        try { TomlLocalDate(args[0],args[1],args[2]); test.fail("bad date accepted"); }
+        catch error is InvalidTomlDate { test.is(error.text(), "invalid TOML date coordinates"); }
+    }
+    for [[-1,0,0,0], [24,0,0,0], [0,-1,0,0], [0,60,0,0], [0,0,-1,0],
+        [0,0,61,0], [0,0,0,-1], [0,0,0,1000000000]] -> args {
+        try { TomlLocalTime(args[0],args[1],args[2],args[3]); test.fail("bad time accepted"); }
+        catch error is InvalidTomlTime { test.is(error.text(), "invalid TOML time coordinates"); }
+    }
+    for [-1440,1440] -> amount {
+        try { TomlOffset(amount); test.fail("bad offset accepted"); }
+        catch error is InvalidTomlOffset { test.is(error.text(), "invalid TOML offset coordinates"); }
+    }
+    try { TomlOffset(1,false); test.fail("unknown nonzero offset accepted"); }
+    catch error is InvalidTomlOffset { test.ok(true); }
+}
+test "special floating values remain explicit objects" {
+    test.is(TomlInfinity(false).string(), "inf");
+    test.is(TomlInfinity(true).string(), "-inf");
+    test.is(TomlNaN().string(), "nan");
+    let values is @TomlValue = [TomlInfinity(true), TomlNaN()];
+    for values -> value { value.accept(TomlVisitor.fake()); }
+    test.isnt(TomlInfinity(true), TomlInfinity(false));
+}

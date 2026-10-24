@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.compare.bool-has-no-order",
+  "title": "bool has no natural order",
+  "purpose": "Ordering a bool must fail.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.COMPARE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "An unknown builtin action may be rejected statically or at runtime."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "std/compare.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "compare header: bool deliberately has no natural order."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,17 @@
+module logging/enrichment v1.0.0;
+import "logging/named" take Logging,NamedLogging;
+import "logging/level" take LogLevel;
+import "logging/field" take LogFields,CombinedLogFields;
+object FieldLogging does Logging{
+    has origin is Logging;has fields is LogFields;
+    FieldLogging(origin is Logging,fields is LogFields){self.origin=origin;self.fields=fields;}
+    log(level is LogLevel,message is string) is void{origin.log(level,message,fields);}
+    log(level is LogLevel,message is string,fields is LogFields) is void{origin.log(level,message,CombinedLogFields(self.fields,fields).value());}
+    log(level is LogLevel,message is string,fields is LogFields,cause is Error) is void{origin.log(level,message,CombinedLogFields(self.fields,fields).value(),cause);}
+}
+object ChildLogging{
+    has origin is NamedLogging;has segment is string;
+    ChildLogging(origin is NamedLogging,segment is string){self.origin=origin;self.segment=segment;}
+    #projected
+    value() is NamedLogging{origin.child(segment);}
+}

@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Coded does Error {
+    has code is int;
+    Coded(:code);
+    code() is int { code; }
+    text() is string { "coded"; }
+}
+
+main() is int {
+    let out = Stdout();
+    try {
+        throw Coded(code: 7);
+    } catch e is Error {
+        let n = e.code();
+    }
+    out.writeln("unreachable");
+    0;
+}

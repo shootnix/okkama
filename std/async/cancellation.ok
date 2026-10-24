@@ -1,0 +1,97 @@
+module async/cancellation v1.0.0;
+
+/*
+=head1 NAME
+
+async/cancellation - explicit cooperative cancellation capabilities
+
+=head1 DESCRIPTION
+
+C<Cancellation> owns one runtime-local cancellation request. Its
+C<cancelling()> action returns a restricted C<Cancelling> capability which can
+observe the request but cannot issue it.
+
+Explicit cancellation is independent from C<Future.cancel()>. Requesting a
+C<Cancellation> does not cancel any future automatically: cooperating code
+must call C<check()> or await C<wait()>.
+
+=head1 CPU-BOUND COOPERATION
+
+Pass the restricted capability to work which should remain cancellable:
+
+    let cancellation = Cancellation();
+    let token = cancellation.cancelling();
+
+    for records -> record {
+        token.check();
+        process(record);
+    }
+
+    cancellation.cancel();
+
+C<check()> is cheap before a request and throws the builtin C<Cancelled>
+afterwards.
+
+=head1 WAITING FOR A REQUEST
+
+C<wait()> is useful when cancellation itself is an asynchronous event:
+
+    async monitor(cancelling is Cancelling) {
+        await cancelling.wait();
+        audit.writeln("cancellation requested");
+    }
+
+    let cancellation = Cancellation();
+    let monitoring = spawn Monitor(
+        cancelling: cancellation.cancelling(),
+    ).run();
+    cancellation.cancel();
+    await monitoring;
+
+Every waiter resumes exactly once. A wait started after the request completes
+immediately. Cancelling the future returned by C<wait()> only abandons that
+wait; it does not request cancellation and does not affect other waiters.
+
+=head1 OWNERSHIP
+
+Keep C<Cancellation> with the owner of an operation and pass only
+C<Cancelling> to collaborators. Constructing C<CancellationToken> directly is
+rejected by the runtime; tokens can only come from C<cancelling()>.
+
+=cut
+*/
+
+role Cancelling {
+    requested() is bool;
+    check() is void;
+    async wait() is Cancelling;
+}
+
+object Cancellation {
+    Cancellation() {}
+
+    cancelling() is Cancelling {
+        CancellationToken();
+    }
+
+    cancel() is void {
+        panic "Cancellation.cancel is a VM intrinsic";
+    }
+}
+
+object CancellationToken does Cancelling {
+    CancellationToken() {}
+
+    requested() is bool {
+        panic "CancellationToken.requested is a VM intrinsic";
+    }
+
+    check() is void {
+        panic "CancellationToken.check is a VM intrinsic";
+    }
+
+    async wait() is Cancelling {
+        panic "CancellationToken.wait is a VM intrinsic";
+        self;
+    }
+}

@@ -1,0 +1,68 @@
+module http/http1_chunk v1.0.0;
+import "http/http1_head" take Http1Limits,Http1LimitExceeded;
+import "http/http1_framing" take Http1FramingFields;
+import "http/version" take HttpVersion;
+import "http/header" take Headers,Header,HeaderName,HeaderLimits,InvalidHeader;
+import "http/message" take InvalidHttpMessage;
+import "http/internal/trailers" take HttpTrailerRules;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches,EntireRegexMatch;
+import "numbers/bigint" take BigInt,BigProduct,BigSum;
+import "encoding/single_byte" take Latin1Encoded;
+import "runtime/single_byte" take latin1_representable_prefix;
+import "compare" take Order;
+
+// Chunk extensions are bounded wire grammar, not application metadata. Unknown
+// syntactically safe extensions are ignored; their values never escape here.
+object ParsedHttp1ChunkLine {
+    has origin is string;has limits is Http1Limits;
+    ParsedHttp1ChunkLine(origin is string){self.origin=origin;limits=Http1Limits();}
+    ParsedHttp1ChunkLine(origin is string,limits is Http1Limits){self.origin=origin;self.limits=limits;}
+    size() is BigInt {
+        confirm origin.length()<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+        confirm latin1_representable_prefix(origin)==origin.length() else throw InvalidHttpMessage("chunk line requires octets");
+        let token="[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+        let quoted="\"(?:[\\x{09}\\x{20}\\x{21}\\x{23}-\\x{5b}\\x{5d}-\\x{7e}\\x{80}-\\x{ff}]|\\\\[\\x{09}\\x{20}-\\x{7e}\\x{80}-\\x{ff}])*\"";
+        let extensions="(?:[ \\t]*;[ \\t]*"+token+"(?:[ \\t]*=[ \\t]*(?:"+token+"|"+quoted+"))?)*";
+        let pattern=Regex("^([0-9A-Fa-f]+)"+extensions+"$");
+        confirm RegexMatches(origin,pattern).found() else throw InvalidHttpMessage("invalid chunk size or extension syntax");
+        let hex=EntireRegexMatch(origin,pattern).capture(1).text();
+        confirm hex.length()<=16 else throw Http1LimitExceeded("chunk_digits");
+        let value=Latin1Encoded(hex).bytes().reduce(BigInt("0"))->size,octet {
+            let code=octet.int();let digit=if code<=57 {code-48;}else{if code<=70 {code-55;}else{code-87;}};
+            BigSum(left:BigProduct(left:size,right:BigInt("16")).value(),right:BigInt(digit.string())).value();
+        };
+        confirm value.order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded("body_bytes");value;
+    }
+}
+object ParsedHttp1Trailers {
+    has origin is string;has head is Headers;has limits is Http1Limits;
+    ParsedHttp1Trailers(origin is string,head is Headers){self.origin=origin;self.head=head;limits=Http1Limits();}
+    ParsedHttp1Trailers(origin is string,head is Headers,limits is Http1Limits){self.origin=origin;self.head=head;self.limits=limits;}
+    value() is Headers {
+        confirm origin.length()<=limits.head_bytes() else throw Http1LimitExceeded("trailer_bytes");
+        confirm latin1_representable_prefix(origin)==origin.length() else throw InvalidHttpMessage("trailer section requires octets");
+        if origin=="\r\n" {return Headers([],HeaderLimits(limits.fields(),limits.head_bytes()+limits.fields()));}
+        let ending=origin.split("\r\n\r\n");
+        confirm ending.size()==2 && ending[1]=="" else throw InvalidHttpMessage("exact trailer CRLF framing required");
+        let lines=origin.split("\r\n");confirm lines.size()-2<=limits.fields() else throw Http1LimitExceeded("fields");
+        let names=Http1FramingFields(head,HttpVersion.http_1_1,limits).list("Connection");
+        let nominated is @string=names.map()->value {
+            try{HeaderName(value).lowercase();}catch e is InvalidHeader{throw InvalidHttpMessage("invalid Connection token");}
+        };
+        let rules=HttpTrailerRules(nominated);
+        let entries is @Header=(0..lines.size()-2).map()->index {
+            let line=lines[index];confirm line.length()<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+            let pieces=line.split(":");confirm pieces.size()>=2 && pieces[0]!="" else throw InvalidHttpMessage("trailer field colon required");
+            let entry=try{Header(HeaderName(pieces[0]),line.slice(pieces[0].length()+1,line.length()));}
+                catch e is InvalidHeader{throw InvalidHttpMessage("invalid trailer field syntax");};
+            rules.check(entry);
+            entry;
+        };
+        Headers(entries,HeaderLimits(limits.fields(),limits.head_bytes()+limits.fields()));
+    }
+}
+test "zero chunk and empty trailers have explicit boundaries" {
+    test.is(ParsedHttp1ChunkLine("0; ignored=\"safe;value\"").size().string(),"0");
+    test.is(ParsedHttp1Trailers("\r\n",Headers([])).value().entries().size(),0);
+}

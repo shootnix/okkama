@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Item {
+    Item();
+}
+
+object Calculator {
+    has seed is int;
+    Calculator(:seed);
+    describe(item is Item) is int { 1; }
+}
+
+async main() is int {
+    let out = Stdout();
+    let pending = spawn Calculator(seed: 1).describe(item: Item());
+    let s = await pending;
+    out.writeln("unreachable");
+    0;
+}

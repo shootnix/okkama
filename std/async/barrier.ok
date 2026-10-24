@@ -1,0 +1,91 @@
+module async/barrier v1.0.0;
+
+/*
+=head1 NAME
+
+async/barrier - cyclic cooperative rendezvous for a fixed number of parties
+
+=head1 SYNOPSIS
+
+    let phase is Barrier = Barrier(parties: 4);
+
+    async worker() {
+        prepare_partition();
+        let arrival = await phase.wait();
+        if arrival == 3 {
+            publish_phase_metrics();
+        }
+        consume_prepared_partitions();
+    }
+
+=head1 DESCRIPTION
+
+C<wait()> suspends until exactly C<parties> calls have arrived in the current
+generation. Arrivals receive distinct indexes C<0..parties-1> in arrival order;
+the final arrival receives C<parties-1>. Releasing one complete generation
+automatically begins the next generation.
+
+C<state()> returns an immutable observation. Its waiter count belongs to the
+current generation and may change immediately after observation.
+
+Cancelling one pending wait breaks its complete generation. C<abort()> does the
+same explicitly. Existing and future waits then throw C<BrokenBarrier> until
+C<reset()> is called. The cancelled wait itself remains C<Cancelled>; the other
+waiters observe C<BrokenBarrier>.
+
+C<reset()> first wakes every old waiter with C<BrokenBarrier>, then advances to
+a fresh unbroken generation. It never moves an old waiter into the new one.
+
+=cut
+*/
+
+object Barrier {
+    has amount is int;
+
+    Barrier(parties is int) {
+        confirm parties > 0 else throw InvalidPartyCount(parties: parties);
+        amount = parties;
+    }
+
+    async wait() is int {
+        panic "Barrier.wait is a VM intrinsic";
+    }
+
+    state() is BarrierState {
+        panic "Barrier.state is a VM intrinsic";
+    }
+
+    abort() is void {
+        panic "Barrier.abort is a VM intrinsic";
+    }
+
+    reset() is void {
+        panic "Barrier.reset is a VM intrinsic";
+    }
+}
+
+object BarrierState {
+    parties() is int { panic "BarrierState.parties is a VM intrinsic"; }
+    waiters() is int { panic "BarrierState.waiters is a VM intrinsic"; }
+    generation() is int { panic "BarrierState.generation is a VM intrinsic"; }
+    broken() is bool { panic "BarrierState.broken is a VM intrinsic"; }
+}
+
+object InvalidPartyCount does Error {
+    has amount is int;
+    InvalidPartyCount(parties is int) { amount = parties; }
+
+    parties() is int { amount; }
+
+    text() is string {
+        "barrier party count must be positive";
+    }
+}
+
+object BrokenBarrier does Error {
+    BrokenBarrier();
+
+    text() is string {
+        "barrier is broken";
+    }
+}

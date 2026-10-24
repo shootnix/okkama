@@ -1,0 +1,104 @@
+module runtime/regex v1.0.0;
+
+native object RegexState;
+native object RegexQueryState;
+native object RegexMatchState;
+native object RegexReplacementState;
+native object RegexSubstitutionState;
+
+native regex_state_create(expression is string, flags is @int) is RegexState;
+native regex_state_prepare(state is RegexState) is %string:int;
+native regex_state_group_count(state is RegexState) is int;
+native regex_state_group_names(state is RegexState) is %string:int;
+native regex_query_create(
+    state is RegexState,
+    origin is string,
+    start is int,
+    end is int,
+    mode is int,
+) is RegexQueryState;
+native regex_query_found(state is RegexQueryState) is bool;
+native regex_query_match(state is RegexQueryState) is RegexMatchState;
+native regex_match_capture_count(state is RegexMatchState) is int;
+native regex_match_capture_name(state is RegexMatchState, index is int) is string;
+native regex_match_capture_index(state is RegexMatchState, name is string) is int;
+native regex_match_capture_span(state is RegexMatchState, index is int) is %string:int;
+native regex_replacement_state(template is string) is RegexReplacementState;
+native regex_replacement_prepare(state is RegexReplacementState) is %string:int;
+native regex_replacement_tokens(state is RegexReplacementState) is @string;
+native regex_escape(origin is string) is string;
+native regex_substitution_state() is RegexSubstitutionState;
+native regex_substitution_ready(state is RegexSubstitutionState) is bool;
+native regex_substitution_store(
+    state is RegexSubstitutionState,
+    string is string,
+    amount is int,
+) is bool;
+native regex_substitution_string(state is RegexSubstitutionState) is string;
+native regex_substitution_amount(state is RegexSubstitutionState) is int;
+
+// Private regex memo/query boundary, not a user pattern utility namespace.
+// State creation binds an immutable pattern/flags; prepare validates/compiles.
+// Queries bind a source interval and mode, preserving scalar offsets. Match
+// handles expose validated capture coordinates; public regex modules translate
+// the substrate maps into nominal observations and typed errors.
+// Substitution state is an explicit provider memo cell. Before store, ready is
+// false and both result observations return native invalid_input. A store sets
+// the complete string/count pair; observations do not mutate it. No I/O or
+// external resources: opaque state lifetime belongs to the registry.
+
+test "regex substitution is unavailable until completely stored" {
+    let state = regex_substitution_state();
+    test.is(regex_substitution_ready(state), false);
+    test.is(try {regex_substitution_string(state); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    test.is(try {regex_substitution_amount(state); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    test.ok(regex_substitution_store(state, "result", 2));
+    test.ok(regex_substitution_ready(state));
+    test.is(regex_substitution_string(state), "result");
+    test.is(regex_substitution_amount(state), 2);
+    test.is(regex_substitution_string(state), "result");
+}
+test "regex substitution states are independent and empty result is ready" {
+    let first = regex_substitution_state();
+    let second = regex_substitution_state();
+    test.ok(regex_substitution_store(first, "", 0));
+    test.ok(regex_substitution_ready(first));
+    test.is(regex_substitution_string(first), "");
+    test.is(regex_substitution_amount(first), 0);
+    test.is(regex_substitution_ready(second), false);
+}
+
+test "regex metadata and match coordinates are nominal native observations" {
+    let pattern = regex_state_create("(?<letter>a)", []);
+    test.is(regex_state_prepare(pattern)["status"], 0);
+    test.is(regex_state_group_count(pattern), 1);
+    test.is(regex_state_group_names(pattern)["letter"], 1);
+    let query = regex_query_create(pattern, "!a!", 0, 3, 0);
+    test.ok(regex_query_found(query));
+    let found = regex_query_match(query);
+    test.is(regex_match_capture_count(found), 1);
+    test.is(regex_match_capture_name(found, 1), "letter");
+    test.is(regex_match_capture_index(found, "letter"), 1);
+    test.is(regex_match_capture_index(found, "absent"), -1);
+    test.is(regex_match_capture_span(found, 1)["start"], 1);
+    test.is(regex_match_capture_span(found, 1)["end"], 2);
+    let absent = regex_query_create(pattern, "b", 0, 1, 0);
+    test.is(regex_query_found(absent), false);
+    test.is(try {regex_query_match(absent); "";} catch failure is NativeFailure {failure.code();}, "not_found");
+}
+test "regex prepare failures and replacement expansion stay repeatable" {
+    let invalid = regex_state_create("[", []);
+    test.is(regex_state_prepare(invalid)["status"], 1);
+    test.is(regex_state_prepare(invalid)["status"], 1);
+    let query = regex_query_create(invalid, "a", 0, 1, 0);
+    for 0..2 -> attempt {
+        test.is(try {regex_query_found(query); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    }
+    let replacement = regex_replacement_state("hi $1 ${letter} $$");
+    test.is(regex_replacement_prepare(replacement)["status"], 0);
+    test.is(regex_replacement_tokens(replacement), ["literal", "hi ", "index", "1", "literal", " ", "name", "letter", "literal", " $"]);
+    let broken = regex_replacement_state("$");
+    test.is(regex_replacement_prepare(broken)["status"], 1);
+    test.is(try {regex_replacement_tokens(broken); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    test.is(regex_escape("."), "\\.");
+}

@@ -1,0 +1,305 @@
+module template/html v1.0.0;
+import "template/compile" take TemplateProgram, TemplateInstruction, InvalidTemplateLimits;
+import "template/json" take JsonTemplateStrings;
+import "template/sections" take TemplateSectionOutput;
+import "json/value" take JsonValue;
+import "html/entities" take EscapedHtml;
+import "io/stream" take WritingText;
+import "io/buffer" take ByteBuffer;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Decoded;
+import "collections/list" take List, EmptyList;
+
+// Contextual HTML fragment template. Constructors bind only; each observation
+// validates the entire source before JSON lookup or output. Text and an explicit
+// whitelist of quoted ordinary attributes are the only interpolation contexts.
+// Text escapes &<>; attributes also escape both quotes through EscapedHtml.
+// No raw/trusted form, browser repair or sanitization of authored literal markup.
+// Strict balanced ASCII tags, depth <=64, safe comments/doctype and conservative
+// raw-element handling avoid ambiguous browser states. Foreign markup is rejected.
+// Default bounds: 65536 input scalars, 10000 instructions, 1048576 output bytes.
+// Output counts escaped UTF-8, streams <=1024 scalars per call and borrows the sink.
+// Owned temporary buffers close on errors; a late error can leave a written prefix.
+// Parsing is O(input * bounded name/depth); plan storage is bounded by nodes/input.
+// One scalar escape may use <=6 times its bounded input, no aggregate stream buffer.
+// Flat JSON variables/current item, comments and delimiter escapes only in this
+// slice. Sections and partials fail explicitly. No native parser/provider changes.
+// Contract: docs/std/template-html-guide.md. Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/template/html.ok
+object HtmlTemplate {
+    has origin is string;
+    has maximum_input, maximum_nodes, maximum_output is int;
+    HtmlTemplate(source is string) {origin=source;maximum_input=65536;maximum_nodes=10000;maximum_output=1048576;}
+    HtmlTemplate(source is string, maximum_input is int, maximum_nodes is int, maximum_output is int) {
+        confirm maximum_input>=0 && maximum_nodes>=0 && maximum_output>=0 else throw InvalidTemplateLimits();
+        origin=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;self.maximum_output=maximum_output;
+    }
+    source() is string {origin;}
+    string(data is JsonValue) is string {
+        let output=ByteBuffer();defer output.closing().close();
+        self.write(data,Utf8Output(origin:output.writing()));
+        Utf8Decoded(output.content().bytes()).string();
+    }
+    write(data is JsonValue, destination is WritingText) is void {
+        let instructions=HtmlTemplateProgram(origin,maximum_input,maximum_nodes).instructions();
+        let output=TemplateSectionOutput(destination,maximum_output);
+        for instructions -> instruction {
+            if instruction.variable() {
+                let value=JsonTemplateStrings(data,1024,output.remaining()).string(instruction.text());
+                output.append(EscapedHtml(value,instruction.quotes()).string());
+            } else {output.append(instruction.text());}
+        }
+    }
+}
+
+// Internal verified rendering plan. HTML sees the literals after template
+// comments/escapes have been resolved; variables leave their lexical context
+// unchanged. Each instruction retains its escaping policy; no data is inspected.
+object HtmlTemplateInstruction {
+    has content is string;has named, quoted is bool;
+    HtmlTemplateInstruction(text is string, variable is bool, quotes is bool) {content=text;named=variable;quoted=quotes;}
+    text() is string {content;}variable() is bool {named;}quotes() is bool {quoted;}
+}
+object HtmlTemplateProgram {
+    has source is string;has maximum_input, maximum_nodes is int;
+    HtmlTemplateProgram(source is string, maximum_input is int, maximum_nodes is int) {
+        self.source=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;
+    }
+    instructions() is @HtmlTemplateInstruction {
+        let instructions=TemplateProgram(source,maximum_input,maximum_nodes,true).instructions();
+        confirm source.split(Utf8Decoded([byte(0)]).string()).size()==1 else throw InvalidHtmlTemplate("NUL in source");
+        let plan=instructions.reduce(HtmlTemplatePlan()) -> previous,instruction {previous.following(instruction);};
+        plan.instructions();
+    }
+}
+// Internal successor accumulation keeps immutable contexts and persistent plan
+// tails together. No mutable fields or captured accumulators are required.
+object HtmlTemplatePlan {
+    has context is HtmlTemplateContext;
+    has items is List<HtmlTemplateInstruction>;
+    HtmlTemplatePlan() {context=HtmlTemplateContext();let empty is List<HtmlTemplateInstruction> = EmptyList();items=empty;}
+    following(instruction is TemplateInstruction) is ^HtmlTemplatePlan {
+        confirm instruction.tag()=="" else throw InvalidHtmlTemplate("structural tags require a separate HTML composition contract");
+        let quotes=if instruction.variable() {context.quotes();} else {false;};
+        let following=if instruction.variable() {context;} else {
+            (0..instruction.text().length()).reduce(context) -> previous,index {previous.following(instruction.text().slice(index,index+1));};
+        };
+        ^context=following;
+        ^items=items.prefix(HtmlTemplateInstruction(instruction.text(),instruction.variable(),quotes));
+    }
+    instructions() is @HtmlTemplateInstruction {
+        context.finish();
+        let reversed is @HtmlTemplateInstruction=items.map() -> item {item;};
+        let ordered is @HtmlTemplateInstruction=(0..reversed.size()).map() -> index {reversed[reversed.size()-index-1];};
+        ordered;
+    }
+}
+
+object HtmlTemplateContext {
+    has state is HtmlTemplateState;
+    HtmlTemplateContext() {state=HtmlTemplateState();}
+    following(value is string) is ^HtmlTemplateContext {^state=state.following(value);}
+    quotes() is bool {state.quotes();}
+    finish() is void {state.finish();}
+}
+
+// Internal immutable lexical context. Names are bounded at 128 ASCII scalars;
+// the stack at 64. following() returns the next context without mutating this
+// one. The full constructor is infrastructure, not an application data schema.
+object HtmlTemplateState {
+    has mode, tag, attribute, quote, pending is string;
+    has stack is List<string>;
+    HtmlTemplateState() {
+        mode="text";tag="";attribute="";quote="";pending="";
+        let empty is List<string> = EmptyList();stack=empty;
+    }
+    HtmlTemplateState(:mode,:tag,:attribute,:quote,:pending,:stack);
+    quotes() is bool {
+        if mode=="text" {return false;}
+        confirm mode=="quoted" else throw InvalidHtmlTemplate("interpolation outside text or quoted attribute");
+        let allowed=attribute=="id" || attribute=="class" || attribute=="title" || attribute=="alt" || attribute=="role" || attribute=="lang" || attribute=="dir"
+            || (attribute.length()>5 && attribute.slice(0,5)=="aria-") || (attribute.length()>5 && attribute.slice(0,5)=="data-");
+        confirm allowed else throw InvalidHtmlTemplate("interpolation in restricted attribute: "+attribute);
+        true;
+    }
+    finish() is void {
+        confirm mode=="text" && stack.size()==0 else throw InvalidHtmlTemplate("unfinished HTML context");
+    }
+    following(value is string) is HtmlTemplateState {
+        let char=HtmlTemplateCharacter(value);
+        if mode=="text" {
+            if value=="<" {return HtmlTemplateState(mode:"open",tag:"",attribute:"",quote:quote,pending:pending,stack:stack);}
+            return self;
+        }
+        if mode=="open" {
+            if value=="/" {return HtmlTemplateState(mode:"close_start",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value=="!" {return HtmlTemplateState(mode:"bang",tag:tag,attribute:attribute,quote:quote,pending:"",stack:stack);}
+            confirm char.letter() else throw InvalidHtmlTemplate("invalid tag start");
+            return HtmlTemplateState(mode:"tag",tag:char.lower(),attribute:attribute,quote:quote,pending:pending,stack:stack);
+        }
+        if mode=="tag" {
+            if char.name() {
+                confirm tag.length()<128 else throw InvalidHtmlTemplate("tag name limit exceeded");
+                return HtmlTemplateState(mode:mode,tag:tag+char.lower(),attribute:attribute,quote:quote,pending:pending,stack:stack);
+            }
+            if char.space() {return HtmlTemplateState(mode:"space",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value==">" {return self.opened(false);}
+            if value=="/" {return HtmlTemplateState(mode:"slash",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            throw InvalidHtmlTemplate("invalid tag name");
+        }
+        if mode=="space" || mode=="after_attr" {
+            if char.space() {return self;}
+            if mode=="after_attr" && value=="=" {return HtmlTemplateState(mode:"value",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value==">" {return self.opened(false);}
+            if value=="/" {return HtmlTemplateState(mode:"slash",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            confirm char.letter() else throw InvalidHtmlTemplate("invalid attribute name");
+            return HtmlTemplateState(mode:"attr",tag:tag,attribute:char.lower(),quote:quote,pending:pending,stack:stack);
+        }
+        if mode=="attr" {
+            if char.name() {
+                confirm attribute.length()<128 else throw InvalidHtmlTemplate("attribute name limit exceeded");
+                return HtmlTemplateState(mode:mode,tag:tag,attribute:attribute+char.lower(),quote:quote,pending:pending,stack:stack);
+            }
+            if char.space() {return HtmlTemplateState(mode:"after_attr",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value=="=" {return HtmlTemplateState(mode:"value",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value==">" {return self.opened(false);}
+            if value=="/" {return HtmlTemplateState(mode:"slash",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            throw InvalidHtmlTemplate("invalid attribute name");
+        }
+        if mode=="value" {
+            if char.space() {return self;}
+            if value=="\"" || value=="'" {return HtmlTemplateState(mode:"quoted",tag:tag,attribute:attribute,quote:value,pending:pending,stack:stack);}
+            confirm value!=">" && value!="<" && value!="=" && value!="`" else throw InvalidHtmlTemplate("invalid unquoted attribute");
+            return HtmlTemplateState(mode:"unquoted",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);
+        }
+        if mode=="quoted" {
+            if value==quote {return HtmlTemplateState(mode:"after_quote",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            return self;
+        }
+        if mode=="unquoted" {
+            if char.space() {return HtmlTemplateState(mode:"space",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value==">" {return self.opened(false);}
+            confirm value!="<" && value!="=" && value!="`" && value!="\"" && value!="'" else throw InvalidHtmlTemplate("invalid unquoted attribute");
+            return self;
+        }
+        if mode=="after_quote" {
+            if char.space() {return HtmlTemplateState(mode:"space",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            if value==">" {return self.opened(false);}
+            if value=="/" {return HtmlTemplateState(mode:"slash",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            throw InvalidHtmlTemplate("attributes require whitespace separation");
+        }
+        if mode=="slash" {
+            confirm value==">" else throw InvalidHtmlTemplate("invalid self-closing tag");
+            return self.opened(true);
+        }
+        if mode=="close_start" {
+            confirm char.letter() else throw InvalidHtmlTemplate("invalid closing tag");
+            return HtmlTemplateState(mode:"close",tag:char.lower(),attribute:attribute,quote:quote,pending:pending,stack:stack);
+        }
+        if mode=="close" {
+            if char.name() {
+                confirm tag.length()<128 else throw InvalidHtmlTemplate("tag name limit exceeded");
+                return HtmlTemplateState(mode:mode,tag:tag+char.lower(),attribute:attribute,quote:quote,pending:pending,stack:stack);
+            }
+            if char.space() {return HtmlTemplateState(mode:"close_space",tag:tag,attribute:attribute,quote:quote,pending:pending,stack:stack);}
+            confirm value==">" else throw InvalidHtmlTemplate("invalid closing tag");
+            return self.closed();
+        }
+        if mode=="close_space" {
+            if char.space() {return self;}
+            confirm value==">" else throw InvalidHtmlTemplate("invalid closing tag");
+            return self.closed();
+        }
+        if mode=="bang" {
+            if value==">" {
+                confirm pending=="doctype html" && stack.size()==0 else throw InvalidHtmlTemplate("unsupported declaration");
+                return HtmlTemplateState(mode:"text",tag:tag,attribute:attribute,quote:quote,pending:"",stack:stack);
+            }
+            let following_text=pending+char.lower();
+            if following_text=="--" {return HtmlTemplateState(mode:"comment",tag:tag,attribute:attribute,quote:quote,pending:"",stack:stack);}
+            confirm following_text=="-" || (following_text.length()<=12 && following_text=="doctype html".slice(0,following_text.length())) else throw InvalidHtmlTemplate("unsupported declaration");
+            return HtmlTemplateState(mode:mode,tag:tag,attribute:attribute,quote:quote,pending:following_text,stack:stack);
+        }
+        if mode=="comment" {
+            if value=="-" {
+                confirm pending.length()<2 else throw InvalidHtmlTemplate("invalid comment");
+                return HtmlTemplateState(mode:mode,tag:tag,attribute:attribute,quote:quote,pending:pending+value,stack:stack);
+            }
+            if value==">" {
+                confirm pending=="--" else throw InvalidHtmlTemplate("ambiguous comment ending");
+                return HtmlTemplateState(mode:"text",tag:tag,attribute:attribute,quote:quote,pending:"",stack:stack);
+            }
+            confirm value!="<" && pending!="--" else throw InvalidHtmlTemplate("ambiguous comment content");
+            return HtmlTemplateState(mode:mode,tag:tag,attribute:attribute,quote:quote,pending:"",stack:stack);
+        }
+        if mode=="raw" {
+            if value=="<" {return HtmlTemplateState(mode:"raw_close",tag:tag,attribute:attribute,quote:quote,pending:"",stack:stack);}
+            return self;
+        }
+        if mode=="raw_close" {
+            let ending="/"+tag;
+            if value==">" {
+                confirm pending==ending else throw InvalidHtmlTemplate("invalid raw-element close");
+                return self.closed();
+            }
+            if pending==ending && char.space() {return self;}
+            let following_text=pending+char.lower();
+            confirm following_text.length()<=ending.length() && following_text==ending.slice(0,following_text.length()) else throw InvalidHtmlTemplate("ambiguous raw-element content");
+            return HtmlTemplateState(mode:mode,tag:tag,attribute:attribute,quote:quote,pending:following_text,stack:stack);
+        }
+        throw InvalidHtmlTemplate("unknown internal HTML context");
+    }
+    private:
+    opened(slash is bool) is HtmlTemplateState {
+        confirm tag!="svg" && tag!="math" && tag!="plaintext" else throw InvalidHtmlTemplate("unsupported foreign or plaintext element");
+        let empty=["area","base","br","col","embed","hr","img","input","link","meta","param","source","track","wbr"].reduce(false) -> found,name {found || name==tag;};
+        confirm !slash || empty else throw InvalidHtmlTemplate("self-closing non-void element");
+        if empty {return HtmlTemplateState(mode:"text",tag:"",attribute:"",quote:"",pending:"",stack:stack);}
+        confirm stack.size()<64 else throw InvalidHtmlTemplate("HTML nesting limit exceeded");
+        let raw=["script","style","title","textarea","xmp","iframe","noembed","noframes","noscript"].reduce(false) -> found,name {found || name==tag;};
+        return HtmlTemplateState(mode:if raw {"raw";} else {"text";},tag:tag,attribute:"",quote:"",pending:"",stack:stack.prefix(tag));
+    }
+    closed() is HtmlTemplateState {
+        confirm stack.size()>0 && stack.first()==tag else throw InvalidHtmlTemplate("mismatched closing HTML tag");
+        return HtmlTemplateState(mode:"text",tag:"",attribute:"",quote:"",pending:"",stack:stack.tail());
+    }
+}
+
+// Internal ASCII lexical observations, deliberately not Unicode case folding.
+object HtmlTemplateCharacter {
+    has origin is string;
+    HtmlTemplateCharacter(origin is string) {self.origin=origin;}
+    letter() is bool {"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".split(origin).size()>1;}
+    name() is bool {self.letter() || "0123456789-".split(origin).size()>1;}
+    space() is bool {origin==" " || origin=="\t" || origin=="\r" || origin=="\n" || origin==Utf8Decoded([byte(12)]).string();}
+    lower() is string {
+        let parts="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(origin);
+        if parts.size()==2 {"abcdefghijklmnopqrstuvwxyz".slice(parts[0].length(),parts[0].length()+1);} else {origin;}
+    }
+}
+object InvalidHtmlTemplate does Error {
+    has reason is string;
+    InvalidHtmlTemplate(reason is string) {self.reason=reason;}
+    text() is string {"invalid HTML template: "+reason;}
+}
+
+test "HTML context distinguishes text and quoted ordinary attributes" {
+    let context=HtmlTemplateContext();test.is(context.quotes(),false);
+    for "<p title=\"".split("") -> char {context=context.following(char);}
+    test.is(context.quotes(),true);
+    for "\"></p>".split("") -> char {context=context.following(char);}
+    context.finish();test.is(context.quotes(),false);
+}
+test "HTML context rejects event attributes and raw content" {
+    let context=HtmlTemplateContext();
+    for "<p onclick='".split("") -> char {context=context.following(char);}
+    test.ok(try {context.quotes();false;} catch e is InvalidHtmlTemplate {true;});
+    let script=HtmlTemplateContext();
+    for "<script>".split("") -> char {script=script.following(char);}
+    test.ok(try {script.quotes();false;} catch e is InvalidHtmlTemplate {true;});
+}
+test "HTML names fold ASCII and unfinished fragments fail" {
+    test.is(HtmlTemplateCharacter("A").lower(),"a");
+    let context=HtmlTemplateContext();context=context.following("<");
+    test.ok(try {context.finish();false;} catch e is InvalidHtmlTemplate {true;});
+    test.is(InvalidHtmlTemplate("test").text(),"invalid HTML template: test");
+}

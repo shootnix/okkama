@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.random.pcg32-reproducible",
+  "title": "PcgRandom reproduces the documented pcg32 sequence",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.RANDOM.SOURCE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - seed 42 first eight bytes\nok 2 - byte count\nok 3 - empty range\nchecks: 3, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/random/source.ok",
+    "PCG paper (O'Neill 2014), pcg32 reference"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "random/source makes the pcg32 sequence public: zero-state advance, add seed mod 2^64, advance; XSH-RR outputs emitted little-endian. Seed 42 gives outputs 3270867926, 1795671209 (independent Python implementation of the reference algorithm). Ranges are non-empty half-open."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "json/parse" take ParsedJson, InvalidJson;
+import "json/write" take CompactJson;
+import "json/read" take JsonView, InvalidJsonNumber;
+import "json/value" take JsonText, JsonNumber, DuplicateJsonMember;
+import "math/decimal" take Decimal;
+
+main() is int {
+    let c = Checks();
+    c = c.same_text("trailing comma", try { let probe = JsonView(origin: ParsedJson(origin: "[1,]")).items(); "no error"; } catch e is InvalidJson { "line " + e.line().string(); }, "line 1");
+    c = c.same_text("duplicate member", try { let probe = JsonView(origin: ParsedJson(origin: "{\"a\":1,\"a\":2}")).int("a"); "no error"; } catch e is DuplicateJsonMember { e.name(); }, "a");
+    c = c.same_text("single quotes", try { let probe = JsonView(origin: ParsedJson(origin: "{'a':1}")).names(); "no error"; } catch e is InvalidJson { "invalid"; }, "invalid");
+    c.done();
+}

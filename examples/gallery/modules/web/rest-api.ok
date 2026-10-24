@@ -1,0 +1,80 @@
+// REST API: книги и HTTP-семантика
+// Задача: Пройти создание, чтение, удаление, пути, query, cookies, redirect и ошибки.
+// Запуск из корня: ./examples/gallery/run modules/web/rest-api
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: SqliteMemory за узким DbExecuting; Created/Redirect/Exception и HTTP-клиент.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/modules/cro/use-cases/rest-api.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/web/rest_api v1.0.0;
+import "support" take DemoServer,DemoClient;
+import "../../../cookbook/support/sql" take QueryJson;
+import "db/sqlite" take SqliteMemory;
+import "db/connection" take DbExecuting;
+import "db/statement" take Statement;
+import "db/value" take DbText,DbInteger;
+import "numbers/bigint" take BigInt;
+import "json/read" take JsonView;
+import "json/parse" take ParsedJson;
+import "web/routing" take WebRoutes,Get,Post,Delete;
+import "web/request" take WebRequest;
+import "web/reply" take Text,Json,Created,Redirect;
+import "web/exception" take Exception;
+import "http/handler" take HandlingResult;
+import "http/server" take HttpServer;
+import "http/header" take Headers,Header,HeaderName;
+import "async/scope" take FutureGroup;
+import "strings/parse" take ParsedInt;
+object BooksApi {
+    has db is DbExecuting;BooksApi(db is DbExecuting){self.db=db;}
+    async index(request is WebRequest) is HandlingResult{Text(200,"home");}
+    async hello(request is WebRequest) is HandlingResult{Text(200,"Hello, "+request.path("name")+"!");}
+    async add(request is WebRequest) is HandlingResult{
+        let a=try{ParsedInt(request.path("a")).value();}catch error is Error{throw Exception(400,"integer required");};
+        let b=try{ParsedInt(request.path("b")).value();}catch error is Error{throw Exception(400,"integer required");};Text(200,(a+b).string());
+    }
+    async search(request is WebRequest) is HandlingResult{Text(200,"q="+request.query("q")+" limit="+request.query("limit","10"));}
+    async list(request is WebRequest) is HandlingResult{Json(200,await QueryJson(db,Statement("SELECT id,title,year FROM books ORDER BY id")).value());}
+    async one(request is WebRequest) is HandlingResult{
+        let id=ParsedInt(request.path("id")).value();let found=JsonView(await QueryJson(db,Statement("SELECT id,title,year FROM books WHERE id=?",[DbInteger(BigInt(id.string()))])).value()).items();
+        confirm found.size()==1 else throw Exception(404,"book not found");Json(200,found[0].value());
+    }
+    async create(request is WebRequest) is HandlingResult{
+        let body=await request.json(16384);let title=body.text("title");confirm title.length()>0 && title.length()<=200 else throw Exception(422,"title required");
+        let year=body.int("year");confirm year>0 && year<10000 else throw Exception(422,"year required");
+        let created=await QueryJson(db,Statement("INSERT INTO books(title,year) VALUES(?,?) RETURNING id,title,year",[DbText(title),DbInteger(BigInt(year.string()))])).value();
+        let record=JsonView(created).items()[0];Created("/books/"+record.int("id").string(),record.value());
+    }
+    async remove(request is WebRequest) is HandlingResult{
+        let id=ParsedInt(request.path("id")).value();let deleted=JsonView(await QueryJson(db,Statement("DELETE FROM books WHERE id=? RETURNING id",[DbInteger(BigInt(id.string()))])).value()).items();
+        confirm deleted.size()==1 else throw Exception(404,"book not found");Text(200,"deleted");
+    }
+    async headers(request is WebRequest) is HandlingResult{Text(200,"agent="+request.header("X-Agent","none"));}
+    async old(request is WebRequest) is HandlingResult{Redirect(301,"/hello/redirected");}
+    async visits(request is WebRequest) is HandlingResult{
+        let raw=request.header("Cookie","");let fields=raw.split("visits=");
+        let old=if fields.size()==2{ParsedInt(fields[1].split(";")[0]).value();}else{0;};
+        confirm old>=0 && old<1000000 else throw Exception(400,"invalid visit cookie");
+        let reply=Text(200,"visit "+(old+1).string()).header("Set-Cookie","visits="+(old+1).string()+"; Path=/; HttpOnly; SameSite=Lax");reply;
+    }
+    async teapot(request is WebRequest) is HandlingResult{Text(418,"short and stout");}
+    async boom(request is WebRequest) is HandlingResult{throw Exception(500,"demo application error");}
+    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+}
+async main() is int {
+    let db=await SqliteMemory().connection();defer await db.settled();defer db.close();
+    await db.execution(Statement("CREATE TABLE books(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,year INTEGER NOT NULL)"));
+    await db.execution(Statement("INSERT INTO books(title,year) VALUES('Think Okkama',2026)"));
+    let api=BooksApi(db);let routes=WebRoutes([Get("/",api.index),Get("/hello/:name",api.hello),Get("/add/:a/:b",api.add),Get("/search",api.search),Get("/books",api.list),Get("/books/:id",api.one),Post("/books",api.create),Delete("/books/:id",api.remove),Get("/headers",api.headers),Get("/old",api.old),Get("/visits",api.visits),Get("/teapot",api.teapot),Get("/boom",api.boom)],api.missing);
+    let server=await DemoServer(routes).server();let work is FutureGroup<HttpServer>=FutureGroup();defer await work.wait();defer server.close();work.start(server.serve());let client=DemoClient(server);
+    for ["/","/hello/Okkama","/add/2/40","/add/x/1","/search?q=stdlib&limit=3","/search?q=okkama","/books","/books/1","/books/99"]->path{let reply=await client.get(path);reply.show(path);}
+    let created=await client.request("POST","/books","{\"title\":\"Okkama Fundamentals\",\"year\":2026}","application/json",Headers([]));created.show("create");confirm created.status()==201 && created.header("Location")=="/books/2";
+    let deleted=await client.request("DELETE","/books/1","","text/plain",Headers([]));deleted.show("delete");confirm deleted.status()==200;
+    let missing=await client.get("/books/1");confirm missing.status()==404;
+    let headers=await client.request("GET","/headers","","text/plain",Headers([Header(HeaderName("X-Agent"),"rest-api/1.0")]));headers.show("header");
+    let redirect=await client.get("/old");confirm redirect.status()==301;let followed=await client.get(redirect.header("Location"));followed.show("redirect");
+    let first=await client.get("/visits");let cookie=first.header("Set-Cookie").split(";")[0];
+    let second=await client.request("GET","/visits","","text/plain",Headers([Header(HeaderName("Cookie"),cookie)]));second.show("cookie");confirm second.text()=="visit 2";
+    let teapot=await client.get("/teapot");teapot.show("teapot");confirm teapot.status()==418;
+    let error=await client.get("/boom");error.show("server error");confirm error.status()==500;0;
+}

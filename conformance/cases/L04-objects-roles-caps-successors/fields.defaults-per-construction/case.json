@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fields.defaults-per-construction",
+  "title": "field defaults are evaluated for every construction",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.FIELDS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "default evaluated\ndefault evaluated\n7 7\n5 3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.2",
+    "docs/okkama-spec-11072026.md#11.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.3 and D-035: field defaults are evaluated before the constructor for each construction (twice for two constructions); a supplied shorthand value replaces the default."
+  },
+  "status": "mandatory"
+}

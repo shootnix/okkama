@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.encoding.base85-variants",
+  "title": "Ascii85 and RFC 1924 Base85",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.ENCODING.BASE85",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - ascii85\nok 2 - ascii85 zero group\nok 3 - rfc1924\nok 4 - decode\nok 5 - single trailing character\nchecks: 5, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/encoding/base85.ok",
+    "RFC 1924",
+    "Adobe Ascii85"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Ascii85 and RFC 1924 encodings cross-checked with Python base64.a85encode/b85encode; `z` abbreviates a zero group; one trailing encoded character is invalid."
+  },
+  "status": "mandatory"
+}

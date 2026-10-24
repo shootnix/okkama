@@ -1,0 +1,21 @@
+// Убрать повторные адреса рассылки
+//
+// Отделы прислали списки адресатов; каждому получателю нужно отправить одно письмо.
+//
+// Запуск: ./examples/cookbook/run lab recipe-sets
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-sets
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/sets v1.0.0;
+import "collections/set" take OrderedSet,Union,Intersection;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let sales = OrderedSet(values: ["ada@example.test", "bob@example.test", "ada@example.test"]);
+    let support = OrderedSet(values: ["bob@example.test", "eve@example.test"]);
+    confirm sales.size() == 2;
+    for Union(left: sales, right: support) -> address { Stdout().writeln(address); }
+    confirm Intersection(left: sales, right: support).membership("bob@example.test");
+    0;
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.float.integral-text",
+  "title": "integral float values print without a forced .0",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.FLOAT-LITERALS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.FLOAT",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "10\n0\n3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 6.6: numeric string casts use canonical text, so an integral float has no forced `.0`."
+  },
+  "status": "mandatory"
+}

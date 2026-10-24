@@ -1,0 +1,40 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+object Counter {
+    has value is int;
+    Counter(:value);
+    value() is int { value; }
+    bumped() is ^Counter { ^value = value + 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    let t = Tracer();
+    let counter = Counter(value: 0);
+    let result = loop {
+        counter = counter.bumped();
+        last counter.value() * 100 if counter.value() == 3;
+        counter.value();
+    };
+    out.writeln(result.string());
+    loop {
+        5;
+        last;
+    }
+    out.writeln("bare last discarded");
+    0;
+}

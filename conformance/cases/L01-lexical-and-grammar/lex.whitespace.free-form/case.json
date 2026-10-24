@@ -1,0 +1,38 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.whitespace.free-form",
+  "title": "tabs, spaces and line breaks are interchangeable separators",
+  "purpose": "Accept the construct and observe the exit status.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.WHITESPACE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 42,
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar tokens are separated by insignificant whitespace; 40 + 2 = 42."
+  },
+  "status": "mandatory"
+}

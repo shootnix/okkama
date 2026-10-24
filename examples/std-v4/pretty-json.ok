@@ -1,0 +1,14 @@
+module app v1.0.0;
+import "json/parse" take ParsedJson;
+import "json/write" take PrettyJson;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        PrettyJson(origin: ParsedJson("{\"name\":\"Ada\",\"values\":[1,null]}"), indentation: 2).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

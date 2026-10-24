@@ -1,0 +1,39 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "toml/parse" take ParsedToml;
+import "toml/value" take TomlVisitor, TomlValue, TomlMember, TomlLocalDate, TomlLocalTime, TomlLocalDateTime, TomlOffsetDateTime;
+import "collections/sequence" take Sequencing;
+
+object Printer does TomlVisitor {
+    Printer();
+    text(value is string) is void { Stdout().writeln("text " + value); }
+    integer(value is int) is void { Stdout().writeln("integer " + value.string()); }
+    real(value is float) is void { Stdout().writeln("real " + value.string()); }
+    infinity(negative is bool) is void { Stdout().writeln("infinity"); }
+    not_a_number() is void { Stdout().writeln("nan"); }
+    boolean(value is bool) is void { Stdout().writeln(if value { "boolean true"; } else { "boolean false"; }); }
+    elements(values is Sequencing<TomlValue>) is void {
+        Stdout().writeln("array " + values.size().string());
+        for values -> item {
+            item.accept(self);
+        }
+    }
+    members(values is Sequencing<TomlMember>) is void {
+        Stdout().writeln("table " + values.size().string());
+        for values -> member {
+            Stdout().writeln("key " + member.name());
+            member.value().accept(self);
+        }
+    }
+    local_date(value is TomlLocalDate) is void { Stdout().writeln("date " + value.string()); }
+    local_time(value is TomlLocalTime) is void { Stdout().writeln("time " + value.string()); }
+    local_datetime(value is TomlLocalDateTime) is void { Stdout().writeln("datetime " + value.string()); }
+    offset_datetime(value is TomlOffsetDateTime) is void { Stdout().writeln("offset datetime " + value.string()); }
+}
+
+main() is int {
+    let source = "title = \"Ada\"\ncount = 42\nratio = 0.5\nenabled = true\ntags = [\"a\", 'b']\nborn = 1815-12-10\n\n[server]\nport = 8080\n";
+    ParsedToml(source).value().accept(Printer());
+    0;
+}

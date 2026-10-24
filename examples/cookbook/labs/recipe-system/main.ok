@@ -1,0 +1,23 @@
+// Собрать сведения для локального диагностического отчёта
+//
+// Пользователь прислал проблему с импортом; в отчёт нужны архитектура и текущий каталог.
+//
+// Запуск: ./examples/cookbook/run lab recipe-system
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-system
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/system v1.0.0;
+import "os/platform" take Platform;
+import "os/directory" take WorkingDirectory;
+import "os/account" take User;
+import "os/storage" take Storage;
+import "io/stdout" take Stdout;
+
+main() is int {
+    Stdout().writeln(User().name());
+    Stdout().writeln(Storage(WorkingDirectory().path()).usage().available().string());
+    Stdout().writeln(Platform().architecture());
+    Stdout().writeln(WorkingDirectory().path().string());
+    0;
+}

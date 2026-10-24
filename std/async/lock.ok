@@ -1,0 +1,63 @@
+module async/lock v1.0.0;
+
+import "io/stream" take Closing;
+
+/*
+=head1 NAME
+
+async/lock - cancellation-safe cooperative mutual exclusion
+
+=head1 SYNOPSIS
+
+    let lock is Lock = Lock();
+
+    async update() {
+        let guard is LockGuard = await lock.guard();
+        defer guard.close();
+
+        await repository.replace(next_value);
+    }
+
+=head1 DESCRIPTION
+
+C<guard()> suspends until it owns the lock and returns the ownership capability.
+The guard has no public constructor: only a successful acquisition can produce
+one. Keep its lifetime lexical with C<defer guard.close()>.
+
+Acquirers are granted ownership in FIFO order. Cancelling a waiting C<guard()>
+future removes that request without consuming the next ownership grant.
+C<LockGuard.close()> is idempotent.
+
+C<locked()> is an observation for diagnostics and tests, not a safe precondition
+for another operation: ownership may change immediately after it returns. A lock
+is not reentrant; attempting to acquire it again while retaining its guard waits
+like any other acquisition.
+
+Prefer a task which owns mutable state and receives commands through a channel
+when that shape expresses the domain. Use C<Lock> for genuinely shared resource
+boundaries which cannot naturally have one state-owning task.
+
+=cut
+*/
+
+object Lock {
+    Lock() {}
+
+    async guard() is LockGuard {
+        panic "Lock.guard is a VM intrinsic";
+    }
+
+    locked() is bool {
+        panic "Lock.locked is a VM intrinsic";
+    }
+}
+
+object LockGuard does Closing {
+    closed() is bool {
+        panic "LockGuard.closed is a VM intrinsic";
+    }
+
+    close() is void {
+        panic "LockGuard.close is a VM intrinsic";
+    }
+}

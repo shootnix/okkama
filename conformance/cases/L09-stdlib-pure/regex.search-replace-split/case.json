@@ -1,0 +1,66 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.regex.search-replace-split",
+  "title": "regex search, substitution and split",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.REGEX.SEARCH",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.REGEX.REPLACE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.REGEX.SPLIT",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.REGEX.PATTERN",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - first match\nok 2 - absent match\nok 3 - literal substitution\nok 4 - substitution count\nok 5 - named groups\nok 6 - literal dollar\nok 7 - split keeps empty\nok 8 - escaped literal\nchecks: 8, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/regex/search.ok",
+    "std/regex/replace.ok",
+    "std/regex/split.ok",
+    "std/regex/escape.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "regex module headers: Dialect 1 search/substitution/split semantics; literal replacement never interprets dollars; expanded replacement supports ${name}."
+  },
+  "status": "mandatory",
+  "notes": "Spec 6.9 describes a different `regex` module API; the active std regex/* governs (D-042)."
+}

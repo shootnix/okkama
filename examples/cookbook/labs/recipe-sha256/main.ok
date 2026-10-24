@@ -1,0 +1,24 @@
+// Сверить SHA-256 полученного документа
+//
+// У поставщика опубликован hex SHA-256; загрузчик должен вычислить digest тех же байтов.
+//
+// Запуск: ./examples/cookbook/run lab recipe-sha256
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-sha256
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/sha256 v1.0.0;
+import "runtime/crypto" as crypto;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/hex" take HexEncoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let bytes = Utf8Encoded("abc").bytes();
+    let digest = crypto.digest("sha256", bytes);
+    let text = HexEncoded(digest).string();
+    confirm text == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    confirm crypto.secure_equal(digest, crypto.digest("sha256", bytes));
+    Stdout().writeln(text);
+    0;
+}

@@ -1,0 +1,31 @@
+// CLI-клиент WebSocket-чата
+//
+// Подключается к локальной комнате, читает приветствие, отправляет текст и получает рассылку.
+//
+// Запуск из корня репозитория:
+//     Терминал 1: ./examples/cookbook/run chat 8083
+//     Терминал 2: ./examples/cookbook/run chat-client 8083 "Ада: привет!"
+//
+// Аргументы: порт, сообщение. Указывает Origin и subprotocol, печатает ответы и выполняет close-handshake.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/chat_client v1.0.0;
+import "../support/arguments" take Arguments;
+import "http/websocket_client" take WebSocketConnecting,WebSocketPolicy;
+import "http/websocket" take WebSocketLimits,TextWebSocketMessage;
+import "http/header" take Headers,Header,HeaderName;
+import "http/endpoint" take ListedNetworks;
+import "url/value" take ParsedUrl;
+import "net/ip" take IpAddress,IpNetwork;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+import "io/stdout" take Stdout;
+async main() is int{
+    let args=Arguments();let port=args.integer(0,8083);let origin="http://127.0.0.1:"+port.string();
+    let policy=WebSocketPolicy(WebSocketLimits(),Duration(5.rat(),DurationUnit.second),Duration(2.rat(),DurationUnit.second),ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let connection=await WebSocketConnecting(ParsedUrl("ws://127.0.0.1:"+port.string()+"/socket").value(),["okkama-chat"],Headers([Header(HeaderName("Origin"),origin)]),FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,SystemClock()).connection();
+    Stdout().writeln((await connection.message()).text());await connection.send(TextWebSocketMessage(args.text(1,"Ада: привет!")));Stdout().writeln((await connection.message()).text());await connection.close(1000,"done");0;
+}

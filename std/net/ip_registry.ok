@@ -1,0 +1,215 @@
+module net/ip_registry v1.0.0;
+
+import "encoding/hex" take HexDecoded;
+import "error" take InvalidArgument;
+
+// Generated offline from pinned IANA data, retrieved 2026-09-25.
+// Special-purpose registries: 2025-10-09; IPv6 address space: 2025-10-23.
+// Regenerate with docs/audits/evidence/ip-properties/generate.py.
+// Longest prefix wins. Special assignments override equal-length space rows.
+// Flags are private: unspecified=1, loopback=2, link_local=4, private_network=8,
+// global=16, multicast=32, reserved=64, documentation=128. Blank/N/A is not True.
+// Public users receive IpAddress.properties(), never this numeric encoding.
+// SHA256 ipv4.csv: e3e39e76d00b1677335db8e9a805c7b9480ea2f4dc9e33f0b93cd3a905128d73
+// SHA256 ipv6.csv: 775feea0621dec8735a44fbf30f762e721e8f0a1b3ab7eb341961a88cfce2139
+// SHA256 ipv6-space.csv: 41fef65d7a5fb32076175ffac1b663a9153d5593d3e2c840696ed8ffa1c7af29
+
+object IpClassification {
+    has origin is @byte;
+    IpClassification(origin is @byte) {
+        confirm origin.size()==4 || origin.size()==16
+            else throw InvalidArgument("IP classification needs 4 or 16 bytes");
+        self.origin=origin;
+    }
+    flags() is int {
+        if origin.size()==4 {
+            // 0.0.0.0/32
+            if PackedIpPrefix(origin,"00000000",32).matches() {return 65;}
+            // 192.0.0.8/32
+            if PackedIpPrefix(origin,"c0000008",32).matches() {return 0;}
+            // 192.0.0.9/32
+            if PackedIpPrefix(origin,"c0000009",32).matches() {return 16;}
+            // 192.0.0.10/32
+            if PackedIpPrefix(origin,"c000000a",32).matches() {return 16;}
+            // 192.0.0.170/32
+            if PackedIpPrefix(origin,"c00000aa",32).matches() {return 64;}
+            // 192.0.0.171/32
+            if PackedIpPrefix(origin,"c00000ab",32).matches() {return 64;}
+            // 192.88.99.2/32
+            if PackedIpPrefix(origin,"c0586302",32).matches() {return 0;}
+            // 255.255.255.255/32
+            if PackedIpPrefix(origin,"ffffffff",32).matches() {return 64;}
+            // 192.0.0.0/29
+            if PackedIpPrefix(origin,"c0000000",29).matches() {return 0;}
+            // 192.0.0.0/24
+            if PackedIpPrefix(origin,"c0000000",24).matches() {return 0;}
+            // 192.0.2.0/24
+            if PackedIpPrefix(origin,"c0000200",24).matches() {return 128;}
+            // 192.31.196.0/24
+            if PackedIpPrefix(origin,"c01fc400",24).matches() {return 16;}
+            // 192.52.193.0/24
+            if PackedIpPrefix(origin,"c034c100",24).matches() {return 16;}
+            // 192.88.99.0/24
+            if PackedIpPrefix(origin,"c0586300",24).matches() {return 0;}
+            // 192.175.48.0/24
+            if PackedIpPrefix(origin,"c0af3000",24).matches() {return 16;}
+            // 198.51.100.0/24
+            if PackedIpPrefix(origin,"c6336400",24).matches() {return 128;}
+            // 203.0.113.0/24
+            if PackedIpPrefix(origin,"cb007100",24).matches() {return 128;}
+            // 169.254.0.0/16
+            if PackedIpPrefix(origin,"a9fe0000",16).matches() {return 68;}
+            // 192.168.0.0/16
+            if PackedIpPrefix(origin,"c0a80000",16).matches() {return 8;}
+            // 198.18.0.0/15
+            if PackedIpPrefix(origin,"c6120000",15).matches() {return 0;}
+            // 172.16.0.0/12
+            if PackedIpPrefix(origin,"ac100000",12).matches() {return 8;}
+            // 100.64.0.0/10
+            if PackedIpPrefix(origin,"64400000",10).matches() {return 0;}
+            // 0.0.0.0/8
+            if PackedIpPrefix(origin,"00000000",8).matches() {return 64;}
+            // 10.0.0.0/8
+            if PackedIpPrefix(origin,"0a000000",8).matches() {return 8;}
+            // 127.0.0.0/8
+            if PackedIpPrefix(origin,"7f000000",8).matches() {return 66;}
+            // 240.0.0.0/4
+            if PackedIpPrefix(origin,"f0000000",4).matches() {return 64;}
+            // 224.0.0.0/4
+            if PackedIpPrefix(origin,"e0000000",4).matches() {return 32;}
+            // 0.0.0.0/0
+            if PackedIpPrefix(origin,"00000000",0).matches() {return 16;}
+        } else {
+            // ::/128
+            if PackedIpPrefix(origin,"00000000000000000000000000000000",128).matches() {return 65;}
+            // ::1/128
+            if PackedIpPrefix(origin,"00000000000000000000000000000001",128).matches() {return 66;}
+            // 2001:1::1/128
+            if PackedIpPrefix(origin,"20010001000000000000000000000001",128).matches() {return 16;}
+            // 2001:1::2/128
+            if PackedIpPrefix(origin,"20010001000000000000000000000002",128).matches() {return 16;}
+            // 2001:1::3/128
+            if PackedIpPrefix(origin,"20010001000000000000000000000003",128).matches() {return 16;}
+            // ::ffff:0.0.0.0/96
+            if PackedIpPrefix(origin,"00000000000000000000ffff00000000",96).matches() {return 64;}
+            // 64:ff9b::/96
+            if PackedIpPrefix(origin,"0064ff9b000000000000000000000000",96).matches() {return 16;}
+            // 100::/64
+            if PackedIpPrefix(origin,"01000000000000000000000000000000",64).matches() {return 0;}
+            // 100:0:0:1::/64
+            if PackedIpPrefix(origin,"01000000000000010000000000000000",64).matches() {return 0;}
+            // 64:ff9b:1::/48
+            if PackedIpPrefix(origin,"0064ff9b000100000000000000000000",48).matches() {return 0;}
+            // 2001:2::/48
+            if PackedIpPrefix(origin,"20010002000000000000000000000000",48).matches() {return 0;}
+            // 2001:4:112::/48
+            if PackedIpPrefix(origin,"20010004011200000000000000000000",48).matches() {return 16;}
+            // 2620:4f:8000::/48
+            if PackedIpPrefix(origin,"2620004f800000000000000000000000",48).matches() {return 16;}
+            // 2001::/32
+            if PackedIpPrefix(origin,"20010000000000000000000000000000",32).matches() {return 0;}
+            // 2001:3::/32
+            if PackedIpPrefix(origin,"20010003000000000000000000000000",32).matches() {return 16;}
+            // 2001:db8::/32
+            if PackedIpPrefix(origin,"20010db8000000000000000000000000",32).matches() {return 128;}
+            // 2001:10::/28
+            if PackedIpPrefix(origin,"20010010000000000000000000000000",28).matches() {return 0;}
+            // 2001:20::/28
+            if PackedIpPrefix(origin,"20010020000000000000000000000000",28).matches() {return 16;}
+            // 2001:30::/28
+            if PackedIpPrefix(origin,"20010030000000000000000000000000",28).matches() {return 16;}
+            // 2001::/23
+            if PackedIpPrefix(origin,"20010000000000000000000000000000",23).matches() {return 0;}
+            // 3fff::/20
+            if PackedIpPrefix(origin,"3fff0000000000000000000000000000",20).matches() {return 128;}
+            // 2002::/16
+            if PackedIpPrefix(origin,"20020000000000000000000000000000",16).matches() {return 0;}
+            // 5f00::/16
+            if PackedIpPrefix(origin,"5f000000000000000000000000000000",16).matches() {return 0;}
+            // fe80::/10
+            if PackedIpPrefix(origin,"fe800000000000000000000000000000",10).matches() {return 68;}
+            // fe80::/10
+            if PackedIpPrefix(origin,"fe800000000000000000000000000000",10).matches() {return 4;}
+            // fec0::/10
+            if PackedIpPrefix(origin,"fec00000000000000000000000000000",10).matches() {return 64;}
+            // fe00::/9
+            if PackedIpPrefix(origin,"fe000000000000000000000000000000",9).matches() {return 64;}
+            // ::/8
+            if PackedIpPrefix(origin,"00000000000000000000000000000000",8).matches() {return 64;}
+            // 100::/8
+            if PackedIpPrefix(origin,"01000000000000000000000000000000",8).matches() {return 64;}
+            // ff00::/8
+            if PackedIpPrefix(origin,"ff000000000000000000000000000000",8).matches() {return 32;}
+            // fc00::/7
+            if PackedIpPrefix(origin,"fc000000000000000000000000000000",7).matches() {return 8;}
+            // 200::/7
+            if PackedIpPrefix(origin,"02000000000000000000000000000000",7).matches() {return 64;}
+            // fc00::/7
+            if PackedIpPrefix(origin,"fc000000000000000000000000000000",7).matches() {return 8;}
+            // 400::/6
+            if PackedIpPrefix(origin,"04000000000000000000000000000000",6).matches() {return 64;}
+            // f800::/6
+            if PackedIpPrefix(origin,"f8000000000000000000000000000000",6).matches() {return 64;}
+            // 800::/5
+            if PackedIpPrefix(origin,"08000000000000000000000000000000",5).matches() {return 64;}
+            // f000::/5
+            if PackedIpPrefix(origin,"f0000000000000000000000000000000",5).matches() {return 64;}
+            // 1000::/4
+            if PackedIpPrefix(origin,"10000000000000000000000000000000",4).matches() {return 64;}
+            // e000::/4
+            if PackedIpPrefix(origin,"e0000000000000000000000000000000",4).matches() {return 64;}
+            // 2000::/3
+            if PackedIpPrefix(origin,"20000000000000000000000000000000",3).matches() {return 16;}
+            // 4000::/3
+            if PackedIpPrefix(origin,"40000000000000000000000000000000",3).matches() {return 64;}
+            // 6000::/3
+            if PackedIpPrefix(origin,"60000000000000000000000000000000",3).matches() {return 64;}
+            // 8000::/3
+            if PackedIpPrefix(origin,"80000000000000000000000000000000",3).matches() {return 64;}
+            // a000::/3
+            if PackedIpPrefix(origin,"a0000000000000000000000000000000",3).matches() {return 64;}
+            // c000::/3
+            if PackedIpPrefix(origin,"c0000000000000000000000000000000",3).matches() {return 64;}
+        }
+        0;
+    }
+}
+
+// One numeric prefix comparison, bounded by the fixed address byte width.
+object PackedIpPrefix {
+    has origin, pattern is @byte;
+    has bits is int;
+    PackedIpPrefix(origin is @byte, prefix is string, bits is int) {
+        let decoded=HexDecoded(prefix).bytes();
+        confirm origin.size()==decoded.size() && bits>=0 && bits<=origin.size()*8
+            else throw InvalidArgument("invalid packed IP prefix");
+        self.origin=origin;
+        pattern=decoded;
+        self.bits=bits;
+    }
+    matches() is bool {
+        let whole=(bits/8).int();
+        for 0..whole -> index {
+            if origin[index]!=pattern[index] {return false;}
+        }
+        let remaining=bits%8;
+        if remaining>0 {
+            let mask=256-(1 << (8-remaining));
+            return (origin[whole].int() & mask)==(pattern[whole].int() & mask);
+        }
+        true;
+    }
+}
+
+test "special-purpose exceptions override broader assignments" {
+    test.is(IpClassification([byte(192),byte(0),byte(0),byte(9)]).flags(),16);
+    test.is(IpClassification([byte(192),byte(0),byte(0),byte(11)]).flags(),0);
+}
+test "IPv6 reserved space excludes more specific assignments" {
+    let reserved is @byte=(0..16).map() -> index {if index==0 {byte(64);} else {byte(0);}};
+    let translated is @byte=[byte(0),byte(100),byte(255),byte(155),
+        byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),byte(0),
+        byte(0),byte(0),byte(0),byte(1)];
+    test.is(IpClassification(reserved).flags(),64);
+    test.is(IpClassification(translated).flags(),16);
+}

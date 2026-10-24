@@ -1,0 +1,58 @@
+module web/exception v1.0.0;
+import "http/handler" take HandlingResult,HandlingKind,WebSocketHandling,WrongHandlingKind;
+import "http/message" take Response;
+import "http/status" take Status;
+import "http/websocket_server" take WebSocketUpgrade;
+import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+import "encoding/utf" take Utf8Encoded;
+import "web/internal/reply" take ReplyHeaders,ReplyResponse,InvalidReply;
+
+// An HTTP failure that is both an Error and a reply. Endpoints and exception
+// scopes may throw it or return it; the framework turns a thrown Exception into
+// its response. The body is RFC 9457 problem details with type about:blank:
+//
+//     {"type":"about:blank","title":"Not Found","status":404,"detail":"user 7 not found"}
+//
+// detail is sent to the client: never put internal diagnostics into it.
+
+object Exception does Error, HandlingResult {
+    has code is int;
+    has message is string;
+    has extra is ReplyHeaders;
+
+    Exception(status is int, detail is string) {
+        confirm status >= 400 && status <= 599 else throw InvalidReply("exception status must be 4xx or 5xx");
+        code = status;
+        message = detail;
+        extra = ReplyHeaders();
+    }
+
+    // Successor like every reply; throwing consumes it in place:
+    // throw Exception(401, "token expired").header("WWW-Authenticate", "Bearer");
+    header(name is string, value is string) is ^Exception { ^extra = extra.added(name, value); }
+    status() is int { code; }
+    detail() is string { message; }
+    title() is string { let phrase = Status(code).phrase(); if phrase == "" { "HTTP " + code.string(); } else { phrase; } }
+    text() is string { code.string() + " " + self.title() + ": " + message; }
+
+    kind() is HandlingKind { HandlingKind.response; }
+    response() is Response {
+        let problem = JsonObject([
+            JsonMember("type", JsonText("about:blank")),
+            JsonMember("title", JsonText(self.title())),
+            JsonMember("status", JsonNumber(Decimal(code.string()))),
+            JsonMember("detail", JsonText(message))
+        ]);
+        ReplyResponse(code, "application/problem+json", Utf8Encoded(CompactJson(origin: problem).string()).bytes(), extra).response();
+    }
+    websocket() is WebSocketUpgrade { throw WrongHandlingKind(); }
+    application() is WebSocketHandling { throw WrongHandlingKind(); }
+}
+
+test "exception text names status, title and detail" {
+    test.is(Exception(404, "user 7 not found").text(), "404 Not Found: user 7 not found");
+    test.is(Exception(599, "x").title(), "HTTP 599");
+    test.ok(try { Exception(302, "x"); false; } catch failure is InvalidReply { true; });
+}

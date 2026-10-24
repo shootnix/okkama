@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Point {
+    has x, y is int;
+    has label is string = "pt";
+    Point(:x, :y);
+    describe() is string { label + " " + x.string() + "," + y.string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let p = Point(x: 3, y: 4);
+    out.writeln(p.describe());
+    0;
+}

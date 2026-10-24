@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.failed-transition",
+  "title": "a failed transition produces no successor and leaves the receiver usable",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.NEW-IDENTITY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "already open\nopen/0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.9",
+    "docs/okkama-llm-context-1.0.md#16"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "LLM context 16: a mid-action failure produces no partial successor; the original remains unchanged."
+  },
+  "status": "mandatory"
+}

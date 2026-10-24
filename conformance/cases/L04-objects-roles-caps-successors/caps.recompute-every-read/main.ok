@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Meter {
+    has base is int;
+    Meter(:base);
+    cap Reading {
+        value is int {
+            Stdout().writeln("computing");
+            base * 2;
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let m = Meter(base: 2);
+    let view = m::Reading;
+    out.writeln("acquired");
+    out.writeln(view::value.string());
+    out.writeln(view::value.string());
+    0;
+}

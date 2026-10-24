@@ -1,0 +1,100 @@
+module http/internal/hpack_primitives v1.0.0;
+import "http/internal/http2_frame" take Http2Fault,Http2FaultScope;
+import "runtime/hpack" take huffman_decode;
+import "http/internal/wire_bytes" take HttpWireBytes;
+import "async/atomic" take Atomic;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+
+// Internal bounded uint32 integer profile. No public header/HPACK API.
+object HpackInteger {
+    has value,prefix,pattern is int;
+    HpackInteger(value is int,prefix is int,pattern is int){
+        confirm value>=0 && value<=4294967295 && prefix>=1 && prefix<=8
+            && pattern>=0 && pattern<=255 else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid HPACK integer");
+        let mask=(1 << prefix)-1;
+        confirm (pattern & mask)==0 else throw Http2Fault(Http2FaultScope.connection,9,0,"overlapping HPACK prefix");
+        self.value=value;self.prefix=prefix;self.pattern=pattern;
+    }
+    bytes() is @byte{
+        let maximum=(1 << prefix)-1;
+        if value<maximum{return [(pattern | value).byte()];}
+        let output=ByteBuffer();let remaining=Atomic(value-maximum);
+        output.writing().write(ByteSnapshot([(pattern | maximum).byte()]));
+        for (0..5) -> step{
+            let chunk=remaining.value() & 127;
+            if remaining.value()<128{
+                output.writing().write(ByteSnapshot([chunk.byte()]));return output.content().bytes();
+            }
+            output.writing().write(ByteSnapshot([(chunk | 128).byte()]));remaining.replace(remaining.value() >> 7);
+        }
+        throw Http2Fault(Http2FaultScope.connection,9,0,"oversized HPACK integer");
+    }
+}
+object ParsedHpackInteger {
+    has number,following is int;
+    ParsedHpackInteger(origin is @byte,offset is int,prefix is int){
+        let parsed=HpackIntegerInput(origin,offset,prefix).result();number=parsed.value();following=parsed.following();
+    }
+    value() is int{number;}following() is int{following;}
+}
+object HpackNumber {
+    has value,following is int;HpackNumber(value is int,following is int){self.value=value;self.following=following;}
+    value() is int{value;}following() is int{following;}
+}
+object HpackIntegerInput {
+    has origin is @byte;has offset,prefix is int;
+    HpackIntegerInput(origin is @byte,offset is int,prefix is int){self.origin=origin;self.offset=offset;self.prefix=prefix;}
+    result() is HpackNumber{
+        confirm offset>=0 && offset<origin.size() && prefix>=1 && prefix<=8
+            else throw Http2Fault(Http2FaultScope.connection,9,0,"missing HPACK integer");
+        let maximum=(1 << prefix)-1;let initial=origin[offset].int() & maximum;
+        if initial<maximum{return HpackNumber(initial,offset+1);}
+        let value=Atomic(initial);
+        for (0..5) -> step{
+            let index=offset+1+step;
+            confirm index<origin.size() else throw Http2Fault(Http2FaultScope.connection,9,0,"truncated HPACK integer");
+            let octet=origin[index].int();let amount=(octet & 127)*(1 << (7*step));
+            confirm amount<=4294967295-value.value() else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK integer overflow");
+            value.replace(value.value()+amount);
+            if octet<128{return HpackNumber(value.value(),index+1);}
+        }
+        throw Http2Fault(Http2FaultScope.connection,9,0,"oversized HPACK integer");
+    }
+}
+object HpackString {
+    has origin is @byte;HpackString(origin is @byte){confirm origin.size()<=1048576 else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK string budget");self.origin=origin;}
+    bytes() is @byte{
+        let prefix=HpackInteger(origin.size(),7,0).bytes();
+        HttpWireBytes([prefix,origin],prefix.size()+origin.size()).bytes();
+    }
+}
+object ParsedHpackString {
+    has data is @byte;has following is int;
+    ParsedHpackString(origin is @byte,offset is int,maximum is int){
+        confirm maximum>=0 && maximum<=1048576 else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid HPACK string budget");
+        let length=ParsedHpackInteger(origin,offset,7);let start=length.following();let count=length.value();
+        confirm count<=1048576 && count<=origin.size()-start else throw Http2Fault(Http2FaultScope.connection,9,0,"truncated or oversized HPACK string");
+        let huffman=(origin[offset].int() & 128)!=0;
+        confirm huffman || count<=maximum else throw Http2Fault(Http2FaultScope.connection,9,0,"decoded HPACK string budget");
+        let encoded=origin.slice(start,start+count);
+        data=if huffman{HpackHuffman(encoded,maximum).bytes();}else{encoded;};following=start+count;
+    }
+    bytes() is @byte{data;}following() is int{following;}
+}
+object HpackHuffman {
+    has origin is @byte;has maximum is int;
+    HpackHuffman(origin is @byte,maximum is int){
+        confirm origin.size()<=1048576 && maximum>=0 && maximum<=1048576
+            else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid Huffman budget");self.origin=origin;self.maximum=maximum;
+    }
+    bytes() is @byte{
+        let result is @byte=try{huffman_decode(origin,maximum);}
+            catch failure is NativeFailure{throw Http2Fault(Http2FaultScope.connection,9,0,"invalid or oversized HPACK Huffman string");};
+        result;
+    }
+}
+test "bounded HPACK primitives preserve wire values" {
+    let encoded=HpackInteger(1337,5,0).bytes();test.is(ParsedHpackInteger(encoded,0,5).value(),1337);
+    test.is(HpackHuffman([31.byte()],1).bytes()[0].int(),97);
+}

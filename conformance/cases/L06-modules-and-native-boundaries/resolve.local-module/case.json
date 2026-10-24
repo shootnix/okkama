@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.resolve.local-module",
+  "title": "imports resolve relative to the importing file",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.RESOLUTION",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "MOD.TAKE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "lib/shapes.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.2: `import \"lib/shapes\"` resolves lib/shapes.ok next to the importer; take exposes Square bare."
+  },
+  "status": "mandatory"
+}

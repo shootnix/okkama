@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.constructor-nested-resource-failure",
+  "title": "a failing constructor releases resources bound inside nested blocks",
+  "purpose": "Exercise a fragile combination of features identified by research or improvement findings.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "X.CTOR-RESOURCES",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    },
+    {
+      "contract": "LIFE.CONSTRUCTOR-FAILURE",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "destroy temporary\ndestroy second\ndestroy first\nconstruction failed\ndestroy temporary\nholder alive\nholder destroyed\ndestroy second\ndestroy first\n"
+    }
+  },
+  "spec_refs": [
+    "docs/resource-lifetimes.md",
+    "improvements-roadmap/results/IMP-09/RESULT.md",
+    "okkama-pl/t/interpreter/917-constructor-child-field-ownership.t",
+    "docs/okkama-spec-11072026.md#10",
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "IMP-09: a resource assigned to a field of the object under construction inside an inner if/try is owned by the construction, not the inner block; on failure it is released; a temporary dies with its block (constructor scope) first. Successful holders destroy the parent before owned children, children in reverse registration order."
+  },
+  "status": "mandatory"
+}

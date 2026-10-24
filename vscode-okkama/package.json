@@ -1,0 +1,75 @@
+{
+  "name": "okkama-vscode",
+  "displayName": "Okkama",
+  "description": "Okkama: syntax highlighting and language server (diagnostics, lint, hover, completion, signature help, go to definition, references, rename, outline, formatting)",
+  "version": "0.6.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "scripts": {
+    "test": "perl t/grammar.t",
+    "test:tokens": "node t/tokenization.cjs"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "okkama",
+        "aliases": [
+          "Okkama",
+          "okkama"
+        ],
+        "extensions": [
+          ".ok"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "okkama",
+        "scopeName": "source.okkama",
+        "path": "./syntaxes/okkama.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "okkama.restartServer",
+        "title": "Okkama: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Okkama",
+      "properties": {
+        "okkama.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "\u041f\u0443\u0442\u044c \u043a Rust-\u0441\u0431\u043e\u0440\u043a\u0435 okkama (\u043a\u043e\u043c\u0430\u043d\u0434\u0430 `okkama lsp`). \u041f\u0443\u0441\u0442\u043e \u2014 okkama-rs/target/release/okkama \u0432 \u0440\u0430\u0431\u043e\u0447\u0435\u0439 \u043e\u0431\u043b\u0430\u0441\u0442\u0438, \u0437\u0430\u0442\u0435\u043c okkama \u0438\u0437 PATH."
+        },
+        "okkama.stdlibPath": {
+          "type": "string",
+          "default": "",
+          "description": "\u041a\u0430\u0442\u0430\u043b\u043e\u0433 std. \u041f\u0443\u0441\u0442\u043e \u2014 std/ \u0440\u0430\u0431\u043e\u0447\u0435\u0439 \u043e\u0431\u043b\u0430\u0441\u0442\u0438, \u0437\u0430\u0442\u0435\u043c OKKAMA_STDLIB_DIR \u0438\u043b\u0438 /usr/local/lib/okkama/std."
+        },
+        "okkama.importDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0438 \u0438\u043c\u043f\u043e\u0440\u0442\u0430 (\u043a\u0430\u043a OKKAMA_IMPORT_DIRS)."
+        }
+      }
+    }
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:okkama"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^11.0.0"
+  }
+}

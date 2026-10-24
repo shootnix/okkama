@@ -1,0 +1,362 @@
+module mime/media_type v1.0.0;
+
+import "collections/sequence" take Sequencing;
+import "collections/list" take List, EmptyList;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8;
+import "url/percent" take PercentEncoded, PercentDecoded, UrlComponent, InvalidPercentEncoding;
+import "strings/parse" take ParsedInt, InvalidInteger;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "error" take InvalidArgument;
+
+// Immutable logical parameters and concrete media types. Parsing observes an
+// unfolded ASCII field body eagerly; RFC 2231 parts assemble as bytes before
+// UTF-8 decoding. Plain duplicates retain order; valid extensions supersede
+// fallbacks. Defaults cap input at 1 MiB and 256 wire/source parameters.
+// Serialization produces a logical field body; message/header owns folding.
+// See docs/std/mime-media-type.md for strict grammar and offset contracts.
+object MimeParameter {
+    has key, text is string;
+    MimeParameter(name is string, value is string) {
+        confirm name.split("*").size()==1 else throw InvalidMediaType(0,"logical parameter name contains asterisk");
+        key=MimeToken(name).string();
+        for (0..value.length()) -> index {
+            let bytes=Utf8Encoded(value.slice(index,index+1)).bytes();let code=bytes[0].int();
+            confirm code==9 || (code>=32 && code!=127) else throw InvalidMediaType(index,"control in parameter value");
+        }
+        text=value;
+    }
+    name() is string {key;}
+    value() is string {text;}
+}
+object MimeParameters {
+    has origin is @MimeParameter;
+    MimeParameters(entries is Sequencing<MimeParameter>) {origin=MimeSnapshot(entries,256).entries();}
+    MimeParameters(entries is Sequencing<MimeParameter>, maximum_parameters is int) {origin=MimeSnapshot(entries,maximum_parameters).entries();}
+    entries() is Sequencing<MimeParameter> {origin;}
+    membership(name is string) is bool {
+        let key=MimeToken(name).string();origin.reduce(false) -> found,entry {found || entry.name()==key;};
+    }
+    first(name is string) is string {
+        let key=MimeToken(name).string();
+        for origin -> entry {if entry.name()==key {return entry.value();}}
+        throw MissingMimeParameter(key);
+    }
+    values(name is string) is Sequencing<string> {
+        let key=MimeToken(name).string();let matching is @MimeParameter=origin.filter() -> entry {entry.name()==key;};
+        let values is @string=matching.map() -> entry {entry.value();};values;
+    }
+    string() is string {
+        let parts is @string=origin.map() -> entry {
+            let value=entry.value();let bytes=Utf8Encoded(value).bytes();
+            if bytes.size()!=value.length() {entry.name()+"*=UTF-8''"+PercentEncoded(value,UrlComponent.data).string();}
+            else {
+                let valid=(0..value.length()).reduce(true) -> valid,index {
+                    valid && MimeCharacter(value.slice(index,index+1)).token();
+                };
+                let token=value.length()>0 && valid;
+                let quoted=if token {value;} else {"\""+value.replace("\\","\\\\").replace("\"","\\\"")+"\"";};
+                entry.name()+"="+quoted;
+            }
+        };
+        parts.join("; ");
+    }
+}
+object MediaType {
+    has major, minor is string;
+    has entries is MimeParameters;
+    MediaType(origin is string) {
+        let parsed=MimeScanning(origin,256,1048576).value();
+        major=parsed.type();minor=parsed.subtype();entries=parsed.parameters();
+    }
+    MediaType(origin is string, limits is MediaTypeLimits) {
+        let parsed=MimeScanning(origin,limits.parameters(),limits.bytes()).value();
+        major=parsed.type();minor=parsed.subtype();entries=parsed.parameters();
+    }
+    MediaType(type is string, subtype is string, parameters is MimeParameters) {
+        confirm type!="*" && subtype!="*" else throw InvalidMediaType(0,"wildcard is not a concrete media type");
+        major=MimeToken(type).string();minor=MimeToken(subtype).string();entries=parameters;
+    }
+    type() is string {major;}
+    subtype() is string {minor;}
+    parameters() is MimeParameters {entries;}
+    string() is string {major+"/"+minor+if entries.entries().size()==0 {"";} else {"; "+entries.string();};}
+}
+object InvalidMediaType does Error {
+    has position is int;has reason is string;
+    InvalidMediaType(offset is int, reason is string) {position=offset;self.reason=reason;}
+    offset() is int {position;}
+    reason() is string {reason;}
+    text() is string {"invalid media type at scalar offset "+position.string()+": "+reason;}
+}
+object MissingMimeParameter does Error {
+    has key is string;
+    MissingMimeParameter(name is string) {key=name;}
+    name() is string {key;}
+    text() is string {"missing MIME parameter: "+key;}
+}
+object MimeLimitExceeded does Error {
+    has limit is string;
+    MimeLimitExceeded(kind is string) {limit=kind;}
+    kind() is string {limit;}
+    text() is string {"MIME "+limit+" limit exceeded";}
+}
+object MediaTypeLimits {
+    has maximum_parameters, maximum_bytes is int;
+    MediaTypeLimits(parameters is int, bytes is int) {
+        confirm parameters>=0 && bytes>=0 else throw InvalidArgument("MIME limits must be nonnegative");
+        maximum_parameters=parameters;maximum_bytes=bytes;
+    }
+    parameters() is int {maximum_parameters;}
+    bytes() is int {maximum_bytes;}
+}
+
+// Importable lexer, bounded snapshots and RFC 2231 assembly collaborators.
+object MimeCharacter {
+    has origin is string;
+    MimeCharacter(origin is string) {self.origin=origin;}
+    token() is bool {
+        let bytes=Utf8Encoded(origin).bytes();
+        bytes.size()==1 && bytes[0].int()>=33 && bytes[0].int()<=126
+            && "()<>@,;:\\\"/[]?=".split(origin).size()==1;
+    }
+}
+object MimeToken {
+    has text is string;
+    MimeToken(origin is string) {
+        confirm origin!="" else throw InvalidMediaType(0,"empty token");
+        for (0..origin.length()) -> index {
+            confirm MimeCharacter(origin.slice(index,index+1)).token() else throw InvalidMediaType(index,"invalid token");
+        }
+        let bytes is @byte=Utf8Encoded(origin).bytes().map() -> octet {
+            let code=octet.int();if code>=65 && code<=90 {(code+32).byte();} else {octet;}
+        };
+        text=Utf8Decoded(bytes).string();
+    }
+    string() is string {text;}
+}
+object MimeSnapshot {
+    has origin is Sequencing<MimeParameter>;has maximum is int;
+    MimeSnapshot(origin is Sequencing<MimeParameter>, maximum is int) {
+        confirm maximum>=0 else throw InvalidArgument("MIME parameter limit must be nonnegative");
+        self.origin=origin;self.maximum=maximum;
+    }
+    entries() is @MimeParameter {
+        let count=origin.size();confirm count>=0 else throw InvalidArgument("MIME source size must be nonnegative");
+        confirm count<=maximum else throw MimeLimitExceeded("parameters");
+        let entries is @MimeParameter=(0..count).map() -> index {origin.item(index);};entries;
+    }
+}
+object MimeItems<T> {
+    has reversed is List<T>;
+    MimeItems() {let empty is List<T>=EmptyList();reversed=empty;}
+    size() is int {reversed.size();}
+    following(item is T) is ^MimeItems<T> {^reversed=reversed.prefix(item);}
+    entries() is @T {
+        let reverse is @T=reversed.map() -> item {item;};
+        let ordered is @T=(0..reverse.size()).map() -> index {reverse[reverse.size()-index-1];};ordered;
+    }
+}
+object MimePosition {
+    has index is int;
+    MimePosition(index is int) {self.index=index;}
+    index() is int {index;}
+    following(index is int) is ^MimePosition {^index=index;}
+}
+object MimeScanned {
+    has text is string;has end is int;
+    MimeScanned(text is string, end is int) {self.text=text;self.end=end;}
+    text() is string {text;}
+    end() is int {end;}
+}
+object MimeParsed {
+    has major, minor is string;has entries is MimeParameters;
+    MimeParsed(type is string, subtype is string, entries is MimeParameters) {major=type;minor=subtype;self.entries=entries;}
+    type() is string {major;}
+    subtype() is string {minor;}
+    parameters() is MimeParameters {entries;}
+}
+object MimeScanning {
+    has origin is string;has maximum_parameters, maximum_bytes is int;
+    MimeScanning(origin is string, maximum_parameters is int, maximum_bytes is int) {
+        confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument("MIME limits must be nonnegative");
+        self.origin=origin;self.maximum_parameters=maximum_parameters;self.maximum_bytes=maximum_bytes;
+    }
+    value() is MimeParsed {
+        self.validate();
+        let major=self.token(self.space(0));let slash=self.space(major.end());
+        confirm slash<origin.length() && origin.slice(slash,slash+1)=="/" else throw InvalidMediaType(slash,"missing subtype separator");
+        let minor=self.token(self.space(slash+1));
+        confirm major.text()!="*" && minor.text()!="*" else throw InvalidMediaType(0,"wildcard is not a concrete media type");
+        MimeParsed(MimeToken(major.text()).string(),MimeToken(minor.text()).string(),self.parameters(minor.end()));
+    }
+    disposition() is MimeParsed {
+        self.validate();let kind=self.token(self.space(0));
+        MimeParsed(MimeToken(kind.text()).string(),"",self.parameters(kind.end()));
+    }
+    private:
+    validate() is void {
+        confirm origin.length()<=maximum_bytes && Utf8Encoded(origin).bytes().size()<=maximum_bytes else throw MimeLimitExceeded("bytes");
+        for (0..origin.length()) -> index {
+            let bytes=Utf8Encoded(origin.slice(index,index+1)).bytes();let code=bytes[0].int();
+            confirm bytes.size()==1 && (code==9 || (code>=32 && code<=126)) else throw InvalidMediaType(index,"expected unfolded ASCII field body");
+        }
+    }
+    parameters(start is int) is MimeParameters {
+        let position=MimePosition(self.space(start));let raw is MimeItems<MimeWireParameter>=MimeItems();
+        loop {
+            let index=position.index();last if index==origin.length();
+            confirm origin.slice(index,index+1)==";" else throw InvalidMediaType(index,"expected parameter separator");
+            confirm raw.size()<maximum_parameters else throw MimeLimitExceeded("parameters");
+            let start=self.space(index+1);let name=self.token(start);let equals=self.space(name.end());
+            confirm equals<origin.length() && origin.slice(equals,equals+1)=="=" else throw InvalidMediaType(equals,"missing parameter assignment");
+            let at=self.space(equals+1);
+            let value=if at<origin.length() && origin.slice(at,at+1)=="\"" {self.quoted(at);} else {self.token(at);};
+            raw=raw.following(MimeWireParameter(name.text(),value.text(),start,maximum_parameters));
+            position=position.following(self.space(value.end()));
+        }
+        MimeAssembly(raw.entries(),maximum_parameters).parameters();
+    }
+    space(start is int) is int {
+        let position=MimePosition(start);
+        loop {
+            let index=position.index();if index==origin.length() {return index;}
+            let char=origin.slice(index,index+1);if char!=" " && char!="\t" {return index;}
+            position=position.following(index+1);
+        }
+    }
+    token(start is int) is MimeScanned {
+        let position=MimePosition(start);
+        loop {
+            let index=position.index();last if index==origin.length() || !MimeCharacter(origin.slice(index,index+1)).token();
+            position=position.following(index+1);
+        }
+        confirm position.index()>start else throw InvalidMediaType(start,"expected token");
+        MimeScanned(origin.slice(start,position.index()),position.index());
+    }
+    quoted(start is int) is MimeScanned {
+        let position=MimePosition(start+1);let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        loop {
+            let index=position.index();confirm index<origin.length() else throw InvalidMediaType(start,"unterminated quoted string");
+            let char=origin.slice(index,index+1);
+            if char=="\"" {return MimeScanned(Utf8Decoded(buffer.content().bytes()).string(),index+1);}
+            if char=="\\" {
+                confirm origin.length()-index>=2 else throw InvalidMediaType(index,"unfinished quoted pair");
+                writer.write(ByteSnapshot(Utf8Encoded(origin.slice(index+1,index+2)).bytes()));position=position.following(index+2);
+            } else {writer.write(ByteSnapshot(Utf8Encoded(char).bytes()));position=position.following(index+1);}
+        }
+    }
+}
+object MimeWireParameter {
+    has key, text is string;has number, position is int;has encoded is bool;
+    MimeWireParameter(name is string, value is string, offset is int, maximum_sections is int) {
+        let parts=name.split("*");confirm parts.size()<=3 else throw InvalidMediaType(offset,"invalid continuation name");
+        key=try {MimeToken(parts[0]).string();} catch failure is InvalidMediaType {throw InvalidMediaType(offset,"invalid parameter name");};
+        text=value;position=offset;
+        if parts.size()==1 {number=-2;encoded=false;}
+        else if parts.size()==2 && parts[1]=="" {number=-1;encoded=true;}
+        else {
+            let digits=parts[1];
+            confirm digits.length()>0 && digits.length()<=maximum_sections.string().length() && (digits.length()==1 || digits.slice(0,1)!="0")
+                else throw InvalidMediaType(offset,"invalid continuation index");
+            let valid=(0..digits.length()).reduce(true) -> valid,index {valid && "0123456789".split(digits.slice(index,index+1)).size()==2;};
+            confirm valid && (parts.size()==2 || parts[2]=="") else throw InvalidMediaType(offset,"invalid continuation index");
+            let parsed=try {ParsedInt(digits).value();} catch failure is InvalidInteger {throw InvalidMediaType(offset,"invalid continuation index");};
+            confirm parsed<maximum_sections else throw InvalidMediaType(offset,"continuation index exceeds section bound");
+            number=parsed;encoded=parts.size()==3;
+        }
+    }
+    name() is string {key;}
+    value() is string {text;}
+    section() is int {number;}
+    encoded() is bool {encoded;}
+    offset() is int {position;}
+}
+object MimeAssembly {
+    has origin is @MimeWireParameter;has maximum is int;
+    MimeAssembly(origin is @MimeWireParameter, maximum is int) {self.origin=origin;self.maximum=maximum;}
+    parameters() is MimeParameters {
+        let output is MimeItems<MimeParameter>=MimeItems();
+        for (0..origin.size()) -> index {
+            let entry=origin[index];let group is @MimeWireParameter=origin.filter() -> other {other.name()==entry.name();};
+            let extended is @MimeWireParameter=group.filter() -> other {other.section()!=-2;};
+            if extended.size()==0 {output=output.following(MimeParameter(entry.name(),entry.value()));}
+            else {
+                let prior=(0..index).reduce(false) -> found,position {found || origin[position].name()==entry.name();};
+                if !prior {output=output.following(MimeParameter(entry.name(),MimeExtended(extended).string()));}
+            }
+        }
+        MimeParameters(output.entries(),maximum);
+    }
+}
+object MimeExtended {
+    has origin is @MimeWireParameter;
+    MimeExtended(origin is @MimeWireParameter) {self.origin=origin;}
+    string() is string {
+        let offset=origin[0].offset();let single is @MimeWireParameter=origin.filter() -> part {part.section()==-1;};
+        confirm single.size()==0 || (single.size()==1 && origin.size()==1) else throw InvalidMediaType(offset,"conflicting extended parameters");
+        let ordered is @MimeWireParameter=if single.size()==1 {single;} else {
+            let parts is @MimeWireParameter=(0..origin.size()).map() -> index {
+                let matches is @MimeWireParameter=origin.filter() -> part {part.section()==index;};
+                confirm matches.size()==1 else throw InvalidMediaType(offset,"duplicate or missing continuation index");matches[0];
+            };parts;
+        };
+        let initial=ordered[0];
+        let prefix=MimeCharset(initial.value(),initial.encoded(),initial.offset());
+        let output=ByteBuffer();defer output.closing().close();let writer=output.writing();
+        for (0..ordered.size()) -> index {
+            let part=ordered[index];let text=if index==0 {prefix.value();} else {part.value();};
+            let bytes=if part.encoded() {MimeExtendedBytes(text,part.offset()).bytes();} else {Utf8Encoded(text).bytes();};
+            writer.write(ByteSnapshot(bytes));
+        }
+        let bytes=output.content().bytes();
+        if prefix.charset()!="utf-8" {
+            let ascii=bytes.reduce(true) -> valid,octet {valid && octet.int()<128;};
+            confirm ascii else throw InvalidMediaType(offset,"non-ASCII bytes without UTF-8 charset");
+        }
+        let decoded=try {Utf8Decoded(bytes).string();} catch failure is InvalidUtf8 {throw InvalidMediaType(offset,"invalid extended UTF-8");};
+        for (0..decoded.length()) -> index {
+            let code=Utf8Encoded(decoded.slice(index,index+1)).bytes()[0].int();
+            confirm code==9 || (code>=32 && code!=127) else throw InvalidMediaType(offset,"control in extended value");
+        }
+        decoded;
+    }
+}
+object MimeCharset {
+    has encoding, text is string;
+    MimeCharset(origin is string, encoded is bool, offset is int) {
+        if !encoded {encoding="";text=origin;}
+        else {
+            let parts=origin.split("'");confirm parts.size()==3 else throw InvalidMediaType(offset,"extended value requires charset and language delimiters");
+            let charset=if parts[0]=="" {"";} else {
+                try {MimeToken(parts[0]).string();} catch failure is InvalidMediaType {throw InvalidMediaType(offset,"invalid parameter charset");}
+            };
+            confirm charset=="" || charset=="utf-8" || charset=="us-ascii" else throw InvalidMediaType(offset,"unsupported parameter charset");
+            let language=parts[1];let valid=(0..language.length()).reduce(true) -> valid,index {
+                valid && "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-".split(language.slice(index,index+1)).size()==2;
+            };
+            confirm valid else throw InvalidMediaType(offset,"invalid parameter language");
+            encoding=charset;text=parts[2];
+        }
+    }
+    charset() is string {encoding;}
+    value() is string {text;}
+}
+object MimeExtendedBytes {
+    has origin is string;has offset is int;
+    MimeExtendedBytes(origin is string, offset is int) {self.origin=origin;self.offset=offset;}
+    bytes() is @byte {
+        for (0..origin.length()) -> index {
+            let char=origin.slice(index,index+1);
+            confirm (char=="%" || MimeCharacter(char).token()) && char!="*" && char!="'"
+                else throw InvalidMediaType(offset,"invalid extended parameter character");
+        }
+        try {PercentDecoded(origin).bytes();}
+        catch failure is InvalidPercentEncoding {throw InvalidMediaType(offset,"invalid extended percent escape");}
+    }
+}
+
+test "media type case and extended value are explicit" {
+    let value=MediaType("Text/Plain; title*=UTF-8''caf%C3%A9");
+    test.is(value.type(),"text");test.is(value.parameters().first("TITLE"),"café");
+}

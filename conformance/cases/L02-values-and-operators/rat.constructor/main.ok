@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln(rat(2, 4).string());
+    out.writeln(rat(-2, -4).string());
+    out.writeln(rat(2, -4).string());
+    out.writeln(rat(0, 7).string());
+    let r = rat(6, 4);
+    out.writeln(r.numerator() + "/" + r.denominator());
+    out.writeln(if rat(1, 2) == rat(2, 4) { "equal"; } else { "different"; });
+    0;
+}

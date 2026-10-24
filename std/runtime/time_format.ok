@@ -1,0 +1,33 @@
+module runtime/time_format v1.0.0;
+
+native time_pattern_invalid_offset(
+    pattern is string,
+    local is bool,
+    parsing is bool,
+) is int;
+native time_format_date(
+    year is int,
+    month is int,
+    day is int,
+    pattern is string,
+) is string;
+native time_format_local(
+    year is int,
+    month is int,
+    day is int,
+    hour is int,
+    minute is int,
+    second is int,
+    nanosecond is int,
+    pattern is string,
+) is string;
+native time_parse_invalid_offset(
+    origin is string,
+    pattern is string,
+    local is bool,
+) is int;
+native time_parse_parts(
+    origin is string,
+    pattern is string,
+    local is bool,
+) is @int;

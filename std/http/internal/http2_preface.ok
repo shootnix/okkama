@@ -1,0 +1,94 @@
+module http/internal/http2_preface v1.0.0;
+import "http/http2_settings" take Http2Settings,Http2SettingsWire;
+import "http/internal/http2_settings" take Http2PeerSettings,ReceivedHttp2Settings;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
+import "http/internal/http2_reading" take Http2FrameReading,EndOfHttp2Frames;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "async/scope" take FutureGroup;
+import "io/decorators" take ByteSnapshot;
+import "encoding/utf" take Utf8Encoded;
+import "http/internal/wire_bytes" take HttpWireBytes;
+import "net/stream" take StreamReadCleanup;
+import "async/atomic" take Atomic;
+import "io/decorators" take InvalidReading;
+
+// Borrowed stream collaborator. Caller must already select H2 (ALPN h2 for TLS)
+// and owns transport disposal after any fault, partial write or cancellation.
+// Reads only the server's first SETTINGS, applies it, then emits ACK. The later
+// ACK of our own settings belongs to the connection loop, not this preface.
+object Http2ClientPreface {
+    has waiting is Future<Http2PeerSettings>;
+    Http2ClientPreface(input is AsyncReading,output is AsyncWriting,settings is Http2Settings){
+        let operation=Http2PrefaceOperation(input,output,settings);waiting=operation.run();
+    }
+    async result() is Http2PeerSettings{
+        let group is FutureGroup<Http2PeerSettings>=FutureGroup();let cleanup=Http2PrefaceSettlement(group);
+        defer await cleanup.close();group.start(waiting);await waiting;
+    }
+}
+object Http2PrefaceOperation {
+    has input is AsyncReading;has output is AsyncWriting;has settings is Http2Settings;
+    Http2PrefaceOperation(input is AsyncReading,output is AsyncWriting,settings is Http2Settings){self.input=input;self.output=output;self.settings=settings;}
+    async emit(bytes is @byte) is void{
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2PrefaceSettlement(group);
+        defer await cleanup.close();let pending=output.write(ByteSnapshot(bytes));group.start(pending);await pending;
+    }
+    async run() is Http2PeerSettings{
+        let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();
+        let payload=Http2SettingsWire(settings,true).bytes();
+        let frame=Http2Frame(Http2FrameHeader(4.byte(),0.byte(),0,payload.size()),payload).bytes();
+        let prefix=HttpWireBytes([magic,frame],magic.size()+frame.size()).bytes();
+        await self.emit(prefix);
+        let peer=try{await Http2FrameReading(input,settings.frame_size()).result();}
+            catch failure is EndOfHttp2Frames{throw Http2Fault(Http2FaultScope.connection,1,0,"missing server preface");};
+        let received=ReceivedHttp2Settings(peer,Http2PeerSettings(),true).value();
+        await self.emit(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes());received;
+    }
+}
+object Http2PrefaceSettlement<T> {
+    has group is FutureGroup<T>;Http2PrefaceSettlement(group is FutureGroup<T>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+// Prior-knowledge or ALPN-selected server side. Never guesses the protocol;
+// the caller owns the transport and its opening deadline. Sending SETTINGS
+// first prevents either endpoint from waiting for the other's advertisement.
+object Http2ServerPreface {
+    has waiting is Future<Http2PeerSettings>;
+    Http2ServerPreface(input is AsyncReading,output is AsyncWriting,settings is Http2Settings){
+        let operation=Http2ServerPrefaceOperation(input,output,settings);waiting=operation.run();
+    }
+    async result() is Http2PeerSettings{
+        let group is FutureGroup<Http2PeerSettings>=FutureGroup();let cleanup=Http2PrefaceSettlement(group);
+        defer await cleanup.close();group.start(waiting);await waiting;
+    }
+}
+object Http2ServerPrefaceOperation {
+    has input is AsyncReading;has output is AsyncWriting;has settings is Http2Settings;
+    Http2ServerPrefaceOperation(input is AsyncReading,output is AsyncWriting,settings is Http2Settings){self.input=input;self.output=output;self.settings=settings;}
+    async emit(bytes is @byte) is void{
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2PrefaceSettlement(group);
+        defer await cleanup.close();let pending=output.write(ByteSnapshot(bytes));group.start(pending);await pending;
+    }
+    async chunk(limit is int) is @byte{
+        let group is FutureGroup<@byte>=FutureGroup();let cleanup=StreamReadCleanup(group);
+        defer await cleanup.close();let pending=input.bytes(limit);group.start(pending);await pending;
+    }
+    async run() is Http2PeerSettings{
+        let payload=Http2SettingsWire(settings,false).bytes();
+        await self.emit(Http2Frame(Http2FrameHeader(4.byte(),0.byte(),0,payload.size()),payload).bytes());
+        let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();let offset=Atomic(0);
+        loop{
+            if offset.value()==magic.size(){last;}let remaining=magic.size()-offset.value();let bytes=await self.chunk(remaining);
+            confirm bytes.size()<=remaining else throw InvalidReading("HTTP2 preface source exceeded request");
+            confirm bytes.size()>0 else throw Http2Fault(Http2FaultScope.connection,1,0,"truncated client preface");
+            for (0..bytes.size()) -> index{
+                confirm bytes[index].int()==magic[offset.value()+index].int() else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid client preface");
+            }
+            offset.replace(offset.value()+bytes.size());
+        }
+        let first=try{await Http2FrameReading(input,settings.frame_size()).result();}
+            catch failure is EndOfHttp2Frames{throw Http2Fault(Http2FaultScope.connection,1,0,"missing client SETTINGS");};
+        let peer=ReceivedHttp2Settings(first,Http2PeerSettings(),false).value();
+        await self.emit(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes());peer;
+    }
+}

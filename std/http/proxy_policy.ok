@@ -1,0 +1,28 @@
+module http/proxy_policy v1.0.0;
+import "http/auth" take BasicCredentials;
+import "http/endpoint" take HttpEndpointSelection,AllEndpoints;
+import "net/dns" take FixedResolution;
+import "url/value" take Url,ParsedUrl;
+// Explicit plain HTTP proxy. Origin HTTPS is verified after CONNECT; TLS to
+// the proxy itself needs a separate nested transport and is not inferred.
+object ProxyPolicy {
+    has url is Url;has credentials is @BasicCredentials;
+    ProxyPolicy(origin is Url){HttpProxyEndpoint(origin);url=origin;credentials=[];}
+    ProxyPolicy(origin is Url,credentials is BasicCredentials){HttpProxyEndpoint(origin);url=origin;self.credentials=[credentials];}
+    url() is Url{url;}authenticated() is bool{credentials.size()==1;}
+    credentials() is BasicCredentials{confirm credentials.size()==1 else throw MissingProxyCredentials();credentials[0];}
+}
+object HttpProxyEndpoint {
+    HttpProxyEndpoint(origin is Url){let parts=origin.parts();
+        confirm parts.scheme()=="http" && !parts.query().present() && !parts.fragment().present() && (parts.path()=="" || parts.path()=="/") && !parts.authority().userinfo().present() else throw InvalidProxy("plain HTTP endpoint without URI credentials/path/query/fragment required");
+        try{HttpEndpointSelection(origin,FixedResolution([]),AllEndpoints());}catch e is Error{throw InvalidProxy("invalid endpoint");}
+    }
+}
+object MissingProxyCredentials does Error{MissingProxyCredentials();text() is string{"proxy has no credentials";}}
+object InvalidProxy does Error{has reason is string;InvalidProxy(reason is string){self.reason=reason;}reason() is string{reason;}text() is string{"invalid proxy: "+reason;}}
+object ProxyAuthorizationConflict does Error{ProxyAuthorizationConflict();text() is string{"caller Proxy-Authorization conflicts with configured proxy transport";}}
+object ProxyConnectRejected does Error{has status is int;ProxyConnectRejected(status is int){self.status=status;}status() is int{status;}text() is string{"proxy CONNECT rejected";}}
+
+test "proxy policy does not acquire credentials implicitly" {
+    let proxy=ProxyPolicy(ParsedUrl("http://proxy.test/").value());test.ok(!proxy.authenticated());
+}

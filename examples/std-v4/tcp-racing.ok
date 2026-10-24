@@ -1,0 +1,16 @@
+module app v1.0.0;
+import "net/tcp" take TcpListening,TcpAcceptance,TcpConnection;
+import "net/tcp_racing" take TcpRacing;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "io/decorators" take ByteSnapshot;
+import "io/stdout" take Stdout;
+async main() is int {
+    let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
+    let accepting is async () is TcpConnection=listener.connection;let pending=spawn accepting();
+    let client=await TcpRacing([listener.local_endpoint()]).connection();defer client.close();
+    let peer=await pending;defer peer.close();
+    await client.output().write(ByteSnapshot([7.byte()]));
+    confirm (await peer.input().bytes(1))[0].int()==7;
+    Stdout().writeln("owned TCP racing connection verified");0;
+}

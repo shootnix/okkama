@@ -1,0 +1,32 @@
+module bench/app/catalog v1.0.0;
+
+// Каталог: детерминированные товары и покупатели, резерв остатков.
+import "domain" take Product, Customer, OutOfStock;
+
+object Catalog {
+    has size is int;
+
+    Catalog(:size);
+
+    size() is int { size; }
+
+    product(id is int) is Product {
+        Product(
+            id: id,
+            name: "product-" + id.string(),
+            category: id * 7 % 10,
+            price: id * 389 % 20000 + 199,
+            stock: id * 13 % 40 + 1
+        );
+    }
+
+    customer(id is int) is Customer {
+        Customer(id: id, name: "customer-" + id.string(), tier: id % 4);
+    }
+
+    // Больше остатка — отказ `OutOfStock`.
+    reserved(product is Product, quantity is int) is int {
+        confirm quantity <= product.stock() else throw OutOfStock(product: product.id(), available: product.stock());
+        quantity;
+    }
+}

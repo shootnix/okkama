@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.privacy.closure-reads-self-field",
+  "title": "a closure created by the owner may read its fields",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.FIELD-PRIVACY",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#10",
+    "docs/okkama-spec-11072026.md#11.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 10: anonymous actions capture self lexically; reading self.code inside the owner's closure is an owner read."
+  },
+  "status": "mandatory"
+}

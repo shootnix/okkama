@@ -1,0 +1,22 @@
+// Подготовить письмо к доставке
+//
+// Подготовить MIME-письмо к доставке: MailMessage и DeliveredMail представляют сообщение и явную подготовку заголовков.
+//
+// Запуск: ./examples/cookbook/run lab example-mail-message
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-mail-message
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "mail/message" take ParsedMail, DeliveredMail, MessageId, MailDate, ParsedMailDate;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let message=ParsedMail(Utf8Encoded("To: reader@example.test\r\nBcc: private@example.test\r\nSubject: hello\r\n\r\nExample body").bytes()).message();
+    Stdout().writeln(Utf8Decoded(DeliveredMail(message).bytes()).string());
+    Stdout().writeln(MessageId("<example.1@example.test>").string());
+    let date=ParsedMailDate("Fri, 21 Nov 97 09:55 -0000");
+    Stdout().writeln(MailDate(date.value(),date.offset_known()).string());
+    0;
+}

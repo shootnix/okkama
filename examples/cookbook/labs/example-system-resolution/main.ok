@@ -1,0 +1,19 @@
+// Разрешить DNS-имя через системный resolver
+//
+// Получить адреса сервера или подставить тестовый DNS: SystemResolution и FixedResolution реализуют Resolving.
+//
+// Запуск: ./examples/cookbook/run lab example-system-resolution
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-system-resolution
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/dns" take SystemResolution;
+import "net/endpoint" take HostName,HostEndpoint;
+import "io/stdout" take Stdout;
+async main() is int {
+    let resolver=SystemResolution();let result=await resolver.addresses(HostEndpoint(HostName("localhost"),80));
+    confirm result.size()>0;
+    for (0..result.size()) -> index {confirm result.item(index).port()==80;}
+    Stdout().writeln("system resolver worker and requested ports verified");0;
+}

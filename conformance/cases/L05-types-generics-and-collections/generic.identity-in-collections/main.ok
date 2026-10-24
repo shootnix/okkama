@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+main() is int {
+    let out = Stdout();
+    let boxes is @Box<int> = [Box(value: 1), Box(value: 2)];
+    let total = boxes.reduce(0) -> acc, b { acc + b.get(); };
+    out.writeln(total.string());
+    0;
+}

@@ -1,0 +1,129 @@
+module http/internal/http2_headers v1.0.0;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2FrameRules,Http2Fault,Http2FaultScope;
+import "http/internal/http2_reading" take Http2FrameReading,EndOfHttp2Frames;
+import "http/internal/hpack" take HpackDecoder,HpackEncoded,HpackBudget;
+import "http/internal/hpack_tables" take HpackField;
+import "net/stream" take AsyncReading,AsyncWriting;
+import "collections/sequence" take Sequencing;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "async/atomic" take Atomic;
+import "async/scope" take FutureGroup;
+import "http/internal/wire_bytes" take HttpWireBytes;
+
+object Http2HeaderBlock {
+    has fields is @HpackField;has context is HpackDecoder;has stream is int;has end_stream is bool;
+    Http2HeaderBlock(fields is @HpackField,context is HpackDecoder,stream is int,end_stream is bool){self.fields=fields;self.context=context;self.stream=stream;self.end_stream=end_stream;}
+    fields() is @HpackField{fields;}context() is HpackDecoder{context;}
+    stream() is int{stream;}end_stream() is bool{end_stream;}
+}
+// Connection reader owns ordering and transport; this collaborator consumes
+// exactly one already-started HEADERS block, with no interleaved frame allowed.
+object Http2HeaderBlockReading {
+    has pending is Future<Http2HeaderBlock>;
+    Http2HeaderBlockReading(first is Http2Frame,origin is AsyncReading,context is HpackDecoder,budget is HpackBudget){let operation=Http2HeaderInput(first,origin,context,budget,16384);pending=operation.reading();}
+    Http2HeaderBlockReading(first is Http2Frame,origin is AsyncReading,context is HpackDecoder,budget is HpackBudget,maximum is int){let operation=Http2HeaderInput(first,origin,context,budget,maximum);pending=operation.reading();}
+    async result() is Http2HeaderBlock{
+        let group is FutureGroup<Http2HeaderBlock>=FutureGroup();let cleanup=Http2HeaderSettlement(group);defer await cleanup.close();group.start(pending);await pending;
+    }
+}
+object Http2HeaderInput {
+    has first is Http2Frame;has origin is AsyncReading;has context is HpackDecoder;has budget is HpackBudget;has maximum is int;
+    Http2HeaderInput(first is Http2Frame,origin is AsyncReading,context is HpackDecoder,budget is HpackBudget,maximum is int){
+        confirm maximum>=16384 && maximum<=16777215 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid frame receive limit");
+        self.first=first;self.origin=origin;self.context=context;self.budget=budget;self.maximum=maximum;
+    }
+    async reading() is Http2HeaderBlock{
+        confirm first.header().kind().int()==1 else throw Http2Fault(Http2FaultScope.connection,1,0,"HEADERS required");
+        Http2FrameRules(first).check();
+        confirm first.header().length()<=maximum else throw Http2Fault(Http2FaultScope.connection,6,0,"HEADERS receive frame limit");
+        let buffer=ByteBuffer();let fragment=Http2HeaderFragment(first).bytes();
+        confirm fragment.size()<=budget.encoded() else throw Http2Fault(Http2FaultScope.connection,11,0,"encoded field block budget");
+        buffer.writing().write(ByteSnapshot(fragment));
+        let complete=Atomic((first.header().flags().int() & 4)!=0);let count=Atomic(1);let stream=first.header().stream();
+        loop{
+            if complete.value(){last;}
+            confirm count.value()<1024 else throw Http2Fault(Http2FaultScope.connection,11,0,"field block frame count");
+            let reads is FutureGroup<Http2Frame>=FutureGroup();let cleanup=Http2HeaderSettlement(reads);defer await cleanup.close();
+            let pending=Http2FrameReading(origin,maximum).result();reads.start(pending);
+            let following=try{await pending;}
+                catch failure is EndOfHttp2Frames{throw Http2Fault(Http2FaultScope.connection,1,0,"truncated field block");}
+                catch failure is Http2Fault{
+                    // CONTINUATION itself has no structural stream fault. A
+                    // stream-scoped failure here came from an interleaved frame
+                    // and cannot weaken the connection's sequencing violation.
+                    if failure.scope()==Http2FaultScope.stream{throw Http2Fault(Http2FaultScope.connection,1,0,"interleaved field block frame");}throw;
+                };
+            confirm following.header().kind().int()==9 && following.header().stream()==stream
+                else throw Http2Fault(Http2FaultScope.connection,1,0,"interleaved field block frame");
+            let bytes=following.payload();
+            confirm bytes.size()<=budget.encoded()-buffer.content().size() else throw Http2Fault(Http2FaultScope.connection,11,0,"encoded field block budget");
+            buffer.writing().write(ByteSnapshot(bytes));complete.replace((following.header().flags().int() & 4)!=0);count.replace(count.value()+1);
+        }
+        let decoded=context.decoded(buffer.content().bytes(),budget);
+        Http2HeaderBlock(decoded.fields(),decoded.context(),stream,(first.header().flags().int() & 1)!=0);
+    }
+}
+object Http2HeaderFragment {
+    has origin is Http2Frame;Http2HeaderFragment(origin is Http2Frame){self.origin=origin;}
+    bytes() is @byte{
+        let payload=origin.payload();let flags=origin.header().flags().int();let padded=(flags & 8)!=0;let priority=(flags & 32)!=0;
+        let start=(if padded{1;}else{0;})+(if priority{5;}else{0;});
+        let padding=if padded{payload[0].int();}else{0;};payload.slice(start,payload.size()-padding);
+    }
+}
+// Caller serializes whole header blocks with other connection output. Per-frame
+// AsyncWriting serialization alone cannot prevent two blocks from interleaving.
+object Http2HeaderBlockWriting {
+    has pending is Future<AsyncWriting>;
+    Http2HeaderBlockWriting(origin is AsyncWriting,stream is int,fields is Sequencing<HpackField>,budget is HpackBudget,fragment is int,end_stream is bool){
+        let operation=Http2HeaderOutput(origin,stream,fields,budget,fragment,end_stream);pending=operation.writing();
+    }
+    async result() is AsyncWriting{
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2HeaderSettlement(group);defer await cleanup.close();group.start(pending);await pending;
+    }
+}
+object Http2HeaderOutput {
+    has origin is AsyncWriting;has stream,fragment is int;has fields is Sequencing<HpackField>;has budget is HpackBudget;has end_stream is bool;
+    Http2HeaderOutput(origin is AsyncWriting,stream is int,fields is Sequencing<HpackField>,budget is HpackBudget,fragment is int,end_stream is bool){
+        confirm stream>0 && stream<=2147483647 && fragment>0 && fragment<=16777215
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid outgoing field block coordinates");
+        self.origin=origin;self.stream=stream;self.fields=fields;self.budget=budget;self.fragment=fragment;self.end_stream=end_stream;
+    }
+    async emit(frame is Http2Frame) is void{
+        let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=Http2HeaderSettlement(group);defer await cleanup.close();
+        let pending=origin.write(ByteSnapshot(frame.bytes()));group.start(pending);await pending;
+    }
+    async writing() is AsyncWriting{
+        let encoded=Http2EncodedHeaderFrames(stream,fields,budget,fragment,end_stream);
+        for encoded.frames() -> frame{await self.emit(frame);}
+        origin;
+    }
+}
+// Shared preflight for direct block writing and the connection output queue.
+object Http2EncodedHeaderFrames {
+    has value is @Http2Frame;
+    Http2EncodedHeaderFrames(stream is int,fields is Sequencing<HpackField>,budget is HpackBudget,fragment is int,end_stream is bool){
+        confirm stream>0 && stream<=2147483647 && fragment>0 && fragment<=16777215
+            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid outgoing field block coordinates");
+        confirm budget.encoded()>0 else throw Http2Fault(Http2FaultScope.connection,11,0,"field block needs table-size update");
+        let encoded=HpackEncoded(fields,HpackBudget(budget.encoded()-1,budget.decoded(),budget.fields())).bytes();
+        // A zero table at every block start satisfies all peer reductions.
+        let bytes=HttpWireBytes([[32.byte()],encoded],encoded.size()+1).bytes();let count=((bytes.size()+fragment-1)/fragment).int();
+        confirm count<=1024 else throw Http2Fault(Http2FaultScope.connection,11,0,"outgoing field block frame count");
+        value=(0..count).map()->index{
+            let start=index*fragment;let end=if bytes.size()-start>fragment{start+fragment;}else{bytes.size();};
+            let kind=if index==0{1;}else{9;};let flags=(if index+1==count{4;}else{0;})+(if index==0 && end_stream{1;}else{0;});
+            Http2Frame(Http2FrameHeader(kind.byte(),flags.byte(),stream,end-start),bytes.slice(start,end));
+        };
+    }
+    frames() is @Http2Frame{value;}
+}
+object Http2HeaderSettlement<T> {
+    has group is FutureGroup<T>;Http2HeaderSettlement(group is FutureGroup<T>){self.group=group;}
+    async close() is void{if group.active()>0{group.cancel();await group.wait();}}
+}
+test "HEADERS metadata and padding do not enter HPACK" {
+    let frame=Http2Frame(Http2FrameHeader(1.byte(),12.byte(),1,3),[1.byte(),130.byte(),0.byte()]);
+    Http2FrameRules(frame).check();let fragment=Http2HeaderFragment(frame).bytes();test.is(fragment.size(),1);test.is(fragment[0].int(),130);
+}

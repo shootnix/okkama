@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("sum", 1 + 2, 3);
+    c = c.same_text("concat", "a" + "b", "ab");
+    c = c.same_bool("less", 1 < 2, true);
+    c = c.ok("bool", true);
+    c = c.same_ints("array", [1, 2, 3], [1, 2, 3]);
+    let words is @string = ["x", "y"];
+    c = c.same_texts("texts", words, ["x", "y"]);
+    c = c.same_float("half", 0.25 + 0.25, 0.5);
+    c.done();
+}

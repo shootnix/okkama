@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.nominal.enum-vs-object-names",
+  "title": "enum and object types are distinct nominal categories",
+  "purpose": "Observe type, generic and collection semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.NOMINAL",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "enum\nobject\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15",
+    "docs/okkama-spec-11072026.md#11.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 15/11.1: enum values infer as their enum type; objects as their object type."
+  },
+  "status": "mandatory"
+}

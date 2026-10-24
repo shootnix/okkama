@@ -1,0 +1,74 @@
+// Исполняемый набор тестов и демонстрация тестового фреймворка
+//
+// Проверяет оплату по JSON cases, свойства, roundtrip форматов, persistent-накопление, двойники, ошибки и часы.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run tests
+//     ./examples/cookbook/run tests --report=json
+//     ./examples/cookbook/run tests --report=tap
+//     ./examples/cookbook/run tests --report=junit
+//
+// Фикстуры: data/payroll-cases.json и data/stock.json. Seed генерации 42. Проверки работают в test-контексте std/testing; код завершения отражает результат набора.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/tests v1.0.0;
+import "payroll" take PaidShift,ShiftLedger;
+import "formats" take StockDocument;
+import "../support/sql" take Collected;
+import "../support/files" take LocalFiles;
+import "testing/check" take TextEquals;
+import "testing/error" take Throwing,ErrorTextMatching;
+import "testing/double" take RecordedCalls;
+import "testing/generation" take IntegerGeneration;
+import "testing/property" take Property;
+import "testing/time" take ManualClock;
+import "testing/result" take TestReport,TestResult,TestStatus,TestOutput;
+import "testing/report" take HumanTestReport,TapTestReport,JsonTestReport,JUnitTestReport;
+import "time/clock" take Instant;
+import "time/duration" take Duration,DurationUnit;
+import "numbers/bigint" take BigInt;
+import "json/read" take JsonView;
+import "json/parse" take ParsedJson;
+import "error" take InvalidArgument;
+import "io/stdout" take Stdout;
+main() is int{Stdout().writeln("Запуск: ./examples/cookbook/run tests");0;}
+test "payroll JSON cases and half-even rounding" {
+    let cases=JsonView(ParsedJson(LocalFiles().text("examples/cookbook/data/payroll-cases.json"))).items();
+    for cases->sample {
+        let actual=PaidShift("Ада","2026-10-18",sample.int("minutes"),BigInt(sample.text("rate_cents"))).amount().string();
+        TextEquals(actual,sample.text("expected_cents")).check();
+    }
+}
+test "one hour equals the hourly rate" {
+    let law is Property<int>=Property(IntegerGeneration(0,100001),42,30,10,32,(rate is int) is bool{
+        PaidShift("Ада","2026-10-18",60,BigInt(rate.string())).amount().string()==rate.string();
+    });law.check();
+}
+test "JSON CSV TOML roundtrip" {
+    let original=StockDocument("json",LocalFiles().text("examples/cookbook/data/stock.json")).string("json");
+    for ["csv","toml","json"]->format{
+        let encoded=StockDocument("json",original).string(format);
+        TextEquals(StockDocument(format,encoded).string("json"),original).check();
+    }
+}
+test "persistent accumulation retains earlier values" {
+    let empty is Collected<int>=Collected();let first=empty.addition(7);let following=first.addition(9);
+    test.is(empty.values(),[]);test.is(first.values(),[7]);test.is(following.values(),[7,9]);
+}
+test "recorded calls" {
+    let calls is RecordedCalls<string>=RecordedCalls();calls.record("order-7");calls.record("order-8");
+    test.is(calls.records().item(0).value(),"order-7");test.is(calls.size(),2);
+}
+test "expected error" {
+    let check is Throwing<int>=Throwing(() is int{throw InvalidArgument("стоимость");},ErrorTextMatching("стоимость"));check.check();
+}
+test "manual clock" {
+    let clock=ManualClock(Instant(Duration(0.rat(),DurationUnit.second)));defer clock.close();
+    clock.advance(Duration(2.rat(),DurationUnit.hour));test.is(clock.monotonic_instant().reading().seconds(),7200.rat());
+}
+test "four CI report formats" {
+    let duration=Duration(1.rat(),DurationUnit.millisecond);
+    let report=TestReport(Instant(duration),duration,42,[TestResult("пример",TestStatus.passed,duration,[],TestOutput([],[],false))]);
+    test.ok(HumanTestReport(report,80).string().length()>0);test.ok(TapTestReport(report).string().length()>0);
+    test.ok(JsonTestReport(report).string().length()>0);test.ok(JUnitTestReport(report,"cookbook").string().length()>0);
+}

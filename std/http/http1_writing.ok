@@ -1,0 +1,77 @@
+module http/http1_writing v1.0.0;
+import "http/http1_head" take Http1RequestHead,Http1ResponseHead,Http1Limits,Http1LimitExceeded,ParsedHttp1RequestHead,ParsedHttp1ResponseHead;
+import "http/http1_framing" take Http1RequestFraming,Http1ResponseFraming;
+import "http/header" take Headers;
+import "http/method" take Method;
+import "http/version" take Http1VersionText;
+import "net/stream" take AsyncWriting;
+import "io/stream" take ByteSource;
+import "io/buffer" take ByteBuffer;
+import "io/decorators" take ByteSnapshot;
+import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
+import "async/scope" take FutureScope,Supervising;
+
+// Canonical head bytes are fully bounded/validated before a lazy single write.
+// Sink is borrowed. Started failure may emit a prefix: discard the session.
+object Http1RequestHeadWriting {
+    has pending is Future<AsyncWriting>;
+    Http1RequestHeadWriting(origin is AsyncWriting,head is Http1RequestHead){pending=Http1HeadOutput().request(origin,head,Http1Limits());}
+    Http1RequestHeadWriting(origin is AsyncWriting,head is Http1RequestHead,limits is Http1Limits){pending=Http1HeadOutput().request(origin,head,limits);}
+    result() is Future<AsyncWriting>{pending;}
+}
+object Http1ResponseHeadWriting {
+    has pending is Future<AsyncWriting>;
+    Http1ResponseHeadWriting(origin is AsyncWriting,head is Http1ResponseHead,method is Method){pending=Http1HeadOutput().response(origin,head,method,Http1Limits());}
+    Http1ResponseHeadWriting(origin is AsyncWriting,head is Http1ResponseHead,method is Method,limits is Http1Limits){pending=Http1HeadOutput().response(origin,head,method,limits);}
+    result() is Future<AsyncWriting>{pending;}
+}
+object Http1HeadOutput {
+    Http1HeadOutput();
+    request(origin is AsyncWriting,head is Http1RequestHead,limits is Http1Limits) is Future<AsyncWriting> {
+        Http1RequestFraming(head,limits).plan();
+        let start=head.method().string()+" "+head.target().string()+" "+Http1VersionText(head.version()).string();
+        let wire=Http1HeadWire(start,head.headers(),limits).bytes();ParsedHttp1RequestHead(Latin1Decoded(wire).string(),limits).value();
+        self.writing(origin,wire);
+    }
+    response(origin is AsyncWriting,head is Http1ResponseHead,method is Method,limits is Http1Limits) is Future<AsyncWriting> {
+        Http1ResponseFraming(head,method,limits).plan();
+        let start=Http1VersionText(head.version()).string()+" "+head.status().code().string()+" "+head.status().phrase();
+        let wire=Http1HeadWire(start,head.headers(),limits).bytes();ParsedHttp1ResponseHead(Latin1Decoded(wire).string(),limits).value();
+        self.writing(origin,wire);
+    }
+    writing(origin is AsyncWriting,wire is @byte) is Future<AsyncWriting> {
+        let output=Http1HeadWriteOperation(origin,ByteSnapshot(wire));
+        let scope is FutureScope<AsyncWriting,AsyncWriting>=FutureScope(action:output.write);scope.result();
+    }
+}
+object Http1HeadWriteOperation {
+    has origin is AsyncWriting;has source is ByteSource;
+    Http1HeadWriteOperation(origin is AsyncWriting,source is ByteSource){self.origin=origin;self.source=source;}
+    async write(group is Supervising<AsyncWriting>) is AsyncWriting {
+        let pending=origin.write(source);group.start(pending);await pending;
+    }
+}
+// Implementation-only serializer; Request/Response/Head metadata never exposes
+// a raw line. Every serialized field uses canonical ': ' and terminating CRLF.
+object Http1HeadWire {
+    has start is string;has fields is Headers;has limits is Http1Limits;
+    Http1HeadWire(start is string,fields is Headers,limits is Http1Limits){self.start=start;self.fields=fields;self.limits=limits;}
+    bytes() is @byte {
+        confirm start.length()<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+        confirm start.length()+4<=limits.head_bytes() else throw Http1LimitExceeded("head_bytes");
+        let entries=fields.entries();confirm entries.size()<=limits.fields() else throw Http1LimitExceeded("fields");
+        let total=(0..entries.size()).reduce(start.length()+4)->used,index {
+            let field=entries.item(index);let width=field.name().string().length()+field.value().length()+2;
+            confirm width<=limits.line_bytes() else throw Http1LimitExceeded("line_bytes");
+            confirm width+2<=limits.head_bytes()-used else throw Http1LimitExceeded("head_bytes");used+width+2;
+        };
+        let buffer=ByteBuffer();defer buffer.closing().close();let writer=buffer.writing();
+        writer.write(ByteSnapshot(Latin1Encoded(start+"\r\n").bytes()));
+        for (0..entries.size()) -> index {let field=entries.item(index);writer.write(ByteSnapshot(Latin1Encoded(field.name().string()+": "+field.value()+"\r\n").bytes()));}
+        writer.write(ByteSnapshot([13.byte(),10.byte()]));buffer.content().bytes();
+    }
+}
+test "extension response status keeps mandatory reason separator" {
+    let wire=Http1HeadWire("HTTP/1.1 299 ",Headers([]),Http1Limits()).bytes();
+    test.is(Latin1Decoded(wire).string(),"HTTP/1.1 299 \r\n\r\n");
+}

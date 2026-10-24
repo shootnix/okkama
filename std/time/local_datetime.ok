@@ -1,0 +1,122 @@
+module time/local_datetime v1.0.0;
+
+import "compare" take Comparing, Order;
+import "time/duration" take Duration, DurationUnit;
+import "time/date" take Date, ShiftedDate, DaysBetween, DateOrdinal, InvalidDate;
+import "time/day" take TimeOfDay;
+
+// A local calendar date and wall-clock time without an offset or time zone.
+//
+//     let start = LocalDateTime(
+//         date: Date(year: 2026, month: 8, day: 11),
+//         time: TimeOfDay(hour: 23, minute: 30, second: 0, nanosecond: 0),
+//     );
+//     let finish = start.plus(Duration(
+//         value: 2.rat(),
+//         unit: DurationUnit.hour,
+//     )); // 2026-08-12 01:30
+//
+// Arithmetic treats every civil day as exactly 86,400 seconds. This object
+// does not model daylight-saving transitions, offsets, leap seconds or an
+// instant on a global timeline. Those interpretations require an explicit
+// time-zone object. Results outside Date years 1..9999 throw InvalidDate.
+
+object LocalDateTime does Comparing<LocalDateTime> {
+    has date_value is Date;
+    has time_value is TimeOfDay;
+
+    LocalDateTime(date is Date, time is TimeOfDay) {
+        date_value = date;
+        time_value = time;
+    }
+
+    date() is Date {
+        date_value;
+    }
+
+    time() is TimeOfDay {
+        time_value;
+    }
+
+    plus(duration is Duration) is LocalDateTime {
+        let ordinal is int = value DateOrdinal(origin: date_value);
+        let day_seconds is rat = (
+            time_value.hour() * 3600
+                + time_value.minute() * 60
+                + time_value.second()
+        ).rat() + rat(time_value.nanosecond(), 1000000000);
+
+        let earliest is rat = -(
+            ((ordinal - 1) * 86400).rat() + day_seconds
+        );
+        let latest is rat = (
+            (3652059 - ordinal) * 86400
+        ).rat() + rat(86399999999999, 1000000000) - day_seconds;
+        confirm duration.seconds() >= earliest && duration.seconds() <= latest
+            else throw InvalidDate(
+                "local date-time arithmetic is outside years 1..9999"
+            );
+
+        let shifted is rat = day_seconds + duration.seconds();
+        let truncated_days is int = (shifted / 86400.rat()).int();
+        let days is int = if shifted < 0.rat()
+            && shifted != (truncated_days * 86400).rat() {
+            truncated_days - 1;
+        }
+        else {
+            truncated_days;
+        };
+        let within_day is rat = shifted - (days * 86400).rat();
+        let nanoseconds is int = (within_day * 1000000000.rat()).int();
+
+        let hour is int = (nanoseconds / 3600000000000).int();
+        let after_hour is int = nanoseconds - hour * 3600000000000;
+        let minute is int = (after_hour / 60000000000).int();
+        let after_minute is int = after_hour - minute * 60000000000;
+        let second is int = (after_minute / 1000000000).int();
+        let nano is int = after_minute - second * 1000000000;
+
+        LocalDateTime(
+            date: value ShiftedDate(origin: date_value, days: days),
+            time: TimeOfDay(
+                hour: hour,
+                minute: minute,
+                second: second,
+                nanosecond: nano,
+            ),
+        );
+    }
+
+    minus(other is LocalDateTime) is Duration {
+        let days is int = value DaysBetween(
+            left: other.date(),
+            right: date_value,
+        );
+        let own_seconds is rat = (
+            time_value.hour() * 3600
+                + time_value.minute() * 60
+                + time_value.second()
+        ).rat() + rat(time_value.nanosecond(), 1000000000);
+        let other_time is TimeOfDay = other.time();
+        let other_seconds is rat = (
+            other_time.hour() * 3600
+                + other_time.minute() * 60
+                + other_time.second()
+        ).rat() + rat(other_time.nanosecond(), 1000000000);
+
+        Duration(
+            value: (days * 86400).rat() + own_seconds - other_seconds,
+            unit: DurationUnit.second,
+        );
+    }
+
+    order(other is LocalDateTime) is Order {
+        let dates is Order = date_value.order(other.date());
+        if dates != Order.equal {
+            dates;
+        }
+        else {
+            time_value.order(other.time());
+        }
+    }
+}

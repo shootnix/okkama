@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box {
+    has n is int = 0;
+    Box();
+    bumped() is ^Box {
+        ^missing = 1;
+    }
+}
+
+object Use {
+    Use();
+    run() is Box { Box().bumped(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let b = Use().run();
+    out.writeln("unreachable");
+    0;
+}

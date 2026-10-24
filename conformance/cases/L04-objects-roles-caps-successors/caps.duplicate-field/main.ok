@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Customer {
+    has given_name is string;
+    Customer(:given_name);
+    cap Bad {
+        a is int { 1; }
+        a is int { 2; }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let c = Customer(given_name: "A");
+    out.writeln("unreachable");
+    0;
+}

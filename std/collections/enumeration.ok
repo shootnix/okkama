@@ -1,0 +1,120 @@
+module collections/enumeration v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+
+// Adds a stable integer index to every item of an Iterating object.
+//
+// Enumerated does not consume or change the origin. Its cursor is immutable:
+// successor() returns another cursor while the previous cursor keeps pointing
+// at the same indexed item.
+//
+// Number values from zero:
+//
+//     let cursor = Enumerated(origin: names).cursor();
+//     let first = cursor.item();
+//     // first.index() == 0
+//     // first.item() is the first name
+//
+// Number values from a chosen index, for example human-friendly line numbers:
+//
+//     let lines = Enumerated(origin: document.lines(), start: 1);
+//     let output = Stdout();
+//     for lines -> line {
+//         output.writeln(line.index().string(), ": ", line.item());
+//     }
+//
+// Each line received by the loop is an Indexed<string>. Its index() is the
+// line number and its item() is the original line.
+//
+// Advance without mutation:
+//
+//     let first = Enumerated(origin: names).cursor();
+//     let second = first.successor();
+//     // first.item().index() == 0
+//     // second.item().index() == 1
+//
+// Check available() before item() or successor(). Calling either method on an
+// exhausted cursor throws IterationEnded. If another item would require an
+// index larger than int.max, successor() throws EnumerationOverflow.
+
+object Indexed<T> {
+    has offset is int;
+    has origin is T;
+
+    Indexed(index is int, item is T) {
+        offset = index;
+        origin = item;
+    }
+
+    index() is int {
+        offset;
+    }
+
+    item() is T {
+        origin;
+    }
+}
+
+object Enumerated<T> does Iterating<Indexed<T>> {
+    has origin is Iterating<T>;
+    has start is int = 0;
+
+    Enumerated(:origin);
+    Enumerated(:origin, :start);
+
+    cursor() is Cursor<Indexed<T>> {
+        EnumerationCursor(
+            origin: origin.cursor(),
+            position: start,
+        );
+    }
+}
+
+object EnumerationCursor<T> does Cursor<Indexed<T>> {
+    has origin is Cursor<T>;
+    has position is int;
+
+    EnumerationCursor(:origin, :position);
+
+    available() is bool {
+        origin.available();
+    }
+
+    item() is Indexed<T> {
+        confirm self.available() else throw IterationEnded();
+        Indexed(index: position, item: origin.item());
+    }
+
+    successor() is Cursor<Indexed<T>> {
+        confirm self.available() else throw IterationEnded();
+
+        let following = origin.successor();
+        EnumerationCursor(
+            origin: following,
+            position: if following.available() {
+                confirm position < 9223372036854775807
+                    else throw EnumerationOverflow(index: position);
+                position + 1;
+            }
+            else {
+                position;
+            },
+        );
+    }
+}
+
+object EnumerationOverflow does Error {
+    has origin is int;
+
+    EnumerationOverflow(index is int) {
+        origin = index;
+    }
+
+    index() is int {
+        origin;
+    }
+
+    text() is string {
+        "enumeration index is outside the int range";
+    }
+}

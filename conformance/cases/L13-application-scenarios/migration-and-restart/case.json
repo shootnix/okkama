@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L13.migration-and-restart",
+  "title": "migrations apply once across a restart and keep data",
+  "purpose": "A bounded application scenario observed through its externally visible outcomes.",
+  "level": "L13",
+  "contracts": [
+    {
+      "contract": "APP.MIGRATIONS",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite",
+      "filesystem"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - first start migrates to v2\nok 2 - restart is idempotent\nok 3 - data survives restart\nchecks: 3, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/sql-dialects-and-migrations.md",
+    "improvements-roadmap/results/IMP-30/RESULT.md",
+    "improvements-roadmap/results/IMP-16/RESULT.md"
+  ],
+  "budget": {
+    "timeout_s": 90
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Phase-aware startup (IMP-30/IMP-16): migrations record their version; a restart re-reads it and applies nothing again; rows inserted between starts keep values and gain the column default."
+  },
+  "status": "mandatory"
+}

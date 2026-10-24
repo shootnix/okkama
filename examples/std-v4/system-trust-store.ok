@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "crypto/x509/trust" take SystemTrustStore;
+import "io/stdout" take Stdout;
+
+// Explicit host effect. Keep the returned immutable snapshot for the lifetime
+// of a client policy rather than reacquiring it for each request.
+main() is int {
+    let roots=SystemTrustStore().result();
+    Stdout().writeln(roots.certificates().size().string());
+    0;
+}

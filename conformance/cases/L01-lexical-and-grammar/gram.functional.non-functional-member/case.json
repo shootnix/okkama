@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.functional.non-functional-member",
+  "title": "invalid functional suffix: the arrow suffix is valid only after map, filter or reduce",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.FUNCTIONAL-SUFFIX",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The contract requires rejection but the grammar marks this rule as context-sensitive (checked after parsing); detection while parsing is equally conforming."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "grammar / spec 6.8: the arrow suffix is valid only after map, filter or reduce."
+  },
+  "status": "mandatory"
+}

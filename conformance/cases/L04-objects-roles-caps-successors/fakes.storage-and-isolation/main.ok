@@ -1,0 +1,39 @@
+module app v1.0.0;
+
+role Books {
+    remember(id is int, title is string) is void;
+    title(id is int) is string;
+    count() is int;
+
+    fake {
+        has prefix is string = "fake:";
+        remember(id is int, title is string) is void {
+            fake.storage.set(id, title);
+        }
+        title(id is int) is string {
+            prefix + fake.storage.get(id);
+        }
+        count() is int {
+            fake.storage.size();
+        }
+    }
+}
+
+test "fake storage works" {
+    let books is Books = Books.fake();
+    books.remember(1, "Dune");
+    test.is(books.title(1), "fake:Dune");
+    test.is(books.count(), 1);
+}
+
+test "independent fakes have isolated storage" {
+    let first is Books = Books.fake();
+    let second is Books = Books.fake();
+    first.remember(1, "A");
+    test.is(second.count(), 0);
+    test.is(first.count(), 1);
+}
+
+main() is int {
+    panic "main must not run in test mode";
+}

@@ -1,0 +1,207 @@
+module http/header v1.0.0;
+
+import "http/method" take Method, InvalidMethod;
+import "encoding/single_byte" take Latin1Encoded, Latin1Decoded, UnrepresentableLatin1Character;
+import "collections/sequence" take Sequencing;
+import "compare" take Comparing, Order;
+import "error" take InvalidArgument;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches,PrefixRegexMatch;
+
+// HTTP names share the HTTP token grammar, not mail's broader field-name
+// grammar. Spelling is immutable; HTTP matching is explicit canonical ordering,
+// because language structural equality also observes the preserved spelling.
+object HeaderName does Comparing<HeaderName> {
+    has spelling,canonical is string;
+    HeaderName(origin is string) {
+        let checked=try {Method(origin).string();} catch failure is InvalidMethod {
+            throw InvalidHeader(origin,"field name must be an HTTP token");
+        };
+        spelling=checked;canonical=HttpAsciiLowercase(checked).string();
+    }
+    string() is string {spelling;}
+    lowercase() is string {canonical;}
+    order(other is HeaderName) is Order {self.lowercase().order(other.lowercase());}
+}
+// A logical field value uses one Unicode scalar per wire octet (Latin-1).
+// No folding or implicit Unicode encoding; only edge SP/HTAB are removed.
+object Header {
+    has name is HeaderName;has value is string;
+    Header(name is HeaderName, value is string) {
+        self.name=name;self.value=HttpFieldValue(name,value).string();
+    }
+    name() is HeaderName {name;}
+    value() is string {value;}
+}
+// Bounded regex windows preserve the Header contract beyond the regex input
+// limit. Validation checks every window before reporting a control error.
+object HttpFieldValue {
+    has name is HeaderName;has origin is string;
+    HttpFieldValue(name is HeaderName,origin is string){self.name=name;self.origin=origin;}
+    string() is string {
+        let non_octet=Regex("[^\\x{0}-\\x{ff}]");
+        let controls=Regex("[\\x{0}-\\x{8}\\x{a}-\\x{1f}\\x{7f}]");
+        let state=HttpFieldScan(0,false);
+        loop {
+            let position=state.position();last if position==origin.length();
+            let stop=if origin.length()-position>65536 {position+65536;} else {origin.length();};
+            let piece=origin.slice(position,stop);
+            confirm !RegexMatches(piece,non_octet).found()
+                else throw InvalidHeader(name.string(),"field value is not an octet string");
+            state=state.following(stop,state.control() || RegexMatches(piece,controls).found());
+        }
+        confirm !state.control() else throw InvalidHeader(name.string(),"control in field value");
+        self.trimmed();
+    }
+    private:
+    trimmed() is string {
+        let spaces=Regex("[ \\t]*");let ending=Regex("[\\x{0}-\\x{ff}]*[^ \\t]");
+        let range=HttpFieldRange(0,origin.length());
+        loop {
+            let start=range.start();let end=range.end();last if start==end;
+            let stop=if end-start>65536 {start+65536;} else {end;};
+            let piece=origin.slice(start,stop);let removed=PrefixRegexMatch(piece,spaces).range().end();
+            range=range.following(start+removed,end);last if removed<piece.length();
+        }
+        loop {
+            let start=range.start();let end=range.end();last if start==end;
+            let from=if end-start>65536 {end-65536;} else {start;};
+            let piece=origin.slice(from,end);let removed=PrefixRegexMatch(piece,spaces).range().end();
+            if removed==piece.length(){range=range.following(start,from);} else {
+                range=range.following(start,from+PrefixRegexMatch(piece,ending).range().end());last;
+            }
+        }
+        origin.slice(range.start(),range.end());
+    }
+}
+object HttpFieldScan {
+    has position is int;has control is bool;
+    HttpFieldScan(position is int,control is bool){self.position=position;self.control=control;}
+    position() is int {position;}control() is bool {control;}
+    following(position is int,control is bool) is ^HttpFieldScan {^position=position;^control=control;}
+}
+object HttpFieldRange {
+    has start,end is int;
+    HttpFieldRange(start is int,end is int){self.start=start;self.end=end;}
+    start() is int {start;}end() is int {end;}
+    following(start is int,end is int) is ^HttpFieldRange {^start=start;^end=end;}
+}
+object HeaderLimits {
+    has count,budget is int;
+    HeaderLimits(){count=1024;budget=1048576;}
+    HeaderLimits(entries is int, bytes is int) {
+        confirm entries>=0 && bytes>=0 else throw InvalidArgument("HTTP header limits must be nonnegative");
+        count=entries;budget=bytes;
+    }
+    entries() is int {count;}
+    bytes() is int {budget;}
+}
+// Snapshot each source item once. Every derived aggregate keeps these limits;
+// no query joins duplicates or silently interprets Set-Cookie as a list field.
+object Headers {
+    has origin is @Header;has limits is HeaderLimits;
+    Headers(entries is Sequencing<Header>) {
+        let bounds=HeaderLimits();origin=HeaderSnapshot(entries,bounds).entries();limits=bounds;
+    }
+    Headers(entries is Sequencing<Header>, limits is HeaderLimits) {
+        origin=HeaderSnapshot(entries,limits).entries();self.limits=limits;
+    }
+    limits() is HeaderLimits {limits;}
+    entries() is Sequencing<Header> {origin;}
+    membership(name is HeaderName) is bool {
+        origin.reduce(false) -> found,entry {found || entry.name().order(name)==Order.equal;};
+    }
+    first(name is HeaderName) is string {
+        for origin -> entry {if entry.name().order(name)==Order.equal {return entry.value();}}
+        throw MissingHeader(name);
+    }
+    values(name is HeaderName) is Sequencing<string> {
+        let matching is @Header=origin.filter() -> entry {entry.name().order(name)==Order.equal;};
+        let values is @string=matching.map() -> entry {entry.value();};values;
+    }
+    addition(entry is Header) is Headers {
+        confirm origin.size()<limits.entries() else throw HeaderLimitExceeded("entries");
+        let values is @Header=(0..origin.size()+1).map() -> index {
+            if index<origin.size(){origin[index];}else{entry;}
+        };Headers(values,limits);
+    }
+}
+object HeadersWithout {
+    has origin is Headers;has selected is @string;
+    HeadersWithout(origin is Headers, names is Sequencing<HeaderName>) {
+        let count=names.size();confirm count>=0 else throw InvalidArgument("negative header name sequence size");
+        confirm count<=origin.limits().entries() else throw HeaderLimitExceeded("entries");
+        let keys is @string=(0..count).map() -> index {names.item(index).lowercase();};
+        selected=keys;self.origin=origin;
+    }
+    result() is Headers {
+        let source=origin.entries();let entries is @Header=(0..source.size()).map() -> index {source.item(index);};
+        let kept is @Header=entries.filter() -> entry {
+            let excluded=selected.reduce(false) -> found,name {found || name==entry.name().lowercase();};
+            !excluded;
+        };Headers(kept,origin.limits());
+    }
+}
+object ReplacedHeader {
+    has origin is Headers;has entry is Header;
+    ReplacedHeader(origin is Headers, entry is Header){self.origin=origin;self.entry=entry;}
+    result() is Headers {HeadersWithout(origin,[entry.name()]).result().addition(entry);}
+}
+// Logical HTTP/2 validation, not HPACK or a complete message encoder.
+// Pseudo-fields belong to the eventual typed request/response framing layer.
+object Http2Headers {
+    has origin is Headers;has request is bool;
+    Http2Headers(origin is Headers, request is bool){self.origin=origin;self.request=request;}
+    result() is Headers {
+        let source=origin.entries();let entries is @Header=(0..source.size()).map() -> index {
+            let entry=source.item(index);let name=entry.name().lowercase();
+            confirm name!="connection" && name!="proxy-connection" && name!="keep-alive"
+                && name!="transfer-encoding" && name!="upgrade"
+                else throw InvalidHeader(entry.name().string(),"connection-specific HTTP/2 field");
+            if name=="te" {confirm request && HttpAsciiLowercase(entry.value()).string()=="trailers"
+                else throw InvalidHeader(entry.name().string(),"HTTP/2 TE requires request trailers");}
+            Header(HeaderName(name),entry.value());
+        };Headers(entries,origin.limits());
+    }
+}
+object InvalidHeader does Error {
+    has name,reason is string;
+    InvalidHeader(name is string, reason is string){self.name=name;self.reason=reason;}
+    text() is string {"invalid HTTP header "+name+": "+reason;}
+}
+object MissingHeader does Error {
+    has name is HeaderName;MissingHeader(name is HeaderName){self.name=name;}
+    name() is HeaderName {name;}text() is string {"missing HTTP header: "+name.string();}
+}
+object HeaderLimitExceeded does Error {
+    has kind is string;HeaderLimitExceeded(kind is string){self.kind=kind;}
+    kind() is string {kind;}text() is string {"HTTP header "+kind+" limit exceeded";}
+}
+// Internal representation collaborators; modules do not have private exports.
+object HttpAsciiLowercase {
+    has origin is string;HttpAsciiLowercase(origin is string){self.origin=origin;}
+    string() is string {
+        let bytes is @byte=Latin1Encoded(origin).bytes().map() -> octet {
+            let code=octet.int();if code>=65 && code<=90{(code+32).byte();}else{octet;}
+        };Latin1Decoded(bytes).string();
+    }
+}
+object HeaderSnapshot {
+    has origin is @Header;
+    HeaderSnapshot(entries is Sequencing<Header>, limits is HeaderLimits) {
+        let count=entries.size();confirm count>=0 else throw InvalidArgument("negative header sequence size");
+        confirm count<=limits.entries() else throw HeaderLimitExceeded("entries");
+        let values is @Header=(0..count).map() -> index {entries.item(index);};
+        let used=values.reduce(0) -> total,entry {
+            let bytes=entry.name().string().length()+entry.value().length()+4;
+            confirm bytes<=limits.bytes()-total else throw HeaderLimitExceeded("bytes");total+bytes;
+        };origin=values;
+    }
+    entries() is @Header {origin;}
+}
+
+test "HTTP fields retain duplicates and compare names without case" {
+    let fields=Headers([Header(HeaderName("Set-Cookie")," a=1 "),Header(HeaderName("set-cookie"),"b=2")]);
+    test.is(fields.values(HeaderName("SET-COOKIE")).size(),2);
+    test.is(fields.first(HeaderName("set-cookie")),"a=1");
+}

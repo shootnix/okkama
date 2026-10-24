@@ -1,0 +1,31 @@
+module app v1.0.0;
+import "os/environment" take Environment;
+import "http/client" take HttpClient;
+import "http/client_policy" take ClientPolicy,HttpLimits,ClientTimeouts;
+import "http/endpoint" take ListedNetworks;
+import "http/version" take HttpVersion;
+import "collections/set" take Set,OrderedSet;
+import "net/dns" take FixedResolution;
+import "net/tls" take TlsClientPolicy;
+import "crypto/x509/trust" take TrustedCertificates;
+import "net/ip" take IpAddress,IpNetwork;
+import "time/clock" take SystemClock;
+import "http/message" take Request;
+import "http/method" take Method;
+import "http/header" take Headers;
+import "http/target" take AbsoluteTarget;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+import "http/exchange" take ClientResponse;
+import "async/scope" take FutureGroup;
+async main() is int{
+    let versions is Set<HttpVersion>=OrderedSet([HttpVersion.http_1_1,HttpVersion.http_2]);
+    let policy=ClientPolicy(versions,HttpLimits(),ClientTimeouts(),1,ListedNetworks([IpNetwork(IpAddress("127.0.0.0"),8)]));
+    let client=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,SystemClock());defer client.close();
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl(Environment().variable("OKKAMA_HTTP_URL")).value()),Headers([]));
+    let first=client.response(request);let second=client.response(request);let group is FutureGroup<ClientResponse>=FutureGroup();group.start(first);group.start(second);
+    let a=await first;confirm a.details().version()==HttpVersion.http_1_1 && !second.done();
+    let ra=a.response().body().reading();defer ra.close();confirm await ra.bytes(8)==[65.byte()];confirm (await ra.bytes(8)).size()==0;
+    let b=await second;confirm b.details().version()==HttpVersion.http_1_1;let rb=b.response().body().reading();defer rb.close();confirm await rb.bytes(8)==[66.byte()];confirm (await rb.bytes(8)).size()==0;
+    Stdout().writeln("mixed client serialized HTTP1 body leases on one transport");0;
+}

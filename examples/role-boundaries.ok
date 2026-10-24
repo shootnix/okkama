@@ -1,0 +1,32 @@
+module main v1.0.0;
+
+role Presentation {
+    label() is string;
+}
+
+object Customer does Presentation {
+    has number is int;
+    Customer(:number);
+    label() is string { "customer " + number.string(); }
+    id() is int { number; }
+}
+
+object BusinessCard {
+    has customer is Presentation;
+    BusinessCard(:customer);
+    string() is string { customer.label(); }
+    // customer.id() and customer.number are unavailable through Presentation.
+}
+
+main() is int {
+    let customer = Customer(number: 7);
+    confirm BusinessCard(customer: customer).string() == "customer 7";
+    confirm customer.id() == 7;
+    0;
+}
+
+test "a role boundary retains behavior and leaves a separate full reference usable" {
+    let customer = Customer(number: 7);
+    test.is(BusinessCard(customer: customer).string(), "customer 7");
+    test.is(customer.id(), 7);
+}

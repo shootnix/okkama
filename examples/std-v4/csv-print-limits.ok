@@ -1,0 +1,17 @@
+module app v1.0.0;
+import "csv" take CsvString, CsvLimitExceeded;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let rows is @@string = [["é", "a,b"]];
+        let document = CsvString(rows, 9, 3, 1, 2);
+        let rejected = try { CsvString(rows, 8, 3, 1, 2).string(); "unexpected"; }
+            catch error is CsvLimitExceeded { error.text(); };
+        document.string() + rejected;
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

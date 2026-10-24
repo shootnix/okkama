@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.harness.deliberate-failures",
+  "title": "harness: failing checks are reported and make the exit status 1",
+  "purpose": "Negative control: a broken assertion mechanism must not turn into silent success.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.LOCAL-REBIND",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 1,
+    "stdout": {
+      "text": "not ok 1 - int mismatch: expected 5, got 4\nnot ok 2 - text mismatch: expected \"abd\", got \"abc\"\nnot ok 3 - bool mismatch: expected true, got false\nnot ok 4 - false condition: condition is false\nnot ok 5 - array mismatch: expected [2, 1], got [1, 2]\nnot ok 6 - explicit failure: unreachable branch\nok 7 - still counted\nchecks: 7, failed: 6\n"
+    }
+  },
+  "spec_refs": [
+    "conformance/harness/okkama/conformance/check.ok",
+    "docs/okkama-spec-11072026.md#11.9",
+    "docs/okkama-spec-11072026.md#9.12"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "harness contract: failing checks print 'not ok N - label: detail' and done() returns 1; values follow spec 8.3/8.4 (2+2=4, arrays compare by order)."
+  },
+  "status": "mandatory"
+}

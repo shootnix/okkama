@@ -1,0 +1,132 @@
+module checksum/crc v1.0.0;
+
+import "checksum/state" take Checksumming, InvalidChecksumInitial;
+
+// Immutable CRC values over byte chunks. Both objects compute lazily in value()
+// without mutation or memoization. state(bytes) computes the receiver's value,
+// then returns a successor retaining only the new chunk and resulting seed.
+// Input arrays and earlier states remain unchanged; branches and repeats are
+// valid. Empty chunks preserve the initial value. No I/O or owned resources.
+// Each byte takes eight bounded bit steps; results are non-negative integers.
+// These checksums are not cryptographic digests. Encode text explicitly.
+//
+//     let first = Crc32([byte(49), byte(50), byte(51), byte(52)]);
+//     let whole = first.state([byte(53), byte(54), byte(55), byte(56), byte(57)]);
+//     whole.value(); // 3421780262 ("123456789")
+//
+// Crc32 is CRC-32/ISO-HDLC: width 32, polynomial 0x04C11DB7, reflected input
+// and output, init register 0xFFFFFFFF, xorout 0xFFFFFFFF. The public seed is
+// a finalized CRC (as in zlib), so it is XORed before and after calculation.
+// Crc32()/Crc32(bytes) default to public seed 0. Crc32(bytes, initial) requires
+// 0..4294967295 and throws InvalidChecksumInitial at construction otherwise.
+object Crc32 does Checksumming {
+    has origin is @byte;
+    has initial is int;
+
+    Crc32() { origin = []; initial = 0; }
+    Crc32(origin is @byte) { self.origin = origin; initial = 0; }
+    Crc32(origin is @byte, initial is int) {
+        confirm initial >= 0 && initial <= 4294967295
+            else throw InvalidChecksumInitial(initial, 4294967295);
+        self.origin = origin;
+        self.initial = initial;
+    }
+
+    value() is int {
+        let result = origin.reduce(initial ^ 0xFFFFFFFF) -> checksum, octet {
+            (0..8).reduce(checksum ^ octet.int()) -> bits, index {
+                if (bits & 1) != 0 { (bits >> 1) ^ 0xEDB88320; }
+                else { bits >> 1; }
+            };
+        };
+        result ^ 0xFFFFFFFF;
+    }
+
+    state(origin is @byte) is ^Crc32 {
+        ^initial = self.value();
+        ^origin = origin;
+    }
+}
+
+// CRC-16 with polynomial 0x1021, MSB first, no input/output reflection and no
+// final XOR. The mandatory seed directly initializes the 16-bit register;
+// there is deliberately no implicit choice of a CCITT variant.
+// Crc16Ccitt(initial) denotes the empty chunk; Crc16Ccitt(bytes, initial) binds
+// bytes. Both require 0..65535 or throw InvalidChecksumInitial immediately.
+// "123456789" gives 10673 with seed 65535, or 12739 with seed 0. These exact
+// parameters match binascii.crc_hqx, not the reflected KERMIT/X-25 variants.
+object Crc16Ccitt does Checksumming {
+    has origin is @byte;
+    has initial is int;
+
+    Crc16Ccitt(initial is int) {
+        confirm initial >= 0 && initial <= 65535
+            else throw InvalidChecksumInitial(initial, 65535);
+        origin = [];
+        self.initial = initial;
+    }
+    Crc16Ccitt(origin is @byte, initial is int) {
+        confirm initial >= 0 && initial <= 65535
+            else throw InvalidChecksumInitial(initial, 65535);
+        self.origin = origin;
+        self.initial = initial;
+    }
+
+    value() is int {
+        origin.reduce(initial) -> checksum, octet {
+            (0..8).reduce(checksum ^ (octet.int() << 8)) -> bits, index {
+                if (bits & 0x8000) != 0 { ((bits << 1) ^ 0x1021) & 0xFFFF; }
+                else { (bits << 1) & 0xFFFF; }
+            };
+        };
+    }
+
+    state(origin is @byte) is ^Crc16Ccitt {
+        ^initial = self.value();
+        ^origin = origin;
+    }
+}
+
+test "CRC-32 empty and 123456789 independent reference vectors" {
+    test.is(Crc32().value(), 0);
+    test.is(Crc32([], 4294967295).value(), 4294967295);
+    let digits = [byte(49), byte(50), byte(51), byte(52), byte(53), byte(54), byte(55), byte(56), byte(57)];
+    test.is(Crc32(digits).value(), 3421780262);
+    test.is(Crc32(digits, 305419896).value(), 32800891);
+}
+
+test "CRC-16 specifies seed reflection and final xor" {
+    test.is(Crc16Ccitt(65535).value(), 65535);
+    test.is(Crc16Ccitt([], 0).value(), 0);
+    let digits = [byte(49), byte(50), byte(51), byte(52), byte(53), byte(54), byte(55), byte(56), byte(57)];
+    test.is(Crc16Ccitt(digits, 0).value(), 12739);
+    test.is(Crc16Ccitt(digits, 65535).value(), 10673);
+}
+
+test "CRC branches preserve origin states and empty chunks" {
+    let a = Crc32([byte(1), byte(2)]);
+    let b = Crc16Ccitt([byte(1), byte(2)], 65535);
+    test.is(a.state([byte(3)]).value(), 1438416925);
+    test.is(a.state([byte(4)]).value(), 3419936190);
+    test.is(a.value(), 3066839698);
+    test.is(a.state([]).value(), 3066839698);
+    test.is(b.state([byte(3)]).value(), 44461);
+    test.is(b.state([byte(4)]).value(), 56650);
+    test.is(b.value(), 3708);
+    test.is(b.state([]).value(), 3708);
+}
+
+test "CRC treats high-bit bytes as unsigned" {
+    test.is(Crc32([byte(255)]).value(), 4278190080);
+    test.is(Crc16Ccitt([byte(128)], 0).value(), 37256);
+    test.is(Crc16Ccitt([byte(255)], 65535).value(), 65280);
+}
+
+test "CRC rejects negative and oversized initial values" {
+    test.ok(try { Crc32([], -1); false; } catch error is Error { true; });
+    test.ok(try { Crc32([], 4294967296); false; } catch error is Error { true; });
+    test.ok(try { Crc16Ccitt(-1); false; } catch error is Error { true; });
+    test.ok(try { Crc16Ccitt(65536); false; } catch error is Error { true; });
+    test.ok(try { Crc16Ccitt([], -1); false; } catch error is Error { true; });
+    test.ok(try { Crc16Ccitt([], 65536); false; } catch error is Error { true; });
+}

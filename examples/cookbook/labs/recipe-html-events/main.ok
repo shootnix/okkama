@@ -1,0 +1,22 @@
+// Перебрать теги полученной HTML-страницы
+//
+// Импортёр описаний товаров должен реагировать на начало тегов и текстовые события.
+//
+// Запуск: ./examples/cookbook/run lab recipe-html-events
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#recipe-html-events
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module cookbook/html_events v1.0.0;
+import "html/events" take HtmlEvents,HtmlEventKind;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let events = HtmlEvents(origin: "<p>Чай &amp; кофе</p>");
+    let kinds = events.map() -> event { event.kind(); };
+    confirm kinds[0] == HtmlEventKind.start_tag;
+    confirm kinds[1] == HtmlEventKind.text;
+    confirm kinds[2] == HtmlEventKind.end_tag;
+    Stdout().writeln(kinds.size().string());
+    0;
+}

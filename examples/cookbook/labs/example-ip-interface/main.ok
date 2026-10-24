@@ -1,0 +1,19 @@
+// Связать адрес интерфейса с префиксом сети
+//
+// Проверить адрес и принадлежность подсети: IpAddress и IpNetwork работают с IPv4 и IPv6.
+//
+// Запуск: ./examples/cookbook/run lab example-ip-interface
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-ip-interface
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module app v1.0.0;
+import "net/ip" take IpAddress, IpInterface;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let interface=IpInterface(IpAddress("2001:0DB8::7"),64);
+    Stdout().writeln(interface.string());
+    Stdout().writeln(interface.network().network().string());
+    0;
+}

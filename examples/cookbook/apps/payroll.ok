@@ -1,0 +1,87 @@
+// Расчёт оплаты смен и история работы
+//
+// Читает CSV журнала смен, считает оплату по минутам и часовой ставке, фильтрует сотрудника и день.
+//
+// Запуск из корня репозитория:
+//     ./examples/cookbook/run payroll demo
+//     ./examples/cookbook/run payroll init /tmp/shifts.csv
+//     ./examples/cookbook/run payroll add /tmp/shifts.csv "Ада" 2026-10-18 90 2500
+//     ./examples/cookbook/run payroll report /tmp/shifts.csv "Ада" 2026-10-18
+//     ./examples/cookbook/run payroll daily /tmp/shifts.csv
+//     ./examples/cookbook/run payroll history /tmp/shifts.csv
+//
+// Вход CSV: employee,day,minutes,rate_cents. Результат JSON: минуты, целые часы с остатком минут и точная сумма в центах. Округление стоимости каждой смены — half-even через BigInt.
+// См. ../README.md — полный сценарий, ../COVERAGE.md — используемые модули.
+
+module cookbook/payroll v1.0.0;
+import "../support/arguments" take Arguments,Usage;
+import "../support/files" take LocalFiles;
+import "fs/file" take FileEntry;
+import "fs/path" take Path;
+import "csv" take CsvRows,CsvDialect,CsvRecord;
+import "collections/set" take OrderedSet;
+import "numbers/bigint" take BigInt,BigProduct,BigQuotient,BigRemainder,BigSum;
+import "compare" take Order;
+import "strings/parse" take ParsedInt;
+import "time/iso" take DateFromIso;
+import "json/value" take JsonObject,JsonMember,JsonArray,JsonText,JsonNumber,JsonValue;
+import "json/write" take PrettyJson;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+object PaidShift {
+    has employee,day is string;has minutes is int;has rate is BigInt;
+    PaidShift(employee is string,day is string,minutes is int,rate is BigInt){
+        confirm employee.length()>0 && employee.length()<=100 && minutes>0 && minutes<=1440 && rate.sign()>=0 && rate.bits()<=128 else throw Usage("invalid work shift");
+        DateFromIso(day).value();self.employee=employee;self.day=day;self.minutes=minutes;self.rate=rate;
+    }
+    employee() is string{employee;}day() is string{day;}minutes() is int{minutes;}
+    amount() is BigInt {
+        let scaled=BigProduct(left:rate,right:BigInt(minutes.string())).value();let whole=BigQuotient(left:scaled,right:BigInt("60")).value();
+        let twice=BigProduct(left:BigRemainder(left:scaled,right:BigInt("60")).value(),right:BigInt("2")).value();
+        let odd=BigRemainder(left:whole,right:BigInt("2")).value().sign()!=0;
+        if twice.order(BigInt("60"))==Order.greater || (twice.order(BigInt("60"))==Order.equal && odd){BigSum(left:whole,right:BigInt("1")).value();}else{whole;}
+    }
+}
+object ShiftLedger {
+    has shifts is @PaidShift;
+    ShiftLedger(text is string){
+        let rows=CsvRows(text,CsvDialect(",","\"","\n")).map()->row{row;};
+        confirm rows.size()>0 && rows[0]==["employee","day","minutes","rate_cents"] else throw Usage("expected employee,day,minutes,rate_cents header");
+        let values is @PaidShift=(1..rows.size()).map()->index{let row=rows[index];confirm row.size()==4 else throw Usage("four shift columns required");
+            let minutes=BigInt(row[2]);confirm minutes.sign()>0 && minutes.order(BigInt("1440"))!=Order.greater else throw Usage("minutes must be 1..1440");
+            PaidShift(row[0],row[1],ParsedInt(minutes.string()).value(),BigInt(row[3]));};shifts=values;
+    }
+    report(employee is string,day is string) is JsonArray {
+        let selected is @PaidShift=shifts.filter()->shift{(employee=="" || shift.employee()==employee) && (day=="" || shift.day()==day);};
+        let names=OrderedSet(values:selected.map()->shift{shift.employee();});
+        let result is @JsonValue=names.map()->name{
+            let own=selected.filter()->shift{shift.employee()==name;};
+            let amount=own.reduce(BigInt("0"))->sum,shift{BigSum(left:sum,right:shift.amount()).value();};
+            let minutes=own.reduce(0)->sum,shift{sum+shift.minutes();};
+            JsonObject([JsonMember("employee",JsonText(name)),JsonMember("minutes",JsonNumber(Decimal(minutes.string()))),JsonMember("hours",JsonNumber(Decimal(BigQuotient(left:BigInt(minutes.string()),right:BigInt("60")).value().string()))),JsonMember("remaining_minutes",JsonNumber(Decimal((minutes%60).string()))),JsonMember("amount_cents",JsonText(amount.string()))]);
+        };JsonArray(result);
+    }
+    // Дневная сводка строится из того же журнала, с тем же правилом округления смен.
+    daily(employee is string) is JsonArray {
+        let days=OrderedSet(values:shifts.map()->shift{shift.day();});
+        let result is @JsonValue=days.map()->day{
+            JsonObject([JsonMember("day",JsonText(day)),JsonMember("employees",self.report(employee,day))]);
+        };
+        JsonArray(result);
+    }
+}
+main() is int {
+    let args=Arguments();let command=args.text(0,"help");
+    match command{
+        case "demo","report"{let path=args.text(1,"examples/cookbook/data/shifts.csv");let ledger=ShiftLedger(LocalFiles().text(path));Stdout().writeln(PrettyJson(indentation:2,origin:ledger.report(args.text(2,""),args.text(3,""))).string());}
+        case "daily"{let ledger=ShiftLedger(LocalFiles().text(args.text(1)));Stdout().writeln(PrettyJson(indentation:2,origin:ledger.daily(args.text(2,""))).string());}
+        case "history"{Stdout().write(LocalFiles().text(args.text(1)));}
+        case "init"{confirm !FileEntry(Path(args.text(1))).existence() else throw Usage("journal already exists");LocalFiles().write(args.text(1),"employee,day,minutes,rate_cents\n");}
+        case "add"{
+            ShiftLedger(LocalFiles().text(args.text(1)));PaidShift(args.text(2),args.text(3),args.integer(4,0),BigInt(args.text(5)));
+            let line=CsvRecord(fields:[args.text(2),args.text(3),args.text(4),args.text(5)]).string();
+            LocalFiles().append(args.text(1),line.slice(0,line.length()-2)+"\n");
+        }
+        else{Stdout().writeln("payroll demo | init FILE | add FILE EMPLOYEE DAY MINUTES RATE_CENTS | report FILE [EMPLOYEE] [DAY] | daily FILE [EMPLOYEE] | history FILE");}
+    }0;
+}

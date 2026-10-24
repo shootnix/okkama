@@ -1,0 +1,10 @@
+module example v1.0.0;
+import "i18n/gettext" take ParsedPo,PoString;
+import "io/stdout" take Stdout;
+main() is int {
+    let source="# translator\nmsgctxt \"menu\"\nmsgid \"Open\"\nmsgstr \"Открыть\"\n";
+    let document=ParsedPo(source).value();
+    Stdout().writeln(document.entries().item(0).translations()[0]);
+    Stdout().writeln(PoString(document).string());
+    0;
+}

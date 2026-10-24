@@ -1,0 +1,26 @@
+module logging/name v1.0.0;
+import "collections/sequence" take Sequencing;
+import "config/key" take SettingKey,InvalidSettingKey;
+import "compare" take Comparing,Order;
+object LogName does Comparing<LogName>{
+    has key is SettingKey;
+    LogName(segments is Sequencing<string>){key=try{SettingKey(segments);}catch e is InvalidSettingKey{throw InvalidLogName(e.text());};}
+    segments() is Sequencing<string>{key.segments();}
+    string() is string{key.string();}
+    order(other is LogName) is Order{key.order(SettingKey(other.segments()));}
+}
+object ChildLogName{
+    has origin is LogName;has segment is string;
+    ChildLogName(origin is LogName,segment is string){self.origin=origin;self.segment=segment;}
+    #projected
+    value() is LogName{
+        let base=origin.segments();
+        let parts is @string=(0..base.size()+1).map()->index{if index<base.size(){base.item(index);}else{segment;}};
+        LogName(parts);
+    }
+}
+object InvalidLogName does Error{
+    has reason is string;
+    InvalidLogName(reason is string){self.reason=reason;}
+    text() is string{reason;}
+}

@@ -1,0 +1,297 @@
+module example/async/cache_with_eviction v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+import "collections/list" take List, EmptyList;
+
+object CacheEntry {
+    has key is string;
+    has value is string;
+    CacheEntry(:key, :value);
+
+    key() is string { key; }
+    value() is string { value; }
+}
+
+object MissingCacheKey does Error {
+    has key is string;
+    MissingCacheKey(:key);
+
+    key() is string { key; }
+    text() is string { "cache key is missing"; }
+}
+
+object CacheState {
+    has entries is List<CacheEntry>;
+    has limit is int;
+    CacheState(:entries, :limit);
+
+    put(entry is CacheEntry) is ^CacheState {
+        ^entries = self.trimmed(
+            self.without(entries, entry.key()).prefix(entry)
+        );
+    }
+
+    removed(key is string) is ^CacheState {
+        ^entries = self.without(entries, key);
+    }
+
+    value(key is string) is string {
+        self.find_in(entries, key).value();
+    }
+
+    size() is int { entries.size(); }
+
+    find_in(remaining is List<CacheEntry>, key is string) is CacheEntry {
+        if (remaining.size() == 0) {
+            throw MissingCacheKey(key: key);
+        }
+        else if remaining.first().key() == key {
+            remaining.first();
+        }
+        else {
+            self.find_in(remaining.tail(), key);
+        }
+    }
+
+    without(
+        remaining is List<CacheEntry>,
+        key is string
+    ) is List<CacheEntry> {
+        if (remaining.size() == 0) {
+            remaining;
+        }
+        else if remaining.first().key() == key {
+            self.without(remaining.tail(), key);
+        }
+        else {
+            self.without(remaining.tail(), key)
+                .prefix(remaining.first());
+        }
+    }
+
+    trimmed(current is List<CacheEntry>) is List<CacheEntry> {
+        if current.size() <= limit {
+            current;
+        }
+        else {
+            self.without_oldest(current);
+        }
+    }
+
+    without_oldest(
+        remaining is List<CacheEntry>
+    ) is List<CacheEntry> {
+        if (remaining.tail().size() == 0) {
+            remaining.tail();
+        }
+        else {
+            self.without_oldest(remaining.tail())
+                .prefix(remaining.first());
+        }
+    }
+}
+
+enum CacheOperation = (get, put, remove, size, stop);
+enum CacheReplyStatus = (value, missing, changed, stopped);
+
+object CacheReply {
+    has status is CacheReplyStatus;
+    has value is string;
+    has size is int;
+    CacheReply(:status, :value, :size);
+
+    status() is CacheReplyStatus { status; }
+    value() is string { value; }
+    size() is int { size; }
+}
+
+object CacheCommand {
+    has operation is CacheOperation;
+    has key is string;
+    has value is string;
+    has reply is Sending<CacheReply>;
+    CacheCommand(:operation, :key, :value, :reply);
+
+    operation() is CacheOperation { operation; }
+    key() is string { key; }
+    value() is string { value; }
+    reply() is Sending<CacheReply> { reply; }
+}
+
+object CacheOwner {
+    has commands is Receiving<CacheCommand>;
+    has limit is int;
+    CacheOwner(:commands, :limit);
+
+    async run() is int {
+        let empty is List<CacheEntry> = EmptyList();
+        let state = CacheState(entries: empty, limit: limit);
+
+        loop {
+            let command = await commands.item();
+
+            if command.operation() == CacheOperation.get {
+                try {
+                    let value = state.value(command.key());
+                    await command.reply().send(
+                        CacheReply(
+                            status: CacheReplyStatus.value,
+                            value: value,
+                            size: state.size()
+                        )
+                    );
+                }
+                catch error is MissingCacheKey {
+                    await command.reply().send(
+                        CacheReply(
+                            status: CacheReplyStatus.missing,
+                            value: "",
+                            size: state.size()
+                        )
+                    );
+                }
+            }
+            else if command.operation() == CacheOperation.put {
+                state = state.put(
+                    CacheEntry(
+                        key: command.key(),
+                        value: command.value()
+                    )
+                );
+                await command.reply().send(
+                    CacheReply(
+                        status: CacheReplyStatus.changed,
+                        value: "",
+                        size: state.size()
+                    )
+                );
+            }
+            else if command.operation() == CacheOperation.remove {
+                state = state.removed(command.key());
+                await command.reply().send(
+                    CacheReply(
+                        status: CacheReplyStatus.changed,
+                        value: "",
+                        size: state.size()
+                    )
+                );
+            }
+            else if command.operation() == CacheOperation.size {
+                await command.reply().send(
+                    CacheReply(
+                        status: CacheReplyStatus.value,
+                        value: "",
+                        size: state.size()
+                    )
+                );
+            }
+            else {
+                await command.reply().send(
+                    CacheReply(
+                        status: CacheReplyStatus.stopped,
+                        value: "",
+                        size: state.size()
+                    )
+                );
+                last state.size();
+            }
+        }
+    }
+}
+
+object Cache {
+    has commands is Sending<CacheCommand>;
+    Cache(:commands);
+
+    async request(
+        operation is CacheOperation,
+        key is string,
+        value is string
+    ) is CacheReply {
+        let reply is Channel<CacheReply> = Channel(capacity: 1);
+        await commands.send(
+            CacheCommand(
+                operation: operation,
+                key: key,
+                value: value,
+                reply: reply.sending()
+            )
+        );
+        await reply.receiving().item();
+    }
+
+    async put(key is string, value is string) is int {
+        let result = await self.request(CacheOperation.put, key, value);
+        result.size();
+    }
+
+    async value(key is string) is string {
+        let result = await self.request(CacheOperation.get, key, "");
+        if result.status() == CacheReplyStatus.value {
+            result.value();
+        }
+        else {
+            throw MissingCacheKey(key: key);
+        }
+    }
+
+    async remove(key is string) is int {
+        let result = await self.request(CacheOperation.remove, key, "");
+        result.size();
+    }
+
+    async size() is int {
+        let result = await self.request(CacheOperation.size, "", "");
+        result.size();
+    }
+
+    async stop() is int {
+        let result = await self.request(CacheOperation.stop, "", "");
+        result.size();
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let commands is Channel<CacheCommand> = Channel(capacity: 2);
+        let owner = spawn CacheOwner(
+            commands: commands.receiving(),
+            limit: 2
+        ).run();
+        let cache = Cache(commands: commands.sending());
+
+        await cache.put("a", "one");
+        await cache.put("b", "two");
+        await cache.put("c", "three");
+
+        let missing = try {
+            await cache.value("a");
+            0;
+        }
+        catch error is MissingCacheKey {
+            1;
+        };
+        let retained = await cache.value("b");
+        let size = await cache.size();
+        let stopped = await cache.stop();
+        let owned = await owner;
+        commands.sending().close();
+
+        if missing == 1
+            && retained == "two"
+            && size == 2
+            && stopped == 2
+            && owned == 2 {
+            42;
+        }
+        else {
+            0;
+        }
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}

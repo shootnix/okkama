@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.cycles.rejected",
+  "title": "cyclic imports are rejected",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.CYCLES",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "lib/a.ok",
+    "lib/b.ok"
+  ],
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "resolution",
+        "semantic"
+      ],
+      "justification": "spec 5.2 makes this a module-resolution error without fixing whether it is reported by static analysis or when imports are loaded at run start; either way no program code runs."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 5.2: cyclic imports are rejected."
+  },
+  "status": "mandatory"
+}

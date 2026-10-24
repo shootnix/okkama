@@ -1,0 +1,11 @@
+module runtime/time v1.0.0;
+
+// Portable clock boundary. Clock readings are integral nanoseconds supplied
+// by the active runtime. Waiting accepts canonical arbitrary-precision decimal
+// text so the stdlib never narrows Duration through the host integer width.
+
+native wall_clock() is int;
+native monotonic_clock() is int;
+// Identity allocation does not read or change a clock.
+native clock_domain(fresh is bool) is string;
+native async sleep_nanoseconds(duration is string) is bool;

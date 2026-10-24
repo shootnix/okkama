@@ -1,0 +1,8 @@
+module app v1.0.0;
+import "http/content_coding" take ContentCoding;
+import "io/stdout" take Stdout;
+main() is int {
+    // Observing a stored name neither encodes bytes nor advertises a decoder.
+    Stdout().writeln(ContentCoding("GZip").string());
+    Stdout().writeln(ContentCoding("X-Custom").string());0;
+}

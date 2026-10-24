@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "html/entities" take EscapedHtml;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let output = Stdout();
+    output.writeln(EscapedHtml("<Ada & Bob>").string());
+    output.writeln(EscapedHtml("\"Ada's\"", true).string());
+    0;
+}

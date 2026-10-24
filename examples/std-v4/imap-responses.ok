@@ -1,0 +1,15 @@
+module app v1.0.0;
+import "mail/imap_response" take ImapResponseDecoder;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/stdout" take Stdout;
+
+main() is int {
+    let decoder=ImapResponseDecoder();
+    decoder=decoder.fed(Utf8Encoded("* 7 FETCH (BODY[] {5}\r\nA\r").bytes());
+    decoder=decoder.fed(Utf8Encoded("\nBC)\r\nA1 OK complete\r\n").bytes());
+    let response=decoder.finish();
+    Stdout().writeln(response.name());
+    Stdout().writeln(response.parts().item(1).bytes().size().string());
+    Stdout().write(Utf8Decoded(decoder.remainder()).string());
+    0;
+}

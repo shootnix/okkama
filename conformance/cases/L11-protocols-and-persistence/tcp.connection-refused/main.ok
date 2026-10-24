@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "net/tcp" take TcpConnecting, TcpConnection;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "net/failure" take NetworkFailure;
+import "cli/arguments" take ProcessArguments, Utf8Arguments;
+import "strings/parse" take ParsedInt;
+import "encoding/utf" take Utf8Decoded, Utf8Encoded;
+import "io/decorators" take ByteSnapshot;
+
+async main() is int {
+    let out = Stdout();
+    let port = value ParsedInt(Utf8Arguments(ProcessArguments()).item(0));
+    let r = try {
+        let connection = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
+        connection.close();
+        "connected";
+    } catch e is NetworkFailure {
+        "network failure";
+    };
+    out.writeln(r);
+    0;
+}

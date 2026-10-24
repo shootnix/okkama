@@ -1,0 +1,22 @@
+module app v1.0.0;
+import "template/compile" take TextTemplate;
+import "template/render" take TemplateOutput;
+import "template/model" take TemplateBinding, TemplateBindings;
+import "template/path" take TemplatePath;
+import "io/buffer" take ByteBuffer;
+import "io/text" take Utf8Output;
+import "encoding/utf" take Utf8Decoded;
+object ExampleResult {
+    ExampleResult();
+    value() is string {
+        let out=ByteBuffer();
+        let data=TemplateBindings([TemplateBinding(TemplatePath(["name"]),"Ada")]);
+        TemplateOutput(TextTemplate("Hello {{name}}!"),data,Utf8Output(origin:out.writing())).write();
+        Utf8Decoded(out.content().bytes()).string();
+    }
+}
+
+main() is int {
+    ExampleResult().value();
+    return 0;
+}

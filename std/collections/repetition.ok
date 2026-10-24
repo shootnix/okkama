@@ -1,0 +1,210 @@
+module collections/repetition v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing, EmptySequence;
+import "error" take InvalidArgument, OutOfRange;
+import "size" take Sizing;
+
+// Repeats values lazily or as a finite sequence.
+//
+// Repeating is infinite. Its cursor is always available, so consumers must
+// impose their own stopping condition:
+//
+//     for Repeating(value: "tick") -> value {
+//         output.writeln(value);
+//         last if clock.expired();
+//     }
+//
+// Repeated is finite, indexed and sized:
+//
+//     let padding = Repeated(value: " ", count: 4);
+//     // padding.size() == 4
+//     // padding.item(2) == " "
+//
+// A negative count throws InvalidArgument. item() uses strict zero-based
+// bounds and throws OutOfRange. first() and last() throw EmptySequence when
+// count is zero.
+//
+// Cycled repeatedly traverses a finite Sequencing value:
+//
+//     let turns = Cycled(origin: players);
+//     for turns -> player {
+//         player.move();
+//         last if game.finished();
+//     }
+//
+// Cycling an empty sequence is finite and immediately exhausted. Cycling a
+// non-empty sequence is infinite. Every cursor is immutable.
+
+object Repeating<T> does Iterating<T> {
+    has origin is T;
+
+    Repeating(value is T) {
+        origin = value;
+    }
+
+    cursor() is Cursor<T> {
+        RepeatingCursor(value: origin);
+    }
+}
+
+object RepeatingCursor<T> does Cursor<T> {
+    has origin is T;
+
+    RepeatingCursor(value is T) {
+        origin = value;
+    }
+
+    available() is bool {
+        true;
+    }
+
+    item() is T {
+        origin;
+    }
+
+    successor() is Cursor<T> {
+        self;
+    }
+}
+
+object Repeated<T> does Sequencing<T>, Iterating<T>, Sizing {
+    has origin is T;
+    has amount is int;
+
+    Repeated(value is T, count is int) {
+        confirm count >= 0
+            else throw InvalidArgument("repeat count cannot be negative");
+        origin = value;
+        amount = count;
+    }
+
+    cursor() is Cursor<T> {
+        RepeatedCursor(value: origin, position: 0, count: amount);
+    }
+
+    size() is int {
+        amount;
+    }
+
+    item(index is int) is T {
+        confirm index >= 0 && index < amount
+            else throw OutOfRange("repeat index is outside the sequence");
+        origin;
+    }
+
+    first() is T {
+        confirm amount > 0 else throw EmptySequence();
+        origin;
+    }
+
+    last() is T {
+        confirm amount > 0 else throw EmptySequence();
+        origin;
+    }
+}
+
+object RepeatedCursor<T> does Cursor<T> {
+    has origin is T;
+    has position is int;
+    has amount is int;
+
+    RepeatedCursor(value is T, position is int, count is int) {
+        confirm count >= 0
+            else throw InvalidArgument("repeat count cannot be negative");
+        confirm position >= 0 && position <= count
+            else throw InvalidArgument("repeat cursor position is invalid");
+        origin = value;
+        self.position = position;
+        amount = count;
+    }
+
+    available() is bool {
+        position < amount;
+    }
+
+    item() is T {
+        confirm self.available() else throw IterationEnded();
+        origin;
+    }
+
+    successor() is Cursor<T> {
+        confirm self.available() else throw IterationEnded();
+        RepeatedCursor(
+            value: origin,
+            position: position + 1,
+            count: amount,
+        );
+    }
+}
+
+object Cycled<T> does Iterating<T> {
+    has origin is Sequencing<T>;
+
+    Cycled(:origin);
+
+    cursor() is Cursor<T> {
+        if origin.size() == 0 {
+            EmptyCycleCursor(origin: origin);
+        }
+        else {
+            CycledCursor(origin: origin, position: 0);
+        }
+    }
+}
+
+object CycledCursor<T> does Cursor<T> {
+    has origin is Sequencing<T>;
+    has position is int;
+
+    CycledCursor(origin is Sequencing<T>, position is int) {
+        confirm origin.size() > 0
+            else throw InvalidArgument("cannot create an active cursor for an empty cycle");
+        confirm position >= 0 && position < origin.size()
+            else throw InvalidArgument("cycle cursor position is invalid");
+        self.origin = origin;
+        self.position = position;
+    }
+
+    available() is bool {
+        true;
+    }
+
+    item() is T {
+        origin.item(position);
+    }
+
+    successor() is Cursor<T> {
+        CycledCursor(
+            origin: origin,
+            position: if position + 1 < origin.size() {
+                position + 1;
+            }
+            else {
+                0;
+            },
+        );
+    }
+}
+
+object EmptyCycleCursor<T> does Cursor<T> {
+    has origin is Sequencing<T>;
+
+    EmptyCycleCursor(origin is Sequencing<T>) {
+        confirm origin.size() == 0
+            else throw InvalidArgument("cannot create an empty cursor for a non-empty cycle");
+        self.origin = origin;
+    }
+
+    available() is bool {
+        false;
+    }
+
+    item() is T {
+        throw IterationEnded();
+    }
+
+    successor() is Cursor<T> {
+        throw IterationEnded();
+    }
+}

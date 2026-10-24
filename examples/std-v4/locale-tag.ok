@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "locale/tag" take LocaleFromLanguageTag, MissingLocaleSubtag;
+import "io/stdout" take Stdout;
+main() is int {
+    for ["sR-lATN-rs", "ES-419", "sl-ROZAJ-biske"] -> source {
+        let locale=LocaleFromLanguageTag(source).value();
+        Stdout().writeln(locale.string());
+    }
+    let language=LocaleFromLanguageTag("en").value();
+    let region=try {language.region();} catch error is MissingLocaleSubtag {"absent " + error.kind();};
+    Stdout().writeln(region);
+    0;
+}

@@ -1,0 +1,24 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Light = (red, amber, green);
+
+main() is int {
+    let out = Stdout();
+    for [Light.red, Light.green, Light.amber] -> light {
+        match light {
+            case Light.red { out.writeln("stop"); }
+            case Light.green { out.writeln("go"); }
+            else { out.writeln("wait"); }
+        }
+    }
+    let word = "beta";
+    let code = match word {
+        case "alpha" { 1; }
+        case "beta", "gamma" { 2; }
+        else { 0; }
+    };
+    out.writeln(code.string());
+    0;
+}

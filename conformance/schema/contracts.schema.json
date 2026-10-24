@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ocs-contracts/1",
+  "title": "Contract inventory",
+  "type": "object",
+  "required": [
+    "schema",
+    "contracts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ocs-contracts/1"
+    },
+    "family": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "status",
+          "aspects",
+          "spec_refs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9]*(\\.[A-Z0-9][A-Z0-9_-]*)+$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "mandatory",
+              "unresolved",
+              "deferred",
+              "informative"
+            ]
+          },
+          "spec_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "discrepancies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^D-[0-9]{3}$"
+            }
+          },
+          "aspects": {
+            "type": "object",
+            "required": [
+              "normal",
+              "boundary",
+              "invalid",
+              "interaction"
+            ],
+            "properties": {
+              "normal": {
+                "oneOf": [
+                  {
+                    "const": "required"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^n/a: .{4,}"
+                  }
+                ]
+              },
+              "boundary": {
+                "oneOf": [
+                  {
+                    "const": "required"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^n/a: .{4,}"
+                  }
+                ]
+              },
+              "invalid": {
+                "oneOf": [
+                  {
+                    "const": "required"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^n/a: .{4,}"
+                  }
+                ]
+              },
+              "interaction": {
+                "oneOf": [
+                  {
+                    "const": "required"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^n/a: .{4,}"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

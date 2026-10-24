@@ -1,0 +1,35 @@
+module http/websocket_origin v1.0.0;
+import "http/message" take Request;
+import "http/header" take HeaderName;
+import "url/value" take Url,ParsedUrl,InvalidUrl,MissingUrlPort,UrlHostKind;
+
+// Trusted destination is supplied by the server's routing configuration, not
+// reconstructed from an untrusted Host field. Non-browser clients must supply
+// an explicit alternative policy if they omit Origin.
+role WebSocketAllowing {allowed(request is Request,destination is Url) is bool;}
+object SameOriginWebSockets does WebSocketAllowing {
+    SameOriginWebSockets();
+    allowed(request is Request,destination is Url) is bool{
+        let values=request.headers().values(HeaderName("Origin"));if values.size()!=1{return false;}
+        let origin=values.item(0);if origin.length()==0 || origin.length()>8192 || origin=="null"{return false;}
+        try{
+            let parsed=ParsedUrl(origin).value();let parts=parsed.parts();
+            if parts.scheme()!="http" && parts.scheme()!="https"{return false;}
+            if parts.path()!="" || parts.query().present() || parts.fragment().present(){return false;}
+            let left=WebSocketOriginCoordinates(parsed);let right=WebSocketOriginCoordinates(destination);
+            left.scheme()==right.scheme() && left.host()==right.host() && left.port()==right.port();
+        }catch e is InvalidUrl{false;}catch e is MissingUrlPort{false;}
+    }
+}
+object WebSocketOriginCoordinates {
+    has scheme,host is string;has port is int;
+    WebSocketOriginCoordinates(origin is Url){
+        let parts=origin.parts();let supplied=parts.scheme();
+        confirm supplied=="https" || supplied=="http" || supplied=="wss" || supplied=="ws" else throw InvalidUrl(0,"origin scheme");
+        let authority=parts.authority();confirm authority.present() && !authority.userinfo().present() else throw InvalidUrl(0,"origin authority");
+        let name=authority.host();confirm name.kind()==UrlHostKind.name || name.kind()==UrlHostKind.address else throw InvalidUrl(0,"origin host");
+        let secure=supplied=="https" || supplied=="wss";scheme=if secure{"https";}else{"http";};host=name.string();
+        let number=if authority.port_marker().present(){authority.port();}else{if secure{443;}else{80;}};confirm number>0 else throw InvalidUrl(0,"origin port");port=number;
+    }
+    scheme() is string{scheme;}host() is string{host;}port() is int{port;}
+}

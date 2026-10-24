@@ -1,0 +1,27 @@
+// Выбрать язык и форму слова файл
+//
+// Сохранить язык интерфейса ru-KZ: Locale разбирает BCP 47 и удерживает канонические координаты.
+//
+// Запуск: ./examples/cookbook/run lab example-locale-i18n
+// Результат: stdout и проверки confirm, предусмотренные примером.
+// Книга: docs/Okkama-Stdlib-RU.md#example-locale-i18n
+// Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
+
+module example v1.0.0;
+import "locale/tag" take Locale;
+import "locale/match" take BasicLanguageRange,LookedUpLocale;
+import "locale/data" take LocaleFallbacks;
+import "locale/likely" take LikelyLocale;
+import "i18n/plural" take PluralNumber,PluralCategory;
+import "i18n/catalog" take MessageKey,PluralForm,PluralMessage,MessageCatalog;
+import "io/stdout" take Stdout;
+main() is int {
+    let chosen=LookedUpLocale([BasicLanguageRange("ru-KZ")],[Locale("en"),Locale("ru")],Locale("en")).value();
+    Stdout().writeln(LikelyLocale(chosen).value().string());
+    let key=MessageKey("","files");
+    let catalog=MessageCatalog(chosen,[PluralMessage(key,[PluralForm(PluralCategory.one,"файл"),PluralForm(PluralCategory.few,"файла"),PluralForm(PluralCategory.other,"файлов")])]);
+    for ["1","2","11","1.0"]->text {Stdout().writeln(text+" "+catalog.plural(key,PluralNumber(text)));}
+    let fallback=LocaleFallbacks(Locale("en","AU"));
+    for (0..fallback.size())->index {Stdout().writeln(fallback.item(index).string());}
+    0;
+}

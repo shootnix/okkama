@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.collect.race-empty",
+  "title": "Raced rejects an empty input",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.COLLECT",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "-1\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/collect.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "async/collect: neither selector accepts an empty input; both throw NoFutures."
+  },
+  "status": "mandatory"
+}

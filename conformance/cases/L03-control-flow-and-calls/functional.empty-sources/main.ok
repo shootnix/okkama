@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tracer {
+    Tracer();
+    mark(label is string, value is int) is int {
+        Stdout().writeln(label);
+        value;
+    }
+    flag(label is string, value is bool) is bool {
+        Stdout().writeln(label);
+        value;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let t = Tracer();
+    let empty is @int = [];
+    let mapped is @string = empty.map() -> v { v.string(); };
+    out.writeln(mapped.size().string());
+    let sum = empty.reduce(t.mark("initial", 7)) -> acc, v { t.mark("block", acc + v); };
+    out.writeln(sum.string());
+    let none_kept = [1, 2].filter() -> v { v > 5; };
+    out.writeln(none_kept.size().string());
+    0;
+}

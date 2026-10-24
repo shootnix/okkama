@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.panic.bare",
+  "title": "bare `panic;` is invalid",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.THROW-PANIC",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "ERR.PANIC",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "The contract requires rejection but the grammar marks this rule as context-sensitive (checked after parsing); detection while parsing is equally conforming."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 9.5: bare `panic;` is invalid."
+  },
+  "status": "mandatory"
+}

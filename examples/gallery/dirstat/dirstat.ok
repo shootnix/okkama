@@ -1,0 +1,45 @@
+// Что занимает место в каталоге
+// Задача: Посчитать число файлов и байты по расширениям.
+// Запуск из корня: ./examples/gallery/run dirstat/dirstat [PATH] [--top=5] [--json]
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: модули Scan/Tally, снимки метаданных, строгие аргументы и JSON.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/dirstat/dirstat.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/dirstat v1.0.0;
+import "lib/scan" take Scan;
+import "lib/tally" take Tally;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "cli/arguments" take Utf8Arguments,ProcessArguments;
+import "strings/parse" take ParsedInt;
+import "json/value" take JsonArray,JsonValue,JsonObject,JsonMember,JsonText,JsonNumber;
+import "json/write" take PrettyJson;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+object ScanOptions {
+    has path is string;has top is int;has json,supplied is bool;
+    ScanOptions(){path=".";top=10;json=false;supplied=false;}
+    path() is string{path;}top() is int{top;}json() is bool{json;}
+    argument(text is string) is ^ScanOptions {
+        if text=="--json"{^json=true;}else{
+            if text.length()>6 && text.slice(0,6)=="--top="{
+                let count=ParsedInt(text.slice(6,text.length())).value();confirm count>0 && count<=1000;^top=count;
+            }else{confirm !supplied && text!="" && (text.length()<2 || text.slice(0,2)!="--");^path=text;^supplied=true;}
+        }
+    }
+}
+main() is int {
+    let options=Utf8Arguments(ProcessArguments()).reduce(ScanOptions())->old,text{old.argument(text);};
+    let files=Scan().files(Directory(Path(options.path())));let kinds=Tally().kinds(files);
+    let total=files.reduce(0)->sum,file{sum+file.bytes();};let shown=if kinds.size()<options.top(){kinds.size();}else{options.top();};
+    if options.json(){
+        let values is @JsonValue=(0..shown).map()->i{kinds[i].json();};
+        let result=JsonObject([JsonMember("directory",JsonText(options.path())),JsonMember("total_bytes",JsonNumber(Decimal(total.string()))),JsonMember("kinds",JsonArray(values))]);
+        Stdout().writeln(PrettyJson(origin:result,indentation:2).string());
+    }else{
+        Stdout().writeln(options.path()+": "+files.size().string()+" files, "+total.string()+" bytes");
+        Stdout().writeln("extension\tfiles\tbytes");
+        for (0..shown)->i{let kind=kinds[i];Stdout().writeln(kind.extension()+"\t"+kind.files().string()+"\t"+kind.bytes().string());}
+    }0;
+}

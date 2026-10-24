@@ -1,0 +1,37 @@
+module app v1.0.0;
+import "archive/stream" take ArchiveReading, ArchiveWriting, EndOfArchive;
+import "archive/entry" take ArchiveEntry, ArchiveFile;
+import "archive/path" take ArchivePath;
+import "archive/metadata" take ArchiveMetadata, ArchiveModificationFromEpoch;
+import "io/buffer" take ByteBuffer;
+import "io/stdout" take Stdout;
+import "encoding/utf" take Utf8Decoded;
+
+// Illustrates lifecycle composition, not a TAR/ZIP wire format. The source
+// operation constructs exactly one one-byte entry per invocation. The writer
+// explicitly emits names and an ending; the adapters do not close either buffer.
+main() is int {
+    let input = ByteBuffer([byte(1), byte(2)]);
+    let output = ByteBuffer();
+    let metadata = ArchiveMetadata(ArchiveModificationFromEpoch(0.rat()).value(), "");
+    let reader = ArchiveReading(() is ArchiveEntry {
+        let bytes = input.reading().bytes(1);
+        if bytes.size() == 0 { throw EndOfArchive(); }
+        ArchiveFile(ArchivePath("member-" + bytes[0].int().string()), metadata, bytes);
+    });
+    let writer = ArchiveWriting((entry is ArchiveEntry) is void {
+        output.writing() <- entry.path().string() <- "\n";
+    }, () is void {
+        output.writing() <- "finished\n";
+        output.writing().flush();
+    });
+    loop {
+        try { writer.write(reader.entry()); }
+        catch end is EndOfArchive { last; }
+    }
+    writer.finish();
+    reader.close();writer.close();
+    Stdout().write(Utf8Decoded(output.content().bytes()).string());
+    input.closing().close();output.closing().close();
+    0;
+}

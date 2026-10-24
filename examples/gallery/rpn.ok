@@ -1,0 +1,42 @@
+// Постфиксный калькулятор
+// Задача: Вычислить выражение стековой машины с точными дробями.
+// Запуск из корня: ./examples/gallery/run rpn ['3 4 + 5 *']
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: persistent-стек возвращает следующую версию; ошибки проверяются до обращения к вершине.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/rpn.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/rpn v1.0.0;
+import "strings/parse" take ParsedRat;
+import "cli/arguments" take Utf8Arguments,ProcessArguments;
+import "io/stdout" take Stdout;
+object RpnStack {
+    has values is @rat;RpnStack(){let empty is @rat=[];values=empty;}
+    pushed(number is rat) is ^RpnStack {
+        ^values=(0..values.size()+1).map()->i{if i<values.size(){values[i];}else{number;}};
+    }
+    applied(operator is string) is ^RpnStack {
+        confirm values.size()>=2;let right=values[values.size()-1];let left=values[values.size()-2];
+        let answer=match operator{case "+"{left+right;}case "-"{left-right;}case "*"{left*right;}case "/"{left/right;}else{panic "unknown RPN operator";}};
+        ^values=(0..values.size()-1).map()->i{if i<values.size()-2{values[i];}else{answer;}};
+    }
+    value() is rat{confirm values.size()==1;values[0];}
+}
+object Rpn {
+    Rpn();
+    value(source is string) is rat {
+        confirm source.length()>0 && source.length()<=1024;
+        let tokens=source.split(" ").filter()->word{word!="";};
+        tokens.reduce(RpnStack())->stack,token{
+            if token=="+" || token=="-" || token=="*" || token=="/"{stack.applied(token);}
+            else{stack.pushed(ParsedRat(token).value());}
+        }.value();
+    }
+}
+main() is int {
+    let args=Utf8Arguments(ProcessArguments());let machine=Rpn();
+    let samples=if args.size()>0{[args.item(0)];}else{["3 4 + 5 *","15 7 1 1 + - / 3 *","1 3 /","100 5 / 3 -"];};
+    for samples->sample{Stdout().writeln(sample+" = "+machine.value(sample).string());}
+    confirm machine.value("1 3 /")==rat(1,3);
+    confirm machine.value("5 1 2 + 4 * + 3 -")==14.rat();0;
+}

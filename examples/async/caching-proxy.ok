@@ -1,0 +1,304 @@
+module example/async/caching_proxy v1.0.0;
+
+import "async/channel" take Channel, Sending, Receiving;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration, DurationUnit;
+
+enum CacheOperation = (get, put, stop);
+enum CacheStatus = (hit, miss, changed, stopped);
+
+object CacheReply {
+    has status is CacheStatus;
+    has value is string;
+    CacheReply(:status, :value);
+
+    status() is CacheStatus { status; }
+    value() is string { value; }
+}
+
+object CacheCommand {
+    has operation is CacheOperation;
+    has key is string;
+    has value is string;
+    has reply is Sending<CacheReply>;
+    CacheCommand(:operation, :key, :value, :reply);
+
+    operation() is CacheOperation { operation; }
+    key() is string { key; }
+    value() is string { value; }
+    reply() is Sending<CacheReply> { reply; }
+}
+
+object ProxyCacheState {
+    has present is bool;
+    has key is string;
+    has value is string;
+    ProxyCacheState(:present, :key, :value);
+
+    saved(key is string, value is string) is ^ProxyCacheState {
+        ^present = true;
+        ^key = key;
+        ^value = value;
+    }
+
+    contains(candidate is string) is bool {
+        present && key == candidate;
+    }
+
+    value() is string { value; }
+}
+
+object ProxyCacheOwner {
+    has commands is Receiving<CacheCommand>;
+    ProxyCacheOwner(:commands);
+
+    async run() is int {
+        let state = ProxyCacheState(
+            present: false,
+            key: "",
+            value: ""
+        );
+
+        loop {
+            let command = await commands.item();
+
+            if command.operation() == CacheOperation.get {
+                if state.contains(command.key()) {
+                    await command.reply().send(
+                        CacheReply(
+                            status: CacheStatus.hit,
+                            value: state.value()
+                        )
+                    );
+                }
+                else {
+                    await command.reply().send(
+                        CacheReply(
+                            status: CacheStatus.miss,
+                            value: ""
+                        )
+                    );
+                }
+            }
+            else if command.operation() == CacheOperation.put {
+                state = state.saved(command.key(), command.value());
+                await command.reply().send(
+                    CacheReply(
+                        status: CacheStatus.changed,
+                        value: command.value()
+                    )
+                );
+            }
+            else {
+                await command.reply().send(
+                    CacheReply(
+                        status: CacheStatus.stopped,
+                        value: state.value()
+                    )
+                );
+                last 0;
+            }
+        }
+    }
+}
+
+object ProxyCache {
+    has commands is Sending<CacheCommand>;
+    ProxyCache(:commands);
+
+    async request(
+        operation is CacheOperation,
+        key is string,
+        value is string
+    ) is CacheReply {
+        let reply is Channel<CacheReply> = Channel(capacity: 1);
+        await commands.send(
+            CacheCommand(
+                operation: operation,
+                key: key,
+                value: value,
+                reply: reply.sending()
+            )
+        );
+        await reply.receiving().item();
+    }
+
+    async get(key is string) is CacheReply {
+        await self.request(CacheOperation.get, key, "");
+    }
+
+    async put(key is string, value is string) is CacheReply {
+        await self.request(CacheOperation.put, key, value);
+    }
+
+    async stop() is CacheReply {
+        await self.request(CacheOperation.stop, "", "");
+    }
+}
+
+enum UpstreamOperation = (fetch, count, stop);
+
+object UpstreamReply {
+    has value is string;
+    has calls is int;
+    UpstreamReply(:value, :calls);
+
+    value() is string { value; }
+    calls() is int { calls; }
+}
+
+object UpstreamCommand {
+    has operation is UpstreamOperation;
+    has key is string;
+    has reply is Sending<UpstreamReply>;
+    UpstreamCommand(:operation, :key, :reply);
+
+    operation() is UpstreamOperation { operation; }
+    key() is string { key; }
+    reply() is Sending<UpstreamReply> { reply; }
+}
+
+object UpstreamState {
+    has calls is int;
+    UpstreamState(:calls);
+
+    called() is ^UpstreamState {
+        ^calls = calls + 1;
+    }
+
+    calls() is int { calls; }
+}
+
+object UpstreamOwner {
+    has commands is Receiving<UpstreamCommand>;
+    UpstreamOwner(:commands);
+
+    async run() is int {
+        let state = UpstreamState(calls: 0);
+
+        loop {
+            let command = await commands.item();
+
+            if command.operation() == UpstreamOperation.fetch {
+                await SystemClock().wait(Duration(value: 1000.rat(), unit: DurationUnit.nanosecond));
+                state = state.called();
+                await command.reply().send(
+                    UpstreamReply(
+                        value: "upstream:" + command.key(),
+                        calls: state.calls()
+                    )
+                );
+            }
+            else if command.operation() == UpstreamOperation.count {
+                await command.reply().send(
+                    UpstreamReply(value: "", calls: state.calls())
+                );
+            }
+            else {
+                await command.reply().send(
+                    UpstreamReply(value: "", calls: state.calls())
+                );
+                last state.calls();
+            }
+        }
+    }
+}
+
+object Upstream {
+    has commands is Sending<UpstreamCommand>;
+    Upstream(:commands);
+
+    async request(
+        operation is UpstreamOperation,
+        key is string
+    ) is UpstreamReply {
+        let reply is Channel<UpstreamReply> = Channel(capacity: 1);
+        await commands.send(
+            UpstreamCommand(
+                operation: operation,
+                key: key,
+                reply: reply.sending()
+            )
+        );
+        await reply.receiving().item();
+    }
+
+    async fetch(key is string) is string {
+        let result = await self.request(UpstreamOperation.fetch, key);
+        result.value();
+    }
+
+    async count() is int {
+        let result = await self.request(UpstreamOperation.count, "");
+        result.calls();
+    }
+
+    async stop() is int {
+        let result = await self.request(UpstreamOperation.stop, "");
+        result.calls();
+    }
+}
+
+object CachingProxy {
+    has cache is ProxyCache;
+    has upstream is Upstream;
+    CachingProxy(:cache, :upstream);
+
+    async value(key is string) is string {
+        let cached = await cache.get(key);
+
+        if cached.status() == CacheStatus.hit {
+            cached.value();
+        }
+        else {
+            let fetched = await upstream.fetch(key);
+            await cache.put(key, fetched);
+            fetched;
+        }
+    }
+}
+
+object ExampleResult {
+    ExampleResult();
+    async value() is int {
+        let cache_commands is Channel<CacheCommand> = Channel(capacity: 2);
+        let cache_owner = spawn ProxyCacheOwner(
+            commands: cache_commands.receiving()
+        ).run();
+        let cache = ProxyCache(commands: cache_commands.sending());
+
+        let upstream_commands is Channel<UpstreamCommand> =
+            Channel(capacity: 2);
+        let upstream_owner = spawn UpstreamOwner(
+            commands: upstream_commands.receiving()
+        ).run();
+        let upstream = Upstream(commands: upstream_commands.sending());
+        let proxy = CachingProxy(cache: cache, upstream: upstream);
+
+        let first = await proxy.value("book/42");
+        let second = await proxy.value("book/42");
+        let calls = await upstream.count();
+
+        await cache.stop();
+        await upstream.stop();
+        await cache_owner;
+        let owned_calls = await upstream_owner;
+        cache_commands.sending().close();
+        upstream_commands.sending().close();
+
+        if first == "upstream:book/42"
+            && second == first
+            && calls == 1
+            && owned_calls == 1 {
+            42;
+        }
+        else {
+            0;
+        }
+    }
+}
+
+async main() is int {
+    await ExampleResult().value();
+    return 0;
+}

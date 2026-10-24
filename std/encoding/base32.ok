@@ -1,0 +1,62 @@
+module encoding/base32 v1.0.0;
+
+import "runtime/base32" take
+    base32_encode, base32_invalid_offset, base32_decode;
+
+// Strict RFC 4648 Base32.
+//
+//     Base32Encoded(origin: [byte(102), byte(111), byte(111)]).string();
+//     // "MZXW6==="
+//
+//     Base32Decoded(origin: "MZXW6===").bytes();
+//     // [102, 111, 111]
+//
+// The alphabet is uppercase ASCII A-Z followed by 2-7. Encoding always emits
+// canonical `=` padding to a multiple of eight characters. Decoding requires
+// that exact padding and rejects lowercase, 0/1 aliases, whitespace,
+// separators, misplaced padding and nonzero unused trailing bits. Empty input
+// is valid. InvalidBase32.offset() is a Unicode-scalar offset; a structurally
+// incomplete final quantum reports origin.length().
+
+object Base32Encoded {
+    has origin is @byte;
+
+    Base32Encoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        base32_encode(origin);
+    }
+}
+
+object Base32Decoded {
+    has origin is string;
+
+    Base32Decoded(origin is string) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        let offset is int = base32_invalid_offset(origin);
+        confirm offset == -1 else throw InvalidBase32(offset);
+        base32_decode(origin);
+    }
+}
+
+object InvalidBase32 does Error {
+    has invalid_offset is int;
+
+    InvalidBase32(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid Base32 at scalar offset " + invalid_offset.string();
+    }
+}

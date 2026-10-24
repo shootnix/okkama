@@ -1,0 +1,232 @@
+module encoding/utf v1.0.0;
+
+import "runtime/utf" take
+    utf8_encode, utf8_decode, utf8_valid_prefix,
+    utf16_encode, utf16_decode, utf16_valid_prefix,
+    utf32_encode, utf32_decode, utf32_valid_prefix;
+
+// Explicit, immutable UTF codecs.
+//
+//     let network is @byte = Utf16Encoded(
+//         origin: "A😀",
+//         order: ByteOrder.big,
+//     ).bytes();
+//     // [0, 65, 216, 61, 222, 0]
+//
+//     let restored is string = Utf16Decoded(
+//         origin: network,
+//         order: ByteOrder.big,
+//     ).string();
+//
+// UTF-8 has one canonical byte order. UTF-16 and UTF-32 always require an
+// explicit ByteOrder: serialized APIs never inherit a machine-native order.
+// Encoders do not add a BOM. Decoders do not detect, strip or use a BOM to
+// change order; U+FEFF is decoded as an ordinary scalar value.
+//
+// InvalidUtf8, InvalidUtf16 and InvalidUtf32 report the byte offset at which
+// the first malformed scalar begins. An incomplete final code unit starts at
+// its first trailing byte. Decoders reject overlong UTF-8, surrogate scalars,
+// unpaired UTF-16 surrogates and values above U+10FFFF. No codec normalizes
+// text or inserts replacement characters.
+
+enum ByteOrder = (big, little);
+
+object Utf8Encoded {
+    has origin is string;
+
+    Utf8Encoded(origin is string) {
+        self.origin = origin;
+    }
+
+    bytes() is @byte {
+        utf8_encode(origin);
+    }
+}
+
+object Utf8Decoded {
+    has origin is @byte;
+
+    Utf8Decoded(origin is @byte) {
+        self.origin = origin;
+    }
+
+    string() is string {
+        let offset is int = utf8_valid_prefix(origin);
+        confirm offset == origin.size() else throw InvalidUtf8(offset);
+        utf8_decode(origin);
+    }
+}
+
+object Utf16Encoded {
+    has origin is string;
+    has order is ByteOrder;
+
+    Utf16Encoded(origin is string, order is ByteOrder) {
+        self.origin = origin;
+        self.order = order;
+    }
+
+    bytes() is @byte {
+        utf16_encode(origin, self.order_name());
+    }
+
+    private:
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object Utf16Decoded {
+    has origin is @byte;
+    has order is ByteOrder;
+
+    Utf16Decoded(origin is @byte, order is ByteOrder) {
+        self.origin = origin;
+        self.order = order;
+    }
+
+    string() is string {
+        let name is string = self.order_name();
+        let offset is int = utf16_valid_prefix(origin, name);
+        confirm offset == origin.size() else throw InvalidUtf16(offset);
+        utf16_decode(origin, name);
+    }
+
+    private:
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object Utf32Encoded {
+    has origin is string;
+    has order is ByteOrder;
+
+    Utf32Encoded(origin is string, order is ByteOrder) {
+        self.origin = origin;
+        self.order = order;
+    }
+
+    bytes() is @byte {
+        utf32_encode(origin, self.order_name());
+    }
+
+    private:
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object Utf32Decoded {
+    has origin is @byte;
+    has order is ByteOrder;
+
+    Utf32Decoded(origin is @byte, order is ByteOrder) {
+        self.origin = origin;
+        self.order = order;
+    }
+
+    string() is string {
+        let name is string = self.order_name();
+        let offset is int = utf32_valid_prefix(origin, name);
+        confirm offset == origin.size() else throw InvalidUtf32(offset);
+        utf32_decode(origin, name);
+    }
+
+    private:
+
+    order_name() is string {
+        if order == ByteOrder.big { "big"; } else { "little"; }
+    }
+}
+
+object InvalidUtf8 does Error {
+    has invalid_offset is int;
+
+    InvalidUtf8(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid UTF-8 sequence at byte offset " + invalid_offset.string();
+    }
+}
+
+object InvalidUtf16 does Error {
+    has invalid_offset is int;
+
+    InvalidUtf16(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid UTF-16 sequence at byte offset " + invalid_offset.string();
+    }
+}
+
+object InvalidUtf32 does Error {
+    has invalid_offset is int;
+
+    InvalidUtf32(offset is int) {
+        invalid_offset = offset;
+    }
+
+    offset() is int {
+        invalid_offset;
+    }
+
+    #projected
+    text() is string {
+        "invalid UTF-32 sequence at byte offset " + invalid_offset.string();
+    }
+}
+
+// Every Unicode scalar is preserved, including the 66 noncharacters. These
+// values are not surrogate codepoints and do not make UTF text malformed.
+// This is a codec, not an interchange-policy filter; no replacement/deletion.
+// Empty observations are repeatable; codecs own only immutable input values.
+
+test "UTF encoders preserve noncharacters in every byte order" {
+    let text = Utf8Decoded([byte(239), byte(183), byte(144), byte(239), byte(191), byte(191), byte(244), byte(143), byte(191), byte(191)]).string();
+    test.is(text.length(), 3);
+    test.is(Utf16Encoded(text, ByteOrder.big).bytes(), [byte(253), byte(208), byte(255), byte(255), byte(219), byte(255), byte(223), byte(255)]);
+    test.is(Utf16Encoded(text, ByteOrder.little).bytes(), [byte(208), byte(253), byte(255), byte(255), byte(255), byte(219), byte(255), byte(223)]);
+    test.is(Utf32Encoded(text, ByteOrder.big).bytes(), [byte(0), byte(0), byte(253), byte(208), byte(0), byte(0), byte(255), byte(255), byte(0), byte(16), byte(255), byte(255)]);
+    test.is(Utf32Encoded(text, ByteOrder.little).bytes(), [byte(208), byte(253), byte(0), byte(0), byte(255), byte(255), byte(0), byte(0), byte(255), byte(255), byte(16), byte(0)]);
+    for [ByteOrder.big, ByteOrder.little] -> order {
+        test.is(Utf16Decoded(Utf16Encoded(text, order).bytes(), order).string(), text);
+        test.is(Utf32Decoded(Utf32Encoded(text, order).bytes(), order).string(), text);
+    }
+    test.is(Utf8Decoded(Utf8Encoded(text).bytes()).string(), text);
+}
+test "empty UTF values and BOM-shaped scalars are stable" {
+    test.is(Utf8Encoded("").bytes().size(), 0);
+    test.is(Utf8Decoded([]).string(), "");
+    for [ByteOrder.big, ByteOrder.little] -> order {
+        test.is(Utf16Encoded("", order).bytes().size(), 0);
+        test.is(Utf32Encoded("", order).bytes().size(), 0);
+        test.is(Utf16Decoded([], order).string(), "");
+        test.is(Utf32Decoded([], order).string(), "");
+    }
+    let bom = Utf8Decoded([byte(239), byte(187), byte(191)]).string();
+    test.is(bom.length(), 1);
+    test.is(Utf16Encoded(bom, ByteOrder.big).bytes(), [byte(254), byte(255)]);
+}
+test "malformed scalar boundaries retain typed byte offsets" {
+    test.is(try {Utf8Decoded([byte(65), byte(192), byte(128)]).string(); -1;} catch error is InvalidUtf8 {error.offset();}, 1);
+    test.is(try {Utf16Decoded([byte(0), byte(65), byte(216), byte(0)], ByteOrder.big).string(); -1;} catch error is InvalidUtf16 {error.offset();}, 2);
+    test.is(try {Utf32Decoded([byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)], ByteOrder.big).string(); -1;} catch error is InvalidUtf32 {error.offset();}, 4);
+}

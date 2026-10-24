@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.destroy.failure-reported",
+  "title": "a failing destroy is reported as a failure",
+  "purpose": "The program terminates unsuccessfully after the observable effects listed.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.DESTROY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime",
+        "panic"
+      ],
+      "justification": "The failing destroy uses a bare confirm, whose category is runtime or panic (D-004)."
+    },
+    "stdout": {
+      "text": "inside\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.5: if a destroy block fails, the runtime reports the failure."
+  },
+  "status": "mandatory"
+}

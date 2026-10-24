@@ -1,0 +1,80 @@
+module numbers/bigrational v1.0.0;
+
+import "compare" take Comparing, Order;
+import "numbers/bigint" take BigInt, BigSum, BigDifference, BigProduct, BigQuotient, BigGcd;
+
+// Canonical exact ratio: positive denominator, gcd=1, unique zero 0/1.
+object BigRational does Comparing<BigRational> {
+    has upper, lower is BigInt;
+    BigRational(numerator is BigInt, denominator is BigInt) {
+        confirm denominator.sign() != 0 else throw ZeroBigRationalDenominator();
+        let common = BigGcd(left: numerator, right: denominator).value();
+        let divisor = if denominator.sign() < 0 {
+            BigDifference(left: BigInt("0"), right: common).value();
+        } else { common; };
+        upper = BigQuotient(left: numerator, right: divisor).value();
+        lower = BigQuotient(left: denominator, right: divisor).value();
+    }
+    numerator() is BigInt { upper; }
+    denominator() is BigInt { lower; }
+    order(other is BigRational) is Order {
+        let left = BigProduct(left: upper, right: other.denominator()).value();
+        let right = BigProduct(left: other.numerator(), right: lower).value();
+        left.order(right);
+    }
+    string() is string { upper.string() + "/" + lower.string(); }
+}
+
+object BigRationalSum {
+    has left, right is BigRational;
+    BigRationalSum(:left, :right);
+    #projected
+    value() is BigRational {
+        let first = BigProduct(left: left.numerator(), right: right.denominator()).value();
+        let second = BigProduct(left: right.numerator(), right: left.denominator()).value();
+        BigRational(numerator: BigSum(left: first, right: second).value(),
+            denominator: BigProduct(left: left.denominator(), right: right.denominator()).value());
+    }
+}
+
+object BigRationalDifference {
+    has left, right is BigRational;
+    BigRationalDifference(:left, :right);
+    #projected
+    value() is BigRational {
+        let first = BigProduct(left: left.numerator(), right: right.denominator()).value();
+        let second = BigProduct(left: right.numerator(), right: left.denominator()).value();
+        BigRational(numerator: BigDifference(left: first, right: second).value(),
+            denominator: BigProduct(left: left.denominator(), right: right.denominator()).value());
+    }
+}
+
+object BigRationalProduct {
+    has left, right is BigRational;
+    BigRationalProduct(:left, :right);
+    #projected
+    value() is BigRational {
+        BigRational(numerator: BigProduct(left: left.numerator(), right: right.numerator()).value(),
+            denominator: BigProduct(left: left.denominator(), right: right.denominator()).value());
+    }
+}
+
+object BigRationalQuotient {
+    has left, right is BigRational;
+    BigRationalQuotient(:left, :right);
+    #projected
+    value() is BigRational {
+        confirm right.numerator().sign() != 0 else throw BigRationalDivisionByZero();
+        BigRational(numerator: BigProduct(left: left.numerator(), right: right.denominator()).value(),
+            denominator: BigProduct(left: left.denominator(), right: right.numerator()).value());
+    }
+}
+
+object ZeroBigRationalDenominator does Error {
+    ZeroBigRationalDenominator();
+    text() is string { "BigRational denominator must not be zero"; }
+}
+object BigRationalDivisionByZero does Error {
+    BigRationalDivisionByZero();
+    text() is string { "BigRational division by zero"; }
+}

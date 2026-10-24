@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Wallet {
+    has amount is int;
+    Wallet(amount is int) {
+        self.amount = amount;
+        confirm self.valid();
+    }
+    valid() is bool { amount >= 0; }
+}
+
+main() is int {
+    let out = Stdout();
+    let w = Wallet(5);
+    out.writeln("unreachable");
+    0;
+}

@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.string.no-interpolation",
+  "title": "`${x}` inside a string is literal text",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.STRING-LITERALS",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "GRAM.REMOVED-SYNTAX",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "value ${x} {x}\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-llm-context-1.0.md#2",
+    "docs/okkama-spec-11072026.md#4.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "There is no string interpolation; `$`, `{` and `}` inside a string literal are ordinary characters."
+  },
+  "status": "mandatory"
+}

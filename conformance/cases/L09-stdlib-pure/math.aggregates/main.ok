@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "conformance/check" take Checks;
+import "math/aggregate" take Minimum, Maximum, Sum, Product, Hypotenuse;
+import "collections/sequence" take EmptySequence;
+
+object Empty {
+    Empty();
+    floats() is @float {
+        let e is @float = [];
+        e;
+    }
+    ints() is @int {
+        let e is @int = [];
+        e;
+    }
+}
+
+main() is int {
+    let c = Checks();
+    c = c.same_int("minimum", value Minimum(values: [3, 9, 4]), 3);
+    c = c.same_int("maximum", value Maximum(values: [3, 9, 4]), 9);
+    c = c.same_float("sum", value Sum(values: [0.5, 0.25]), 0.75);
+    c = c.same_float("product", value Product(values: [2.0, 4.0]), 8.0);
+    c = c.same_float("hypotenuse", value Hypotenuse(values: [3.0, 4.0]), 5.0);
+    c = c.same_float("empty sum", value Sum(values: Empty().floats()), 0.0);
+    c = c.same_text("empty minimum", try { let probe = value Minimum(values: Empty().ints()); "no error"; } catch e is EmptySequence { "EmptySequence"; }, "EmptySequence");
+    c.done();
+}

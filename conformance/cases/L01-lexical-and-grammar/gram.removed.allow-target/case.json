@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.removed.allow-target",
+  "title": "removed syntax: the `allow` access grant is removed (member target)",
+  "purpose": "Malformed source is rejected by the lexer/parser.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.REMOVED-SYNTAX",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "OBJ.NO-INHERITANCE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#16",
+    "docs/allow-removal.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 16: the former `allow` declaration is removed and rejected by the parser; no compatibility switch."
+  },
+  "status": "mandatory"
+}

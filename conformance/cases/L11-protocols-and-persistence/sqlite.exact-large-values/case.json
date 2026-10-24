@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.exact-large-values",
+  "title": "64-bit integers and decimals survive exactly",
+  "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.SQLITE",
+      "aspects": [
+        "boundary"
+      ]
+    },
+    {
+      "contract": "STD.DB.VALUE",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "9223372036854775807\ndecimal exact\nnull is not text\n"
+    }
+  },
+  "spec_refs": [
+    "docs/std/db-sqlite.md",
+    "std/db/read.ok",
+    "docs/sql-numeric-transport.md"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "db-sqlite guide: signed 64-bit INTEGER is exact and DbDecimal binds as canonical TEXT; db/read never replaces NULL with a default."
+  },
+  "status": "mandatory",
+  "notes": "The decimal is compared by value because the canonical spelling rule is unspecified (D-045)."
+}

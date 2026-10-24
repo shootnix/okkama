@@ -1,0 +1,244 @@
+module os/environment v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/sequence" take Sequencing, EmptySequence;
+import "error" take OutOfRange;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "runtime/environment" take
+    environment_snapshot,
+    environment_normalize,
+    environment_add,
+    environment_diff,
+    environment_name,
+    environment_home,
+    environment_path_separator;
+import "size" take Sizing;
+
+// Environment is an immutable snapshot. Environment() reads the process
+// environment exactly once; Environment(values: ...) is completely isolated:
+//
+//     let system = Environment();
+//     let isolated = Environment(values: ["LANG": "C.UTF-8"]);
+//
+// Missing variables are distinct from variables containing an empty string:
+//
+//     if system.membership("EDITOR") {
+//         output.writeln(system.variable("EDITOR"));
+//     }
+//
+// addition() and difference() build new snapshots without changing their receiver:
+//
+//     let child = system
+//         .addition("APPLICATION_ENV", "production")
+//         .difference("APPLICATION_TOKEN");
+//
+// Names are case-sensitive on POSIX and normalized case-insensitively on
+// Windows. Empty names, names containing = or NUL, and values containing NUL
+// are rejected before an Environment becomes observable.
+
+object Environment {
+    has origin is %string:string;
+
+    Environment() {
+        origin = try {
+            environment_snapshot();
+        }
+        catch failure is NativeFailure {
+            throw InvalidEnvironmentVariable(failure.message());
+        };
+    }
+
+    Environment(values is %string:string) {
+        origin = try {
+            environment_normalize(values);
+        }
+        catch failure is NativeFailure {
+            throw InvalidEnvironmentVariable(failure.message());
+        };
+    }
+
+    membership(name is string) is bool {
+        origin.has(self.normalized(name));
+    }
+
+    variable(name is string) is string {
+        let normalized is string = self.normalized(name);
+        confirm origin.has(normalized)
+            else throw MissingEnvironmentVariable(name);
+        origin[normalized];
+    }
+
+    variables() is %string:string {
+        origin;
+    }
+
+    addition(name is string, value is string) is Environment {
+        let revised is %string:string = try {
+            environment_add(origin, name, value);
+        }
+        catch failure is NativeFailure {
+            throw InvalidEnvironmentVariable(failure.message());
+        };
+        Environment(values: revised);
+    }
+
+    difference(name is string) is Environment {
+        let revised is %string:string = try {
+            environment_diff(origin, name);
+        }
+        catch failure is NativeFailure {
+            throw InvalidEnvironmentVariable(failure.message());
+        };
+        Environment(values: revised);
+    }
+
+    private:
+    normalized(name is string) is string {
+        try {
+            environment_name(name);
+        }
+        catch failure is NativeFailure {
+            throw InvalidEnvironmentVariable(failure.message());
+        }
+    }
+}
+
+// HomeDirectory derives a directory only from its explicit Environment.
+// It never rereads ambient process state:
+//
+//     let home is Directory = value HomeDirectory(
+//         environment: Environment(),
+//     );
+
+object HomeDirectory {
+    has environment is Environment;
+
+    HomeDirectory(:environment);
+
+    #projected
+    value() is Directory {
+        let path is string = try {
+            environment_home(environment.variables());
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_found" {
+                throw MissingHomeDirectory();
+            }
+            else {
+                throw InvalidEnvironmentVariable(failure.message());
+            }
+        };
+        Directory(path: Path(path));
+    }
+}
+
+// SearchPath parses PATH using the runtime-selected separator. Ordering and
+// duplicates are preserved. Empty components mean Path("."); a missing PATH
+// produces an empty sequence:
+//
+//     let search = SearchPath(environment: Environment());
+//     for search -> directory {
+//         output.writeln(directory.string());
+//     }
+
+object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
+    has paths is @Path;
+
+    SearchPath(environment is Environment) {
+        paths = if environment.membership("PATH") {
+            environment.variable("PATH")
+                .split(environment_path_separator())
+                .map() -> part {
+                    Path(if part.empty() { "."; } else { part; });
+                };
+        }
+        else {
+            [];
+        };
+    }
+
+    cursor() is Cursor<Path> {
+        SearchPathCursor(paths: paths, position: 0);
+    }
+
+    size() is int {
+        paths.size();
+    }
+
+    item(index is int) is Path {
+        confirm index >= 0 && index < self.size()
+            else throw OutOfRange("search-path index is outside the sequence");
+        paths[index];
+    }
+
+    first() is Path {
+        confirm self.size() > 0 else throw EmptySequence();
+        paths[0];
+    }
+
+    last() is Path {
+        confirm self.size() > 0 else throw EmptySequence();
+        paths[self.size() - 1];
+    }
+}
+
+object SearchPathCursor does Cursor<Path> {
+    has paths is @Path;
+    has position is int;
+
+    SearchPathCursor(:paths, :position);
+
+    available() is bool {
+        position < paths.size();
+    }
+
+    item() is Path {
+        confirm self.available() else throw IterationEnded();
+        paths[position];
+    }
+
+    successor() is Cursor<Path> {
+        confirm self.available() else throw IterationEnded();
+        SearchPathCursor(paths: paths, position: position + 1);
+    }
+}
+
+object MissingEnvironmentVariable does Error {
+    has origin is string;
+
+    MissingEnvironmentVariable(name is string) {
+        origin = name;
+    }
+
+    name() is string {
+        origin;
+    }
+
+    #projected
+    text() is string {
+        "environment variable is missing: " + origin;
+    }
+}
+
+object InvalidEnvironmentVariable does Error {
+    has message is string;
+
+    InvalidEnvironmentVariable(message is string) {
+        self.message = message;
+    }
+
+    #projected
+    text() is string {
+        message;
+    }
+}
+
+object MissingHomeDirectory does Error {
+    MissingHomeDirectory();
+
+    #projected
+    text() is string {
+        "home directory is unavailable";
+    }
+}

@@ -1,0 +1,285 @@
+module fs/directory v1.0.0;
+
+import "collections/iteration" take Cursor, Iterating, IterationEnded;
+import "collections/list" take List, EmptyList;
+import "fs/file" take FileSystemFailure;
+import "fs/path" take Path;
+import "fs/stat" take FileKind, FileStat, FileStatFromMap;
+import "runtime/fs" take
+    path_encode,
+    lstat,
+    mkdir,
+    rmdir,
+    rename,
+    directory_entries,
+    directory_remove_tree;
+
+// Directory is a narrow path command object. create() creates one level with
+// portable 0755 permissions filtered by the process umask. remove() removes
+// only an empty directory and throws DirectoryNotEmpty otherwise.
+//
+// DirectoryEntries snapshots and lexicographically sorts one directory in one
+// native bulk operation when cursor() is requested:
+//
+//     for DirectoryEntries(origin: Directory(path: root)) -> entry {
+//         output.writeln(entry.path().string());
+//     }
+//
+// Descendants performs deterministic preorder traversal. It snapshots only
+// the directory currently being entered, not the complete tree:
+//
+//     for Descendants(origin: Directory(path: root)) -> entry {
+//         output.writeln(entry.kind().string(), " ", entry.path().string());
+//     }
+//
+// Directory symlinks are yielded as symbolic_link entries and never followed.
+// DirectoryTree applies the same leaf rule while deleting children bottom-up:
+//
+//     DirectoryTree(origin: Directory(path: root)).remove();
+
+role DirectoryLocating {
+    path() is Path;
+}
+
+object Directory does DirectoryLocating {
+    has origin is Path;
+
+    Directory(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    existence() is bool {
+        try {
+            lstat(path_encode(origin.string()))["kind"] == 2;
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_found" {
+                false;
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    create() is void {
+        try {
+            mkdir(path_encode(origin.string()), 493);
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+
+    remove() is void {
+        try {
+            rmdir(path_encode(origin.string()));
+        }
+        catch failure is NativeFailure {
+            if failure.code() == "not_empty" {
+                throw DirectoryNotEmpty(origin);
+            }
+            else {
+                throw FileSystemFailure(failure.code(), failure.message());
+            }
+        }
+    }
+
+    move(destination is Path) is void {
+        try {
+            rename(
+                path_encode(origin.string()),
+                path_encode(destination.string()),
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object DirectoryEntry {
+    has origin is Path;
+
+    DirectoryEntry(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    kind() is FileKind {
+        self.stat().kind();
+    }
+
+    stat() is FileStat {
+        try {
+            value FileStatFromMap(origin: lstat(path_encode(origin.string())));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object DirectoryEntries does Iterating<DirectoryEntry> {
+    has origin is DirectoryLocating;
+
+    DirectoryEntries(origin is DirectoryLocating) {
+        self.origin = origin;
+    }
+
+    cursor() is Cursor<DirectoryEntry> {
+        try {
+            DirectoryEntryCursor(
+                parent: origin.path(),
+                names: directory_entries(
+                    path_encode(origin.path().string()),
+                ),
+                position: 0,
+            );
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object DirectoryEntryCursor does Cursor<DirectoryEntry> {
+    has parent is Path;
+    has names is @string;
+    has position is int;
+
+    DirectoryEntryCursor(:parent, :names, :position);
+
+    available() is bool { position < names.size(); }
+
+    item() is DirectoryEntry {
+        confirm self.available() else throw IterationEnded();
+        DirectoryEntry(path: parent.child(names[position]));
+    }
+
+    successor() is Cursor<DirectoryEntry> {
+        confirm self.available() else throw IterationEnded();
+        DirectoryEntryCursor(
+            parent: parent,
+            names: names,
+            position: position + 1,
+        );
+    }
+}
+
+object Descendants does Iterating<DirectoryEntry> {
+    has origin is DirectoryLocating;
+
+    Descendants(origin is DirectoryLocating) {
+        self.origin = origin;
+    }
+
+    cursor() is Cursor<DirectoryEntry> {
+        let following is List<Cursor<DirectoryEntry>> = EmptyList();
+        value DescendantCursorFrom(
+            current: DirectoryEntries(origin: origin).cursor(),
+            following: following,
+        );
+    }
+}
+
+object DescendantCursor does Cursor<DirectoryEntry> {
+    has current is Cursor<DirectoryEntry>;
+    has following is List<Cursor<DirectoryEntry>>;
+
+    DescendantCursor(:current, :following);
+
+    available() is bool { true; }
+
+    item() is DirectoryEntry { current.item(); }
+
+    successor() is Cursor<DirectoryEntry> {
+        let entry is DirectoryEntry = current.item();
+        let sibling is Cursor<DirectoryEntry> = current.successor();
+        if entry.kind() == FileKind.directory {
+            value DescendantCursorFrom(
+                current: DirectoryEntries(
+                    origin: Directory(path: entry.path()),
+                ).cursor(),
+                following: following.prefix(sibling),
+            );
+        }
+        else {
+            value DescendantCursorFrom(
+                current: sibling,
+                following: following,
+            );
+        }
+    }
+}
+
+object DescendantCursorFrom {
+    has current is Cursor<DirectoryEntry>;
+    has following is List<Cursor<DirectoryEntry>>;
+
+    DescendantCursorFrom(:current, :following);
+
+    #projected
+    value() is Cursor<DirectoryEntry> {
+        if current.available() {
+            DescendantCursor(current: current, following: following);
+        }
+        else {
+            if following.size() > 0 {
+                value DescendantCursorFrom(
+                    current: following.first(),
+                    following: following.tail(),
+                );
+            }
+            else {
+                ExhaustedDescendantCursor();
+            }
+        }
+    }
+}
+
+object ExhaustedDescendantCursor does Cursor<DirectoryEntry> {
+    ExhaustedDescendantCursor();
+
+    available() is bool { false; }
+
+    item() is DirectoryEntry { throw IterationEnded(); }
+
+    successor() is Cursor<DirectoryEntry> { throw IterationEnded(); }
+}
+
+object DirectoryTree {
+    has origin is DirectoryLocating;
+
+    DirectoryTree(origin is DirectoryLocating) {
+        self.origin = origin;
+    }
+
+    remove() is void {
+        let removed is Path = origin.path();
+        try {
+            directory_remove_tree(path_encode(removed.string()));
+        }
+        catch failure is NativeFailure {
+            throw FileSystemFailure(failure.code(), failure.message());
+        }
+    }
+}
+
+object DirectoryNotEmpty does Error {
+    has origin is Path;
+
+    DirectoryNotEmpty(path is Path) {
+        origin = path;
+    }
+
+    path() is Path { origin; }
+
+    #projected
+    text() is string {
+        "directory is not empty: " + origin.string();
+    }
+}

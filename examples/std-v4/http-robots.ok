@@ -1,0 +1,10 @@
+module example v1.0.0;
+import "http/robots" take RobotsPolicy;
+import "url/value" take ParsedUrl;
+import "io/stdout" take Stdout;
+main() is int{
+    let policy=RobotsPolicy("User-agent: *\nDisallow: /private\nAllow: /private/public\n");
+    let denied=policy.allowed("ExampleBot",ParsedUrl("https://example.test/private").value());
+    let allowed=policy.allowed("ExampleBot",ParsedUrl("https://example.test/private/public").value());
+    Stdout().writeln(denied.string()+" "+allowed.string());0;
+}

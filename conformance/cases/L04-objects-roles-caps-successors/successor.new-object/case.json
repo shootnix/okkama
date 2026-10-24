@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.new-object",
+  "title": "a successor is a new object and the receiver is unchanged",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.NEW-IDENTITY",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "SUCC.MUST-USE",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "SUCC.DECL",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "closed/0\nopen/0\nopen/1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "spec 11.9: the original object is not mutated; aggregate storage consumes a successor."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,90 @@
+module http/cookie_date v1.0.0;
+import "time/clock" take Instant;
+import "time/date" take Date, InvalidDate;
+import "time/day" take TimeOfDay, InvalidTimeOfDay;
+import "time/local_datetime" take LocalDateTime;
+import "regex/pattern" take Regex;
+import "regex/search" take RegexMatches, FirstRegexMatch;
+import "regex/split" take RegexParts;
+import "http/header" take HttpAsciiLowercase;
+import "encoding/utf" take Utf8Encoded;
+import "encoding/single_byte" take Latin1Encoded, UnrepresentableLatin1Character;
+
+// RFC 6265bis draft-22 cookie-date token algorithm. Weekday/timezone words are
+// ignored, two-digit centuries are fixed and no ambient locale/clock is read.
+object ParsedCookieDate {
+    has origin is string;ParsedCookieDate(origin is string){self.origin=origin;}
+    value() is Instant {
+        confirm origin.length()<=4096 else throw InvalidCookieDate("source limit exceeded");
+        try{Latin1Encoded(origin).bytes();}catch e is UnrepresentableLatin1Character{throw InvalidCookieDate("octet source required");}
+        let fields=CookieDateReading();
+        let separators=Regex("[\\x{09}\\x{20}-\\x{2f}\\x{3b}-\\x{40}\\x{5b}-\\x{60}\\x{7b}-\\x{7e}]+");
+        for RegexParts(origin,separators) -> token {if token!="" {fields=fields.following(token);}}
+        fields.value();
+    }
+}
+object CookieDateReading {
+    has year,month,day,hour,minute,second is int;
+    has time_pattern,day_pattern,year_pattern,month_pattern is Regex;
+    CookieDateReading() {
+        year=-1;month=-1;day=-1;hour=-1;minute=-1;second=-1;
+        time_pattern=Regex("^([0-9]{1,2}):([0-9]{1,2}):([0-9]{1,2})([^0-9].*)?$");
+        day_pattern=Regex("^([0-9]{1,2})([^0-9].*)?$");
+        year_pattern=Regex("^([0-9]{2,4})([^0-9].*)?$");
+        month_pattern=Regex("^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)([^0-9].*)?$");
+    }
+    following(token is string) is ^CookieDateReading {
+        if hour<0 && RegexMatches(token,time_pattern).found() {
+            let found=FirstRegexMatch(token,time_pattern);
+            ^hour=CookieDateDecimal(found.capture(1).text()).value();
+            ^minute=CookieDateDecimal(found.capture(2).text()).value();
+            ^second=CookieDateDecimal(found.capture(3).text()).value();
+        }else{
+            if day<0 && RegexMatches(token,day_pattern).found() {
+                ^day=CookieDateDecimal(FirstRegexMatch(token,day_pattern).capture(1).text()).value();
+            }else{
+                let lower=HttpAsciiLowercase(token).string();
+                if month<0 && RegexMatches(lower,month_pattern).found() {
+                    ^month=CookieDateMonth(FirstRegexMatch(lower,month_pattern).capture(1).text()).value();
+                }else{
+                    if year<0 && RegexMatches(token,year_pattern).found() {
+                        ^year=CookieDateDecimal(FirstRegexMatch(token,year_pattern).capture(1).text()).value();
+                    }
+                }
+            }
+        }
+    }
+    value() is Instant {
+        confirm year>=0 && month>0 && day>0 && hour>=0 else throw InvalidCookieDate("missing fields");
+        let full=if year<=69 {2000+year;}else{if year<=99 {1900+year;}else{year;}};
+        confirm full>=1601 else throw InvalidCookieDate("year before 1601");
+        let date=try{Date(full,month,day);}catch e is InvalidDate{throw InvalidCookieDate("calendar fields");};
+        let time=try{TimeOfDay(hour,minute,second,0);}catch e is InvalidTimeOfDay{throw InvalidCookieDate("clock fields");};
+        Instant(LocalDateTime(date,time).minus(LocalDateTime(Date(1970,1,1),TimeOfDay(0,0,0,0))));
+    }
+}
+object CookieDateMonth {
+    has origin is string;CookieDateMonth(origin is string){self.origin=origin;}
+    value() is int {
+        let names=["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+        for (0..12) -> index {if names[index]==origin{return index+1;}}
+        throw InvalidCookieDate("month token");
+    }
+}
+object CookieDateDecimal {
+    has origin is string;CookieDateDecimal(origin is string){self.origin=origin;}
+    value() is int {
+        Utf8Encoded(origin).bytes().reduce(0) -> result,octet {
+            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidCookieDate("ASCII decimal required");
+            result*10+code-48;
+        };
+    }
+}
+object InvalidCookieDate does Error {
+    has reason is string;InvalidCookieDate(reason is string){self.reason=reason;}
+    reason() is string {reason;}text() is string {"invalid cookie date: "+reason;}
+}
+test "cookie date does not validate weekday" {
+    test.ok(ParsedCookieDate("Sun 01 Jan 70 0:0:0").value().unix_duration().seconds()==0.rat());
+    test.ok(try{ParsedCookieDate("29 Feb 2023 0:0:0").value();false;}catch e is InvalidCookieDate{true;});
+}

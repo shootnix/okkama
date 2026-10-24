@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Calc {
+    Calc();
+    sub(left is int, right is int) is int { left - right; }
+}
+
+main() is int {
+    let out = Stdout();
+    let c = Calc();
+    out.writeln(c.sub(10, 3).string());
+    out.writeln(c.sub(right: 3, left: 10).string());
+    out.writeln(c.sub(10, 3,).string());
+    0;
+}

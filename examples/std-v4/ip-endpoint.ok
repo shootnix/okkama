@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "net/ip" take IpAddress;
+import "net/endpoint" take IpEndpoint, InvalidPort;
+import "io/stdout" take Stdout;
+
+main() is int {
+    Stdout().writeln(IpEndpoint(IpAddress("192.0.2.1"),80).string());
+    Stdout().writeln(IpEndpoint(IpAddress("fe80::1"),443,"eth0").string());
+    try {IpEndpoint(IpAddress("::1"),65536);}
+    catch error is InvalidPort {Stdout().writeln(error.text());}
+    0;
+}

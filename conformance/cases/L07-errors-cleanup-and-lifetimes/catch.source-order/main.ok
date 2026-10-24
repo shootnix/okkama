@@ -1,0 +1,37 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object NotFound does Error {
+    has key is string;
+    NotFound(:key);
+    text() is string { "not found: " + key; }
+}
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let specific = try {
+        throw NotFound(key: "a");
+        "none";
+    } catch e is NotFound {
+        "specific";
+    } catch e is Error {
+        "general";
+    };
+    out.writeln(specific);
+    let general_first = try {
+        throw NotFound(key: "a");
+        "none";
+    } catch e is Error {
+        "general";
+    } catch e is NotFound {
+        "specific";
+    };
+    out.writeln(general_first);
+    0;
+}

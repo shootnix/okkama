@@ -1,0 +1,75 @@
+module http/conversation v1.0.0;
+import "http/message" take Request,Response;
+import "http/transport_observation" take HttpResponseObservation;
+import "http/version" take HttpVersion;
+import "http/body" take EmptyBody;
+import "http/client_request" take HttpDirectRequest;
+import "http/proxy_request" take HttpForwardRequest;
+import "http/header" take Header;
+import "url/value" take Url;
+import "http/endpoint" take EndpointAllowing;
+import "http/http1_session" take Http1Session,Http1Exchange;
+import "http/http2_session" take Http2Session,Http2Exchange;
+import "http/exchange" take ExchangeDetails;
+import "collections/sequence" take Sequencing;
+import "io/stream" take Closing;
+import "async/scope" take FutureGroup;
+import "http/http2_connection" take Http2Connecting,Http2Acquisition;
+import "http/connection" take HttpAcquisitionCleanup;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+role HttpConversation {
+    closed() is bool;close() is void;accepting() is bool;multiplexed() is bool;
+    async settled() is bool;async exchange(request is Request) is HttpConversationExchange;
+}
+role HttpConversationConnecting {async acquisition() is HttpConversationAcquisition;}
+role HttpConversationRouting {
+    connecting(url is Url) is HttpConversationConnecting;
+    allowed(url is Url,details is ExchangeDetails,access is EndpointAllowing) is bool;
+}
+object HttpConversationAcquisition {
+    has session is HttpConversation;has details is ExchangeDetails;
+    HttpConversationAcquisition(session is HttpConversation,details is ExchangeDetails){self.session=session;self.details=details;}
+    session() is HttpConversation{session;}details() is ExchangeDetails{details;}
+}
+object HttpConversationExchange does Closing {
+    has request is Request;has response is Response;has information is @Response;has lease is Closing;
+    HttpConversationExchange(request is Request,response is Response,information is @Response,lease is Closing){self.request=request;self.response=response;self.information=information;self.lease=lease;}
+    request() is Request{request;}response() is Response{response;}informational() is Sequencing<Response>{information;}
+    closed() is bool{lease.closed();}close() is void{lease.close();}
+}
+object Http1Conversation does HttpConversation,Closing {
+    has origin is Http1Session;has observation is @HttpResponseObservation;has forward is bool;has proxy_fields is @Header;Http1Conversation(origin is Http1Session){self.origin=origin;observation=[];forward=false;proxy_fields=[];}
+    Http1Conversation(origin is Http1Session,observation is HttpResponseObservation){self.origin=origin;self.observation=[observation];forward=false;proxy_fields=[];}
+    Http1Conversation(origin is Http1Session,observation is HttpResponseObservation,proxy_fields is @Header){self.origin=origin;self.observation=[observation];forward=true;self.proxy_fields=proxy_fields;}
+    closed() is bool{origin.closed();}close() is void{origin.close();}accepting() is bool{!origin.closed();}multiplexed() is bool{false;}
+    async settled() is bool{true;}
+    async exchange(request is Request) is HttpConversationExchange{
+        let source=Request(request.method(),request.target(),request.headers(),request.body(),HttpVersion.http_1_1);let prepared=if forward{HttpForwardRequest(source,proxy_fields).request();}else{HttpDirectRequest(source).request();};
+        for observation -> value{value.begin();}
+        let group is FutureGroup<Http1Exchange>=FutureGroup();let cleanup=HttpConversationSettlement(group);defer await cleanup.close();let pending=origin.exchange(prepared);group.start(pending);let result=await pending;
+        let heads=result.informational();let information is @Response=(0..heads.size()).map()->index{heads.item(index).response(EmptyBody());};HttpConversationExchange(request,result.response(),information,origin);
+    }
+}
+object Http2Conversation does HttpConversation,Closing {
+    has origin is Http2Session;Http2Conversation(origin is Http2Session){self.origin=origin;}
+    closed() is bool{origin.closed();}close() is void{origin.close();}accepting() is bool{origin.accepting();}multiplexed() is bool{true;}
+    async settled() is bool{await origin.settled();}
+    async exchange(request is Request) is HttpConversationExchange{
+        let prepared=Request(request.method(),request.target(),request.headers(),request.body(),HttpVersion.http_2);
+        let group is FutureGroup<Http2Exchange>=FutureGroup();let cleanup=HttpConversationSettlement(group);defer await cleanup.close();let pending=origin.exchange(prepared);group.start(pending);let result=await pending;
+        let heads=result.informational();let information is @Response=(0..heads.size()).map()->index{heads.item(index);};HttpConversationExchange(request,result.response(),information,result);
+    }
+}
+object HttpConversationSettlement<T>{has group is FutureGroup<T>;HttpConversationSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+
+object Http2ConversationConnecting does HttpConversationConnecting {
+    has origin is Http2Connecting;Http2ConversationConnecting(origin is Http2Connecting){self.origin=origin;}
+    async acquisition() is HttpConversationAcquisition{
+        let group is FutureGroup<Http2Acquisition>=FutureGroup();let empty is @Future<Http2Acquisition>=[];let pending=Atomic(empty);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(group,pending,taken,Http2ConversationDisposal().release);defer await cleanup.close();let opening=origin.acquisition();pending.replace([opening]);group.start(opening);let result=await opening;taken.set();HttpConversationAcquisition(Http2Conversation(result.session()),result.details());
+    }
+}
+object Http2ConversationDisposal{Http2ConversationDisposal();release(acquired is Http2Acquisition) is void{acquired.session().close();}}
+
+object HttpConversationAcquisitionDisposal{HttpConversationAcquisitionDisposal();release(acquired is HttpConversationAcquisition) is void{acquired.session().close();}}

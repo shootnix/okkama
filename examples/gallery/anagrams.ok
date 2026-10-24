@@ -1,0 +1,39 @@
+// Классы анаграмм
+// Задача: Сгруппировать слова по набору букв и стабильно упорядочить группы.
+// Запуск из корня: ./examples/gallery/run anagrams
+// Без аргументов выполняется встроенный пример; результат — stdout и проверки confirm.
+// Приёмы Okkama: Sorted, OrderedSet, filter и предметный порядок Comparing.
+// Исходная задача: https://github.com/ash/rakupp/blob/main/examples/anagrams.raku
+// Объяснение и ожидаемый результат: examples/gallery/README.md.
+
+module gallery/anagrams v1.0.0;
+import "collections/ordering" take Sorted;
+import "collections/set" take OrderedSet;
+import "compare" take Comparing,Order;
+import "io/stdout" take Stdout;
+object Anagrams {
+    Anagrams();
+    key(word is string) is string {
+        let letters=(0..word.length()).map()->i{word.slice(i,i+1);};
+        Sorted(letters).map()->letter{letter;}.join("");
+    }
+}
+object AnagramGroup does Comparing<AnagramGroup> {
+    has key is string;has words is @string;
+    AnagramGroup(key is string,words is @string){self.key=key;self.words=words;}
+    size() is int{words.size();}key() is string{key;}
+    order(other is AnagramGroup) is Order {
+        let by_size=other.size().order(words.size());
+        if by_size==Order.equal{key.order(other.key());}else{by_size;}
+    }
+    string() is string{key+"  "+(Sorted(words).map()->word{word;}).join(" ");}
+}
+main() is int {
+    let words="listen silent enlist tinsel evil live vile veil stop tops pots spot opts post night thing cat act tac angle glean angel dog god rat tar art cab bac stressed desserts".split(" ");
+    let grouping=Anagrams();let keys=OrderedSet(words.map()->word{grouping.key(word);});
+    let all=keys.map()->key{AnagramGroup(key,words.filter()->word{grouping.key(word)==key;});};
+    let groups=all.filter()->group{group.size()>1;};
+    let ordered=Sorted(groups);confirm ordered.size()==10 && ordered.first().size()==6;
+    for ordered->group{Stdout().writeln(group.string());}
+    Stdout().writeln("Classes: "+ordered.size().string()+"; words: "+words.size().string());0;
+}

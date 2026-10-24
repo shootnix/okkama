@@ -1,0 +1,61 @@
+module http/internal/http2_life v1.0.0;
+import "http/internal/http2_frame" take Http2Fault,Http2FaultScope;
+
+enum Http2StreamState=(idle,open,local_ended,remote_ended,closed);
+// No reserved states: push is disabled. Message semantics (informational/final
+// heads, trailers, DATA lengths) and actual reset output belong to the owner.
+object Http2StreamLife {
+    has stream is int;has state is Http2StreamState;
+    Http2StreamLife(stream is int){confirm stream>0 && stream<=2147483647 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid stream ID");self.stream=stream;state=Http2StreamState.idle;}
+    stream() is int{stream;}state() is Http2StreamState{state;}
+    // Inspect BEFORE applying a received frame. A final accepted frame closes
+    // the state but its data must still be delivered. Closed frames require
+    // minimal HPACK/connection-flow processing before discarding application data.
+    discarding() is bool{state==Http2StreamState.closed;}
+    local_headers(end_stream is bool) is ^Http2StreamLife{
+        confirm state==Http2StreamState.idle || state==Http2StreamState.open || state==Http2StreamState.remote_ended
+            else throw Http2Fault(Http2FaultScope.stream,5,stream,"local stream already ended");
+        let current=if state==Http2StreamState.idle{Http2StreamState.open;}else{state;};
+        ^state=if end_stream{Http2LifeEnding(current,true).value();}else{current;};
+    }
+    remote_headers(end_stream is bool) is ^Http2StreamLife{
+        confirm state!=Http2StreamState.remote_ended else throw Http2Fault(Http2FaultScope.stream,5,stream,"remote stream already ended");
+        let current=if state==Http2StreamState.idle{Http2StreamState.open;}else{state;};
+        ^state=if end_stream{Http2LifeEnding(current,false).value();}else{current;};
+    }
+    local_data(end_stream is bool) is ^Http2StreamLife{
+        confirm state!=Http2StreamState.idle else throw Http2Fault(Http2FaultScope.connection,1,0,"DATA on idle stream");
+        confirm state==Http2StreamState.open || state==Http2StreamState.remote_ended else throw Http2Fault(Http2FaultScope.stream,5,stream,"local stream already ended");
+        ^state=if end_stream{Http2LifeEnding(state,true).value();}else{state;};
+    }
+    remote_data(end_stream is bool) is ^Http2StreamLife{
+        confirm state!=Http2StreamState.idle else throw Http2Fault(Http2FaultScope.connection,1,0,"DATA on idle stream");
+        confirm state!=Http2StreamState.remote_ended else throw Http2Fault(Http2FaultScope.stream,5,stream,"remote stream already ended");
+        ^state=if end_stream{Http2LifeEnding(state,false).value();}else{state;};
+    }
+    local_reset() is ^Http2StreamLife{
+        confirm state!=Http2StreamState.idle else throw Http2Fault(Http2FaultScope.connection,1,0,"reset on idle stream");^state=Http2StreamState.closed;
+    }
+    remote_reset() is ^Http2StreamLife{
+        confirm state!=Http2StreamState.idle else throw Http2Fault(Http2FaultScope.connection,1,0,"reset on idle stream");^state=Http2StreamState.closed;
+    }
+}
+object Http2LifeEnding {
+    has origin is Http2StreamState;has local is bool;Http2LifeEnding(origin is Http2StreamState,local is bool){self.origin=origin;self.local=local;}
+    value() is Http2StreamState{
+        if origin==Http2StreamState.closed || (local && origin==Http2StreamState.remote_ended) || (!local && origin==Http2StreamState.local_ended){Http2StreamState.closed;}
+        else{if local{Http2StreamState.local_ended;}else{Http2StreamState.remote_ended;}}
+    }
+}
+object Http2ClientStreamIds {
+    has following is int;Http2ClientStreamIds(){following=1;}
+    Http2ClientStreamIds(first is int){confirm first>0 && first<=2147483647 && first%2==1 else throw Http2Fault(Http2FaultScope.connection,1,0,"client stream ID must be positive odd uint31");following=first;}
+    next_stream() is int{confirm following<=2147483647 else throw Http2StreamIdsExhausted();following;}
+    highest() is int{if following==1{0;}else{following-2;}}
+    allocated() is ^Http2ClientStreamIds{confirm following<=2147483647 else throw Http2StreamIdsExhausted();^following=following+2;}
+}
+object Http2StreamIdsExhausted does Error{Http2StreamIdsExhausted();text() is string{"HTTP2 client stream IDs exhausted";}}
+test "reset is local to one stream state" {
+    let first=Http2StreamLife(1);let sibling=Http2StreamLife(3);first=first.local_headers(false);sibling=sibling.local_headers(false);first=first.local_reset();
+    test.ok(first.discarding());test.ok(sibling.state()==Http2StreamState.open);
+}

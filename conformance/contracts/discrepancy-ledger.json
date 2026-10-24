@@ -1,0 +1,922 @@
+{
+  "schema": "ocs-ledger/1",
+  "description": "Material disagreements between Okkama sources, with the conformance decision for each.",
+  "implementation_observed": "okkama-pl (Perl) at git f1ad6d43",
+  "entries": [
+    {
+      "id": "D-001",
+      "subject": "Projection syntax: `&action` versus `#projected`",
+      "sources": [
+        "docs/okkama-grammar-1.0.ebnf lines 58, 94 (`projection_action_decl = \"&\" action_decl`)",
+        "docs/okkama-spec-11072026.md section 11.3",
+        "docs/okkama-llm-context-1.0.md sections 2 and 14"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `&doubled()` is rejected (\"Object projection declarations use #projected, not &\"); `#projected` and `#projected(alias)` work.",
+      "intended_contract": "Single `&` projection syntax is removed; `#projected` / `#projected(alias)` mark projection actions.",
+      "authority": "Specification 11.3 (updated 18.10.2026) states the removal explicitly; the EBNF was not updated.",
+      "conformance_expectation": "Mandatory: `&` projections are rejected, `#projected` prefixes work (GRAM.PROJECTED-DIRECTIVE, OBJ.PROJECTIONS).",
+      "resolution": "resolved",
+      "cases": [
+        "L01.gram.projected.directive",
+        "L01.gram.projected.removed-ampersand"
+      ],
+      "contracts": [
+        "GRAM.PROJECTED-DIRECTIVE",
+        "OBJ.PROJECTIONS"
+      ]
+    },
+    {
+      "id": "D-002",
+      "subject": "`confirm ... else throw` missing from the EBNF",
+      "sources": [
+        "docs/okkama-grammar-1.0.ebnf line 137 (`confirm_else = \"else\" \"panic\" expr`)",
+        "docs/okkama-spec-11072026.md section 9.4"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: both `else throw` and `else panic` parse and run.",
+      "intended_contract": "confirm accepts exactly `else throw expr` or `else panic expr`; the operand is lazy.",
+      "authority": "Specification 9.4.",
+      "conformance_expectation": "Mandatory: both forms accepted, any other else operand rejected.",
+      "resolution": "resolved",
+      "cases": [
+        "L01.gram.confirm.forms",
+        "L01.gram.confirm.else-value"
+      ],
+      "contracts": [
+        "GRAM.CONFIRM",
+        "ERR.CONFIRM"
+      ]
+    },
+    {
+      "id": "D-003",
+      "subject": "Productions the specification adds but the EBNF lacks",
+      "sources": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md sections 9.5 (throw / throw;), 11.3 (#projected), 14 (async test), 6.5 (generic bounds `<T: Role>`)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: all listed forms parse.",
+      "intended_contract": "The grammar is a parser construction target; the specification adds throw statements, bare rethrow, async tests, directives and bounds.",
+      "authority": "Specification sections cited; the EBNF is incomplete rather than restrictive.",
+      "conformance_expectation": "Grammar contracts include these forms (GRAM.THROW-PANIC, GRAM.TEST-BLOCK, GRAM.PROJECTED-DIRECTIVE, GEN.BOUNDS).",
+      "resolution": "resolved",
+      "cases": [
+        "L01.gram.throw.forms",
+        "L01.gram.test.skipped-in-production",
+        "L05.generic.bound-satisfied"
+      ],
+      "contracts": [
+        "GRAM.THROW-PANIC",
+        "GEN.BOUNDS"
+      ]
+    },
+    {
+      "id": "D-004",
+      "subject": "Category of a bare failed `confirm`",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 9.4 (\"uncatchable programming error\")",
+        "docs/okkama-spec-11072026.md section 11.4 (\"Without else, an unsuccessful condition panics\")",
+        "docs/okkama-llm-context-1.0.md section 1 rule 9"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: reported as `RuntimeError: confirm failed`, not catchable.",
+      "intended_contract": "A bare failed confirm is uncatchable; the documents disagree whether its category is panic or programming error.",
+      "authority": "Both texts agree on uncatchability, which is what programs can observe.",
+      "conformance_expectation": "Expectations accept categories panic or runtime and require that no catch observes it.",
+      "resolution": "resolved for conformance (category naming remains a documentation inconsistency)",
+      "cases": [
+        "L07.confirm.bare-uncatchable",
+        "L07.destroy.failure-reported"
+      ],
+      "contracts": [
+        "ERR.CONFIRM"
+      ]
+    },
+    {
+      "id": "D-005",
+      "subject": "Disputed reserved words `optional`, `setters`, `mutable`, `var`",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 4.3 (lists them as not valid syntax; \"code MUST NOT use them\")",
+        "docs/okkama-grammar-1.0.md context restrictions (lists only isa, super, abstract, protected, null, none, nil, with)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: accepts all four as ordinary identifiers.",
+      "intended_contract": "`optional`, `setters`, `mutable` and `var` are ordinary identifiers.",
+      "authority": "Language owner decision (19.10.2026): \"no\" (not reserved). Spec 4.3 must drop them from its list.",
+      "conformance_expectation": "Mandatory LEX.NONRESERVED-WORDS: the words may name locals, fields, parameters and actions.",
+      "resolution": "resolved",
+      "cases": [
+        "L01.lex.nonreserved-words"
+      ],
+      "contracts": [
+        "LEX.NONRESERVED-WORDS"
+      ]
+    },
+    {
+      "id": "D-006",
+      "subject": "Spurious secondary lexer diagnostic after an unknown escape",
+      "sources": [
+        "okkama-pl/lib/Okkama/Lexer.pm",
+        "docs/okkama-spec-11072026.md section 4.2"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `\"\\q\"` reports the unknown escape and then a spurious `Unterminated string` at a later line.",
+      "intended_contract": "An unknown escape is a lexer error.",
+      "authority": "Specification 4.2.",
+      "conformance_expectation": "Diagnostic prose is not normative; the rejection itself is conforming. Recorded as an observation only.",
+      "resolution": "resolved (non-normative observation)",
+      "cases": [
+        "L01.lex.string.unknown-escape"
+      ],
+      "contracts": [
+        "LEX.STRING-LITERALS"
+      ]
+    },
+    {
+      "id": "D-007",
+      "subject": "Byte values as map keys",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 6.3 (byte listed as a map key; identity distinct from int)",
+        "docs/OkkamaBook.md section 5.3 (\"Byte-valued map keys are currently unsupported\")",
+        "docs/okkama-llm-context-1.0.md sections 8 and 11 (keys cannot be byte) versus section 4 (byte listed)",
+        "docs/okkama-spec-11072026.md section 13 (fake storage rejects byte keys)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `[byte(1): \"byte\", 1: \"int\"]` works with distinct keys.",
+      "intended_contract": "byte values are not valid map keys.",
+      "authority": "Language owner decision (19.10.2026): \"no\". Spec 6.3 must remove byte from the key list (the book and fake-storage rules already agree).",
+      "conformance_expectation": "Mandatory COLL.MAP-BYTE-KEYS: a byte key is rejected (statically or when evaluated). Perl accepts it: DEF-004.",
+      "resolution": "resolved",
+      "cases": [
+        "L05.map.byte-keys-rejected"
+      ],
+      "contracts": [
+        "COLL.MAP-BYTE-KEYS"
+      ]
+    },
+    {
+      "id": "D-008",
+      "subject": "Runtime support for `import ... as`",
+      "sources": [
+        "docs/okkama-llm-context-1.0.md section 25 (\"alias (as) imports parse but are not runtime-supported\")",
+        "docs/okkama-spec-11072026.md section 5.2 (as replaces the namespace)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: aliases work, including `as` combined with `take`.",
+      "intended_contract": "`as` replaces the basename namespace; with take it contains only the selected names.",
+      "authority": "Specification 5.2 (the LLM context status table is stale).",
+      "conformance_expectation": "Mandatory MOD.ALIAS cases.",
+      "resolution": "resolved",
+      "cases": [
+        "L06.alias.namespace",
+        "L06.alias.with-take"
+      ],
+      "contracts": [
+        "MOD.ALIAS"
+      ]
+    },
+    {
+      "id": "D-009",
+      "subject": "Decimal literal tokens",
+      "sources": [
+        "docs/okkama-grammar-1.0.ebnf (`DECIMAL = implementation_defined_decimal_token`)",
+        "docs/okkama-spec-11072026.md section 4.2",
+        "docs/okkama-llm-context-1.0.md section 25"
+      ],
+      "observed": "Not exercised.",
+      "intended_contract": "Decimal literals have no runtime semantics yet.",
+      "authority": "Specification 4.2 and grammar.",
+      "conformance_expectation": "Contract LEX.DECIMAL-LITERALS is deferred; no mandatory expectation.",
+      "resolution": "deferred",
+      "cases": [],
+      "contracts": [
+        "LEX.DECIMAL-LITERALS"
+      ]
+    },
+    {
+      "id": "D-010",
+      "subject": "Documents cite standard-library paths that are not in the active std/",
+      "sources": [
+        "docs/okkama-spec-11072026.md sections 6.7 (`import \"okkama\" take Dump`), 6.9 (`import \"regex\"`), 14 (`test/more`)",
+        "docs/okkama-llm-context-1.0.md section 25 (socket/tcp, encoding/csv, test/more, http/headers, ...)",
+        "stdlib_DEPRECATED/"
+      ],
+      "observed": "Those import paths do not exist under std/; std/ provides testing/*, runtime/debug, regex/* instead.",
+      "intended_contract": "The active standard library is std/.",
+      "authority": "Task instruction: std/ is the active standard library; historical trees do not define behaviour.",
+      "conformance_expectation": "Conformance cases import only modules that exist in the audited std/ inventory (contracts/stdlib-inventory.json).",
+      "resolution": "resolved",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-011",
+      "subject": "How the standard library is located",
+      "sources": [
+        "docs/okkama-llm-context-1.0.md toolchain section (\"stdlib resolves as ../stdlib relative to cwd\")",
+        "okkama-pl/lib/Okkama.pm (OKKAMA_STDLIB_DIR, default /usr/local/lib/okkama/std)"
+      ],
+      "observed": "The CLI uses OKKAMA_STDLIB_DIR or /usr/local/lib/okkama/std (a symlink to this repository's std/ on the audited host).",
+      "intended_contract": "The suite passes the selected library root explicitly in every adapter request.",
+      "authority": "Implementation source.",
+      "conformance_expectation": "Adapters receive `stdlib_root`; the Perl adapter sets OKKAMA_STDLIB_DIR from it.",
+      "resolution": "resolved",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-012",
+      "subject": "Detection stage of missing `take` names",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 5.2 (\"Missing take names are runtime errors\")"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: the analyzer reports `Import ... has no declaration ...` before execution.",
+      "intended_contract": "Missing take names are module-resolution errors; no program code runs.",
+      "authority": "Specification 5.2 plus the general rule that declaration-derived facts are checked before execution.",
+      "conformance_expectation": "Expectation accepts check or runtime stage with resolution/semantic category and empty stdout.",
+      "resolution": "resolved",
+      "cases": [
+        "L06.take.missing-name",
+        "L06.reexport.take-transitive-name"
+      ],
+      "contracts": [
+        "MOD.TAKE"
+      ]
+    },
+    {
+      "id": "D-013",
+      "subject": "Specification section 22 describes async as having no futures or scheduler",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 22 (\"synchronous-contract async actions ... no future or scheduler runtime\")",
+        "docs/okkama-spec-11072026.md section 18"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: lazy futures, cooperative scheduler, spawn and channels are implemented.",
+      "intended_contract": "Section 18 (futures, await, spawn) governs.",
+      "authority": "Specification 18 and docs/async-guide.md.",
+      "conformance_expectation": "L08 cases follow section 18.",
+      "resolution": "resolved",
+      "cases": [],
+      "contracts": [
+        "ASYNC.FUTURES"
+      ]
+    },
+    {
+      "id": "D-014",
+      "subject": "\"No cancellation, timeout, race or join\" versus library support",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 18 (first version has no cancellation, timeout syntax, race, join)",
+        "std/async/cancellation.ok",
+        "std/async/timeout.ok",
+        "std/async/collect.ok",
+        "docs/async-guide.md"
+      ],
+      "observed": "Cancellation, timeouts, races and joins exist as std library objects and Future.cancel().",
+      "intended_contract": "There is no dedicated syntax; the capabilities are library contracts.",
+      "authority": "std/ modules and the async guide.",
+      "conformance_expectation": "Covered as STD.ASYNC.* contracts, not language syntax.",
+      "resolution": "resolved",
+      "cases": [
+        "L08.cancellation.cooperative-token",
+        "L08.future.cancel-unstarted"
+      ],
+      "contracts": []
+    },
+    {
+      "id": "D-015",
+      "subject": "Diagnostic message formats",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 20",
+        "docs/okkama-llm-context-1.0.md section 24"
+      ],
+      "observed": "Perl renders `Type: message` with stack frames; older documents show `Runtime error at line N: ...`.",
+      "intended_contract": "Diagnostic prose, stack traces and rendering are not normative.",
+      "authority": "Task requirement and spec 20 (tooling projection).",
+      "conformance_expectation": "The suite compares only logical categories, stages and uncaught Error types; stderr is ignored for failing cases.",
+      "resolution": "resolved",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-016",
+      "subject": "Ordinary int arithmetic beyond signed 64-bit",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 8.3",
+        "docs/bitwise-guide.md (\"Это не новая общая спецификация переполнений\")",
+        "docs/OkkamaBook.md section 5.4"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `9223372036854775807 + 1` evaluates to 9223372036854775808 (arbitrary precision).",
+      "intended_contract": "Signed 64-bit int arithmetic wraps on overflow (two's complement), as in Go; MIN % -1 is 0. Okkama has no constant declarations, so Go's compile-time rejection of overflowing constant expressions has no counterpart: every overflowing expression wraps.",
+      "authority": "Language owner decision (19.10.2026): \"same as in Go\".",
+      "conformance_expectation": "Mandatory VAL.INT-OVERFLOW. Perl uses arbitrary precision: DEF-005.",
+      "resolution": "resolved",
+      "cases": [
+        "L02.int.overflow-wraps"
+      ],
+      "contracts": [
+        "VAL.INT-OVERFLOW"
+      ]
+    },
+    {
+      "id": "D-017",
+      "subject": "Detection stage of a missing entry point",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 3"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `RuntimeError: Program requires main() declaration` before any program code.",
+      "intended_contract": "Executable runs require main; the stage is unspecified.",
+      "authority": "Specification 3.",
+      "conformance_expectation": "Expectation accepts check or runtime stages.",
+      "resolution": "resolved",
+      "cases": [
+        "L00.entry.missing-main-fails"
+      ],
+      "contracts": [
+        "ENTRY.REQUIRED"
+      ]
+    },
+    {
+      "id": "D-018",
+      "subject": "Anonymous action parameter annotations",
+      "sources": [
+        "docs/okkama-llm-context-1.0.md section 15 (\"parameter annotations and variadic parameters are rejected\")",
+        "docs/okkama-spec-11072026.md section 8.10.2 (parameter types are mandatory)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: parameter types are required; untyped parameters are rejected.",
+      "intended_contract": "Parameter types and an explicit result are mandatory.",
+      "authority": "Specification 8.10.2.",
+      "conformance_expectation": "GRAM.ANON-ACTION cases.",
+      "resolution": "resolved",
+      "cases": [
+        "L01.gram.anon.untyped-param"
+      ],
+      "contracts": [
+        "GRAM.ANON-ACTION"
+      ]
+    },
+    {
+      "id": "D-019",
+      "subject": "`probe` fixture shorthand",
+      "sources": [
+        "okkama-pl/t/README.md",
+        "okkama-pl/t/lib/Okkama/Test.pm"
+      ],
+      "observed": "The Perl test helper rewrites a module-level `probe()` action into an object method and records its value with an interpreter subclass.",
+      "intended_contract": "Not language syntax; a test-fixture convenience.",
+      "authority": "okkama-pl/t/README.md.",
+      "conformance_expectation": "The conformance suite never uses probe rewriting or internal value extraction; every case is a real program observed through public behaviour.",
+      "resolution": "resolved",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-020",
+      "subject": "Untyped `has` declarations",
+      "sources": [
+        "docs/okkama-grammar-1.0.ebnf (`has_decl = \"has\" attr_name_list has_type? has_default? \";\"`)",
+        "docs/okkama-spec-11072026.md section 11.2"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `has count = 0;` parses.",
+      "intended_contract": "The grammar allows omitting the type; the specification does not define the field's runtime type.",
+      "authority": "Grammar only.",
+      "conformance_expectation": "Only syntactic acceptance is mandatory (GRAM.HAS-DECL boundary); shorthand rejects untyped fields (spec 11.3).",
+      "resolution": "resolved (runtime typing of untyped fields not asserted)",
+      "cases": [
+        "L01.gram.has.untyped-with-default",
+        "L04.shorthand.untyped-field"
+      ],
+      "contracts": [
+        "GRAM.HAS-DECL"
+      ]
+    },
+    {
+      "id": "D-021",
+      "subject": "Residual mentions of the removed `allow` declaration",
+      "sources": [
+        "docs/object-caps-0.0.1-ru.md (\"Роли, allow и #projected сохраняют свои отдельные контракты\")",
+        "stdlib_DEPRECATED/",
+        "research/ R13-R21 sources",
+        "docs/okkama-spec-11072026.md section 16",
+        "docs/allow-removal.md"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `allow` declarations are rejected by the parser.",
+      "intended_contract": "`allow` is removed with no compatibility mode (IMP-27).",
+      "authority": "Specification 16 and the IMP-27 decision.",
+      "conformance_expectation": "Mandatory rejection cases; historical sources do not define behaviour.",
+      "resolution": "resolved",
+      "cases": [
+        "L01.gram.removed.allow",
+        "L01.gram.removed.allow-target"
+      ],
+      "contracts": [
+        "GRAM.REMOVED-SYNTAX",
+        "OBJ.NO-INHERITANCE"
+      ]
+    },
+    {
+      "id": "D-022",
+      "subject": "Experimental effects and export checking",
+      "sources": [
+        "improvements-roadmap/results/IMP-25/RESULT.md",
+        "improvements-roadmap/results/IMP-26/RESULT.md",
+        "docs/qualified-export-prototype.md",
+        "docs/source-effect-prototype.md"
+      ],
+      "observed": "Implemented as opt-in prototypes outside the main compiler.",
+      "intended_contract": "Not language contracts.",
+      "authority": "IMP-25/IMP-26 results (\"not included in the main compiler as mandatory policy\").",
+      "conformance_expectation": "Excluded from the mandatory suite.",
+      "resolution": "resolved (excluded)",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-023",
+      "subject": "Explicit runtime import directories",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 5.2 (lookup step 1: explicit runtime import directories)",
+        "okkama-pl/lib/Okkama.pm"
+      ],
+      "observed": "The CLI exposes no option for import directories.",
+      "intended_contract": "Lookup is local-first: importer directory, then the standard library.",
+      "authority": "Specification 5.2.",
+      "conformance_expectation": "Cases use only importer-relative and std/ lookup; harness modules are copied next to the program.",
+      "resolution": "resolved",
+      "cases": [],
+      "contracts": [
+        "MOD.RESOLUTION"
+      ]
+    },
+    {
+      "id": "D-024",
+      "subject": "Match exhaustiveness and branch type compatibility",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 8.12",
+        "docs/okkama-llm-context-1.0.md section 7"
+      ],
+      "observed": "Not checked.",
+      "intended_contract": "Future semantic-analysis work.",
+      "authority": "Specification 8.12.",
+      "conformance_expectation": "Contract CTRL.MATCH-EXHAUSTIVENESS is deferred.",
+      "resolution": "deferred",
+      "cases": [],
+      "contracts": [
+        "CTRL.MATCH-EXHAUSTIVENESS"
+      ]
+    },
+    {
+      "id": "D-025",
+      "subject": "Generic role bounds absent from the EBNF",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 6.5 (`object Heap<T: Comparing<T>>`)",
+        "docs/okkama-grammar-1.0.ebnf (`generic_params` has no bound)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: bounds parse and are checked after inference.",
+      "intended_contract": "One nominal role bound per object type parameter.",
+      "authority": "Specification 6.5.",
+      "conformance_expectation": "GEN.BOUNDS cases.",
+      "resolution": "resolved",
+      "cases": [
+        "L05.generic.bound-satisfied",
+        "L05.generic.bound-violated"
+      ],
+      "contracts": [
+        "GEN.BOUNDS"
+      ]
+    },
+    {
+      "id": "D-026",
+      "subject": "Proposed backend contracts",
+      "sources": [
+        "okkama-pl/bin/okkamac",
+        "okkama-pl/bin/okkama-ir",
+        "okkama-pl/compiler-draft/",
+        "docs/okkama-spec-11072026.md section 11.2.1 (OIR Profile 0 remains int-only)"
+      ],
+      "observed": "An experimental IR/compiler path accepts only a narrow int profile.",
+      "intended_contract": "Backends must eventually satisfy the same language contracts; their temporary limits are not language rules.",
+      "authority": "Task instruction (do not standardise temporary limits).",
+      "conformance_expectation": "Excluded from the mandatory suite; a compiled backend adapter would run the same cases.",
+      "resolution": "resolved (excluded)",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-027",
+      "subject": "Unicode data versions",
+      "sources": [
+        "std/regex/pattern.ok (Unicode 16.0.0)",
+        "std/unicode/normalization.ok (Unicode 16.0.0)"
+      ],
+      "observed": "std pins Unicode 16.0.0; the suite's Python oracle uses an older unicodedata (13.0.0).",
+      "intended_contract": "Behaviour depends on the pinned 16.0.0 tables.",
+      "authority": "std module headers.",
+      "conformance_expectation": "Unicode cases use code points whose properties are identical in both versions and require the `unicode-data` environment tag.",
+      "resolution": "resolved",
+      "cases": [
+        "L09.unicode.normalization",
+        "L09.html.entities"
+      ],
+      "contracts": []
+    },
+    {
+      "id": "D-028",
+      "subject": "Grammar `for` patterns with several bindings or an index",
+      "sources": [
+        "docs/okkama-grammar-1.0.ebnf (`pattern = BINDING_NAME (\",\" BINDING_NAME)* | BINDING_NAME \"[\" INT \"]\"`)",
+        "docs/okkama-spec-11072026.md section 9.9 (\"Current runtime supports one binding\")"
+      ],
+      "observed": "Not exercised.",
+      "intended_contract": "Undocumented.",
+      "authority": "None.",
+      "conformance_expectation": "No mandatory expectation; recorded as an undocumented grammar alternative.",
+      "resolution": "deferred",
+      "cases": [],
+      "contracts": []
+    },
+    {
+      "id": "D-029",
+      "subject": "Section 22 lists owner-only private fields as parser-only",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 22 (\"Parser-supported but not fully runtime-specified: owner-only private fields\")",
+        "docs/okkama-spec-11072026.md sections 11.2, 16"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: field privacy is enforced at runtime and statically.",
+      "intended_contract": "Fields are private to their owner.",
+      "authority": "Specification 11.2 and 16.",
+      "conformance_expectation": "Mandatory OBJ.FIELD-PRIVACY cases.",
+      "resolution": "resolved",
+      "cases": [
+        "L04.privacy.external-read",
+        "L04.privacy.peer-read"
+      ],
+      "contracts": [
+        "OBJ.FIELD-PRIVACY"
+      ]
+    },
+    {
+      "id": "D-030",
+      "subject": "CR LF line endings",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 4.2"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: CRLF sources run.",
+      "intended_contract": "As in Go: CR is whitespace between tokens, so CRLF sources are accepted; CR characters inside fenced raw strings are discarded.",
+      "authority": "Language owner decision (19.10.2026): \"same as in other langs / Go\". Spec 4.2 (\"every character ... retained\") must be amended for CR.",
+      "conformance_expectation": "Mandatory LEX.CRLF. Perl keeps CR in raw strings: DEF-006.",
+      "resolution": "resolved",
+      "cases": [
+        "L01.lex.crlf.line-endings",
+        "L01.lex.crlf.raw-string-discards-cr"
+      ],
+      "contracts": [
+        "LEX.CRLF"
+      ]
+    },
+    {
+      "id": "D-031",
+      "subject": "Sign of `%` with negative operands",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 8.3"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `-7 % 3` is 2 and `7 % -3` is -2 (floored, sign of the divisor).",
+      "intended_contract": "Truncated division as in Go: x % y has the sign of x.",
+      "authority": "Language owner decision (19.10.2026): \"same\" (as Go).",
+      "conformance_expectation": "Mandatory VAL.INT-MODULO-SIGN. Perl uses floored modulo (-7 % 3 = 2): DEF-007.",
+      "resolution": "resolved",
+      "cases": [
+        "L02.int.modulo-sign"
+      ],
+      "contracts": [
+        "VAL.INT-MODULO-SIGN"
+      ]
+    },
+    {
+      "id": "D-032",
+      "subject": "Canonical text of floats",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 6.6 (\"canonical numeric text\")"
+      ],
+      "observed": "Perl prints integral floats without `.0`; non-terminating values, exponents, signed zero and non-finite values are not exercised.",
+      "intended_contract": "Float text is Go's strconv.FormatFloat(x, 'g', -1, 64): shortest round-trip digits, exponent notation when the decimal exponent is < -4 or >= 6, IEEE negative zero as -0. Non-finite values are not representable in the finite float contract.",
+      "authority": "Language owner decision (19.10.2026): proposal accepted (\"ок\").",
+      "conformance_expectation": "Mandatory VAL.FLOAT-TEXT cases; expected strings computed with go1.26.1 using runtime (not constant-folded) values.",
+      "resolution": "resolved",
+      "cases": [
+        "L02.float.text-shortest-round-trip",
+        "L02.float.text-exponent-and-zero"
+      ],
+      "contracts": [
+        "VAL.FLOAT-TEXT"
+      ]
+    },
+    {
+      "id": "D-033",
+      "subject": "Whitespace set of trim() and CR handling of chomp()",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 6.6"
+      ],
+      "observed": "Basic ASCII space/LF behaviour observed.",
+      "intended_contract": "trim() removes leading and trailing Unicode White_Space as Go strings.TrimSpace does; chomp() removes exactly one trailing CRLF or LF.",
+      "authority": "Language owner decision (19.10.2026): proposal accepted (\"ок\").",
+      "conformance_expectation": "Mandatory VAL.STRING-WHITESPACE case.",
+      "resolution": "resolved",
+      "cases": [
+        "L02.string.trim-whitespace-set"
+      ],
+      "contracts": [
+        "VAL.STRING-WHITESPACE"
+      ]
+    },
+    {
+      "id": "D-034",
+      "subject": "Exit status after an unobserved spawned failure",
+      "sources": [
+        "docs/async-guide.md section 6.4 (\"ненаблюдённая ошибка не теряется и сообщается пользователю\")"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: the error is rendered on stderr and the run fails (nonzero status).",
+      "intended_contract": "An unobserved spawned failure is reported and the run fails with a nonzero status.",
+      "authority": "Language owner decision (19.10.2026): proposal accepted (\"ок\").",
+      "conformance_expectation": "Mandatory ASYNC.UNOBSERVED-FAILURE case.",
+      "resolution": "resolved",
+      "cases": [
+        "L08.shutdown.unobserved-failure"
+      ],
+      "contracts": [
+        "ASYNC.SHUTDOWN",
+        "ASYNC.UNOBSERVED-FAILURE"
+      ]
+    },
+    {
+      "id": "D-035",
+      "subject": "Field defaults and construction order",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 11.3 (\"Field defaults are evaluated before the constructor body\")"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: a default with an observable effect is evaluated even when the caller supplies the field.",
+      "intended_contract": "Before the constructor runs, self is filled with every field default. The constructor (shorthand bindings, then the body) binds the supplied values, replacing defaults. Afterwards every field must be bound, otherwise construction fails at runtime.",
+      "authority": "Language owner decision (19.10.2026), refined the same day: defaults are always evaluated first.",
+      "conformance_expectation": "Mandatory OBJ.CONSTRUCTION-ORDER: defaults are evaluated even for supplied fields, a full or shorthand body sees the default or supplied value, and an unbound field after the constructor dies at runtime. The earlier reading (default skipped when supplied) and its defect DEF-008 are withdrawn.",
+      "resolution": "resolved",
+      "cases": [
+        "L04.fields.default-evaluated-then-replaced",
+        "L04.ctor.full-body-sees-default",
+        "L04.shorthand.body-sees-supplied-value",
+        "L04.ctor.unbound-field-dies-after-body"
+      ],
+      "contracts": [
+        "OBJ.CONSTRUCTION-ORDER"
+      ]
+    },
+    {
+      "id": "D-036",
+      "subject": "Iteration protocol names",
+      "sources": [
+        "docs/okkama-spec-11072026.md sections 6.8 and 9.9 (`Iterable<T>`, `Cursor<T>` with current()/advanced())",
+        "std/collections/iteration.ok (`Iterating<T>`, `Cursor<T>` with item()/successor())",
+        "docs/std/stdlib-roadmap-v4.md"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: recognises the std roles Iterating/Cursor with available/item/successor.",
+      "intended_contract": "Nominal iteration through the standard roles of the active std.",
+      "authority": "The active std/ module plus roadmap v4; the specification text is stale.",
+      "conformance_expectation": "COLL.ITERABLE cases use Iterating/item/successor.",
+      "resolution": "resolved",
+      "cases": [
+        "L05.iterable.for-protocol-order"
+      ],
+      "contracts": [
+        "COLL.ITERABLE"
+      ]
+    },
+    {
+      "id": "D-037",
+      "subject": "Ordering relation of map keys",
+      "sources": [
+        "docs/okkama-spec-11072026.md sections 6.6, 6.8 (\"sorted by key\")",
+        "docs/okkama-spec-11072026.md section 6.3 (key identity before host normalisation)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: int keys are ordered by their decimal text (`-1,10,100,9`).",
+      "intended_contract": "keys()/values() are sorted by key; for int keys the natural (numeric) order.",
+      "authority": "Specification 6.6 read with the key-identity rule of 6.3.",
+      "conformance_expectation": "Mandatory COLL.MAP case expects numeric order; Perl fails it (DEF-003). The specification should state the order relation per key category.",
+      "resolution": "resolved (with a documentation request)",
+      "cases": [
+        "L05.map.int-key-order"
+      ],
+      "contracts": [
+        "COLL.MAP"
+      ]
+    },
+    {
+      "id": "D-038",
+      "subject": "Async native declarations",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 5.3 (async is not a supported native form)",
+        "docs/okkama-grammar-1.0.md context restrictions",
+        "docs/okkama-spec-11072026.md section 11.6 (async is supported for native declarations)",
+        "docs/okkama-grammar-1.0.ebnf (`native_action_decl = \"native\" async_mark? ...`)",
+        "std/runtime/*.ok (42 `native async` declarations)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: accepts `native async` declarations.",
+      "intended_contract": "Async native declarations are valid.",
+      "authority": "Specification 11.6, the grammar production and active std usage.",
+      "conformance_expectation": "Async natives are accepted (NATIVE.DECL normal).",
+      "resolution": "resolved",
+      "cases": [
+        "L06.native.decl-valid-forms"
+      ],
+      "contracts": [
+        "NATIVE.DECL"
+      ]
+    },
+    {
+      "id": "D-039",
+      "subject": "Channel API names",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 18.2 and docs/okkama-llm-context-1.0.md (`Sender<T>`, `Receiver<T>`, `receive`)",
+        "std/async/channel.ok (`Sending<T>`, `Receiving<T>`, `item()`)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: implements the std names.",
+      "intended_contract": "The active std/ module API.",
+      "authority": "std/ is the active library.",
+      "conformance_expectation": "L08 channel cases use Sending/Receiving/item.",
+      "resolution": "resolved",
+      "cases": [
+        "L08.spawn.eager-start-and-channel",
+        "L08.channel.close-semantics"
+      ],
+      "contracts": [
+        "STD.ASYNC.CHANNEL"
+      ]
+    },
+    {
+      "id": "D-040",
+      "subject": "Channel capacity zero",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 18.2 and docs/okkama-llm-context-1.0.md (capacity must be positive)",
+        "std/async/channel.ok (capacity zero is an unbuffered rendezvous; negative throws)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: capacity zero works as a rendezvous.",
+      "intended_contract": "Capacity zero is valid; negative capacities throw InvalidChannelCapacity.",
+      "authority": "The active std/ module.",
+      "conformance_expectation": "Mandatory rendezvous and negative-capacity cases.",
+      "resolution": "resolved",
+      "cases": [
+        "L08.channel.rendezvous",
+        "L08.channel.negative-capacity"
+      ],
+      "contracts": [
+        "STD.ASYNC.CHANNEL"
+      ]
+    },
+    {
+      "id": "D-041",
+      "subject": "`Cancelled` as a catch type",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 9.6 (catch types: Error, concrete Error objects, NativeFailure)",
+        "docs/async-guide.md section 4.5",
+        "std/net/*.ok (`catch e is Cancelled`)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `catch e is Cancelled` works.",
+      "intended_contract": "The builtin Cancelled is catchable.",
+      "authority": "Async guide and std usage.",
+      "conformance_expectation": "L08 cases catch Cancelled.",
+      "resolution": "resolved",
+      "cases": [
+        "L08.future.cancel-unstarted",
+        "L12.cancellation-runs-cleanup"
+      ],
+      "contracts": []
+    },
+    {
+      "id": "D-042",
+      "subject": "Regex API",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 6.9 (`import \"regex\" take Regex, Match`; no named groups)",
+        "std/regex/*.ok (Dialect 1 with named groups; FirstRegexMatch, RegexSubstitution, RegexParts)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: implements the std regex/* API.",
+      "intended_contract": "The active std/regex modules.",
+      "authority": "std/ is the active library.",
+      "conformance_expectation": "L09 regex cases follow std/regex/*.",
+      "resolution": "resolved",
+      "cases": [
+        "L09.regex.search-replace-split"
+      ],
+      "contracts": [
+        "STD.REGEX.PATTERN"
+      ]
+    },
+    {
+      "id": "D-043",
+      "subject": "Builtin `order()` on scalars",
+      "sources": [
+        "std/compare.ok (int, float, rat, byte, string and char implement Comparing<Self>)",
+        "docs/okkama-spec-11072026.md section 6.6 (builtin list omits order)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `1.order(2) == Order.less` works.",
+      "intended_contract": "Natural builtin orderings implement compare.Comparing.",
+      "authority": "std/compare.ok.",
+      "conformance_expectation": "L09 compare cases.",
+      "resolution": "resolved",
+      "cases": [
+        "L09.compare.builtin-order"
+      ],
+      "contracts": [
+        "STD.COMPARE"
+      ]
+    },
+    {
+      "id": "D-044",
+      "subject": "Formatting API",
+      "sources": [
+        "docs/okkama-llm-context-1.0.md section 23 (`string Formatted(\"{}: {}\", \"Ada\", 3)` with any values)",
+        "std/strings/format.ok (`Formatted(:pattern, :values)` over @string)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: implements the std API.",
+      "intended_contract": "The active std/strings/format module.",
+      "authority": "std/ is the active library.",
+      "conformance_expectation": "L09 strings.formatted case.",
+      "resolution": "resolved",
+      "cases": [
+        "L09.strings.formatted"
+      ],
+      "contracts": [
+        "STD.STRINGS.FORMAT"
+      ]
+    },
+    {
+      "id": "D-045",
+      "subject": "Canonical spelling of Decimal values",
+      "sources": [
+        "std/math/decimal.ok (two examples: 001.2000 -> 1.2, 1000 -> 1e3; the rule is the native decimal_canonical)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43: `Decimal(\"-0.50\").string()` is `-5e-1`; large positional values print in scientific form.",
+      "intended_contract": "Equivalent spellings share one canonical form; the general rule is not documented.",
+      "authority": "Language owner decision (19.10.2026): decimals are not a language feature yet.",
+      "conformance_expectation": "VAL.DECIMAL-SPELLING is deferred; std/math/decimal values are compared by value.",
+      "resolution": "deferred",
+      "cases": [
+        "L09.decimal.canonical",
+        "L11.sqlite.exact-large-values",
+        "L12.exact-number-json-sqlite"
+      ],
+      "contracts": [
+        "VAL.DECIMAL-SPELLING"
+      ]
+    },
+    {
+      "id": "D-046",
+      "subject": "Implicit promotion between numeric categories",
+      "sources": [
+        "docs/okkama-spec-11072026.md sections 6.1, 8.3, 8.4, 8.6, 8.7 (byte promotes to int; int promotes to float in float arithmetic; ordering accepts mixed integer categories and exact rat; byte indexes and range bounds)",
+        "docs/okkama-llm-context-1.0.md section 6",
+        "docs/compiler/OIR-1.md decision R02"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43 promotes silently: `1 < 1.5`, `1.5 + 1`, `byte(200) + 100`, `byte(3) > 2`, `rat(1, 2) + 1`, `xs[byte(1)]` and `[byte(1)..=3]` all run.",
+      "intended_contract": "Different numeric categories (int, byte, float, rat) interact only after an explicit cast: float(n), b.int(), n.rat(), x.float(). Mixed arithmetic, ordering, array indexes and range bounds without a cast are errors. Operations inside one category keep their rules (byte + byte and -byte give int, int / int gives rat).",
+      "authority": "Language owner decision (21.10.2026): «нет, только явное преобразование, никаких штучек. если перл тут пропускает -- это ошибка перл-версии. концептуально разные типы могут взаимодействовать только после явного каста».",
+      "conformance_expectation": "Positive cases convert explicitly; mandatory negative cases reject each mixed form (detection stage left open as for other category errors). The specification sections listed above still describe promotion and need edits.",
+      "resolution": "resolved",
+      "cases": [
+        "L02.ordering.numeric",
+        "L02.float.arithmetic",
+        "L02.int.byte-promotion",
+        "L02.byte.compare-and-index",
+        "L02.rat.arithmetic",
+        "L05.array.access",
+        "L13.invoice-calculation",
+        "L02.ordering.int-float-rejected",
+        "L02.ordering.byte-int-rejected",
+        "L02.float.plus-int-rejected",
+        "L02.byte.plus-int-rejected",
+        "L02.rat.plus-int-rejected",
+        "L02.range.byte-bound-rejected",
+        "L05.array.byte-index-rejected",
+        "L01.gram.precedence.associativity",
+        "L02.rat.division"
+      ],
+      "contracts": [
+        "VAL.ORDERING",
+        "VAL.BYTE",
+        "VAL.FLOAT",
+        "VAL.RAT",
+        "VAL.RANGES",
+        "VAL.INT-ARITH",
+        "COLL.ARRAY"
+      ]
+    },
+    {
+      "id": "D-047",
+      "subject": "Map literals with keys of different types",
+      "sources": [
+        "docs/okkama-spec-11072026.md section 6.3 (\"Key identity includes its exact type: byte(1), 1, 1.0, true and \\\"1\\\" do not alias\")",
+        "docs/okkama-spec-11072026.md section 6.2 (map keys may not be any)"
+      ],
+      "observed": "okkama-pl (Perl) at git f1ad6d43 builds [1: \"int\", \"1\": \"string\"] as one map with two keys of different types.",
+      "intended_contract": "A map has exactly one key type (%K:V). Keys of different types in one literal are an error: the only common type would be any, and any is not a map key. Key identity still includes the exact type, so different maps keyed by 1 and \"1\" stay distinct.",
+      "authority": "Language owner decision (21.10.2026): «у нас мапы строго тип:тип, ключи разных типов -- ошибка. можно только any, но any у нас не распаковывается в программе, только на слое нейтивов, поэтому нет, типы строго одно и то же. специфика перла пролезла».",
+      "conformance_expectation": "L05.map.key-types keeps only single-type keys; L05.map.mixed-key-types-rejected requires rejection.",
+      "resolution": "resolved",
+      "cases": [
+        "L05.map.key-types",
+        "L05.map.mixed-key-types-rejected"
+      ],
+      "contracts": [
+        "COLL.MAP"
+      ]
+    }
+  ]
+}

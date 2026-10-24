@@ -1,0 +1,6 @@
+module runtime/locale v1.0.0;
+// Platform Unicode snapshot only. POSIX interpretation and portable CLDR policy
+// belong to stdlib. Native array copies at most 64 strings of 255 scalars.
+native preferred_language_tags() is @string;
+
+test "platform snapshot is bounded Unicode language data" {let values=preferred_language_tags();test.ok(values.size()<=64);}

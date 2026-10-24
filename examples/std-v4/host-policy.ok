@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "net/endpoint" take HostName, HostEndpoint;
+import "net/public_suffix" take PublicSuffixList;
+import "io/stdout" take Stdout;
+main() is int {
+    let host=HostName("BÜCHER.example");
+    Stdout().writeln(HostEndpoint(host,443).string());
+    let rules=PublicSuffixList();
+    Stdout().writeln(rules.version());
+    Stdout().writeln(rules.registrable(HostName("a.www.ck")).ascii());
+    0;
+}

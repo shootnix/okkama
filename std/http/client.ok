@@ -1,0 +1,458 @@
+module http/client v1.0.0;
+import "http/client_policy" take ClientPolicy,Http1ClientProtocols;
+import "http/transport_observation" take HttpPeerGoneBeforeResponse;
+import "http/client_protocols" take HttpClientProtocols;
+import "http/selected_connection" take HttpSelectedConnecting;
+import "http/conversation" take HttpConversationConnecting,HttpConversationAcquisition,HttpConversationExchange,Http2ConversationConnecting,HttpConversationRouting;
+import "http/http2_connection" take Http2Connecting,Http2Acquisition;
+import "http/http2_session" take Http2Exchange;
+import "http/http2_settings" take Http2Settings;
+import "http/internal/http2_fields" take Http2RequestFields;
+import "http/version" take HttpVersion,UnsupportedHttpVersion;
+import "http/client_request" take InvalidClientRequest;
+import "http/client_request" take HttpDirectRequest;
+import "http/message" take Request,Response;
+import "http/exchange" take ClientResponse;
+import "http/connection" take Http1Connecting,Http1Acquisition,HttpAcquisitionCleanup;
+import "http/http1_session" take Http1Exchange;
+import "http/endpoint" take HttpEndpointSelection,EndpointDenied;
+import "http/body" take BodyOpening,BodyReading,BodyClosed,BodyAlreadyOpened,UnknownBodyLength,EmptyBody;
+import "http/header" take Headers;
+import "net/dns" take Resolving;
+import "net/tls" take TlsClientPolicy;
+import "time/clock" take Timing;
+import "time/duration" take Duration;
+import "async/timeout" take Within,TimedOut;
+import "async/semaphore" take Semaphore,Permit;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+import "async/scope" take FutureGroup;
+import "io/stream" take Closing,InvalidReadLimit;
+import "numbers/bigint" take BigInt;
+import "url/value" take Url,MissingUrlPort;
+import "net/dns" take FixedResolution;
+import "crypto/x509/trust" take TrustedCertificates;
+import "time/clock" take SystemClock;
+import "http/target" take AbsoluteTarget,RequestTargetKind;
+import "http/method" take Method;
+import "url/value" take ParsedUrl;
+
+role Exchanging {async response(request is Request) is ClientResponse;}
+
+object HttpClient does Exchanging,Closing {
+    has resolver is Resolving;has tls is TlsClientPolicy;has policy is ClientPolicy;has clock is Timing;has state is HttpClientState;has h2 is @HttpSharedClientState;has mixed is @HttpSharedClientState;has routing is @HttpConversationRouting;
+    HttpClient(resolver is Resolving,tls is TlsClientPolicy,policy is ClientPolicy,clock is Timing){
+        routing=[];let use_h2=policy.protocols().size()==1 && policy.protocols().membership(HttpVersion.http_2);
+        HttpClientProtocols(policy,tls);let use_mixed=policy.protocols().size()==2;
+        mixed=if use_mixed{[HttpSharedClientState(policy.connections())];}else{let absent is @HttpSharedClientState=[];absent;};
+        h2=if use_h2{[HttpSharedClientState(policy.connections())];}else{let absent is @HttpSharedClientState=[];absent;};self.resolver=resolver;self.tls=tls;self.policy=policy;self.clock=clock;state=HttpClientState(policy.connections());
+    }
+    HttpClient(resolver is Resolving,tls is TlsClientPolicy,policy is ClientPolicy,clock is Timing,routing is HttpConversationRouting){
+        HttpClientProtocols(policy,tls);self.resolver=resolver;self.tls=tls;self.policy=policy;self.clock=clock;self.routing=[routing];
+        state=HttpClientState(policy.connections());h2=[];mixed=[HttpSharedClientState(policy.connections())];
+    }
+    closed() is bool{if mixed.size()==1{return mixed[0].closed();}if h2.size()==1{h2[0].closed();}else{state.closed();}}close() is void{if mixed.size()==1{mixed[0].close();return;}if h2.size()==1{h2[0].close();}else{state.close();}}
+    async response(request is Request) is ClientResponse{
+        if mixed.size()==1{
+            confirm !self.closed() else throw ClientClosed();let direct=HttpMixedDirectRequest(request);
+            let route=HttpEndpointSelection(direct.url(),resolver,policy.access());
+            let operation=mixed[0].operation();let published=Event();let cleanup=HttpSharedClientStartupCleanup(operation,published);defer await cleanup.close();
+            let connecting is HttpConversationConnecting=if routing.size()==1{routing[0].connecting(direct.url());}else{HttpSelectedConnecting(route,tls,policy,clock);};
+            let reserving=operation.acquisition(HttpClientKey(direct.url()).string(),connecting,policy.timeouts().connection_timeout(),clock);operation.bookings().start(reserving);let lease=await reserving;let acquired=lease.acquired();
+            if lease.reused(){let allowed=if routing.size()==1{routing[0].allowed(direct.url(),acquired.details(),policy.access());}else{policy.access().allowed(direct.url(),acquired.details().endpoints().remote_endpoint());};confirm allowed else throw EndpointDenied();}
+            let waiting=acquired.session().exchange(direct.request());operation.exchanges().start(waiting);
+            let bounded is HttpDeadline<HttpConversationExchange>=HttpDeadline(waiting,policy.timeouts().headers_timeout(),clock,"headers");let exchange=try{await bounded.result();}catch e is HttpPeerGoneBeforeResponse{if lease.reused(){throw HttpStaleConnection(e.origin());}throw e.origin();};operation.published(exchange);
+            confirm !self.closed() else throw ClientClosed();
+            let source=exchange.response().body();let empty=try{source.length().sign()==0;}catch e is UnknownBodyLength{false;};
+            let body is BodyOpening=if empty{operation.finish();EmptyBody();}else{HttpSharedClientBody(source,operation,lease,policy.timeouts().body_idle_timeout(),clock);};
+            let original=exchange.response();let response=Response(original.status(),original.headers(),body,original.version());
+            let result=ClientResponse(request,response,acquired.details());published.set();return result;
+        }
+        if h2.size()==1{
+            confirm !self.closed() else throw ClientClosed();let direct=Http2DirectRequest(request);
+            let route=HttpEndpointSelection(direct.url(),resolver,policy.access());
+            let operation=h2[0].operation();let published=Event();let cleanup=HttpSharedClientStartupCleanup(operation,published);defer await cleanup.close();
+            let reserving=operation.acquisition(HttpClientKey(direct.url()).string(),Http2ConversationConnecting(Http2Connecting(route,tls,Http2Settings(),policy.limits(),clock)),policy.timeouts().connection_timeout(),clock);operation.bookings().start(reserving);let lease=await reserving;let acquired=lease.acquired();
+            if lease.reused(){confirm policy.access().allowed(direct.url(),acquired.details().endpoints().remote_endpoint()) else throw EndpointDenied();}
+            let waiting=acquired.session().exchange(direct.request());operation.exchanges().start(waiting);
+            let bounded is HttpDeadline<HttpConversationExchange>=HttpDeadline(waiting,policy.timeouts().headers_timeout(),clock,"headers");let exchange=try{await bounded.result();}catch e is HttpPeerGoneBeforeResponse{if lease.reused(){throw HttpStaleConnection(e.origin());}throw e.origin();};operation.published(exchange);
+            confirm !self.closed() else throw ClientClosed();
+            let source=exchange.response().body();let empty=try{source.length().sign()==0;}catch e is UnknownBodyLength{false;};
+            let body is BodyOpening=if empty{operation.finish();EmptyBody();}else{HttpSharedClientBody(source,operation,lease,policy.timeouts().body_idle_timeout(),clock);};
+            let original=exchange.response();let response=Response(original.status(),original.headers(),body,original.version());
+            let result=ClientResponse(request,response,acquired.details());published.set();return result;
+        }
+        confirm !self.closed() else throw ClientClosed();let direct=HttpDirectRequest(request);
+        let route=HttpEndpointSelection(direct.url(),resolver,policy.access());
+        let operation=state.operation();let published=Event();let cleanup=HttpClientStartupCleanup(operation,published);defer await cleanup.close();
+        let lease=await operation.acquisition(HttpClientKey(direct.url()).string(),Http1Connecting(route,tls,policy.limits().http1(),clock),policy.timeouts().connection_timeout(),clock);let acquired=lease.acquired();
+        if lease.reused(){confirm policy.access().allowed(direct.url(),acquired.details().endpoints().remote_endpoint()) else throw EndpointDenied();}
+        acquired.begin();let waiting=acquired.session().exchange(direct.request());operation.exchanges().start(waiting);
+        let bounded is HttpDeadline<Http1Exchange>=HttpDeadline(waiting,policy.timeouts().headers_timeout(),clock,"headers");let exchange=try{await bounded.result();}catch e is HttpPeerGoneBeforeResponse{if lease.reused(){throw HttpStaleConnection(e.origin());}throw e.origin();};
+        confirm !self.closed() else throw ClientClosed();
+        let source=exchange.response().body();let empty=try{source.length().sign()==0;}catch e is UnknownBodyLength{false;};
+        let body is BodyOpening=if empty{operation.finish();EmptyBody();}else{HttpClientBody(source,operation,lease,policy.timeouts().body_idle_timeout(),clock);};
+        let original=exchange.response();let response=Response(original.status(),original.headers(),body,original.version());
+        let result=ClientResponse(request,response,acquired.details());published.set();result;
+    }
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+// Policy and TLS identity are scoped to this state; no proxy is implicit.
+object HttpClientKey {
+    has key is string;HttpClientKey(url is Url){
+        let parts=url.parts();let authority=parts.authority();
+        let port=try{authority.port();}catch e is MissingUrlPort{if parts.scheme()=="https"{443;}else{80;}};
+        key=parts.scheme()+"://"+authority.host().string()+":"+port.string();
+    }
+    string() is string{key;}
+}
+object HttpClientIdle {
+    has key is string;has transport is HttpClientTransport;
+    HttpClientIdle(key is string,transport is HttpClientTransport){self.key=key;self.transport=transport;}
+    key() is string{key;}transport() is HttpClientTransport{transport;}
+}
+object HttpClientState does Closing {
+    has capacity is Semaphore;has stopped is Event;has serial is Atomic<int>;
+    has operations is Atomic<@HttpClientOperation>;has idle is Atomic<@HttpClientIdle>;
+    HttpClientState(connections is int){
+        capacity=Semaphore(connections);stopped=Event();serial=Atomic(0);
+        let active is @HttpClientOperation=[];operations=Atomic(active);let empty is @HttpClientIdle=[];idle=Atomic(empty);
+    }
+    closed() is bool{stopped.ready();}capacity() is Semaphore{capacity;}
+    operation() is HttpClientOperation{
+        confirm !self.closed() else throw ClientClosed();let previous=operations.value();
+        confirm previous.size()<256 else throw InvalidClientRequest("pending H1 exchange budget");
+        let position=serial.value();serial.replace(position+1);let operation=HttpClientOperation(self,position);
+        let following is @HttpClientOperation=(0..previous.size()+1).map()->index{if index<previous.size(){previous[index];}else{operation;}};
+        operations.replace(following);operation;
+    }
+    remove(position is int) is void{let kept is @HttpClientOperation=operations.value().filter()->operation{operation.position()!=position;};operations.replace(kept);}
+    take(key is string) is @HttpClientTransport{
+        confirm !self.closed() else throw ClientClosed();let previous=idle.value();
+        for previous->entry{if entry.transport().closed(){entry.transport().close();}}
+        let available is @HttpClientIdle=previous.filter()->entry{!entry.transport().closed();};idle.replace(available);
+        for (0..available.size())->index{if available[index].key()==key{
+            let rest is @HttpClientIdle=(0..available.size()).filter()->offset{offset!=index;}.map()->offset{available[offset];};idle.replace(rest);return [available[index].transport()];
+        }}
+        if available.size()>0{
+            available[0].transport().close();let rest is @HttpClientIdle=(1..available.size()).map()->index{available[index];};idle.replace(rest);
+        }
+        let empty is @HttpClientTransport=[];empty;
+    }
+    recycle(key is string,transport is HttpClientTransport) is void{
+        if self.closed() || transport.closed(){transport.close();}else{
+            let previous=idle.value();let entry=HttpClientIdle(key,transport);
+            let following is @HttpClientIdle=(0..previous.size()+1).map()->index{if index<previous.size(){previous[index];}else{entry;}};idle.replace(following);
+        }
+    }
+    close() is void{
+        if !stopped.ready(){stopped.set();let active=operations.value();let empty is @HttpClientOperation=[];operations.replace(empty);
+            for active->operation{operation.cancel();}for active->operation{operation.close();}
+            let unused=idle.value();let no_idle is @HttpClientIdle=[];idle.replace(no_idle);for unused->entry{entry.transport().close();}
+        }
+    }
+}
+object HttpClientOperation does Closing {
+    has owner is HttpClientState;has position is int;has key is Atomic<string>;has stopped,finished is Event;
+    has permits is Atomic<@Permit>;has acquired is Atomic<@Http1Acquisition>;
+    has transports is Atomic<@HttpClientTransport>;
+    has permit_group is FutureGroup<Permit>;has permit_pending is Atomic<@Future<Permit>>;has permit_taken is Event;
+    has acquisition_group is FutureGroup<Http1Acquisition>;has acquisition_pending is Atomic<@Future<Http1Acquisition>>;has acquisition_taken is Event;
+    has exchanges is FutureGroup<Http1Exchange>;
+    HttpClientOperation(owner is HttpClientState,position is int){
+        self.owner=owner;self.position=position;key=Atomic("");stopped=Event();finished=Event();
+        let no_permits is @Permit=[];permits=Atomic(no_permits);let no_connections is @Http1Acquisition=[];acquired=Atomic(no_connections);
+        let no_transports is @HttpClientTransport=[];transports=Atomic(no_transports);
+        permit_group=FutureGroup();let no_waiters is @Future<Permit>=[];permit_pending=Atomic(no_waiters);permit_taken=Event();
+        acquisition_group=FutureGroup();let no_acquisitions is @Future<Http1Acquisition>=[];acquisition_pending=Atomic(no_acquisitions);acquisition_taken=Event();exchanges=FutureGroup();
+    }
+    position() is int{position;}closed() is bool{stopped.ready();}exchanges() is FutureGroup<Http1Exchange>{exchanges;}
+    async acquisition(key is string,connecting is Http1Connecting,limit is Duration,clock is Timing) is HttpClientAcquired{
+        self.key.replace(key);let pending=owner.capacity().permit();permit_pending.replace([pending]);permit_group.start(pending);
+        let permit=await pending;permits.replace([permit]);permit_taken.set();confirm !self.closed() && !owner.closed() else throw ClientClosed();
+        let cached=owner.take(key);let transport=if cached.size()==1{cached[0];}else{HttpClientTransport(connecting);};transports.replace([transport]);
+        if cached.size()==0{transport.start();}
+        let opening=transport.acquisition();acquisition_pending.replace([opening]);acquisition_group.start(opening);
+        let bounded is HttpDeadline<Http1Acquisition>=HttpDeadline(opening,limit,clock,"connection");let connection=await bounded.result();
+        acquired.replace([connection]);acquisition_taken.set();confirm !self.closed() && !owner.closed() else throw ClientClosed();HttpClientAcquired(connection,permit,transport,cached.size()==1);
+    }
+    finish() is void{
+        if !finished.ready() && !self.closed(){finished.set();let empty is @Http1Acquisition=[];acquired.replace(empty);
+            let held=transports.value();let no_transports is @HttpClientTransport=[];transports.replace(no_transports);
+            for held->transport{owner.recycle(key.value(),transport);}self.release_permit();owner.remove(position);
+        }
+    }
+    release_permit() is void{let held=permits.value();let empty is @Permit=[];permits.replace(empty);for held->permit{permit.close();}}
+    cancel() is void{permit_group.cancel();acquisition_group.cancel();exchanges.cancel();}
+    close() is void{
+        if !stopped.ready() && !finished.ready(){stopped.set();self.cancel();
+            for acquired.value()->connection{connection.session().close();}let empty is @Http1Acquisition=[];acquired.replace(empty);self.release_permit();owner.remove(position);
+            for transports.value()->transport{transport.close();}
+        }
+    }
+    async settle() is void{
+        let retention=HttpClientTransportSettlement(transports.value());defer await retention.close();
+        let permit_cleanup=HttpAcquisitionCleanup(permit_group,permit_pending,permit_taken,HttpClientPermitDisposal().release);defer await permit_cleanup.close();
+        let acquisition_cleanup=HttpAcquisitionCleanup(acquisition_group,acquisition_pending,acquisition_taken,HttpClientAcquisitionDisposal().release);defer await acquisition_cleanup.close();
+        if exchanges.active()>0{await exchanges.wait();}
+    }
+}
+object HttpClientAcquired {
+    has acquired is Http1Acquisition;has permit is Permit;has transport is HttpClientTransport;has reused is bool;
+    HttpClientAcquired(acquired is Http1Acquisition,permit is Permit,transport is HttpClientTransport,reused is bool){self.acquired=acquired;self.permit=permit;self.transport=transport;self.reused=reused;}
+    acquired() is Http1Acquisition{acquired;}reused() is bool{reused;}
+}
+// Atomic payloads are borrowed. A long-lived, supervised task owns the actual
+// acquired session in its lexical scope until eviction or client close.
+object HttpClientTransport {
+    has connecting is Http1Connecting;has ready,stopped is Event;
+    has acquired is Atomic<@Http1Acquisition>;has group is FutureGroup<bool>;
+    HttpClientTransport(connecting is Http1Connecting){self.connecting=connecting;ready=Event();stopped=Event();let empty is @Http1Acquisition=[];acquired=Atomic(empty);group=FutureGroup();}
+    start() is void{group.start(self.run());}
+    async run() is bool{
+        let signalling=HttpClientSignal(ready);defer signalling.close();
+        let opening=connecting.acquisition();let children is FutureGroup<Http1Acquisition>=FutureGroup();let raw is @Future<Http1Acquisition>=[opening];let pending=Atomic(raw);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(children,pending,taken,HttpClientAcquisitionDisposal().release);defer await cleanup.close();children.start(opening);
+        let connection=await opening;taken.set();defer connection.session().close();acquired.replace([connection]);ready.set();
+        await stopped.wait();true;
+    }
+    async acquisition() is Http1Acquisition{
+        await ready.wait();let values=acquired.value();if values.size()==0{await group.wait();throw ClientClosed();}
+        confirm !self.closed() else throw ClientClosed();values[0];
+    }
+    closed() is bool{if stopped.ready(){return true;}let values=acquired.value();values.size()==1 && values[0].session().closed();}
+    close() is void{stopped.set();for acquired.value()->connection{connection.session().close();}group.cancel();}
+    async settle() is void{if stopped.ready() && group.active()>0{await group.wait();}}
+}
+object HttpClientSignal {has ready is Event;HttpClientSignal(ready is Event){self.ready=ready;}close() is void{ready.set();}}
+object HttpClientTransportSettlement {
+    has origins is @HttpClientTransport;HttpClientTransportSettlement(origins is @HttpClientTransport){self.origins=origins;}
+    async close() is void{for origins->origin{await origin.settle();}}
+}
+object HttpClientPermitDisposal {HttpClientPermitDisposal();release(permit is Permit) is void{permit.close();}}
+object HttpClientAcquisitionDisposal {HttpClientAcquisitionDisposal();release(acquired is Http1Acquisition) is void{acquired.session().close();}}
+object HttpClientStartupCleanup {
+    has operation is HttpClientOperation;has published is Event;
+    HttpClientStartupCleanup(operation is HttpClientOperation,published is Event){self.operation=operation;self.published=published;}
+    async close() is void{
+        if !published.ready(){defer await operation.settle();defer operation.close();operation.cancel();await operation.settle();}
+        else{await operation.settle();}
+    }
+}
+object HttpDeadline<T> {
+    has origin is Future<T>;has limit is Duration;has clock is Timing;has phase is string;
+    HttpDeadline(origin is Future<T>,limit is Duration,clock is Timing,phase is string){self.origin=origin;self.limit=limit;self.clock=clock;self.phase=phase;}
+    async result() is T{
+        if limit.seconds()==0.rat(){return await origin;}
+        let bounded is Within<T>=Within(origin,limit,clock);
+        try{await bounded.result();}catch e is TimedOut{throw HttpTimeout(phase);}
+    }
+}
+object HttpClientBody does BodyOpening {
+    has origin is BodyOpening;has operation is HttpClientOperation;has retained is HttpClientAcquired;has limit is Duration;has clock is Timing;has opened is Atomic<bool>;
+    HttpClientBody(origin is BodyOpening,operation is HttpClientOperation,retained is HttpClientAcquired,limit is Duration,clock is Timing){self.origin=origin;self.operation=operation;self.retained=retained;self.limit=limit;self.clock=clock;opened=Atomic(false);}
+    length() is BigInt{origin.length();}replayable() is bool{false;}
+    reading() is BodyReading{confirm !operation.closed() else throw BodyClosed();confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();HttpClientReading(origin.reading(),operation,retained,limit,clock);}
+    destroy{try{if !opened.value(){operation.close();}}catch e is Error{}catch e is NativeFailure{}}
+}
+object HttpClientReading does BodyReading {
+    has origin is BodyReading;has operation is HttpClientOperation;has retained is HttpClientAcquired;has limit is Duration;has clock is Timing;has complete is Event;
+    HttpClientReading(origin is BodyReading,operation is HttpClientOperation,retained is HttpClientAcquired,limit is Duration,clock is Timing){self.origin=origin;self.operation=operation;self.retained=retained;self.limit=limit;self.clock=clock;complete=Event();}
+    closed() is bool{operation.closed() || origin.closed();}close() is void{if !complete.ready(){operation.close();origin.close();}}
+    trailers() is Headers{origin.trailers();}
+    async bytes(amount is int) is @byte{
+        confirm amount>0 else throw InvalidReadLimit(amount);confirm !self.closed() else throw BodyClosed();if complete.ready(){return [];}
+        let successful=Event();let reads is FutureGroup<@byte>=FutureGroup();let cleanup=HttpClientReadCleanup(operation,successful,reads);defer await cleanup.close();
+        let bounded is HttpDeadline<@byte>=HttpDeadline(origin.bytes(amount),limit,clock,"body_idle");let pending=bounded.result();reads.start(pending);let chunk=await pending;
+        if chunk.size()==0{complete.set();operation.finish();}successful.set();chunk;
+    }
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+object HttpClientReadCleanup {
+    has operation is HttpClientOperation;has successful is Event;has reads is FutureGroup<@byte>;
+    HttpClientReadCleanup(operation is HttpClientOperation,successful is Event,reads is FutureGroup<@byte>){self.operation=operation;self.successful=successful;self.reads=reads;}
+    async close() is void{if !successful.ready(){defer await operation.settle();defer operation.close();reads.cancel();await reads.wait();}}
+}
+object ClientClosed does Error{ClientClosed();text() is string{"HTTP client is closed";}}
+object HttpTimeout does Error {
+    has phase is string;HttpTimeout(phase is string){self.phase=phase;}
+    phase() is string{phase;}text() is string{"HTTP "+phase+" timeout";}
+}
+async test "unstarted client response cancellation acquires no route or connection" {
+    let client=HttpClient(FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),ClientPolicy(),SystemClock());
+    let request=Request(Method("GET"),AbsoluteTarget(ParsedUrl("http://example.test/").value()),Headers([]));
+    let waiting=client.response(request);waiting.cancel();
+    test.ok(try{await waiting;false;}catch e is Cancelled{true;});test.ok(!client.closed());client.close();test.ok(client.closed());
+}
+
+// Policy and TLS identity are scoped to this state; no proxy is implicit.
+// Each shared H2 conversation owns one physical connection permit;
+// request/body leases are independent of that transport lifetime.
+object Http2ClientProtocols {
+    Http2ClientProtocols(policy is ClientPolicy,tls is TlsClientPolicy){
+        confirm policy.protocols().size()==1 && policy.protocols().membership(HttpVersion.http_2) else throw UnsupportedHttpVersion();
+        for tls.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion();}
+    }
+}
+object Http2DirectRequest {
+    has url is Url;has request is Request;
+    Http2DirectRequest(origin is Request){
+        let target=origin.target();confirm target.kind()==RequestTargetKind.absolute else throw InvalidClientRequest("absolute HTTP URL required");let destination=target.url();
+        confirm origin.version()==HttpVersion.http_1_1 || origin.version()==HttpVersion.http_2 else throw InvalidClientRequest("unsupported H2 request source version");
+        let prepared=Request(origin.method(),target,origin.headers(),origin.body(),HttpVersion.http_2);Http2RequestFields(prepared,1);request=prepared;url=destination;
+    }
+    url() is Url{url;}request() is Request{request;}
+}
+
+object HttpSharedClientIdle {
+    has key is string;has transport is HttpSharedClientTransport;
+    HttpSharedClientIdle(key is string,transport is HttpSharedClientTransport){self.key=key;self.transport=transport;}
+    key() is string{key;}transport() is HttpSharedClientTransport{transport;}
+}
+object HttpSharedClientState does Closing {
+    has capacity is Semaphore;has stopped is Event;has serial is Atomic<int>;
+    has operations is Atomic<@HttpSharedClientOperation>;has shared is Atomic<@HttpSharedClientIdle>;
+    HttpSharedClientState(connections is int){capacity=Semaphore(connections);stopped=Event();serial=Atomic(0);let active is @HttpSharedClientOperation=[];operations=Atomic(active);let empty is @HttpSharedClientIdle=[];shared=Atomic(empty);}
+    closed() is bool{stopped.ready();}capacity() is Semaphore{capacity;}
+    operation() is HttpSharedClientOperation{
+        confirm !self.closed() else throw ClientClosed();let old=operations.value();confirm old.size()<256 else throw InvalidClientRequest("pending H2 exchange budget");
+        let position=serial.value();serial.replace(position+1);let operation=HttpSharedClientOperation(self,position);
+        let next_operations is @HttpSharedClientOperation=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{operation;}};operations.replace(next_operations);operation;
+    }
+    remove(position is int) is void{operations.replace(operations.value().filter()->operation{operation.position()!=position;});}
+    take(key is string,connecting is HttpConversationConnecting) is HttpSharedClientSelected{
+        confirm !self.closed() else throw ClientClosed();let old=shared.value();
+        for old -> entry{if entry.transport().closed(){entry.transport().close();}}
+        let live is @HttpSharedClientIdle=old.filter()->entry{!entry.transport().closed();};shared.replace(live);
+        for live -> entry{if entry.key()==key && entry.transport().usable(){entry.transport().retain();return HttpSharedClientSelected(entry.transport(),true);}}
+        // Evict only idle conversations, never another request's shared owner.
+        let disposable=live.filter()->entry{entry.transport().users()==0;};
+        if disposable.size()>0{disposable[0].transport().close();}
+        let retained is @HttpSharedClientIdle=live.filter()->entry{!entry.transport().closed();};
+        let transport=HttpSharedClientTransport(connecting,capacity);transport.retain();let entry=HttpSharedClientIdle(key,transport);
+        let next_entries is @HttpSharedClientIdle=(0..retained.size()+1).map()->index{if index<retained.size(){retained[index];}else{entry;}};shared.replace(next_entries);transport.start();HttpSharedClientSelected(transport,false);
+    }
+    close() is void{if !stopped.ready(){stopped.set();let active=operations.value();for active -> operation{operation.cancel();}for active -> operation{operation.close();}operations.replace([]);let entries=shared.value();shared.replace([]);for entries -> entry{entry.transport().close();}}}
+}
+object HttpSharedClientSelected {
+    has transport is HttpSharedClientTransport;has reused is bool;HttpSharedClientSelected(transport is HttpSharedClientTransport,reused is bool){self.transport=transport;self.reused=reused;}
+    transport() is HttpSharedClientTransport{transport;}reused() is bool{reused;}
+}
+object HttpSharedClientOperation does Closing {
+    has owner is HttpSharedClientState;has position is int;has stopped,finished,entered is Event;
+    has transports is Atomic<@HttpSharedClientTransport>;has held is Atomic<@HttpConversationExchange>;
+    has bookings is FutureGroup<HttpSharedClientAcquired>;has acquisitions is FutureGroup<HttpConversationAcquisition>;has exchanges is FutureGroup<HttpConversationExchange>;
+    HttpSharedClientOperation(owner is HttpSharedClientState,position is int){self.owner=owner;self.position=position;stopped=Event();finished=Event();entered=Event();let empty_transports is @HttpSharedClientTransport=[];transports=Atomic(empty_transports);let empty_exchanges is @HttpConversationExchange=[];held=Atomic(empty_exchanges);bookings=FutureGroup();acquisitions=FutureGroup();exchanges=FutureGroup();}
+    position() is int{position;}closed() is bool{stopped.ready();}exchanges() is FutureGroup<HttpConversationExchange>{exchanges;}
+    bookings() is FutureGroup<HttpSharedClientAcquired>{bookings;}
+    published(exchange is HttpConversationExchange) is void{held.replace([exchange]);}
+    async acquisition(key is string,connecting is HttpConversationConnecting,limit is Duration,clock is Timing) is HttpSharedClientAcquired{
+        loop{
+            confirm !self.closed() && !owner.closed() else throw ClientClosed();
+            let selected=owner.take(key,connecting);let transport=selected.transport();transports.replace([transport]);
+            let attempt is FutureGroup<bool>=FutureGroup();let cleanup=HttpSharedSessionWait(attempt);defer await cleanup.close();
+            let admission=transport.admitted();attempt.start(admission);await admission;
+            let opening=transport.acquisition();acquisitions.start(opening);let bounded is HttpDeadline<HttpConversationAcquisition>=HttpDeadline(opening,limit,clock,"connection");let connection=await bounded.result();
+            confirm !self.closed() && !owner.closed() else throw ClientClosed();let entering=transport.enter(entered);attempt.start(entering);
+            let accepted=try{await entering;true;}catch e is HttpConversationUnavailable{false;};
+            if accepted{return HttpSharedClientAcquired(connection,transport,selected.reused());}
+            // No exchange or request write was started. Release this obsolete
+            // reservation and acquire a new conversation for the unsent request.
+            confirm !self.closed() && !owner.closed() else throw ClientClosed();transports.replace([]);transport.release();
+        }
+    }
+    release() is void{let leases=transports.value();transports.replace([]);for leases -> transport{if entered.ready(){transport.leave();}transport.release();}owner.remove(position);}
+    finish() is void{if !finished.ready() && !self.closed(){finished.set();held.replace([]);self.release();}}
+    cancel() is void{bookings.cancel();acquisitions.cancel();exchanges.cancel();}
+    close() is void{if !stopped.ready() && !finished.ready(){stopped.set();self.cancel();for held.value() -> exchange{exchange.close();}held.replace([]);self.release();}}
+    async settle() is void{
+        let a=HttpSharedSessionWait(bookings);defer await a.close();let b=HttpSharedSessionWait(acquisitions);defer await b.close();let c=HttpSharedSessionWait(exchanges);defer await c.close();
+    }
+}
+object HttpSharedSessionWait<T>{has group is FutureGroup<T>;HttpSharedSessionWait(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
+object HttpSharedClientAcquired {
+    has acquired is HttpConversationAcquisition;has transport is HttpSharedClientTransport;has reused is bool;
+    HttpSharedClientAcquired(acquired is HttpConversationAcquisition,transport is HttpSharedClientTransport,reused is bool){self.acquired=acquired;self.transport=transport;self.reused=reused;}
+    acquired() is HttpConversationAcquisition{acquired;}reused() is bool{reused;}
+}
+object HttpSharedClientTransport {
+    has connecting is HttpConversationConnecting;has capacity is Semaphore;has ready,stopped,admission,granted is Event;has refs is Atomic<int>;has busy is Atomic<bool>;has changed is Atomic<Event>;
+    has acquired is Atomic<@HttpConversationAcquisition>;has group is FutureGroup<bool>;
+    HttpSharedClientTransport(connecting is HttpConversationConnecting,capacity is Semaphore){self.connecting=connecting;self.capacity=capacity;ready=Event();stopped=Event();admission=Event();granted=Event();refs=Atomic(0);busy=Atomic(false);changed=Atomic(Event());let empty is @HttpConversationAcquisition=[];acquired=Atomic(empty);group=FutureGroup();}
+    async enter(marker is Event) is bool{
+        let values=acquired.value();confirm values.size()==1 && self.usable() else throw HttpConversationUnavailable();
+        if values[0].session().multiplexed(){marker.set();return true;}
+        loop{confirm self.usable() else throw HttpConversationUnavailable();let signal=changed.value();if busy.compare_and_replace(false,true){marker.set();return true;}await signal.wait();}
+    }
+    leave() is void{let values=acquired.value();if values.size()==1 && !values[0].session().multiplexed(){busy.replace(false);changed.value().set();changed.replace(Event());}}
+    retain() is void{refs.replace(refs.value()+1);}users() is int{refs.value();}
+    release() is void{confirm refs.value()>0;refs.replace(refs.value()-1);if refs.value()==0 && (!ready.ready() || !self.usable()){self.close();}}
+    start() is void{group.start(self.run());}
+    async run() is bool{
+        let signal=HttpSharedClientSignal(ready);defer signal.close();let admitted=HttpSharedClientSignal(admission);defer admitted.close();
+        let permits is FutureGroup<Permit>=FutureGroup();let raw_permits is @Future<Permit>=[];let pending_permits=Atomic(raw_permits);let permit_taken=Event();
+        let permit_cleanup=HttpAcquisitionCleanup(permits,pending_permits,permit_taken,HttpClientPermitDisposal().release);defer await permit_cleanup.close();
+        let waiting=capacity.permit();pending_permits.replace([waiting]);permits.start(waiting);let permit=await waiting;permit_taken.set();defer permit.close();granted.set();admission.set();
+        let opening=connecting.acquisition();let children is FutureGroup<HttpConversationAcquisition>=FutureGroup();let raw is @Future<HttpConversationAcquisition>=[opening];let pending=Atomic(raw);let taken=Event();
+        let cleanup=HttpAcquisitionCleanup(children,pending,taken,HttpSharedClientAcquisitionDisposal().release);defer await cleanup.close();children.start(opening);
+        let connection=await opening;taken.set();defer await connection.session().settled();defer connection.session().close();acquired.replace([connection]);ready.set();await stopped.wait();true;
+    }
+    async admitted() is bool{await admission.wait();if !granted.ready(){await group.wait();throw ClientClosed();}confirm !self.closed() else throw ClientClosed();true;}
+    async acquisition() is HttpConversationAcquisition{await ready.wait();let values=acquired.value();if values.size()==0{await group.wait();throw ClientClosed();}confirm !self.closed() else throw ClientClosed();values[0];}
+    closed() is bool{if stopped.ready(){return true;}let values=acquired.value();values.size()==1 && values[0].session().closed();}
+    usable() is bool{if self.closed(){return false;}let values=acquired.value();values.size()==0 || values[0].session().accepting();}
+    close() is void{stopped.set();changed.value().set();group.cancel();}
+    async settle() is void{if stopped.ready() && group.active()>0{await group.wait();}}
+}
+object HttpSharedClientSignal {has ready is Event;HttpSharedClientSignal(ready is Event){self.ready=ready;}close() is void{ready.set();}}
+object HttpSharedClientAcquisitionDisposal {HttpSharedClientAcquisitionDisposal();release(acquired is HttpConversationAcquisition) is void{acquired.session().close();}}
+object HttpSharedClientStartupCleanup {
+    has operation is HttpSharedClientOperation;has published is Event;
+    HttpSharedClientStartupCleanup(operation is HttpSharedClientOperation,published is Event){self.operation=operation;self.published=published;}
+    async close() is void{defer await operation.settle();if !published.ready(){operation.close();}}
+}
+object HttpSharedClientBody does BodyOpening {
+    has origin is BodyOpening;has operation is HttpSharedClientOperation;has retained is HttpSharedClientAcquired;has limit is Duration;has clock is Timing;has opened is Atomic<bool>;
+    HttpSharedClientBody(origin is BodyOpening,operation is HttpSharedClientOperation,retained is HttpSharedClientAcquired,limit is Duration,clock is Timing){self.origin=origin;self.operation=operation;self.retained=retained;self.limit=limit;self.clock=clock;opened=Atomic(false);}
+    length() is BigInt{origin.length();}replayable() is bool{false;}
+    reading() is BodyReading{confirm !operation.closed() else throw BodyClosed();confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();HttpSharedClientReading(origin.reading(),operation,retained,limit,clock);}
+    destroy{try{if !opened.value(){operation.close();}}catch e is Error{}catch e is NativeFailure{}}
+}
+object HttpSharedClientReading does BodyReading {
+    has origin is BodyReading;has operation is HttpSharedClientOperation;has retained is HttpSharedClientAcquired;has limit is Duration;has clock is Timing;has complete is Event;
+    HttpSharedClientReading(origin is BodyReading,operation is HttpSharedClientOperation,retained is HttpSharedClientAcquired,limit is Duration,clock is Timing){self.origin=origin;self.operation=operation;self.retained=retained;self.limit=limit;self.clock=clock;complete=Event();}
+    closed() is bool{operation.closed() || origin.closed();}close() is void{if !complete.ready(){operation.close();origin.close();}}
+    trailers() is Headers{origin.trailers();}
+    async bytes(amount is int) is @byte{
+        confirm amount>0 else throw InvalidReadLimit(amount);confirm !self.closed() else throw BodyClosed();if complete.ready(){return [];}
+        let successful=Event();let cleanup=HttpSharedClientReadCleanup(operation,successful);defer cleanup.close();
+        let bounded is HttpDeadline<@byte>=HttpDeadline(origin.bytes(amount),limit,clock,"body_idle");let chunk=await bounded.result();
+        if chunk.size()==0{complete.set();operation.finish();}successful.set();chunk;
+    }
+    destroy{try{self.close();}catch e is Error{}catch e is NativeFailure{}}
+}
+object HttpSharedClientReadCleanup {
+    has operation is HttpSharedClientOperation;has successful is Event;
+    HttpSharedClientReadCleanup(operation is HttpSharedClientOperation,successful is Event){self.operation=operation;self.successful=successful;}
+    close() is void{if !successful.ready(){operation.close();}}
+}
+
+object HttpMixedDirectRequest {
+    has url is Url;has request is Request;
+    HttpMixedDirectRequest(origin is Request){
+        let target=origin.target();confirm target.kind()==RequestTargetKind.absolute else throw InvalidClientRequest("absolute HTTP URL required");
+        confirm origin.version()==HttpVersion.http_1_1 || origin.version()==HttpVersion.http_2 else throw InvalidClientRequest("unsupported HTTP request source version");
+        let source=Request(origin.method(),target,origin.headers(),origin.body(),HttpVersion.http_1_1);HttpDirectRequest(source);
+        request=origin;url=target.url();
+    }
+    url() is Url{url;}request() is Request{request;}
+}
+
+object HttpConversationUnavailable does Error{HttpConversationUnavailable();text() is string{"HTTP conversation no longer accepts an unsent request";}}
+
+object HttpStaleConnection does Error{
+    has failures is @Error;
+    HttpStaleConnection(){failures=[];}HttpStaleConnection(origin is Error){failures=[origin];}
+    text() is string{"stale pooled HTTP connection before any response bytes";}
+    origin() is Error{if failures.size()==1{failures[0];}else{self;}}
+}

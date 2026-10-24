@@ -1,0 +1,161 @@
+module http/cookie v1.0.0;
+import "time/clock" take Instant;
+import "encoding/utf" take Utf8Encoded;
+import "net/endpoint" take HostName, InvalidHostName;
+import "http/method" take Method, InvalidMethod;
+import "http/header" take HttpAsciiLowercase;
+import "http/date" take HttpDate, InvalidHttpDate;
+import "collections/set" take Set, OrderedSet;
+import "collections/iteration" take Cursor;
+
+// Absolute expiry is explicit. A session cookie has no instant, including no
+// epoch sentinel. Construction neither queries a clock nor rounds a timestamp.
+// Max-Age/Expires interpretation and cookie storage policy are separate consumers.
+object CookieExpiry {
+    has origin is @Instant;
+    CookieExpiry(){origin=[];}
+    CookieExpiry(origin is Instant){self.origin=[origin];}
+    persistent() is bool {origin.size()==1;}
+    instant() is Instant {
+        confirm self.persistent() else throw MissingCookieExpiry();origin[0];
+    }
+}
+object MissingCookieExpiry does Error {
+    MissingCookieExpiry();text() is string {"session cookie has no absolute expiry instant";}
+}
+enum CookieFlag = (secure, http_only, partitioned);
+enum SameSite = (unspecified, strict, lax, cross_site);
+// Names retain case; the prefix checks follow the case-insensitive consumer
+// policy of RFC 6265bis draft-22. cross_site renders the wire token None because
+// none is the language's null literal. A constructor snapshots role flags before
+// retaining them, and explicit string() rendering is the only payload diagnostic.
+object CookieAttributes {
+    has domain,path is string;has expiry is CookieExpiry;has same_site is SameSite;
+    has secure,http_only,partitioned is bool;
+    CookieAttributes(){domain="";path="";expiry=CookieExpiry();same_site=SameSite.unspecified;secure=false;http_only=false;partitioned=false;}
+    CookieAttributes(domain is string, path is string, expiry is CookieExpiry, same_site is SameSite, flags is Set<CookieFlag>) {
+        confirm domain.length()<=1024 && path.length()<=4096 else throw InvalidCookie("attribute source limit exceeded");
+        let canonical=if domain=="" {"";}else{
+            let name=if domain.slice(0,1)=="." {domain.slice(1,domain.length());}else{domain;};
+            let host=try{HostName(name).ascii();}catch failure is InvalidHostName {throw InvalidCookie("invalid cookie domain");};
+            confirm host.slice(host.length()-1,host.length())!="." else throw InvalidCookie("cookie domain cannot end with a dot");host;
+        };
+        confirm path=="" || path.slice(0,1)=="/" else throw InvalidCookie("cookie path must be absolute or omitted");
+        confirm CookieAttributeOctets(path).valid() else throw InvalidCookie("invalid cookie path octets");
+        let checked=CookieFlagSnapshot(flags).value();
+        confirm same_site!=SameSite.cross_site || checked.secure() else throw InvalidCookie("SameSite=None requires Secure");
+        confirm !checked.partitioned() || checked.secure() else throw InvalidCookie("Partitioned requires Secure");
+        self.domain=canonical;self.path=path;self.expiry=expiry;self.same_site=same_site;
+        secure=checked.secure();http_only=checked.http_only();partitioned=checked.partitioned();
+    }
+    domain() is string {domain;}path() is string {path;}expiry() is CookieExpiry {expiry;}same_site() is SameSite {same_site;}
+    flags() is Set<CookieFlag> {
+        let all=[CookieFlag.secure,CookieFlag.http_only,CookieFlag.partitioned];
+        let selected is @CookieFlag=all.filter() -> flag {
+            match flag {case CookieFlag.secure {secure;}case CookieFlag.http_only {http_only;}case CookieFlag.partitioned {partitioned;}else{false;}}
+        };OrderedSet(selected);
+    }
+    string() is string {
+        let date=if expiry.persistent() {
+            let wire=try{HttpDate(expiry.instant()).string();}catch failure is InvalidHttpDate {throw InvalidCookie("expiry is outside HTTP date range");};
+            "; Expires="+wire;
+        }else{"";};
+        let site=match same_site {
+            case SameSite.strict {"; SameSite=Strict";}case SameSite.lax {"; SameSite=Lax";}
+            case SameSite.cross_site {"; SameSite=None";}else{"";}
+        };
+        (if domain=="" {"";}else{"; Domain="+domain;})+(if path=="" {"";}else{"; Path="+path;})+date+site
+            +(if secure {"; Secure";}else{"";})+(if http_only {"; HttpOnly";}else{"";})+(if partitioned {"; Partitioned";}else{"";});
+    }
+}
+object Cookie {
+    has name,value is string;has attributes is CookieAttributes;
+    Cookie(name is string, value is string, attributes is CookieAttributes) {
+        confirm name.length()+value.length()<=4096 else throw InvalidCookie("cookie pair source limit exceeded");
+        confirm name!="" || value!="" else throw InvalidCookie("empty cookie pair");
+        if name!="" {try{Method(name);}catch failure is InvalidMethod {throw InvalidCookie("cookie name token required");}}
+        confirm CookieValueWire(value).valid() else throw InvalidCookie("invalid cookie value octets");
+        let candidate=HttpAsciiLowercase(if name=="" {value;}else{name;}).string();
+        let flags=attributes.flags();
+        if candidate.length()>=9 && candidate.slice(0,9)=="__secure-" {
+            confirm flags.membership(CookieFlag.secure) else throw InvalidCookie("secure cookie prefix requires Secure");
+        }
+        if candidate.length()>=7 && candidate.slice(0,7)=="__host-" {
+            confirm flags.membership(CookieFlag.secure) && attributes.domain()=="" && attributes.path()=="/"
+                else throw InvalidCookie("host cookie prefix requires Secure, omitted Domain and explicit Path=/");
+        }
+        self.name=name;self.value=value;self.attributes=attributes;
+    }
+    name() is string {name;}value() is string {value;}attributes() is CookieAttributes {attributes;}
+    pair() is string {if name=="" {value;}else{name+"="+value;}}
+    string() is string {self.pair()+attributes.string();}
+    diagnostic() is string {"cookie "+name+"=<redacted>";}
+}
+object CookieValueOctets {
+    has origin is string;CookieValueOctets(origin is string){self.origin=origin;}
+    valid() is bool {
+        Utf8Encoded(origin).bytes().reduce(true) -> valid,octet {
+            let code=octet.int();valid && (code==33 || (code>=35 && code<=43) || (code>=45 && code<=58)
+                || (code>=60 && code<=91) || (code>=93 && code<=126));
+        };
+    }
+}
+object CookieValueWire {
+    has origin is string;CookieValueWire(origin is string){self.origin=origin;}
+    valid() is bool {
+        if origin.length()>=2 && origin.slice(0,1)=="\"" && origin.slice(origin.length()-1,origin.length())=="\"" {
+            return CookieValueOctets(origin.slice(1,origin.length()-1)).valid();
+        }
+        CookieValueOctets(origin).valid();
+    }
+}
+object CookieAttributeOctets {
+    has origin is string;CookieAttributeOctets(origin is string){self.origin=origin;}
+    valid() is bool {Utf8Encoded(origin).bytes().reduce(true) -> valid,octet {let code=octet.int();valid && code>=32 && code<=126 && code!=59;};}
+}
+object CookieFlagSnapshot {
+    has origin is Set<CookieFlag>;CookieFlagSnapshot(origin is Set<CookieFlag>){self.origin=origin;}
+    value() is CookieFlagValues {
+        let count=origin.size();confirm count>=0 && count<=3 else throw InvalidCookie("cookie flag count must be 0..3");
+        let state=CookieFlagReading(origin.cursor());
+        for (0..count) -> index {state=state.following();}
+        state.value();
+    }
+}
+object CookieFlagReading {
+    has cursor is Cursor<CookieFlag>;has values is CookieFlagValues;
+    CookieFlagReading(cursor is Cursor<CookieFlag>){self.cursor=cursor;values=CookieFlagValues();}
+    following() is ^CookieFlagReading {
+        confirm cursor.available() else throw InvalidCookie("cookie flag cursor ended early");
+        ^values=values.following(cursor.item());^cursor=cursor.successor();
+    }
+    value() is CookieFlagValues {
+        confirm !cursor.available() else throw InvalidCookie("cookie flag cursor exceeds declared size");values;
+    }
+}
+object CookieFlagValues {
+    has secure,http_only,partitioned is bool;CookieFlagValues(){secure=false;http_only=false;partitioned=false;}
+    following(flag is CookieFlag) is ^CookieFlagValues {
+        match flag {
+            case CookieFlag.secure {confirm !secure else throw InvalidCookie("duplicate cookie flag");^secure=true;}
+            case CookieFlag.http_only {confirm !http_only else throw InvalidCookie("duplicate cookie flag");^http_only=true;}
+            case CookieFlag.partitioned {confirm !partitioned else throw InvalidCookie("duplicate cookie flag");^partitioned=true;}
+            else{throw InvalidCookie("unknown cookie flag");}
+        }
+    }
+    secure() is bool {secure;}http_only() is bool {http_only;}partitioned() is bool {partitioned;}
+}
+object InvalidCookie does Error {
+    has reason is string;InvalidCookie(reason is string){self.reason=reason;}
+    reason() is string {reason;}text() is string {"invalid cookie: "+reason;}
+}
+test "session expiry has no absolute instant" {
+    test.ok(!CookieExpiry().persistent());
+    test.ok(try{CookieExpiry().instant();false;}catch e is MissingCookieExpiry{true;});
+}
+test "cookie prefix and wire policy" {
+    let attrs=CookieAttributes("","/",CookieExpiry(),SameSite.cross_site,OrderedSet([CookieFlag.secure]));
+    test.ok(Cookie("__Host-id","secret",attrs).string()=="__Host-id=secret; Path=/; SameSite=None; Secure");
+    test.ok(Cookie("id","secret",CookieAttributes()).diagnostic()=="cookie id=<redacted>");
+    test.ok(try{Cookie("__secure-id","secret",CookieAttributes());false;}catch e is InvalidCookie{true;});
+}
