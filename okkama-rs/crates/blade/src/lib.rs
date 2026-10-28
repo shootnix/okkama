@@ -40,13 +40,20 @@ struct CommandVersion {
 
 impl Command for CommandNew {
     fn execute(&self) -> ExitCode {
-        let result = self.create_dir();
-        match result {
+        if self.create_dir() == Err(e) {
+            eprintln!("{}", e);
+            return ExitCode::from(2);
+        }
+        
+        //let result = self.create_dir();
+        
+        /*match result {
             Ok(()) => {},
             Err(e) => {
                 eprintln!("{}", e);
+                return ExitCode::from(2);
             }
-        }
+        }*/
         ExitCode::SUCCESS
     }
 }
