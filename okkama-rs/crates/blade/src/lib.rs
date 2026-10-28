@@ -1,7 +1,7 @@
 //! Core library for the Blade command-line tool.
 
 use std::{env::Args, process::ExitCode};
-use std::path::{Path, PathBuf};
+//use std::path::{Path, PathBuf};
 
 /// Help text shared by Blade command-line front ends.
 pub const HELP: &str = "\
@@ -40,20 +40,29 @@ struct CommandVersion {
 
 impl Command for CommandNew {
     fn execute(&self) -> ExitCode {
-        if self.create_dir() == Err(e) {
-            eprintln!("{}", e);
+        if let Err(e) = self.create_dir() {
+            eprintln!("cannot make a root dir: {}", e);
+            return ExitCode::from(2);
+        }
+
+        if let Err(e) = self.create_dir_internal(String::from("src")) {
+            eprintln!("cannot make src dir: {}", e);
             return ExitCode::from(2);
         }
         
-        //let result = self.create_dir();
+        if let Err(e) = self.create_dir_internal(String::from("bin")) {
+            eprintln!("cannot make bin dir: {}", e);
+            return ExitCode::from(2);
+        }
+
+        if let Err(e) = self.create_dir_internal(String::from("lib")) {
+            eprintln!("cannot make lib dir: {}", e);
+            return ExitCode::from(2);
+        }
         
-        /*match result {
-            Ok(()) => {},
-            Err(e) => {
-                eprintln!("{}", e);
-                return ExitCode::from(2);
-            }
-        }*/
+        // create src/main.ok
+        // create hello.toml
+
         ExitCode::SUCCESS
     }
 }
@@ -87,6 +96,14 @@ impl CommandNew {
         let cwd = std::env::current_dir()?;
         let dir_name = self.args.last().unwrap();
         let dir_path = cwd.join(dir_name);
+        std::fs::create_dir_all(dir_path)?;
+        Ok(())
+    }
+
+    fn create_dir_internal(&self, dir_name: String) -> std::io::Result<()> {
+        let cwd = std::env::current_dir()?;
+        let root_dir = self.args.last().unwrap();
+        let dir_path = cwd.join(root_dir).join(dir_name);
         std::fs::create_dir_all(dir_path)?;
         Ok(())
     }

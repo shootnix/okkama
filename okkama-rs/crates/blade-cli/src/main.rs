@@ -1,7 +1,6 @@
 use std::process::ExitCode;
 
 use blade::Cli;
-use blade::{HELP, VERSION};
 
 fn main() -> ExitCode {
     let cli = Cli::new(std::env::args());
