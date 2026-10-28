@@ -65,8 +65,8 @@ COMMANDS:
     ir        Lower a source module to IR and print its functions
     build     Lower a source module and invoke the selected backend
     exec      Execute a Sparrow bytecode file in this process
-    run       Build for the JVM and run it with `java` (default engine);
-              `--engine ir|sparrow` executes inside the Rust process
+    run       Run a program: the IR interpreter by default, `--engine sparrow`
+              (VM with JIT) or `--engine jvm` (build classes and run `java`)
 
 Use `-` as FILE to read the source from standard input. `check`, `ir` and
 `build` accept several FILE paths: the files of one module (spec §5.1) share
@@ -94,11 +94,11 @@ BUILD OPTIONS:
     -o, --output FILE      Output artifact path (required)
 
 RUN OPTIONS:
-    --engine jvm          Compile and execute with Java (default)
-    --engine ir           Execute IR inside the Rust process
-    --engine sparrow      Compile and execute Sparrow inside the Rust process
-                          Place engine options before FILE. IR and Sparrow
-                          currently reject test mode and program arguments.
+    --engine ir           Execute IR inside the Rust process (default)
+    --engine sparrow      Compile to Sparrow and execute it (JIT) in the process
+    --engine jvm          Compile to JVM classes and execute them with `java`
+                          Place engine options before FILE; every engine runs
+                          tests (-t), program arguments and `spawn` workers.
                           OKKAMA_ENGINE=ir|sparrow|jvm sets the default.
 
 EXIT STATUS:
@@ -1156,9 +1156,10 @@ fn build_command(args: &[String]) -> Outcome {
     }
 }
 
-/// `okkama run`: JVM по умолчанию (решение 24.10.2026: пока IR и Sparrow не
-/// покрывают язык и std; `OKKAMA_ENGINE` меняет умолчание); --engine jvm собирает классы и запускает java
-/// с потоками и кодом выхода программы. Файлы модуля — первый и следующие
+/// `okkama run`: по умолчанию IR-интерпретатор в процессе (все три движка
+/// исполняют язык и std одинаково; `OKKAMA_ENGINE` меняет умолчание);
+/// --engine jvm собирает классы и запускает java с потоками и кодом выхода
+/// программы. Файлы модуля — первый и следующие
 /// за ним существующие `.ok`; остальное (после необязательного `--`) —
 /// аргументы программы.
 fn run_command(args: &[String]) -> Outcome {
@@ -1168,7 +1169,8 @@ fn run_command(args: &[String]) -> Outcome {
     let mut engine = match default.as_str() {
         "ir" => "ir",
         "sparrow" => "sparrow",
-        _ => "jvm",
+        "jvm" => "jvm",
+        _ => "ir",
     };
     while let Some(first) = rest.first() {
         match first.as_str() {

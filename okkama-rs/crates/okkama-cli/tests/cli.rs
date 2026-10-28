@@ -232,25 +232,25 @@ fn native_run_engines_execute_source_without_java() {
         "native-engines.ok",
         b"module app v1.0.0; main() is int { 6 * 7; }",
     );
-    // По умолчанию `run` — JVM: без java в PATH это явная ошибка, а не тихий
-    // переход на другой движок.
+    // По умолчанию `run` — IR-интерпретатор в процессе: java не нужна.
     let output = okkama()
         .args(["run", source.path()])
         .env("PATH", "")
         .env_remove("OKKAMA_ENGINE")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
-    assert!(stderr(&output).contains("cannot start java"));
-    // OKKAMA_ENGINE меняет умолчание.
+    assert_eq!(output.status.code(), Some(42), "{}", stderr(&output));
+    assert!(output.stderr.is_empty());
+    // OKKAMA_ENGINE меняет умолчание; JVM без java в PATH — явная ошибка, а
+    // не тихий переход на другой движок.
     let output = okkama()
         .args(["run", source.path()])
         .env("PATH", "")
-        .env("OKKAMA_ENGINE", "ir")
+        .env("OKKAMA_ENGINE", "jvm")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(42), "{}", stderr(&output));
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+    assert!(stderr(&output).contains("cannot start java"));
     for engine in ["ir", "sparrow"] {
         let output = okkama()
             .args(["run", "--engine", engine, source.path()])
