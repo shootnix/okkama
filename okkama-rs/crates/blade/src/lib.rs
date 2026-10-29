@@ -1,6 +1,6 @@
 //! Core library for the Blade command-line tool.
 
-use std::{env::Args, process::ExitCode};
+use std::{env::Args, io::Write, process::ExitCode};
 //use std::path::{Path, PathBuf};
 
 /// Help text shared by Blade command-line front ends.
@@ -61,7 +61,40 @@ impl Command for CommandNew {
         }
         
         // create src/main.ok
+        /*
+            module hello v1.0.0;
+
+            import "io/stdout" take Stdout;
+
+            main() is int {
+                Stdout.writeln("hello from okkama");
+                0;
+            }
+        */
+        let main_ok = b"\
+module hello v1.0.0;
+
+import \"io/stdout\" take Stdout;
+
+main() is int {
+    Stdout().writeln(\"hello from okkama\");
+    0;
+}";
+        if let Err(e) = self.create_file(String::from("src/main.ok"), main_ok) {
+            eprintln!("cannot make file src/main.ok: {}", e);
+            return ExitCode::from(2);
+        }
+
         // create hello.toml
+        /*
+            [module]
+            name = "hello"
+            version = 1.0.0
+            
+            [build]
+            target = "sparrow"
+            output = "hello"
+        */
 
         ExitCode::SUCCESS
     }
@@ -106,6 +139,16 @@ impl CommandNew {
         let dir_path = cwd.join(root_dir).join(dir_name);
         std::fs::create_dir_all(dir_path)?;
         Ok(())
+    }
+
+    fn create_file(&self, filepath: String, filecontent: &[u8]) -> std::io::Result<()> {
+        let cwd = std::env::current_dir()?;
+        let root_dir = self.args.last().unwrap();
+        let path = cwd.join(root_dir).join(filepath);
+        let mut file = std::fs::File::create(path)?;
+        file.write_all(filecontent)?;
+        
+        return Ok(())
     }
 }
 
