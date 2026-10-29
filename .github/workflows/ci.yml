@@ -75,9 +75,16 @@ jobs:
         run: ./ocs validate
       - name: Run full-release on ${{ matrix.engine }}
         working-directory: conformance
-        run: >
-          ./ocs run --adapter adapters/rust/adapter.json --profile full-release
-          --adapter-env OCS_RUST_ENGINE=${{ matrix.engine }} -j 4
+        run: |
+          set +e
+          ./ocs run --adapter adapters/rust/adapter.json --profile full-release \
+            --adapter-env OCS_RUST_ENGINE=${{ matrix.engine }} -j 4 | tee ocs.log
+          status=${PIPESTATUS[0]}
+          # Каждый непройденный кейс — аннотация (видна в интерфейсе и в API).
+          grep -E '^\[ *[0-9]+/ *[0-9]+\] +[A-Z_]+ ' ocs.log | grep -v '\] PASS ' | head -50 |
+            while IFS= read -r line; do echo "::error title=OCS ${{ matrix.engine }}::$line"; done
+          tail -1 ocs.log
+          exit $status
       - name: Keep the run report
         if: always()
         uses: actions/upload-artifact@v4
