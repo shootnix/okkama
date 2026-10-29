@@ -59,6 +59,8 @@ impl Command for CommandNew {
             eprintln!("cannot make lib dir: {}", e);
             return ExitCode::from(2);
         }
+
+        let project_name = self.args.last().unwrap();
         
         // create src/main.ok
         /*
@@ -71,16 +73,19 @@ impl Command for CommandNew {
                 0;
             }
         */
-        let main_ok = b"\
-module hello v1.0.0;
+        let main_ok = format!(
+    r#"module {project_name} v1.0.0;
+import "io/stdout" take Stdout;
 
-import \"io/stdout\" take Stdout;
+main() is int {{
 
-main() is int {
-    Stdout().writeln(\"hello from okkama\");
+    Stdout().writeln("hello from okkama");
     0;
-}";
-        if let Err(e) = self.create_file(String::from("src/main.ok"), main_ok) {
+}}
+"#
+
+);
+        if let Err(e) = self.create_file(String::from("src/main.ok"), main_ok.as_bytes()) {
             eprintln!("cannot make file src/main.ok: {}", e);
             return ExitCode::from(2);
         }
@@ -97,6 +102,20 @@ main() is int {
             target = "sparrow"
             output = "hello"
         */
+        let hello_toml = format!(
+r#"[module]
+name = "{project_name}"
+version = "1.0.0"
+
+[build]
+target = "sparrow"
+output = "{project_name}"
+"#
+);
+        if let Err(e) = self.create_file(String::from(format!("{project_name}.toml")), hello_toml.as_bytes()) {
+            eprintln!("cannot make file hello.toml: {}", e);
+            return ExitCode::from(2);
+        }
 
         ExitCode::SUCCESS
     }
