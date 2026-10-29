@@ -23,9 +23,9 @@ jobs:
         os: [ubuntu-22.04, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # JDK 22+: тесты JVM-бэкенда и FFM natives (crypto, SQLite, терминал).
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "22"
@@ -54,8 +54,8 @@ jobs:
         engine: [ir, sparrow, jvm]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "22"
@@ -70,6 +70,10 @@ jobs:
             conformance/adapters/rust/.target
           key: ocs-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
           restore-keys: ocs-${{ runner.os }}-
+      # Адаптер собирает реализацию с --offline: crates заранее в реестре.
+      - name: Fetch crates
+        working-directory: okkama-rs
+        run: cargo fetch --locked
       - name: Validate the suite
         working-directory: conformance
         run: ./ocs validate
@@ -87,7 +91,7 @@ jobs:
           exit $status
       - name: Keep the run report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: conformance-${{ matrix.engine }}
           path: conformance/reports/runs/

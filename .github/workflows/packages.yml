@@ -45,7 +45,7 @@ jobs:
             smoke: true
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -87,7 +87,7 @@ jobs:
           "$bin/okkama" run --engine sparrow benchmarks/02-calls/main.ok
           "$bin/sparrow" --version
           "$bin/blade" --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: okkama-${{ matrix.platform }}
           path: dist/*
@@ -101,7 +101,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
