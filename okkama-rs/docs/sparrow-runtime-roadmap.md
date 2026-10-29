@@ -46,8 +46,8 @@ cd ../conformance && ./ocs run --adapter adapters/rust/adapter.json \
     --profile full-release --adapter-env OCS_RUST_ENGINE=sparrow -j 8
 ```
 
-Обычный `run` пока исполняет через JVM (решение пользователя 24.10.2026);
-переключение умолчания — одна строка (`run_command`).
+`okkama run` по умолчанию исполняет IR-интерпретатором (с 25.10.2026; до
+этого — JVM); `--engine sparrow|jvm` или `OKKAMA_ENGINE` выбирает другой.
 
 ## Следующий этап — после паритета
 

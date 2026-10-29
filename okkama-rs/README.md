@@ -89,9 +89,9 @@ VM: OIR компилируется в SPB 9 ([формат и инструкци
 Java. Оба движка делят рантайм `okkama-runtime-core`: значения, планировщик
 задач, регионы, natives `std/runtime/*`, intrinsics и воркеры `spawn`.
 Результат main в 0..255 становится кодом выхода, неперехваченный отказ —
-диагностикой в stderr с кодом 1, как у JVM. Обычный `run` пока собирает
-JVM-байткод и запускает `java` (решение 24.10.2026); `--engine ir|sparrow`
-или `OKKAMA_ENGINE=ir|sparrow` выбирает исполнение в Rust-процессе.
+диагностикой в stderr с кодом 1, как у JVM. `okkama run` по умолчанию
+исполняет IR-интерпретатором в Rust-процессе; `--engine sparrow|jvm` или
+`OKKAMA_ENGINE=ir|sparrow|jvm` выбирает другой движок.
 Известные границы — в [compatibility.md](docs/compatibility.md#движки-ir-и-sparrow-расхождения-с-jvm).
 
 [План полного рантайма, GC и JIT](docs/sparrow-runtime-roadmap.md).
@@ -332,6 +332,8 @@ okkama-rs/
     src/analysis, jit         границы будущих стадий (только документация)
     tests/                    интеграционные тесты, фикстуры, снапшоты, корпус
   crates/okkama-cli/          бинарник `okkama`: файлы, stdin, опции, коды выхода
+  crates/blade/               библиотека менеджера проектов Blade (`blade new`)
+  crates/blade-cli/           бинарник `blade`
   examples/                   небольшие корректные программы на Okkama
   docs/                       architecture.md, syntax-coverage.md, compatibility.md
   tools/engines/              сверка движков IR и Sparrow с JVM

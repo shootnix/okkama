@@ -7,8 +7,8 @@
 #     make vscode          # расширение VS Code (.vsix) и его установка в VS Code
 #
 # `build` сначала пересобирает Java-рантайм okkama.rt (если его исходники
-# новее классов и есть javac), затем cargo собирает okkama, okkama-native и
-# sparrow (VM байткода .spb).
+# новее классов и есть javac), затем cargo собирает okkama, okkama-native,
+# sparrow (VM байткода .spb) и blade (менеджер проектов).
 # Классы рантайма встраиваются в сам okkama.
 
 PREFIX ?= $(HOME)/.local
@@ -38,7 +38,7 @@ $(STAMP): $(JAVA)
 	@touch $@
 
 build: runtime
-	cd $(RS) && $(CARGO) build --release -p okkama-cli -p okkama-native -p sparrow-cli
+	cd $(RS) && $(CARGO) build --release -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
 
 install: build
 	./install.sh --prefix "$(PREFIX)" --no-build

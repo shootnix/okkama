@@ -32,8 +32,8 @@ pub(super) fn capabilities() -> Outcome {
 }
 
 fn engine() -> Result<String, String> {
-    // Как `okkama run`: JVM по умолчанию, IR и Sparrow — явно.
-    let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "jvm".into());
+    // Как `okkama run` и адаптер: IR по умолчанию, Sparrow и JVM — явно.
+    let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "ir".into());
     match engine.as_str() {
         "ir" | "sparrow" | "jvm" => Ok(engine),
         _ => Err(format!(

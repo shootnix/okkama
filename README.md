@@ -22,9 +22,9 @@ is enforced by the runtime — not by code review.**
 ### Three engines, one language
 
 ```sh
-okkama hello.ok                                  # JVM (default)
+okkama hello.ok                                  # IR interpreter (default), in-process
 okkama run --engine sparrow hello.ok             # Sparrow VM with JIT, in-process
-okkama run --engine ir hello.ok                  # IR interpreter
+okkama run --engine jvm hello.ok                 # JVM classes, run with `java`
 okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 ```
 
@@ -132,6 +132,7 @@ and installs:
 | --- | --- |
 | `<prefix>/bin/okkama` | compiler, runner (JVM, Sparrow, IR), `fmt`, `lint`, language server; the JVM runtime is built in |
 | `<prefix>/bin/sparrow` | standalone Sparrow VM for `.spb` bytecode |
+| `<prefix>/bin/blade` | project tool: `blade new NAME` creates a project skeleton |
 | `<prefix>/lib/okkama/std/` | a copy of the standard library |
 | `<prefix>/lib/okkama/native/<os>-<arch>/` | host cryptography (`okkama-native`) |
 | `<prefix>/lib/okkama/icu-76.1/lib/` | ICU for `locale/collation`, when built |
@@ -141,7 +142,7 @@ and installs:
 Then:
 
 ```sh
-okkama hello.ok                  # build for the JVM and run
+okkama hello.ok                  # run (IR interpreter; --engine sparrow|jvm)
 okkama -t hello.ok               # run its tests
 okkama build hello.ok --target jvm -o hello.jar && java -jar hello.jar
 okkama fmt -w hello.ok           # format

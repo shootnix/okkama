@@ -11,6 +11,7 @@
 #
 #     <prefix>/bin/okkama                                  компилятор, LSP, fmt, lint
 #     <prefix>/bin/sparrow                                 VM байткода Sparrow (.spb)
+#     <prefix>/bin/blade                                   менеджер проектов (`blade new`)
 #     <prefix>/lib/okkama/std/                             стандартная библиотека
 #     <prefix>/lib/okkama/native/<os>-<arch>/libokkama_native.*   хостовая криптография
 #     <prefix>/lib/okkama/icu-76.1/lib/                    ICU для locale/collation (если собрана)
@@ -75,7 +76,7 @@ if [[ $BUILD -eq 1 ]]; then
     make -C "$ROOT" build
 fi
 
-for built in "$TARGET/okkama" "$TARGET/sparrow" "$TARGET/$NATIVE"; do
+for built in "$TARGET/okkama" "$TARGET/sparrow" "$TARGET/blade" "$TARGET/$NATIVE"; do
     if [[ ! -f "$built" ]]; then
         echo "install.sh: $built is missing; run without --no-build" >&2
         exit 1
@@ -101,7 +102,7 @@ fi
 
 # Бинарник: через временный файл и rename — замена работающего файла на месте
 # ломает подпись кода на macOS. Ссылка на Perl-версию заменяется файлом.
-for tool in okkama sparrow; do
+for tool in okkama sparrow blade; do
     cp "$TARGET/$tool" "$BIN/.$tool.tmp"
     chmod 755 "$BIN/.$tool.tmp"
     rm -f "$BIN/$tool"
@@ -115,7 +116,7 @@ cat > "$LIB/uninstall.sh" <<EOF
 #!/usr/bin/env bash
 # Удаляет Okkama $VERSION из $PREFIX (создан install.sh).
 set -euo pipefail
-rm -f "$BIN/okkama" "$BIN/sparrow"
+rm -f "$BIN/okkama" "$BIN/sparrow" "$BIN/blade"
 rm -rf "$LIB"
 echo "Okkama removed from $PREFIX"
 EOF
@@ -157,5 +158,5 @@ if [[ -n "$resolved" && "$resolved" != "$BIN/okkama" ]]; then
     warn "\`okkama\` in PATH is $resolved, not $BIN/okkama"
 fi
 if ! command -v java >/dev/null 2>&1; then
-    warn "java is not installed: \`okkama run\` needs a JDK (22+ for FFM natives)"
+    warn "java is not installed: \`okkama run --engine jvm\` needs a JDK (22+ for FFM natives)"
 fi

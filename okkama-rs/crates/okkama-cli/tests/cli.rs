@@ -197,8 +197,8 @@ fn ocs_capabilities_follow_the_selected_engine() {
         .env_remove("OCS_RUST_ENGINE")
         .output()
         .unwrap();
-    // Как `okkama run`: JVM по умолчанию.
-    assert!(stdout(&output).contains("\"engine\": \"jvm\""));
+    // Как `okkama run`: IR по умолчанию.
+    assert!(stdout(&output).contains("\"engine\": \"ir\""));
     let output = okkama()
         .arg("--ocs-capabilities")
         .env("OCS_RUST_ENGINE", "typo")
