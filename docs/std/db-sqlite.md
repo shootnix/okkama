@@ -4,9 +4,11 @@
 return a concrete `SqliteConnection`. Each acquisition owns one POSIX worker and
 SQLite connection. Memory acquisitions are independent databases. Windows reports
 unsupported; the portable database contracts and external connectors remain usable.
-SQLite 3.41+ and optional FFI::Platypus 2.12 are required for this provider. Install
-through the active Perlbrew with `cpanm --with-feature sqlite --installdeps .` from
-`okkama-pl`. Provider loading itself does not load FFI or acquire a database.
+The provider needs the system SQLite library, version 3.41 or newer (`libsqlite3`;
+macOS ships one, on Debian/Ubuntu it is `libsqlite3-0`, 3.41+ from Ubuntu 24.04 and
+Debian 13). The library is loaded on the first connection; an older one reports
+`unsupported` with code `SQLITE_VERSION`. Provider loading itself does not acquire a
+database.
 
 ```okkama
 let connection=await SqliteMemory().connection();

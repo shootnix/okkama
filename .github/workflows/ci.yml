@@ -52,7 +52,8 @@ jobs:
       fail-fast: false
       matrix:
         engine: [ir, sparrow, jvm]
-    runs-on: ubuntu-22.04
+    # SQLite 3.41+ (std db/sqlite): в Ubuntu 22.04 только 3.37.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5

@@ -161,7 +161,7 @@ Maintainer: Alexander Ponomarev <shootnix@users.noreply.github.com>
 Section: devel
 Priority: optional
 Depends: libc6 (>= 2.35)
-Suggests: libsqlite3-0, openjdk-21-jdk-headless
+Suggests: libsqlite3-0 (>= 3.41), openjdk-21-jdk-headless
 Homepage: https://github.com/shootnix/okkama
 Description: Okkama programming language
  Compiler and runner for Okkama (IR interpreter, Sparrow VM with JIT,
