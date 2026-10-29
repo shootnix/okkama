@@ -1,0 +1,87 @@
+# Тесты и conformance на каждый push в develop и каждый pull request.
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # JDK 22+: тесты JVM-бэкенда и FFM natives (crypto, SQLite, терминал).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "22"
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+          key: test-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: test-${{ runner.os }}-
+      - name: Build
+        working-directory: okkama-rs
+        run: cargo build --release --locked -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
+      - name: Test
+        working-directory: okkama-rs
+        run: cargo test --release --locked --workspace
+
+  conformance:
+    name: Conformance (${{ matrix.engine }})
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [ir, sparrow, jvm]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "22"
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      # Адаптер собирает реализацию в свой каталог: кэшируем и его.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            conformance/adapters/rust/.target
+          key: ocs-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: ocs-${{ runner.os }}-
+      - name: Validate the suite
+        working-directory: conformance
+        run: ./ocs validate
+      - name: Run full-release on ${{ matrix.engine }}
+        working-directory: conformance
+        run: >
+          ./ocs run --adapter adapters/rust/adapter.json --profile full-release
+          --adapter-env OCS_RUST_ENGINE=${{ matrix.engine }} -j 4
+      - name: Keep the run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-${{ matrix.engine }}
+          path: conformance/reports/runs/
+          if-no-files-found: ignore

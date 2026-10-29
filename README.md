@@ -5,38 +5,27 @@
 **A statically typed object language where the Elegant Objects discipline
 is enforced by the runtime — not by code review.**
 
-[![Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
-[![Spec](https://img.shields.io/badge/language%20spec-1.0-blue)](docs/okkama-spec-11072026.md)
-[![Conformance](https://img.shields.io/badge/conformance-776%2F776-brightgreen)](conformance/)
-[![Rust](https://img.shields.io/badge/Rust-%E2%89%A5%201.85-orange?logo=rust)](okkama-rs/)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![CI](https://github.com/shootnix/okkama/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/ci.yml)
+[![Packages](https://github.com/shootnix/okkama/actions/workflows/packages.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/packages.yml)
+[![Release](https://img.shields.io/github/v/release/shootnix/okkama?include_prereleases&label=release)](https://github.com/shootnix/okkama/releases)
+[![Conformance](https://img.shields.io/badge/conformance-776%2F776%20×%203%20engines-brightgreen)](conformance/)
+[![License](https://img.shields.io/github/license/shootnix/okkama)](LICENSE)
 
-[The Okkama Book](docs/OkkamaBook.md) ·
-[Книга на русском](docs/OkkamaBook-RU.md) ·
+[Install](#install) ·
+[Quick start](#quick-start) ·
+[The Book](docs/OkkamaBook.md) ·
+[Книга](docs/OkkamaBook-RU.md) ·
 [Specification](docs/okkama-spec-11072026.md) ·
 [Grammar](docs/okkama-grammar-1.0.md) ·
 [LLM Context Pack](docs/okkama-llm-context-1.0.md)
 
 </div>
 
-### Three engines, one language
-
-```sh
-okkama hello.ok                                  # IR interpreter (default), in-process
-okkama run --engine sparrow hello.ok             # Sparrow VM with JIT, in-process
-okkama run --engine jvm hello.ok                 # JVM classes, run with `java`
-okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
-```
-
-The compiler lowers Okkama to one IR (OIR-1); the JVM backend, the Sparrow
-register VM (Cranelift JIT, cycle collector) and the IR interpreter execute it
-with identical results — the [conformance suite](conformance/) and the engine
-parity check hold them to that. Details: [okkama-rs](okkama-rs/README.md),
-[Sparrow ISA](okkama-rs/docs/sparrow-isa.md),
-[runtime, GC and JIT](okkama-rs/docs/sparrow-runtime-roadmap.md),
-[benchmarks](benchmarks/README.md).
-
 ---
+
+Okkama has no `null`, no inheritance, no setters and no hidden mutation.
+Objects are immutable; a change of state is a *new* object returned by a
+successor action, and the runtime refuses programs that throw it away.
 
 ```okkama
 module app v1.0.0;
@@ -64,7 +53,74 @@ main() is int {
 }
 ```
 
-## What is Okkama?
+## Install
+
+Prebuilt packages for **macOS (Apple Silicon and Intel)** and **Linux x86_64**
+are on the [Releases](https://github.com/shootnix/okkama/releases) page:
+tagged versions and a rolling `nightly` built from `develop`. Each package
+contains `okkama`, `sparrow`, `blade`, the standard library and the host
+crypto library.
+
+| Platform | Installer | Archive |
+|---|---|---|
+| macOS, Apple Silicon | `okkama-<version>-macos-aarch64.pkg` | `okkama-<version>-macos-aarch64.tar.gz` |
+| macOS, Intel | `okkama-<version>-macos-x86_64.pkg` | `okkama-<version>-macos-x86_64.tar.gz` |
+| Linux x86_64 (glibc 2.35+) | `okkama-<version>-linux-x86_64.deb` | `okkama-<version>-linux-x86_64.tar.gz` |
+
+```sh
+# Debian / Ubuntu
+sudo apt install ./okkama-<version>-linux-x86_64.deb
+
+# macOS: the .pkg installs into /usr/local; or, without root, from the archive:
+tar -xzf okkama-<version>-macos-aarch64.tar.gz
+./okkama-<version>-macos-aarch64/install.sh        # into ~/.local (--prefix DIR)
+```
+
+Every file has a `.sha256` next to it. The macOS packages are not signed yet:
+open the `.pkg` with right-click → *Open*, and for an archive downloaded in a
+browser run `xattr -dr com.apple.quarantine okkama-*` once.
+
+**From source** (Rust 1.85+):
+
+```sh
+git clone https://github.com/shootnix/okkama.git && cd okkama
+make install                      # into ~/.local; PREFIX=/opt/okkama make install
+```
+
+`okkama` finds the standard library and native libraries next to itself, so no
+environment variables are needed — `okkama env` shows what it found. The JVM
+engine additionally needs a JDK (22+ for the FFM natives: cryptography,
+SQLite, terminal, accounts, collation); the IR and Sparrow engines need nothing.
+
+## Quick start
+
+```sh
+blade new hello && cd hello       # project skeleton: src/main.ok
+okkama src/main.ok                # run it
+```
+
+`main() is int` is the entry point; its result is the process exit status.
+
+```okkama
+module hello v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    Stdout().writeln("Hello, Okkama!");
+    0;
+}
+```
+
+```sh
+okkama hello.ok                   # run (IR interpreter)
+okkama -t hello.ok                # run the file's `test` blocks
+okkama fmt -w hello.ok            # format in place
+okkama lint hello.ok              # errors, warnings, lint findings
+okkama build hello.ok --target jvm -o hello.jar && java -jar hello.jar
+```
+
+## Why Okkama
 
 Okkama is built around four ideas:
 
@@ -107,85 +163,7 @@ These are decisions, not gaps:
 - ❌ hidden state changes — mutations are visible in signatures (`is ^Type`) and at call sites
 - ❌ standalone named/free functions — named behavior lives on objects;
   compact first-class computations use object-shaped anonymous actions
-- ❌ `while` loops, `return`, string interpolation, wildcard imports
-
-## Getting started
-
-The implementation, `okkama-rs`, is written in Rust. Building needs a Rust
-toolchain (1.85+). The JVM engine needs a JDK to run programs (JDK 22 or newer
-enables the FFM natives: cryptography, SQLite, terminal, accounts,
-collation); the Sparrow and IR engines need nothing else.
-
-### Installation (macOS and Linux)
-
-```sh
-git clone <this repository>
-cd okkama
-make install                     # into ~/.local; PREFIX=/opt/okkama make install
-```
-
-`make install` rebuilds the JVM runtime when its Java sources changed (and
-`javac` is available), builds `okkama` and the host crypto library with cargo,
-and installs:
-
-| path | contents |
-| --- | --- |
-| `<prefix>/bin/okkama` | compiler, runner (JVM, Sparrow, IR), `fmt`, `lint`, language server; the JVM runtime is built in |
-| `<prefix>/bin/sparrow` | standalone Sparrow VM for `.spb` bytecode |
-| `<prefix>/bin/blade` | project tool: `blade new NAME` creates a project skeleton |
-| `<prefix>/lib/okkama/std/` | a copy of the standard library |
-| `<prefix>/lib/okkama/native/<os>-<arch>/` | host cryptography (`okkama-native`) |
-| `<prefix>/lib/okkama/icu-76.1/lib/` | ICU for `locale/collation`, when built |
-
-`okkama` finds these next to itself, so no environment variables are needed;
-`okkama env` shows what it found. `make uninstall` removes the installation.
-Then:
-
-```sh
-okkama hello.ok                  # run (IR interpreter; --engine sparrow|jvm)
-okkama -t hello.ok               # run its tests
-okkama build hello.ok --target jvm -o hello.jar && java -jar hello.jar
-okkama fmt -w hello.ok           # format
-okkama lint hello.ok             # errors, warnings, lint
-```
-
-Editor support: `make vscode` packages and installs the VS Code extension
-(highlighting plus the `okkama lsp` language server).
-
-### Development checkout
-
-```sh
-make build                       # okkama, sparrow, okkama-native (release)
-make test                        # cargo test --workspace
-cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 8
-python3 benchmarks/run.py        # engine benchmarks (benchmarks/README.md)
-```
-
-`tools/build-icu-collation.sh` builds the pinned ICU 76.1 into `.runtime/`
-for `locale/collation`; without it those natives report `unsupported`.
-
-The entry point is `main() is int` or `async main() is int`, without parameters.
-The CLI uses its result as the process exit status: 0 means success, 1..255
-are application-defined errors. Other types and out-of-range values are errors.
-The result is not printed; defer/destroy and shutdown run before process exit.
-
-Your first program — `hello.ok`:
-
-```okkama
-module hello v1.0.0;
-
-main() is int {
-    let greeting = "Hello, " + "Okkama!";
-    confirm greeting.length() == 14;
-    return 0;              // process exit status: success
-}
-```
-
-```console
-$ okkama hello.ok
-$ echo $?
-0
-```
+- ❌ `while` loops, string interpolation, wildcard imports
 
 ## A taste of the language
 
@@ -199,7 +177,8 @@ prices["fig"];               // runtime error — missing keys never return null
 prices["fig"] else 0;        // 0 — the fallback is your explicit decision
 ```
 
-### Object capabilities (`cap`): computed consumer contracts
+<details>
+<summary><b>Object capabilities (`cap`): computed consumer contracts</b></summary>
 
 ```okkama
 object Customer {
@@ -224,7 +203,10 @@ retain the owner safely and expose only their declared computed fields.
 Owners never convert implicitly to caps. See the [working example](examples/object-caps.ok)
 and [Capabilities 0.0.1 guide](docs/object-caps-0.0.1-ru.md).
 
-### Roles: contracts that ship their own test double
+</details>
+
+<details>
+<summary><b>Roles: contracts that ship their own test double</b></summary>
 
 ```okkama
 role Package {
@@ -254,7 +236,10 @@ returns, collections and bound actions; it does not copy the object.
 See the [role example](examples/role-boundaries.ok) and
 [book section](docs/OkkamaBook-RU.md#221-доступ-через-роль).
 
-### Typed failures — errors are objects, bugs are not values
+</details>
+
+<details>
+<summary><b>Typed failures — errors are objects, bugs are not values</b></summary>
 
 ```okkama
 object InvalidCents does Error {
@@ -280,7 +265,10 @@ catch error is InvalidCents {
 }
 ```
 
-### Functional collections — eager, immutable, deterministic
+</details>
+
+<details>
+<summary><b>Functional collections — eager, immutable, deterministic</b></summary>
 
 ```okkama
 let total = [0, 2..=4, 9]                     // ranges expand in literals
@@ -289,7 +277,10 @@ let total = [0, 2..=4, 9]                     // ranges expand in literals
     .reduce(0) -> sum, value { sum + value; };
 ```
 
-### Anonymous actions — object-shaped lexical computations
+</details>
+
+<details>
+<summary><b>Anonymous actions — object-shaped lexical computations</b></summary>
 
 ```okkama
 object Apply {
@@ -312,7 +303,10 @@ anonymous callable objects rather than a second global function system.
 
 See [anonymous actions and action types](docs/anonymous-actions.md) for the full syntax.
 
-### Deterministic cleanup — scope owns resources
+</details>
+
+<details>
+<summary><b>Deterministic cleanup — scope owns resources</b></summary>
 
 ```okkama
 {
@@ -320,6 +314,39 @@ See [anonymous actions and action types](docs/anonymous-actions.md) for the full
     defer report.flush();       // LIFO, on scope exit
 }                               // file's destroy block runs HERE — not "eventually"
 ```
+
+</details>
+
+## Three engines, one language
+
+The compiler lowers Okkama to one intermediate representation
+([OIR-1](docs/compiler/OIR-1.md)) and runs it on any of three engines with
+identical results — output, errors and exit status. The
+[conformance suite](conformance/) and an engine parity check over all of
+`std/` and `examples/` hold them to that.
+
+```sh
+okkama hello.ok                              # IR interpreter (default), in-process
+okkama run --engine sparrow hello.ok         # Sparrow register VM + Cranelift JIT
+okkama run --engine jvm hello.ok             # JVM class files, run with `java`
+okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
+```
+
+| | IR interpreter | Sparrow + JIT | JVM |
+|---|---|---|---|
+| Start-up (`hello`) | 6 ms | **5 ms** | 43 ms |
+| `fib(32)`, 7 M calls | 1.69 s | **0.16 s** | 0.18 s |
+| Mandelbrot (float) | 0.73 s | **0.05 s** | 0.14 s |
+| 1 M successor steps | 1.28 s | **0.11 s** | 0.13 s |
+| 6-module application | 2.05 s | **0.41 s** | 0.52 s |
+| Peak memory, application | 8 MB | 15 MB | 277 MB |
+| Needs | nothing | nothing | JDK |
+
+Median of five runs on an Apple M2 Max; the full ladder of eleven programs,
+CPU time and memory are in [benchmarks](benchmarks/README.md). Sparrow is a
+self-contained VM ([ISA](okkama-rs/docs/sparrow-isa.md)) with a baseline JIT,
+in-place successor updates and a cycle collector
+([runtime, GC and JIT](okkama-rs/docs/sparrow-runtime-roadmap.md)).
 
 ## Documentation
 
@@ -338,59 +365,65 @@ See [anonymous actions and action types](docs/anonymous-actions.md) for the full
 Where documents disagree, the source of truth is the conformance suite
 (`conformance/`) and the specification — in that order.
 
-## Project status
+## Status
 
-Okkama is **experimental**: the language and standard library continue to
-evolve. The Rust implementation runs the whole language and standard library
-on three engines with identical results: the conformance suite passes
-776/776 cases on each of JVM, Sparrow and the IR interpreter, and every
-deterministic program of `std/` (in test mode) and `examples/` produces the
-same output, errors and exit status on all of them.
+Okkama is **experimental**: the language and the standard library still
+evolve, and nothing is stable yet. The implementation runs the whole language
+and standard library: the conformance suite passes 776/776 cases on each
+engine, and every deterministic program in `std/` (in test mode) and
+`examples/` behaves identically on all three. See
+[Appendix B of the Book](docs/OkkamaBook.md#appendix-b-implementation-status)
+for the feature table.
 
-See [Appendix B of the Book](docs/OkkamaBook.md#appendix-b-implementation-status)
-for the language feature table.
+## Development
 
-## Repository layout
+```sh
+make build                        # okkama, sparrow, blade, okkama-native (release)
+make test                         # cargo test --workspace
+make dist                         # packages for this machine into dist/
+cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 8
+python3 benchmarks/run.py         # engine benchmarks
+```
+
+`tools/build-icu-collation.sh` builds the pinned ICU 76.1 into `.runtime/`
+for `locale/collation`; without it those natives report `unsupported`.
+
+GitHub Actions run the tests on Linux and macOS and the conformance suite on
+every engine for each push and pull request ([CI](.github/workflows/ci.yml)).
+[Packages](.github/workflows/packages.yml) are built for every platform on
+each push to `develop` (the `nightly` pre-release) and published as a release
+for each `vX.Y.Z` tag, which must match the version in `okkama-rs/Cargo.toml`.
 
 ```text
 okkama/
-├── okkama-rs/           # Rust implementation: compiler, JVM backend, Sparrow VM + JIT,
-│                        # IR interpreter, runtime and natives, LSP, fmt, lint
-├── std/                 # standard library; module contracts in docs/std/
-├── docs/                # book (EN/RU), spec, grammar, LLM context, OIR, guides
-├── conformance/         # conformance suite (OCS) and its runner
-├── examples/            # gallery, cookbook, web and async examples
-├── benchmarks/          # engine benchmarks and their runner
-├── tools/               # data generators for std (CLDR, IANA, ISO, ICU, tzdb)
-├── vscode-okkama/       # VS Code extension (highlighting + language server)
-├── Makefile             # build, install, test, vscode
-└── install.sh
+├── okkama-rs/        Rust implementation: compiler, JVM backend, Sparrow VM + JIT,
+│                     IR interpreter, runtime and natives, LSP, fmt, lint, blade
+├── std/              standard library (module contracts in docs/std/)
+├── docs/             book (EN/RU), specification, grammar, OIR, guides
+├── conformance/      conformance suite (OCS) and its runner
+├── examples/         gallery, cookbook, web and async programs
+├── benchmarks/       engine benchmarks and their runner
+├── tools/            packaging and data generators for std (CLDR, IANA, ISO, ICU, tzdb)
+└── vscode-okkama/    VS Code extension: highlighting + language server
 ```
 
 ## Editor support
 
-- **VS Code** — the [`vscode-okkama`](vscode-okkama/) extension provides
-  syntax highlighting and the `okkama lsp` language server (diagnostics,
-  completion, signatures, references, rename, formatting); `make vscode`
-  packages and installs it.
-- **Anything TextMate-compatible** — grammar in
-  [`okkama.tmLanguage.json`](vscode-okkama/syntaxes/okkama.tmLanguage.json).
+The [`vscode-okkama`](vscode-okkama/) extension provides highlighting and the
+`okkama lsp` language server — diagnostics, completion, signatures,
+references, rename and formatting. `make vscode` packages and installs it. Any
+TextMate-compatible editor can use
+[`okkama.tmLanguage.json`](vscode-okkama/syntaxes/okkama.tmLanguage.json).
 
 ## Contributing
 
-Issues, questions, and design discussions are welcome:
-
-- 🐛 Report a bug in the issue tracker — a minimal `.ok` program plus
-  expected/actual behavior is perfect.
-- 💡 Open a discussion issue for language design questions — Okkama says
-  "no" a lot, and every "no" has a written rationale in the
-  [Book](docs/OkkamaBook.md).
-- 🤝 Pull requests: keep changes small and focused and include a test
-  (a Rust test or a conformance case). `make test` and the conformance suite
-  must stay green on every engine.
-- 🤖 Using an AI assistant? Feed it the
-  [LLM Context Pack](docs/okkama-llm-context-1.0.md) first — it contains
-  everything a model needs to write correct Okkama.
+- 🐛 Bugs: a minimal `.ok` program with expected and actual behavior is perfect.
+- 💡 Design questions are welcome — Okkama says "no" a lot, and every "no" has a
+  written rationale in the [Book](docs/OkkamaBook.md).
+- 🤝 Pull requests: small and focused, with a test (a Rust test or a
+  conformance case). CI must stay green on every engine.
+- 🤖 Using an AI assistant? Give it the
+  [LLM Context Pack](docs/okkama-llm-context-1.0.md) first.
 
 ## License
 

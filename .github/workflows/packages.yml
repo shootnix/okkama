@@ -1,0 +1,119 @@
+# Пакеты Okkama: tar.gz для всех платформ, .pkg (macOS) и .deb (Linux).
+#
+# - push в develop: пакеты текущей версии `<версия>-nightly.<дата>.<sha>`,
+#   пре-релиз `nightly` на странице Releases обновляется;
+# - тег vX.Y.Z: релиз X.Y.Z (тег обязан совпадать с версией в Cargo.toml);
+# - вручную (workflow_dispatch): только артефакты сборки.
+name: Packages
+
+on:
+  push:
+    branches: [develop]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos-aarch64
+            smoke: true
+          # Кросс-сборка на arm64-раннере: Intel-раннеры macOS уходят.
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: macos-x86_64
+            smoke: false
+          # glibc 2.35: пакет ставится на Ubuntu 22.04+, Debian 12+ и новее.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x86_64
+            smoke: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+          key: packages-${{ matrix.target }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: packages-${{ matrix.target }}-
+      - name: Version
+        id: version
+        run: |
+          base="$(sed -n 's/^version = "\(.*\)"/\1/p' okkama-rs/Cargo.toml | head -1)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            if [[ "${GITHUB_REF_NAME#v}" != "$base" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match version $base in okkama-rs/Cargo.toml"
+              exit 1
+            fi
+            echo "version=$base" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$base-nightly.$(date -u +%Y%m%d).$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Package
+        run: >
+          tools/package.sh --target ${{ matrix.target }} --installer
+          --version ${{ steps.version.outputs.version }} --out dist
+      - name: Smoke test
+        if: matrix.smoke
+        run: |
+          mkdir smoke
+          tar -C smoke -xzf dist/okkama-*-${{ matrix.platform }}.tar.gz
+          bin="$(echo smoke/okkama-*/bin)"
+          "$bin/okkama" env
+          "$bin/okkama" examples/gallery/quicksort.ok
+          "$bin/okkama" run --engine sparrow benchmarks/02-calls/main.ok
+          "$bin/sparrow" --version
+          "$bin/blade" --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: okkama-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release ${{ github.ref_name }}
+        if: github.ref_type == 'tag'
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY"
+          --title "Okkama ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+      - name: Nightly
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          gh release delete nightly --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create nightly dist/* --repo "$GITHUB_REPOSITORY" --prerelease \
+            --target "$GITHUB_SHA" --title "Nightly" \
+            --notes "Built from develop at $GITHUB_SHA. Unstable: use a tagged release for anything real."

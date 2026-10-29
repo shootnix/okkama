@@ -4,6 +4,7 @@
 #     make install         # сборка и установка в ~/.local (PREFIX=/opt/okkama make install)
 #     make uninstall
 #     make test            # тесты Rust
+#     make dist            # пакеты этой платформы в dist/ (tar.gz + .pkg/.deb)
 #     make vscode          # расширение VS Code (.vsix) и его установка в VS Code
 #
 # `build` сначала пересобирает Java-рантайм okkama.rt (если его исходники
@@ -20,7 +21,7 @@ STAMP   := $(RUNTIME)/classes/.built
 JAVA    := $(wildcard $(RUNTIME)/src/okkama/rt/*.java $(RUNTIME)/src22/okkama/rt/*.java)
 VSIX    := vscode-okkama/okkama-vscode.vsix
 
-.PHONY: all build runtime install uninstall test vscode clean
+.PHONY: all build runtime install uninstall test dist vscode clean
 
 all: build
 
@@ -48,6 +49,9 @@ uninstall:
 
 test:
 	cd $(RS) && $(CARGO) test --release --workspace
+
+dist: runtime
+	./tools/package.sh --installer
 
 $(VSIX): vscode-okkama/package.json vscode-okkama/extension.js vscode-okkama/syntaxes/okkama.tmLanguage.json
 	cd vscode-okkama && npm install --omit=dev --no-audit --no-fund
