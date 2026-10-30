@@ -4944,7 +4944,7 @@ exceptional exit.
 | `runtime/poll` | typed readiness polling over file/pipe/socket handles: registration ids and tags, readable/writable masks, absolute monotonic deadlines, consumed cancellation |
 | `runtime/environment` | raw-`@byte` environment get/set/remove/all (mutation is process-global) |
 | `runtime/system` | portable platform/architecture strings; `secure_random(size)` from the OS CSPRNG with no PRNG fallback |
-| `runtime/debug` | `data_dump(any) is string` backing `okkama.Dump` |
+| `runtime/debug` | `data_dump(any) is string` backing `okkama.Dump`; `data_kind`, `data_type`, `data_size`, `data_leaf`, `data_names`, `data_keys`, `data_items` backing `debug/dumper.Dumper` |
 | `runtime/regex` | opaque `RegexHandle` patterns: compile, exact invalid offset, boolean search/whole match, first/all leftmost-longest code-point spans, idempotent close |
 | `runtime/format` | opaque-`any` concatenation plus positional `{}` and named `{field}` formatting with escaped braces |
 | `runtime/crypto` | closed SHA-256/384/512 digest/HMAC set and constant-work byte comparison |

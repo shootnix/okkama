@@ -9,7 +9,7 @@ use okkama_compiler::{
     ir::{self, InstKind, IntValue, TermKind},
     source::Span,
 };
-use okkama_runtime_core::failure::{Failure, Kind as FailureKind};
+use okkama_runtime_core::failure::{Failure, Kind as FailureKind, Site};
 use okkama_runtime_core::sched;
 use std::rc::Rc;
 
@@ -23,6 +23,25 @@ pub fn execute(module: &ir::Module) -> Result<IntValue, RuntimeError> {
 pub fn execute_with_arguments(
     module: &ir::Module,
     arguments: Vec<String>,
+) -> Result<IntValue, RuntimeError> {
+    execute_traced(module, arguments).0
+}
+
+/// [`execute_with_arguments`] и стек вызовов неперехваченного отказа
+/// (от места возникновения к `main`; пусто, если отказа не было).
+pub fn execute_traced(
+    module: &ir::Module,
+    arguments: Vec<String>,
+) -> (Result<IntValue, RuntimeError>, Vec<Site>) {
+    let mut trace = Vec::new();
+    let result = execute_inner(module, arguments, &mut trace);
+    (result, trace)
+}
+
+fn execute_inner(
+    module: &ir::Module,
+    arguments: Vec<String>,
+    trace: &mut Vec<Site>,
 ) -> Result<IntValue, RuntimeError> {
     ir::verify(module).map_err(RuntimeError::InvalidIr)?;
     if !module.imports.is_empty() || module.tests.is_some() {
@@ -41,6 +60,47 @@ pub fn execute_with_arguments(
     let result = sched::on_large_stack(|| run_entry(&engine, entry));
     // Незавершённые задачи освобождаются до возврата: их стеки держат значения.
     sched::reset();
+    if result.is_err()
+        && let Some(failure) = engine.uncaught.borrow_mut().take()
+    {
+        *trace = failure.trace.sites();
+    }
+    take_fatal(&engine)?;
+    result
+}
+
+/// Ячейка REPL: конструктор `ctor` служебного объекта, затем его действие
+/// `run` с аргументами; результат `run`. Стек неперехваченного отказа — в `trace`.
+pub(crate) fn execute_cell(
+    module: &ir::Module,
+    ctor: ir::FuncId,
+    run: ir::FuncId,
+    args: Vec<Value>,
+    trace: &mut Vec<Site>,
+) -> Result<Value, RuntimeError> {
+    ir::verify(module).map_err(RuntimeError::InvalidIr)?;
+    let engine = new_engine(module);
+    sched::reset();
+    let result = sched::on_large_stack(|| {
+        let call = |func, args| match execute_function(&engine, func, args) {
+            Ok(value) => value.ok_or_else(|| invalid_state(module.span, "REPL cell returned no value")),
+            Err(RuntimeError::Unwind { span, failure }) => Err(RuntimeError::Unwind {
+                span,
+                failure: describe_failure(&engine, &failure, span)?,
+            }),
+            Err(error) => Err(error),
+        };
+        let cell = call(ctor, Vec::new())?;
+        let mut arguments = vec![cell];
+        arguments.extend(args);
+        call(run, arguments)
+    });
+    sched::reset();
+    if result.is_err()
+        && let Some(failure) = engine.uncaught.borrow_mut().take()
+    {
+        *trace = failure.trace.sites();
+    }
     take_fatal(&engine)?;
     result
 }
@@ -50,6 +110,7 @@ pub(crate) fn new_engine(module: &ir::Module) -> Rc<Engine> {
         module: module.clone(),
         state: State::default(),
         fatal: std::cell::RefCell::new(None),
+        uncaught: std::cell::RefCell::new(None),
     });
     engine.state.set_enums(module);
     engine
@@ -75,6 +136,9 @@ pub(crate) struct Engine {
     pub(crate) state: State,
     /// Ошибка реализации внутри задачи: завершает запуск после планировщика.
     fatal: std::cell::RefCell<Option<RuntimeError>>,
+    /// Последний отказ, дошедший до корня исполнения (его стек вызовов —
+    /// для диагностики запуска).
+    uncaught: std::cell::RefCell<Option<Rc<Failure>>>,
 }
 
 fn run_entry(engine: &Rc<Engine>, entry: ir::FuncId) -> Result<IntValue, RuntimeError> {
@@ -82,9 +146,10 @@ fn run_entry(engine: &Rc<Engine>, entry: ir::FuncId) -> Result<IntValue, Runtime
     let outcome = if module.functions[entry.0].is_async() {
         // `async main`: корневой Future и цикл планировщика до его исхода.
         let root = cold_call(engine, entry, Vec::new());
-        sched::run_main(&root)
-            .map(Some)
-            .map_err(|failure| failure_error(failure, module.span))
+        sched::run_main(&root).map(Some).map_err(|failure| {
+            *engine.uncaught.borrow_mut() = Some(failure.clone());
+            failure_error(failure, module.span)
+        })
     } else {
         execute_function(engine, entry, Vec::new())
     };
@@ -115,7 +180,7 @@ pub(crate) fn cold_call(engine: &Rc<Engine>, func: ir::FuncId, args: Vec<Value>)
 pub(crate) fn run_body(engine: &Rc<Engine>, func: ir::FuncId, args: Vec<Value>) -> sched::Outcome {
     match execute_function(engine, func, args) {
         Ok(value) => Ok(value.unwrap_or(Value::Undef)),
-        Err(error) => match from_error(error) {
+        Err(error) => match root_failure(engine, error) {
             Ok(failure) => Err(failure),
             Err(fatal) => {
                 let message = fatal.to_string();
@@ -255,7 +320,7 @@ pub(crate) fn execute_function(
                             for cleanup in failures {
                                 primary = primary.with_secondary(cleanup);
                             }
-                            propagate(module, &mut frames, primary, inst.span)?;
+                            propagate(engine, &mut frames, primary, inst.span, false)?;
                         }
                     }
                 }
@@ -311,7 +376,7 @@ pub(crate) fn execute_function(
                                 slots[result.0] = Some(value);
                             }
                         }
-                        Err(raised) => propagate(module, &mut frames, raised, inst.span)?,
+                        Err(raised) => propagate(engine, &mut frames, raised, inst.span, false)?,
                     }
                     continue;
                 }
@@ -329,7 +394,7 @@ pub(crate) fn execute_function(
                             Ok(value) => value,
                             Err(error) => {
                                 let raised = from_error(error)?;
-                                propagate(module, &mut frames, raised, inst.span)?;
+                                propagate(engine, &mut frames, raised, inst.span, false)?;
                                 continue;
                             }
                         };
@@ -822,8 +887,10 @@ pub(crate) fn execute_function(
             let value = match evaluated {
                 Ok(value) => value,
                 Err(error) => {
-                    let raised = from_error(error)?;
-                    propagate(module, &mut frames, raised, inst.span)?;
+                    // Ошибка может прийти из вложенного исполнения (помощник
+                    // intrinsic): его отказ сохраняет свой стек вызовов.
+                    let raised = root_failure(engine, error)?;
+                    propagate(engine, &mut frames, raised, inst.span, false)?;
                     continue;
                 }
             };
@@ -840,24 +907,24 @@ pub(crate) fn execute_function(
                 let raised = Failure::new(FailureKind::Panic(
                     read(slots, *message, span)?.string(span)?.to_owned(),
                 ));
-                propagate(module, &mut frames, raised, span)?;
+                propagate(engine, &mut frames, raised, span, true)?;
                 continue;
             }
             TermKind::Trap { message, .. } => {
                 let raised = Failure::new(FailureKind::Program(message.clone()));
-                propagate(module, &mut frames, raised, span)?;
+                propagate(engine, &mut frames, raised, span, true)?;
                 continue;
             }
             TermKind::Raise(value) => {
                 let raised = failure(read(slots, *value, span)?, span)?.clone();
-                propagate(module, &mut frames, raised, span)?;
+                propagate(engine, &mut frames, raised, span, true)?;
                 continue;
             }
             TermKind::Throw(value) => {
                 let value = read(slots, *value, span)?;
                 if let Value::NativeFailure(failure) = value {
                     let raised = Failure::new(FailureKind::Native(failure.clone()));
-                    propagate(module, &mut frames, raised, span)?;
+                    propagate(engine, &mut frames, raised, span, true)?;
                     continue;
                 }
                 let declaration = state.object_declaration(module, value, span)?;
@@ -877,7 +944,7 @@ pub(crate) fn execute_function(
                         message: None,
                     })
                 };
-                propagate(module, &mut frames, raised, span)?;
+                propagate(engine, &mut frames, raised, span, true)?;
                 continue;
             }
             TermKind::Catch {
@@ -1152,14 +1219,40 @@ fn from_error(error: RuntimeError) -> Result<Rc<Failure>, RuntimeError> {
         other => Err(other),
     }
 }
+/// `terminator` — отказ возник на терминаторе верхнего кадра, а не на его
+/// инструкции.
+/// Отказ из ошибки корня вложенного исполнения: исходный объект, если корень
+/// его запомнил (с ним сохраняются идентичность и стек вызовов), иначе новый.
+/// Простой отказ доходит до корня ошибкой своего вида (`failure_error`), и
+/// `from_error` построил бы новый объект без стека.
+fn root_failure(engine: &Engine, error: RuntimeError) -> Result<Rc<Failure>, RuntimeError> {
+    let fresh = from_error(error)?;
+    let original = engine.uncaught.borrow_mut().take();
+    Ok(match original {
+        Some(original) if Rc::ptr_eq(&original, &fresh) || original.kind == fresh.kind => original,
+        _ => fresh,
+    })
+}
+
 fn propagate(
-    module: &ir::Module,
+    engine: &Engine,
     frames: &mut Vec<Frame>,
     failure: Rc<Failure>,
     span: Span,
+    terminator: bool,
 ) -> Result<(), RuntimeError> {
+    let module = &engine.module;
+    let mut terminator = terminator;
     while let Some(frame) = frames.last_mut() {
         let function = &module.functions[frame.function.0];
+        failure.trace.record(
+            frame.slots.as_ptr() as usize,
+            Site {
+                function: frame.function.0 as u32,
+                pc: frame_pc(function, frame, terminator),
+            },
+        );
+        terminator = false;
         if let Some(target) = &function.blocks[frame.block.0].unwind {
             let mut arguments = target
                 .args
@@ -1186,7 +1279,24 @@ fn propagate(
             return Ok(());
         }
     }
+    *engine.uncaught.borrow_mut() = Some(failure.clone());
     Err(failure_error(failure, span))
+}
+
+/// Номер исполняемой инструкции кадра в общей нумерации IR и Sparrow:
+/// инструкции блоков по порядку, терминатор — после инструкций блока.
+/// `next_inst` уже указывает на следующую инструкцию.
+fn frame_pc(function: &ir::Function, frame: &Frame, terminator: bool) -> u32 {
+    let start: usize = function.blocks[..frame.block.0]
+        .iter()
+        .map(|block| block.insts.len() + 1)
+        .sum();
+    let index = if terminator {
+        function.blocks[frame.block.0].insts.len()
+    } else {
+        frame.next_inst.saturating_sub(1)
+    };
+    (start + index) as u32
 }
 
 /// Отказ, дошедший до корня: простой — ошибкой своего вида, иначе раскрутка.

@@ -53,6 +53,14 @@ pub fn execute_with_arguments(program: &Program, arguments: Vec<String>) -> Resu
     sparrow_vm::execute_with_arguments(program, arguments).map_err(convert)
 }
 
+pub use sparrow_vm::render_trace;
+
+/// [`execute_with_arguments`] и стек вызовов неперехваченного отказа.
+pub fn execute_traced(program: &Program, arguments: Vec<String>) -> (Result<ir::IntValue, Error>, Vec<crate::Site>) {
+    let (result, trace) = sparrow_vm::execute_traced(program, arguments);
+    (result.map_err(convert), trace)
+}
+
 pub fn run_tests(program: &Program, out: &mut dyn std::io::Write) -> Result<bool, Error> {
     sparrow_vm::run_tests(program, out).map_err(convert)
 }

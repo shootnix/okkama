@@ -1188,6 +1188,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             functions,
             entry: self.entry,
             span: program.span,
+            debug: ir::DebugInfo::default(),
         }
     }
 }

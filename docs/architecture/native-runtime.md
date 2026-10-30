@@ -1197,6 +1197,13 @@ The mandatory declaration is:
 
 ```text
 runtime/debug@1::data_dump/1 [any] -> string
+runtime/debug@1::data_kind/1 [any] -> string
+runtime/debug@1::data_type/1 [any] -> string
+runtime/debug@1::data_size/1 [any] -> int
+runtime/debug@1::data_leaf/1 [any] -> string
+runtime/debug@1::data_names/1 [any] -> @string
+runtime/debug@1::data_keys/1 [any] -> @any
+runtime/debug@1::data_items/1 [any] -> @any
 ```
 
 `core.debug` formats portable logical scalars, enums, byte sequences, typed

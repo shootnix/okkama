@@ -170,6 +170,15 @@ fn print_function(out: &mut String, index: usize, function: &Function) {
     out.push_str("}\n");
 }
 
+impl crate::Instruction {
+    /// Текст инструкции, как в ассемблере: мнемоника и операнды.
+    pub fn text(&self) -> String {
+        let mut out = self.mnemonic().to_string();
+        self.print_operands(&mut out);
+        out
+    }
+}
+
 /// Текст программы; [`assemble`] даёт ту же программу.
 pub fn disassemble(program: &Program) -> String {
     let mut out = format!("sparrow {}\nmodule ", crate::VERSION);

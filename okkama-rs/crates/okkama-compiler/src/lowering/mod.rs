@@ -188,7 +188,11 @@ fn lower_roots(
     let sources = modules::source_modules(&graph, roots);
     let first_root = graph.loaded.len();
     lower_modules(sources, roots.len(), roots[0].0, Vec::new(), test_mode)
-        .map(|(module, warnings)| {
+        .map(|(mut module, warnings)| {
+            module.debug.first_root = first_root;
+            module.debug.sources = (0..first_root + roots.len())
+                .map(|index| source_of(&graph, roots, index).map(std::sync::Arc::new))
+                .collect();
             let warnings = warnings
                 .into_iter()
                 .filter(|warning| warning.module >= first_root)
@@ -312,6 +316,7 @@ fn lower_modules(
     }
     let owners: Vec<usize> = (0..functions.len()).map(|index| ctx.task_module(index)).collect();
     let mut module = ctx.module(program, imports, functions);
+    module.debug.function_modules = owners.clone();
     // Вызов, который не может завершиться ничем, кроме рекурсии, — ошибка.
     let infinite = ir::recursion::infinite(&module);
     if let Some(func) = infinite.first() {

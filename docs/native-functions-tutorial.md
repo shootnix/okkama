@@ -71,7 +71,10 @@ reset и lifecycle. Строки, разделители, prefetch, threshold, w
 flush принадлежат `io/buffer` и реализуются на Okkama.
 Узкий `runtime/debug.data_dump(any)` является намеренным исключением: это
 runtime diagnostic primitive над logical ABI values, а его публичная оболочка
-`okkama.Dump` всё равно живёт в Okkama-коде.
+`okkama.Dump` всё равно живёт в Okkama-коде. Так же устроен `debug/dumper`:
+natives `data_kind`, `data_type`, `data_size`, `data_leaf`, `data_names`,
+`data_keys`, `data_items` только описывают одно значение, а многострочный дамп
+с отступами собирает Okkama.
 
 ## Шаг 2. Добавить bodyless Okkama declaration
 

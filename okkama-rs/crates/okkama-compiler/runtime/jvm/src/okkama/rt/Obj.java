@@ -25,4 +25,12 @@ public abstract class Obj {
 
     /** Значения полей, которые могут достигать идентичностей. */
     public void refs(List<Object> out) {}
+
+    /** Имя объекта Okkama ({@code Box<int>}) для дампа; классы программы задают его. */
+    public String okkamaName() {
+        return getClass().getSimpleName();
+    }
+
+    /** Пары «имя поля, значение» по порядку объявления — для дампа. */
+    public void okkamaFields(List<Object> out) {}
 }

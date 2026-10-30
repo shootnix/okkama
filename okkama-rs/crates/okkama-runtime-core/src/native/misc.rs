@@ -77,7 +77,7 @@ fn escaped(value: &str, quote: char) -> String {
     out
 }
 
-fn dump(native: Native, context: &Context, value: &Value) -> Result<String, Error> {
+pub(super) fn dump(native: Native, context: &Context, value: &Value) -> Result<String, Error> {
     Ok(match value {
         Value::Any(inner) => dump(native, context, inner)?,
         Value::Int(value) => value.to_string(),
@@ -454,6 +454,7 @@ pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Valu
             handle::<Secret>(&args[0])?.bytes.borrow().is_none(),
         )),
         ("runtime/debug", "data_dump") => Ok(text(dump(native, context, &args[0])?)),
+        ("runtime/debug", name) => super::inspect::execute(name, native, &args[0], context),
         ("runtime/diff", "diff_script") => {
             let left = diff_lines(native, &args[0])?;
             let right = diff_lines(native, &args[1])?;

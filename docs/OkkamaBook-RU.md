@@ -5267,7 +5267,7 @@ catch failure is NativeFailure {
 | `runtime/poll` | типизированный опрос готовности над хэндлами файлов/пайпов/сокетов: идентификаторы регистраций и теги, маски readable/writable, абсолютные монотонные дедлайны, потребляемая отмена |
 | `runtime/environment` | окружение в сырых `@byte`: get/set/remove/all (мутация глобальна для процесса) |
 | `runtime/system` | портируемые строки платформы/архитектуры; `secure_random(size)` из CSPRNG ОС без PRNG-фолбэка |
-| `runtime/debug` | `data_dump(any) is string`, стоящий за `okkama.Dump` |
+| `runtime/debug` | `data_dump(any) is string`, стоящий за `okkama.Dump`; `data_kind`, `data_type`, `data_size`, `data_leaf`, `data_names`, `data_keys`, `data_items`, стоящие за `debug/dumper.Dumper` |
 | `runtime/regex` | непрозрачные `RegexHandle`: compile, точный offset ошибки, булевы search/whole-match, first/all leftmost-longest code-point spans, идемпотентный close |
 | `runtime/format` | конкатенация opaque-`any`, positional `{}` и named `{field}` форматирование с escaped braces |
 | `runtime/crypto` | закрытый набор SHA-256/384/512 digest/HMAC и constant-work сравнение байтов |

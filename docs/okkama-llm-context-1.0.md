@@ -1356,7 +1356,7 @@ the verified collection inference and map-result rules above.
 | `runtime/poll` | readiness polling over file/pipe/socket handles, monotonic deadlines |
 | `runtime/environment` | raw-`@byte` env get/set/remove/all |
 | `runtime/system` | platform/arch strings, `secure_random(size)` (OS CSPRNG) |
-| `runtime/debug` | `data_dump(any) is string` (backs `Dump`) |
+| `runtime/debug` | `data_dump(any) is string` (backs `Dump`); `data_kind`, `data_type`, `data_size`, `data_leaf`, `data_names`, `data_keys`, `data_items` (back `debug/dumper.Dumper`) |
 | `runtime/regex` | `compile`/`invalid_offset`/`contains`/`matches`/`spans`/`all_spans`/`close` over `RegexHandle`; spans are leftmost-longest Unicode code-point ranges with ordered captures |
 | `runtime/format` | privileged rendering of opaque `any`: concatenation, positional `{}` formatting, named `{name}` formatting and brace escaping |
 | `runtime/crypto` | SHA-256/384/512 digests and HMAC over exact bytes plus constant-work `secure_equal` |

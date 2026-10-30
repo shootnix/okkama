@@ -56,6 +56,7 @@ fn module(values: Vec<Type>, blocks: Vec<Block>) -> Module {
         }],
         entry: Some(FuncId(0)),
         span: Span::empty(0),
+        debug: Default::default(),
     }
 }
 

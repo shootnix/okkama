@@ -275,6 +275,53 @@ fn native_run_engines_execute_source_without_java() {
 }
 
 #[test]
+fn uncaught_failure_prints_place_and_call_stack() {
+    let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
+    for engine in ["ir", "sparrow"] {
+        let output = run_stdin(&["run", "--engine", engine, "-"], source);
+        assert_eq!(output.status.code(), Some(1));
+        let text = stderr(&output);
+        assert!(text.starts_with("RuntimeError: Array index out of bounds\n"), "{engine}: {text}");
+        assert!(text.contains(":4:27\n  |\n4 |     at(i is int) is int { [1, 2][i]; }\n"), "{engine}: {text}");
+        assert!(text.contains("Stack trace (most recent call first):\n  at Box.at ("), "{engine}: {text}");
+        assert!(text.contains(":7:5)\n"), "{engine}: {text}");
+    }
+    let mut command = okkama();
+    command.args(["run", "-"]).env("OKKAMA_TRACE", "off");
+    command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    child.stdin.take().unwrap().write_all(source).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(stderr(&output), "RuntimeError: Array index out of bounds\n");
+}
+
+#[test]
+fn repl_keeps_variables_and_declarations_between_inputs() {
+    let std = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../std");
+    let mut child = okkama()
+        .arg("repl")
+        .env("OKKAMA_STDLIB_DIR", &std)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = "let x = 40\nx + 2\nobject Point {\n    has x is int;\n    Point(:x);\n}\nlet p = Point(x: x)\np\n\
+                 let x = \"text\"\n:vars\np.nope()\n[1][3]\nx\n";
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        stdout(&output),
+        "42 (int)\nPoint {\n    x: 40\n}\np: Point\nx: string\n\"text\" (string, 4 chars)\n"
+    );
+    let errors = stderr(&output);
+    assert!(errors.contains("<input>:1:3: semantic error: Object \"Point\" has no action \"nope\""), "{errors}");
+    assert!(errors.contains("RuntimeError: Array index out of bounds\n"), "{errors}");
+    assert!(errors.contains("  at <input> (<input>:1:"), "{errors}");
+}
+
+#[test]
 fn legacy_backend_alias_is_supported_but_conflicts_are_errors() {
     let file = TempFile::new("target-alias.spb", b"previous");
     let output = run_stdin(

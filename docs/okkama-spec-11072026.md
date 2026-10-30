@@ -1570,10 +1570,32 @@ Strings and chars use escaped source-like forms; maps use their deterministic
 ordered-pair ABI. The result is intended for diagnostics and debugging, not
 serialization or a parseable persistence format.
 
-Dump never reflects Okkama object fields and never exposes native handles or
+`Dump` never reflects Okkama object fields and never exposes native handles or
 interpreter-only wrappers. It does not add a universal `.dump()` action to
 language values. An untyped collection nested beneath `any` is rejected rather
 than having its element/key/value identity guessed at the native boundary.
+
+For looking inside a value while debugging, `debug/dumper` (after Perl's
+`Data::Printer`) does reflect objects, private fields included:
+
+```okkama
+import "debug/dumper" take Dumper;
+
+let dump = Dumper(order);
+dump.type();               // "Order"
+dump.size();               // fields of an object, elements of a collection
+dump.all();                // multi-line dump of everything inside
+dump.max_depth(1).all();   // nested values as `{...}` / `[...]`
+```
+
+Types are runtime types: object and enum names without module prefixes
+(`Box<int>`, `Stdout`), `@T` and `%K:V` from the elements, `?` for an empty
+collection and `(A | B)` for elements of different types. Actions, futures and
+native objects are shown, not looked into. The dump is a diagnostic aid, not a
+stable or parseable format, and it never changes the value. It is built in
+Okkama over the `runtime/debug` primitives `data_kind`, `data_type`,
+`data_size`, `data_leaf`, `data_names`, `data_keys` and `data_items`, which
+describe one value each; every engine produces the same text.
 
 ### 6.8 Functional Collection Expressions
 

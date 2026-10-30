@@ -12,6 +12,23 @@ public final class NativeFailure extends Obj implements Error {
     public final String operation;
     public final String message;
 
+    @Override
+    public String okkamaName() {
+        return "NativeFailure";
+    }
+
+    @Override
+    public void okkamaFields(java.util.List<Object> out) {
+        out.add("domain");
+        out.add(domain);
+        out.add("code");
+        out.add(code);
+        out.add("operation");
+        out.add(operation);
+        out.add("message");
+        out.add(message);
+    }
+
     public NativeFailure(String domain, String code, String operation, String message) {
         this.domain = domain;
         this.code = code;

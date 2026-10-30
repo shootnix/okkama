@@ -63,6 +63,10 @@ const STRING_D: &str = "Ljava/lang/String;";
 /// Класс объекта: внутреннее имя JVM, поля (имя, дескриптор), роли и мосты.
 struct ObjectLayout {
     class: String,
+    /// Имя объекта Okkama (`Box<int>`) — для дампа (`okkamaName`).
+    name: String,
+    /// Типы полей по порядку: упаковка значений для дампа (`okkamaFields`).
+    field_types: Vec<Type>,
     fields: Vec<(String, String)>,
     interfaces: Vec<usize>,
     bridges: Vec<Bridge>,
@@ -350,6 +354,8 @@ fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> R
             } else {
                 class_for(&object.name)?
             },
+            name: object.name.clone(),
+            field_types: object.fields.iter().map(|field| field.ty.clone()).collect(),
             fields: Vec::new(),
             interfaces: Vec::new(),
             bridges: Vec::new(),

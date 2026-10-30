@@ -129,6 +129,8 @@ pub(super) fn object_class(layout: &Layout, object: &ObjectLayout) -> Result<Vec
     )?);
 
     methods.push(refs_method(&mut pool, object)?);
+    methods.push(okkama_name_method(&mut pool, object)?);
+    methods.push(okkama_fields_method(&mut pool, object)?);
     if let Some(destroy) = object.destroy {
         let (name, descriptor) = &layout.signatures[destroy.0];
         let target = pool.method_ref(&layout.main, name, descriptor)?;
@@ -181,6 +183,50 @@ fn refs_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Method>
     }
     asm.op(&[0xb1], 0, 0); // return
     method(pool, asm, 0x0001, "refs", "(Ljava/util/List;)V", 2)
+}
+
+/// `okkamaName()`: имя объекта Okkama для дампа (`runtime/debug`).
+fn okkama_name_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Method> {
+    let name = pool.string(&object.name)?;
+    let mut asm = Asm::default();
+    asm.ldc(name);
+    asm.op(&[0xb0], 1, 0); // areturn
+    method(pool, asm, 0x0001, "okkamaName", "()Ljava/lang/String;", 1)
+}
+
+/// `okkamaFields(List)`: пары «имя поля, значение» по порядку для дампа;
+/// поля примитивов упаковываются, как значения `any`.
+fn okkama_fields_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Method> {
+    let add = pool.interface_method_ref(runtime::LIST, "add", "(Ljava/lang/Object;)Z")?;
+    let mut asm = Asm::default();
+    for (index, (name, descriptor)) in object.fields.iter().enumerate() {
+        let label = pool.string(name)?;
+        asm.op(&[0x2b], 0, 1); // aload_1
+        asm.ldc(label);
+        asm.invoke_interface(add, 2, 2, 1);
+        asm.op(&[0x57], 1, 0); // pop
+        let field = pool.field_ref(&object.class, name, descriptor)?;
+        asm.op(&[0x2b], 0, 1); // aload_1
+        asm.op(&[0x2a], 0, 1); // aload_0
+        asm.op_index(0xb4, field, 1, 1); // getfield
+        let boxing = match object.field_types.get(index) {
+            Some(Type::Bool) => Some(("java/lang/Boolean", "(Z)Ljava/lang/Boolean;")),
+            Some(Type::Byte) => {
+                asm.op(&[0x91], 1, 1); // i2b
+                Some(("java/lang/Byte", "(B)Ljava/lang/Byte;"))
+            }
+            Some(Type::Char) => Some(("java/lang/Integer", "(I)Ljava/lang/Integer;")),
+            _ => None,
+        };
+        if let Some((owner, signature)) = boxing {
+            let value_of = pool.method_ref(owner, "valueOf", signature)?;
+            asm.op_index(0xb8, value_of, 1, 1); // invokestatic valueOf
+        }
+        asm.invoke_interface(add, 2, 2, 1);
+        asm.op(&[0x57], 1, 0); // pop
+    }
+    asm.op(&[0xb1], 0, 0); // return
+    method(pool, asm, 0x0001, "okkamaFields", "(Ljava/util/List;)V", 2)
 }
 
 /// `equals(Object)`: тот же класс и равные поля в порядке объявления

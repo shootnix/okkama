@@ -15,6 +15,14 @@ impl State {
     }
 
     pub(crate) fn set_enums(&self, module: &ir::Module) {
+        self.native.borrow_mut().objects = module
+            .objects
+            .iter()
+            .map(|object| {
+                let fields = object.fields.iter().map(|field| field.name.clone()).collect();
+                (object.name.clone(), fields)
+            })
+            .collect();
         self.native.borrow_mut().enums = module
             .enums
             .iter()

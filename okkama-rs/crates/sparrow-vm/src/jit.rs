@@ -571,6 +571,16 @@ extern "C" fn h_handler(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -
     })
 }
 
+/// Записать кадр в стек вызовов текущего отказа (при `FATAL` отказа нет).
+extern "C" fn h_trace(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -> u32 {
+    guarded(ctx, (func as usize, pc as usize), |ctx| {
+        if let Some(failure) = ctx.failure.borrow().as_ref() {
+            failure.trace.record(regs as usize, okkama_runtime_core::failure::Site { function: func, pc });
+        }
+        OK
+    })
+}
+
 /// Любой вызов без быстрого пути: `call.cap`, native, intrinsic, async.
 extern "C" fn h_call(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -> u32 {
     note_at(ctx, func, pc);
@@ -1171,6 +1181,9 @@ impl<'a, 'b> Gen<'a, 'b> {
     /// должен быть уже завершён.
     fn fill_failure(&mut self, failed: Block, status: ir::Value, pc: usize) -> Result<(), String> {
         self.b.switch_to_block(failed);
+        // Кадр машинного кода — в стек вызовов отказа (интерпретатор этих
+        // кадров не видит). Путь холодный: только при отказе.
+        let _ = self.eval(h_trace as *const () as usize, pc);
         match self.function.handler_at(pc as u32) {
             Some(handler) => {
                 let target = self.block(handler.target.pc)?;

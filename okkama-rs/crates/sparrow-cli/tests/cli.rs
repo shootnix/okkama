@@ -184,5 +184,12 @@ fn uncaught_failures_are_reported_like_okkama() {
     );
     let result = file.run("run");
     assert_eq!(result.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&result.stderr), "RuntimeError: confirm failed\n");
+    assert_eq!(
+        String::from_utf8_lossy(&result.stderr),
+        "RuntimeError: confirm failed\n\
+         Stack trace (Sparrow, most recent call first):\n  at main [f0 @0: trap confirm, \"confirm failed\"]\n"
+    );
+    // `OKKAMA_TRACE=off` — только сам отказ.
+    let quiet = Command::new(env!("CARGO_BIN_EXE_sparrow")).arg("run").arg(&file.0).env("OKKAMA_TRACE", "off").output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&quiet.stderr), "RuntimeError: confirm failed\n");
 }

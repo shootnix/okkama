@@ -16,7 +16,7 @@ pub mod verify;
 
 pub use verify::{VerifyError, verify};
 
-use crate::source::Span;
+use crate::source::{SourceFile, Span};
 
 /// Статический тип значения OIR (§3).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -227,6 +227,35 @@ pub struct Module {
     /// Индекс функции-точки входа в `functions`.
     pub entry: Option<FuncId>,
     pub span: Span,
+    pub debug: DebugInfo,
+}
+
+/// Отладочные сведения модуля: исходник каждой функции — для мест ошибок
+/// исполнения. Это не часть программы: печать OIR и движки их не читают.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DebugInfo {
+    /// Исходники модулей программы по номеру модуля (`None` — неизвестен).
+    pub sources: Vec<Option<std::sync::Arc<SourceFile>>>,
+    /// Номер модуля в `sources` для каждой функции `functions` (пусто — неизвестны).
+    pub function_modules: Vec<usize>,
+    /// Первый модуль корня (файлов программы); модули до него — импорты.
+    pub first_root: usize,
+}
+
+impl Module {
+    /// Исходник функции `func`, если он известен.
+    pub fn source_of(&self, func: FuncId) -> Option<&SourceFile> {
+        let module = *self.debug.function_modules.get(func.0)?;
+        self.debug.sources.get(module)?.as_deref()
+    }
+
+    /// Функция `func` из файла самой программы, а не из импорта.
+    pub fn in_root(&self, func: FuncId) -> bool {
+        self.debug
+            .function_modules
+            .get(func.0)
+            .is_some_and(|module| *module >= self.debug.first_root)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -451,6 +480,20 @@ pub enum Attr {
 impl Function {
     pub fn is_async(&self) -> bool {
         self.attrs.contains(&Attr::Async)
+    }
+
+    /// Место инструкции `pc` в нумерации, общей с Sparrow: инструкции блоков
+    /// по порядку, терминатор блока — после его инструкций.
+    pub fn span_at(&self, pc: u32) -> Option<Span> {
+        let mut rest = pc as usize;
+        for block in &self.blocks {
+            match rest.cmp(&block.insts.len()) {
+                std::cmp::Ordering::Less => return Some(block.insts[rest].span),
+                std::cmp::Ordering::Equal => return Some(block.term.span),
+                std::cmp::Ordering::Greater => rest -= block.insts.len() + 1,
+            }
+        }
+        None
     }
 
     /// Результат `call` функции: у async — `future<R>`.

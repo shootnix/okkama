@@ -18,7 +18,8 @@ USAGE:
 
 run          Verify and execute bytecode in this process; ARGS are the
              program's arguments. main's integer result in 0..255 becomes the
-             exit status; an uncaught failure is reported on stderr (exit 1).
+             exit status; an uncaught failure is reported on stderr (exit 1)
+             with the call stack in Sparrow terms (OKKAMA_TRACE=off: without).
 test         Run the tests of bytecode built with `okkama build -t`.
 check        Verify bytecode without executing it (including infinite loops).
 --assemble   Assemble Sparrow assembly text into bytecode.
@@ -58,7 +59,8 @@ fn worker(path: &Path) {
 fn execute(path: &Path, arguments: Vec<String>) -> Result<u8, Failure> {
     let program = load(path)?;
     worker(path);
-    match sparrow_vm::execute_with_arguments(&program, arguments) {
+    let (result, trace) = sparrow_vm::execute_traced(&program, arguments);
+    match result {
         Ok(value) => value
             .to_string()
             .parse::<u8>()
@@ -66,6 +68,10 @@ fn execute(path: &Path, arguments: Vec<String>) -> Result<u8, Failure> {
         Err(error) => match sparrow_vm::report(&error) {
             Some(text) => {
                 eprint!("{text}");
+                // `OKKAMA_TRACE=off` — без стека (как у `okkama run`).
+                if std::env::var("OKKAMA_TRACE").as_deref() != Ok("off") {
+                    eprint!("{}", sparrow_vm::render_trace(&program, &trace));
+                }
                 Ok(1)
             }
             None => Err((1, error.to_string())),

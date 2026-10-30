@@ -1,5 +1,24 @@
 module runtime/debug v1.0.0;
-// Existing core.debug diagnostic boundary; no reflection in application code.
+// Diagnostic boundary of core.debug and debug/dumper: values are described,
+// never changed. Formatting above one value belongs to Okkama code.
 native data_dump(value is any) is string;
+// Value category: int, float, rat, bool, byte, char, string, enum, array, map,
+// object, action, future, failure, native.
+native data_kind(value is any) is string;
+// Runtime type name: `Point`, `Box<int>`, `@int`, `%string:int`; an empty
+// collection has element type `?`, mixed elements give `(A | B)`.
+native data_type(value is any) is string;
+// Elements of an array or map, characters of a string, fields of an object;
+// 0 for other values.
+native data_size(value is any) is int;
+// One-line text of a value that is not looked into: literals of scalars and
+// enums, `<action>`, `<future: done>`, `<native>`, `<failure: Panic: x>`.
+native data_leaf(value is any) is string;
+// Field names of an object, in declaration order.
+native data_names(value is any) is @string;
+// Keys of a map, in map order.
+native data_keys(value is any) is @any;
+// Elements of an array, values of a map, field values of an object.
+native data_items(value is any) is @any;
 
 test "diagnostic string escaping is explicit" {test.is(data_dump("a\nb"),"\"a\\nb\"");}

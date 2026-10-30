@@ -529,4 +529,11 @@ natives! {
     X509CertificateExtensions = 526, "runtime/x509@1::certificate_extensions/1", "(string) -> @@string";
     X509SystemCertificates = 527, "runtime/x509@1::system_certificates/0", "() -> @@byte";
     X509VerifyChain = 528, "runtime/x509@1::verify_chain/6", "(@@byte, @@byte, string, string, string, string) -> @@byte";
+    DebugDataKind = 529, "runtime/debug@1::data_kind/1", "(any) -> string";
+    DebugDataType = 530, "runtime/debug@1::data_type/1", "(any) -> string";
+    DebugDataSize = 531, "runtime/debug@1::data_size/1", "(any) -> int";
+    DebugDataLeaf = 532, "runtime/debug@1::data_leaf/1", "(any) -> string";
+    DebugDataNames = 533, "runtime/debug@1::data_names/1", "(any) -> @string";
+    DebugDataKeys = 534, "runtime/debug@1::data_keys/1", "(any) -> @any";
+    DebugDataItems = 535, "runtime/debug@1::data_items/1", "(any) -> @any";
 }

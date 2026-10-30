@@ -174,3 +174,61 @@ fn sparrow_typed_diagnostics_causes_and_uncatchable_failures_match_ir() {
         );
     }
 }
+
+/// Программа из файла `trace.ok` (с отладочными сведениями: исходник функций).
+fn lower_file(text: &str) -> ir::Module {
+    struct NoImports;
+    impl lowering::ModuleLoader for NoImports {
+        fn load(&mut self, _: &str, _: &str) -> Result<Option<lowering::LoadedModule>, String> {
+            Ok(None)
+        }
+    }
+    let source = SourceFile::new("trace.ok", text).unwrap();
+    let program = syntax::parse(&source, &syntax::ParseOptions::default()).unwrap();
+    let roots = [lowering::RootFile { program: &program, source: &source }];
+    lowering::lower_linked_files(&roots, &mut NoImports).unwrap().0
+}
+
+#[test]
+fn uncaught_failure_reports_place_and_call_stack_on_both_engines() {
+    let module = lower_file(
+        "module app v1.0.0;\n\
+         object Worker {\n\
+         \x20   Worker();\n\
+         \x20   fail(n is int) is int { if n == 0 { panic \"stop\"; } 1 + self.fail(n - 1); }\n\
+         }\n\
+         main() is int {\n\
+         \x20   Worker().fail(2);\n\
+         }\n",
+    );
+    // Рекурсия не хвостовая: хвостовой вызов исполняется циклом, без кадров.
+    let expected = concat!(
+        " --> trace.ok:4:41\n",
+        "  |\n",
+        "4 |     fail(n is int) is int { if n == 0 { panic \"stop\"; } 1 + self.fail(n - 1); }\n",
+        "  |                                         ^^^^^^^^^^^^\n",
+        "Stack trace (most recent call first):\n",
+        "  at Worker.fail (trace.ok:4:41)\n",
+        "  at Worker.fail (trace.ok:4:61)  (\u{00d7}2)\n",
+        "  at main (trace.ok:7:5)\n",
+    );
+    let (result, trace) = okkama_runtime::execute_traced(&module, Vec::new());
+    assert!(matches!(result, Err(RuntimeError::Panic { .. })));
+    assert_eq!(okkama_runtime::render_trace(&module, &trace), expected);
+    let program = codegen::sparrow::generate(&module).unwrap();
+    let (result, sparrow_trace) = sparrow::execute_traced(&program, Vec::new());
+    assert!(result.is_err());
+    assert_eq!(sparrow_trace, trace);
+    let text = sparrow::render_trace(&program, &sparrow_trace);
+    assert!(text.starts_with("Stack trace (Sparrow, most recent call first):\n  at Worker.fail [f"), "{text}");
+    assert!(text.contains(": panic r"), "{text}");
+}
+
+#[test]
+fn caught_failure_and_success_leave_no_trace() {
+    let module = lower_file("module app v1.0.0;\nmain() is int {\n    42;\n}\n");
+    let (result, trace) = okkama_runtime::execute_traced(&module, Vec::new());
+    assert_eq!(result.unwrap().to_string(), "42");
+    assert!(trace.is_empty());
+    assert_eq!(okkama_runtime::render_trace(&module, &trace), "");
+}

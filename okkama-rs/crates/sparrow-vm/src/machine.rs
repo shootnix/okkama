@@ -3,7 +3,7 @@
 //! в исполнителе IR: значения и операции — общие (`okkama_runtime_core`).
 use crate::{Error, OperationError};
 use okkama_runtime_core::abi::{Native, NativeFailure};
-use okkama_runtime_core::failure::{Failure, Kind};
+use okkama_runtime_core::failure::{Failure, Kind, Site};
 use okkama_runtime_core::heap::{ArrayHeap, Closing, ObjectHeap, Ref, Region};
 use okkama_runtime_core::ops::{self, Fault};
 use okkama_runtime_core::{IntValue, Value, sched};
@@ -66,6 +66,8 @@ pub(crate) struct Engine {
     prepared: Vec<std::cell::OnceCell<Prepared>>,
     /// Компилятор горячих функций в машинный код; `None` — выключен.
     pub(crate) jit: Option<Box<crate::jit::Jit>>,
+    /// Отказ, дошедший до корня запуска (его стек вызовов — для диагностики).
+    uncaught: RefCell<Option<Rc<Failure>>>,
 }
 
 /// Функция, подготовленная к исполнению: значения констант по номеру
@@ -91,6 +93,11 @@ impl Prepared {
 
 pub(crate) fn new_engine(program: &Program) -> Rc<Engine> {
     let mut context = okkama_runtime_core::native::Context::default();
+    context.objects = program
+        .objects
+        .iter()
+        .map(|object| (object.name.clone(), object.fields.iter().map(|(name, _)| name.clone()).collect()))
+        .collect();
     context.enums = program
         .enums
         .iter()
@@ -105,6 +112,7 @@ pub(crate) fn new_engine(program: &Program) -> Rc<Engine> {
         fatal: RefCell::new(None),
         prepared: program.functions.iter().map(|_| std::cell::OnceCell::new()).collect(),
         jit: crate::jit::Jit::new(program, me.as_ptr()),
+        uncaught: RefCell::new(None),
     })
 }
 
@@ -505,6 +513,13 @@ fn propagate(program: &Program, frames: &mut Vec<Frame>, failure: Rc<Failure>) -
     while let Some(frame) = frames.last_mut() {
         let function = &program.functions[frame.function];
         let failing = frame.pc.saturating_sub(1) as u32;
+        failure.trace.record(
+            frame.registers.as_ptr() as usize,
+            Site {
+                function: frame.function as u32,
+                pc: failing,
+            },
+        );
         if let Some(handler) = function.handler_at(failing) {
             let values = handler
                 .target
@@ -1354,15 +1369,23 @@ fn run_entry(engine: &Rc<Engine>, entry: usize) -> Result<IntValue, Located> {
     let outcome = if engine.program.functions[entry].is_async {
         // `async main`: корневой Future и цикл планировщика до его исхода.
         let root = cold_call(engine, entry, Vec::new());
-        sched::run_main(&root).map(Some).map_err(|failure| Located {
-            function: entry,
-            pc: 0,
-            stop: failure_stop(failure),
+        sched::run_main(&root).map(Some).map_err(|failure| {
+            *engine.uncaught.borrow_mut() = Some(failure.clone());
+            Located {
+                function: entry,
+                pc: 0,
+                stop: failure_stop(failure),
+            }
         })
     } else {
-        invoke(engine, entry, Vec::new()).map_err(|located| Located {
-            stop: root_stop(located.stop),
-            ..located
+        invoke(engine, entry, Vec::new()).map_err(|located| {
+            if let Stop::Unwind(failure) = &located.stop {
+                *engine.uncaught.borrow_mut() = Some(failure.clone());
+            }
+            Located {
+                stop: root_stop(located.stop),
+                ..located
+            }
         })
     };
     let value = outcome?.ok_or_else(|| Located {
@@ -1387,6 +1410,18 @@ pub fn execute(program: &Program) -> Result<IntValue, Error> {
 
 /// То же с аргументами командной строки программы.
 pub fn execute_with_arguments(program: &Program, arguments: Vec<String>) -> Result<IntValue, Error> {
+    execute_traced(program, arguments).0
+}
+
+/// [`execute_with_arguments`] и стек вызовов неперехваченного отказа
+/// (от места возникновения к `main`; пусто, если отказа не было).
+pub fn execute_traced(program: &Program, arguments: Vec<String>) -> (Result<IntValue, Error>, Vec<Site>) {
+    let mut trace = Vec::new();
+    let result = execute_inner(program, arguments, &mut trace);
+    (result, trace)
+}
+
+fn execute_inner(program: &Program, arguments: Vec<String>, trace: &mut Vec<Site>) -> Result<IntValue, Error> {
     program.verify().map_err(Error::InvalidProgram)?;
     if program.tests.is_some() {
         return Err(Error::Operation {
@@ -1410,6 +1445,11 @@ pub fn execute_with_arguments(program: &Program, arguments: Vec<String>) -> Resu
     }
     // Незавершённые задачи освобождаются до возврата: их стеки держат значения.
     sched::reset();
+    if result.is_err()
+        && let Some(failure) = engine.uncaught.borrow_mut().take()
+    {
+        *trace = failure.trace.sites();
+    }
     if let Err(fatal) = engine.take_fatal() {
         return Err(public_error(&engine, fatal));
     }

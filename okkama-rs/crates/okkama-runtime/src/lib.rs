@@ -8,13 +8,17 @@
 mod host;
 mod interpreter;
 mod operations;
+pub mod repl;
 pub mod sparrow;
 mod worker;
 mod state;
 mod tests;
+mod trace;
 mod value;
 
-pub use interpreter::{execute, execute_with_arguments};
+pub use interpreter::{execute, execute_traced, execute_with_arguments};
+pub use okkama_runtime_core::failure::Site;
+pub use trace::render_trace;
 pub use tests::run_tests;
 pub use worker::set_worker_command;
 pub use okkama_runtime_core::failure::Kind as FailureKind;

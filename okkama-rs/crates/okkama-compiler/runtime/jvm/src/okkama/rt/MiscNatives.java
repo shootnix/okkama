@@ -244,6 +244,161 @@ public final class MiscNatives {
         return dump(value);
     }
 
+    // ---- runtime/debug: описание значения для debug/dumper (как native/inspect.rs) ----
+
+    private static Object plain(Object value) {
+        while (value instanceof Any) {
+            value = ((Any) value).value;
+        }
+        return value;
+    }
+
+    private static Any boxed(Object value) {
+        return value instanceof Any ? (Any) value : new Any(value);
+    }
+
+    private static String kind(Object value) {
+        value = plain(value);
+        if (value instanceof BigInteger) return "int";
+        if (value instanceof Double) return "float";
+        if (value instanceof Rat) return "rat";
+        if (value instanceof Boolean) return "bool";
+        if (value instanceof Byte) return "byte";
+        if (value instanceof Integer) return "char";
+        if (value instanceof String) return "string";
+        if (value instanceof Case) return "enum";
+        if (value instanceof List) return "array";
+        if (value instanceof Map) return "map";
+        if (value instanceof Obj) return "object";
+        if (value instanceof Fn) return "action";
+        if (value instanceof Future) return "future";
+        if (value instanceof Failure) return "failure";
+        return "native";
+    }
+
+    /** Имя типа без модулей: {@code Box<io.stdout::Stdout>} → {@code Box<Stdout>}. */
+    static String shortType(String name) {
+        StringBuilder out = new StringBuilder();
+        int token = 0;
+        for (int index = 0; index < name.length(); ) {
+            int ch = name.codePointAt(index);
+            if (ch == ':' && name.startsWith("::", index)) {
+                out.setLength(token);
+                index += 2;
+                continue;
+            }
+            out.appendCodePoint(ch);
+            if (!(Character.isLetterOrDigit(ch) || ch == '_' || ch == '.')) {
+                token = out.length();
+            }
+            index += Character.charCount(ch);
+        }
+        return out.toString();
+    }
+
+    private static List<Object> fields(Obj object) {
+        ArrayList<Object> pairs = new ArrayList<Object>();
+        object.okkamaFields(pairs);
+        return pairs;
+    }
+
+    private static String typeName(Object value) {
+        value = plain(value);
+        if (value instanceof Case) return ((Case) value).type;
+        if (value instanceof Obj) return shortType(((Obj) value).okkamaName());
+        if (value instanceof List) return "@" + common((List<?>) value);
+        if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            return "%" + common(new ArrayList<Object>(map.keySet())) + ":" + common(new ArrayList<Object>(map.values()));
+        }
+        return kind(value);
+    }
+
+    /** Общий тип элементов: один — он сам, нет — {@code ?}, разные — {@code (A | B)}. */
+    private static String common(List<?> items) {
+        ArrayList<String> seen = new ArrayList<String>();
+        for (Object item : items) {
+            String name = typeName(item);
+            if (!seen.contains(name)) {
+                seen.add(name);
+            }
+        }
+        if (seen.isEmpty()) return "?";
+        if (seen.size() == 1) return seen.get(0);
+        return "(" + String.join(" | ", seen) + ")";
+    }
+
+    private static int size(Object value) {
+        value = plain(value);
+        if (value instanceof List) return ((List<?>) value).size();
+        if (value instanceof Map) return ((Map<?, ?>) value).size();
+        if (value instanceof String) return ((String) value).codePointCount(0, ((String) value).length());
+        if (value instanceof Obj) return fields((Obj) value).size() / 2;
+        return 0;
+    }
+
+    public static String runtime_debug__data_kind(Any value) {
+        return kind(value);
+    }
+
+    public static String runtime_debug__data_type(Any value) {
+        return typeName(value);
+    }
+
+    public static BigInteger runtime_debug__data_size(Any value) {
+        return BigInteger.valueOf(size(value));
+    }
+
+    public static String runtime_debug__data_leaf(Any value) {
+        Object plain = plain(value);
+        if (plain instanceof Fn) return "<action>";
+        if (plain instanceof Future) return "<future>";
+        if (plain instanceof Failure) return "<failure: " + Rt.describe((Failure) plain) + ">";
+        if (plain instanceof List || plain instanceof Map || plain instanceof Obj) {
+            return "<" + typeName(plain) + " of " + size(plain) + ">";
+        }
+        String category = kind(plain);
+        if (category.equals("native")) return "<native>";
+        return dump(plain);
+    }
+
+    public static List<String> runtime_debug__data_names(Any value) {
+        ArrayList<String> names = new ArrayList<String>();
+        Object plain = plain(value);
+        if (plain instanceof Obj) {
+            List<Object> pairs = fields((Obj) plain);
+            for (int index = 0; index < pairs.size(); index += 2) {
+                names.add((String) pairs.get(index));
+            }
+        }
+        return names;
+    }
+
+    public static List<Object> runtime_debug__data_keys(Any value) {
+        ArrayList<Object> keys = new ArrayList<Object>();
+        Object plain = plain(value);
+        if (plain instanceof Map) {
+            for (Object key : ((Map<?, ?>) plain).keySet()) {
+                keys.add(boxed(key));
+            }
+        }
+        return keys;
+    }
+
+    public static List<Object> runtime_debug__data_items(Any value) {
+        ArrayList<Object> items = new ArrayList<Object>();
+        Object plain = plain(value);
+        if (plain instanceof List) {
+            for (Object item : (List<?>) plain) items.add(boxed(item));
+        } else if (plain instanceof Map) {
+            for (Object item : ((Map<?, ?>) plain).values()) items.add(boxed(item));
+        } else if (plain instanceof Obj) {
+            List<Object> pairs = fields((Obj) plain);
+            for (int index = 1; index < pairs.size(); index += 2) items.add(boxed(pairs.get(index)));
+        }
+        return items;
+    }
+
     // ---- runtime/diff (Algorithm::Diff LCSidx) ----
 
     /** {@code _replaceNextLargerWith}: индекс замены или {@code null}. */

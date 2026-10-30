@@ -75,7 +75,7 @@ impl fmt::Display for LineColumn {
 }
 
 /// One source text with its display name and a precomputed line index.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceFile {
     name: String,
     text: String,

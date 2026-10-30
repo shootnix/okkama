@@ -12,7 +12,8 @@ mod liveness;
 mod machine;
 mod tests;
 
-pub use machine::{execute, execute_with_arguments};
+pub use machine::{execute, execute_traced, execute_with_arguments};
+pub use okkama_runtime_core::failure::Site;
 pub use tests::run_tests;
 
 use okkama_runtime_core::failure::Failure;
@@ -98,4 +99,26 @@ pub fn report(error: &Error) -> Option<String> {
     };
     text.push('\n');
     Some(text)
+}
+
+/// Стек вызовов отказа в терминах Sparrow, без исходников: функция, номер и
+/// текст инструкции каждого кадра. Пустая строка — стек пуст.
+pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String {
+    if trace.is_empty() {
+        return String::new();
+    }
+    let frames: Vec<String> = trace
+        .iter()
+        .map(|site| match program.functions.get(site.function as usize) {
+            Some(function) => {
+                let name = okkama_runtime_core::failure::frame_name(&function.symbol);
+                match function.code.get(site.pc as usize) {
+                    Some(instruction) => format!("{name} [f{} @{}: {}]", site.function, site.pc, instruction.text()),
+                    None => format!("{name} [f{} @{}]", site.function, site.pc),
+                }
+            }
+            None => format!("? [f{} @{}]", site.function, site.pc),
+        })
+        .collect();
+    okkama_runtime_core::failure::stack_text("Stack trace (Sparrow, most recent call first):", &frames)
 }

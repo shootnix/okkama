@@ -34,6 +34,7 @@ pub mod unicode;
 pub mod value;
 pub mod x509;
 
+pub mod inspect;
 pub mod support;
 pub mod system;
 
@@ -45,6 +46,8 @@ pub struct Context {
     pub arguments: Vec<String>,
     /// Имена enum программы без модуля и их case (`debug.data_dump`).
     pub enums: Vec<(String, Vec<String>)>,
+    /// Имена объектов программы и их полей по порядку (`debug/dumper`).
+    pub objects: Vec<(String, Vec<String>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

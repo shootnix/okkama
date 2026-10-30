@@ -16,6 +16,7 @@ static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod lsp;
 mod ocs;
+mod repl;
 
 use okkama_compiler::codegen::{self, Backend, Options as CodegenOptions};
 use okkama_compiler::diagnostics::{Diagnostic, render_all};
@@ -43,6 +44,7 @@ USAGE:
     okkama fmt [-w|--check] <FILE|->...
     okkama lint <FILE>...
     okkama lsp
+    okkama repl
     okkama env
     okkama ir <FILE|-> [--format text]
     okkama build <FILE|-> --target jvm -o <FILE>
@@ -62,6 +64,8 @@ COMMANDS:
     lint      Check programs and report errors, warnings and lint findings
     env       Show where okkama finds std, the native library, ICU and Java
     lsp       Run the language server (LSP over stdio) for editors
+    repl      Read-eval-print loop on the IR engine: statements, expressions,
+              declarations and imports; variables live on between inputs
     ir        Lower a source module to IR and print its functions
     build     Lower a source module and invoke the selected backend
     exec      Execute a Sparrow bytecode file in this process
@@ -100,6 +104,9 @@ RUN OPTIONS:
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
                           OKKAMA_ENGINE=ir|sparrow|jvm sets the default.
+                          An uncaught failure on ir and sparrow also prints
+                          its source line and the call stack;
+                          OKKAMA_TRACE=off prints the failure alone.
 
 EXIT STATUS:
     0  success
@@ -253,7 +260,18 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
             Err(error) => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
         };
     }
-    sparrow_outcome(okkama_runtime::sparrow::execute_with_arguments(&program, arguments.to_vec()))
+    // Исходников у файла байткода нет: стек — в терминах Sparrow.
+    let (result, trace) = okkama_runtime::sparrow::execute_traced(&program, arguments.to_vec());
+    with_trace(sparrow_outcome(result), okkama_runtime::sparrow::render_trace(&program, &trace))
+}
+
+/// Диагностика отказа программы (код 1) и его место со стеком вызовов;
+/// `OKKAMA_TRACE=off` — без них (например, для сравнения движков).
+fn with_trace(mut outcome: Outcome, trace: String) -> Outcome {
+    if outcome.code == 1 && std::env::var("OKKAMA_TRACE").as_deref() != Ok("off") {
+        outcome.stderr.push_str(&trace);
+    }
+    outcome
 }
 
 fn sparrow_outcome(
@@ -326,6 +344,10 @@ fn main() -> ExitCode {
     // Сервер языка владеет stdin/stdout сам.
     if args.first().map(String::as_str) == Some("lsp") {
         return lsp::run();
+    }
+    // REPL читает stdin построчно и печатает по ходу.
+    if args.first().map(String::as_str) == Some("repl") {
+        return repl::run();
     }
     let outcome = run(&args);
     // A closed stdout (`okkama ast big.ok | head`) is not an error worth a
@@ -1252,7 +1274,8 @@ fn run_command(args: &[String]) -> Outcome {
             };
         }
         let arguments = program_args.to_vec();
-        return native_outcome(okkama_runtime::execute_with_arguments(&module, arguments));
+        let (result, trace) = okkama_runtime::execute_traced(&module, arguments);
+        return with_trace(native_outcome(result), okkama_runtime::render_trace(&module, &trace));
     }
     if engine == "sparrow" {
         let program = match codegen::sparrow::generate(&module) {
@@ -1271,7 +1294,9 @@ fn run_command(args: &[String]) -> Outcome {
                 Err(error) => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
             };
         }
-        return sparrow_outcome(okkama_runtime::sparrow::execute_with_arguments(&program, program_args.to_vec()));
+        // Номера функций и инструкций Sparrow совпадают с OIR: место — по исходнику.
+        let (result, trace) = okkama_runtime::sparrow::execute_traced(&program, program_args.to_vec());
+        return with_trace(sparrow_outcome(result), okkama_runtime::render_trace(&module, &trace));
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),

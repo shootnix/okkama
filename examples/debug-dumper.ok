@@ -1,0 +1,40 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+import "debug/dumper" take Dumper;
+
+// Программа заглядывает внутрь заказа, как Data::Printer в Perl: тип, размер
+// и всё содержимое — поля объектов (и приватные), элементы массивов, пары словарей.
+// Запуск из корня: okkama run examples/debug-dumper.ok
+// Первые две строки — тип заказа и число его полей, дальше — полный дамп и
+// тот же дамп, ограниченный одним уровнем вложенности.
+enum Status = (draft, paid);
+
+object Line {
+    has sku is string;
+    has count is int;
+    Line(:sku, :count);
+}
+
+object Order {
+    has id is int;
+    has lines is @Line;
+    has status is Status;
+    has notes is %string:int;
+    Order(:id, :lines, :status, :notes);
+}
+
+main() is int {
+    let out = Stdout();
+    let order = Order(
+        id: 7,
+        lines: [Line(sku: "A-1", count: 2), Line(sku: "B-9", count: 1)],
+        status: Status.paid,
+        notes: ["gift": 1, "rush": 0]
+    );
+    let dump = Dumper(order);
+    out.writeln(dump.type());
+    out.writeln(dump.size().string());
+    out.writeln(dump.all());
+    out.writeln(dump.max_depth(1).all());
+    0;
+}

@@ -65,12 +65,15 @@ def run(engine, path, tests, timeout):
         command.append("-t")
     command.append(str(path))
     try:
+        # Стек вызовов отказа печатают только IR и Sparrow: сравниваются
+        # сами диагностики, без него.
         done = subprocess.run(
             command,
             cwd=path.parent,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=timeout,
+            env=dict(os.environ, OKKAMA_TRACE="off"),
         )
     except subprocess.TimeoutExpired:
         return {"code": "timeout", "stdout": "", "stderr": ""}
