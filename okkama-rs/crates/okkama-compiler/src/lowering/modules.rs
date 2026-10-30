@@ -30,6 +30,12 @@ pub trait ModuleLoader {
     /// найден. `Err` — готовый к выводу текст (например, синтаксическая
     /// ошибка в найденном файле).
     fn load(&mut self, path: &str, importer: &str) -> Result<Option<LoadedModule>, String>;
+
+    /// Модуль `path` только из стандартной библиотеки (пути `std.…`).
+    /// Загрузчик без отдельного поиска std ищет его, как обычный импорт.
+    fn load_std(&mut self, path: &str, importer: &str) -> Result<Option<LoadedModule>, String> {
+        self.load(path, importer)
+    }
 }
 
 /// Загруженный граф: модули в порядке зависимостей и импорты каждого
@@ -60,6 +66,26 @@ pub(super) fn load_graph(
         root_imports.push(walk.imports_of(program, name, *source)?);
     }
     walk.imports.extend(root_imports);
+    // Имена объявлений квалифицируются именем модуля: два разных файла с
+    // одним `module` (локальный модуль, затеняющий std, и сам std через
+    // `std.…` или импорт внутри std) в одной программе не уживутся.
+    let mut seen: HashMap<String, &LoadedModule> = HashMap::new();
+    for loaded in &walk.loaded {
+        let name = module_path(&loaded.program);
+        if let Some(first) = seen.get(&name) {
+            return Err(LinkError::Lowering {
+                source: Some(loaded.source.clone()),
+                error: LoweringError::invalid(
+                    loaded.program.module.span,
+                    format!(
+                        "Module \"{name}\" is loaded from two files: {} and {}; a program can use only one",
+                        first.id, loaded.id
+                    ),
+                ),
+            });
+        }
+        seen.insert(name, loaded);
+    }
     Ok(Graph {
         loaded: walk.loaded,
         imports: walk.imports,
@@ -87,15 +113,28 @@ impl Walk<'_> {
         let mut result = Vec::new();
         for (index, import) in program.imports.iter().enumerate() {
             let path = import.path.literal.value.clone();
-            let Some(module) = self.loader.load(&path, name).map_err(LinkError::Load)? else {
+            let std_module = path.strip_prefix(super::std_paths::STD_IMPORT);
+            let found = match std_module {
+                Some(module) => self.loader.load_std(module, name),
+                None => self.loader.load(&path, name),
+            };
+            let Some(mut module) = found.map_err(LinkError::Load)? else {
+                let message = match std_module {
+                    Some(module) => format!(
+                        "Standard library module \"{module}\" not found (std.{})",
+                        module.replace('/', ".")
+                    ),
+                    None => format!("Import \"{path}\" not found"),
+                };
                 return Err(LinkError::Lowering {
                     source: source.cloned(),
-                    error: LoweringError::invalid(
-                        import.span,
-                        format!("Import \"{path}\" not found"),
-                    ),
+                    error: LoweringError::invalid(import.span, message),
                 });
             };
+            super::std_paths::desugar(&mut module.program).map_err(|error| LinkError::Lowering {
+                source: Some(module.source.clone()),
+                error,
+            })?;
             if let Some(position) = self.active.iter().position(|(_, id)| *id == module.id) {
                 let mut chain: Vec<String> = self.active[position..]
                     .iter()

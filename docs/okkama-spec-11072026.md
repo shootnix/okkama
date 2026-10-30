@@ -288,6 +288,42 @@ Rules:
 - Imported module `main()` is never executed by an import.
 - Cyclic imports are rejected.
 
+### 5.2.1 Standard Library Paths
+
+A standard library declaration can be named in place, without an import, by a
+path that starts with the reserved word `std`:
+
+```okkama
+let out = std.io.stdout.Stdout();
+let path is std.fs.path.Path = std.fs.path.Path("/home/user");
+let order = std.compare.Order.less;
+let text = std.runtime.debug.data_dump(order);
+```
+
+Rules:
+
+- The segments after `std` up to the first segment that starts with an
+  upper-case letter form the module path (`std.fs.path.Path`: module
+  `fs/path`, declaration `Path`); the rest of the chain is ordinary member
+  access (`std.compare.Order.less`). A path of lower-case segments only names
+  a native action of its module and is valid only when called
+  (`std.runtime.debug.data_dump(v)`).
+- In type positions the last segment is the type and the segments before it
+  form the module path: `std.io.stdout.Stdout`, `@std.fs.path.Path`.
+- A path behaves exactly like a namespace import of that module made by the
+  same file (5.2): the module is resolved in the bundled standard library
+  directory only, never in runtime import directories or the importing
+  directory, and it is registered once per program. A path and an explicit
+  import of the same standard library module name the same declarations and
+  the same nominal types.
+- A path that names a module without a declaration (`std.io.stdout` as a
+  value), a missing module, or a missing declaration is a semantic error.
+- `std` is reserved: it cannot name a variable, parameter, field, loop or catch
+  binding, or an import alias, and it is not a value on its own.
+- A program cannot use two different files that declare the same module path.
+  A local module that shadows a standard library module (5.2) therefore cannot
+  be combined with a `std.` path to that module.
+
 ### 5.3 Module Native Declarations
 
 A runtime substrate module MAY declare a required host-provided function with

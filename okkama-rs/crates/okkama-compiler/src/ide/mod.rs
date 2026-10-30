@@ -15,6 +15,8 @@ mod complete;
 mod index;
 mod lint;
 mod outline;
+mod std_paths;
+pub use std_paths::{StdCompletion, StdKind, std_completions};
 
 pub use complete::{Context, builtin_members, keywords};
 pub use index::build;

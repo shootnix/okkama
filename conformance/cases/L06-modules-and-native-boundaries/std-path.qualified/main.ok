@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Report {
+    has out is std.io.stdout.Stdout;
+    Report(:out);
+    show(order is std.compare.Order) is void {
+        out.writeln(std.runtime.debug.data_dump(order));
+    }
+}
+
+main() is int {
+    let out = std.io.stdout.Stdout();
+    out.writeln("direct");
+    // The explicit import and the std path name the same Stdout type.
+    let report = Report(out: Stdout());
+    report.show(std.compare.Order.greater);
+    let orders is @std.compare.Order = [std.compare.Order.less];
+    out.writeln(orders.size().string());
+    0;
+}

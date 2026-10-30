@@ -462,3 +462,20 @@ fn freshly_typed_receivers_resolve_by_name_and_through_calls() {
     let field = MAIN.replace("        sum;\n", "        total.\n");
     assert_eq!(complete_after(&field, "        total."), ["cents", "plus"]);
 }
+
+#[test]
+fn std_paths_are_not_unused_imports() {
+    // Загрузчик из памяти ищет `std.shop.money` там же, где обычный импорт.
+    let text = r#"module app v1.0.0;
+
+main() is int {
+    let wallet = std.shop.money.Money(7);
+    let kind is std.shop.money.Currency = std.shop.money.Currency.euro;
+    return wallet.cents();
+}
+"#;
+    let found = lints(text);
+    assert!(!found.iter().any(|(code, _)| code == "unused-import"), "{found:?}");
+    let errors: Vec<_> = inspect(text).diagnostics.into_iter().filter(|found| found.code.is_none()).collect();
+    assert!(errors.is_empty(), "{errors:?}");
+}

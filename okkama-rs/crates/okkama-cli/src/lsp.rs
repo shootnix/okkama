@@ -451,7 +451,48 @@ impl Server {
         Some((document, offset, text, inspection))
     }
 
+    /// Путь `std.…` у курсора (§5.2.1): папки, модули и объявления std с
+    /// диска. Не зависит от анализа документа: `std.` посреди набора ещё не
+    /// разбирается.
+    fn std_completion(&self, params: &Value) -> Option<lsp_types::CompletionResponse> {
+        let uri = params.pointer("/textDocument/uri")?.as_str()?;
+        let line = params.pointer("/position/line")?.as_u64()? as u32;
+        let character = params.pointer("/position/character")?.as_u64()? as u32;
+        let document = self.documents.get(uri)?;
+        let offset = LineIndex::new(&document.text).offset(ide::Position { line, character });
+        let found = ide::std_completions(&document.text, offset, &self.loader(false).stdlib)?;
+        let items = found
+            .into_iter()
+            .map(|found| lsp_types::CompletionItem {
+                kind: Some(match found.kind {
+                    ide::StdKind::Folder => lsp_types::CompletionItemKind::FOLDER,
+                    ide::StdKind::Module => lsp_types::CompletionItemKind::MODULE,
+                    ide::StdKind::Object => lsp_types::CompletionItemKind::CLASS,
+                    ide::StdKind::Role => lsp_types::CompletionItemKind::INTERFACE,
+                    ide::StdKind::Enum => lsp_types::CompletionItemKind::ENUM,
+                    ide::StdKind::EnumCase => lsp_types::CompletionItemKind::ENUM_MEMBER,
+                    ide::StdKind::Native => lsp_types::CompletionItemKind::FUNCTION,
+                }),
+                // Сначала текущий уровень, потом целые пути из глубины.
+                sort_text: Some(format!("{}{}", u8::from(found.deep), found.label)),
+                detail: (!found.detail.is_empty()).then_some(found.detail),
+                documentation: (!found.documentation.is_empty()).then_some(
+                    lsp_types::Documentation::MarkupContent(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: found.documentation,
+                    }),
+                ),
+                label: found.label,
+                ..lsp_types::CompletionItem::default()
+            })
+            .collect();
+        Some(lsp_types::CompletionResponse::Array(items))
+    }
+
     fn completion(&self, params: &Value) -> Option<lsp_types::CompletionResponse> {
+        if let Some(found) = self.std_completion(params) {
+            return Some(found);
+        }
         let (document, offset, analyzed, inspection) = self.position(params)?;
         let items = inspection
             .complete(analyzed, &document.text, offset)

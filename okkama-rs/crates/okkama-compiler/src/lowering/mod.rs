@@ -19,6 +19,7 @@ mod builder;
 mod ctx;
 mod intrinsics;
 mod modules;
+pub mod std_paths;
 
 pub use modules::{LoadedModule, ModuleLoader};
 
@@ -179,11 +180,33 @@ fn source_of(
     }
 }
 
+/// Программы корня с путями `std.…`, переписанными в скрытые импорты
+/// (копии: исходный AST остаётся для форматтера и печати).
+fn desugared(roots: &[modules::Root<'_>]) -> std::result::Result<Vec<ast::Program>, LinkError> {
+    let mut programs = Vec::with_capacity(roots.len());
+    for (program, _, source) in roots {
+        let mut program = (*program).clone();
+        std_paths::desugar(&mut program).map_err(|error| LinkError::Lowering {
+            source: source.cloned(),
+            error,
+        })?;
+        programs.push(program);
+    }
+    Ok(programs)
+}
+
 fn lower_roots(
     roots: &[modules::Root<'_>],
     loader: &mut dyn ModuleLoader,
     test_mode: bool,
 ) -> std::result::Result<(ir::Module, Vec<CheckError>), LinkError> {
+    let programs = desugared(roots)?;
+    let roots: Vec<modules::Root<'_>> = programs
+        .iter()
+        .zip(roots)
+        .map(|(program, (_, name, source))| (program, *name, *source))
+        .collect();
+    let roots = roots.as_slice();
     let graph = modules::load_graph(roots, loader)?;
     let sources = modules::source_modules(&graph, roots);
     let first_root = graph.loaded.len();
@@ -245,13 +268,21 @@ fn check_roots(
     loader: &mut dyn ModuleLoader,
     test_mode: bool,
 ) -> CheckResult {
-    let graph = modules::load_graph(roots, loader).map_err(|error| match error {
+    let link_error = |error| match error {
         LinkError::Load(text) => Err(text),
         LinkError::Lowering { source, error } => Ok(vec![CheckError {
             source,
             error: crate::analysis::SemanticError::invalid(0, error.span(), error.message()),
         }]),
-    })?;
+    };
+    let programs = desugared(roots).map_err(link_error)?;
+    let roots: Vec<modules::Root<'_>> = programs
+        .iter()
+        .zip(roots)
+        .map(|(program, (_, name, source))| (program, *name, *source))
+        .collect();
+    let roots = roots.as_slice();
+    let graph = modules::load_graph(roots, loader).map_err(link_error)?;
     let sources = modules::source_modules(&graph, roots);
     let first_root = graph.loaded.len();
     crate::analysis::analyze_mode(sources, roots.len(), test_mode)
@@ -396,7 +427,7 @@ pub fn inspect(
         }
     };
     let outline = crate::ide::outline(&parsed, &lines);
-    let program = if test_mode {
+    let mut program = if test_mode {
         prune::desugar_test_items(parsed)
     } else {
         prune::strip_test_items(parsed)
@@ -406,6 +437,17 @@ pub fn inspect(
         parsed: true,
         ..Inspection::default()
     };
+    if let Err(error) = std_paths::desugar(&mut program) {
+        inspection.diagnostics.push(Diagnostic {
+            path: source.name().to_string(),
+            range: lines.range(error.span()),
+            severity: Severity::Error,
+            message: error.message().to_string(),
+            code: None,
+            unnecessary: false,
+        });
+        return inspection;
+    }
     let roots: [modules::Root<'_>; 1] = [(&program, source.name(), Some(source))];
     let graph = match modules::load_graph(&roots, loader) {
         Ok(graph) => graph,

@@ -201,6 +201,10 @@ impl Linter<'_, '_> {
             .map(|token| &text[token.span.range()])
             .collect();
         for import in &program.imports {
+            // Скрытый импорт пути `std.…` пользователь не писал: путь и есть использование.
+            if import.path.literal.value.starts_with(crate::lowering::std_paths::STD_IMPORT) {
+                continue;
+            }
             if let Some(alias) = &import.alias {
                 if import.take.is_empty() && !used.contains(alias.text.as_str()) {
                     self.warn(

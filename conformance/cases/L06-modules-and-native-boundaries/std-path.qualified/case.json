@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.std-path.qualified",
+  "title": "std paths name declarations in expressions and type positions",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.STD-PATH",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "direct\nOrder.greater\n1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.2.0 from the cited contract text",
+    "expected_basis": "spec 5.2.1: std.io.stdout.Stdout, std.compare.Order and the native std.runtime.debug.data_dump resolve without imports; a path and an explicit import of io/stdout give the same Stdout type."
+  },
+  "status": "mandatory"
+}

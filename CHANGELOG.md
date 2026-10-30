@@ -6,6 +6,26 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- **`std.` paths**: a standard library declaration can be named in place, without an
+  import — `std.io.stdout.Stdout()`, `let p is std.fs.path.Path = …`,
+  `std.compare.Order.less`, `std.runtime.debug.data_dump(v)`. A path is a hidden
+  namespace import of that module (looked up in the bundled std only), so the module is
+  loaded once per program and shares its types with explicit imports. `std` is reserved
+  (spec §5.2.1).
+- **Editor completion for `std.` paths** (`okkama lsp`, VS Code): after `std.` and each
+  folder, the folders and modules of the bundled std at that level; after a module, its
+  objects, roles, enums and native actions with their doc comments; after an enum, its
+  cases. Whole paths (`io.stdout`, and `io.stdout.Stdout` once a letter is typed) are
+  offered from anywhere in std.
+
+### Changed
+
+- A program that would load two different files declaring the same module path (for
+  example a local module shadowing std next to a `std.` path to it) is now rejected with a
+  clear error instead of an internal compiler error.
+
 ## [0.2.0] — 2026-10-30
 
 ### Added

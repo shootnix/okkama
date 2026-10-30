@@ -1030,12 +1030,23 @@ impl ModuleLoader for FileLoader {
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| PathBuf::from("."))
         };
-        let candidates = self
-            .import_dirs
-            .iter()
-            .chain([&base, &self.stdlib])
-            .map(|dir| dir.join(&file));
-        for candidate in candidates {
+        let mut dirs = self.import_dirs.clone();
+        dirs.push(base);
+        dirs.push(self.stdlib.clone());
+        self.load_from(&file, &dirs)
+    }
+
+    /// `std.…`: модуль только из std, а не из каталога импорта или программы.
+    fn load_std(&mut self, path: &str, _importer: &str) -> Result<Option<LoadedModule>, String> {
+        let stdlib = self.stdlib.clone();
+        self.load_from(&format!("{path}.ok"), &[stdlib])
+    }
+}
+
+impl FileLoader {
+    /// Первый файл `file` из каталогов `dirs`, разобранный как модуль.
+    fn load_from(&mut self, file: &str, dirs: &[PathBuf]) -> Result<Option<LoadedModule>, String> {
+        for candidate in dirs.iter().map(|dir| dir.join(file)) {
             if !candidate.is_file() {
                 continue;
             }

@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.std-path.reserved-name",
+  "title": "std cannot name a local binding",
+  "purpose": "Observe module resolution and visibility.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.STD-PATH",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The rule is stated without a detection stage; static analysis, import loading or execution may report it. The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.2.0 from the cited contract text",
+    "expected_basis": "spec 5.2.1: std is reserved and cannot name a variable."
+  },
+  "status": "mandatory"
+}
