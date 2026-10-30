@@ -882,8 +882,7 @@ is a byte echo, not a cryptographic implementation.
 | Declaration / role | Constructors | Public behavior |
 | --- | --- | --- |
 | `PathStyle` | — | Language/native contract; no declared actions |
-| `Path` does `Comparing<Path>` | `Path(origin is string)`<br>`Path(origin is string, style is PathStyle)` | `parent() is Path`<br>`child(part is string) is Path`<br>`absolute() is bool`<br>`order(other is Path) is Order`<br>`string() is string`<br>`style() is PathStyle` |
-| `JoinedPath` | `JoinedPath(parts is ...string)` | `#projected value() is Path` |
+| `Path` does `Comparing<Path>` | `Path(origin is string)`<br>`Path(origin is string, style is PathStyle)`<br>`Path(parts is ...string)` | `parent() is Path`<br>`child(part is string) is Path`<br>`absolute() is bool`<br>`order(other is Path) is Order`<br>`string() is string`<br>`style() is PathStyle` |
 | `NativePathStyle` | `NativePathStyle()` | `#projected value() is PathStyle` |
 | `PathStyleCode` | `PathStyleCode(origin is PathStyle)` **named only** | `#projected value() is int` |
 | `InvalidPath` does `Error` | `InvalidPath(message is string)` | `#projected text() is string` |

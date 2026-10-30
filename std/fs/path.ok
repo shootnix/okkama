@@ -16,10 +16,10 @@ import "runtime/system" take system_platform;
 //     let native = Path("var").child("log").child("app.log");
 //     let foreign = Path("C:\\Users\\alice", PathStyle.windows);
 //
-// JoinedPath is the portable application-facing join. It asks the runtime for
-// the current platform and never makes callers choose a separator:
+// Path(parts...) is the portable application-facing join. It asks the runtime
+// for the current platform and never makes callers choose a separator:
 //
-//     let config = value JoinedPath("etc", "okkama", "config.toml");
+//     let config = Path("etc", "okkama", "config.toml");
 //
 // A later absolute part replaces everything accumulated before it. Joining,
 // parent lookup and absolute detection never consult the filesystem and do not
@@ -40,6 +40,19 @@ object Path does Comparing<Path> {
     Path(origin is string, style is PathStyle) {
         confirm !origin.empty() else throw InvalidPath("path cannot be empty");
         self.origin = origin;
+        path_style = style;
+    }
+
+    Path(parts is ...string) {
+        let values is @string = parts...;
+        confirm values.size() > 0
+            else throw InvalidPath("path join requires at least one part");
+        for values -> part {
+            confirm !part.empty()
+                else throw InvalidPath("path join rejects empty parts");
+        }
+        let style is PathStyle = value NativePathStyle();
+        origin = path_join(values, value PathStyleCode(origin: style));
         path_style = style;
     }
 
@@ -77,30 +90,6 @@ object Path does Comparing<Path> {
     // Expose the lexical grammar without probing the host filesystem.
     style() is PathStyle { path_style; }
 
-}
-
-object JoinedPath {
-    has origin is @string;
-
-    JoinedPath(parts is ...string) {
-        let values is @string = parts...;
-        confirm values.size() > 0
-            else throw InvalidPath("path join requires at least one part");
-        for values -> part {
-            confirm !part.empty()
-                else throw InvalidPath("path join rejects empty parts");
-        }
-        origin = values;
-    }
-
-    #projected
-    value() is Path {
-        let style is PathStyle = value NativePathStyle();
-        Path(
-            path_join(origin, value PathStyleCode(origin: style)),
-            style,
-        );
-    }
 }
 
 object NativePathStyle {

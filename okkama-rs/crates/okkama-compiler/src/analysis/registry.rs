@@ -1416,6 +1416,7 @@ impl<'a> Registry<'a> {
             let result = self.resolve_result(&signature.result, &scope);
             if methods.iter().any(|other| {
                 other.name == signature.name.text
+                    && other.variadic == variadic
                     && other.params.len() == params.len()
                     && other
                         .params
@@ -1436,16 +1437,6 @@ impl<'a> Registry<'a> {
                 .iter()
                 .find(|other| other.name == signature.name.text)
             {
-                if other.variadic || variadic {
-                    self.error(
-                        signature.span,
-                        format!(
-                            "Role \"{}\" cannot overload variadic action \"{}\"",
-                            decl.name.text, signature.name.text
-                        ),
-                    );
-                    continue;
-                }
                 if other.result != result {
                     self.error(
                         signature.span,
@@ -1681,16 +1672,39 @@ impl<'a> Registry<'a> {
                 span: ctor.span,
             });
         }
-        let variadic_ctor = ctors
-            .iter()
-            .any(|ctor| matches!(ctor.shape, CtorShape::Full { variadic: true, .. }));
-        if variadic_ctor && ctors.len() > 1 {
-            self.error(
-                decl.name.span,
-                format!(
-                    "Object \"{name}\" cannot declare another constructor alongside variadic constructor \"{name}\""
-                ),
-            );
+        // Неразличимые полные конструкторы: те же типы и вариадичность; имена
+        // различают только фиксированные (именованным вызовом).
+        for (index, ctor) in ctors.iter().enumerate() {
+            let CtorShape::Full {
+                params, variadic, ..
+            } = &ctor.shape
+            else {
+                continue;
+            };
+            let twin = ctors[..index].iter().any(|other| {
+                let CtorShape::Full {
+                    params: others,
+                    variadic: other_variadic,
+                    ..
+                } = &other.shape
+                else {
+                    return false;
+                };
+                variadic == other_variadic
+                    && params.len() == others.len()
+                    && params
+                        .iter()
+                        .zip(others)
+                        .all(|((left_name, left), (right_name, right))| {
+                            left == right && (*variadic || left_name == right_name)
+                        })
+            });
+            if twin {
+                self.error(
+                    ctor.span,
+                    format!("Constructor \"{name}\" is declared twice with the same signature"),
+                );
+            }
         }
         self.objects[id.0].ctors = ctors;
 
@@ -1890,9 +1904,15 @@ impl<'a> Registry<'a> {
                         None
                     }
                 } else if let Some(first) = named.first() {
+                    // Та же арность; среди перегрузок — с той же вариадичностью.
+                    let same_arity = |candidate: &&&MethodInfo<'_>| {
+                        candidate.params.len() == params.len()
+                    };
                     match named
                         .iter()
-                        .find(|candidate| candidate.params.len() == params.len())
+                        .filter(same_arity)
+                        .find(|candidate| candidate.variadic == method.variadic)
+                        .or_else(|| named.iter().find(same_arity))
                     {
                         None => Some(format!(
                             "Object \"{object}\" does role \"{role_display}\" but action \"{}\" does not accept {} parameter(s)",
@@ -1906,13 +1926,20 @@ impl<'a> Registry<'a> {
                                 .zip(&params)
                                 .enumerate()
                                 .find(|(_, ((_, actual), expected))| actual != *expected);
+                            // Хвост показывается как `...T`, а не `@T`.
+                            let shown = |ty: &Ty, variadic: bool, position: usize| match ty {
+                                Ty::Array(element) if variadic && position + 1 == params.len() => {
+                                    format!("...{}", self.type_name(element))
+                                }
+                                _ => self.type_name(ty),
+                            };
                             Some(match mismatch {
                                 Some((position, ((_, actual), expected))) => format!(
                                     "Action \"{}\" parameter {} on object \"{object}\" must be {} for role \"{role_display}\", got {}",
                                     method.name,
                                     position + 1,
-                                    self.type_name(expected),
-                                    self.type_name(actual)
+                                    shown(expected, method.variadic, position),
+                                    shown(actual, candidate.variadic, position)
                                 ),
                                 None => format!(
                                     "Action \"{}\" on object \"{object}\" must return {} for role \"{role_display}\", got {}",
@@ -2352,43 +2379,35 @@ impl<'a> Registry<'a> {
     }
 }
 
-/// Перегрузки одного имени: одинаковые сигнатуры неразличимы, у variadic
-/// перегрузок нет, у одной арности — один результат.
+/// Перегрузки одного имени: одинаковые сигнатуры неразличимы (у variadic
+/// имена не различают — их вызов позиционный), у одной арности — один
+/// результат. Арность — число параметров, variadic-хвост — один параметр.
 fn overload_conflict(
     methods: &[MethodInfo<'_>],
     method: &MethodInfo<'_>,
     object: &str,
 ) -> Option<String> {
     for other in methods.iter().filter(|other| other.name == method.name) {
-        // Variadic-перегрузка запрещена только между двумя variadic (как Perl).
-        if other.variadic && method.variadic {
-            return Some(format!(
-                "Object \"{object}\" cannot overload variadic action \"{}\"",
-                method.name
-            ));
-        }
-        let same_types = method.params.len() == other.params.len()
+        let same_types = method.variadic == other.variadic
+            && method.params.len() == other.params.len()
             && method
                 .params
                 .iter()
                 .zip(&other.params)
                 .all(|((_, left), (_, right))| left == right);
-        let same_names = method
-            .params
-            .iter()
-            .zip(&other.params)
-            .all(|((left, _), (right, _))| left == right);
+        let same_names = method.variadic
+            || method
+                .params
+                .iter()
+                .zip(&other.params)
+                .all(|((left, _), (right, _))| left == right);
         if same_types && same_names {
             return Some(format!(
                 "Action \"{}\" on object \"{object}\" is declared twice with the same signature",
                 method.name
             ));
         }
-        if method.params.len() == other.params.len()
-            && !method.variadic
-            && !other.variadic
-            && method.result != other.result
-        {
+        if method.params.len() == other.params.len() && method.result != other.result {
             return Some(format!(
                 "Overloads of action \"{}\" on object \"{object}\" must declare the same result",
                 method.name

@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.overload-duplicate-signature",
+  "title": "variadic overloads with the same tail type are duplicates",
+  "purpose": "Variadic calls are positional, so parameter names cannot distinguish two variadic signatures of the same types.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "A declaration-level rule checked after parsing; an implementation may also detect it at registration/runtime. The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.8.1: two variadic signatures with the same parameter types are the same signature."
+  },
+  "status": "mandatory"
+}

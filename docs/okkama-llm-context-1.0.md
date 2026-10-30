@@ -752,8 +752,8 @@ identifiers. OIR Profile 0 remains int-only. Full contract:
 - **Mandatory and explicit.** Never generated from fields. Stateless objects
   still write `Marker() {}` (or the zero-field shorthand `Marker();`).
 - **Full constructors:** typed parameters; body = ordinary statements + field
-  binds `field = expr;` / `self.field = expr;`. Overload by **exact arity**
-  only. Named or positional calls, never mixed; positionals bind to
+  binds `field = expr;` / `self.field = expr;`. Overload like actions:
+  by arity and parameter types. Named or positional calls, never mixed; positionals bind to
   parameters, never to field order. Every field must be bound or defaulted by
   the end, or construction fails.
 - **Field shorthand** `Cash(:digit, :cents);` — a closed **named-only**
@@ -762,8 +762,8 @@ identifiers. OIR Profile 0 remains int-only. Full contract:
   happen first). Bodyless shorthand errors if an unlisted field lacks a
   default.
 - **Variadic constructor:** one final typed tail (`Min(first is T, rest is
-  ...T)`), positional-only calls, and it must be the object's ONLY
-  constructor.
+  ...T)`), positional-only calls. It overloads with other constructors; a
+  fitting fixed or shorthand constructor wins over it.
 - **Named constructor projection:** `#projected` registers the zero-argument
   action name as a prefix; `#projected(alias)` registers an explicit lowercase
   prefix. `value ParsedInt(text)` means exactly `ParsedInt(text).value()`.
@@ -904,7 +904,10 @@ format(pattern is string, values is ...any) is string {
   postfix `...` applies to the whole array cast without a precedence change.
   Stream expansion validates each element normally, writes none for empties,
   and stops on failure without rolling back prior writes. Use parentheses in
-  `(await source.words())...`. Variadic names cannot be overloaded.
+  `(await source.words())...`. Variadic actions overload with fixed and
+  other variadic ones (`f(x is int)`, `f(xs is ...int)`, `f(xs is ...string)`);
+  a fitting fixed signature always wins, and an empty tail is ambiguous
+  between variadics that differ only in the tail type.
 
 - **Action-value types:** `(T, U) is R`; `() is R`; `async (T) is R` for an
   awaited callable. They may

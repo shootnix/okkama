@@ -3116,11 +3116,21 @@ Rules:
 - Constructor body uses bare or explicit `self.field` field bind statements.
 - All fields MUST be initialized by the end of construction.
 - Field defaults are evaluated before the constructor body and type-checked.
-- Full constructors are selected by exact arity. Shorthand constructors are
-  selected by named-field compatibility: every supplied name must be allowed
-  and every required name must be present.
-- Multiple compatible full/shorthand signatures are ambiguous; declaration
-  order never resolves the call.
+- Full constructors are selected like action overloads (11.8): by arity,
+  by parameter names in a named call, and by parameter types with the same
+  specificity rules. Shorthand constructors are selected by named-field
+  compatibility: every supplied name must be allowed, every required name
+  must be present and every supplied value must fit its field type.
+- A call that fits a fixed full or a shorthand constructor never selects a
+  variadic constructor.
+- Multiple equally specific compatible signatures are ambiguous; declaration
+  order never resolves the call. Two full constructors with the same
+  parameter types are a declaration error unless both are fixed and their
+  parameter names differ.
+- A generic object infers its specialization from each constructor the call
+  fits (fixed and shorthand first, then variadic); when they infer different
+  specializations, only those under which a constructor accepts the
+  arguments remain, and more than one is ambiguous.
 - If no constructor is compatible, construction fails. There is no fallback
   that derives a signature from all `has` fields.
 
@@ -3150,8 +3160,9 @@ Rules:
   variadic constructor is rejected before any argument is evaluated;
 - the fixed prefix defines the constructor's minimum arity; a call with too
   few arguments reports the shortfall before the constructor body runs;
-- an object that declares a variadic constructor cannot declare any other
-  constructor (full or shorthand);
+- a variadic constructor overloads with other constructors, including other
+  variadic ones that differ in parameter types; a fitting fixed or shorthand
+  constructor is preferred (see the rules above);
 - each tail value is checked left to right against the declared element type,
   with a tail-relative position in the diagnostic;
 - exact generic `T` inference applies across the fixed prefix and every tail
@@ -3442,7 +3453,10 @@ Cash(digit: 7).secret(); // error
 
 ### 11.8 Action Overloads
 
-Fixed actions can overload by arity and parameter types.
+Actions can overload by arity and parameter types. Arity is the number of
+parameters, and a variadic tail counts as one parameter: `add(value is int)`
+and `add(values is ...int)` both have arity 1 and are different signatures,
+because `...int` is not `int`.
 
 ```okkama
 add(value is int) is int {
@@ -3461,7 +3475,11 @@ add(value is string) is int {
 Rules:
 
 - receiver and argument expressions evaluate exactly once, left to right;
-- candidates first match fixed arity and named parameter shape, then the
+- a fixed signature fits a call with exactly its number of arguments, a
+  variadic one fits a positional call with at least its fixed prefix;
+- a call that fits a fixed signature never selects a variadic one: variadic
+  candidates are considered only when no fixed candidate fits;
+- candidates first match arity and named parameter shape, then the
   evaluated runtime values are checked against substituted declared types;
 - exact concrete/applied types are more specific than role compatibility;
 - a compatible concrete or role type is more specific than `any`;
@@ -3478,10 +3496,16 @@ Rules:
 - no compatible typed candidate and multiple equally specific candidates have
   distinct diagnostics containing the actual argument types;
 - private access is checked after the typed signature is selected;
-- Overloads with the same name must declare compatible return types.
+- a variadic tail compares its element type with every tail value, so
+  `...int` is more specific than `...any` for `add(1, 2)`; a call with an
+  empty tail, or an unpacked `@never` array, is ambiguous between variadic
+  candidates that differ only in the tail type;
+- two signatures with the same parameter types are a declaration error
+  unless both are fixed and their parameter names differ;
+- Overloads with the same name and arity must declare the same return type.
 
-Typed action overload selection does not apply to constructors or native
-module functions. Variadic action overload sets remain forbidden. The complete
+Constructors use the same selection (11.3). Native module functions do not
+overload. The complete
 specificity and evaluation contract is recorded in
 `docs/todo/typed-action-overload-resolution-14072026.md`.
 
@@ -3503,8 +3527,8 @@ Rules:
 - it must be the unique final parameter and cannot have a default value;
 - full constructors may declare a variadic final parameter under the
   restrictions in section 11.3;
-- an action with a variadic parameter cannot be overloaded in the current
-  milestone;
+- an action with a variadic parameter overloads with fixed and other
+  variadic signatures under the rules of 11.8;
 - calls are positional only and must provide every fixed-prefix argument;
 - the tail contains zero or more values, each checked deeply against its
   declared element type;

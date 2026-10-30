@@ -1,14 +1,20 @@
 {
   "schema": "ocs-case/1",
   "id": "L04.variadic-ctor.with-other-constructor",
-  "title": "a variadic constructor must be the only constructor",
-  "purpose": "The construct is invalid and must not complete.",
+  "title": "a variadic constructor coexists with fixed constructors",
+  "purpose": "A fixed constructor that fits the call is preferred; otherwise the variadic constructor takes the arguments.",
   "level": "L04",
   "contracts": [
     {
       "contract": "OBJ.VARIADIC-CONSTRUCTOR",
       "aspects": [
-        "invalid"
+        "boundary"
+      ]
+    },
+    {
+      "contract": "OBJ.CONSTRUCTORS",
+      "aspects": [
+        "interaction"
       ]
     }
   ],
@@ -23,22 +29,10 @@
     ]
   },
   "expect": {
-    "outcome": "error",
-    "failure": {
-      "stages": [
-        "parse",
-        "check",
-        "runtime"
-      ],
-      "categories": [
-        "syntax",
-        "semantic",
-        "runtime"
-      ],
-      "justification": "A declaration-level rule: the grammar lists it as a context-sensitive restriction checked after parsing, and an implementation may also detect it at registration/runtime. The program must not complete."
-    },
+    "outcome": "success",
+    "exit_status": 0,
     "stdout": {
-      "text": ""
+      "text": "empty 0\none 1\ntail 3\n"
     }
   },
   "spec_refs": [
@@ -48,8 +42,8 @@
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 11.3: an object that declares a variadic constructor cannot declare any other constructor."
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.3: a fitting fixed constructor is selected before the variadic one."
   },
   "status": "mandatory"
 }

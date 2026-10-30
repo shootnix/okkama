@@ -4,18 +4,27 @@ import "io/stdout" take Stdout;
 
 object Bag {
     has items is @int;
+    has origin is string;
     Bag(items is ...int) {
         let all is @int = items...;
         items = all;
+        origin = "tail";
     }
     Bag() {
         items = [];
+        origin = "empty";
     }
+    Bag(only is int) {
+        items = [only];
+        origin = "one";
+    }
+    describe() is string { origin + " " + items.size().string(); }
 }
 
 main() is int {
     let out = Stdout();
-    let b = Bag();
-    out.writeln("unreachable");
+    out.writeln(Bag().describe());
+    out.writeln(Bag(5).describe());
+    out.writeln(Bag(1, 2, 3).describe());
     0;
 }

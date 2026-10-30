@@ -1,20 +1,20 @@
 {
   "schema": "ocs-case/1",
   "id": "L03.variadic.overloaded",
-  "title": "variadic actions cannot be overloaded",
-  "purpose": "The declaration is invalid and the program must not complete.",
+  "title": "a fixed overload is preferred over a variadic one",
+  "purpose": "Fixed and variadic overloads of one name coexist; a call that fits a fixed signature never selects the variadic one.",
   "level": "L03",
   "contracts": [
     {
       "contract": "CALL.VARIADIC",
       "aspects": [
-        "invalid"
+        "interaction"
       ]
     },
     {
       "contract": "CALL.OVERLOADS",
       "aspects": [
-        "invalid"
+        "boundary"
       ]
     }
   ],
@@ -23,38 +23,28 @@
     "main.ok"
   ],
   "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
   "expect": {
-    "outcome": "error",
-    "failure": {
-      "stages": [
-        "parse",
-        "check",
-        "runtime"
-      ],
-      "categories": [
-        "syntax",
-        "semantic",
-        "runtime"
-      ],
-      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
-    },
+    "outcome": "success",
+    "exit_status": 7,
     "stdout": {
-      "text": ""
+      "text": "1\n100\n102\n"
     }
   },
   "spec_refs": [
-    "docs/okkama-spec-11072026.md#11.8.1",
-    "docs/okkama-spec-11072026.md#11.8"
+    "docs/okkama-spec-11072026.md#11.8",
+    "docs/okkama-spec-11072026.md#11.8.1"
   ],
   "budget": {
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 11.8.1: an action with a variadic parameter cannot be overloaded; spec 11.8: variadic action overload sets remain forbidden."
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.8: a fitting fixed signature is selected before any variadic one; total(1) is fixed, total() and total(1, 2) take the tail."
   },
-  "status": "mandatory",
-  "defects": [
-    "DEF-002"
-  ]
+  "status": "mandatory"
 }

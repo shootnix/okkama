@@ -1,0 +1,62 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.overload-empty-tail-ambiguous",
+  "title": "an empty tail does not choose between variadic overloads",
+  "purpose": "A call with no tail values fits every variadic overload with an empty fixed prefix equally and is ambiguous.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The call has no single most specific candidate; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8",
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.8: equally specific candidates are ambiguous; declaration order is never a tie-breaker."
+  },
+  "status": "mandatory"
+}

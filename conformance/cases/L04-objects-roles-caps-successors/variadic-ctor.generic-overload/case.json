@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.variadic-ctor.generic-overload",
+  "title": "generic arguments are inferred from the selected constructor",
+  "purpose": "Each constructor that fits the call infers the specialization; a fixed one is tried before the variadic one.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.VARIADIC-CONSTRUCTOR",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "value 1\nvalues 2\nvalues 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3",
+    "docs/okkama-spec-11072026.md#6.5"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.3: Box(1) is the fixed constructor with T = int; Box(\"a\", \"b\") infers T = string from the tail; Box() takes T from the expected type."
+  },
+  "status": "mandatory"
+}

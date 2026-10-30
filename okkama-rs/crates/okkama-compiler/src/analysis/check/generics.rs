@@ -70,6 +70,11 @@ impl Checker<'_, '_> {
     }
 
     /// Вывести специализацию по аргументам; ошибка сообщается здесь.
+    ///
+    /// Вывод идёт по каждому конструктору, которому вызов подходит по форме
+    /// (сначала фиксированные и shorthand, затем variadic, §11.3). Разные
+    /// специализации от разных конструкторов сужаются до тех, при которых
+    /// конструктор принимает аргументы по типам.
     pub(super) fn infer_specialization(
         &mut self,
         object: ObjectId,
@@ -77,42 +82,117 @@ impl Checker<'_, '_> {
         expected: Option<&Ty>,
         span: Span,
     ) -> Option<Vec<Ty>> {
+        let count = self.reg.objects[object.0].ctors.len();
+        let variadic = |ctor: &CtorShape<'_>| matches!(ctor, CtorShape::Full { variadic: true, .. });
+        let mut order: Vec<usize> = (0..count)
+            .filter(|ctor| !variadic(&self.reg.objects[object.0].ctors[*ctor].shape))
+            .collect();
+        let tails = order.len();
+        order.extend((0..count).filter(|ctor| variadic(&self.reg.objects[object.0].ctors[*ctor].shape)));
+        let mut found: Vec<Vec<Ty>> = Vec::new();
+        let mut failure = None;
+        let mut shaped = false;
+        for (position, ctor) in order.iter().enumerate() {
+            if position == tails && !found.is_empty() {
+                break;
+            }
+            let Some((patterns, tail)) = self.ctor_patterns(object, *ctor, call) else {
+                continue;
+            };
+            shaped = true;
+            match self.infer_with(object, call, expected, &patterns, tail.as_ref()) {
+                Ok(resolved) if !found.contains(&resolved) => found.push(resolved),
+                Ok(_) => {}
+                Err(message) => {
+                    failure.get_or_insert(message);
+                }
+            }
+        }
+        if !shaped {
+            // Ни одной подходящей формы: специализацию задаёт только ожидаемый
+            // тип, а отказ конструирования сообщит выбор конструктора.
+            let none = vec![None; call.values.len()];
+            match self.infer_with(object, call, expected, &none, None) {
+                Ok(resolved) => found.push(resolved),
+                Err(message) => failure = Some(message),
+            }
+        }
+        if found.len() > 1 {
+            found.retain(|resolved| {
+                let env: Vec<(ParamId, Ty)> = self.reg.objects[object.0]
+                    .params
+                    .iter()
+                    .copied()
+                    .zip(resolved.iter().cloned())
+                    .collect();
+                let shapes = self.ctor_shapes(object, &env);
+                !self.ctor_candidates(object, &shapes, call, &env).1.is_empty()
+            });
+        }
+        match found.len() {
+            1 => found.pop(),
+            0 => {
+                let message = failure.unwrap_or_else(|| {
+                    format!(
+                        "Cannot infer generic parameters for object \"{}\"",
+                        self.reg.objects[object.0].name
+                    )
+                });
+                self.error(span, message);
+                None
+            }
+            _ => {
+                let message = format!(
+                    "Ambiguous construction of \"{}\": constructors infer different generic arguments",
+                    self.reg.objects[object.0].name
+                );
+                self.error(span, message);
+                None
+            }
+        }
+    }
+
+    /// Специализация по образцам аргументов одного конструктора.
+    fn infer_with(
+        &self,
+        object: ObjectId,
+        call: &CallArgs,
+        expected: Option<&Ty>,
+        patterns: &[Option<Ty>],
+        tail: Option<&Ty>,
+    ) -> Result<Vec<Ty>, String> {
         let mut inference = self.inference(object);
         if let Some(expected) = expected {
             self.bind_expected(object, &mut inference, expected);
         }
-        let (patterns, tail) = self.ctor_patterns(object, call);
-        for (arg, pattern) in call.values.iter().zip(&patterns) {
+        for (arg, pattern) in call.values.iter().zip(patterns) {
             if let Some(pattern) = pattern {
                 let actual = Self::ty_of(&arg.value).taken();
                 self.unify(&mut inference, pattern, &actual);
             }
         }
         // Финальная распаковка `xs...` — массив элементов variadic-хвоста.
-        if let (Some(element), Some((array, _))) = (&tail, &call.spread) {
+        if let (Some(element), Some((array, _))) = (tail, &call.spread) {
             if let Ty::Array(item) = Self::ty_of(array).taken() {
                 self.unify(&mut inference, element, &item);
             }
         }
         if let Some(message) = inference.conflict.take() {
-            self.error(span, message);
-            return None;
+            return Err(message);
         }
-        let mut resolved = Vec::new();
-        for (param, binding) in inference.params.iter().zip(&inference.bindings) {
-            match binding {
-                Some(ty) => resolved.push(ty.clone()),
-                None => {
-                    let message = format!(
+        inference
+            .params
+            .iter()
+            .zip(inference.bindings)
+            .map(|(param, binding)| {
+                binding.ok_or_else(|| {
+                    format!(
                         "Cannot infer generic parameter \"{}\" for object \"{}\"",
                         self.reg.params[param.0].name, inference.object
-                    );
-                    self.error(span, message);
-                    return None;
-                }
-            }
-        }
-        Some(resolved)
+                    )
+                })
+            })
+            .collect()
     }
 
     /// Ограничения параметров специализации (§6.5): проверка до тела конструктора.
@@ -145,86 +225,83 @@ impl Checker<'_, '_> {
         true
     }
 
-    /// Образцы типов аргументов: shorthand — типы полей по именам, полный
-    /// конструктор — типы параметров (хвост — тип элемента). Второе значение
-    /// — образец элемента хвоста для финальной распаковки.
-    fn ctor_patterns(&self, object: ObjectId, call: &CallArgs) -> (Vec<Option<Ty>>, Option<Ty>) {
+    /// Образцы типов аргументов для конструктора `ctor`, если вызов подходит
+    /// ему по форме: shorthand — типы полей по именам, полный конструктор —
+    /// типы параметров (хвост — тип элемента). Второе значение — образец
+    /// элемента хвоста для финальной распаковки.
+    fn ctor_patterns(
+        &self,
+        object: ObjectId,
+        ctor: usize,
+        call: &CallArgs,
+    ) -> Option<(Vec<Option<Ty>>, Option<Ty>)> {
         let info = &self.reg.objects[object.0];
         let count = call.values.len();
         if call.named() {
+            let fields: Vec<(String, Ty)> = match &info.ctors[ctor].shape {
+                CtorShape::Shorthand { fields, .. } => fields
+                    .iter()
+                    .map(|field| {
+                        (
+                            info.fields[*field].name.clone(),
+                            info.fields[*field].ty.clone(),
+                        )
+                    })
+                    .collect(),
+                CtorShape::Full {
+                    params, variadic, ..
+                } if !variadic && params.len() == count => params.clone(),
+                CtorShape::Full { .. } => return None,
+            };
             let names = call.names();
-            for ctor in &info.ctors {
-                let fields: Option<Vec<(String, Ty)>> = match &ctor.shape {
-                    CtorShape::Shorthand { fields, .. } => Some(
-                        fields
-                            .iter()
-                            .map(|field| {
-                                (
-                                    info.fields[*field].name.clone(),
-                                    info.fields[*field].ty.clone(),
-                                )
-                            })
-                            .collect(),
-                    ),
-                    CtorShape::Full {
-                        params, variadic, ..
-                    } if !variadic && params.len() == count => Some(params.clone()),
-                    CtorShape::Full { .. } => None,
+            if !names
+                .iter()
+                .all(|name| fields.iter().any(|(field, _)| field == name))
+            {
+                return None;
+            }
+            let patterns = call
+                .values
+                .iter()
+                .map(|arg| {
+                    let name = arg.name.as_deref()?;
+                    fields
+                        .iter()
+                        .find(|(field, _)| field == name)
+                        .map(|(_, ty)| ty.clone())
+                })
+                .collect();
+            return Some((patterns, None));
+        }
+        match &info.ctors[ctor].shape {
+            CtorShape::Full {
+                params, variadic, ..
+            } if *variadic && count + 1 >= params.len() => {
+                let element = match &params[params.len() - 1].1 {
+                    Ty::Array(element) => (**element).clone(),
+                    other => other.clone(),
                 };
-                let Some(fields) = fields else {
-                    continue;
-                };
-                if !names
-                    .iter()
-                    .all(|name| fields.iter().any(|(field, _)| field == name))
-                {
-                    continue;
-                }
-                let patterns = call
-                    .values
-                    .iter()
-                    .map(|arg| {
-                        let name = arg.name.as_deref()?;
-                        fields
-                            .iter()
-                            .find(|(field, _)| field == name)
-                            .map(|(_, ty)| ty.clone())
+                let patterns = (0..count)
+                    .map(|index| {
+                        Some(if index + 1 < params.len() {
+                            params[index].1.clone()
+                        } else {
+                            element.clone()
+                        })
                     })
                     .collect();
-                return (patterns, None);
+                Some((patterns, Some(element)))
             }
-            return (vec![None; count], None);
-        }
-        for ctor in &info.ctors {
-            if let CtorShape::Full {
+            CtorShape::Full {
                 params, variadic, ..
-            } = &ctor.shape
-            {
-                if *variadic && count + 1 >= params.len() {
-                    let element = match &params[params.len() - 1].1 {
-                        Ty::Array(element) => (**element).clone(),
-                        other => other.clone(),
-                    };
-                    let patterns = (0..count)
-                        .map(|index| {
-                            Some(if index + 1 < params.len() {
-                                params[index].1.clone()
-                            } else {
-                                element.clone()
-                            })
-                        })
-                        .collect();
-                    return (patterns, Some(element));
-                }
-                if !variadic && params.len() == count {
-                    return (
-                        params.iter().map(|(_, ty)| Some(ty.clone())).collect(),
-                        None,
-                    );
-                }
-            }
+            } if !variadic && params.len() == count && call.spread.is_none() => Some((
+                params.iter().map(|(_, ty)| Some(ty.clone())).collect(),
+                None,
+            )),
+            // `Box()` у shorthand: всё — из ожидаемого типа и значений по умолчанию.
+            CtorShape::Shorthand { .. } if count == 0 => Some((Vec::new(), None)),
+            _ => None,
         }
-        (vec![None; count], None)
     }
 
     /// Сопоставить образец (в параметрах объявления) с фактическим типом.

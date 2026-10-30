@@ -226,6 +226,27 @@ impl Checker<'_, '_> {
             .enumerate()
             .filter_map(|(index, shape)| self.fits(call, shape).map(|ranks| (index, ranks)))
             .collect();
+        Self::most_specific(Self::fixed_first(fitting, |index| shapes[index].variadic))
+    }
+
+    /// Подошла фиксированная сигнатура — variadic-кандидаты не рассматриваются.
+    pub(super) fn fixed_first(
+        fitting: Vec<(usize, Vec<u8>)>,
+        variadic: impl Fn(usize) -> bool,
+    ) -> Vec<(usize, Vec<u8>)> {
+        if fitting.iter().any(|(index, _)| !variadic(*index)) {
+            fitting
+                .into_iter()
+                .filter(|(index, _)| !variadic(*index))
+                .collect()
+        } else {
+            fitting
+        }
+    }
+
+    /// Кандидат, не менее специфичный во всех позициях и строго более — хотя бы
+    /// в одной, чем каждый другой.
+    pub(super) fn most_specific(fitting: Vec<(usize, Vec<u8>)>) -> Result<usize, bool> {
         match fitting.as_slice() {
             [] => Err(false),
             [(index, _)] => Ok(*index),
@@ -768,6 +789,98 @@ impl Checker<'_, '_> {
             .collect()
     }
 
+    /// Конструкторы для вызова: подходящие по форме (число аргументов, имена)
+    /// и подходящие по типам со специфичностью по позициям (§11.3). Подошёл
+    /// фиксированный или shorthand — variadic не рассматриваются; из именованных
+    /// форм остаются те, где пропущено меньше полей shorthand (как Perl).
+    pub(super) fn ctor_candidates(
+        &self,
+        object: ObjectId,
+        shapes: &[(Shape, bool)],
+        call: &CallArgs,
+        env: &[(ParamId, Ty)],
+    ) -> (Vec<usize>, Vec<(usize, Vec<u8>)>) {
+        let info = &self.reg.objects[object.0];
+        let named = call.named();
+        let names = call.names();
+        let mut by_shape = Vec::new();
+        let mut typed = Vec::new();
+        for (index, (shape, shorthand)) in shapes.iter().enumerate() {
+            let ranks = if *shorthand {
+                let CtorShape::Shorthand { fields, .. } = &info.ctors[index].shape else {
+                    unreachable!("shorthand shapes come from shorthand constructors")
+                };
+                let allowed: HashSet<&str> = fields
+                    .iter()
+                    .map(|field| info.fields[*field].name.as_str())
+                    .collect();
+                let required = fields
+                    .iter()
+                    .filter(|field| info.fields[**field].default.is_none())
+                    .all(|field| names.contains(&info.fields[*field].name));
+                let fits = call.spread.is_none()
+                    && (named || call.values.is_empty())
+                    && names.iter().all(|name| allowed.contains(name.as_str()))
+                    && required;
+                if !fits {
+                    continue;
+                }
+                // Типы проверяются только у переданных полей.
+                let given = Shape {
+                    params: fields
+                        .iter()
+                        .map(|field| &info.fields[*field])
+                        .filter(|field| names.contains(&field.name))
+                        .map(|field| (field.name.clone(), field.ty.subst(env)))
+                        .collect(),
+                    variadic: false,
+                };
+                self.fits(call, &given)
+            } else if shape.variadic {
+                if named || call.values.len() + 1 < shape.params.len() {
+                    continue;
+                }
+                self.fits(call, shape)
+            } else {
+                let fits = call.spread.is_none()
+                    && shape.params.len() == call.values.len()
+                    && (!named || shape.params.iter().all(|(name, _)| names.contains(name)));
+                if !fits {
+                    continue;
+                }
+                self.fits(call, shape)
+            };
+            by_shape.push(index);
+            if let Some(ranks) = ranks {
+                typed.push((index, ranks));
+            }
+        }
+        let variadic = |index: usize| shapes[index].0.variadic;
+        let typed = Self::fixed_first(typed, variadic);
+        let mut by_shape: Vec<(usize, Vec<u8>)> =
+            by_shape.into_iter().map(|index| (index, Vec::new())).collect();
+        by_shape = Self::fixed_first(by_shape, variadic);
+        let omitted = |index: usize| match &info.ctors[index].shape {
+            CtorShape::Shorthand { fields, .. } => fields
+                .iter()
+                .filter(|field| !names.contains(&info.fields[**field].name))
+                .count(),
+            CtorShape::Full { .. } => 0,
+        };
+        let fewest = |found: Vec<(usize, Vec<u8>)>| {
+            if !named || found.len() < 2 {
+                return found;
+            }
+            let least = found.iter().map(|(index, _)| omitted(*index)).min().unwrap_or(0);
+            found
+                .into_iter()
+                .filter(|(index, _)| omitted(*index) == least)
+                .collect::<Vec<_>>()
+        };
+        let by_shape = fewest(by_shape).into_iter().map(|(index, _)| index).collect();
+        (by_shape, fewest(typed))
+    }
+
     /// `Object(args)`; `type_args` — известная специализация generic-объекта.
     pub(super) fn construct(
         &mut self,
@@ -843,55 +956,20 @@ impl Checker<'_, '_> {
         let shapes = self.ctor_shapes(object, &env);
         let object_ty = Ty::Object(object, type_args.clone());
         let name = self.type_name(&object_ty);
-        let named = call.named();
         let names = call.names();
-        let mut candidates = Vec::new();
-        for (index, (shape, shorthand)) in shapes.iter().enumerate() {
-            let fits = if *shorthand {
-                let info = &self.reg.objects[object.0];
-                let CtorShape::Shorthand { fields, .. } = &info.ctors[index].shape else {
-                    unreachable!("shorthand shapes come from shorthand constructors")
-                };
-                let allowed: HashSet<&str> = fields
-                    .iter()
-                    .map(|field| info.fields[*field].name.as_str())
-                    .collect();
-                let required = fields
-                    .iter()
-                    .filter(|field| info.fields[**field].default.is_none())
-                    .all(|field| names.contains(&info.fields[*field].name));
-                call.spread.is_none()
-                    && (named || call.values.is_empty())
-                    && names.iter().all(|name| allowed.contains(name.as_str()))
-                    && required
-            } else if shape.variadic {
-                self.fits(&call, shape).is_some()
-            } else {
-                call.spread.is_none()
-                    && shape.params.len() == call.values.len()
-                    && (!named || shape.params.iter().all(|(name, _)| names.contains(name)))
-            };
-            if fits {
-                candidates.push(index);
-            }
-        }
-        // Несколько подходящих форм с именами: меньше пропущенных полей shorthand (как Perl).
-        if candidates.len() > 1 && named {
-            let omitted = |index: &usize| match &self.reg.objects[object.0].ctors[*index].shape {
-                CtorShape::Shorthand { fields, .. } => fields
-                    .iter()
-                    .filter(|field| {
-                        !names.contains(&self.reg.objects[object.0].fields[**field].name)
-                    })
-                    .count(),
-                CtorShape::Full { .. } => 0,
-            };
-            let fewest = candidates.iter().map(omitted).min().unwrap_or(0);
-            candidates.retain(|index| omitted(index) == fewest);
-        }
-        let ctor = match candidates.as_slice() {
-            [ctor] => *ctor,
-            [] => {
+        let (by_shape, typed) = self.ctor_candidates(object, &shapes, &call, &env);
+        // Типам не подошёл никто, а по форме — ровно один: его ошибку типа
+        // точнее сообщит `arrange`.
+        let chosen = if typed.is_empty() && by_shape.len() == 1 {
+            Ok(by_shape[0])
+        } else if typed.is_empty() {
+            Err(false)
+        } else {
+            Self::most_specific(typed)
+        };
+        let ctor = match chosen {
+            Ok(ctor) => ctor,
+            Err(false) => {
                 let message = format!(
                     "No constructor of \"{name}\" accepts ({})",
                     self.type_list(&call)
@@ -899,7 +977,7 @@ impl Checker<'_, '_> {
                 self.error(span, message);
                 return Self::poisoned(span);
             }
-            _ => {
+            Err(true) => {
                 self.error(span, format!("Ambiguous construction of \"{name}\""));
                 return Self::poisoned(span);
             }

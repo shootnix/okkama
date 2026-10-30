@@ -743,7 +743,7 @@ modules have no implementation checkbox until their slice is actually tested.
 
 **Represents:** filesystem locators, observations and owned resources.
 
-**Roles/objects:** `Path`, `JoinedPath`, `NativePathStyle`, `PathStyleCode`.
+**Roles/objects:** `Path`, `NativePathStyle`, `PathStyleCode`.
 
 **Behavior:** public signatures are listed in the [current API](stdlib-api-v4.md); design decisions are recorded in the matching audit section and the required redesigns above.
 

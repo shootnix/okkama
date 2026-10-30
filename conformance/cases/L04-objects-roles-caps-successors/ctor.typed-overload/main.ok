@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Duration {
+    has text is string;
+    Duration(ms is int) { text = "ms " + ms.string(); }
+    Duration(spelled is string) { text = "text " + spelled; }
+    Duration(other is any) { text = "any"; }
+    shown() is string { text; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Duration(250).shown());
+    out.writeln(Duration("1s").shown());
+    out.writeln(Duration(1.5).shown());
+    0;
+}

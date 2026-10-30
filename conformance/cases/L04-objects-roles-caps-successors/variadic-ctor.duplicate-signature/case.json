@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.variadic-ctor.duplicate-signature",
+  "title": "two variadic constructors with the same tail type are duplicates",
+  "purpose": "Variadic constructor calls are positional, so names cannot distinguish them.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.VARIADIC-CONSTRUCTOR",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "parse",
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "syntax",
+        "semantic",
+        "runtime"
+      ],
+      "justification": "A declaration-level rule checked after parsing; an implementation may also detect it at registration/runtime. The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.3: constructors with the same parameter types and variadic tail are the same signature."
+  },
+  "status": "mandatory"
+}

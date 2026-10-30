@@ -1,0 +1,27 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Box<T> {
+    has items is @T;
+    has origin is string;
+    Box(value is T) {
+        items = [value];
+        origin = "value";
+    }
+    Box(values is ...T) {
+        let all is @T = values...;
+        items = all;
+        origin = "values";
+    }
+    describe() is string { origin + " " + items.size().string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Box(1).describe());
+    out.writeln(Box("a", "b").describe());
+    let bytes is Box<int> = Box();
+    out.writeln(bytes.describe());
+    0;
+}

@@ -6,7 +6,7 @@ the record documents the failing implementation.
 | Defect | Implementation | Case | Summary |
 |---|---|---|---|
 | [DEF-001](DEF-001.md) | okkama-perl | `L01.gram.constructor.shorthand-trailing-comma` | parser rejects the trailing comma the EBNF allows in constructor shorthand |
-| [DEF-002](DEF-002.md) | okkama-perl | `L03.variadic.overloaded` | an overloaded variadic action is accepted and runs |
+| [DEF-002](DEF-002.md) | okkama-perl | — | **withdrawn**: variadic overloads were allowed, a fixed overload is preferred |
 | [DEF-003](DEF-003.md) | okkama-perl | `L05.map.int-key-order` | int map keys are ordered as text (`-1,10,100,9`) |
 | [DEF-004](DEF-004.md) | okkama-perl | `L05.map.byte-keys-rejected` | byte values are accepted as map keys |
 | [DEF-005](DEF-005.md) | okkama-perl | `L02.int.overflow-wraps` | int is not exact beyond −2^63…2^64−1 (MIN-1 fails) |

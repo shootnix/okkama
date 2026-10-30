@@ -2195,14 +2195,12 @@ keep their existing declaration syntax.
 - [x] object `Path` does `Comparing<Path>`
   - [x] `Path(origin is string)`
   - [x] `Path(origin is string, style is PathStyle)`
+  - [x] `Path(parts is ...string)`
   - [x] `parent() is Path`
   - [x] `child(part is string) is Path`
   - [x] `absolute() is bool`
   - [x] `order(other is Path) is Order`
   - [x] `string() is string`
-- [x] object `JoinedPath`
-  - [x] `JoinedPath(parts is ...string)`
-  - [x] `#projected value() is Path`
 - [x] object `NativePathStyle`
   - [x] `NativePathStyle()`
   - [x] `#projected value() is PathStyle`
@@ -2236,9 +2234,9 @@ keep their existing declaration syntax.
   - [ ] `ResolvedPath(origin is Path)`
   - [ ] `#projected value() is Path`
 - [x] Keep `Path` purely lexical.
-- [x] Make `JoinedPath` select the current platform's path grammar internally.
+- [x] Make the variadic `Path(parts is ...string)` select the current platform's path grammar internally.
 - [x] Keep explicit `PathStyle` only for parsing paths belonging to another platform.
-- [x] Reject an empty `JoinedPath` parts list and empty individual parts.
+- [x] Reject an empty `Path(parts...)` parts list and empty individual parts.
 - [x] Let a later absolute part replace every previously accumulated part.
 - [x] Do not normalize `.` or `..` while joining.
 - [x] Do not consult the filesystem while joining.

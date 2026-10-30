@@ -297,14 +297,14 @@ RoleName.fake(...) is valid only inside test code;
 variadic parameters are valid only on object actions, role action signatures, fake actions, and full constructors;
 a variadic parameter must be unique, final, explicitly typed, and have no default value;
 a variadic full constructor is positional-call-only and rejects named calls;
-an object that declares a variadic full constructor cannot declare any other constructor;
+a variadic full constructor overloads with other constructors; a fitting fixed or shorthand constructor is preferred;
 generic declaration parameters are valid on objects and roles;
 generic parameters must be uppercase, ordered, unique, and may not shadow their declaration name;
 applied object and role types must provide exactly the declaration's generic arity;
 generic role fakes obtain their exact specialization from a declared target type;
 every ordinary source object must declare at least one constructor;
 constructors are never generated from has declarations;
-full constructor calls require an exact explicit arity match;
+full constructor calls are selected like action overloads: by arity, named-parameter shape, parameter types and specificity;
 constructor field shorthand is named-only and selected by allowed/required field compatibility;
 constructor field shorthand entries must name explicitly typed fields on the same object;
 constructor selection never falls back to all has fields or their order;
@@ -314,7 +314,7 @@ a projected action must be public, synchronous, zero-argument, explicitly typed,
 projection prefixes are resolved from the statically resolved constructor target during semantic analysis; they are not module bindings and do not apply to arbitrary expressions;
 the directive marks one declaration and selects its action name; unmarked fixed overloads of that name remain available, and projection invokes the ordinary zero-argument overload;
 single `&` projection declaration/expression syntax is removed; `&&` remains boolean conjunction;
-actions with a variadic parameter do not participate in action overloading;
+actions with a variadic parameter overload with fixed and other variadic actions; a variadic tail counts as one parameter of the arity, and a call that fits a fixed signature never selects a variadic one;
 fixed action overloads are selected by arity, named-parameter shape, runtime
 argument compatibility, and specificity; declaration order is never a
 tie-breaker;

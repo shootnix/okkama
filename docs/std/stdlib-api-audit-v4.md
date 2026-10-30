@@ -611,7 +611,6 @@ Real temporary filesystem, symlink boundaries, missing paths, repeated close, es
 | --- | --- | --- | --- |
 | `PathStyle` | Domain atom / role / runtime-owned state | No public action declarations | keep: closed domain vocabulary; no methods or mutable namespace |
 | `Path` | `origin:string`; `path_style:PathStyle` | `parent() is Path`<br>`child(part is string) is Path`<br>`absolute() is bool`<br>`order(other is Path) is Order`<br>`string() is string` | keep with module effect policy: Path represents a specific capability, locator or coherent observation; explicit coordinates/representations, no generic data protocol |
-| `JoinedPath` | `origin:@string` | `value() is Path` | keep with module effect policy: JoinedPath represents a specific capability, locator or coherent observation; explicit coordinates/representations, no generic data protocol |
 | `NativePathStyle` | Domain atom / role / runtime-owned state | `value() is PathStyle` | keep with module effect policy: NativePathStyle represents a specific capability, locator or coherent observation; explicit coordinates/representations, no generic data protocol |
 | `PathStyleCode` | `origin:PathStyle` | `value() is int` | keep at implementation boundary: PathStyleCode represents the algorithm/adapter coordinates listed here; not a general service; module-private enforcement is unavailable |
 | `InvalidPath` | `message:string` | `text() is string` | keep: typed failure and explicit diagnostic coordinates, not success-data transport |

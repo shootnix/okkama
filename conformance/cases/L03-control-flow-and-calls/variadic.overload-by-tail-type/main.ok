@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show();
+    kind(values is ...int) is string { "int"; }
+    kind(values is ...string) is string { "string"; }
+    kind(values is ...any) is string { "any"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let s = Show();
+    let words is @string = ["a", "b"];
+    out.writeln(s.kind(1, 2));
+    out.writeln(s.kind("a"));
+    out.writeln(s.kind(1, "a"));
+    out.writeln(s.kind(words...));
+    0;
+}

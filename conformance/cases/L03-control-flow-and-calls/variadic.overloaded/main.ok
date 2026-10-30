@@ -1,11 +1,21 @@
 module app v1.0.0;
 
+import "io/stdout" take Stdout;
+
 object Summer {
     Summer();
-    total(values is ...int) is int { 0; }
+    total(values is ...int) is int {
+        let all is @int = values...;
+        100 + all.size();
+    }
     total(a is int) is int { a; }
 }
 
 main() is int {
-    Summer().total(1);
+    let out = Stdout();
+    let s = Summer();
+    out.writeln(s.total(1).string());
+    out.writeln(s.total().string());
+    out.writeln(s.total(1, 2).string());
+    s.total(7);
 }

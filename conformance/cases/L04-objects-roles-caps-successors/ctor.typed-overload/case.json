@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.ctor.typed-overload",
+  "title": "constructors of one arity are selected by parameter types",
+  "purpose": "Full constructors overload by parameter types like actions; exact types are more specific than any.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTORS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ms 250\ntext 1s\nany\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.3",
+    "docs/okkama-spec-11072026.md#11.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.3: constructor overloads use the action overload specificity rules."
+  },
+  "status": "mandatory"
+}

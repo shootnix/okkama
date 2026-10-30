@@ -60,6 +60,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `"` and `/` open completion only inside import paths, so division does not.
 - `blade new` writes `blade.toml` (it was `NAME.toml`), creates `pkg/` (it was `lib/`)
   and starts `src/main.ok` with `module NAME;`.
+- **Variadic and typed overloads** (spec §11.3, §11.8).
+  - An action or constructor may have several variadic overloads that differ in
+    parameter types (`kind(values is ...int)`, `kind(values is ...string)`), next to
+    fixed ones.
+  - A variadic tail counts as one parameter of the arity, and `...int` differs from
+    `int`.
+  - A call that fits a fixed signature never selects a variadic one: next to
+    `total(values is ...int)`, `total(a is int)` takes `total(1)`, while `total()`
+    and `total(1, 2)` take the tail.
+  - Constructors of one arity are selected by parameter types, like actions:
+    `Duration(ms is int)` and `Duration(text is string)`.
+  - A variadic constructor no longer has to be the only constructor:
+    `Path(origin is string)` and `Path(parts is ...string)` can coexist.
+  - A generic object infers its arguments from each constructor that fits the call.
+  - Two variadic signatures with the same types are a declaration error, because names
+    cannot tell them apart in a positional call. So are two constructors with identical
+    signatures.
 
 ### Fixed
 
@@ -81,6 +98,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   imports only inside itself, so a file such as `io/stream.ok` in a program or in
   `OKKAMA_IMPORT_DIRS` no longer breaks std.
 
+- **`fs/path`: `JoinedPath` is removed.** Its join is the variadic constructor
+  `Path(parts is ...string)`: write `Path("etc", "okkama", "config.toml")` in place of
+  `value JoinedPath("etc", "okkama", "config.toml")`. The rules are unchanged: the current
+  platform's style, `InvalidPath` for an empty part list or an empty part, and a later
+  absolute part replaces the parts before it. `Path(text)` and `Path(text, style)` keep
+  their meaning.
+- Overloads of one name and arity declare the same result also when one of them is
+  variadic. An object's action that breaks a role signature shows a variadic tail as
+  `...int` in the error (it was `@int`).
+- Conformance: `L03.variadic.overloaded` and `L04.variadic-ctor.with-other-constructor`
+  now expect success under the new overload rules, and DEF-002 is withdrawn.
 - A program that would load two different files declaring the same module path (for
   example a local module shadowing std next to a `std.` path to it) is now rejected with a
   clear error instead of an internal compiler error.

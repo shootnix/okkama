@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show();
+    kind(values is ...int) is string { "int"; }
+    kind(values is ...string) is string { "string"; }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Show().kind());
+    0;
+}

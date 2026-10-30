@@ -1530,8 +1530,8 @@ Cash(value is int) {
   is no general assignment in the language.
 - By the end of construction every field must be initialized (bound or
   defaulted): `Object "Cash" field "cents" was not initialized` otherwise.
-- Full constructors overload **by exact arity**. Multiple compatible
-  signatures are ambiguous; declaration order never breaks ties; there is no
+- Full constructors overload like actions (18.3): by arity and parameter
+  types. Equally specific compatible signatures are ambiguous; declaration order never breaks ties; there is no
   fallback that derives a signature from `has` fields.
 
 Keep constructors focused on binding, simple normalization and explicit
@@ -1576,9 +1576,10 @@ Member(:id, :name) {
 
 - `Marker();` is the zero-field shorthand — a distinct, valid form for
   stateless objects.
-- Selection: full constructors match by exact arity; shorthands match by
-  named-field compatibility (all supplied names allowed, all required names
-  present). Cross-compatible signatures are ambiguous errors.
+- Selection: full constructors match by arity and parameter types (18.3);
+  shorthands match by named-field compatibility (all supplied names allowed,
+  all required names present, values fit the field types). Equally specific
+  signatures are ambiguous errors.
 
 ### 17.4 Variadic constructors
 
@@ -1601,8 +1602,10 @@ object Min<T> {
   before evaluating arguments.
 - The fixed prefix sets the minimum arity; each tail value is checked left to
   right against the element type.
-- An object with a variadic constructor cannot declare **any** other
-  constructor.
+- A variadic constructor overloads with other constructors. A fixed or
+  shorthand constructor that fits the call wins, so `Bag()` next to
+  `Bag(items is ...int)` takes the empty constructor, and `Bag(1, 2)` the
+  variadic one.
 - Inside the body the parameter is an opaque `varargs<T>`; unpack it with
   `rest...` as a `let` value, a complete field-bind value, or a `for` source.
 - Exact generic inference runs across the fixed prefix and every tail value.
@@ -1848,7 +1851,8 @@ resolution is uniform): `Action "secret" on object "Cash" is private`.
 
 ### 18.3 Typed action overloads
 
-Fixed (non-variadic) actions overload by arity **and** parameter types:
+Actions overload by arity **and** parameter types. A variadic tail counts
+as one parameter, and `...int` is a different type from `int`:
 
 ```okkama
 print(value is int) is int { 1; }
@@ -1859,8 +1863,10 @@ print(value is any) is int { 3; }
 Resolution:
 
 1. Receiver and arguments evaluate exactly once, left to right.
-2. Candidates filter by fixed arity and named-parameter shape; then evaluated
-   runtime values are checked against declared types.
+2. Candidates filter by arity and named-parameter shape (a variadic one
+   takes at least its fixed prefix); then argument types are checked against
+   declared types.
+   If a fixed candidate fits, variadic candidates are not considered.
 3. Specificity: exact concrete/applied types beat role-compatible types, and
    both beat `any`; a concrete collection element type beats a shape
    containing `any`.
@@ -1873,11 +1879,17 @@ Resolution:
    during selection.
 7. Named calls additionally filter by parameter names, so same-type
    signatures can be distinguished by name where a positional call cannot.
-8. All overloads of one name must declare compatible return types.
+8. Overloads of one name and arity must declare the same return type.
+9. A variadic tail compares its element type with every tail value. A call
+   with an empty tail is ambiguous between `f(xs is ...int)` and
+   `f(xs is ...string)`; declare `f()` to give it a meaning.
 
-Overload selection applies to actions only — not constructors (exact arity /
-named-field rules instead) and not native functions. Variadic action names
-cannot be overloaded.
+```okkama
+total(values is ...int) is int { 0; }
+total(a is int) is int { a; }      // total(1) — this one; total(), total(1, 2) — the tail
+```
+
+Constructors use the same selection (17.2). Native functions do not overload.
 
 ### 18.4 Variadic actions
 

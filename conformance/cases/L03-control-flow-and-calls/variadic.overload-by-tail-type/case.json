@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.variadic.overload-by-tail-type",
+  "title": "variadic overloads differ by tail element type",
+  "purpose": "Variadic overloads are selected by the specificity of every tail value; an unpacked array selects by its element type.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "CALL.VARIADIC",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "int\nstring\nany\nstring\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8",
+    "docs/okkama-spec-11072026.md#11.8.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for typed and variadic overloads",
+    "expected_basis": "spec 11.8: exact element types are more specific than any; a mixed tail fits only ...any."
+  },
+  "status": "mandatory"
+}
