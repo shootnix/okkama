@@ -459,6 +459,62 @@ public final class TextNatives {
         return out;
     }
 
+    // ---- runtime/number_text ----
+
+    // Запись strings/parse::ParsedInt: необязательный '-', при radix 0 — префикс
+    // 0b/0o/0x (иначе основание 10), затем хотя бы одна цифра 0-9a-zA-Z.
+    private static BigInteger intParse(String text, BigInteger radix) {
+        if (radix.bitLength() > 31) {
+            return null;
+        }
+        int base = radix.intValue();
+        if (base != 0 && (base < 2 || base > 36)) {
+            return null;
+        }
+        boolean negative = text.startsWith("-");
+        String unsigned = negative ? text.substring(1) : text;
+        String digits = unsigned;
+        if (base == 0) {
+            String prefix = unsigned.length() >= 2 ? unsigned.substring(0, 2).toLowerCase(java.util.Locale.ROOT) : "";
+            if (prefix.equals("0b")) {
+                base = 2;
+            } else if (prefix.equals("0o")) {
+                base = 8;
+            } else if (prefix.equals("0x")) {
+                base = 16;
+            } else {
+                base = 10;
+            }
+            if (base != 10) {
+                digits = unsigned.substring(2);
+            }
+        }
+        if (digits.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < digits.length(); i++) {
+            char symbol = digits.charAt(i);
+            if (symbol > 'z' || Character.digit(symbol, base) < 0) {
+                return null;
+            }
+        }
+        BigInteger magnitude = new BigInteger(digits, base);
+        return negative ? magnitude.negate() : magnitude;
+    }
+
+    public static boolean runtime_number_text__int_parse_valid(String text, BigInteger radix) {
+        return intParse(text, radix) != null;
+    }
+
+    public static BigInteger runtime_number_text__int_parse(String text, BigInteger radix) {
+        BigInteger value = intParse(text, radix);
+        if (value == null) {
+            throw failure("core.number_text", "invalid_input", "runtime/number_text@1::int_parse/2",
+                    "invalid integer spelling");
+        }
+        return value;
+    }
+
     // ---- runtime/collections ----
 
     public static boolean runtime_collections__string_star_match(String pattern, String target,

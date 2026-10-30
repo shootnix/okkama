@@ -4204,6 +4204,7 @@ are not a declaration that all Stage26/27 roadmap rows are complete.
 | runtime/testing | native test_context_active(); TestState; test_state_open/next/size/close | bool flag and test-context-only bounded native cursor/capacity owners |
 | runtime/locale | native preferred_language_tags() | @string, bounded Unicode snapshot; POSIX policy remains in stdlib |
 | runtime/debug | existing native data_dump(any) declaration | string diagnostic boundary already registered by core.debug |
+| runtime/number_text | native int_parse_valid(text,radix); int_parse(text,radix) | ParsedInt spelling: optional `-`, 0b/0o/0x only with radix 0, digits 0-9a-zA-Z below the base, any length; int_parse fails with invalid_input where int_parse_valid is false |
 
 The generated CLDR internals and checker/state/report helpers remain importable
 infrastructure because module-private declarations are not available. Main Error

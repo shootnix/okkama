@@ -11792,14 +11792,14 @@
      "actions": [
       {
        "async": false,
-       "line": 54,
+       "line": 55,
        "name": "item",
        "params": "",
        "result": "T"
       },
       {
        "async": false,
-       "line": 58,
+       "line": 59,
        "name": "amount",
        "params": "",
        "result": "int"
@@ -11808,7 +11808,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 47,
+       "line": 48,
        "params": "item is T , amount is int"
       }
      ],
@@ -11823,7 +11823,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 43,
+     "line": 44,
      "name": "Frequency",
      "private_actions": [],
      "tests": 0
@@ -11832,28 +11832,28 @@
      "actions": [
       {
        "async": false,
-       "line": 79,
+       "line": 74,
        "name": "cursor",
        "params": "",
        "result": "Cursor < Frequency < T > >"
       },
       {
        "async": false,
-       "line": 83,
+       "line": 78,
        "name": "size",
        "params": "",
        "result": "int"
       },
       {
        "async": false,
-       "line": 87,
+       "line": 82,
        "name": "amount",
        "params": "value is T",
        "result": "int"
       },
       {
        "async": false,
-       "line": 100,
+       "line": 95,
        "name": "total",
        "params": "",
        "result": "int"
@@ -11862,7 +11862,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 67,
+       "line": 68,
        "params": "values is Iterating < T >"
       }
      ],
@@ -11880,7 +11880,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 63,
+     "line": 64,
      "name": "Frequencies",
      "private_actions": [],
      "tests": 0
@@ -11889,21 +11889,68 @@
      "actions": [
       {
        "async": false,
-       "line": 116,
+       "line": 109,
        "name": "frequencies",
        "params": "",
        "result": "List < Frequency < T > >"
       },
       {
        "async": false,
-       "line": 120,
+       "line": 132,
+       "name": "total",
+       "params": "",
+       "result": "int"
+      }
+     ],
+     "caps": [],
+     "constructors": [
+      {
+       "line": 105,
+       "params": "values is Iterating < T >"
+      }
+     ],
+     "does": [],
+     "fields": [
+      "items"
+     ],
+     "generics": [
+      "T"
+     ],
+     "has_destroy": false,
+     "has_fake": false,
+     "kind": "object",
+     "line": 102,
+     "name": "FrequencyTally",
+     "private_actions": [
+      {
+       "async": false,
+       "line": 138,
+       "name": "listed",
+       "params": "found is @ T , value is T",
+       "result": "bool"
+      }
+     ],
+     "tests": 0
+    },
+    {
+     "actions": [
+      {
+       "async": false,
+       "line": 163,
+       "name": "frequencies",
+       "params": "",
+       "result": "List < Frequency < T > >"
+      },
+      {
+       "async": false,
+       "line": 167,
        "name": "total",
        "params": "",
        "result": "int"
       },
       {
        "async": false,
-       "line": 124,
+       "line": 171,
        "name": "addition",
        "params": "value is T",
        "result": "FrequencyBuilding < T >"
@@ -11912,7 +11959,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 109,
+       "line": 156,
        "params": "frequencies is List < Frequency < T > > , total is int"
       }
      ],
@@ -11927,7 +11974,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 105,
+     "line": 152,
      "name": "FrequencyBuilding",
      "private_actions": [],
      "tests": 0
@@ -11936,21 +11983,21 @@
      "actions": [
       {
        "async": false,
-       "line": 162,
+       "line": 209,
        "name": "frequencies",
        "params": "",
        "result": "List < Frequency < T > >"
       },
       {
        "async": false,
-       "line": 166,
+       "line": 213,
        "name": "membership",
        "params": "",
        "result": "bool"
       },
       {
        "async": false,
-       "line": 170,
+       "line": 217,
        "name": "addition",
        "params": "frequency is Frequency < T >",
        "result": "FrequencyRevision < T >"
@@ -11959,7 +12006,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 152,
+       "line": 199,
        "params": "frequencies is List < Frequency < T > > , value is T , present is bool ,"
       }
      ],
@@ -11975,7 +12022,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 147,
+     "line": 194,
      "name": "FrequencyRevision",
      "private_actions": [],
      "tests": 0
@@ -12013,9 +12060,9 @@
    ],
    "module": "collections/frequencies",
    "path": "collections/frequencies.ok",
-   "public_actions": 12,
-   "public_declarations": 4,
-   "sha256": "6b8681b5aedeb558add9266db821cb5bd783a9a3b216a02e05a029e7da47ddd2",
+   "public_actions": 14,
+   "public_declarations": 5,
+   "sha256": "8cf94466f35bbbfe779cce96679afd55ffd3bc0685bc83c6625efd7123869b02",
    "version": "v1.0.0"
   },
   {
@@ -136734,6 +136781,35 @@
    "class": "substrate",
    "declarations": [
     {
+     "async": false,
+     "kind": "native-action",
+     "line": 7,
+     "name": "int_parse_valid",
+     "params": "text is string , radix is int",
+     "result": "bool"
+    },
+    {
+     "async": false,
+     "kind": "native-action",
+     "line": 9,
+     "name": "int_parse",
+     "params": "text is string , radix is int",
+     "result": "int"
+    }
+   ],
+   "import_path": "runtime/number_text",
+   "imports": [],
+   "module": "runtime/number_text",
+   "path": "runtime/number_text.ok",
+   "public_actions": 0,
+   "public_declarations": 0,
+   "sha256": "0dc1198690babbe181b00dff8b1b0fb311f89267b4ff57443c0351b3b3768608",
+   "version": "v1.0.0"
+  },
+  {
+   "class": "substrate",
+   "declarations": [
+    {
      "actions": [
       {
        "async": false,
@@ -139154,7 +139230,7 @@
      "actions": [
       {
        "async": false,
-       "line": 41,
+       "line": 43,
        "name": "value",
        "params": "",
        "result": "int"
@@ -139163,11 +139239,11 @@
      "caps": [],
      "constructors": [
       {
-       "line": 20,
+       "line": 22,
        "params": "origin is string"
       },
       {
-       "line": 30,
+       "line": 32,
        "params": "origin is string , base is int"
       }
      ],
@@ -139180,24 +139256,16 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 16,
+     "line": 18,
      "name": "ParsedInt",
-     "private_actions": [
-      {
-       "async": false,
-       "line": 106,
-       "name": "digit",
-       "params": "index is int , base is int",
-       "result": "int"
-      }
-     ],
+     "private_actions": [],
      "tests": 2
     },
     {
      "actions": [
       {
        "async": false,
-       "line": 166,
+       "line": 84,
        "name": "value",
        "params": "",
        "result": "float"
@@ -139206,7 +139274,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 158,
+       "line": 76,
        "params": "origin is string"
       }
      ],
@@ -139218,26 +139286,26 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 155,
+     "line": 73,
      "name": "ParsedFloat",
      "private_actions": [
       {
        "async": false,
-       "line": 226,
+       "line": 144,
        "name": "decimal",
        "params": "offset is int",
        "result": "int"
       },
       {
        "async": false,
-       "line": 238,
+       "line": 156,
        "name": "digits",
        "params": "start is int , end is int",
        "result": "float"
       },
       {
        "async": false,
-       "line": 244,
+       "line": 162,
        "name": "digit",
        "params": "index is int",
        "result": "float"
@@ -139249,7 +139317,7 @@
      "actions": [
       {
        "async": false,
-       "line": 277,
+       "line": 195,
        "name": "value",
        "params": "",
        "result": "rat"
@@ -139258,7 +139326,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 269,
+       "line": 187,
        "params": "origin is string"
       }
      ],
@@ -139270,7 +139338,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 266,
+     "line": 184,
      "name": "ParsedRat",
      "private_actions": [],
      "tests": 2
@@ -139279,7 +139347,7 @@
      "actions": [
       {
        "async": false,
-       "line": 326,
+       "line": 244,
        "name": "value",
        "params": "",
        "result": "bool"
@@ -139288,7 +139356,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 321,
+       "line": 239,
        "params": "origin is string"
       }
      ],
@@ -139300,7 +139368,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 318,
+     "line": 236,
      "name": "ParsedBool",
      "private_actions": [],
      "tests": 2
@@ -139309,7 +139377,7 @@
      "actions": [
       {
        "async": false,
-       "line": 377,
+       "line": 295,
        "name": "value",
        "params": "",
        "result": "byte"
@@ -139318,11 +139386,11 @@
      "caps": [],
      "constructors": [
       {
-       "line": 358,
+       "line": 276,
        "params": "origin is string"
       },
       {
-       "line": 367,
+       "line": 285,
        "params": "origin is string , base is int"
       }
      ],
@@ -139335,12 +139403,12 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 354,
+     "line": 272,
      "name": "ParsedByte",
      "private_actions": [
       {
        "async": false,
-       "line": 437,
+       "line": 355,
        "name": "digit",
        "params": "index is int , base is int",
        "result": "int"
@@ -139352,14 +139420,14 @@
      "actions": [
       {
        "async": false,
-       "line": 493,
+       "line": 411,
        "name": "source",
        "params": "",
        "result": "string"
       },
       {
        "async": false,
-       "line": 498,
+       "line": 416,
        "name": "text",
        "params": "",
        "result": "string"
@@ -139368,7 +139436,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 489,
+       "line": 407,
        "params": "str is string"
       }
      ],
@@ -139382,7 +139450,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 486,
+     "line": 404,
      "name": "InvalidInteger",
      "private_actions": [],
      "tests": 0
@@ -139391,14 +139459,14 @@
      "actions": [
       {
        "async": false,
-       "line": 510,
+       "line": 428,
        "name": "source",
        "params": "",
        "result": "string"
       },
       {
        "async": false,
-       "line": 515,
+       "line": 433,
        "name": "text",
        "params": "",
        "result": "string"
@@ -139407,7 +139475,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 506,
+       "line": 424,
        "params": "str is string"
       }
      ],
@@ -139421,7 +139489,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 503,
+     "line": 421,
      "name": "InvalidFloat",
      "private_actions": [],
      "tests": 0
@@ -139430,14 +139498,14 @@
      "actions": [
       {
        "async": false,
-       "line": 527,
+       "line": 445,
        "name": "source",
        "params": "",
        "result": "string"
       },
       {
        "async": false,
-       "line": 532,
+       "line": 450,
        "name": "text",
        "params": "",
        "result": "string"
@@ -139446,7 +139514,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 523,
+       "line": 441,
        "params": "str is string"
       }
      ],
@@ -139460,7 +139528,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 520,
+     "line": 438,
      "name": "InvalidRational",
      "private_actions": [],
      "tests": 0
@@ -139469,14 +139537,14 @@
      "actions": [
       {
        "async": false,
-       "line": 544,
+       "line": 462,
        "name": "source",
        "params": "",
        "result": "string"
       },
       {
        "async": false,
-       "line": 549,
+       "line": 467,
        "name": "text",
        "params": "",
        "result": "string"
@@ -139485,7 +139553,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 540,
+       "line": 458,
        "params": "str is string"
       }
      ],
@@ -139499,7 +139567,7 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 537,
+     "line": 455,
      "name": "InvalidBoolean",
      "private_actions": [],
      "tests": 0
@@ -139508,14 +139576,14 @@
      "actions": [
       {
        "async": false,
-       "line": 561,
+       "line": 479,
        "name": "source",
        "params": "",
        "result": "string"
       },
       {
        "async": false,
-       "line": 566,
+       "line": 484,
        "name": "text",
        "params": "",
        "result": "string"
@@ -139524,7 +139592,7 @@
      "caps": [],
      "constructors": [
       {
-       "line": 557,
+       "line": 475,
        "params": "str is string"
       }
      ],
@@ -139538,19 +139606,27 @@
      "has_destroy": false,
      "has_fake": false,
      "kind": "object",
-     "line": 554,
+     "line": 472,
      "name": "InvalidByte",
      "private_actions": [],
      "tests": 0
     }
    ],
    "import_path": "strings/parse",
-   "imports": [],
+   "imports": [
+    {
+     "path": "runtime/number_text",
+     "take": [
+      "int_parse_valid",
+      "int_parse"
+     ]
+    }
+   ],
    "module": "strings/parse",
    "path": "strings/parse.ok",
    "public_actions": 15,
    "public_declarations": 10,
-   "sha256": "a9960903a23b817769c8acadd3b3b971be67ce952e32ddd58f984041e87ec3d9",
+   "sha256": "f6d482f7017888c28a8c51aa65a0591ad7fac50cc4f62ff62323537de6afbe08",
    "version": "v1.0.0"
   },
   {
@@ -159013,10 +159089,10 @@
  "root": "../std",
  "schema": "ocs-stdlib-inventory/1",
  "totals": {
-  "declarations": 3749,
-  "modules": 506,
-  "public_actions": 7077,
+  "declarations": 3752,
+  "modules": 507,
+  "public_actions": 7079,
   "public_modules": 446,
-  "substrate_modules": 60
+  "substrate_modules": 61
  }
 }

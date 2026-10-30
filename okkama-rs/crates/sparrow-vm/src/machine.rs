@@ -571,8 +571,18 @@ pub(crate) fn transfer_registers(registers: &mut [Value], target: &Target, paylo
         [] => {}
         // Одна запись: снимок не нужен.
         [(dst, source)] => {
-            let value = read(registers, *source)?.clone();
-            registers[dst.0 as usize] = value;
+            let value = read(registers, *source)?.copied();
+            Value::store(&mut registers[dst.0 as usize], value);
+        }
+        // Снимок короткого списка — на стеке.
+        moves if moves.len() <= 8 => {
+            let mut values: [Value; 8] = std::array::from_fn(|_| Value::Undef);
+            for (slot, (_, source)) in values.iter_mut().zip(moves) {
+                *slot = read(registers, *source)?.copied();
+            }
+            for ((dst, _), value) in moves.iter().zip(values) {
+                Value::store(&mut registers[dst.0 as usize], value);
+            }
         }
         moves => {
             let values = moves
@@ -1182,6 +1192,180 @@ pub(crate) fn evaluate<'a>(
     }
 }
 
+/// Итог быстрого пути инструкции.
+enum Fast {
+    /// Исполнена; продолжить с текущего кадра.
+    Done,
+    /// Корневой кадр вернул значение.
+    Finished(Option<Value>),
+    /// Не подходит — общий путь `evaluate`.
+    Slow,
+}
+
+/// Наибольшее число свободных регистровых массивов в запасе.
+const SPARE_FRAMES: usize = 256;
+
+/// Регистры снятого кадра — в запас для следующего вызова.
+fn recycle(spare: &mut Vec<Vec<Value>>, mut registers: Vec<Value>) {
+    if spare.len() < SPARE_FRAMES {
+        Value::clear(&mut registers);
+        spare.push(registers);
+    }
+}
+
+/// Малое целое регистра.
+#[inline(always)]
+fn small(registers: &[Value], register: Register) -> Option<i64> {
+    match registers.get(register.0 as usize)? {
+        Value::Int(value) => value.to_i64(),
+        _ => None,
+    }
+}
+
+/// Частые инструкции прямо над регистрами кадра: константы, копии,
+/// арифметика и сравнения малых целых, переходы, прямые вызовы и возврат.
+/// Всё, что требует общей семантики (большие целые, отказы, регионы, JIT,
+/// native, async), уходит в `evaluate` (`Fast::Slow`) без побочных эффектов.
+#[inline(always)]
+fn fast(engine: &Rc<Engine>, frames: &mut Vec<Frame>, spare: &mut Vec<Vec<Value>>, index: usize, pc: usize, instruction: &I) -> Fast {
+    let program = &engine.program;
+    // С JIT обратные переходы и вызовы считают горячий код — общий путь.
+    let interpreted = engine.jit.is_none();
+    let frame = frames.last_mut().expect("frame");
+    let registers = &mut frame.registers;
+    let int = |value: Option<i64>| match value {
+        Some(value) => Some(Value::Int(IntValue::from_i64(value))),
+        None => None,
+    };
+    let (dst, value) = match instruction {
+        I::Const { dst, .. } => match engine.prepared(index) {
+            Ok(prepared) => (dst, prepared.constants[pc].copied()),
+            Err(_) => return Fast::Slow,
+        },
+        I::Move { dst, source } => match registers.get(source.0 as usize) {
+            Some(value) if !matches!(value, Value::Undef) => (dst, value.copied()),
+            _ => return Fast::Slow,
+        },
+        I::IntAdd { dst, left, right } | I::IntSub { dst, left, right } | I::IntMul { dst, left, right } => {
+            let (Some(a), Some(b)) = (small(registers, *left), small(registers, *right)) else {
+                return Fast::Slow;
+            };
+            let result = match instruction {
+                I::IntAdd { .. } => a.checked_add(b),
+                I::IntSub { .. } => a.checked_sub(b),
+                _ => a.checked_mul(b),
+            };
+            match int(result) {
+                Some(value) => (dst, value),
+                None => return Fast::Slow,
+            }
+        }
+        // `%` усекает к нулю, как `%` Rust; деление на ноль — общий путь.
+        I::IntMod { dst, left, right } => {
+            let (Some(a), Some(b)) = (small(registers, *left), small(registers, *right)) else {
+                return Fast::Slow;
+            };
+            match int(a.checked_rem(b)) {
+                Some(value) => (dst, value),
+                None => return Fast::Slow,
+            }
+        }
+        I::ValCmp { op, dst, left, right } => {
+            let (Some(a), Some(b)) = (small(registers, *left), small(registers, *right)) else {
+                return Fast::Slow;
+            };
+            (dst, Value::Bool((a == b) == (*op == Cmp::Eq)))
+        }
+        I::IntCmp { op, dst, left, right } => {
+            let (Some(a), Some(b)) = (small(registers, *left), small(registers, *right)) else {
+                return Fast::Slow;
+            };
+            let holds = match op {
+                Cmp::Eq => a == b,
+                Cmp::Ne => a != b,
+                Cmp::Lt => a < b,
+                Cmp::Le => a <= b,
+                Cmp::Gt => a > b,
+                Cmp::Ge => a >= b,
+            };
+            (dst, Value::Bool(holds))
+        }
+        I::Jump { target } => {
+            if !(interpreted || target.pc as usize > pc) || transfer_registers(registers, target, None).is_err() {
+                return Fast::Slow;
+            }
+            frame.pc = target.pc as usize;
+            return Fast::Done;
+        }
+        I::Branch { condition, then_target, else_target } => {
+            let target = match registers.get(condition.0 as usize) {
+                Some(Value::Bool(true)) => then_target,
+                Some(Value::Bool(false)) => else_target,
+                _ => return Fast::Slow,
+            };
+            if !(interpreted || target.pc as usize > pc) || transfer_registers(registers, target, None).is_err() {
+                return Fast::Slow;
+            }
+            frame.pc = target.pc as usize;
+            return Fast::Done;
+        }
+        I::Call { dst, function, args } if interpreted => {
+            let callee = function.0 as usize;
+            let target = &program.functions[callee];
+            if target.native.is_some() || target.intrinsic.is_some() || target.is_async || target.params.len() != args.len() {
+                return Fast::Slow;
+            }
+            let mut slots = spare.pop().unwrap_or_default();
+            slots.resize(target.registers.len(), Value::Undef);
+            for (param, arg) in target.params.iter().zip(args) {
+                match registers.get(arg.0 as usize) {
+                    Some(value) => Value::store(&mut slots[param.0 as usize], value.copied()),
+                    None => {
+                        recycle(spare, slots);
+                        return Fast::Slow;
+                    }
+                }
+            }
+            frames.push(Frame {
+                function: callee,
+                pc: 0,
+                registers: slots,
+                destination: dst.map(|dst| dst.0),
+                closing: None,
+                boundary: false,
+            });
+            return Fast::Done;
+        }
+        I::Return { value } if frame.closing.is_none() => {
+            let returned = match value {
+                Some(register) => match registers.get(register.0 as usize) {
+                    Some(value) => Some(value.copied()),
+                    None => return Fast::Slow,
+                },
+                None => None,
+            };
+            let destination = frame.destination;
+            if frames.len() > 1 && destination.is_some() != returned.is_some() {
+                return Fast::Slow;
+            }
+            let done = frames.pop().expect("frame");
+            recycle(spare, done.registers);
+            return match frames.last_mut() {
+                Some(caller) => {
+                    if let (Some(register), Some(value)) = (destination, returned) {
+                        Value::store(&mut caller.registers[register.0 as usize], value);
+                    }
+                    Fast::Done
+                }
+                None => Fast::Finished(returned),
+            };
+        }
+        _ => return Fast::Slow,
+    };
+    Value::store(&mut registers[dst.0.0 as usize], value);
+    Fast::Done
+}
+
 pub(crate) fn execute_function(engine: &Rc<Engine>, entry: usize, args: Vec<Value>) -> Result<Option<Value>, Located> {
     let program = &engine.program;
     let at = |frames: &Vec<Frame>, stop: Stop| {
@@ -1189,6 +1373,7 @@ pub(crate) fn execute_function(engine: &Rc<Engine>, entry: usize, args: Vec<Valu
         Located { function, pc, stop }
     };
     let mut frames = vec![Frame::new(program, entry, args, None).map_err(|stop| Located { function: entry, pc: 0, stop })?];
+    let mut spare: Vec<Vec<Value>> = Vec::new();
     loop {
         let (index, pc) = {
             let frame = frames.last().expect("entry returns before the stack is empty");
@@ -1199,6 +1384,11 @@ pub(crate) fn execute_function(engine: &Rc<Engine>, entry: usize, args: Vec<Valu
             return Err(at(&frames, invalid("execution ran past the end of the code")));
         };
         frames.last_mut().expect("frame").pc = pc + 1;
+        match fast(engine, &mut frames, &mut spare, index, pc, instruction) {
+            Fast::Done => continue,
+            Fast::Finished(value) => return Ok(value),
+            Fast::Slow => {}
+        }
         // Место инструкции: отказ, дошедший до корня, сообщается здесь;
         // ошибка вложенного машинного кода сохраняет своё место.
         let here = |stop| match stop {
@@ -1263,7 +1453,9 @@ pub(crate) fn execute_function(engine: &Rc<Engine>, entry: usize, args: Vec<Valu
         let applied = match returned {
             Some(returned) => {
                 let destination = frames.last().expect("frame").destination;
-                frames.pop();
+                if let Some(done) = frames.pop() {
+                    recycle(&mut spare, done.registers);
+                }
                 match frames.last_mut() {
                     Some(caller) => match (destination, returned) {
                         (Some(register), Some(value)) => {

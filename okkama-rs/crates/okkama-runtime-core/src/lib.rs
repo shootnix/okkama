@@ -75,6 +75,7 @@ impl IntValue {
         }
     }
 
+    #[inline(always)]
     pub fn from_i64(value: i64) -> Self {
         Self(Repr::Small(value))
     }
@@ -112,6 +113,7 @@ impl IntValue {
     }
 
     /// Значение, если оно помещается в signed-64.
+    #[inline(always)]
     pub fn to_i64(&self) -> Option<i64> {
         match &self.0 {
             Repr::Small(value) => Some(*value),

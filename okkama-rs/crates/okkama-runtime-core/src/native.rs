@@ -119,7 +119,7 @@ pub fn execute(
         "runtime/time_format" | "runtime/time_zone" => return time::execute(native, args),
         "runtime/io_decorators" | "runtime/testing" | "runtime/csv_state" | "runtime/pem"
         | "runtime/template" | "runtime/ini" => return formats::execute(native, args),
-        "runtime/binary" | "runtime/hpack" | "runtime/collections" => {
+        "runtime/binary" | "runtime/hpack" | "runtime/collections" | "runtime/number_text" => {
             return text::execute(native, args);
         }
         _ => {}

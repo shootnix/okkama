@@ -22,10 +22,20 @@
 `sparrow-interp` (`OKKAMA_JIT=off`), `ir` (`okkama run --engine ir`,
 включая разбор и lowering).
 
+Для сравнения рядом с `main.ok` лежат те же программы на Python, Perl и Ruby
+(`main.py`, `main.pl`, `main.rb`; конфигурации `python`, `perl`, `ruby`). Порт
+повторяет алгоритм `main.ok` и печатает тот же вывод: неизменяемые обновления
+создают новый объект, хвостовая рекурсия Okkama — цикл, `map`/`reduce` —
+идиоматические аналоги языка. В Perl и Ruby нет `async`, поэтому котировка в
+`10-app` — обычный вызов. Perl считает точные целые `Math::BigInt` без GMP,
+поэтому `04-bigint` у него медленный не из-за программы. Интерпретаторы берутся
+из PATH; другие версии задают `--python`, `--perl`, `--ruby`.
+
 ```sh
 cd okkama-rs && cargo build --release -p okkama-cli -p sparrow-cli
 cd .. && python3 benchmarks/run.py --runs 5
 python3 benchmarks/run.py --only 02-calls,10-app --engines sparrow,jvm
+python3 benchmarks/run.py --engines sparrow,python,perl,ruby --python python3.13
 ```
 
 Результат — `benchmarks/results/<время>.json` (`latest.json` — последний полный прогон; `--only`/`--engines` пишут `partial-<время>.json`):
@@ -33,3 +43,31 @@ python3 benchmarks/run.py --only 02-calls,10-app --engines sparrow,jvm
 CPU (`/usr/bin/time -l`, macOS), время и размер сборки `.spb` и `.jar`,
 размеры бинарников. Первый прогон каждой конфигурации — прогрев, не
 учитывается. Артефакты сборки — в `benchmarks/build/`.
+
+`results/latest.json` также пишет размеры установок: бинарники `okkama` и
+`sparrow`, нативную библиотеку JVM, всю установку Okkama (с исходниками std),
+JDK и каталоги установки Python, Perl и Ruby (их `/usr/bin` — заглушки, поэтому
+считается вся установка).
+
+## Отчёт к релизу
+
+`export.py` превращает результат прогона в наборы данных и отчёт:
+
+```sh
+python3 benchmarks/run.py --runs 10
+python3 benchmarks/export.py benchmarks/results/latest.json \
+  --before benchmarks/results/<прогон до изменений>.json \
+  --out benchmarks/reports/<ГГГГ-ММ-ДД>-v<версия> --title "Бенчмарки Okkama <версия> — <дата>"
+```
+
+В каталоге отчёта: `samples.csv` (каждый замер), `stats.csv` (по паре «тест ×
+движок»: n, среднее, медиана, квартили, минимум, максимум, σ, CV, медианы CPU,
+RSS, инструкций и IPC), `summary.csv` (по движку: средние геометрические
+отношений к Python, Perl, Ruby и JVM по тестам 01–10, запуск, память),
+`builds.csv`, `installs.csv`, `before_after.csv` (с `--before`),
+`environment.csv` и `REPORT.md` со всеми таблицами. Сырые `results.json` и
+`before.json` кладутся рядом руками, вместе с `README.md` — выводами релиза.
+
+| Релиз | Отчёт |
+|---|---|
+| 0.3.0 | [reports/2026-10-31-v0.3.0](reports/2026-10-31-v0.3.0/README.md) |

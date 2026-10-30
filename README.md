@@ -8,7 +8,7 @@ is enforced by the runtime — not by code review.**
 [![CI](https://github.com/shootnix/okkama/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/ci.yml)
 [![Packages](https://github.com/shootnix/okkama/actions/workflows/packages.yml/badge.svg?branch=develop)](https://github.com/shootnix/okkama/actions/workflows/packages.yml)
 [![Release](https://img.shields.io/github/v/release/shootnix/okkama?include_prereleases&label=release)](https://github.com/shootnix/okkama/releases)
-[![Conformance](https://img.shields.io/badge/conformance-776%2F776%20×%203%20engines-brightgreen)](conformance/)
+[![Conformance](https://img.shields.io/badge/conformance-787%2F787%20×%203%20engines-brightgreen)](conformance/)
 [![License](https://img.shields.io/github/license/shootnix/okkama)](LICENSE)
 
 [Install](#install) ·
@@ -334,16 +334,21 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 
 | | IR interpreter | Sparrow + JIT | JVM |
 |---|---|---|---|
-| Start-up (`hello`) | 6 ms | **5 ms** | 43 ms |
-| `fib(32)`, 7 M calls | 1.69 s | **0.16 s** | 0.18 s |
-| Mandelbrot (float) | 0.73 s | **0.05 s** | 0.14 s |
-| 1 M successor steps | 1.28 s | **0.11 s** | 0.13 s |
-| 6-module application | 2.05 s | **0.41 s** | 0.52 s |
-| Peak memory, application | 8 MB | 15 MB | 277 MB |
+| Start-up (`hello`) | 6 ms | **6 ms** | 45 ms |
+| `fib(32)`, 7 M calls | 1.32 s | **0.17 s** | 0.18 s |
+| Mandelbrot (float) | 0.51 s | **0.05 s** | 0.14 s |
+| 1 M successor steps | 1.00 s | **0.11 s** | 0.13 s |
+| 6-module application | 1.63 s | **0.35 s** | 0.49 s |
+| Peak memory, application | 7 MB | 15 MB | 273 MB |
 | Needs | nothing | nothing | JDK |
 
-Median of five runs on an Apple M2 Max; the full ladder of eleven programs,
-CPU time and memory are in [benchmarks](benchmarks/README.md). Sparrow is a
+Median of ten runs on an Apple M2 Max. On the same eleven programs written in
+each language, Sparrow with its JIT is on average (geometric mean) 2.3× faster
+than Python 3.9, 2.3× faster than Perl 5.42 and 1.7× faster than Ruby 2.6, and
+still behind them on string processing and generic collections. The full
+ladder, CPU time, memory, sizes and every run are in
+[benchmarks](benchmarks/README.md) and the
+[0.3.0 report](benchmarks/reports/2026-10-31-v0.3.0/README.md). Sparrow is a
 self-contained VM ([ISA](okkama-rs/docs/sparrow-isa.md)) with a baseline JIT,
 in-place successor updates and a cycle collector
 ([runtime, GC and JIT](okkama-rs/docs/sparrow-runtime-roadmap.md)).
@@ -359,7 +364,7 @@ in-place successor updates and a cycle collector
 | 🤖 [LLM Context Pack](docs/okkama-llm-context-1.0.md) | Self-contained context for AI agents generating Okkama code |
 | 🔌 [Native Functions Tutorial](docs/native-functions-tutorial.md) | How the language talks to the host OS |
 | 🗺️ [Stdlib roadmap](docs/std/stdlib-roadmap-v4.md) | Current standard-library plan and module contracts |
-| 🧪 [Conformance suite](conformance/README.md) | Executable specification: 776 cases with expected observations |
+| 🧪 [Conformance suite](conformance/README.md) | Executable specification: 787 cases with expected observations |
 | ⚙️ [OIR-1](docs/compiler/OIR-1.md) | The compiler's intermediate representation |
 
 Where documents disagree, the source of truth is the conformance suite
@@ -369,7 +374,7 @@ Where documents disagree, the source of truth is the conformance suite
 
 Okkama is **experimental**: the language and the standard library still
 evolve, and nothing is stable yet. The implementation runs the whole language
-and standard library: the conformance suite passes 776/776 cases on each
+and standard library: the conformance suite passes 787/787 cases on each
 engine, and every deterministic program in `std/` (in test mode) and
 `examples/` behaves identically on all three. See
 [Appendix B of the Book](docs/OkkamaBook.md#appendix-b-implementation-status)
@@ -382,7 +387,7 @@ make build                        # okkama, sparrow, blade, okkama-native (relea
 make test                         # cargo test --workspace
 make dist                         # packages for this machine into dist/
 cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 8
-python3 benchmarks/run.py         # engine benchmarks
+python3 benchmarks/run.py         # engine benchmarks (also Python, Perl, Ruby)
 ```
 
 `tools/build-icu-collation.sh` builds the pinned ICU 76.1 into `.runtime/`
@@ -402,7 +407,7 @@ okkama/
 ├── docs/             book (EN/RU), specification, grammar, OIR, guides
 ├── conformance/      conformance suite (OCS) and its runner
 ├── examples/         gallery, cookbook, web and async programs
-├── benchmarks/       engine benchmarks and their runner
+├── benchmarks/       engine benchmarks, ports to Python/Perl/Ruby, runner, release reports
 ├── tools/            packaging and data generators for std (CLDR, IANA, ISO, ICU, tzdb)
 └── vscode-okkama/    VS Code extension: highlighting + language server
 ```

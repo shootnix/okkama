@@ -17,3 +17,9 @@ missing_debug_implementations = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+
+# Межкрейтовое встраивание горячих путей (`Value`, `IntValue`, ops ядра в
+# цикле VM и помощниках JIT); unwind остаётся — помощники JIT ловят панику.
+[profile.release]
+lto = "fat"
+codegen-units = 1

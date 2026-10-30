@@ -128,13 +128,10 @@ impl Object {
         &self.fields
     }
 
-    /// Все значения полей, включая поздние, — для итеративного освобождения.
+    /// Поля, освобождение которых уходит в глубину, — в `pending` для
+    /// итеративного освобождения; остальные освобождаются вместе с объектом.
     fn drain(&mut self, pending: &mut Vec<Value>) {
-        pending.extend(
-            std::mem::take(&mut self.fields)
-                .into_iter()
-                .filter(|value| !matches!(value, Value::Undef)),
-        );
+        take_deep(&mut self.fields, pending);
         if let Some(extra) = self.extra.get_mut().take() {
             pending.extend(extra.late.into_iter().map(|(_, value)| value));
         }
@@ -168,7 +165,11 @@ pub struct Bound {
 
 impl Drop for Closure {
     fn drop(&mut self) {
-        release_all(std::mem::take(&mut self.captures));
+        let mut pending = Vec::new();
+        take_deep(&mut self.captures, &mut pending);
+        if !pending.is_empty() {
+            release_all(pending);
+        }
     }
 }
 
@@ -202,6 +203,31 @@ impl<T> std::ops::Deref for Ref<T> {
     }
 }
 
+/// Последняя ссылка на контейнер: её освобождение освобождает дочерние
+/// значения и потому может уйти в глубину. Остальные значения (скаляры,
+/// строки, числа, разделяемые ссылки) освобождаются на месте без рекурсии.
+fn deep(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => Rc::strong_count(object) == 1,
+        Value::Array(array) => Rc::strong_count(array) == 1,
+        Value::Map(map) => Rc::strong_count(map) == 1,
+        Value::Builder(builder) => Rc::strong_count(builder) == 1,
+        Value::MapBuilder(builder) => Rc::strong_count(builder) == 1,
+        Value::Fn(closure) => Rc::strong_count(closure) == 1,
+        Value::Any(value) => Rc::strong_count(value) == 1,
+        _ => false,
+    }
+}
+
+/// Переносит из `values` в `pending` только значения, уходящие в глубину.
+fn take_deep(values: &mut [Value], pending: &mut Vec<Value>) {
+    for value in values {
+        if deep(value) {
+            pending.push(std::mem::replace(value, Value::Undef));
+        }
+    }
+}
+
 /// Отдаёт дочерние значения последней ссылки в `pending` вместо рекурсии.
 fn release(value: Value, pending: &mut Vec<Value>) {
     match value {
@@ -212,27 +238,27 @@ fn release(value: Value, pending: &mut Vec<Value>) {
         }
         Value::Array(array) => {
             if let Some(mut array) = Rc::into_inner(array) {
-                pending.append(&mut array.0);
+                take_deep(&mut array.0, pending);
             }
         }
         Value::Map(map) => {
             if let Some(mut map) = Rc::into_inner(map) {
-                pending.extend(std::mem::take(&mut map.0).into_values());
+                pending.extend(std::mem::take(&mut map.0).into_values().filter(deep));
             }
         }
         Value::Builder(builder) => {
             if let Some(builder) = Rc::into_inner(builder) {
-                pending.append(&mut builder.into_inner());
+                take_deep(&mut builder.into_inner(), pending);
             }
         }
         Value::MapBuilder(builder) => {
             if let Some(builder) = Rc::into_inner(builder) {
-                pending.extend(builder.into_inner().into_values());
+                pending.extend(builder.into_inner().into_values().filter(deep));
             }
         }
         Value::Fn(closure) => {
             if let Some(mut closure) = Rc::into_inner(closure) {
-                pending.append(&mut closure.captures);
+                take_deep(&mut closure.captures, pending);
             }
         }
         Value::Any(value) => {
@@ -257,21 +283,32 @@ fn release_all(mut pending: Vec<Value>) {
 
 impl Drop for Object {
     fn drop(&mut self) {
+        // Пустая очередь не выделяет память: объект из скаляров и
+        // разделяемых ссылок освобождается без обхода.
         let mut pending = Vec::new();
         self.drain(&mut pending);
-        release_all(pending);
+        if !pending.is_empty() {
+            release_all(pending);
+        }
     }
 }
 
 impl Drop for Array {
     fn drop(&mut self) {
-        release_all(std::mem::take(&mut self.0));
+        let mut pending = Vec::new();
+        take_deep(&mut self.0, &mut pending);
+        if !pending.is_empty() {
+            release_all(pending);
+        }
     }
 }
 
 impl Drop for Map {
     fn drop(&mut self) {
-        release_all(std::mem::take(&mut self.0).into_values().collect());
+        let pending: Vec<Value> = std::mem::take(&mut self.0).into_values().filter(deep).collect();
+        if !pending.is_empty() {
+            release_all(pending);
+        }
     }
 }
 
@@ -391,6 +428,13 @@ impl ArrayHeap {
     pub fn builder_push(&self, builder: &Value, value: Value) -> Result<Value, ValueError> {
         self.builder(builder)?.borrow_mut().push(value);
         Ok(builder.clone())
+    }
+
+    /// `builder_push` без копии builder для вызывающего, который сам
+    /// хранит его версию.
+    pub fn builder_push_into(&self, builder: &Value, value: Value) -> Result<(), ValueError> {
+        self.builder(builder)?.borrow_mut().push(value);
+        Ok(())
     }
 
     pub fn builder_append(&self, builder: &Value, array: &Value) -> Result<Value, ValueError> {

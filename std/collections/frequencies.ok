@@ -36,9 +36,10 @@ import "size" take Sizing;
 //
 // The runtime does not yet provide a generic hashing contract. Frequencies
 // therefore uses strict runtime equality and linear lookup, just like
-// OrderedSet, instead of pretending to be a hash table. Construction is
-// O(n*d), where d is the number of distinct values; amount(value) is O(d).
-// Values must support runtime equality; native opaque handles do not.
+// OrderedSet, instead of pretending to be a hash table. Construction reads
+// the input once and makes O(n*d) equality comparisons, where d is the number
+// of distinct values, without rebuilding intermediate lists; amount(value) is
+// O(d). Values must support runtime equality; native opaque handles do not.
 
 object Frequency<T> {
     has origin is T;
@@ -65,15 +66,9 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
     has quantity is int;
 
     Frequencies(values is Iterating<T>) {
-        let empty is List<Frequency<T>> = EmptyList();
-        let built = values.reduce(FrequencyBuilding(
-            frequencies: empty,
-            total: 0,
-        )) -> building, value {
-            building.addition(value);
-        };
-        origin = built.frequencies();
-        quantity = built.total();
+        let tally = FrequencyTally(values: values);
+        origin = tally.frequencies();
+        quantity = tally.total();
     }
 
     cursor() is Cursor<Frequency<T>> {
@@ -99,6 +94,58 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
 
     total() is int {
         quantity;
+    }
+}
+
+// One pass over the input: distinct values in first-occurrence order, then
+// one counting scan per distinct value. No intermediate list is rebuilt.
+object FrequencyTally<T> {
+    has items is @T;
+
+    FrequencyTally(values is Iterating<T>) {
+        items = values.map() -> value { value; };
+    }
+
+    frequencies() is List<Frequency<T>> {
+        let unseen is @T = [];
+        let distinct is @T = items.reduce(unseen) -> found, value {
+            if self.listed(found, value) {
+                found;
+            }
+            else {
+                (0..found.size() + 1).map() -> index {
+                    if index < found.size() { found[index]; } else { value; }
+                };
+            }
+        };
+        let empty is List<Frequency<T>> = EmptyList();
+        // Prefixing in reverse keeps the first occurrence first.
+        (0..distinct.size()).reduce(empty) -> frequencies, offset {
+            let item is T = distinct[distinct.size() - 1 - offset];
+            let amount is int = items.reduce(0) -> count, value {
+                if value == item { count + 1; } else { count; }
+            };
+            frequencies.prefix(Frequency(item: item, amount: amount));
+        };
+    }
+
+    total() is int {
+        items.size();
+    }
+
+    private:
+
+    listed(found is @T, value is T) is bool {
+        // `for` over an empty array produces no value.
+        if found.size() == 0 {
+            false;
+        }
+        else {
+            for found -> known {
+                last true if known == value;
+                false;
+            }
+        }
     }
 }
 
@@ -186,4 +233,24 @@ object FrequencyRevision<T> {
             );
         }
     }
+}
+
+test "counts in first-occurrence order" {
+    let counts = Frequencies(values: ["blue", "red", "blue", "green", "blue", "red"]);
+    test.is(counts.size(), 3);
+    test.is(counts.total(), 6);
+    test.is(counts.amount("blue"), 3);
+    test.is(counts.amount("red"), 2);
+    test.is(counts.amount("green"), 1);
+    test.is(counts.amount("missing"), 0);
+    let order = counts.map() -> frequency { frequency.item() + ":" + frequency.amount().string(); };
+    test.is(order, ["blue:3", "red:2", "green:1"]);
+}
+
+test "empty input" {
+    let nothing is @int = [];
+    let counts = Frequencies(values: nothing);
+    test.is(counts.size(), 0);
+    test.is(counts.total(), 0);
+    test.is(counts.amount(7), 0);
 }

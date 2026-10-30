@@ -536,4 +536,6 @@ natives! {
     DebugDataNames = 533, "runtime/debug@1::data_names/1", "(any) -> @string";
     DebugDataKeys = 534, "runtime/debug@1::data_keys/1", "(any) -> @any";
     DebugDataItems = 535, "runtime/debug@1::data_items/1", "(any) -> @any";
+    NumberTextIntParseValid = 536, "runtime/number_text@1::int_parse_valid/2", "(string, int) -> bool";
+    NumberTextIntParse = 537, "runtime/number_text@1::int_parse/2", "(string, int) -> int";
 }

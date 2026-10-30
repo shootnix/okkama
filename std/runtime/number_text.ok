@@ -1,0 +1,16 @@
+module runtime/number_text v1.0.0;
+
+// Integer spellings of strings/parse::ParsedInt: an optional '-', then for
+// radix 0 an optional 0b/0o/0x prefix (base 10 otherwise), then at least one
+// digit 0-9a-zA-Z below the base. Any length; radix is 0 or 2..36.
+// int_parse fails with invalid_input where int_parse_valid is false.
+native int_parse_valid(text is string, radix is int) is bool;
+
+native int_parse(text is string, radix is int) is int;
+
+test "integer spellings" {
+    test.is(int_parse("-0X2A", 0), -42);
+    test.is(int_parse("ff", 16), 255);
+    test.is(int_parse_valid("12x", 10), false);
+    test.is(int_parse_valid("+1", 10), false);
+}

@@ -38,18 +38,19 @@ fn map_threads_a_linear_builder_through_the_loop_header() {
             "    %3: builder<int> = builder.new\n",
             "    %4: int = const 0\n",
             "    %5: int = array.len %2\n",
+            // Константы тела цикла вынесены во вход (`ir::hoist`).
+            "    %10: int = const 2\n",
+            "    %14: int = const 1\n",
             "    br ^b1(%4, %3)\n",
             "^b1(%6: int, %7: builder<int>):\n",
             "    %8: bool = int.lt %6, %5\n",
             "    cond %8, ^b2, ^b4\n",
             "^b2:\n",
             "    %9: int = array.get %2, %6\n",
-            "    %10: int = const 2\n",
             "    %11: int = int.mul %9, %10\n",
             "    %12: builder<int> = builder.push %7, %11\n",
             "    br ^b3(%12)\n",
             "^b3(%13: builder<int>):\n",
-            "    %14: int = const 1\n",
             "    %15: int = int.add %6, %14\n",
             "    br ^b1(%15, %13)\n",
             "^b4:\n",
@@ -195,4 +196,12 @@ fn map_literals_and_lookups_have_their_own_instructions() {
         branches.contains("array<int> = array.retag %"),
         "{branches}"
     );
+}
+
+#[test]
+fn constants_outside_loops_stay_in_their_branch() {
+    let listing = main_listing("let n = 7; if n > 3 { 40 + n; } else { 50; }");
+    let entry = listing.split("^b1").next().expect("entry block");
+    assert!(!entry.contains("const 40") && !entry.contains("const 50"), "{listing}");
+    assert!(listing.contains("const 40") && listing.contains("const 50"), "{listing}");
 }

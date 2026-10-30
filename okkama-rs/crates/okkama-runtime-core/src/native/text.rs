@@ -1,6 +1,7 @@
 //! Natives байтовых и текстовых преобразований — перенос части `TextNatives`
-//! JVM: `runtime/binary`, `runtime/hpack`, `runtime/collections`
-//! (`runtime/buffer` и `runtime/single_byte` — в своих модулях).
+//! JVM: `runtime/binary`, `runtime/hpack`, `runtime/collections`,
+//! `runtime/number_text` (`runtime/buffer` и `runtime/single_byte` — в своих
+//! модулях).
 use super::Error;
 use super::support::{
     byte_array, bytes, failed, failure, float, int, items, string, string_map,
@@ -379,9 +380,99 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             int(&args[3])?,
         )?)),
         "string_map_snapshot" => map_snapshot(native, args),
+        "int_parse_valid" => Ok(Value::Bool(int_parse(string(&args[0])?, int(&args[1])?).is_some())),
+        "int_parse" => int_parse(string(&args[0])?, int(&args[1])?)
+            .map(Value::Int)
+            .ok_or_else(|| failed(native)),
         _ => Err(Error::Unsupported(format!(
             "native provider is not implemented: {}",
             native.symbol()
         ))),
+    }
+}
+
+// ---- runtime/number_text ----
+
+/// Целое в записи `strings/parse::ParsedInt`: необязательный `-`, при
+/// `radix == 0` — префикс `0b`/`0o`/`0x` (иначе основание 10), затем хотя бы
+/// одна цифра `0-9a-zA-Z` меньше основания. Длина записи не ограничена.
+fn int_parse(text: &str, radix: &IntValue) -> Option<IntValue> {
+    let radix = radix.to_i64()?;
+    if radix != 0 && !(2..=36).contains(&radix) {
+        return None;
+    }
+    let (negative, unsigned) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let (base, digits) = if radix == 0 {
+        match unsigned.get(..2) {
+            Some("0b" | "0B") => (2, &unsigned[2..]),
+            Some("0o" | "0O") => (8, &unsigned[2..]),
+            Some("0x" | "0X") => (16, &unsigned[2..]),
+            _ => (10, unsigned),
+        }
+    } else {
+        (radix as u32, unsigned)
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    let mut small: u64 = 0;
+    let mut big: Option<IntValue> = None;
+    for byte in digits.bytes() {
+        let digit = (byte as char).to_digit(36).filter(|digit| *digit < base)?;
+        match &mut big {
+            None => match small.checked_mul(u64::from(base)).and_then(|value| value.checked_add(u64::from(digit))) {
+                Some(value) => small = value,
+                None => {
+                    let value = IntValue::from_u128(u128::from(small));
+                    big = Some(crate::integer::add(
+                        &crate::integer::multiply(&value, &IntValue::from_i64(i64::from(base))),
+                        &IntValue::from_i64(i64::from(digit)),
+                    ));
+                }
+            },
+            Some(value) => {
+                *value = crate::integer::add(
+                    &crate::integer::multiply(value, &IntValue::from_i64(i64::from(base))),
+                    &IntValue::from_i64(i64::from(digit)),
+                );
+            }
+        }
+    }
+    let magnitude = big.unwrap_or_else(|| IntValue::from_u128(u128::from(small)));
+    Some(if negative { magnitude.negated() } else { magnitude })
+}
+
+#[cfg(test)]
+mod number_text_tests {
+    use super::*;
+
+    fn parsed(text: &str, radix: i64) -> Option<String> {
+        int_parse(text, &IntValue::from_i64(radix)).map(|value| value.to_string())
+    }
+
+    #[test]
+    fn integers_parse_like_parsed_int() {
+        assert_eq!(parsed("0", 10).as_deref(), Some("0"));
+        assert_eq!(parsed("-42", 10).as_deref(), Some("-42"));
+        assert_eq!(parsed("0042", 10).as_deref(), Some("42"));
+        assert_eq!(parsed("ff", 16).as_deref(), Some("255"));
+        assert_eq!(parsed("Z", 36).as_deref(), Some("35"));
+        assert_eq!(parsed("0b101010", 0).as_deref(), Some("42"));
+        assert_eq!(parsed("-0X2A", 0).as_deref(), Some("-42"));
+        assert_eq!(parsed("0x", 0), None);
+        assert_eq!(parsed("0x1f", 16), None);
+        assert_eq!(
+            parsed("123456789012345678901234567890", 10).as_deref(),
+            Some("123456789012345678901234567890")
+        );
+        assert_eq!(parsed("-18446744073709551616", 10).as_deref(), Some("-18446744073709551616"));
+        for bad in ["", "-", "+1", "1.0", " 1", "1 ", "12x", "--1", "é"] {
+            assert_eq!(parsed(bad, 10), None, "{bad}");
+        }
+        assert_eq!(parsed("1", 37), None);
+        assert_eq!(parsed("1", 1), None);
     }
 }

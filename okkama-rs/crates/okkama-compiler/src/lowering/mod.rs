@@ -369,6 +369,8 @@ fn lower_modules(
     }
     // Хвостовая рекурсия исполняется циклом на всех движках.
     ir::recursion::eliminate_tail_calls(&mut module);
+    // Константы циклов вычисляются один раз, во входном блоке.
+    ir::hoist::hoist_loop_constants(&mut module);
     // Lowering обязан выдавать только корректный IR: нарушение — ошибка компилятора.
     if let Err(error) = ir::verify(&module) {
         // Отладка компилятора: печать отвергнутого IR.

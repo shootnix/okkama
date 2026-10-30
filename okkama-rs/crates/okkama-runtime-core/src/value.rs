@@ -50,6 +50,58 @@ pub enum Value {
 }
 
 impl Value {
+    /// Значение без кучи и счётчиков ссылок: копия и освобождение — слова.
+    #[inline(always)]
+    pub fn is_plain(&self) -> bool {
+        match self {
+            Value::Undef | Value::Bool(_) | Value::Float(_) | Value::Byte(_) | Value::Char(_) | Value::Enum { .. } => true,
+            Value::Int(value) => value.to_i64().is_some(),
+            _ => false,
+        }
+    }
+
+    /// Копия, встраиваемая для простых значений; остальные — `clone`.
+    #[inline(always)]
+    pub fn copied(&self) -> Value {
+        match self {
+            Value::Int(value) => match value.to_i64() {
+                Some(small) => Value::Int(IntValue::from_i64(small)),
+                None => self.clone(),
+            },
+            Value::Bool(value) => Value::Bool(*value),
+            Value::Float(value) => Value::Float(*value),
+            Value::Undef => Value::Undef,
+            _ => self.clone(),
+        }
+    }
+
+    /// Записать `value` в `slot`: простое старое значение не освобождается
+    /// вызовом `drop`.
+    #[inline(always)]
+    pub fn store(slot: &mut Value, value: Value) {
+        if slot.is_plain() {
+            // SAFETY: у простого значения нет ресурсов; перезапись без drop
+            // ничего не теряет.
+            #[allow(unsafe_code)]
+            unsafe {
+                std::ptr::write(slot, value);
+            }
+        } else {
+            *slot = value;
+        }
+    }
+
+    /// Освободить значения среза, вызывая `drop` только для непростых.
+    #[inline(always)]
+    pub fn clear(values: &mut Vec<Value>) {
+        for value in values.drain(..) {
+            if value.is_plain() {
+                std::mem::forget(value);
+            } else {
+                drop(value);
+            }
+        }
+    }
     pub fn as_range(&self) -> Result<&crate::range::Range, ValueError> {
         match self {
             Self::Range(range) => Ok(range),

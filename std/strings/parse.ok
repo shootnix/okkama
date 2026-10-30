@@ -13,6 +13,8 @@ module strings/parse v1.0.0;
 // 0x/0X. ParsedRat accepts an integer or `numerator/positive-denominator`.
 // Errors retain the exact, unmodified source string.
 
+import "runtime/number_text" take int_parse_valid, int_parse;
+
 object ParsedInt {
     has source is string;
     has radix is int;
@@ -39,43 +41,9 @@ object ParsedInt {
 
     #projected
     value() is int {
-        let negative is bool = source.slice(0, 1) == "-";
-        let offset is int = if negative { 1; } else { 0; };
-        let prefix is string = if offset + 2 <= source.length() {
-            source.slice(offset, offset + 2);
-        }
-        else {
-            "";
-        };
-        let prefixed is bool = radix == 0 && match prefix {
-            case "0b", "0B", "0o", "0O", "0x", "0X" { true; }
-            else { false; }
-        };
-        let base is int = if radix != 0 {
-            radix;
-        }
-        else {
-            match prefix {
-                case "0b", "0B" { 2; }
-                case "0o", "0O" { 8; }
-                case "0x", "0X" { 16; }
-                else { 10; }
-            }
-        };
-        let start is int = if prefixed { offset + 2; } else { offset; };
-        confirm start < source.length()
+        confirm int_parse_valid(source, radix)
             else throw InvalidInteger(source);
-        let magnitude is int = (start..source.length())
-            .reduce(0) -> result, index {
-                result * base + self.digit(index, base);
-            };
-
-        if negative {
-            -magnitude;
-        }
-        else {
-            magnitude;
-        }
+        int_parse(source, radix);
     }
 
     test "parses integer spellings" {
@@ -99,56 +67,6 @@ object ParsedInt {
                 test.is(error.source(), invalid);
             }
         }
-    }
-
-    private:
-
-    digit(index is int, base is int) is int {
-        let symbol is string = source.slice(index, index + 1);
-
-        let result is int = match symbol {
-            case "0" { 0; }
-            case "1" { 1; }
-            case "2" { 2; }
-            case "3" { 3; }
-            case "4" { 4; }
-            case "5" { 5; }
-            case "6" { 6; }
-            case "7" { 7; }
-            case "8" { 8; }
-            case "9" { 9; }
-            case "a", "A" { 10; }
-            case "b", "B" { 11; }
-            case "c", "C" { 12; }
-            case "d", "D" { 13; }
-            case "e", "E" { 14; }
-            case "f", "F" { 15; }
-            case "g", "G" { 16; }
-            case "h", "H" { 17; }
-            case "i", "I" { 18; }
-            case "j", "J" { 19; }
-            case "k", "K" { 20; }
-            case "l", "L" { 21; }
-            case "m", "M" { 22; }
-            case "n", "N" { 23; }
-            case "o", "O" { 24; }
-            case "p", "P" { 25; }
-            case "q", "Q" { 26; }
-            case "r", "R" { 27; }
-            case "s", "S" { 28; }
-            case "t", "T" { 29; }
-            case "u", "U" { 30; }
-            case "v", "V" { 31; }
-            case "w", "W" { 32; }
-            case "x", "X" { 33; }
-            case "y", "Y" { 34; }
-            case "z", "Z" { 35; }
-            else {
-                throw InvalidInteger(source);
-            }
-        };
-        confirm result < base else throw InvalidInteger(source);
-        result;
     }
 }
 

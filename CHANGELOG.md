@@ -77,6 +77,56 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - Two variadic signatures with the same types are a declaration error, because names
     cannot tell them apart in a positional call. So are two constructors with identical
     signatures.
+- Benchmarks compare Sparrow and the JVM with the same programs in Python, Perl and Ruby
+  (`benchmarks/NN-*/main.{py,pl,rb}`, engines `python`, `perl`, `ruby` in
+  `benchmarks/run.py`). The outputs of all engines must agree. `run.py` also records the
+  install sizes of every engine.
+- `benchmarks/export.py` turns a run into a release report: every run as CSV, statistics
+  per benchmark and engine (mean, median, quartiles, min, max, standard deviation, CV, CPU,
+  memory, instructions, IPC), speed ratios per engine and `REPORT.md`. Reports are kept
+  in `benchmarks/reports/<date>-v<version>/`; the first one is for 0.3.0.
+
+### Performance
+
+Measured by `benchmarks/run.py --runs 10`; all runs and tables are in
+[benchmarks/reports/2026-10-31-v0.3.0](benchmarks/reports/2026-10-31-v0.3.0/README.md).
+
+- Sparrow with the JIT is on average (geometric mean over benchmarks 01–10) 2.31× faster
+  than Python 3.9, 2.34× faster than Perl 5.42, 1.72× faster than Ruby 2.6 and 1.81×
+  faster than the JVM build of Okkama.
+- Sparrow without the JIT went from 0.33× to 0.76× of Python.
+- Biggest gains: `06-collections` is 4.0× faster with the JIT and 6.6× without it;
+  `05-strings` is 2.4× and 4.3× faster; the interpreter is 3.9× faster on `01-arith`
+  and 2.3× on `02-calls`.
+- Still slower than the best of the other languages: `05-strings` (Perl is 1.9× faster),
+  `06-collections` (Perl 1.8×) and `09-closures` (the JVM build 1.4×).
+- Start-up of `00-hello` grew from 5.1 to 5.7 ms.
+
+- **Sparrow interpreter** (`OKKAMA_JIT=off`, and cold code under the JIT): constants,
+  copies, small-integer arithmetic and comparisons, jumps, direct calls and returns run
+  in the dispatch loop itself instead of the generic instruction step. Frame registers
+  come from a pool instead of a new allocation per call. Branch moves of up to eight
+  values snapshot on the stack, and plain values are copied and overwritten without
+  `clone`/`drop` calls.
+- **Loop constants are computed once.** A new OIR pass moves the `const` instructions of
+  blocks that lie on a loop into the entry block of the function. Constants of
+  branches outside loops stay in place. All engines run the same OIR, so error
+  locations stay exact.
+- **Sparrow JIT.**
+  - Value equality of two small integers (generic `==` over `T = int`) is compiled
+    inline.
+  - A role call finds its target in a per-slot table indexed by the object
+    declaration, without a helper call.
+  - `builder.push` no longer copies the builder.
+- **Freeing objects, arrays, maps and closures** queues only the last references to
+  containers. Scalars and shared references are released in place, and an object
+  without such fields frees no queue.
+- **`collections/frequencies`** counts without rebuilding the frequency list for every
+  input value (it was O(n·d) list rebuilds, now O(n·d) comparisons only).
+- **`strings/parse::ParsedInt`** parses natively (`runtime/number_text`:
+  `int_parse_valid`, `int_parse`) with the same accepted spellings and errors.
+- Release builds use fat LTO with one codegen unit: `okkama` shrinks from 18.2 to
+  14.3 MiB, `sparrow` from 12.3 to 10.2 MiB, and JIT code is faster.
 
 ### Fixed
 

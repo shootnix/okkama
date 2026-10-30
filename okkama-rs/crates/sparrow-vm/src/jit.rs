@@ -212,8 +212,8 @@ pub(crate) struct Jit {
     counts: Box<[Cell<u32>]>,
     states: Box<[Cell<State>]>,
     ctx: Box<Ctx>,
-    /// Битовые карты «объявление делает роль» по номеру роли (для кода).
-    role_maps: RefCell<std::collections::HashMap<u32, Box<[u64]>>>,
+    /// Таблицы кода по ролям (`RoleTables`).
+    role_maps: RoleTables,
     layout: Layout,
     threshold: u32,
     debug: bool,
@@ -450,6 +450,8 @@ fn stopped(ctx: &Ctx, stop: Stop, at: (usize, usize)) -> u32 {
 }
 
 /// Учесть выход в помощник (`OKKAMA_JIT_STATS`).
+// Без журнала (`OKKAMA_JIT_DEBUG`) — одна проверка в теле помощника.
+#[inline(always)]
 fn note(ctx: *const Ctx, label: impl FnOnce(&Engine) -> String) {
     // SAFETY: контекст живёт, пока исполняется код его исполнителя.
     let ctx = unsafe { &*ctx };
@@ -460,6 +462,7 @@ fn note(ctx: *const Ctx, label: impl FnOnce(&Engine) -> String) {
     }
 }
 
+#[inline(always)]
 fn note_at(ctx: *const Ctx, func: u32, pc: u32) {
     note(ctx, |engine| engine.program.functions[func as usize].code[pc as usize].mnemonic().to_string());
 }
@@ -947,8 +950,8 @@ extern "C" fn h_builder_push(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u
         };
         let item = owned(registers, *value, mask & 2 != 0);
         let target = owned(registers, *builder, mask & 1 != 0);
-        match okkama_runtime_core::heap::ArrayHeap.builder_push(&target, item) {
-            Ok(_) => {
+        match okkama_runtime_core::heap::ArrayHeap.builder_push_into(&target, item) {
+            Ok(()) => {
                 registers[dst.0.0 as usize] = target;
                 OK
             }
@@ -1015,6 +1018,14 @@ struct Sigs {
     frame: ir::SigRef,
 }
 
+/// Таблицы ролей, на которые ссылается машинный код (живут с `Jit`):
+/// ключ `role` — битовая карта «объявление делает роль»; ключ
+/// `DISPATCH | role << 32 | slot` — функция слота по номеру объявления
+/// (`u64::MAX` — объявление роль не делает).
+type RoleTables = RefCell<std::collections::HashMap<u64, Box<[u64]>>>;
+
+const DISPATCH: u64 = 1 << 63;
+
 struct Gen<'a, 'b> {
     b: FunctionBuilder<'b>,
     layout: &'a Layout,
@@ -1029,7 +1040,7 @@ struct Gen<'a, 'b> {
     sigs: Sigs,
     /// Живость регистров: последнее использование — перемещение.
     live: crate::liveness::Liveness,
-    role_maps: &'a RefCell<std::collections::HashMap<u32, Box<[u64]>>>,
+    role_maps: &'a RoleTables,
     /// Регистры прямо вызываемой функции и её результат.
     area: Option<ir::StackSlot>,
     result: Option<ir::StackSlot>,
@@ -1051,7 +1062,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         index: usize,
         constants: &'a [Value],
         entry: &ir::Signature,
-        role_maps: &'a RefCell<std::collections::HashMap<u32, Box<[u64]>>>,
+        role_maps: &'a RoleTables,
     ) -> Self {
         let function = &program.functions[index];
         let pointer = types::I64;
@@ -1505,6 +1516,27 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(done);
             }
+            // Равенство значений: два малых целых сравниваются в коде
+            // (обобщённый `==` над `T = int`), остальное — `evaluate`.
+            I::ValCmp { op, dst, left, right } => {
+                let (a_ok, a) = self.small_int(regs, offset(*left));
+                let (b_ok, b) = self.small_int(regs, offset(*right));
+                let both = self.b.ins().band(a_ok, b_ok);
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(both, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                let cc = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
+                let result = self.b.ins().icmp(cc, a, b);
+                self.release(regs, offset(dst.0));
+                self.store_bool(regs, offset(dst.0), result);
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.generic(pc)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
+            }
             I::Jump { target } => {
                 self.edge(target)?;
             }
@@ -1708,6 +1740,63 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.check(status, pc)
     }
 
+    /// Цель `call.role` по таблице слота: объявление объекта-receiver —
+    /// индекс; не объект, объявление вне таблицы или без роли — помощник.
+    /// Результат — номер функции (i32), отрицательный — общий путь.
+    fn role_dispatch(&mut self, pc: usize, layout: ObjectLayout, role: u32, slot: u32, receiver: Register) -> ir::Value {
+        let program = self.program;
+        let count = program.objects.len();
+        let address = {
+            let mut maps = self.role_maps.borrow_mut();
+            let key = DISPATCH | u64::from(role) << 32 | u64::from(slot);
+            let table = maps.entry(key).or_insert_with(|| {
+                program
+                    .objects
+                    .iter()
+                    .map(|object| {
+                        object
+                            .does
+                            .iter()
+                            .find(|witness| witness.role.0 == role)
+                            .and_then(|witness| witness.slots.get(slot as usize))
+                            .map_or(u64::MAX, |callee| u64::from(callee.0))
+                    })
+                    .collect()
+            });
+            table.as_ptr() as i64
+        };
+        let regs = self.regs;
+        let done = self.b.create_block();
+        let result = self.b.append_block_param(done, types::I32);
+        let miss = self.b.create_block();
+        let tag = self.load8(regs, offset(receiver));
+        let is_object = self.b.ins().icmp_imm_s(IntCC::Equal, tag, i64::from(layout.tag));
+        let declared = self.b.create_block();
+        self.b.ins().brif(is_object, declared, &[], miss, &[]);
+        self.b.switch_to_block(declared);
+        let pointer = self.b.ins().load(types::I64, flags(), regs, offset(receiver) + 8);
+        let declaration = self.b.ins().load(types::I64, flags(), pointer, layout.inner + layout.declaration);
+        let known = self.b.ins().icmp_imm_u(IntCC::UnsignedLessThan, declaration, count as i64);
+        let lookup = self.b.create_block();
+        self.b.ins().brif(known, lookup, &[], miss, &[]);
+        self.b.switch_to_block(lookup);
+        let scaled = self.b.ins().ishl_imm_u(declaration, 3);
+        let table = self.b.ins().iconst(types::I64, address);
+        let entry = self.b.ins().iadd(table, scaled);
+        let callee = self.b.ins().load(types::I64, flags(), entry, 0);
+        let absent = self.b.ins().icmp_imm_s(IntCC::Equal, callee, -1);
+        let found = self.b.create_block();
+        self.b.ins().brif(absent, miss, &[], found, &[]);
+        self.b.switch_to_block(found);
+        let narrow = self.b.ins().ireduce(types::I32, callee);
+        self.b.ins().jump(done, &[BlockArg::Value(narrow)]);
+        self.b.switch_to_block(miss);
+        let slow = self.eval(h_role_target as *const () as usize, pc);
+        self.b.ins().jump(done, &[BlockArg::Value(slow)]);
+        self.b.switch_to_block(done);
+        result
+    }
+
     /// `role.wrap`/`role.narrow` объекта: делает ли объявление роль — бит
     /// карты, построенной из таблиц программы; иначе (и не объект) — помощник.
     fn role_check(&mut self, pc: usize, dst: Register, source: Register, role: u32) -> Result<(), String> {
@@ -1716,7 +1805,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let count = program.objects.len();
         let address = {
             let mut maps = self.role_maps.borrow_mut();
-            let map = maps.entry(role).or_insert_with(|| {
+            let map = maps.entry(u64::from(role)).or_insert_with(|| {
                 let mut bits = vec![0u64; count.div_ceil(64).max(1)].into_boxed_slice();
                 for (index, object) in program.objects.iter().enumerate() {
                     if object.does.iter().any(|witness| witness.role.0 == role) {
@@ -2046,7 +2135,10 @@ impl<'a, 'b> Gen<'a, 'b> {
         if count > 512 {
             return Ok(false);
         }
-        let target = self.eval(h_role_target as *const () as usize, pc);
+        let target = match self.layout.object.filter(|object| object.declaration >= 0) {
+            Some(layout) => self.role_dispatch(pc, layout, role, slot, receiver),
+            None => self.eval(h_role_target as *const () as usize, pc),
+        };
         let missing = self.b.ins().icmp_imm_s(IntCC::SignedLessThan, target, 0);
         let fast = self.b.create_block();
         let slow = self.b.create_block();
