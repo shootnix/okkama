@@ -1041,7 +1041,7 @@ fn lower_native(ctx: &mut Ctx<'_, '_>, symbol: String, native: usize) -> Result<
             let mut attrs = vec![ir::Attr::Extern(format!(
                 "{}@{}::{}/{}",
                 reg.modules[info.module].name,
-                reg.modules[info.module].program.module.version.major,
+                reg.modules[info.module].program.module.major(),
                 info.name,
                 info.params.len()
             ))];

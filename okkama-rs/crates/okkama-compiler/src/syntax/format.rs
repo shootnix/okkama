@@ -345,8 +345,10 @@ impl<'s> Printer<'s> {
                 .map(|part| part.text.as_str())
                 .collect();
             p.word(&path.join("/"));
-            p.word(" ");
-            p.word(&program.module.version.text());
+            if let Some(version) = &program.module.version {
+                p.word(" ");
+                p.word(&version.text());
+            }
             p.word(";");
         });
         for (index, import) in program.imports.iter().enumerate() {

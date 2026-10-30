@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.src.module-without-version",
+  "title": "the module version is optional",
+  "purpose": "A module declaration without a version is accepted and runs.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "SRC.MODULE-DECL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 7,
+    "stdout": {
+      "text": "versionless\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for optional module versions",
+    "expected_basis": "spec 5.1: the version is optional; Marker().code() is 7."
+  },
+  "status": "mandatory"
+}

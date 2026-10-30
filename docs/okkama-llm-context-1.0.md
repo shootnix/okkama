@@ -29,8 +29,8 @@ feature). Run from the `okkama-pl/` directory when the program imports stdlib
 modules.
 
 Multiple existing `.ok` paths before ordinary arguments share declarations
-as one module. Imports remain file-local. Module names and exact versions must
-match, and the combined module may contain at most one `main`.
+as one module. Imports remain file-local. Module names and versions (or their
+absence) must match, and the combined module may contain at most one `main`.
 
 ---
 
@@ -123,7 +123,7 @@ Rules:
 
 - `module` must be the first thing in the file. Module names are lowercase
   identifiers, optionally `/`-separated (`app`, `money/cash`). Version is
-  exactly `vMAJOR.MINOR.PATCH`.
+  optional (`module app;`); when present it is exactly `vMAJOR.MINOR.PATCH`.
 - Module scope allows only declarations: objects, roles, enums, native
   declarations, actions, test blocks. Library modules may omit `main`.
 

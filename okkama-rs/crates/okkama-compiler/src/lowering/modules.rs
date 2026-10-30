@@ -36,6 +36,19 @@ pub trait ModuleLoader {
     fn load_std(&mut self, path: &str, importer: &str) -> Result<Option<LoadedModule>, String> {
         self.load(path, importer)
     }
+
+    /// Разрешён ли импорт `path` из файла `importer` до поиска файла
+    /// (например, `lib/…` — только прямые зависимости проекта); `Err` —
+    /// текст ошибки у импорта.
+    fn check_import(&mut self, _path: &str, _importer: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Файл принадлежит blade-проекту: версия модуля задаётся в `blade.toml`,
+    /// а не в объявлении `module`.
+    fn in_project(&mut self, _file: &str) -> bool {
+        false
+    }
 }
 
 /// Загруженный граф: модули в порядке зависимостей и импорты каждого
@@ -63,6 +76,7 @@ pub(super) fn load_graph(
     };
     let mut root_imports = Vec::new();
     for (program, name, source) in roots {
+        walk.unversioned(program, name, *source)?;
         root_imports.push(walk.imports_of(program, name, *source)?);
     }
     walk.imports.extend(root_imports);
@@ -102,6 +116,28 @@ struct Walk<'l> {
 }
 
 impl Walk<'_> {
+    /// В blade-проекте версия модуля — в `blade.toml`, не в файле.
+    fn unversioned(
+        &mut self,
+        program: &ast::Program,
+        name: &str,
+        source: Option<&SourceFile>,
+    ) -> Result<(), LinkError> {
+        match &program.module.version {
+            Some(version) if self.loader.in_project(name) => Err(LinkError::Lowering {
+                source: source.cloned(),
+                error: LoweringError::invalid(
+                    version.span,
+                    format!(
+                        "Module version {} is not allowed in a blade project: the version is set in blade.toml",
+                        version.text()
+                    ),
+                ),
+            }),
+            _ => Ok(()),
+        }
+    }
+
     /// Импорты программы `program` из файла `name`; `source` — её исходник
     /// (у корня `None`: ошибки корня рендерит вызывающий).
     fn imports_of(
@@ -114,6 +150,14 @@ impl Walk<'_> {
         for (index, import) in program.imports.iter().enumerate() {
             let path = import.path.literal.value.clone();
             let std_module = path.strip_prefix(super::std_paths::STD_IMPORT);
+            if std_module.is_none() {
+                if let Err(message) = self.loader.check_import(&path, name) {
+                    return Err(LinkError::Lowering {
+                        source: source.cloned(),
+                        error: LoweringError::invalid(import.path.span, message),
+                    });
+                }
+            }
             let found = match std_module {
                 Some(module) => self.loader.load_std(module, name),
                 None => self.loader.load(&path, name),
@@ -131,9 +175,11 @@ impl Walk<'_> {
                     error: LoweringError::invalid(import.span, message),
                 });
             };
-            super::std_paths::desugar(&mut module.program).map_err(|error| LinkError::Lowering {
-                source: Some(module.source.clone()),
-                error,
+            super::std_paths::desugar(&mut module.program).map_err(|error| {
+                LinkError::Lowering {
+                    source: Some(module.source.clone()),
+                    error,
+                }
             })?;
             if let Some(position) = self.active.iter().position(|(_, id)| *id == module.id) {
                 let mut chain: Vec<String> = self.active[position..]
@@ -153,6 +199,7 @@ impl Walk<'_> {
                 result.push((*done, index));
                 continue;
             }
+            self.unversioned(&module.program, &module.id, Some(&module.source))?;
             self.active.push((path, module.id.clone()));
             let nested = self.imports_of(&module.program, &module.id, Some(&module.source))?;
             self.active.pop();

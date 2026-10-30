@@ -210,18 +210,20 @@ names retain their existing rules.
 ```okkama
 module app v1.0.0;
 module money/cash v1.0.0;
+module money/cash;
 ```
 
 Rules:
 
 - The module declaration MUST be first.
 - The module name is one or more lowercase identifiers separated by `/`.
-- The version MUST use `vMAJOR.MINOR.PATCH`.
+- The version is optional. When present it MUST use `vMAJOR.MINOR.PATCH`.
+  A module without a version has ABI major `0` (§5.9).
 - A CLI invocation may supply multiple existing `.ok` source paths. They form
   one module declaration space, but each file retains its own import scope.
-  Every file MUST declare the same module name and exact version. A mismatch
-  is a semantic error, and the combined module MUST NOT declare more than one
-  `main`.
+  Every file MUST declare the same module name and the same version (or every
+  file no version). A mismatch is a semantic error, and the combined module
+  MUST NOT declare more than one `main`.
 
 ### 5.2 Imports
 
@@ -245,11 +247,14 @@ Rules:
   `import "foo/bar";` resolves as `foo/bar.ok`.
 - Explicit `.ok` suffixes are accepted as-is.
 - Runtime lookup is local-first:
-  1. explicit runtime import directories;
-  2. the current script/module directory;
-  3. the bundled Okkama standard library directory.
+  1. the directory of the importing file;
+  2. the root of the importing file's package (§5.2.2), when it has one;
+  3. system import directories (`OKKAMA_IMPORT_DIRS`);
+  4. the bundled Okkama standard library directory.
+- A standard library module resolves its own imports only inside the standard
+  library.
 - A local module shadows a bundled standard library module with the same
-  import path.
+  import path for the program's own imports.
 - A plain import exposes declarations owned directly by the imported module
   only through a namespace derived from the final import-path component.
   Declarations visible to that module only through its own imports are not
@@ -323,6 +328,45 @@ Rules:
 - A program cannot use two different files that declare the same module path.
   A local module that shadows a standard library module (5.2) therefore cannot
   be combined with a `std.` path to that module.
+
+### 5.2.2 Blade Projects and Dependencies
+
+A directory containing `blade.toml` is a package root. A file belongs to the
+package of the nearest such directory above it; a project is a package that
+is not installed in another project's `pkg/`.
+
+```toml
+[module]
+name = "app"
+version = "1.0.0"
+
+[dependencies]
+web = "12.3.0"
+json = { git = "https://example.org/json", version = "1.*" }
+```
+
+```okkama
+module app;
+
+import "pkg/web/router" take Router;
+```
+
+Rules:
+
+- The version of a package lives in `blade.toml`. A module file of a package
+  MUST NOT declare a version; one that does is a semantic error at the version.
+- Dependencies are installed in `pkg/<name>/` of the project root, each with
+  its own `blade.toml`. A package installed there belongs to that project.
+- An import path starting with `pkg/` names a dependency. It resolves against
+  the root of the project only, never against the importer's directory, system
+  directories or the standard library.
+- `pkg/<name>/…` MUST name a dependency declared in `[dependencies]` of the
+  importing file's own package: the project for its files, the dependency for
+  a dependency's files. Transitive dependencies are not importable. Outside
+  any package `pkg/` has no special meaning and is an ordinary directory.
+- Other imports of a package file resolve as in §5.2: beside the importing
+  file, then from its package root, so a package keeps its internal imports
+  wherever it is installed.
 
 ### 5.3 Module Native Declarations
 

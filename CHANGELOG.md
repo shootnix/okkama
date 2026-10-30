@@ -26,6 +26,41 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   or action values. Signature help highlights the parameter by its name in a named call
   (`obj.action(zip: 1, name: …)`) and picks the overload by the names already given.
 
+- **Optional module version**: `module app;` is valid. A module without a version has
+  ABI major `0`. Files of one multi-file module declare the same version, or none in
+  every file.
+- **Blade projects** (spec §5.2.2). A directory with `blade.toml` is a package root.
+  Its `[dependencies]` are installed in `pkg/<name>/` of the project root and are
+  imported as `import "pkg/web/router" take Router;`.
+  - Only dependencies declared by the importing package are importable this way;
+    transitive dependencies are not.
+  - Module files of a project declare no version, because it is set in `blade.toml`.
+  - The compiler, `okkama lsp` and the REPL find the project from the file, so a
+    program resolves the same way from any working directory.
+
+- **blade manages dependencies** (`docs/blade.md`).
+  - Commands: `blade install`, `blade install SOURCE [VERSION]`, `blade remove NAME`
+    and `blade update [NAME...]`.
+  - Sources: git repositories (`vX.Y.Z` tags) and local package directories
+    (`path = "…"`).
+  - Requirements: `12.3.0` (compatible), `12.*`, `=12.3.1`, `*`. Each package has one
+    version per project, and a conflict names every requirement and who made it.
+  - `blade.lock` records the version, git commit and SHA-256 of every package. A moved
+    tag or changed files stop `install` until `update`.
+  - Installation is all or nothing.
+  - Packages with natives, module versions in files, foreign module names or symbolic
+    links are refused.
+- **Editor completion for dependency imports** (`okkama lsp`, VS Code). The completion
+  list opens right after the quote and after each `/`:
+  - `import "` offers `pkg/`;
+  - `pkg/` offers the direct dependencies of the file's package, with their version
+    requirement and source, and marks the ones not installed yet;
+  - `pkg/web/` offers the folders and modules of the installed package.
+
+  `"` and `/` open completion only inside import paths, so division does not.
+- `blade new` writes `blade.toml` (it was `NAME.toml`), creates `pkg/` (it was `lib/`)
+  and starts `src/main.ok` with `module NAME;`.
+
 ### Fixed
 
 - Editor: a name typed where the checked text had a different name with the same first
@@ -35,6 +70,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `@string`).
 
 ### Changed
+
+- **Import lookup is local-first.** The order is now:
+  1. the importing file's directory;
+  2. its package root;
+  3. `OKKAMA_IMPORT_DIRS`;
+  4. the standard library.
+
+  Previously `OKKAMA_IMPORT_DIRS` came first. The standard library resolves its own
+  imports only inside itself, so a file such as `io/stream.ok` in a program or in
+  `OKKAMA_IMPORT_DIRS` no longer breaks std.
 
 - A program that would load two different files declaring the same module path (for
   example a local module shadowing std next to a `std.` path to it) is now rejected with a

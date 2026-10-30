@@ -141,7 +141,11 @@ fn ocs_native_engines_report_execution_and_limitations_without_java() {
             ("7 % 0;", "failed", 1),
             ("panic \"stop\";", "failed", 1),
             ("if -7 % 3 == -1 { 42; } else { 0; }", "completed", 42),
-            ("let x = 1.5; if x * 2.0 == 3.0 { 42; } else { 0; }", "completed", 42),
+            (
+                "let x = 1.5; if x * 2.0 == 3.0 { 42; } else { 0; }",
+                "completed",
+                42,
+            ),
             ("let b is int = \"world\"; 0;", "rejected", 1),
         ] {
             std::fs::write(
@@ -281,14 +285,26 @@ fn uncaught_failure_prints_place_and_call_stack() {
         let output = run_stdin(&["run", "--engine", engine, "-"], source);
         assert_eq!(output.status.code(), Some(1));
         let text = stderr(&output);
-        assert!(text.starts_with("RuntimeError: Array index out of bounds\n"), "{engine}: {text}");
-        assert!(text.contains(":4:27\n  |\n4 |     at(i is int) is int { [1, 2][i]; }\n"), "{engine}: {text}");
-        assert!(text.contains("Stack trace (most recent call first):\n  at Box.at ("), "{engine}: {text}");
+        assert!(
+            text.starts_with("RuntimeError: Array index out of bounds\n"),
+            "{engine}: {text}"
+        );
+        assert!(
+            text.contains(":4:27\n  |\n4 |     at(i is int) is int { [1, 2][i]; }\n"),
+            "{engine}: {text}"
+        );
+        assert!(
+            text.contains("Stack trace (most recent call first):\n  at Box.at ("),
+            "{engine}: {text}"
+        );
         assert!(text.contains(":7:5)\n"), "{engine}: {text}");
     }
     let mut command = okkama();
     command.args(["run", "-"]).env("OKKAMA_TRACE", "off");
-    command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = command.spawn().unwrap();
     child.stdin.take().unwrap().write_all(source).unwrap();
     let output = child.wait_with_output().unwrap();
@@ -308,7 +324,12 @@ fn repl_keeps_variables_and_declarations_between_inputs() {
         .unwrap();
     let input = "let x = 40\nx + 2\nobject Point {\n    has x is int;\n    Point(:x);\n}\nlet p = Point(x: x)\np\n\
                  let x = \"text\"\n:vars\np.nope()\n[1][3]\nx\n";
-    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
@@ -316,8 +337,14 @@ fn repl_keeps_variables_and_declarations_between_inputs() {
         "42 (int)\nPoint {\n    x: 40\n}\np: Point\nx: string\n\"text\" (string, 4 chars)\n"
     );
     let errors = stderr(&output);
-    assert!(errors.contains("<input>:1:3: semantic error: Object \"Point\" has no action \"nope\""), "{errors}");
-    assert!(errors.contains("RuntimeError: Array index out of bounds\n"), "{errors}");
+    assert!(
+        errors.contains("<input>:1:3: semantic error: Object \"Point\" has no action \"nope\""),
+        "{errors}"
+    );
+    assert!(
+        errors.contains("RuntimeError: Array index out of bounds\n"),
+        "{errors}"
+    );
     assert!(errors.contains("  at <input> (<input>:1:"), "{errors}");
 }
 
@@ -425,7 +452,10 @@ fn sparrow_exec_usage_and_io_errors() {
         assert_eq!(run(args).status.code(), Some(2));
     }
     // Аргументы после файла — аргументы программы; отсутствующий файл — I/O.
-    assert_eq!(run(&["exec", "missing-file.spb", "b"]).status.code(), Some(3));
+    assert_eq!(
+        run(&["exec", "missing-file.spb", "b"]).status.code(),
+        Some(3)
+    );
     for args in [&["exec", "--help"][..], &["help", "exec"]] {
         let output = run(args);
         assert_eq!(output.status.code(), Some(0));
@@ -471,8 +501,15 @@ fn sparrow_cli_executes_control_flow_and_v2_function_calls() {
                 2,
                 vec![],
                 vec![
-                    Const { dst: dst(0), value: okkama_sparrow::Constant::Int("21".into()) },
-                    Call { dst: Some(dst(1)), function: okkama_sparrow::FuncRef(1), args: vec![R(0)] },
+                    Const {
+                        dst: dst(0),
+                        value: okkama_sparrow::Constant::Int("21".into()),
+                    },
+                    Call {
+                        dst: Some(dst(1)),
+                        function: okkama_sparrow::FuncRef(1),
+                        args: vec![R(0)],
+                    },
                     Return { value: Some(R(1)) },
                 ],
             ),
@@ -480,7 +517,14 @@ fn sparrow_cli_executes_control_flow_and_v2_function_calls() {
                 "double",
                 2,
                 vec![R(0)],
-                vec![IntAdd { dst: dst(1), left: R(0), right: R(0) }, Return { value: Some(R(1)) }],
+                vec![
+                    IntAdd {
+                        dst: dst(1),
+                        left: R(0),
+                        right: R(0),
+                    },
+                    Return { value: Some(R(1)) },
+                ],
             ),
         ],
         entry: Some(okkama_sparrow::FuncRef(0)),
@@ -1126,4 +1170,167 @@ fn several_files_form_one_module() {
         text.contains("semantic error: Module declares main() more than once"),
         "{text}"
     );
+}
+
+/// A temporary directory tree that is removed when dropped.
+struct TempTree(PathBuf);
+
+impl TempTree {
+    fn new(name: &str, files: &[(&str, &str)]) -> TempTree {
+        let root =
+            std::env::temp_dir().join(format!("okkama-cli-tree-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (path, text) in files {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        TempTree(root)
+    }
+
+    fn path(&self, relative: &str) -> String {
+        self.0.join(relative).to_str().unwrap().to_string()
+    }
+}
+
+impl Drop for TempTree {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Проект blade: зависимость `web` со своим `util` и своей зависимостью
+/// `json`, плюс файлы в `pkg/`, которые не должны ничего перехватить.
+fn blade_project(name: &str) -> TempTree {
+    TempTree::new(
+        name,
+        &[
+            (
+                "blade.toml",
+                "[module]\nname = \"app\"\n\n[dependencies]\nweb = \"12.3.0\"\n",
+            ),
+            (
+                "src/main.ok",
+                "module app;\nimport \"io/stdout\" take Stdout;\nimport \"util\" take Greeting;\n\
+                 import \"pkg/web/router\" take Router;\n\
+                 main() is int { Stdout().writeln(Greeting().text(), \" \", Router().route()); 0; }\n",
+            ),
+            (
+                "src/util.ok",
+                "module app/util;\nobject Greeting { Greeting(); text() is string { \"app\"; } }\n",
+            ),
+            (
+                "pkg/web/blade.toml",
+                "[module]\nname = \"web\"\n\n[dependencies]\njson = \"1.0.0\"\n",
+            ),
+            (
+                "pkg/web/router.ok",
+                "module web/router;\nimport \"util\" take Path;\nimport \"pkg/json/codec\" take Codec;\n\
+                 object Router { Router(); route() is string { Path().text() + \"+\" + Codec().name(); } }\n",
+            ),
+            (
+                "pkg/web/util.ok",
+                "module web/util;\nobject Path { Path(); text() is string { \"web\"; } }\n",
+            ),
+            ("pkg/json/blade.toml", "[module]\nname = \"json\"\n"),
+            (
+                "pkg/json/codec.ok",
+                "module json/codec;\nobject Codec { Codec(); name() is string { \"json\"; } }\n",
+            ),
+            (
+                "pkg/util.ok",
+                "module trap/util;\nobject Path { Path(); }\n",
+            ),
+            (
+                "pkg/io/stream.ok",
+                "module io/stream;\nobject Hijack { Hijack(); }\n",
+            ),
+        ],
+    )
+}
+
+fn in_dir(dir: &str, args: &[&str]) -> Output {
+    let std = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../std");
+    okkama()
+        .args(args)
+        .current_dir(dir)
+        .env("OKKAMA_STDLIB_DIR", &std)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn blade_project_imports_resolve_from_package_roots_and_lib() {
+    let project = blade_project("resolve");
+    let main = project.path("src/main.ok");
+    for cwd in [
+        project.path(""),
+        project.path("src"),
+        std::env::temp_dir().to_str().unwrap().to_string(),
+    ] {
+        let output = in_dir(&cwd, &["run", &main]);
+        assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+        assert_eq!(stdout(&output), "app web+json\n");
+    }
+}
+
+#[test]
+fn blade_project_rejects_undeclared_dependencies_and_file_versions() {
+    let project = blade_project("reject");
+    let undeclared = project.path("src/undeclared.ok");
+    std::fs::write(
+        &undeclared,
+        "module app;\nimport \"pkg/json/codec\" take Codec;\nmain() is int { 0; }\n",
+    )
+    .unwrap();
+    let text = stderr(&in_dir(&project.path(""), &["check", &undeclared]));
+    assert!(
+        text.contains(
+            ":2:8: semantic error: \"json\" is not a dependency: add it to [dependencies] in "
+        ),
+        "{text}"
+    );
+
+    let versioned = project.path("src/versioned.ok");
+    std::fs::write(&versioned, "module app v1.0.0;\nmain() is int { 0; }\n").unwrap();
+    let text = stderr(&in_dir(&project.path(""), &["check", &versioned]));
+    assert!(
+        text.contains(
+            ":1:12: semantic error: Module version v1.0.0 is not allowed in a blade project"
+        ),
+        "{text}"
+    );
+
+    let codec = project.path("pkg/json/codec.ok");
+    let original = std::fs::read_to_string(&codec).unwrap();
+    std::fs::write(
+        &codec,
+        original.replace("module json/codec;", "module json/codec v1.0.0;"),
+    )
+    .unwrap();
+    let text = stderr(&in_dir(
+        &project.path(""),
+        &["check", &project.path("src/main.ok")],
+    ));
+    assert!(
+        text.contains("pkg/json/codec.ok:1:19: semantic error: Module version v1.0.0"),
+        "{text}"
+    );
+
+    // Вне blade-проекта `pkg/` — обычный подкаталог.
+    let loose = TempTree::new(
+        "loose",
+        &[
+            (
+                "main.ok",
+                "module loose;\nimport \"pkg/shapes\" take Square;\nmain() is int { Square().side(); }\n",
+            ),
+            (
+                "pkg/shapes.ok",
+                "module pkg/shapes;\nobject Square { Square(); side() is int { 4; } }\n",
+            ),
+        ],
+    );
+    let output = in_dir(&loose.path(""), &["run", &loose.path("main.ok")]);
+    assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
 }

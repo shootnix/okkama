@@ -14,10 +14,12 @@ use std::process::ExitCode;
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod import_paths;
 mod lsp;
 mod ocs;
 mod repl;
 
+use blade::manifest;
 use okkama_compiler::codegen::{self, Backend, Options as CodegenOptions};
 use okkama_compiler::diagnostics::{Diagnostic, render_all};
 use okkama_compiler::ir;
@@ -246,8 +248,10 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
         Ok(program) => program,
         Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
     };
-    let exe = std::env::current_exe().map_or_else(|_| "okkama".to_string(), |exe| exe.display().to_string());
-    let file = std::fs::canonicalize(path).map_or_else(|_| path.clone(), |file| file.display().to_string());
+    let exe = std::env::current_exe()
+        .map_or_else(|_| "okkama".to_string(), |exe| exe.display().to_string());
+    let file = std::fs::canonicalize(path)
+        .map_or_else(|_| path.clone(), |file| file.display().to_string());
     okkama_runtime::set_worker_command(vec![exe, "exec".into(), file]);
     if program.tests.is_some() {
         let mut stdout = io::stdout();
@@ -262,7 +266,10 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
     }
     // Исходников у файла байткода нет: стек — в терминах Sparrow.
     let (result, trace) = okkama_runtime::sparrow::execute_traced(&program, arguments.to_vec());
-    with_trace(sparrow_outcome(result), okkama_runtime::sparrow::render_trace(&program, &trace))
+    with_trace(
+        sparrow_outcome(result),
+        okkama_runtime::sparrow::render_trace(&program, &trace),
+    )
 }
 
 /// Диагностика отказа программы (код 1) и его место со стеком вызовов;
@@ -274,9 +281,7 @@ fn with_trace(mut outcome: Outcome, trace: String) -> Outcome {
     outcome
 }
 
-fn sparrow_outcome(
-    result: Result<ir::IntValue, okkama_runtime::sparrow::Error>,
-) -> Outcome {
+fn sparrow_outcome(result: Result<ir::IntValue, okkama_runtime::sparrow::Error>) -> Outcome {
     match result {
         Ok(value) => native_outcome(Ok(value)),
         Err(okkama_runtime::sparrow::Error::Operation { error, .. }) => native_outcome(Err(error)),
@@ -970,9 +975,11 @@ fn lower_source(sources: &[SourceFile], tests: bool) -> Result<(ir::Module, Stri
         })
 }
 
-/// Импорты из файлов, как в Perl-интерпретаторе: каталоги `OKKAMA_IMPORT_DIRS`
-/// (через `:`), каталог импортирующего файла, затем std
-/// (`OKKAMA_STDLIB_DIR`, по умолчанию `/usr/local/lib/okkama/std`).
+/// Импорты из файлов, как в Perl: сначала рядом с импортирующим файлом и в
+/// корне его пакета (`blade.toml`), затем системные каталоги
+/// `OKKAMA_IMPORT_DIRS` (через `:`), затем std (`OKKAMA_STDLIB_DIR`, по
+/// умолчанию `/usr/local/lib/okkama/std`). `pkg/…` — зависимости из `pkg/`
+/// корня проекта; файлы std ищут импорты только в std.
 struct FileLoader {
     import_dirs: Vec<PathBuf>,
     stdlib: PathBuf,
@@ -1022,18 +1029,37 @@ impl ModuleLoader for FileLoader {
         } else {
             format!("{path}.ok")
         };
-        let base = if importer == "<stdin>" {
-            PathBuf::from(".")
-        } else {
-            Path::new(importer)
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("."))
-        };
-        let mut dirs = self.import_dirs.clone();
-        dirs.push(base);
-        dirs.push(self.stdlib.clone());
+        let dirs = self.search_dirs(path, importer);
         self.load_from(&file, &dirs)
+    }
+
+    /// В blade-проекте `pkg/…` — только прямые зависимости пакета, которому
+    /// принадлежит импортирующий файл; вне проекта `pkg/` — обычный каталог.
+    fn check_import(&mut self, path: &str, importer: &str) -> Result<(), String> {
+        if !manifest::is_dependency_path(path) {
+            return Ok(());
+        }
+        let importer = importer_path(importer);
+        if self.in_std(&importer) {
+            return Ok(());
+        }
+        let Some(package) = manifest::package_root(&importer) else {
+            return Ok(());
+        };
+        let found = manifest::Manifest::read(&package)?;
+        if found.dependency_of(path).is_none() {
+            let name = path.split('/').nth(1).unwrap_or_default();
+            return Err(format!(
+                "\"{name}\" is not a dependency: add it to [dependencies] in {}",
+                package.join(manifest::MANIFEST).display()
+            ));
+        }
+        Ok(())
+    }
+
+    fn in_project(&mut self, file: &str) -> bool {
+        let file = importer_path(file);
+        !self.in_std(&file) && manifest::package_root(&file).is_some()
     }
 
     /// `std.…`: модуль только из std, а не из каталога импорта или программы.
@@ -1043,7 +1069,51 @@ impl ModuleLoader for FileLoader {
     }
 }
 
+/// Путь импортирующего файла; у виртуальных (`<stdin>`, `<repl>`) — в текущем каталоге.
+fn importer_path(importer: &str) -> PathBuf {
+    let path = if importer.starts_with('<') {
+        Path::new(".").join("<input>")
+    } else {
+        PathBuf::from(importer)
+    };
+    let absolute = std::path::absolute(&path).unwrap_or(path);
+    match (absolute.parent(), absolute.file_name()) {
+        (Some(dir), Some(name)) => std::fs::canonicalize(dir)
+            .map(|dir| dir.join(name))
+            .unwrap_or(absolute),
+        _ => absolute,
+    }
+}
+
 impl FileLoader {
+    fn in_std(&self, file: &Path) -> bool {
+        let stdlib = std::fs::canonicalize(&self.stdlib).unwrap_or_else(|_| self.stdlib.clone());
+        file.starts_with(stdlib)
+    }
+
+    /// Каталоги поиска импорта `path` из файла `importer`, по порядку.
+    fn search_dirs(&self, path: &str, importer: &str) -> Vec<PathBuf> {
+        let importer = importer_path(importer);
+        let base = importer
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        if self.in_std(&importer) {
+            return vec![base, self.stdlib.clone()];
+        }
+        let package = manifest::package_root(&importer);
+        if let Some(package) = &package {
+            if manifest::is_dependency_path(path) {
+                return vec![manifest::project_root(package)];
+            }
+        }
+        let mut dirs = vec![base];
+        dirs.extend(package.filter(|package| !dirs.contains(package)));
+        dirs.extend(self.import_dirs.iter().cloned());
+        dirs.push(self.stdlib.clone());
+        dirs
+    }
+
     /// Первый файл `file` из каталогов `dirs`, разобранный как модуль.
     fn load_from(&mut self, file: &str, dirs: &[PathBuf]) -> Result<Option<LoadedModule>, String> {
         for candidate in dirs.iter().map(|dir| dir.join(file)) {
@@ -1286,7 +1356,10 @@ fn run_command(args: &[String]) -> Outcome {
         }
         let arguments = program_args.to_vec();
         let (result, trace) = okkama_runtime::execute_traced(&module, arguments);
-        return with_trace(native_outcome(result), okkama_runtime::render_trace(&module, &trace));
+        return with_trace(
+            native_outcome(result),
+            okkama_runtime::render_trace(&module, &trace),
+        );
     }
     if engine == "sparrow" {
         let program = match codegen::sparrow::generate(&module) {
@@ -1306,8 +1379,12 @@ fn run_command(args: &[String]) -> Outcome {
             };
         }
         // Номера функций и инструкций Sparrow совпадают с OIR: место — по исходнику.
-        let (result, trace) = okkama_runtime::sparrow::execute_traced(&program, program_args.to_vec());
-        return with_trace(sparrow_outcome(result), okkama_runtime::render_trace(&module, &trace));
+        let (result, trace) =
+            okkama_runtime::sparrow::execute_traced(&program, program_args.to_vec());
+        return with_trace(
+            sparrow_outcome(result),
+            okkama_runtime::render_trace(&module, &trace),
+        );
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),

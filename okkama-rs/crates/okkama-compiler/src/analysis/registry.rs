@@ -390,12 +390,18 @@ impl<'a> Registry<'a> {
                 continue;
             }
             let (version, other) = (
-                first_program.module.version.text(),
-                program.module.version.text(),
+                first_program.module.version_text(),
+                program.module.version_text(),
             );
             if version != other {
+                let shown = |version: &str| match version {
+                    "" => "no version".to_string(),
+                    version => format!("\"{version}\""),
+                };
                 let message = format!(
-                    "module \"{name}\" has conflicting versions \"{version}\" and \"{other}\""
+                    "module \"{name}\" has conflicting versions {} and {}",
+                    shown(&version),
+                    shown(&other)
                 );
                 self.error(program.module.span, message);
             }

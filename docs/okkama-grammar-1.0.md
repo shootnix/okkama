@@ -37,7 +37,7 @@ and do not publish that closure to consumers.
 ```ebnf
 program             = module_decl import_decl* declaration* EOF ;
 
-module_decl         = "module" module_name version ";" ;
+module_decl         = "module" module_name version? ";" ;
 module_name         = CONTEXT_IDENT ("/" CONTEXT_IDENT)* ;
 version             = "v" INT "." INT "." INT ;
 

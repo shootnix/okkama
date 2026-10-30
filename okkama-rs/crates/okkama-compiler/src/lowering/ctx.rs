@@ -1177,7 +1177,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             .collect();
         ir::Module {
             name: module_path(program),
-            version: program.module.version.text(),
+            version: program.module.version_text(),
             imports,
             enums,
             roles,

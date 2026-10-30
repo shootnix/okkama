@@ -20,12 +20,12 @@ fn module_header_forms() {
         .map(|n| n.text.as_str())
         .collect();
     assert_eq!(path, ["app", "api"]);
-    assert_eq!(program.module.version.text(), "v1.2.3");
+    assert_eq!(program.module.version_text(), "v1.2.3");
     // Keyword-shaped lower-case path segments are namespace data.
     parse_ok("module test/more v1.0.0; object Assertions { Assertions(); }");
     // `v1.2 .3` lexes differently from `v1.2.3` but means the same version.
     assert_eq!(
-        parse_ok("module app v1.2 .3;").module.version.text(),
+        parse_ok("module app v1.2 .3;").module.version_text(),
         "v1.2.3"
     );
     // Library modules may omit main.

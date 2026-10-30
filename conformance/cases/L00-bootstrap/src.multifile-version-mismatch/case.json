@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L00.src.multifile-version-mismatch",
+  "title": "files of one module may not mix a version and no version",
+  "purpose": "Multi-file modules declare one version, or none in every file.",
+  "level": "L00",
+  "contracts": [
+    {
+      "contract": "SRC.MODULE-DECL",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "MOD.MULTI-FILE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok",
+    "second.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "spec 5.1: every file declares the same version, or every file no version."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for optional module versions",
+    "expected_basis": "spec 5.1: a version in one file and none in another is a semantic error."
+  },
+  "status": "mandatory"
+}

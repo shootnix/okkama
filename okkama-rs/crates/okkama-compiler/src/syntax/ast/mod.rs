@@ -50,12 +50,13 @@ pub struct Program {
     pub span: Span,
 }
 
-/// `module app/api v1.2.3;`
+/// `module app/api v1.2.3;` or `module app/api;`
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModuleDecl {
     /// Path segments (`app`, `api`).
     pub path: Vec<Name>,
-    pub version: Version,
+    /// Optional: a blade project keeps its version in `blade.toml`.
+    pub version: Option<Version>,
     pub span: Span,
 }
 
@@ -76,6 +77,18 @@ impl Version {
     /// `v1.0.0`
     pub fn text(&self) -> String {
         format!("v{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+impl ModuleDecl {
+    /// `v1.0.0`, or an empty string for a module without a version.
+    pub fn version_text(&self) -> String {
+        self.version.as_ref().map_or_else(String::new, Version::text)
+    }
+
+    /// ABI major of native symbols (§5.9); a module without a version is major `0`.
+    pub fn major(&self) -> &str {
+        self.version.as_ref().map_or("0", |version| version.major.as_str())
     }
 }
 

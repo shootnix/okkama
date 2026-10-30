@@ -48,10 +48,10 @@ fn module_node(module: &ModuleDecl) -> Node {
         .field("path", names(&module.path))
         .field(
             "version",
-            Value::Name {
-                text: module.version.text(),
-                span: module.version.span,
-            },
+            module.version.as_ref().map_or(Value::Absent, |version| Value::Name {
+                text: version.text(),
+                span: version.span,
+            }),
         )
 }
 

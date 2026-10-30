@@ -196,7 +196,9 @@ Rules to remember:
 - The `module` declaration must be the first thing in the file.
 - The module name is one or more lowercase identifiers separated by `/`
   (`app`, `money/cash`).
-- The version must be spelled `vMAJOR.MINOR.PATCH`.
+- The version is optional (`module app;`); when present it must be spelled
+  `vMAJOR.MINOR.PATCH`. Modules of a blade project declare none: their
+  version is set in `blade.toml`.
 - Executable modules must declare `main()`. Library modules may omit it.
 - Only *declarations* are allowed at module scope: objects, roles, enums,
   native declarations, actions, and test blocks. There are no top-level
@@ -2698,15 +2700,24 @@ Import paths are *source paths*, not module names. `import "money";`
 resolves `money.ok`; `import "foo/bar";` resolves `foo/bar.ok` (explicit
 `.ok` suffixes are accepted as-is). Lookup is local-first:
 
-1. explicit runtime import directories;
-2. the importing file's own directory — the entry script's directory for its
+1. the importing file's own directory — the entry script's directory for its
    imports, and each loaded module's directory for that module's imports;
-3. the bundled Okkama standard library directory.
+2. the root of the importing file's package — the nearest directory above it
+   with `blade.toml` — when it has one;
+3. system import directories (`OKKAMA_IMPORT_DIRS`);
+4. the bundled Okkama standard library directory.
 
 The working directory the program is started from plays no part, so a module
 tree behaves identically wherever it is run from. Two modules that import the
 same relative path from different directories load different files. A local
-module shadows a bundled stdlib module with the same path.
+module shadows a bundled stdlib module with the same path for the program's
+own imports; the standard library resolves its own imports only inside itself.
+
+In a blade project, dependencies are installed in `pkg/<name>/` of the project
+root and imported by that path: `import "pkg/web/router" take Router;`. Only
+dependencies declared in `[dependencies]` of the importing package's
+`blade.toml` can be imported this way. Module files of a project declare no
+version (`module app;`): the version is set in `blade.toml` (spec §5.2.2).
 
 ### 26.3 What an import exposes
 

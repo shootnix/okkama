@@ -115,7 +115,10 @@ fn write_term(f: &mut Formatter<'_>, module: Option<&Module>, kind: &TermKind) -
 impl Display for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "oir 1 high")?;
-        writeln!(f, "module {} {}", self.name, self.version)?;
+        match self.version.as_str() {
+            "" => writeln!(f, "module {}", self.name)?,
+            version => writeln!(f, "module {} {version}", self.name)?,
+        }
         writeln!(f, "requires core")?;
         if self.tests.is_some() {
             writeln!(f, "requires test")?;

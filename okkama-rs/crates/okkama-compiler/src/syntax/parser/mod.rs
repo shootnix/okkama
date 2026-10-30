@@ -92,7 +92,7 @@ impl<'s> Parser<'s> {
         })
     }
 
-    /// `module_decl = "module" module_name version ";"`
+    /// `module_decl = "module" module_name version? ";"`
     fn module_declaration(&mut self) -> PResult<ModuleDecl> {
         let keyword = self.consume(
             TokenKind::Module,
@@ -102,7 +102,11 @@ impl<'s> Parser<'s> {
         while self.eat(TokenKind::Slash) {
             path.push(self.consume_module_name_part("Expect module name part after \"/\".")?);
         }
-        let version = self.version()?;
+        let version = if self.check(TokenKind::Semicolon) {
+            None
+        } else {
+            Some(self.version()?)
+        };
         let semicolon = self.consume(
             TokenKind::Semicolon,
             "Expect \";\" after module declaration.",

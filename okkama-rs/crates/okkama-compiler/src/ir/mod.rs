@@ -211,6 +211,7 @@ pub use okkama_runtime_core::IntValue;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Module {
     pub name: String,
+    /// `v1.0.0`; пусто — модуль без версии.
     pub version: String,
     pub imports: Vec<Import>,
     pub enums: Vec<Enum>,
