@@ -19,6 +19,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   objects, roles, enums and native actions with their doc comments; after an enum, its
   cases. Whole paths (`io.stdout`, and `io.stdout.Stdout` once a letter is typed) are
   offered from anywhere in std.
+- **Editor support for named arguments** (`okkama lsp`, VS Code): at the start of an
+  argument (right after `(` or `,`, or while typing a name) the parameters not yet named
+  are offered as `name:`, first in the list. This happens only where a named call is
+  allowed: not after a positional argument, and not for variadic actions, builtin actions
+  or action values. Signature help highlights the parameter by its name in a named call
+  (`obj.action(zip: 1, name: …)`) and picks the overload by the names already given.
+
+### Fixed
+
+- Editor: a name typed where the checked text had a different name with the same first
+  letters (`out.` in place of `obj.action(…)`) was resolved as the old one, so completion
+  showed the wrong members and signature help went missing.
+- Editor: signatures of variadic actions show the tail as `values is ...string` (it was
+  `@string`).
 
 ### Changed
 

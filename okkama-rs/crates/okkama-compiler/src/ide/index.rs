@@ -157,6 +157,20 @@ impl<'r, 'a> Builder<'r, 'a> {
         self.registry.type_name(ty)
     }
 
+    /// Параметры подписи `name is T`; variadic-хвост — как в исходнике, `...T`.
+    fn params(&self, params: &[(String, Ty)], variadic: bool) -> Vec<String> {
+        params
+            .iter()
+            .enumerate()
+            .map(|(index, (name, ty))| match ty {
+                Ty::Array(element) if variadic && index + 1 == params.len() => {
+                    format!("{name} is ...{}", self.ty(element))
+                }
+                _ => format!("{name} is {}", self.ty(ty)),
+            })
+            .collect()
+    }
+
     // ---- члены типов (дополнение) ----
 
     /// Ключ членов типа; члены вычисляются один раз.
@@ -195,11 +209,7 @@ impl<'r, 'a> Builder<'r, 'a> {
     fn method_completion(&self, object: ObjectId, method: usize) -> Completion {
         let info = &self.registry.objects[object.0];
         let found = &info.methods[method];
-        let params: Vec<String> = found
-            .params
-            .iter()
-            .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-            .collect();
+        let params = self.params(&found.params, found.variadic);
         let result = if found.successor {
             format!("^{}", self.registry.result_name(&found.result))
         } else {
@@ -253,11 +263,7 @@ impl<'r, 'a> Builder<'r, 'a> {
         info.methods
             .iter()
             .map(|method| {
-                let params: Vec<String> = method
-                    .params
-                    .iter()
-                    .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-                    .collect();
+                let params = self.params(&method.params, method.variadic);
                 let doc = info
                     .decl
                     .and_then(|decl| {
@@ -864,11 +870,7 @@ impl<'r, 'a> Builder<'r, 'a> {
     fn method_info(&mut self, object: ObjectId, method: usize) -> (String, Option<Location>) {
         let info = &self.registry.objects[object.0];
         let found = &info.methods[method];
-        let params: Vec<String> = found
-            .params
-            .iter()
-            .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-            .collect();
+        let params = self.params(&found.params, found.variadic);
         let result = if found.successor {
             format!("^{}", self.registry.result_name(&found.result))
         } else {
@@ -908,11 +910,7 @@ impl<'r, 'a> Builder<'r, 'a> {
     fn role_method_info(&mut self, role: RoleId, slot: usize) -> (String, Option<Location>) {
         let info = &self.registry.roles[role.0];
         let found = &info.methods[slot];
-        let params: Vec<String> = found
-            .params
-            .iter()
-            .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-            .collect();
+        let params = self.params(&found.params, found.variadic);
         let signature = format!(
             "{}{}.{}({}) is {}",
             if found.is_async { "async " } else { "" },
@@ -943,10 +941,9 @@ impl<'r, 'a> Builder<'r, 'a> {
     fn ctor_hover(&self, object: ObjectId, ctor: usize) -> String {
         let info = &self.registry.objects[object.0];
         let params: Vec<String> = match &info.ctors[ctor].shape {
-            CtorShape::Full { params, .. } => params
-                .iter()
-                .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-                .collect(),
+            CtorShape::Full {
+                params, variadic, ..
+            } => self.params(params, *variadic),
             CtorShape::Shorthand { fields, .. } => fields
                 .iter()
                 .map(|field| {
@@ -1171,11 +1168,7 @@ impl<'r, 'a> Builder<'r, 'a> {
                     .iter()
                     .filter(|method| !method.private && method.decl.is_some())
                 {
-                    let params: Vec<String> = method
-                        .params
-                        .iter()
-                        .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-                        .collect();
+                    let params = self.params(&method.params, method.variadic);
                     let result = if method.successor {
                         format!("^{}", self.registry.result_name(&method.result))
                     } else {
@@ -1205,11 +1198,7 @@ impl<'r, 'a> Builder<'r, 'a> {
                     ))
                 )];
                 for method in &info.methods {
-                    let params: Vec<String> = method
-                        .params
-                        .iter()
-                        .map(|(name, ty)| format!("{name} is {}", self.ty(ty)))
-                        .collect();
+                    let params = self.params(&method.params, method.variadic);
                     lines.push(format!(
                         "    {}{}({}) is {}",
                         if method.is_async { "async " } else { "" },

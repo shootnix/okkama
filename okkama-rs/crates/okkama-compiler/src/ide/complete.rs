@@ -122,24 +122,43 @@ fn matching_open(bytes: &[u8], close: usize, open: u8, shut: u8) -> Option<usize
     None
 }
 
+/// Имя, которое начинается в `at`.
+fn name_at(text: &str, at: usize) -> &str {
+    let rest = text.get(at..).unwrap_or("");
+    &rest[..rest.bytes().take_while(|byte| is_ident(*byte)).count()]
+}
+
 /// Смещение `offset` текущего текста в проверенном (`analyzed`).
 pub fn map_offset(analyzed: &str, text: &str, offset: u32) -> Option<u32> {
     if analyzed == text {
         return Some(offset);
     }
     let (a, b) = (analyzed.as_bytes(), text.as_bytes());
-    let prefix = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    // Общие начало и конец не режут имя: `obj` и `out` не совпадают в `o`.
+    let mut prefix = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    let split = |at: usize| {
+        a.get(at).is_some_and(|byte| is_ident(*byte))
+            || b.get(at).is_some_and(|byte| is_ident(*byte))
+    };
+    while prefix > 0 && is_ident(b[prefix - 1]) && split(prefix) {
+        prefix -= 1;
+    }
     if (offset as usize) <= prefix {
         return Some(offset);
     }
     let limit = a.len().min(b.len()) - prefix;
-    let suffix = a
+    let mut suffix = a
         .iter()
         .rev()
         .zip(b.iter().rev())
         .take(limit)
         .take_while(|(x, y)| x == y)
         .count();
+    let joined =
+        |text: &[u8], suffix: usize| text.len() > suffix && is_ident(text[text.len() - suffix - 1]);
+    while suffix > 0 && is_ident(b[b.len() - suffix]) && (joined(a, suffix) || joined(b, suffix)) {
+        suffix -= 1;
+    }
     if offset as usize >= b.len() - suffix {
         return Some((offset as usize + a.len() - b.len()) as u32);
     }
@@ -281,12 +300,21 @@ impl Inspection {
 
     /// Тип символа проверки в месте `offset` текущего текста (если оно перенеслось).
     fn symbol_type(&self, analyzed: &str, text: &str, offset: u32) -> Option<String> {
+        self.edited_symbol(analyzed, text, offset)?.ty.clone()
+    }
+
+    /// Символ проверки в месте `offset` текущего текста. Перенос позиции
+    /// неточен у самой правки (`out` вместо `obj` начинается там же), поэтому
+    /// имя в этом месте должно совпасть в обоих текстах.
+    fn edited_symbol(&self, analyzed: &str, text: &str, offset: u32) -> Option<&super::Symbol> {
         let at = map_offset(analyzed, text, offset)?;
+        if name_at(analyzed, at as usize) != name_at(text, offset as usize) {
+            return None;
+        }
         self.symbols
             .iter()
             .filter(|symbol| symbol.span.start <= at && at < symbol.span.end)
             .min_by_key(|symbol| symbol.span.len())
-            .and_then(|symbol| symbol.ty.clone())
     }
 
     /// Дополнения в `offset` текущего текста `text`; инспекция построена по `analyzed`.
@@ -323,7 +351,8 @@ impl Inspection {
                 .unwrap_or_default(),
             Context::Plain => {
                 let at = scope_offset(analyzed, text, prefix_start(text, offset));
-                let mut out = Vec::new();
+                // В начале аргумента вызова — сначала имена его параметров.
+                let mut out = self.argument_names(analyzed, text, offset);
                 let mut seen = std::collections::HashSet::new();
                 // Ближайшая (самая узкая) область — первой: её имена перекрывают внешние.
                 let mut scopes: Vec<_> = self
@@ -377,17 +406,34 @@ impl Inspection {
     }
 
     /// Подсказка сигнатуры внутри `name(...)`: подпись, параметры и номер
-    /// текущего параметра.
+    /// текущего параметра (в именованном вызове — по имени аргумента).
     pub fn signature(
         &self,
         analyzed: &str,
         text: &str,
         offset: u32,
     ) -> Option<(String, Vec<String>, usize)> {
+        let site = self.call_site(analyzed, text, offset)?;
+        let active = site.active();
+        Some((site.label, site.params, active))
+    }
+
+    /// Имена ещё не названных параметров (`zip:`) в начале аргумента вызова,
+    /// если вызов может быть именованным.
+    pub fn argument_names(&self, analyzed: &str, text: &str, offset: u32) -> Vec<Completion> {
+        self.call_site(analyzed, text, offset)
+            .map(|site| site.argument_names())
+            .unwrap_or_default()
+    }
+
+    /// Вызов `name(...)`, внутри которого стоит курсор: аргументы до курсора
+    /// и подпись — первая из кандидатов, где есть все уже названные имена.
+    fn call_site(&self, analyzed: &str, text: &str, offset: u32) -> Option<CallSite> {
         let bytes = text.as_bytes();
+        let offset = (offset as usize).min(bytes.len());
         let mut depth = 0usize;
-        let mut commas = 0usize;
-        let mut index = (offset as usize).min(bytes.len());
+        let mut commas = Vec::new();
+        let mut index = offset;
         let open = loop {
             if index == 0 {
                 return None;
@@ -398,7 +444,7 @@ impl Inspection {
                 b'(' | b'[' if depth > 0 => depth -= 1,
                 b'(' => break index,
                 b'[' | b'{' | b'}' | b';' => return None,
-                b',' if depth == 0 => commas += 1,
+                b',' if depth == 0 => commas.push(index),
                 _ => {}
             }
         };
@@ -410,45 +456,78 @@ impl Inspection {
             return None;
         }
         let name = &text[start..open];
-        let label = self
+        let mut bounds = vec![open + 1];
+        bounds.extend(commas.iter().rev().map(|comma| comma + 1));
+        let before: Vec<Option<String>> = bounds
+            .windows(2)
+            .map(|pair| arg_name(&text[pair[0]..pair[1] - 1]).map(str::to_string))
+            .collect();
+        let current = text[*bounds.last().unwrap_or(&(open + 1))..offset].to_string();
+        let line_start = text[..start].rfind('\n').map_or(0, |at| at + 1);
+        let declaration = matches!(
+            text[line_start..start].trim(),
+            "" | "async" | "private" | "native" | "native async"
+        );
+        // Встроенные действия (строк, массивов, …) — только позиционные.
+        let mut named = !declaration;
+        let mut candidates: Vec<String> = self
             .signature_by_symbol(analyzed, text, start as u32)
-            .or_else(|| {
-                if start > 0 && bytes[start - 1] == b'.' {
-                    let receiver = self.infer(analyzed, text, start - 1, 0)?;
+            .into_iter()
+            .collect();
+        if start > 0 && bytes[start - 1] == b'.' {
+            if let Some(receiver) = self.infer(analyzed, text, start - 1, 0) {
+                named &= builtin_members(&receiver).is_empty();
+                candidates.extend(
                     self.members_for(&receiver)
                         .into_iter()
-                        .find(|member| member.label == name)
+                        .filter(|member| member.label == name)
                         .map(|member| match member.detail.strip_prefix("async ") {
                             Some(rest) => format!("async {name}{rest}"),
                             None => format!("{name}{}", member.detail),
-                        })
-                } else if name.starts_with(|ch: char| ch.is_ascii_uppercase()) {
-                    let ctors = self.members.get(&format!("ctor:{name}"))?;
-                    ctors
-                        .iter()
-                        .find(|ctor| parameters(&ctor.detail).len() > commas)
-                        .or_else(|| ctors.first())
-                        .map(|ctor| ctor.detail.clone())
-                } else {
-                    self.globals
-                        .iter()
-                        .find(|global| {
-                            global.label == name && global.kind == CompletionKind::Function
-                        })
-                        .map(|global| format!("{name}{}", global.detail))
-                }
-            })?;
+                        }),
+                );
+            }
+        } else if name.starts_with(|ch: char| ch.is_ascii_uppercase()) {
+            if let Some(ctors) = self.members.get(&format!("ctor:{name}")) {
+                let mut ctors: Vec<&Completion> = ctors.iter().collect();
+                // Без имён — по числу аргументов: первая форма, где их хватает.
+                ctors.sort_by_key(|ctor| parameters(&ctor.detail).len() <= before.len());
+                candidates.extend(ctors.into_iter().map(|ctor| ctor.detail.clone()));
+            }
+        } else {
+            candidates.extend(
+                self.globals
+                    .iter()
+                    .filter(|global| {
+                        global.label == name && global.kind == CompletionKind::Function
+                    })
+                    .map(|global| format!("{name}{}", global.detail)),
+            );
+        }
+        let mut wanted: Vec<&str> = before.iter().flatten().map(String::as_str).collect();
+        wanted.extend(arg_name(&current));
+        let label = candidates
+            .iter()
+            .find(|label| {
+                let params = parameters(label);
+                wanted
+                    .iter()
+                    .all(|name| params.iter().any(|param| param_name(param) == Some(*name)))
+            })
+            .or_else(|| candidates.first())?
+            .clone();
         let params = parameters(&label);
-        Some((label, params, commas))
+        Some(CallSite {
+            label,
+            params,
+            before,
+            current,
+            named,
+        })
     }
 
     fn signature_by_symbol(&self, analyzed: &str, text: &str, offset: u32) -> Option<String> {
-        let at = map_offset(analyzed, text, offset)?;
-        let symbol = self
-            .symbols
-            .iter()
-            .filter(|symbol| symbol.span.start <= at && at < symbol.span.end)
-            .min_by_key(|symbol| symbol.span.len())?;
+        let symbol = self.edited_symbol(analyzed, text, offset)?;
         Some(
             symbol
                 .hover
@@ -490,6 +569,106 @@ fn parameters(label: &str) -> Vec<String> {
         current.push(ch);
     }
     out
+}
+
+/// Вызов вокруг курсора: подпись и аргументы, набранные до него.
+struct CallSite {
+    label: String,
+    params: Vec<String>,
+    /// Имена аргументов перед текущим (`None` — позиционный).
+    before: Vec<Option<String>>,
+    /// Текущий аргумент от его начала до курсора.
+    current: String,
+    /// Вызов может быть именованным: не объявление и не встроенное действие.
+    named: bool,
+}
+
+impl CallSite {
+    /// Имена параметров, если подпись допускает именованный вызов (у
+    /// action-значений имён нет, variadic-хвост принимает только позиционные).
+    fn names(&self) -> Option<Vec<&str>> {
+        if !self.named {
+            return None;
+        }
+        self.params
+            .iter()
+            .map(|param| {
+                let (_, ty) = param.split_once(" is ")?;
+                if ty.starts_with("...") {
+                    return None;
+                }
+                param_name(param)
+            })
+            .collect()
+    }
+
+    /// Номер текущего параметра: по имени аргумента, а в именованном вызове
+    /// без имени — первый ещё не названный (с набранным началом имени).
+    fn active(&self) -> usize {
+        let position = self.before.len();
+        let Some(names) = self.names() else {
+            return position;
+        };
+        if let Some(name) = arg_name(&self.current) {
+            return names
+                .iter()
+                .position(|param| *param == name)
+                .unwrap_or(position);
+        }
+        if self.before.is_empty() || self.before.iter().any(Option::is_none) {
+            return position;
+        }
+        let typed = self.current.trim();
+        let free = |param: &&str| !self.before.iter().flatten().any(|name| name == param);
+        names
+            .iter()
+            .position(|param| free(param) && param.starts_with(typed))
+            .or_else(|| names.iter().position(|param| free(param)))
+            .unwrap_or(position)
+    }
+
+    /// `name:` для параметров, ещё не названных в вызове; в позиционном
+    /// вызове (уже есть позиционный аргумент) — ничего: смешивать нельзя.
+    fn argument_names(&self) -> Vec<Completion> {
+        let Some(names) = self.names() else {
+            return Vec::new();
+        };
+        if self.before.iter().any(Option::is_none) || !self.current.trim().bytes().all(is_ident) {
+            return Vec::new();
+        }
+        names
+            .iter()
+            .zip(&self.params)
+            .filter(|(name, _)| !self.before.iter().flatten().any(|used| used == *name))
+            .map(|(name, param)| Completion {
+                label: format!("{name}:"),
+                kind: CompletionKind::Argument,
+                detail: param
+                    .split_once(" is ")
+                    .map_or(String::new(), |(_, ty)| ty.to_string()),
+                documentation: String::new(),
+                insert: format!("{name}: "),
+                snippet: false,
+            })
+            .collect()
+    }
+}
+
+/// Имя параметра в подписи: `zip is int` → `zip`, `:zip is int` → `zip`.
+fn param_name(param: &str) -> Option<&str> {
+    let (name, _) = param.split_once(" is ")?;
+    let name = name.trim().trim_start_matches(':');
+    (!name.is_empty() && name.bytes().all(is_ident)).then_some(name)
+}
+
+/// Имя именованного аргумента `zip: 12345` (без значения — тоже).
+fn arg_name(arg: &str) -> Option<&str> {
+    let arg = arg.trim_start();
+    let end = arg.bytes().take_while(|byte| is_ident(*byte)).count();
+    let (name, rest) = arg.split_at(end);
+    let first = name.bytes().next()?;
+    let rest = rest.trim_start();
+    (!first.is_ascii_digit() && rest.starts_with(':') && !rest.starts_with("::")).then_some(name)
 }
 
 fn keyword(word: &str) -> Completion {

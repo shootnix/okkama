@@ -475,7 +475,119 @@ main() is int {
 }
 "#;
     let found = lints(text);
-    assert!(!found.iter().any(|(code, _)| code == "unused-import"), "{found:?}");
-    let errors: Vec<_> = inspect(text).diagnostics.into_iter().filter(|found| found.code.is_none()).collect();
+    assert!(
+        !found.iter().any(|(code, _)| code == "unused-import"),
+        "{found:?}"
+    );
+    let errors: Vec<_> = inspect(text)
+        .diagnostics
+        .into_iter()
+        .filter(|found| found.code.is_none())
+        .collect();
     assert!(errors.is_empty(), "{errors:?}");
+}
+
+const NAMED: &str = r#"module app v1.0.0;
+
+object Box {
+    Box();
+    action(name is string, zip is int) is void {}
+    size(width is int) is int { width; }
+    size(height is int) is int { height; }
+    many(values is ...string) is void {}
+}
+
+main() is int {
+    let b = Box();
+    b.action(name: "x", zip: 1);
+    let text = "abc";
+    return b.size(width: 1) + text.size();
+}
+"#;
+
+/// `NAMED`, где вызов `b.action(name: "x", zip: 1)` заменён на `call`; курсор — в конце `call`.
+fn named_at(call: &str) -> (Inspection, String, u32) {
+    let edited = NAMED.replace("b.action(name: \"x\", zip: 1);", call);
+    let offset = (edited.find(call).unwrap() + call.len()) as u32;
+    (inspect(NAMED), edited, offset)
+}
+
+fn active_at(call: &str) -> (String, usize) {
+    let (inspection, edited, offset) = named_at(call);
+    let (label, _, active) = inspection.signature(NAMED, &edited, offset).unwrap();
+    (label, active)
+}
+
+fn argument_names_at(call: &str) -> Vec<String> {
+    let (inspection, edited, offset) = named_at(call);
+    inspection
+        .argument_names(NAMED, &edited, offset)
+        .into_iter()
+        .map(|found| found.label)
+        .collect()
+}
+
+#[test]
+fn signature_help_follows_argument_names() {
+    assert_eq!(active_at("b.action(\"x\", ").1, 1);
+    assert_eq!(active_at("b.action(zip: ").1, 1);
+    assert_eq!(active_at("b.action(zip: 1, ").1, 0);
+    assert_eq!(active_at("b.action(zip: 1, name: \"x\"").1, 0);
+    assert_eq!(active_at("b.action(name: \"x\", zi").1, 1);
+    // Перегрузки, различимые только именами: подпись — по названному имени.
+    assert_eq!(active_at("b.size(height: ").0, "size(height is int) is int");
+    assert_eq!(active_at("b.size(width: ").0, "size(width is int) is int");
+}
+
+#[test]
+fn argument_names_complete_unnamed_parameters() {
+    assert_eq!(argument_names_at("b.action("), ["name:", "zip:"]);
+    assert_eq!(argument_names_at("b.action(zip: 1, "), ["name:"]);
+    assert_eq!(argument_names_at("b.action(zip: 1, na"), ["name:"]);
+    let (inspection, edited, offset) = named_at("b.action(");
+    let first = inspection.complete(NAMED, &edited, offset).remove(0);
+    assert_eq!(
+        (first.kind, first.insert.as_str()),
+        (CompletionKind::Argument, "name: ")
+    );
+    assert_eq!(first.detail, "string");
+}
+
+#[test]
+fn argument_names_are_not_offered_where_names_are_rejected() {
+    // Уже позиционный вызов: смешивать нельзя.
+    assert!(argument_names_at("b.action(\"x\", ").is_empty());
+    // Значение аргумента, а не его начало.
+    assert!(argument_names_at("b.action(zip: ").is_empty());
+    // Variadic-хвост и встроенные действия — только позиционные.
+    assert!(argument_names_at("b.many(").is_empty());
+    assert!(argument_names_at("\"abc\".size(").is_empty());
+    // Объявление параметров, а не вызов.
+    let edited = NAMED.replace(
+        "    many(values is ...string) is void {}\n",
+        "    action(\n",
+    );
+    let offset = (edited.find("    action(\n").unwrap() + "    action(".len()) as u32;
+    assert!(
+        inspect(NAMED)
+            .argument_names(NAMED, &edited, offset)
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_fresh_name_is_not_taken_for_the_checked_name_it_replaced() {
+    // `bb` начинается там же, где в проверенном тексте стоял `b`: это не `b`.
+    let (inspection, edited, offset) = named_at("bb.");
+    let labels: Vec<String> = inspection
+        .complete(NAMED, &edited, offset)
+        .into_iter()
+        .map(|found| found.label)
+        .collect();
+    assert!(!labels.contains(&"action".to_string()), "{labels:?}");
+    assert!(
+        inspection
+            .signature(NAMED, &named_at("bb.action(").1, named_at("bb.action(").2)
+            .is_none()
+    );
 }

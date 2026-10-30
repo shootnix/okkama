@@ -111,6 +111,8 @@ pub enum CompletionKind {
     Function,
     Keyword,
     Module,
+    /// Имя аргумента именованного вызова: `zip:`.
+    Argument,
 }
 
 /// Вариант дополнения.

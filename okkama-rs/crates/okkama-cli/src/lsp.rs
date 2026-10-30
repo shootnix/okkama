@@ -69,7 +69,7 @@ pub fn run() -> ExitCode {
             work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),
         })),
         completion_provider: Some(lsp_types::CompletionOptions {
-            trigger_characters: Some(vec![".".to_string()]),
+            trigger_characters: Some(vec![".".to_string(), "(".to_string(), ",".to_string()]),
             ..lsp_types::CompletionOptions::default()
         }),
         signature_help_provider: Some(lsp_types::SignatureHelpOptions {
@@ -494,10 +494,24 @@ impl Server {
             return Some(found);
         }
         let (document, offset, analyzed, inspection) = self.position(params)?;
-        let items = inspection
-            .complete(analyzed, &document.text, offset)
+        // После `(` и `,` — только имена аргументов: остальное всплывёт при наборе.
+        let argument = matches!(
+            params
+                .pointer("/context/triggerCharacter")
+                .and_then(Value::as_str),
+            Some("(" | ",")
+        );
+        let found = if argument {
+            inspection.argument_names(analyzed, &document.text, offset)
+        } else {
+            inspection.complete(analyzed, &document.text, offset)
+        };
+        let items = found
             .into_iter()
             .map(|found| lsp_types::CompletionItem {
+                // Имена аргументов — выше прочего.
+                sort_text: (found.kind == ide::CompletionKind::Argument)
+                    .then(|| format!("0{}", found.label)),
                 label: found.label,
                 kind: Some(match found.kind {
                     ide::CompletionKind::Method => lsp_types::CompletionItemKind::METHOD,
@@ -510,6 +524,7 @@ impl Server {
                     ide::CompletionKind::Function => lsp_types::CompletionItemKind::FUNCTION,
                     ide::CompletionKind::Keyword => lsp_types::CompletionItemKind::KEYWORD,
                     ide::CompletionKind::Module => lsp_types::CompletionItemKind::MODULE,
+                    ide::CompletionKind::Argument => lsp_types::CompletionItemKind::PROPERTY,
                 }),
                 detail: (!found.detail.is_empty()).then_some(found.detail),
                 documentation: (!found.documentation.is_empty()).then_some(
