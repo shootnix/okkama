@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-31
+
 ### Added
 
 - **`std.` paths**: a standard library declaration can be named in place, without an
@@ -25,7 +27,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   allowed: not after a positional argument, and not for variadic actions, builtin actions
   or action values. Signature help highlights the parameter by its name in a named call
   (`obj.action(zip: 1, name: …)`) and picks the overload by the names already given.
-
 - **Optional module version**: `module app;` is valid. A module without a version has
   ABI major `0`. Files of one multi-file module declare the same version, or none in
   every file.
@@ -37,7 +38,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   - Module files of a project declare no version, because it is set in `blade.toml`.
   - The compiler, `okkama lsp` and the REPL find the project from the file, so a
     program resolves the same way from any working directory.
-
 - **blade manages dependencies** (`docs/blade.md`).
   - Commands: `blade install`, `blade install SOURCE [VERSION]`, `blade remove NAME`
     and `blade update [NAME...]`.
@@ -86,10 +86,40 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   memory, instructions, IPC), speed ratios per engine and `REPORT.md`. Reports are kept
   in `benchmarks/reports/<date>-v<version>/`; the first one is for 0.3.0.
 
+### Changed
+
+- **Import lookup is local-first.** The order is now:
+  1. the importing file's directory;
+  2. its package root;
+  3. `OKKAMA_IMPORT_DIRS`;
+  4. the standard library.
+
+  Previously `OKKAMA_IMPORT_DIRS` came first. The standard library resolves its own
+  imports only inside itself, so a file such as `io/stream.ok` in a program or in
+  `OKKAMA_IMPORT_DIRS` no longer breaks std.
+
+- Overloads of one name and arity declare the same result also when one of them is
+  variadic. An object's action that breaks a role signature shows a variadic tail as
+  `...int` in the error (it was `@int`).
+- Conformance: `L03.variadic.overloaded` and `L04.variadic-ctor.with-other-constructor`
+  now expect success under the new overload rules, and DEF-002 is withdrawn.
+- A program that would load two different files declaring the same module path (for
+  example a local module shadowing std next to a `std.` path to it) is now rejected with a
+  clear error instead of an internal compiler error.
+
+### Removed
+
+- **`fs/path`: `JoinedPath` is removed.** Its join is the variadic constructor
+  `Path(parts is ...string)`: write `Path("etc", "okkama", "config.toml")` in place of
+  `value JoinedPath("etc", "okkama", "config.toml")`. The rules are unchanged: the current
+  platform's style, `InvalidPath` for an empty part list or an empty part, and a later
+  absolute part replaces the parts before it. `Path(text)` and `Path(text, style)` keep
+  their meaning.
+
 ### Performance
 
-Measured by `benchmarks/run.py --runs 10`; all runs and tables are in
-[benchmarks/reports/2026-10-31-v0.3.0](benchmarks/reports/2026-10-31-v0.3.0/README.md).
+Results, measured by `benchmarks/run.py --runs 10` on an Apple M2 Max; all runs and
+tables are in [benchmarks/reports/2026-10-31-v0.3.0](benchmarks/reports/2026-10-31-v0.3.0/README.md):
 
 - Sparrow with the JIT is on average (geometric mean over benchmarks 01–10) 2.31× faster
   than Python 3.9, 2.34× faster than Perl 5.42, 1.72× faster than Ruby 2.6 and 1.81×
@@ -101,6 +131,8 @@ Measured by `benchmarks/run.py --runs 10`; all runs and tables are in
 - Still slower than the best of the other languages: `05-strings` (Perl is 1.9× faster),
   `06-collections` (Perl 1.8×) and `09-closures` (the JVM build 1.4×).
 - Start-up of `00-hello` grew from 5.1 to 5.7 ms.
+
+Changes:
 
 - **Sparrow interpreter** (`OKKAMA_JIT=off`, and cold code under the JIT): constants,
   copies, small-integer arithmetic and comparisons, jumps, direct calls and returns run
@@ -136,32 +168,13 @@ Measured by `benchmarks/run.py --runs 10`; all runs and tables are in
 - Editor: signatures of variadic actions show the tail as `values is ...string` (it was
   `@string`).
 
-### Changed
+### Known limitations
 
-- **Import lookup is local-first.** The order is now:
-  1. the importing file's directory;
-  2. its package root;
-  3. `OKKAMA_IMPORT_DIRS`;
-  4. the standard library.
-
-  Previously `OKKAMA_IMPORT_DIRS` came first. The standard library resolves its own
-  imports only inside itself, so a file such as `io/stream.ok` in a program or in
-  `OKKAMA_IMPORT_DIRS` no longer breaks std.
-
-- **`fs/path`: `JoinedPath` is removed.** Its join is the variadic constructor
-  `Path(parts is ...string)`: write `Path("etc", "okkama", "config.toml")` in place of
-  `value JoinedPath("etc", "okkama", "config.toml")`. The rules are unchanged: the current
-  platform's style, `InvalidPath` for an empty part list or an empty part, and a later
-  absolute part replaces the parts before it. `Path(text)` and `Path(text, style)` keep
-  their meaning.
-- Overloads of one name and arity declare the same result also when one of them is
-  variadic. An object's action that breaks a role signature shows a variadic tail as
-  `...int` in the error (it was `@int`).
-- Conformance: `L03.variadic.overloaded` and `L04.variadic-ctor.with-other-constructor`
-  now expect success under the new overload rules, and DEF-002 is withdrawn.
-- A program that would load two different files declaring the same module path (for
-  example a local module shadowing std next to a `std.` path to it) is now rejected with a
-  clear error instead of an internal compiler error.
+- A `for` used as a value (`for xs -> x { last … if …; fallback; }` as the result of an
+  action) over an empty array passes the checker but fails at run time with "A void
+  result cannot be used as a value"; guard it with `if xs.size() == 0`.
+- Calling a closure from JIT code still copies its captures; `09-closures` is slower on
+  Sparrow than on the JVM build.
 
 ## [0.2.0] — 2026-10-30
 
@@ -201,5 +214,6 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/shootnix/okkama/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shootnix/okkama/releases/tag/v0.2.0
