@@ -1,0 +1,91 @@
+module bench/json v1.0.0;
+
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "json/parse" take ParsedJson;
+import "json/read" take JsonView;
+import "json/value" take JsonKind, JsonValue, JsonObject, JsonArray, JsonMember, JsonText, JsonNumber, JsonBoolean;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+import "time/clock" take SystemClock, MonotonicInstant;
+import "io/stdout" take Stdout;
+
+object Line {
+    has sku is string;
+    has qty is int;
+    Line(:sku, :qty);
+    quantity() is int { qty; }
+    json() is JsonValue {
+        JsonObject([JsonMember("sku", JsonText(sku)), JsonMember("qty", JsonNumber(Decimal(qty.string())))]);
+    }
+}
+
+object Order {
+    has id is int;
+    has name is string;
+    has total is Decimal;
+    has paid is bool;
+    has lines is @Line;
+    Order(:id, :name, :total, :paid, :lines);
+    quantity() is int { lines.reduce(0) -> sum, line { sum + line.quantity(); }; }
+    json() is JsonValue {
+        let items is @JsonValue = lines.map() -> line { line.json(); };
+        JsonObject([
+            JsonMember("id", JsonNumber(Decimal(id.string()))),
+            JsonMember("name", JsonText(name)),
+            JsonMember("total", JsonText(total.string())),
+            JsonMember("paid", JsonBoolean(paid)),
+            JsonMember("lines", JsonArray(items))
+        ]);
+    }
+}
+
+object Stage {
+    has clock is SystemClock;
+    has start is MonotonicInstant;
+    Stage(:clock, :start);
+    report(label is string) is void {
+        let ms = clock.monotonic_instant().minus(start).nanoseconds().string();
+        Stdout().writeln(label + " ns=" + ms);
+    }
+}
+
+main() is int {
+    let clock = SystemClock();
+    let t0 = clock.monotonic_instant();
+    let file = File(mode: FileMode.reading, path: Path("__FILE__"));
+    let source = file.text().content();
+    file.close();
+    Stage(clock: clock, start: t0).report("read chars=" + source.length().string());
+
+    let t1 = clock.monotonic_instant();
+    let parsed = ParsedJson(source);
+    confirm parsed.kind() == JsonKind.object_value;
+    Stage(clock: clock, start: t1).report("parse");
+
+    let t2 = clock.monotonic_instant();
+    let rows = JsonView(parsed).member("orders").items();
+    let orders is @Order = rows.map() -> row {
+        let customer = row.member("customer");
+        let lines is @Line = row.member("lines").items().map() -> line {
+            Line(sku: line.text("sku"), qty: line.int("qty"));
+        };
+        Order(id: row.int("id"), name: customer.text("name"), total: Decimal(row.text("total")),
+            paid: row.boolean("paid"), lines: lines);
+    };
+    Stage(clock: clock, start: t2).report("decode orders=" + orders.size().string());
+
+    let t3 = clock.monotonic_instant();
+    let qty = orders.reduce(0) -> sum, order { sum + order.quantity(); };
+    Stage(clock: clock, start: t3).report("sum qty=" + qty.string());
+
+    let t4 = clock.monotonic_instant();
+    let values is @JsonValue = orders.map() -> order { order.json(); };
+    let document = JsonObject([JsonMember("orders", JsonArray(values))]);
+    Stage(clock: clock, start: t4).report("encode-tree");
+
+    let t5 = clock.monotonic_instant();
+    let out = CompactJson(origin: document).string();
+    Stage(clock: clock, start: t5).report("write chars=" + out.length().string());
+    0;
+}

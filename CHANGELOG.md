@@ -66,16 +66,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Performance
 
+Measured on an Apple M2 Max; all runs and tables are in
+[benchmarks/reports/2026-10-31-v0.3.1](benchmarks/reports/2026-10-31-v0.3.1/README.md).
 Reading 10 000 orders (2.7 MB) into domain objects and writing them back (1.5 MB), Sparrow:
-7.0 s → 0.34 s in total (Python 3.9 with its C `json`: 56 ms); for 50 000 orders
-(14 MB) 1.25 s against Python's 0.39 s, and parsing is faster than Python's.
+7.0 s → 0.33 s (0.27 s with PGO); Python 3.9 with its C `json` takes 55 ms. For 50 000
+orders (14 MB) 1.15 s (0.98 s with PGO) against Python's 0.38 s; parsing is faster than
+Python's. The general benchmarks are unchanged except `05-strings` (1.23×); Sparrow with
+the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
 
-| Stage | 0.3.0 | now | Python |
-|---|---|---|---|
-| parse | 21 ms | 21 ms | 19 ms |
-| decode into objects | 1 934 ms | 165 ms | 12 ms |
-| build the `JsonValue` tree | 254 ms | 75 ms | — |
-| write the text | 4 775 ms | 85 ms | 24 ms (tree and text) |
+| Stage, 10 000 orders | 0.3.0 | 0.3.1 | 0.3.1 PGO | Python 3.9 |
+|---|---|---|---|---|
+| parse | 21 ms | 21 ms | 17 ms | 19 ms |
+| decode into objects | 1 934 ms | 156 ms | 128 ms | 12 ms |
+| build the `JsonValue` tree and write the text | 5 030 ms | 150 ms | 125 ms | 24 ms |
 
 - **Empty ownership regions are elided.** When a program has any `destroy`, every scope
   opened a region, and every call created one and walked its result on exit. A new OIR
