@@ -1,8 +1,11 @@
 module json/value v1.0.0;
 
 import "collections/sequence" take Sequencing;
-import "collections/ordering" take Ranked;
+import "runtime/json" take json_repeated_name;
 import "math/decimal" take Decimal;
+import "numbers/bigint" take BigInt, BigProduct, BigPower, BigPowerLimitExceeded;
+import "runtime/number_text" take int_parse;
+import "compare" take Order;
 
 // Immutable JSON values with explicit nominal payloads.
 //
@@ -43,6 +46,31 @@ role JsonWriting {
 role JsonValue {
     kind() is JsonKind;
     print(to is JsonWriting) is void;
+}
+
+// How json/read.JsonView reaches a value, without casts: json/read reads any
+// JsonValue through print(), json/parse reads its parsed nodes directly.
+// Readings know no position in the document. Reading another kind than the
+// value's is JsonKindMismatch, a missing member is MissingJsonMember, and a
+// number that is not the integer asked for is JsonNumberMismatch; JsonView
+// reports them as its own errors at its pointer. size, items, item, members,
+// names and membership are asked only of arrays or objects, item only within
+// bounds.
+role JsonReading {
+    kind() is JsonKind;
+    value() is JsonValue;
+    text() is string;
+    number() is Decimal;
+    int() is int;
+    boolean() is bool;
+    size() is int;
+    items() is @JsonReading;
+    item(index is int) is JsonReading;
+    members() is @JsonMember;
+    names() is @string;
+    membership(name is string) is bool;
+    member(name is string) is JsonReading;
+    optional(name is string) is @JsonReading;
 }
 
 object JsonMember {
@@ -144,30 +172,11 @@ object JsonObject does JsonValue {
 
     JsonObject(members is Sequencing<JsonMember>) {
         let snapshot is @JsonMember = members.map() -> member { member; };
-        // Capture each immutable name once. The earliest repeated input index
-        // is the duplicate: found pairwise for small objects, otherwise by
-        // stable key ordering, which keeps input indices within equal names.
-        let names is @string = snapshot.map() -> member { member.name(); };
-        let duplicate = if names.size() <= 8 {
-            JsonRepeatedName(names: names).index();
-        }
-        else {
-            let ranked is @Ranked<int,string> = (0..names.size()).map() -> index {
-                Ranked(item: index, key: names[index]);
-            };
-            let ordered = ranked.ordering();
-            (0..ordered.size()).reduce(names.size()) -> earliest, index {
-                if index > 0 && ordered[index-1].key() == ordered[index].key()
-                    && ordered[index].item() < earliest {
-                    ordered[index].item();
-                }
-                else { earliest; }
-            };
-        };
-        confirm duplicate == snapshot.size()
-            else throw DuplicateJsonMember(snapshot[duplicate].name());
-        origin = snapshot;
+        origin = JsonDistinctMembers(snapshot).value();
     }
+
+    // Builtin arrays are immutable already and are kept as they are.
+    JsonObject(members is @JsonMember) { origin = JsonDistinctMembers(members).value(); }
 
     kind() is JsonKind { JsonKind.object_value; }
 
@@ -186,25 +195,18 @@ object JsonObject does JsonValue {
     print(to is JsonWriting) is void { to.members(self.members()); }
 }
 
-// The first index whose name repeats an earlier one, or size() when the
-// names are distinct. Quadratic: only for a handful of names.
-object JsonRepeatedName {
-    has names is @string;
+// Members with distinct names, or DuplicateJsonMember for the earliest
+// repeated input index. Each immutable name is captured once.
+object JsonDistinctMembers {
+    has origin is @JsonMember;
 
-    JsonRepeatedName(:names);
+    JsonDistinctMembers(origin is @JsonMember) { self.origin = origin; }
 
-    index() is int {
-        if names.size() < 2 {
-            names.size();
-        }
-        else {
-            (1..names.size()).reduce(names.size()) -> earliest, later {
-                let repeated = earliest == names.size() && (0..later).reduce(false) -> found, sooner {
-                    found || names[sooner] == names[later];
-                };
-                if repeated { later; } else { earliest; }
-            };
-        }
+    value() is @JsonMember {
+        let names is @string = origin.map() -> member { member.name(); };
+        let duplicate = json_repeated_name(names);
+        confirm duplicate == origin.size() else throw DuplicateJsonMember(origin[duplicate].name());
+        origin;
     }
 }
 
@@ -227,6 +229,72 @@ object JsonMemberIndex {
                 -1;
             }
         }
+    }
+}
+
+// A value of one kind read as another, before its position is known.
+object JsonKindMismatch does Error {
+    has wanted is JsonKind;
+    has found is JsonKind;
+
+    JsonKindMismatch(expected is JsonKind, actual is JsonKind) {
+        wanted = expected;
+        found = actual;
+    }
+
+    expected() is JsonKind { wanted; }
+    actual() is JsonKind { found; }
+    text() is string { "JSON value of another kind"; }
+}
+
+// A JSON number that is not the integer asked for, before its position is known.
+object JsonNumberMismatch does Error {
+    has spelling is string;
+    has reason is string;
+
+    JsonNumberMismatch(number is string, reason is string) {
+        spelling = number;
+        self.reason = reason;
+    }
+
+    number() is string { spelling; }
+    reason() is string { reason; }
+    text() is string { "JSON number " + spelling + ": " + reason; }
+}
+
+// The exact integer value of a JSON number of any size; fractions and
+// exponents beyond 4096 bits are JsonNumberMismatch.
+object JsonExactInteger {
+    has exact is Decimal;
+    JsonExactInteger(exact is Decimal) { self.exact = exact; }
+
+    value() is BigInt {
+        confirm exact.exponent() >= 0 else throw JsonNumberMismatch(exact.string(), "integer required");
+        if exact.exponent() == 0 {
+            exact.coefficient();
+        }
+        else {
+            let scale = try {
+                BigPower(BigInt("10"), exact.exponent(), 4096).value();
+            }
+            catch failure is BigPowerLimitExceeded {
+                throw JsonNumberMismatch(exact.string(), "integer exceeds 4096 bits");
+            };
+            BigProduct(left: exact.coefficient(), right: scale).value();
+        }
+    }
+}
+
+// A JSON number as builtin int: an integer in the signed 64-bit range.
+object JsonExactInt {
+    has exact is Decimal;
+    JsonExactInt(exact is Decimal) { self.exact = exact; }
+
+    value() is int {
+        let integer = JsonExactInteger(exact).value();
+        confirm integer.order(BigInt("9223372036854775807")) != Order.greater && integer.order(BigInt("-9223372036854775808")) != Order.less
+            else throw JsonNumberMismatch(integer.string(), "integer outside int range");
+        int_parse(integer.string(), 10);
     }
 }
 
@@ -299,11 +367,6 @@ object DuplicateJsonMember does Error {
 }
 
 test "duplicate names report the earliest repeated input index" {
-    test.is(JsonRepeatedName(names: []).index(), 0);
-    test.is(JsonRepeatedName(names: ["a"]).index(), 1);
-    test.is(JsonRepeatedName(names: ["a", "b", "c"]).index(), 3);
-    test.is(JsonRepeatedName(names: ["b", "a", "a", "b"]).index(), 2);
-    test.is(JsonRepeatedName(names: ["", "x", ""]).index(), 2);
     for [3, 8, 9, 20] -> width {
         let distinct is @JsonMember = (0..width).map() -> index { JsonMember("m" + index.string(), JsonNull()); };
         test.is(JsonObject(distinct).members().size(), width);

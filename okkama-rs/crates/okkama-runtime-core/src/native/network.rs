@@ -1323,12 +1323,7 @@ fn multicast_join(native: Native, args: &[Value]) -> Result<Value, Error> {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let name = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let name = native.name();
     let operation = native.symbol();
     match name {
         "tcp_bound" => tcp_bound(native, args),

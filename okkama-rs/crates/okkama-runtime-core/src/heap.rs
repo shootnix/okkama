@@ -802,6 +802,12 @@ impl Region {
         }
     }
 
+    /// Регион без идентичностей: его закрытие ничего не уничтожает и не
+    /// освобождает, поэтому исполнители пропускают `begin_close`.
+    pub fn is_empty(&self) -> bool {
+        self.entries.borrow().is_empty()
+    }
+
     /// Начать закрытие; идентичности, достижимые из `keep`, освобождаются.
     pub fn begin_close(&self, keep: &[Value]) -> Closing {
         let mut kept = std::collections::HashSet::new();

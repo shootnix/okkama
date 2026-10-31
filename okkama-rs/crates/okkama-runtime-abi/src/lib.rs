@@ -130,14 +130,55 @@ include!("table.rs");
 impl Native {
     /// Сигнатура provider (разбирается один раз).
     pub fn signature(self) -> &'static Signature {
-        static SIGNATURES: std::sync::OnceLock<std::collections::HashMap<Native, Signature>> =
-            std::sync::OnceLock::new();
-        &SIGNATURES.get_or_init(|| {
-            Self::ALL
-                .iter()
-                .map(|native| (*native, Signature::parse(native.signature_text())))
-                .collect()
-        })[&self]
+        static SIGNATURES: std::sync::OnceLock<Vec<Option<Signature>>> = std::sync::OnceLock::new();
+        SIGNATURES
+            .get_or_init(|| {
+                let mut signatures: Vec<Option<Signature>> = Vec::new();
+                for native in Self::ALL {
+                    let at = *native as usize;
+                    if signatures.len() <= at {
+                        signatures.resize_with(at + 1, || None);
+                    }
+                    signatures[at] = Some(Signature::parse(native.signature_text()));
+                }
+                signatures
+            })[self as usize]
+            .as_ref()
+            .expect("every native has a signature")
+    }
+
+    /// Модуль символа без версии: `runtime/json@1::json_quote/1` → `runtime/json`.
+    pub fn module(self) -> &'static str {
+        Self::parts()[self as usize].0
+    }
+
+    /// Имя функции без модуля и арности: `runtime/json@1::json_quote/1` → `json_quote`.
+    pub fn name(self) -> &'static str {
+        Self::parts()[self as usize].1
+    }
+
+    /// Модуль и имя каждого символа по номеру natives — вычисляются один раз,
+    /// а не разбором строки при каждом вызове.
+    fn parts() -> &'static [(&'static str, &'static str)] {
+        static PARTS: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
+        PARTS.get_or_init(|| {
+            let mut parts = Vec::new();
+            for native in Self::ALL {
+                let at = *native as usize;
+                if parts.len() <= at {
+                    parts.resize(at + 1, ("", ""));
+                }
+                let symbol = native.symbol();
+                let module = symbol.split('@').next().unwrap_or("");
+                let name = symbol
+                    .split("::")
+                    .nth(1)
+                    .and_then(|rest| rest.split('/').next())
+                    .unwrap_or("");
+                parts[at] = (module, name);
+            }
+            parts
+        })
     }
 
     pub fn parameters(self) -> &'static [Type] {

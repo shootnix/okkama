@@ -143,12 +143,7 @@ fn character(value: &Value) -> Result<u32, Error> {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let operation = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let operation = native.name();
     match operation {
         "character_name" => Ok(text(name(character(&args[0])?))),
         "category_code" => Ok(text(data::category(character(&args[0])?))),

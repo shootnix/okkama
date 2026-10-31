@@ -41,14 +41,36 @@ fn big_int(value: &IntValue) -> Big {
 }
 
 /// Разбор `_components` decimal: значащие цифры без нулей по краям и порядок.
-struct Decimal {
-    coefficient: String,
-    exponent: i64,
-    digits: String,
-    sign: i64,
+pub(super) struct Decimal {
+    pub(super) coefficient: String,
+    pub(super) exponent: i64,
+    pub(super) digits: String,
+    pub(super) sign: i64,
 }
 
-fn components(source: &str) -> Option<Decimal> {
+/// Каноническая запись decimal: `0`, иначе мантисса `d[.ddd]` и `e<порядок>`,
+/// если порядок не нулевой (`1e3`, `-1.25e1`, `1.5`).
+pub(super) fn canonical(parts: &Decimal) -> String {
+    if parts.sign == 0 {
+        return "0".into();
+    }
+    let mut mantissa = String::new();
+    if parts.sign < 0 {
+        mantissa.push('-');
+    }
+    mantissa.push_str(&parts.digits[..1]);
+    if parts.digits.len() > 1 {
+        mantissa.push('.');
+        mantissa.push_str(&parts.digits[1..]);
+    }
+    let scientific = i128::from(parts.exponent) + parts.digits.len() as i128 - 1;
+    if scientific != 0 {
+        mantissa.push_str(&format!("e{scientific}"));
+    }
+    mantissa
+}
+
+pub(super) fn components(source: &str) -> Option<Decimal> {
     // (-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?
     let (negative, rest) = match source.strip_prefix('-') {
         Some(rest) => (true, rest),
@@ -258,26 +280,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             text(result.to_string())
         }
         DecimalValid => Value::Bool(components(args[0].as_string()?).is_some()),
-        DecimalCanonical => {
-            let parts = decimal(native, &args[0])?;
-            if parts.sign == 0 {
-                return Ok(text("0"));
-            }
-            let mut mantissa = String::new();
-            if parts.sign < 0 {
-                mantissa.push('-');
-            }
-            mantissa.push_str(&parts.digits[..1]);
-            if parts.digits.len() > 1 {
-                mantissa.push('.');
-                mantissa.push_str(&parts.digits[1..]);
-            }
-            let scientific = i128::from(parts.exponent) + parts.digits.len() as i128 - 1;
-            if scientific != 0 {
-                mantissa.push_str(&format!("e{scientific}"));
-            }
-            text(mantissa)
-        }
+        DecimalCanonical => text(canonical(&decimal(native, &args[0])?)),
         DecimalCoefficient => text(decimal(native, &args[0])?.coefficient),
         DecimalExponent => int(decimal(native, &args[0])?.exponent),
         DecimalOrder => {

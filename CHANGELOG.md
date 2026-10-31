@@ -28,8 +28,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 - `json/parse.JsonNode` reads its own kind directly: `text()`, `spelling()`, `number()`,
   `boolean()`, `size()`, `item(index)`, `name(index)`, `names()`, `members()`,
   `membership(name)`, `member(name)`, `optional(name)`; `ParsedJson.node()` is the root node.
-- Natives `runtime/json.json_member_position` (a member's index by name, one call) and
-  `runtime/json.json_quote` (a JSON string literal), in the Rust and JVM providers.
+- Natives `runtime/json.json_member_position` (a member's index by name, one call),
+  `runtime/json.json_quote` (a JSON string literal), `runtime/json.json_number_text`
+  (the JSON spelling of a decimal), `runtime/json.json_repeated_name` (the first repeated
+  name) and a native JSON output (`json_output`, `json_output_raw`, `json_output_text`,
+  `json_output_number`, `json_output_member`, `json_output_string`; each append answers
+  the UTF-8 size so far), in the Rust and JVM providers.
+- `role json/value.JsonReading`: how `JsonView` reaches a value. `json/read` reads any
+  `JsonValue` through `print()`, `json/parse` reads parsed nodes directly
+  (`ParsedJson.reading()`, `JsonNode.reading()`). Readings report `JsonKindMismatch`,
+  `MissingJsonMember` and `JsonNumberMismatch` without a position; `JsonView` reports
+  them as `WrongJsonKind`, `MissingJsonValue` and `InvalidJsonNumber` at its pointer,
+  with the same texts as before.
+- `JsonObject(members is @JsonMember)`: a builtin array of members is kept as it is,
+  without the defensive copy that `Sequencing<JsonMember>` still gets.
 
 ### Changed
 
@@ -45,16 +57,48 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 ### Performance
 
 Reading 10 000 orders (2.7 MB) into domain objects and writing them back (1.5 MB), Sparrow:
-7.0 s → 1.2 s in total.
+7.0 s → 0.34 s in total (Python 3.9 with its C `json`: 56 ms); for 50 000 orders
+(14 MB) 1.25 s against Python's 0.39 s, and parsing is faster than Python's.
 
-- `JsonView` member and scalar reads of parsed documents: decoding 1.9 s → 0.49 s. A member
-  is found by one native call, and scalar kinds are checked by the native read itself.
-  Member pointers escape with two replacements instead of two split/join pairs.
-- `CompactJson.string()` renders containers by joining their children's text instead of
-  writing through a byte buffer, and `CompactJson` and `JsonTextOutput` escape strings
-  natively instead of a regex split per string: 4.8 s → 0.45 s, byte-for-byte the same
-  output.
-- `JsonObject` checks up to 8 member names pairwise instead of sorting them.
+| Stage | 0.3.0 | now | Python |
+|---|---|---|---|
+| parse | 21 ms | 21 ms | 19 ms |
+| decode into objects | 1 934 ms | 165 ms | 12 ms |
+| build the `JsonValue` tree | 254 ms | 75 ms | — |
+| write the text | 4 775 ms | 85 ms | 24 ms (tree and text) |
+
+- **Empty ownership regions are elided.** When a program has any `destroy`, every scope
+  opened a region, and every call created one and walked its result on exit. A new OIR
+  pass drops regions that nothing is ever adopted, tracked or transferred into (they
+  can own nothing); `region.enter` and `region.unwind` become `undef`, and readers of
+  the unwind result read the failure it passed on. All engines run the same OIR. Regions
+  that are opened but stay empty at run time close without walking `keep`.
+- **Native calls** cost about 46 ns instead of 200 ns on Sparrow: the provider of a
+  native is resolved and checked against the ABI once per function, not per call;
+  signatures, module and function names come from tables indexed by the native's
+  number instead of a SipHash map and symbol splitting; providers are routed by a
+  table, `runtime/json` by `match` on the native itself; and JIT code calls a native
+  with arguments taken straight from its registers instead of a generic interpreter step.
+- `JsonView` reads of parsed documents find a member by one native call, check scalar
+  kinds in the native read itself, and spell their RFC 6901 pointer only when a
+  failure or `pointer()` needs it.
+- `CompactJson.string()` writes the whole document into one native JSON output, one
+  native call per scalar or member name, instead of a byte buffer, a regex split per
+  string and several `Decimal` natives per number. The output is byte-for-byte that of
+  0.3.0.
+- `JsonView` reads a parsed node with one object per value read: the node reading holds
+  the native node itself, and a view is its children's link to the pointer.
+- `JsonObject` finds a repeated member name by one native call instead of sorting names.
+- The general benchmarks (`benchmarks/run.py`) are unchanged within noise; `05-strings`
+  is 1.16× faster.
+
+### Known limitations
+
+- An array literal of values of different concrete types that share a role
+  (`[JsonText("a"), JsonNull()]`) gets its element type from a single matching overload;
+  when a constructor is overloaded for both `@T` and `Sequencing<Role>`, it is typed
+  `@any` and matches neither. `JsonArray` therefore keeps its one `Sequencing<JsonValue>`
+  constructor.
 
 ### Removed
 

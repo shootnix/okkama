@@ -547,7 +547,7 @@ fn limit_of(limit: &IntValue) -> u64 {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let name = native.symbol().split("::").nth(1).and_then(|rest| rest.split('/').next()).unwrap_or("");
+    let name = native.name();
     let operation = native.symbol();
     match name {
         "process_current_id" => Ok(int_value(i64::from(std::process::id()))),

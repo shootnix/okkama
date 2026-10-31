@@ -4,6 +4,7 @@ module runtime/json v1.0.0;
 // projects these opaque states into immutable json/value objects.
 native object JsonParseState;
 native object JsonNodeState;
+native object JsonOutputState;
 
 native json_parse_state(origin is string, maximum_depth is int) is JsonParseState;
 native json_parse_valid(origin is JsonParseState) is bool;
@@ -28,6 +29,24 @@ native json_member_position(origin is JsonNodeState, name is string) is int;
 // JSON string literal of any string: '"' and '\' escaped, \n, \r, \t by name,
 // the other controls U+0000..U+001F as lowercase \u00xx, everything else as is.
 native json_quote(origin is string) is string;
+
+// JSON spelling of a decimal number text: positional for integers up to 21
+// digits and fractions down to 1e-6, the canonical Decimal form beyond them.
+native json_number_text(origin is string) is string;
+
+// JSON text being written, appended at the end. Each append answers the UTF-8
+// size of the whole text so far. json_output_text appends a string literal,
+// json_output_number the json_number_text of a decimal, and
+// json_output_member a member name with its colon, after a comma unless first.
+native json_output() is JsonOutputState;
+native json_output_raw(origin is JsonOutputState, text is string) is int;
+native json_output_text(origin is JsonOutputState, text is string) is int;
+native json_output_number(origin is JsonOutputState, number is string) is int;
+native json_output_member(origin is JsonOutputState, name is string, first is bool) is int;
+native json_output_string(origin is JsonOutputState) is string;
+
+// The first index whose name repeats an earlier one, or the number of names.
+native json_repeated_name(names is @string) is int;
 
 // json_member_position is the index of the member with exactly that name, or -1.
 // Parsing is lazy and memoized. root() is available only after valid(); a
@@ -86,4 +105,30 @@ test "JSON member positions and quoted strings" {
     test.is(json_quote("é🙂/\u{7f}"), "\"é🙂/\u{7f}\"");
     test.is(json_quote("\"\\\n\r\t"), "\"\\\"\\\\\\n\\r\\t\"");
     test.is(json_quote("\u{0}\u{8}\u{c}\u{1b}\u{1f}"), "\"\\u0000\\u0008\\u000c\\u001b\\u001f\"");
+    for [["404", "404"], ["1e3", "1000"], ["-12000", "-12000"], ["0", "0"], ["-0", "0"], ["1.5", "1.5"],
+        ["-0.005", "-0.005"], ["0.000001", "0.000001"], ["0.0000001", "1e-7"],
+        ["123456789012345678901", "123456789012345678901"], ["1e21", "1e21"], ["1.25e1", "12.5"],
+        ["1e1000000", "1e1000000"], ["12.50", "12.5"]] -> pair {
+        test.is(json_number_text(pair[0]), pair[1]);
+    }
+    test.is(try {json_number_text("x"); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+}
+
+test "JSON output appends literals and answers its UTF-8 size" {
+    let output = json_output();
+    test.is(json_output_raw(output, "{"), 1);
+    test.is(json_output_member(output, "é", true), 6);
+    test.is(json_output_text(output, "a\"\u{1}🙂"), 21);
+    test.is(json_output_member(output, "n", false), 26);
+    test.is(json_output_number(output, "1.25e1"), 30);
+    test.is(json_output_raw(output, "}"), 31);
+    test.is(json_output_string(output), "{\"é\":\"a\\\"\\u0001🙂\",\"n\":12.5}");
+    test.is(try {json_output_number(output, "x"); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+}
+
+test "repeated names report the earliest repeated index" {
+    test.is(json_repeated_name([]), 0);
+    test.is(json_repeated_name(["a", "b"]), 2);
+    test.is(json_repeated_name(["b", "a", "a", "b"]), 2);
+    test.is(json_repeated_name(["", "x", ""]), 2);
 }

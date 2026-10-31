@@ -64,6 +64,9 @@ pub(crate) struct Engine {
     fatal: RefCell<Option<Located>>,
     /// Подготовленные функции: создаются при первом вызове.
     prepared: Vec<std::cell::OnceCell<Prepared>>,
+    /// Provider native-функции по её номеру: символ разрешается и сигнатура
+    /// сверяется с ABI при первом вызове, а не при каждом.
+    natives: Vec<std::cell::OnceCell<Option<Native>>>,
     /// Компилятор горячих функций в машинный код; `None` — выключен.
     pub(crate) jit: Option<Box<crate::jit::Jit>>,
     /// Отказ, дошедший до корня запуска (его стек вызовов — для диагностики).
@@ -111,6 +114,7 @@ pub(crate) fn new_engine(program: &Program) -> Rc<Engine> {
         native: RefCell::new(context),
         fatal: RefCell::new(None),
         prepared: program.functions.iter().map(|_| std::cell::OnceCell::new()).collect(),
+        natives: program.functions.iter().map(|_| std::cell::OnceCell::new()).collect(),
         jit: crate::jit::Jit::new(program, me.as_ptr()),
         uncaught: RefCell::new(None),
     })
@@ -174,8 +178,18 @@ impl Engine {
         &self.program.types[ty.0 as usize]
     }
 
-    fn native(&self, symbol: &str, args: &[Value]) -> Result<Value, Stop> {
-        let Some(native) = Native::resolve(symbol) else {
+    /// Provider native-функции `index`; `None` — символа нет в ABI.
+    fn provider(&self, index: usize, symbol: &str) -> Result<Option<Native>, Stop> {
+        let cell = &self.natives[index];
+        if let Some(native) = cell.get() {
+            return Ok(*native);
+        }
+        validate_native_signature(self, &self.program.functions[index], symbol)?;
+        Ok(*cell.get_or_init(|| Native::resolve(symbol)))
+    }
+
+    fn native(&self, index: usize, symbol: &str, args: &[Value]) -> Result<Value, Stop> {
+        let Some(native) = self.provider(index, symbol)? else {
             // Как JVM: native программы без provider — ошибка вызова.
             if !symbol.starts_with("runtime/") {
                 return Err(Stop::Trap(format!("Native symbol \"{symbol}\" is not registered")));
@@ -434,8 +448,7 @@ pub(crate) fn call_now(engine: &Rc<Engine>, index: usize, args: Vec<Value>, at: 
         return Ok(Some(Value::Future(cold_call(engine, index, args))));
     }
     if let Some(symbol) = &function.native {
-        validate_native_signature(engine, function, symbol).map_err(fatal)?;
-        return engine.native(symbol, &args).map(Some).map_err(fatal);
+        return engine.native(index, symbol, &args).map(Some).map_err(fatal);
     }
     if function.params.len() != args.len() {
         return Err(fatal(invalid("call argument count does not match parameters")));
@@ -456,6 +469,13 @@ pub(crate) fn close_now(engine: &Rc<Engine>, registers: &mut [Value], instructio
         return Err(here(invalid("expected region value")));
     };
     let region: Rc<Region> = region.clone();
+    // Пустой регион: уничтожать нечего, отказ уходит дальше как есть.
+    if region.is_empty() {
+        if let I::RegionUnwind { dst, failure: id, .. } = instruction {
+            registers[dst.0.0 as usize] = Value::Failure(failure(read(registers, *id).map_err(here)?).map_err(here)?.clone());
+        }
+        return Ok(());
+    }
     let keep = match keep_or_failure {
         Some((false, keep)) => vec![read(registers, keep).map_err(here)?.clone()],
         Some((true, id)) => thrown_errors(failure(read(registers, id).map_err(here)?).map_err(here)?),
@@ -665,6 +685,13 @@ fn close_region(engine: &Rc<Engine>, frames: &mut Vec<Frame>, pc: usize, instruc
         return Err(invalid("expected region value"));
     };
     let region: Rc<Region> = region.clone();
+    // Пустой регион: уничтожать нечего, отказ уходит дальше как есть.
+    if frame.closing.is_none() && region.is_empty() {
+        if let I::RegionUnwind { dst, failure: id, .. } = instruction {
+            frame.registers[dst.0.0 as usize] = Value::Failure(failure(read(&frame.registers, *id)?)?.clone());
+        }
+        return Ok(());
+    }
     if frame.closing.is_none() {
         let keep = match keep_or_failure {
             Some((false, keep)) => vec![read(&frame.registers, keep)?.clone()],
@@ -742,8 +769,7 @@ fn call(engine: &Rc<Engine>, frames: &mut Vec<Frame>, index: usize, args: Vec<Va
         return Ok(());
     }
     if let Some(symbol) = &function.native {
-        validate_native_signature(engine, function, symbol)?;
-        match engine.native(symbol, &args) {
+        match engine.native(index, symbol, &args) {
             Ok(value) => write(frames, value),
             Err(stop) => {
                 let raised = into_failure(stop)?;

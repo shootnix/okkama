@@ -156,12 +156,7 @@ pub fn decode(native: Native, value: &Value) -> Result<(u8, u16, Vec<u8>), Error
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let operation = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let operation = native.name();
     match operation {
         "ip_parse" => {
             let kind = match int(&args[0])?.to_i64() {

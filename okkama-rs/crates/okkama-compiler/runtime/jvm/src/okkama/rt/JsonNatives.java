@@ -3,6 +3,7 @@ package okkama.rt;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 
 /**
  * Natives {@code runtime/json}: строгий разбор JSON (RFC 8259) в дерево
@@ -525,6 +526,11 @@ public final class JsonNatives {
     // other controls U+0000..U+001F as lowercase u00xx escapes, everything else as is.
     public static String runtime_json__json_quote(String origin) {
         StringBuilder quoted = new StringBuilder(origin.length() + 2);
+        appendQuoted(quoted, origin);
+        return quoted.toString();
+    }
+
+    private static void appendQuoted(StringBuilder quoted, String origin) {
         quoted.append('"');
         for (int at = 0; at < origin.length(); at++) {
             char character = origin.charAt(at);
@@ -542,6 +548,117 @@ public final class JsonNatives {
                     }
             }
         }
-        return quoted.append('"').toString();
+        quoted.append('"');
+    }
+
+    // The JSON spelling of an exact decimal, as json/write.JsonNumberSpelling:
+    // positional for integers up to 21 digits and fractions down to 1e-6, the
+    // canonical scientific form beyond them.
+    public static String runtime_json__json_number_text(String origin) {
+        ValueNatives.Decimal parts = ValueNatives.components(origin);
+        if (parts == null) {
+            throw failure("invalid_input", "json_number_text", 1, "not a decimal number");
+        }
+        String sign = parts.sign < 0 ? "-" : "";
+        BigInteger length = BigInteger.valueOf(parts.digits.length());
+        if (parts.exponent.signum() >= 0) {
+            if (length.add(parts.exponent).compareTo(BigInteger.valueOf(21)) <= 0) {
+                return sign + parts.digits + zeros(parts.exponent.intValue());
+            }
+            return ValueNatives.runtime_decimal__decimal_canonical(origin);
+        }
+        BigInteger point = length.add(parts.exponent);
+        if (point.signum() > 0) {
+            int at = point.intValue();
+            return sign + parts.digits.substring(0, at) + "." + parts.digits.substring(at);
+        }
+        if (point.negate().compareTo(BigInteger.valueOf(5)) <= 0) {
+            return sign + "0." + zeros(point.negate().intValue()) + parts.digits;
+        }
+        return ValueNatives.runtime_decimal__decimal_canonical(origin);
+    }
+
+    private static String zeros(int count) {
+        StringBuilder zeros = new StringBuilder(count);
+        for (int at = 0; at < count; at++) {
+            zeros.append('0');
+        }
+        return zeros.toString();
+    }
+
+    // JSON text being written: appends go to the end, and every append answers
+    // the UTF-8 size of the whole text so far.
+    static final class Output {
+        final StringBuilder text = new StringBuilder();
+        long bytes;
+
+        BigInteger appended(int from) {
+            for (int at = from; at < text.length(); at++) {
+                char unit = text.charAt(at);
+                if (unit < 0x80) {
+                    bytes += 1;
+                } else if (unit < 0x800) {
+                    bytes += 2;
+                } else if (Character.isHighSurrogate(unit) && at + 1 < text.length()
+                        && Character.isLowSurrogate(text.charAt(at + 1))) {
+                    bytes += 4;
+                    at++;
+                } else {
+                    bytes += 3;
+                }
+            }
+            return BigInteger.valueOf(bytes);
+        }
+    }
+
+    public static Object runtime_json__json_output() {
+        return new Output();
+    }
+
+    public static BigInteger runtime_json__json_output_raw(Object handle, String raw) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        output.text.append(raw);
+        return output.appended(from);
+    }
+
+    public static BigInteger runtime_json__json_output_text(Object handle, String origin) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        appendQuoted(output.text, origin);
+        return output.appended(from);
+    }
+
+    public static BigInteger runtime_json__json_output_number(Object handle, String origin) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        output.text.append(runtime_json__json_number_text(origin));
+        return output.appended(from);
+    }
+
+    public static BigInteger runtime_json__json_output_member(Object handle, String name, boolean first) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        if (!first) {
+            output.text.append(',');
+        }
+        appendQuoted(output.text, name);
+        output.text.append(':');
+        return output.appended(from);
+    }
+
+    public static String runtime_json__json_output_string(Object handle) {
+        return ((Output) handle).text.toString();
+    }
+
+    // The first index whose name repeats an earlier one, or the count.
+    public static BigInteger runtime_json__json_repeated_name(List<?> names) {
+        HashSet<Object> seen = new HashSet<Object>();
+        for (int index = 0; index < names.size(); index++) {
+            if (!seen.add(names.get(index))) {
+                return BigInteger.valueOf(index);
+            }
+        }
+        return BigInteger.valueOf(names.size());
     }
 }

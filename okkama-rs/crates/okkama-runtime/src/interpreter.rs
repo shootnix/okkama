@@ -266,6 +266,17 @@ pub(crate) fn execute_function(
                     return Err(invalid_state(inst.span, "expected region value"));
                 };
                 let region = region.clone();
+                // Пустой регион: уничтожать нечего, отказ уходит дальше как есть.
+                if frame.closing.is_none() && region.is_empty() {
+                    if let InstKind::RegionUnwind { failure: id, .. } = &inst.kind {
+                        let active = failure(read(slots, *id, inst.span)?, inst.span)?.clone();
+                        let result = inst
+                            .result
+                            .ok_or_else(|| invalid_state(inst.span, "region.unwind has no result"))?;
+                        slots[result.0] = Some(Value::Failure(active));
+                    }
+                    continue;
+                }
                 if frame.closing.is_none() {
                     let keep = match &inst.kind {
                         InstKind::RegionLeave { keep, .. } => keep

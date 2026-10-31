@@ -62,25 +62,20 @@ fn bindings_own_and_call_results_are_tracked() {
         count(main, |kind| matches!(kind, InstKind::RegionAdopt { .. })),
         1
     );
-    // Регион корня и регион тела закрываются на нормальном пути и на пути отказа.
-    assert_eq!(count(main, |kind| matches!(kind, InstKind::RegionEnter)), 2);
+    // Регион тела закрывается на нормальном пути и на пути отказа. Регион
+    // корня `main` ничем не владеет (параметров нет) и убран.
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::RegionEnter)), 1);
     assert_eq!(
         count(main, |kind| matches!(kind, InstKind::RegionLeave { .. })),
-        2
+        1
     );
     assert_eq!(
         count(main, |kind| matches!(kind, InstKind::RegionUnwind { .. })),
-        2
-    );
-    // Конструктор отдаёт новый объект вызывающему: `region.leave …, keep`.
-    let ctor = function(&module, "Res.new#0");
-    assert_eq!(
-        count(ctor, |kind| matches!(
-            kind,
-            InstKind::RegionLeave { keep: Some(_), .. }
-        )),
         1
     );
+    // Конструктор Res ничем не владеет (поле — int): региона у него нет.
+    let ctor = function(&module, "Res.new#0");
+    assert_eq!(count(ctor, |kind| matches!(kind, InstKind::RegionEnter)), 0);
 }
 
 #[test]
@@ -135,4 +130,29 @@ fn destroy_rules_are_semantic_errors() {
         );
         assert_eq!(error.message(), expected, "{text}");
     }
+}
+
+#[test]
+fn regions_without_identities_are_elided() {
+    let module = module(&format!(
+        "{RES} object Point {{ has x is int; Point(:x); sum(b is int) is int {{ x + b; }} }} \
+         object Holder {{ has res is Res; Holder(:res); }} \
+         main() is int {{ let r = Res(n: 1); let h = Holder(res: Res(n: 3)); Point(x: 2).sum(1); }}"
+    ));
+    // Только скаляры: регионы не открываются вовсе.
+    let sum = function(&module, "Point.sum");
+    assert_eq!(count(sum, |kind| matches!(kind, InstKind::RegionEnter)), 0);
+    assert_eq!(count(sum, |kind| matches!(kind, InstKind::RegionLeave { .. })), 0);
+    assert_eq!(count(sum, |kind| matches!(kind, InstKind::RegionUnwind { .. })), 0);
+    // Конструктор, владеющий объектом с destroy, отдаёт его вызывающему:
+    // `region.leave …, keep`.
+    let holder = function(&module, "Holder.new#0");
+    assert_eq!(
+        count(holder, |kind| matches!(kind, InstKind::RegionLeave { keep: Some(_), .. })),
+        1
+    );
+    // Объект с destroy по-прежнему принадлежит региону области.
+    let main = function(&module, "main");
+    assert!(count(main, |kind| matches!(kind, InstKind::RegionAdopt { .. })) >= 1);
+    assert!(count(main, |kind| matches!(kind, InstKind::RegionLeave { .. })) >= 1);
 }

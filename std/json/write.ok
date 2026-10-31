@@ -7,64 +7,54 @@ import "io/stream" take WritingText;
 import "io/buffer" take ByteBuffer;
 import "io/text" take Utf8Output;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "async/atomic" take Atomic;
-import "runtime/json" take json_quote;
+import "runtime/json" take JsonOutputState, json_output, json_output_raw, json_output_text, json_output_number, json_output_member, json_output_string, json_quote, json_number_text;
 
 // Explicit JSON printing, with no inspection of arbitrary object fields.
 //
-// string() renders every container from its children's text joined once, so
-// the output is never re-encoded through a byte buffer. JsonTextOutput writes
-// the same text incrementally to any WritingText.
+// string() writes the whole document into one native JSON output; a value
+// whose print() issues several commands gets their texts concatenated, as
+// with JsonTextOutput, which writes the same text to any WritingText.
 object CompactJson {
     has origin is JsonValue;
     CompactJson(:origin);
 
     #projected
     string() is string {
-        JsonRendered(origin: origin).string();
+        let output = json_output();
+        origin.print(JsonOutputWriting(output));
+        json_output_string(output);
     }
 }
 
-// The compact text of one value. A print() that issues several commands gets
-// their texts concatenated, exactly as a streaming JsonTextOutput writes them.
-object JsonRendered {
-    has origin is JsonValue;
-    JsonRendered(:origin);
+// Writes into a native JSON output, one native call per scalar or member name.
+object JsonOutputWriting does JsonWriting {
+    has output is JsonOutputState;
 
-    string() is string {
-        let rendering = JsonRendering();
-        origin.print(rendering);
-        rendering.string();
-    }
-}
+    JsonOutputWriting(output is JsonOutputState) { self.output = output; }
 
-object JsonRendering does JsonWriting {
-    has result is Atomic<string>;
+    null_value() is void { json_output_raw(output, "null"); }
+    boolean(value is bool) is void { json_output_raw(output, if value { "true"; } else { "false"; }); }
+    number(value is Decimal) is void { json_output_number(output, value.string()); }
+    text(value is string) is void { json_output_text(output, value); }
 
-    JsonRendering() { result = Atomic(""); }
-
-    null_value() is void { self.appended("null"); }
-    boolean(value is bool) is void { self.appended(if value { "true"; } else { "false"; }); }
-    number(value is Decimal) is void { self.appended(JsonNumberSpelling(value).string()); }
-    text(value is string) is void { self.appended(json_quote(value)); }
     elements(values is Sequencing<JsonValue>) is void {
-        let parts is @string = (0..values.size()).map() -> index {
-            JsonRendered(origin: values.item(index)).string();
-        };
-        self.appended("[" + parts.join(",") + "]");
+        json_output_raw(output, "[");
+        for (0..values.size()) -> index {
+            if index > 0 { json_output_raw(output, ","); }
+            values.item(index).print(self);
+        }
+        json_output_raw(output, "]");
     }
+
     members(members is Sequencing<JsonMember>) is void {
-        let parts is @string = (0..members.size()).map() -> index {
+        json_output_raw(output, "{");
+        for (0..members.size()) -> index {
             let member = members.item(index);
-            json_quote(member.name()) + ":" + JsonRendered(origin: member.value()).string();
-        };
-        self.appended("{" + parts.join(",") + "}");
+            json_output_member(output, member.name(), index == 0);
+            member.value().print(self);
+        }
+        json_output_raw(output, "}");
     }
-
-    string() is string { result.value(); }
-
-    private:
-    appended(text is string) is void { result.replace(result.value() + text); }
 }
 
 // JSON string literal spelling: quotes, backslashes and U+0000..U+001F are
@@ -250,25 +240,7 @@ object JsonNumberSpelling {
 
     JsonNumberSpelling(origin is Decimal) { self.origin = origin; }
 
-    string() is string {
-        let exponent = origin.exponent();
-        let signed = origin.coefficient().string();
-        let negative = signed.slice(0, 1) == "-";
-        let digits = if negative { signed.slice(1, signed.length()); } else { signed; };
-        let sign = if negative { "-"; } else { ""; };
-        if exponent >= 0 {
-            if digits.length() + exponent <= 21 { sign + digits + JsonZeros(exponent).string(); } else { origin.string(); }
-        }
-        else {
-            let point = digits.length() + exponent;
-            if point > 0 {
-                sign + digits.slice(0, point) + "." + digits.slice(point, digits.length());
-            }
-            else {
-                if -point <= 5 { sign + "0." + JsonZeros(-point).string() + digits; } else { origin.string(); }
-            }
-        }
-    }
+    string() is string { json_number_text(origin.string()); }
 }
 
 object JsonZeros {

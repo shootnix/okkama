@@ -36,12 +36,7 @@ fn versioned(mut octets: Vec<u8>, version: u8) -> Value {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let name = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let name = native.name();
     match name {
         "normalized_text" => {
             let origin = string(&args[0])?;

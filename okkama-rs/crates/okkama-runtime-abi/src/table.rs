@@ -540,4 +540,12 @@ natives! {
     NumberTextIntParse = 537, "runtime/number_text@1::int_parse/2", "(string, int) -> int";
     JsonJsonMemberPosition = 538, "runtime/json@1::json_member_position/2", "(JsonNodeState, string) -> int";
     JsonJsonQuote = 539, "runtime/json@1::json_quote/1", "(string) -> string";
+    JsonJsonNumberText = 540, "runtime/json@1::json_number_text/1", "(string) -> string";
+    JsonJsonOutput = 541, "runtime/json@1::json_output/0", "() -> JsonOutputState";
+    JsonJsonOutputRaw = 542, "runtime/json@1::json_output_raw/2", "(JsonOutputState, string) -> int";
+    JsonJsonOutputText = 543, "runtime/json@1::json_output_text/2", "(JsonOutputState, string) -> int";
+    JsonJsonOutputNumber = 544, "runtime/json@1::json_output_number/2", "(JsonOutputState, string) -> int";
+    JsonJsonOutputMember = 545, "runtime/json@1::json_output_member/3", "(JsonOutputState, string, bool) -> int";
+    JsonJsonOutputString = 546, "runtime/json@1::json_output_string/1", "(JsonOutputState) -> string";
+    JsonJsonRepeatedName = 547, "runtime/json@1::json_repeated_name/1", "(@string) -> int";
 }

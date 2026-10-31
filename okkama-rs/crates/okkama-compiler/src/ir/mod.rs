@@ -11,6 +11,7 @@
 
 pub mod cfg;
 pub mod hoist;
+pub mod regions;
 mod print;
 pub mod recursion;
 pub mod verify;

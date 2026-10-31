@@ -15,12 +15,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 fn operation(native: Native) -> &'static str {
-    native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
+    native.name()
 }
 
 /// Ошибка как `_errno` Perl: код и текст `strerror`.

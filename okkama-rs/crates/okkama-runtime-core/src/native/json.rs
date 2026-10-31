@@ -2,7 +2,7 @@
 //! `JsonNatives` JVM. Смещения, строки и столбцы — в символах (code points),
 //! тексты отказов — как у Perl-provider.
 use super::Error;
-use super::support::{failure, handle, int, int_value, new_handle, string, text};
+use super::support::{failure, handle, int, int_value, items, new_handle, string, text};
 use crate::{IntValue, Value, abi::Native};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -420,10 +420,20 @@ fn parsed(value: &Value) -> Result<Rc<Outcome>, Error> {
     Ok(outcome)
 }
 
-/// A JSON string literal: `"` and `\` escaped, `\n`, `\r`, `\t` by name, the
-/// other controls U+0000..U+001F as lowercase `\u00xx`, everything else as is.
-fn quote(origin: &str) -> String {
-    let mut quoted = String::with_capacity(origin.len() + 2);
+/// JSON text being written: appends go to the end, and every append answers
+/// the UTF-8 size of the whole text so far.
+struct Output(RefCell<String>);
+
+impl Output {
+    fn appended(&self, append: impl FnOnce(&mut String)) -> Value {
+        let mut text = self.0.borrow_mut();
+        append(&mut text);
+        int_value(text.len() as i64)
+    }
+}
+
+/// Appends the JSON string literal of `origin` (see [`quote`]).
+fn push_quoted(quoted: &mut String, origin: &str) {
     quoted.push('"');
     for character in origin.chars() {
         match character {
@@ -439,7 +449,39 @@ fn quote(origin: &str) -> String {
         }
     }
     quoted.push('"');
+}
+
+/// A JSON string literal: `"` and `\` escaped, `\n`, `\r`, `\t` by name, the
+/// other controls U+0000..U+001F as lowercase `\u00xx`, everything else as is.
+fn quote(origin: &str) -> String {
+    let mut quoted = String::with_capacity(origin.len() + 2);
+    push_quoted(&mut quoted, origin);
     quoted
+}
+
+/// The JSON spelling of an exact decimal (as `json/write.JsonNumberSpelling`):
+/// positional while that stays short — integers up to 21 digits, fractions
+/// down to 1e-6, the thresholds of JavaScript's `Number#toString` — and the
+/// canonical scientific form beyond them, so the value is never expanded.
+fn number_text(parts: &super::numbers::Decimal) -> String {
+    let sign = if parts.sign < 0 { "-" } else { "" };
+    let digits = parts.digits.as_str();
+    let length = digits.len() as i64;
+    if parts.exponent >= 0 {
+        if length + parts.exponent <= 21 {
+            return format!("{sign}{digits}{}", "0".repeat(parts.exponent as usize));
+        }
+        return super::numbers::canonical(parts);
+    }
+    let point = length + parts.exponent;
+    if point > 0 {
+        let (whole, fraction) = digits.split_at(point as usize);
+        format!("{sign}{whole}.{fraction}")
+    } else if -point <= 5 {
+        format!("{sign}0.{}{digits}", "0".repeat((-point) as usize))
+    } else {
+        super::numbers::canonical(parts)
+    }
 }
 
 fn node(value: &Value) -> Result<&Rc<Node>, Error> {
@@ -451,27 +493,21 @@ fn node_value(node: Rc<Node>) -> Value {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let name = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
     let invalid = |message: &str| failure("core.json", "invalid_input", native, message);
-    match name {
-        "json_parse_state" => Ok(new_handle(ParseState {
+    match native {
+        Native::JsonJsonParseState => Ok(new_handle(ParseState {
             source: string(&args[0])?.chars().collect(),
             maximum_depth: int(&args[1])?.clone(),
             outcome: RefCell::new(None),
         })),
-        "json_parse_valid" => Ok(Value::Bool(parsed(&args[0])?.root.is_some())),
-        "json_parse_has_duplicate" => Ok(Value::Bool(parsed(&args[0])?.duplicate.is_some())),
-        "json_parse_offset" => Ok(int_value(parsed(&args[0])?.offset)),
-        "json_parse_line" => Ok(int_value(parsed(&args[0])?.line)),
-        "json_parse_column" => Ok(int_value(parsed(&args[0])?.column)),
-        "json_parse_message" => Ok(text(parsed(&args[0])?.message.clone())),
-        "json_parse_duplicate" => Ok(text(parsed(&args[0])?.duplicate.clone().unwrap_or_default())),
-        "json_parse_root" => match parsed(&args[0])?.root.clone() {
+        Native::JsonJsonParseValid => Ok(Value::Bool(parsed(&args[0])?.root.is_some())),
+        Native::JsonJsonParseHasDuplicate => Ok(Value::Bool(parsed(&args[0])?.duplicate.is_some())),
+        Native::JsonJsonParseOffset => Ok(int_value(parsed(&args[0])?.offset)),
+        Native::JsonJsonParseLine => Ok(int_value(parsed(&args[0])?.line)),
+        Native::JsonJsonParseColumn => Ok(int_value(parsed(&args[0])?.column)),
+        Native::JsonJsonParseMessage => Ok(text(parsed(&args[0])?.message.clone())),
+        Native::JsonJsonParseDuplicate => Ok(text(parsed(&args[0])?.duplicate.clone().unwrap_or_default())),
+        Native::JsonJsonParseRoot => match parsed(&args[0])?.root.clone() {
             Some(root) => Ok(node_value(root)),
             None => Err(failure(
                 "core.json",
@@ -480,24 +516,24 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 "invalid JSON has no root",
             )),
         },
-        "json_node_kind" => Ok(int_value(node(&args[0])?.kind())),
-        "json_node_boolean" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonNodeKind => Ok(int_value(node(&args[0])?.kind())),
+        Native::JsonJsonNodeBoolean => match node(&args[0])?.as_ref() {
             Node::Boolean(flag) => Ok(Value::Bool(*flag)),
             _ => Err(invalid("JSON node is not boolean")),
         },
-        "json_node_number" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonNodeNumber => match node(&args[0])?.as_ref() {
             Node::Number(value) => Ok(text(value.clone())),
             _ => Err(invalid("JSON node has the wrong kind")),
         },
-        "json_node_text" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonNodeText => match node(&args[0])?.as_ref() {
             Node::Text(value) => Ok(text(value.clone())),
             _ => Err(invalid("JSON node has the wrong kind")),
         },
-        "json_node_size" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonNodeSize => match node(&args[0])?.as_ref() {
             Node::Array(values) | Node::Object(_, values) => Ok(int_value(values.len() as i64)),
             _ => Err(invalid("JSON node has no children")),
         },
-        "json_node_item" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonNodeItem => match node(&args[0])?.as_ref() {
             Node::Array(values) => {
                 let at = super::support::small(int(&args[1])?, values.len())
                     .ok_or_else(|| invalid("JSON array index is outside the node"))?;
@@ -505,11 +541,11 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }
             _ => Err(invalid("JSON node is not an array")),
         },
-        "json_member_name" | "json_member_value" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonMemberName | Native::JsonJsonMemberValue => match node(&args[0])?.as_ref() {
             Node::Object(names, values) => {
                 let at = super::support::small(int(&args[1])?, values.len())
                     .ok_or_else(|| invalid("JSON member index is outside the node"))?;
-                Ok(if name == "json_member_name" {
+                Ok(if native == Native::JsonJsonMemberName {
                     text(names[at].clone())
                 } else {
                     node_value(values[at].clone())
@@ -517,14 +553,53 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }
             _ => Err(invalid("JSON node is not an object")),
         },
-        "json_member_position" => match node(&args[0])?.as_ref() {
+        Native::JsonJsonMemberPosition => match node(&args[0])?.as_ref() {
             Node::Object(names, _) => {
                 let sought = string(&args[1])?;
                 Ok(int_value(names.iter().position(|name| name == sought).map_or(-1, |at| at as i64)))
             }
             _ => Err(invalid("JSON node is not an object")),
         },
-        "json_quote" => Ok(text(quote(string(&args[0])?))),
+        Native::JsonJsonQuote => Ok(text(quote(string(&args[0])?))),
+        Native::JsonJsonNumberText => super::numbers::components(string(&args[0])?)
+            .map(|parts| text(number_text(&parts)))
+            .ok_or_else(|| invalid("not a decimal number")),
+        Native::JsonJsonOutput => Ok(new_handle(Output(RefCell::new(String::new())))),
+        Native::JsonJsonOutputRaw => {
+            let raw = string(&args[1])?;
+            Ok(handle::<Output>(&args[0])?.appended(|text| text.push_str(raw)))
+        }
+        Native::JsonJsonOutputText => {
+            let origin = string(&args[1])?;
+            Ok(handle::<Output>(&args[0])?.appended(|text| push_quoted(text, origin)))
+        }
+        Native::JsonJsonOutputNumber => {
+            let parts = super::numbers::components(string(&args[1])?)
+                .ok_or_else(|| invalid("not a decimal number"))?;
+            Ok(handle::<Output>(&args[0])?.appended(|text| text.push_str(&number_text(&parts))))
+        }
+        Native::JsonJsonOutputMember => {
+            let name = string(&args[1])?;
+            let first = matches!(args[2], Value::Bool(true));
+            Ok(handle::<Output>(&args[0])?.appended(|text| {
+                if !first {
+                    text.push(',');
+                }
+                push_quoted(text, name);
+                text.push(':');
+            }))
+        }
+        Native::JsonJsonOutputString => Ok(text(handle::<Output>(&args[0])?.0.borrow().clone())),
+        Native::JsonJsonRepeatedName => {
+            let names = items(&args[0])?;
+            let mut seen = std::collections::HashSet::with_capacity(names.len());
+            for (index, name) in names.iter().enumerate() {
+                if !seen.insert(name.as_string()?) {
+                    return Ok(int_value(index as i64));
+                }
+            }
+            Ok(int_value(names.len() as i64))
+        }
         _ => Err(Error::Unsupported(format!(
             "native provider is not implemented: {}",
             native.symbol()

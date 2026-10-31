@@ -591,6 +591,39 @@ extern "C" fn h_call(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -> u
     guarded(ctx, at, |ctx| call_generic(ctx, regs, at))
 }
 
+/// Вызов native-функции: аргументы берутся прямо из регистров и уходят
+/// provider, без шага интерпретатора.
+extern "C" fn h_native(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -> u32 {
+    note_at(ctx, func, pc);
+    let at = (func as usize, pc as usize);
+    guarded(ctx, at, |ctx| {
+        let engine = unsafe { engine(ctx) };
+        let function = &engine.program.functions[at.0];
+        let registers = unsafe { registers(regs, function) };
+        let I::Call { dst, function: callee, args } = &function.code[at.1] else {
+            return call_generic(ctx, regs, at);
+        };
+        let mut values = Vec::with_capacity(args.len());
+        for register in args {
+            match machine::read(registers, *register) {
+                Ok(value) => values.push(value.clone()),
+                Err(stop) => return stopped(ctx, stop, at),
+            }
+        }
+        match machine::call_now(&engine, callee.0 as usize, values, at) {
+            Ok(returned) => match (dst, returned) {
+                (Some(dst), Some(value)) => {
+                    registers[dst.0.0 as usize] = value;
+                    OK
+                }
+                (Some(_), None) => stopped(ctx, invalid("call result and return disagree"), at),
+                (None, _) => OK,
+            },
+            Err(exit) => settle(ctx, exit),
+        }
+    })
+}
+
 /// Цель `call.role` по receiver (номер функции) или −1: тогда общий путь.
 extern "C" fn h_role_target(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -> u32 {
     let at = (func as usize, pc as usize);
@@ -1579,6 +1612,10 @@ impl<'a, 'b> Gen<'a, 'b> {
             I::CallFn { dst, callee, args } if self.closure_call(pc, dst.map(|dst| dst.0), *callee, args)? => {}
             I::CallFn { .. } | I::CallRole { .. } => {
                 let status = self.eval(h_call_dyn as *const () as usize, pc);
+                self.check(status, pc)?;
+            }
+            I::Call { function, .. } if self.program.functions[function.0 as usize].native.is_some() => {
+                let status = self.eval(h_native as *const () as usize, pc);
                 self.check(status, pc)?;
             }
             I::Call { .. } | I::CallCap { .. } => {

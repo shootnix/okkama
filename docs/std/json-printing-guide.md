@@ -2,18 +2,19 @@
 
 ## Rendering and escaping (0.4.0)
 
-`CompactJson.string()` renders each container from its children's text joined
-once (`json/write.JsonRendered`); it no longer writes through a byte buffer and
-decodes the result. `JsonTextOutput` remains the incremental writer to any
-`WritingText`, and both produce the same text: a `print()` that issues several
-commands gets their texts concatenated.
+`CompactJson.string()` writes the whole document into one native JSON output
+(`runtime/json.json_output`, through `json/write.JsonOutputWriting`): one native
+call per scalar or member name, with no byte buffer and no decoding of the result.
+`JsonTextOutput` remains the incremental writer to any `WritingText`, and both
+produce the same text: a `print()` that issues several commands gets their texts
+concatenated.
 
 `json/write.JsonQuoted(text).string()` spells a JSON string literal for both,
 through the native `runtime/json.json_quote`:
 `"` and `\` are escaped, `\n`, `\r`, `\t` by name and the other controls
 U+0000..U+001F as lowercase `\u00xx`; every other scalar, including U+007F and
 `/`, is written as is. The output is byte-for-byte that of 0.3.0. On 10 000
-orders (1.5 MB of output) `CompactJson` went from 4.8 s to 0.45 s.
+orders (1.5 MB of output) `CompactJson` went from 4.8 s to 85 ms.
 
 Scalar members need no wrapper: `JsonMember(name, value)` also accepts a
 `string`, `int`, `bool` or `Decimal` and wraps it as `JsonText`, `JsonNumber`
