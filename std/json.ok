@@ -644,6 +644,11 @@ test "repeated names are rejected when built and when parsed" {
     test.is(parsed, "k@2:2");
     test.is(try { ParsedJson("[1,").value(); ""; } catch failure is InvalidJson { failure.line().string() + ":" + failure.column().string(); }, "1:4");
     test.is(try { ParsedJson("[[1]]", 1).value(); ""; } catch failure is InvalidJson { "deep"; }, "deep");
+    // Большой объект: повтор ищется не перебором, а по множеству имён.
+    let names is @string = (0..20).map() -> index { "\"m" + index.string() + "\":" + index.string(); };
+    let wide = "{" + names.join(",") + ",\"m3\":0}";
+    test.is(try { ParsedJson(wide).value(); ""; } catch failure is DuplicateJsonMember { failure.name(); }, "m3");
+    test.is(ParsedJson("{" + names.join(",") + "}").value().size(), 20);
 }
 
 test "reads check kinds and name the pointer" {

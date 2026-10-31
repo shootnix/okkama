@@ -648,14 +648,22 @@ extern "C" fn h_native(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) ->
             && target.intrinsic.is_none()
             && args.len() <= NATIVE_ARGS
         {
-            let mut values: [Value; NATIVE_ARGS] = std::array::from_fn(|_| Value::Undef);
+            // Побитовые копии регистров без счётчиков ссылок: native только
+            // читает аргументы, регистры во время вызова не меняются, а копии
+            // не освобождаются (результат пишется в регистр после вызова).
+            let mut values: [std::mem::MaybeUninit<Value>; NATIVE_ARGS] = [const { std::mem::MaybeUninit::uninit() }; NATIVE_ARGS];
             for (value, register) in values.iter_mut().zip(args) {
                 match machine::read(registers, *register) {
-                    Ok(read) => *value = read.clone(),
+                    // SAFETY: см. выше; копия живёт только на время вызова.
+                    Ok(read) => {
+                        value.write(unsafe { std::ptr::read(read) });
+                    }
                     Err(stop) => return stopped(ctx, stop, at),
                 }
             }
-            return match engine.native(callee.0 as usize, symbol, &values[..args.len()]) {
+            // SAFETY: первые `args.len()` элементов записаны.
+            let values = unsafe { std::slice::from_raw_parts(values.as_ptr().cast::<Value>(), args.len()) };
+            return match engine.native(callee.0 as usize, symbol, values) {
                 Ok(value) => {
                     if let Some(dst) = dst {
                         registers[dst.0.0 as usize] = value;
@@ -1070,20 +1078,39 @@ extern "C" fn h_drop(slot: *mut Value) {
     }));
 }
 
+/// Освободить слоты по битам `mask`: регистры вызываемой типов со ссылками.
+extern "C" fn h_drop_mask(slots: *mut Value, mask: u64) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let mut bits = mask;
+        while bits != 0 {
+            let index = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            // SAFETY: бит — регистр вызываемой (меньше числа её регистров).
+            let slot = unsafe { &mut *slots.add(index) };
+            if !plain_value(slot) {
+                drop(std::mem::replace(slot, Value::Undef));
+            }
+        }
+    }));
+}
+
 /// Освободить `count` слотов подряд.
 extern "C" fn h_drop_range(slots: *mut Value, count: usize) {
     // SAFETY: `slots` — регистры вызываемой функции (`count` слотов).
     let slots = unsafe { std::slice::from_raw_parts_mut(slots, count) };
     for slot in slots {
-        // Без ссылок — нечего освобождать (и деструктор не вызывается).
-        let plain = match slot {
-            Value::Undef | Value::Bool(_) | Value::Float(_) | Value::Byte(_) | Value::Char(_) | Value::Enum { .. } => true,
-            Value::Int(value) => value.to_i64().is_some(),
-            _ => false,
-        };
-        if !plain {
+        if !plain_value(slot) {
             h_drop(slot);
         }
+    }
+}
+
+/// Значение без ссылок: освобождать нечего (и деструктор не вызывается).
+fn plain_value(value: &Value) -> bool {
+    match value {
+        Value::Undef | Value::Bool(_) | Value::Float(_) | Value::Byte(_) | Value::Char(_) | Value::Enum { .. } => true,
+        Value::Int(value) => value.to_i64().is_some(),
+        _ => false,
     }
 }
 
@@ -2231,6 +2258,10 @@ impl<'a, 'b> Gen<'a, 'b> {
             for register in releasing {
                 self.release(base, register as i32 * SLOT);
             }
+        } else if matches!(callee, Callee::Static(_)) && count <= 64 {
+            let mask = releasing.iter().fold(0u64, |mask, register| mask | 1 << register);
+            let mask = self.b.ins().iconst(types::I64, mask as i64);
+            self.helper(h_drop_mask as *const () as usize, self.sigs.clone, &[base, mask]);
         } else {
             let length = self.b.ins().iconst(types::I64, count as i64);
             self.helper(h_drop_range as *const () as usize, self.sigs.clone, &[base, length]);

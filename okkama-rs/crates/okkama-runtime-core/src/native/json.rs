@@ -14,10 +14,11 @@ const STACK_DEPTH: i64 = 100_000;
 enum Node {
     Null,
     Boolean(bool),
-    Number(String),
-    Text(String),
+    // Текст, число и имена делят память со значениями `Str`: чтение — счётчик ссылок.
+    Number(Rc<str>),
+    Text(Rc<str>),
     Array(Vec<Rc<Node>>),
-    Object(Vec<String>, Vec<Rc<Node>>),
+    Object(Vec<Rc<str>>, Vec<Rc<Node>>),
 }
 
 impl Node {
@@ -43,6 +44,8 @@ struct Parser<'a> {
     source: &'a [char],
     maximum_depth: &'a IntValue,
     position: usize,
+    /// Буфер строк разбора: одна строка — одно выделение памяти под `Rc<str>`.
+    scratch: String,
 }
 
 type Parsed<T> = Result<T, ParseError>;
@@ -77,12 +80,19 @@ impl Parser<'_> {
         Some(value)
     }
 
-    fn string(&mut self) -> Parsed<String> {
+    fn string(&mut self) -> Parsed<Rc<str>> {
+        let mut result = std::mem::take(&mut self.scratch);
+        result.clear();
+        let parsed = self.string_into(&mut result);
+        self.scratch = result;
+        parsed.map(|()| Rc::from(self.scratch.as_str()))
+    }
+
+    fn string_into(&mut self, result: &mut String) -> Parsed<()> {
         if self.at(self.position) != Some('"') {
             return Err(self.error("expected JSON string"));
         }
         self.position += 1;
-        let mut result = String::new();
         let fail = |offset, message: &str| ParseError {
             offset,
             message: message.into(),
@@ -93,7 +103,7 @@ impl Parser<'_> {
             let character = self.source[self.position];
             self.position += 1;
             if character == '"' {
-                return Ok(result);
+                return Ok(());
             }
             if (character as u32) < 0x20 {
                 return Err(fail(offset, "unescaped control character in JSON string"));
@@ -245,7 +255,7 @@ impl Parser<'_> {
             '"' => Node::Text(self.string()?),
             '[' => self.array(depth)?,
             '{' => self.object(depth)?,
-            '-' | '0'..='9' => Node::Number(self.number()?),
+            '-' | '0'..='9' => Node::Number(self.number()?.into()),
             _ if self.literal("null") => Node::Null,
             _ if self.literal("false") => Node::Boolean(false),
             _ if self.literal("true") => Node::Boolean(true),
@@ -292,8 +302,9 @@ impl Parser<'_> {
     fn object(&mut self, depth: i64) -> Parsed<Node> {
         self.position += 1;
         self.skip_whitespace();
-        let (mut names, mut values) = (Vec::new(), Vec::new());
-        let mut seen = std::collections::HashSet::new();
+        let (mut names, mut values): (Vec<Rc<str>>, Vec<Rc<Node>>) = (Vec::new(), Vec::new());
+        // Повторы малых объектов ищутся перебором, большие — по множеству.
+        let mut seen: std::collections::HashSet<Rc<str>> = std::collections::HashSet::new();
         if self.at(self.position) == Some('}') {
             self.position += 1;
             return Ok(Node::Object(names, values));
@@ -301,11 +312,19 @@ impl Parser<'_> {
         loop {
             let name_offset = self.position;
             let name = self.string()?;
-            if !seen.insert(name.clone()) {
+            let repeated = if names.len() < 16 {
+                names.contains(&name)
+            } else {
+                if seen.is_empty() {
+                    seen.extend(names.iter().cloned());
+                }
+                !seen.insert(name.clone())
+            };
+            if repeated {
                 return Err(ParseError {
                     offset: name_offset,
                     message: format!("duplicate JSON member \"{name}\""),
-                    duplicate: Some(name),
+                    duplicate: Some(name.to_string()),
                 });
             }
             self.skip_whitespace();
@@ -359,6 +378,7 @@ fn parsed(value: &Value) -> Result<Rc<Outcome>, Error> {
         source: &state.source,
         maximum_depth: &state.maximum_depth,
         position: 0,
+        scratch: String::new(),
     };
     let result = parser.value(1).and_then(|root| {
         parser.skip_whitespace();
@@ -484,6 +504,14 @@ fn number_text(parts: &super::numbers::Decimal) -> String {
     }
 }
 
+/// The text of a `Str` value, shared rather than copied.
+fn shared(value: &Value) -> Result<Rc<str>, Error> {
+    match value {
+        Value::Str(text) => Ok(text.clone()),
+        other => Ok(Rc::from(string(other)?)),
+    }
+}
+
 /// The member `name` of the object node `object`; `None` when the node is
 /// not an object or has no such member.
 fn member<'a>(object: &'a Value, name: &Value) -> Result<Option<&'a Node>, Error> {
@@ -491,7 +519,7 @@ fn member<'a>(object: &'a Value, name: &Value) -> Result<Option<&'a Node>, Error
     Ok(match node(object)?.as_ref() {
         Node::Object(names, values) => names
             .iter()
-            .position(|candidate| candidate == name)
+            .position(|candidate| &**candidate == name)
             .map(|at| values[at].as_ref()),
         _ => None,
     })
@@ -560,7 +588,7 @@ fn find_path(root: &Rc<Node>, target: &Rc<Node>, path: &mut Vec<String>) -> bool
     }
     let children: Vec<(String, &Rc<Node>)> = match root.as_ref() {
         Node::Array(values) => values.iter().enumerate().map(|(index, value)| (index.to_string(), value)).collect(),
-        Node::Object(names, values) => names.iter().cloned().zip(values).collect(),
+        Node::Object(names, values) => names.iter().map(|name| name.to_string()).zip(values).collect(),
         _ => return false,
     };
     for (token, child) in children {
@@ -611,11 +639,11 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             _ => Err(invalid("JSON node is not boolean")),
         },
         Native::JsonJsonNodeNumber => match node(&args[0])?.as_ref() {
-            Node::Number(value) => Ok(text(value.clone())),
+            Node::Number(value) => Ok(Value::Str(value.clone())),
             _ => Err(invalid("JSON node has the wrong kind")),
         },
         Native::JsonJsonNodeText => match node(&args[0])?.as_ref() {
-            Node::Text(value) => Ok(text(value.clone())),
+            Node::Text(value) => Ok(Value::Str(value.clone())),
             _ => Err(invalid("JSON node has the wrong kind")),
         },
         Native::JsonJsonNodeSize => match node(&args[0])?.as_ref() {
@@ -635,7 +663,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 let at = super::support::small(int(&args[1])?, values.len())
                     .ok_or_else(|| invalid("JSON member index is outside the node"))?;
                 Ok(if native == Native::JsonJsonMemberName {
-                    text(names[at].clone())
+                    Value::Str(names[at].clone())
                 } else {
                     node_value(values[at].clone())
                 })
@@ -645,7 +673,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         Native::JsonJsonMemberPosition => match node(&args[0])?.as_ref() {
             Node::Object(names, _) => {
                 let sought = string(&args[1])?;
-                Ok(int_value(names.iter().position(|name| name == sought).map_or(-1, |at| at as i64)))
+                Ok(int_value(names.iter().position(|name| &**name == sought).map_or(-1, |at| at as i64)))
             }
             _ => Err(invalid("JSON node is not an object")),
         },
@@ -680,11 +708,11 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         Native::JsonJsonOutputString => Ok(text(handle::<Output>(&args[0])?.0.borrow().clone())),
         Native::JsonJsonMemberText => match member(&args[0], &args[1])? {
-            Some(Node::Text(value)) => Ok(text(value.clone())),
+            Some(Node::Text(value)) => Ok(Value::Str(value.clone())),
             _ => Err(invalid("JSON member is missing or not a string")),
         },
         Native::JsonJsonMemberSpelling => match member(&args[0], &args[1])? {
-            Some(Node::Number(value)) => Ok(text(value.clone())),
+            Some(Node::Number(value)) => Ok(Value::Str(value.clone())),
             _ => Err(invalid("JSON member is missing or not a number")),
         },
         Native::JsonJsonMemberBoolean => match member(&args[0], &args[1])? {
@@ -702,11 +730,11 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }
             _ => Err(invalid("JSON member is missing or not a short integer")),
         },
-        Native::JsonJsonTextNode => Ok(node_value(Rc::new(Node::Text(string(&args[0])?.to_string())))),
+        Native::JsonJsonTextNode => Ok(node_value(Rc::new(Node::Text(shared(&args[0])?)))),
         Native::JsonJsonNumberNode => {
             let spelling = string(&args[0])?;
             super::numbers::components(spelling).ok_or_else(|| invalid("not a decimal number"))?;
-            Ok(node_value(Rc::new(Node::Number(spelling.to_string()))))
+            Ok(node_value(Rc::new(Node::Number(shared(&args[0])?))))
         }
         Native::JsonJsonBooleanNode => Ok(node_value(Rc::new(Node::Boolean(matches!(args[0], Value::Bool(true)))))),
         Native::JsonJsonNullNode => Ok(node_value(Rc::new(Node::Null))),
@@ -715,13 +743,13 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             Ok(node_value(Rc::new(Node::Array(values))))
         }
         Native::JsonJsonObjectNode => {
-            let names = items(&args[0])?.iter().map(|name| Ok(name.as_string()?.to_string())).collect::<Result<Vec<_>, Error>>()?;
+            let names = items(&args[0])?.iter().map(shared).collect::<Result<Vec<_>, Error>>()?;
             let values = items(&args[1])?.iter().map(|value| node(value).cloned()).collect::<Result<Vec<_>, _>>()?;
             if names.len() != values.len() {
                 return Err(invalid("JSON member names and values differ in number"));
             }
             let mut seen = std::collections::HashSet::with_capacity(names.len());
-            if !names.iter().all(|name| seen.insert(name.as_str())) {
+            if !names.iter().all(|name| seen.insert(&**name)) {
                 return Err(invalid("duplicate JSON member name"));
             }
             Ok(node_value(Rc::new(Node::Object(names, values))))
