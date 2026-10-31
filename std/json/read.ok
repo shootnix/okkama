@@ -167,12 +167,35 @@ object JsonView does JsonTrail {
         JsonOption(origin: present, trail: JsonMemberTrail(parent: self, name: name));
     }
 
-    // Member shortcuts for flat request documents: view.text("name") == view.member("name").text().
-    text(name is string) is string { self.member(name).text(); }
-    number(name is string) is Decimal { self.member(name).number(); }
+    // Member shortcuts: view.text("name") == view.member("name").text(). The
+    // reading answers them without a view of the member; a failure is read
+    // again the long way, which reports it at the right pointer.
+    text(name is string) is string {
+        try { origin.member_text(name); }
+        catch failure is JsonKindMismatch { self.member(name).text(); }
+        catch failure is MissingJsonMember { self.member(name).text(); }
+    }
+
+    number(name is string) is Decimal {
+        try { origin.member_number(name); }
+        catch failure is JsonKindMismatch { self.member(name).number(); }
+        catch failure is MissingJsonMember { self.member(name).number(); }
+    }
+
     integer(name is string) is BigInt { self.member(name).integer(); }
-    int(name is string) is int { self.member(name).int(); }
-    boolean(name is string) is bool { self.member(name).boolean(); }
+
+    int(name is string) is int {
+        try { origin.member_int(name); }
+        catch failure is JsonKindMismatch { self.member(name).int(); }
+        catch failure is MissingJsonMember { self.member(name).int(); }
+        catch failure is JsonNumberMismatch { self.member(name).int(); }
+    }
+
+    boolean(name is string) is bool {
+        try { origin.member_boolean(name); }
+        catch failure is JsonKindMismatch { self.member(name).boolean(); }
+        catch failure is MissingJsonMember { self.member(name).boolean(); }
+    }
 
     private:
     expect(expected is JsonKind) is void {
@@ -273,6 +296,11 @@ object JsonPrintedReading does JsonReading {
             .map() -> member { JsonPrintedReading(member.value(), JsonMemberTrail(parent: trail, name: name)); };
         found;
     }
+
+    member_text(name is string) is string { self.member(name).text(); }
+    member_number(name is string) is Decimal { self.member(name).number(); }
+    member_int(name is string) is int { self.member(name).int(); }
+    member_boolean(name is string) is bool { self.member(name).boolean(); }
 
     private:
     checked(expected is JsonKind) is JsonPayload {

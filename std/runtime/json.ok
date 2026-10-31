@@ -48,6 +48,15 @@ native json_output_string(origin is JsonOutputState) is string;
 // The first index whose name repeats an earlier one, or the number of names.
 native json_repeated_name(names is @string) is int;
 
+// One member of an object node read in one call: its text, number spelling,
+// boolean, or int when the spelling is a plain integer of up to 18 digits.
+// Any other case (not an object, no such member, another kind, another
+// number) is invalid_input; callers then read the member the long way.
+native json_member_text(origin is JsonNodeState, name is string) is string;
+native json_member_spelling(origin is JsonNodeState, name is string) is string;
+native json_member_boolean(origin is JsonNodeState, name is string) is bool;
+native json_member_int(origin is JsonNodeState, name is string) is int;
+
 // json_member_position is the index of the member with exactly that name, or -1.
 // Parsing is lazy and memoized. root() is available only after valid(); a
 // malformed source returns native invalid_data, never a partial tree. Scalar
@@ -131,4 +140,20 @@ test "repeated names report the earliest repeated index" {
     test.is(json_repeated_name(["a", "b"]), 2);
     test.is(json_repeated_name(["b", "a", "a", "b"]), 2);
     test.is(json_repeated_name(["", "x", ""]), 2);
+}
+
+test "members are read in one call or refused" {
+    let row = json_parse_root(json_parse_state("{\"s\":\"x\",\"n\":-12,\"f\":1.5,\"big\":1234567890123456789,\"t\":true,\"z\":null}", 8));
+    test.is(json_member_text(row, "s"), "x");
+    test.is(json_member_spelling(row, "f"), "1.5");
+    test.is(json_member_boolean(row, "t"), true);
+    test.is(json_member_int(row, "n"), -12);
+    for ["s", "f", "big", "missing"] -> name {
+        test.is(try { json_member_int(row, name); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    }
+    test.is(try { json_member_text(row, "n"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_member_boolean(row, "z"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_member_spelling(row, "s"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    let array = json_parse_root(json_parse_state("[1]", 8));
+    test.is(try { json_member_text(array, "a"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
 }

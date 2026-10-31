@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Performance
+
+- `JsonView` member shortcuts (`text(name)`, `int(name)`, `number(name)`, `boolean(name)`)
+  read a member of a parsed document in one native call, without a view and a reading
+  of the member: 454 → 169 ns per read, decoding 10 000 orders 155 → 117 ms. A member
+  that is missing, of another kind or not a short integer is read again the long way,
+  which reports the same error at the same pointer. New natives
+  `runtime/json.json_member_text`, `json_member_spelling`, `json_member_boolean`,
+  `json_member_int`; `role json/value.JsonReading` gains `member_text`,
+  `member_number`, `member_int` and `member_boolean`.
+
 ## [0.3.1] — 2026-10-31
 
 ### Added

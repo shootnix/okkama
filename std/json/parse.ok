@@ -30,7 +30,11 @@ import "runtime/json" take
     json_node_item,
     json_member_name,
     json_member_value,
-    json_member_position;
+    json_member_position,
+    json_member_text,
+    json_member_spelling,
+    json_member_boolean,
+    json_member_int;
 import "runtime/number_text" take int_parse_valid, int_parse;
 
 // Strict RFC-style JSON parsing into immutable json/value objects.
@@ -268,6 +272,28 @@ object JsonNodeReading does JsonReading {
         JsonNodeReading(json_member_value(origin, index));
     }
 
+    // One native call reads a member; anything it refuses is read the long
+    // way, which reports the failure.
+    member_text(name is string) is string {
+        try { json_member_text(origin, name); }
+        catch failure is NativeFailure { self.member(name).text(); }
+    }
+
+    member_number(name is string) is Decimal {
+        try { Decimal(json_member_spelling(origin, name)); }
+        catch failure is NativeFailure { self.member(name).number(); }
+    }
+
+    member_int(name is string) is int {
+        try { json_member_int(origin, name); }
+        catch failure is NativeFailure { self.member(name).int(); }
+    }
+
+    member_boolean(name is string) is bool {
+        try { json_member_boolean(origin, name); }
+        catch failure is NativeFailure { self.member(name).boolean(); }
+    }
+
     optional(name is string) is @JsonReading {
         let index = self.position(name);
         let found is @JsonReading = if index < 0 { []; } else { [JsonNodeReading(json_member_value(origin, index))]; };
@@ -307,6 +333,10 @@ object JsonDocumentReading does JsonReading {
     membership(name is string) is bool { self.root().membership(name); }
     member(name is string) is JsonReading { self.root().member(name); }
     optional(name is string) is @JsonReading { self.root().optional(name); }
+    member_text(name is string) is string { self.root().member_text(name); }
+    member_number(name is string) is Decimal { self.root().member_number(name); }
+    member_int(name is string) is int { self.root().member_int(name); }
+    member_boolean(name is string) is bool { self.root().member_boolean(name); }
 
     private:
     root() is JsonNodeReading { JsonNodeReading(JsonParsedRoot(state).value()); }

@@ -484,6 +484,19 @@ fn number_text(parts: &super::numbers::Decimal) -> String {
     }
 }
 
+/// The member `name` of the object node `object`; `None` when the node is
+/// not an object or has no such member.
+fn member<'a>(object: &'a Value, name: &Value) -> Result<Option<&'a Node>, Error> {
+    let name = string(name)?;
+    Ok(match node(object)?.as_ref() {
+        Node::Object(names, values) => names
+            .iter()
+            .position(|candidate| candidate == name)
+            .map(|at| values[at].as_ref()),
+        _ => None,
+    })
+}
+
 fn node(value: &Value) -> Result<&Rc<Node>, Error> {
     handle::<Rc<Node>>(value)
 }
@@ -590,6 +603,29 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }))
         }
         Native::JsonJsonOutputString => Ok(text(handle::<Output>(&args[0])?.0.borrow().clone())),
+        Native::JsonJsonMemberText => match member(&args[0], &args[1])? {
+            Some(Node::Text(value)) => Ok(text(value.clone())),
+            _ => Err(invalid("JSON member is missing or not a string")),
+        },
+        Native::JsonJsonMemberSpelling => match member(&args[0], &args[1])? {
+            Some(Node::Number(value)) => Ok(text(value.clone())),
+            _ => Err(invalid("JSON member is missing or not a number")),
+        },
+        Native::JsonJsonMemberBoolean => match member(&args[0], &args[1])? {
+            Some(Node::Boolean(flag)) => Ok(Value::Bool(*flag)),
+            _ => Err(invalid("JSON member is missing or not boolean")),
+        },
+        // Only a plain integer spelling of up to 18 digits: always within int.
+        Native::JsonJsonMemberInt => match member(&args[0], &args[1])? {
+            Some(Node::Number(value))
+                if value.trim_start_matches('-').len() <= 18
+                    && !value.trim_start_matches('-').is_empty()
+                    && value.trim_start_matches('-').bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                Ok(int_value(value.parse::<i64>().map_err(|_| invalid("JSON integer"))?))
+            }
+            _ => Err(invalid("JSON member is missing or not a short integer")),
+        },
         Native::JsonJsonRepeatedName => {
             let names = items(&args[0])?;
             let mut seen = std::collections::HashSet::with_capacity(names.len());

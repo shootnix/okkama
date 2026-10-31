@@ -71,6 +71,12 @@ role JsonReading {
     membership(name is string) is bool;
     member(name is string) is JsonReading;
     optional(name is string) is @JsonReading;
+    // member(name).text() and so on, which a reading may answer without a
+    // reading of the member; same results and failures.
+    member_text(name is string) is string;
+    member_number(name is string) is Decimal;
+    member_int(name is string) is int;
+    member_boolean(name is string) is bool;
 }
 
 object JsonMember {

@@ -548,4 +548,8 @@ natives! {
     JsonJsonOutputMember = 545, "runtime/json@1::json_output_member/3", "(JsonOutputState, string, bool) -> int";
     JsonJsonOutputString = 546, "runtime/json@1::json_output_string/1", "(JsonOutputState) -> string";
     JsonJsonRepeatedName = 547, "runtime/json@1::json_repeated_name/1", "(@string) -> int";
+    JsonJsonMemberText = 548, "runtime/json@1::json_member_text/2", "(JsonNodeState, string) -> string";
+    JsonJsonMemberSpelling = 549, "runtime/json@1::json_member_spelling/2", "(JsonNodeState, string) -> string";
+    JsonJsonMemberBoolean = 550, "runtime/json@1::json_member_boolean/2", "(JsonNodeState, string) -> bool";
+    JsonJsonMemberInt = 551, "runtime/json@1::json_member_int/2", "(JsonNodeState, string) -> int";
 }

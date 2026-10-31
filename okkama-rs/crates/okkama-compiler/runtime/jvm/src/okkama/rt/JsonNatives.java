@@ -661,4 +661,55 @@ public final class JsonNatives {
         }
         return BigInteger.valueOf(names.size());
     }
+
+    // The member `name` of an object node, or null when the node is not an
+    // object or has no such member.
+    private static Node member(Object handle, String name) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            return null;
+        }
+        int at = node.names.indexOf(name);
+        return at < 0 ? null : node.values.get(at);
+    }
+
+    public static String runtime_json__json_member_text(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member == null || member.kind != 3) {
+            throw failure("invalid_input", "json_member_text", 2, "JSON member is missing or not a string");
+        }
+        return member.value;
+    }
+
+    public static String runtime_json__json_member_spelling(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member == null || member.kind != 2) {
+            throw failure("invalid_input", "json_member_spelling", 2, "JSON member is missing or not a number");
+        }
+        return member.value;
+    }
+
+    public static boolean runtime_json__json_member_boolean(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member == null || member.kind != 1) {
+            throw failure("invalid_input", "json_member_boolean", 2, "JSON member is missing or not boolean");
+        }
+        return member.flag;
+    }
+
+    // Only a plain integer spelling of up to 18 digits: always within int.
+    public static BigInteger runtime_json__json_member_int(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member != null && member.kind == 2) {
+            String digits = member.value.startsWith("-") ? member.value.substring(1) : member.value;
+            boolean plain = !digits.isEmpty() && digits.length() <= 18;
+            for (int at = 0; plain && at < digits.length(); at++) {
+                plain = Character.isDigit(digits.charAt(at)) && digits.charAt(at) < 128;
+            }
+            if (plain) {
+                return BigInteger.valueOf(Long.parseLong(member.value));
+            }
+        }
+        throw failure("invalid_input", "json_member_int", 2, "JSON member is missing or not a short integer");
+    }
 }
