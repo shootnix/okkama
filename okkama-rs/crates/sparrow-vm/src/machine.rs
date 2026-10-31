@@ -188,7 +188,7 @@ impl Engine {
         Ok(*cell.get_or_init(|| Native::resolve(symbol)))
     }
 
-    fn native(&self, index: usize, symbol: &str, args: &[Value]) -> Result<Value, Stop> {
+    pub(crate) fn native(&self, index: usize, symbol: &str, args: &[Value]) -> Result<Value, Stop> {
         let Some(native) = self.provider(index, symbol)? else {
             // Как JVM: native программы без provider — ошибка вызова.
             if !symbol.starts_with("runtime/") {

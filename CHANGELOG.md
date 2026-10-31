@@ -78,7 +78,8 @@ Reading 10 000 orders (2.7 MB) into domain objects and writing them back (1.5 MB
   signatures, module and function names come from tables indexed by the native's
   number instead of a SipHash map and symbol splitting; providers are routed by a
   table, `runtime/json` by `match` on the native itself; and JIT code calls a native
-  with arguments taken straight from its registers instead of a generic interpreter step.
+  with arguments copied from its registers into an array on the stack, instead of a
+  generic interpreter step and a vector per call.
 - `JsonView` reads of parsed documents find a member by one native call, check scalar
   kinds in the native read itself, and spell their RFC 6901 pointer only when a
   failure or `pointer()` needs it.

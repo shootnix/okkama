@@ -50,6 +50,8 @@ const SLOT: i32 = 24;
 const MARGIN: usize = 4 << 20;
 /// Наибольшее число регистров вызываемой функции, освобождаемых в коде.
 const INLINE_RELEASE: usize = 32;
+/// Наибольшее число аргументов native-вызова, собираемых на стеке.
+const NATIVE_ARGS: usize = 8;
 
 /// Теги раскладки `Value`, прочитанные с образцов значений.
 #[derive(Debug, Clone, Copy)]
@@ -603,6 +605,29 @@ extern "C" fn h_native(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) ->
         let I::Call { dst, function: callee, args } = &function.code[at.1] else {
             return call_generic(ctx, regs, at);
         };
+        let target = &engine.program.functions[callee.0 as usize];
+        // Аргументы — в массиве на стеке; intrinsic и длинные списки — общим путём.
+        if let Some(symbol) = &target.native
+            && target.intrinsic.is_none()
+            && args.len() <= NATIVE_ARGS
+        {
+            let mut values: [Value; NATIVE_ARGS] = std::array::from_fn(|_| Value::Undef);
+            for (value, register) in values.iter_mut().zip(args) {
+                match machine::read(registers, *register) {
+                    Ok(read) => *value = read.clone(),
+                    Err(stop) => return stopped(ctx, stop, at),
+                }
+            }
+            return match engine.native(callee.0 as usize, symbol, &values[..args.len()]) {
+                Ok(value) => {
+                    if let Some(dst) = dst {
+                        registers[dst.0.0 as usize] = value;
+                    }
+                    OK
+                }
+                Err(stop) => settle(ctx, machine::stop_exit(stop, at)),
+            };
+        }
         let mut values = Vec::with_capacity(args.len());
         for register in args {
             match machine::read(registers, *register) {
