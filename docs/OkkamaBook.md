@@ -318,8 +318,10 @@ false       // bool
 ````
 
 String literals support the escape sequences `\n` (newline), `\r` (carriage
-return), `\t` (tab), `\"` (double quote), and `\\` (backslash). Character
-literals support `\n`, `\r`, `\t`, `\'`, and `\\`, and must contain exactly
+return), `\t` (tab), `\"` (double quote), `\\` (backslash) and `\u{H}` — the
+Unicode scalar value with 1 to 6 hexadecimal digits, such as `"\u{1b}[1m"` or
+`"\u{e9}"`. Character literals support `\n`, `\r`, `\t`, `\'`, `\\` and
+`\u{H}`, and must contain exactly
 one character *after* escape decoding. An escaped quote does not terminate its literal. Unknown escapes and
 a trailing lone backslash are lexer errors.
 
@@ -1145,6 +1147,17 @@ let total = values
     .map() -> value { value * 2; }
     .reduce(0) -> sum, value { sum + value; };
 ```
+
+The `-> bindings { ... }` part belongs to its call like a further member
+call, so a functional expression is an ordinary operand:
+
+```okkama
+let shipped = base + orders.reduce(0) -> sum, order { sum + order.count(); };
+if names.filter() -> name { name == wanted; }.size() > 0 { ... }
+```
+
+Only at the top level of a `for` source does the arrow belong to the loop;
+there, group the functional source in parentheses.
 
 Semantics:
 

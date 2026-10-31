@@ -538,4 +538,6 @@ natives! {
     DebugDataItems = 535, "runtime/debug@1::data_items/1", "(any) -> @any";
     NumberTextIntParseValid = 536, "runtime/number_text@1::int_parse_valid/2", "(string, int) -> bool";
     NumberTextIntParse = 537, "runtime/number_text@1::int_parse/2", "(string, int) -> int";
+    JsonJsonMemberPosition = 538, "runtime/json@1::json_member_position/2", "(JsonNodeState, string) -> int";
+    JsonJsonQuote = 539, "runtime/json@1::json_quote/1", "(string) -> string";
 }

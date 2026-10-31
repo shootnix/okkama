@@ -420,6 +420,28 @@ fn parsed(value: &Value) -> Result<Rc<Outcome>, Error> {
     Ok(outcome)
 }
 
+/// A JSON string literal: `"` and `\` escaped, `\n`, `\r`, `\t` by name, the
+/// other controls U+0000..U+001F as lowercase `\u00xx`, everything else as is.
+fn quote(origin: &str) -> String {
+    let mut quoted = String::with_capacity(origin.len() + 2);
+    quoted.push('"');
+    for character in origin.chars() {
+        match character {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\t' => quoted.push_str("\\t"),
+            control if (control as u32) < 0x20 => {
+                quoted.push_str(&format!("\\u{:04x}", control as u32));
+            }
+            other => quoted.push(other),
+        }
+    }
+    quoted.push('"');
+    quoted
+}
+
 fn node(value: &Value) -> Result<&Rc<Node>, Error> {
     handle::<Rc<Node>>(value)
 }
@@ -495,6 +517,14 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }
             _ => Err(invalid("JSON node is not an object")),
         },
+        "json_member_position" => match node(&args[0])?.as_ref() {
+            Node::Object(names, _) => {
+                let sought = string(&args[1])?;
+                Ok(int_value(names.iter().position(|name| name == sought).map_or(-1, |at| at as i64)))
+            }
+            _ => Err(invalid("JSON node is not an object")),
+        },
+        "json_quote" => Ok(text(quote(string(&args[0])?))),
         _ => Err(Error::Unsupported(format!(
             "native provider is not implemented: {}",
             native.symbol()

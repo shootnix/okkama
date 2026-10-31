@@ -218,9 +218,9 @@ Literals:
 ````okkama
 10        // int
 3.14      // float
-"hello"   // string  — escapes: \n \r \t \" \\
+"hello"   // string  — escapes: \n \r \t \" \\ \u{1b} (1-6 hex digits)
 ```raw "text" \n remains raw``` // string — contents are exact
-'x'       // char    — escapes: \n \r \t \' \\ ; exactly one char after decoding
+'x'       // char    — escapes: \n \r \t \' \\ \u{H} ; exactly one char after decoding
 true      // bool
 false     // bool
 ````
@@ -328,7 +328,9 @@ worker.apply(operation: (value is int) is int { value * 2; });
 ```
 
 Old anonymous arrow declarations and trailing call sugar are rejected.
-`values.map() -> value { ... }` is a dedicated collection expression;
+`values.map() -> value { ... }` is a dedicated collection expression and a
+postfix form, usable inside operators and arguments
+(`total + xs.reduce(0) -> s, x { s + x; }`);
 `for values -> value { ... }` remains a loop binding. Anonymous parameters
 cannot be variadic or end with a trailing comma. `void` is result-only:
 `() is void` is valid, `(void) is int` is invalid. Anonymous async actions

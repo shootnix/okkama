@@ -165,9 +165,10 @@ postfix_if          = "if" expr ;
 
 expr_stmt           = expr postfix_if? ";" ;
 
-expr                = assignment_free_expr arrow_suffix* ;
-(* arrow_suffix applies only to an eligible functional member call, e.g. map(). *)
-arrow_suffix        = "->" arrow_bindings? block postfix_op* ;
+expr                = assignment_free_expr ;
+(* arrow_suffix is a postfix form: it applies only directly after an eligible
+   functional member call, e.g. map(), and binds tighter than every operator. *)
+arrow_suffix        = "->" arrow_bindings? block ;
 arrow_bindings      = IDENT ("," IDENT)* ;
 assignment_free_expr= logic_or ;
 logic_or            = logic_and ("||" logic_and)* ;
@@ -187,7 +188,7 @@ await_expr          = "await" unary | postfix ;
 spawn_expr          = "spawn" call_expr ;
 call_expr           = postfix ;  (* semantic form: direct Worker(...).action(...) *)
 postfix             = primary postfix_op* ;
-postfix_op          = call_args | member_access | cap_select | index_access | unpack_op ;
+postfix_op          = call_args arrow_suffix? | member_access | cap_select | index_access | unpack_op ;
 cap_select          = "::" BINDING_NAME ;
 unpack_op           = "..." ;
 member_access       = "." IDENT ;
@@ -295,7 +296,7 @@ functional suffix is valid only after a member call named map, filter, or reduce
 map/filter functional calls take no arguments and reduce takes one positional initial value;
 functional receivers may be arrays, ranges, typed maps, or objects nominally
 implementing the standard collections/iteration.Iterable<T> role; this adds no grammar production;
-the top-level arrow in a for source belongs to the for pattern; group a functional for source;
+the top-level arrow in a for source belongs to the for pattern (a functional suffix is completed only in its nested expressions: parentheses, arguments, indices, blocks); group a functional for source;
 for always requires both an array/range/Iterable source and an explicit binding;
 custom object iteration is nominal through collections/iteration.Iterable<T>
 and its immutable Cursor<T>; it does not add grammar productions;

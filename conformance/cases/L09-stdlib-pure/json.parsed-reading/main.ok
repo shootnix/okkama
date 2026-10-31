@@ -1,0 +1,56 @@
+module app v1.0.0;
+
+import "json/parse" take ParsedJson;
+import "json/read" take JsonView, WrongJsonKind, MissingJsonValue, InvalidJsonNumber;
+import "json/value" take JsonKind, JsonValue;
+import "io/stdout" take Stdout;
+
+object Outcome {
+    has view is JsonView;
+    Outcome(:view);
+
+    string() is string {
+        try {
+            match view.kind() {
+                case JsonKind.object_value {
+                    let parts is @string = view.names().map() -> name {
+                        name + "=" + Outcome(view: view.member(name)).string();
+                    };
+                    "{" + parts.join(",") + "|" + view.size().string() + "}";
+                }
+                case JsonKind.array_value {
+                    let parts is @string = view.items().map() -> item { Outcome(view: item).string(); };
+                    "[" + parts.join(",") + "|" + view.size().string() + "]";
+                }
+                case JsonKind.number_value { view.number().string() + "/" + Outcome(view: view).integral(); }
+                case JsonKind.string_value { view.text() + "@" + view.pointer(); }
+                case JsonKind.boolean_value { view.boolean().string(); }
+                else { "null@" + view.pointer(); }
+            }
+        }
+        catch failure is WrongJsonKind { failure.text(); }
+        catch failure is MissingJsonValue { failure.text(); }
+        catch failure is InvalidJsonNumber { failure.text(); }
+    }
+
+    integral() is string {
+        try { view.int().string(); }
+        catch failure is InvalidJsonNumber { failure.text(); }
+    }
+}
+
+main() is int {
+    let sources is @string = [
+        "{\"a/b\":{\"~\":[1,-2,0.5,1e2,-1E+2,123456789012345678,1234567890123456789,9223372036854775807,9223372036854775808,-9223372036854775808,1e19,2.5e1]},\"s\":\"x\",\"t\":true,\"n\":null,\"e\":[],\"o\":{}}",
+        "[\"only\",[[[]]],{\"k\":[{\"deep\":\"v\"}]}]",
+        "-0",
+        "\"\"",
+    ];
+    for sources -> source {
+        let printed is JsonValue = ParsedJson(source);
+        let direct = Outcome(view: JsonView(ParsedJson(source))).string();
+        confirm direct == Outcome(view: JsonView(printed)).string();
+        Stdout().writeln(direct);
+    }
+    0;
+}

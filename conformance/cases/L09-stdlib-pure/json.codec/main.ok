@@ -1,0 +1,71 @@
+module app v1.0.0;
+
+import "json/codec" take JsonCodec, JsonList, JsonDecoded, JsonEncoded, JsonTextCodec;
+import "json/read" take JsonView, WrongJsonKind, MissingJsonValue;
+import "json/value" take JsonValue, JsonObject, JsonMember;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+
+object Line {
+    has sku is string;
+    has qty is int;
+    Line(:sku, :qty);
+    sku() is string { sku; }
+    quantity() is int { qty; }
+}
+
+object Order {
+    has id is int;
+    has note is string;
+    has total is Decimal;
+    has tags is @string;
+    has lines is @Line;
+    Order(:id, :note, :total, :tags, :lines);
+    id() is int { id; }
+    note() is string { note; }
+    total() is Decimal { total; }
+    tags() is @string { tags; }
+    lines() is @Line { lines; }
+}
+
+object LineJson does JsonCodec<Line> {
+    LineJson();
+    value(view is JsonView) is Line { Line(sku: view.text("sku"), qty: view.optional("qty").int(1)); }
+    json(line is Line) is JsonValue { JsonObject([JsonMember("sku", line.sku()), JsonMember("qty", line.quantity())]); }
+}
+
+object OrderJson does JsonCodec<Order> {
+    OrderJson();
+    value(view is JsonView) is Order {
+        Order(
+            id: view.required("id").int(),
+            note: view.optional("note").text("-"),
+            total: view.number("total"),
+            tags: view.optional("tags").items().map() -> tag { tag.text(); },
+            lines: JsonList(item: LineJson()).value(view.required("lines"))
+        );
+    }
+    json(order is Order) is JsonValue {
+        JsonObject([
+            JsonMember("id", order.id()),
+            JsonMember("note", order.note()),
+            JsonMember("total", order.total()),
+            JsonMember("tags", JsonList(item: JsonTextCodec()).json(order.tags())),
+            JsonMember("lines", JsonList(item: LineJson()).json(order.lines()))
+        ]);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let codec = JsonList(item: OrderJson());
+    let source = "[{\"id\":7,\"note\":null,\"total\":12.50,\"lines\":[{\"sku\":\"A\",\"qty\":2},{\"sku\":\"B\"}]},"
+        + "{\"id\":8,\"note\":\"gift \\\"wrap\\\"\",\"total\":1e2,\"tags\":[\"x\",\"y\"],\"lines\":[]}]";
+    let orders = JsonDecoded(codec: codec, source: source).value();
+    out.writeln(JsonEncoded(codec: codec, origin: orders).string());
+    let broken = "[{\"id\":7,\"total\":1,\"lines\":[{\"sku\":\"A\",\"qty\":\"2\"}]}]";
+    out.writeln(try { JsonDecoded(codec: codec, source: broken).value(); ""; } catch failure is WrongJsonKind { failure.text(); });
+    let missing = "[{\"id\":7,\"total\":1}]";
+    out.writeln(try { JsonDecoded(codec: codec, source: missing).value(); ""; } catch failure is MissingJsonValue { failure.text(); });
+    0;
+}

@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let parts is @string = ["\u{1b}", "\u{0}", "\u{E9}", "\u{1F642}", "\u{10FFFF}", "\u{000041}", "\\u{41}"];
+    let escape = '\u{1b}';
+    confirm escape == '\u{1B}';
+    Stdout().writeln(parts.join("|") + "|" + parts.join("").length().string());
+    0;
+}

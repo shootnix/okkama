@@ -1,5 +1,28 @@
 # JSON printing completion contract
 
+## Rendering and escaping (0.4.0)
+
+`CompactJson.string()` renders each container from its children's text joined
+once (`json/write.JsonRendered`); it no longer writes through a byte buffer and
+decodes the result. `JsonTextOutput` remains the incremental writer to any
+`WritingText`, and both produce the same text: a `print()` that issues several
+commands gets their texts concatenated.
+
+`json/write.JsonQuoted(text).string()` spells a JSON string literal for both,
+through the native `runtime/json.json_quote`:
+`"` and `\` are escaped, `\n`, `\r`, `\t` by name and the other controls
+U+0000..U+001F as lowercase `\u00xx`; every other scalar, including U+007F and
+`/`, is written as is. The output is byte-for-byte that of 0.3.0. On 10 000
+orders (1.5 MB of output) `CompactJson` went from 4.8 s to 0.45 s.
+
+Scalar members need no wrapper: `JsonMember(name, value)` also accepts a
+`string`, `int`, `bool` or `Decimal` and wraps it as `JsonText`, `JsonNumber`
+or `JsonBoolean` by its declared type; `JsonNumber(value is int)` exists too.
+
+```okkama
+JsonObject([JsonMember("id", 42), JsonMember("name", "Ada"), JsonMember("vip", true)]);
+```
+
 `PrettyJson(origin is JsonValue, indentation is int)` renders through JsonWriting
 without inspecting kind(), fields or concrete types. A conforming JsonValue.print()
 selects exactly one of the six JsonWriting commands to represent its value; the
@@ -68,4 +91,5 @@ The value written is always exact; nothing passes through float. `1e1000000` is 
 through stable sorted indices. Member order remains the original input order;
 the earliest repeated input name wins, even if another duplicate sorts earlier.
 String identity is exact, including empty names and distinct Unicode spellings.
-Validation uses O(n log n) comparisons and O(n) temporary indices.
+Objects of up to 8 members compare names pairwise; larger ones use O(n log n)
+comparisons and O(n) temporary indices. The reported duplicate is the same.

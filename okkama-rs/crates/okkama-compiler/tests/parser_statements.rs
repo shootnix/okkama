@@ -133,6 +133,16 @@ fn for_statements_own_the_top_level_arrow() {
         body_sexpr("for (values.map() -> item { item; }) -> value { value; }"),
         "(ForStatement source=(group (map values -> [item] {item})) bindings=[(ForBinding name=value batch=_)] body={value})"
     );
+    // Only the top level of the source gives the arrow to the `for`; nested
+    // expressions such as arguments complete their functional calls.
+    assert_eq!(
+        body_sexpr("for mapper.items(values.map() -> item { item; }) -> value { value; }"),
+        "(ForStatement source=(call (. mapper items) (map values -> [item] {item})) bindings=[(ForBinding name=value batch=_)] body={value})"
+    );
+    assert_eq!(
+        body_sexpr("for a + mapper.map() -> value { value; }"),
+        "(ForStatement source=(+ a (call (. mapper map))) bindings=[(ForBinding name=value batch=_)] body={value})"
+    );
     for (body, expected) in [
         (
             "for users user { user; }",

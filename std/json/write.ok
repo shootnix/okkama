@@ -1,26 +1,79 @@
 module json/write v1.0.0;
 
-import "json/value" take JsonValue, JsonWriting, JsonMember;
+import "json/value" take JsonValue, JsonWriting, JsonMember, JsonObject, JsonArray, JsonText, JsonNull, JsonBoolean, JsonNumber;
 import "collections/sequence" take Sequencing;
 import "math/decimal" take Decimal;
 import "io/stream" take WritingText;
 import "io/buffer" take ByteBuffer;
 import "io/text" take Utf8Output;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "regex/pattern" take Regex;
-import "regex/search" take RegexMatches;
+import "async/atomic" take Atomic;
+import "runtime/json" take json_quote;
 
 // Explicit JSON printing, with no inspection of arbitrary object fields.
+//
+// string() renders every container from its children's text joined once, so
+// the output is never re-encoded through a byte buffer. JsonTextOutput writes
+// the same text incrementally to any WritingText.
 object CompactJson {
     has origin is JsonValue;
     CompactJson(:origin);
 
     #projected
     string() is string {
-        let output = ByteBuffer();
-        origin.print(JsonTextOutput(destination: Utf8Output(origin: output.writing())));
-        Utf8Decoded(origin: output.content().bytes()).string();
+        JsonRendered(origin: origin).string();
     }
+}
+
+// The compact text of one value. A print() that issues several commands gets
+// their texts concatenated, exactly as a streaming JsonTextOutput writes them.
+object JsonRendered {
+    has origin is JsonValue;
+    JsonRendered(:origin);
+
+    string() is string {
+        let rendering = JsonRendering();
+        origin.print(rendering);
+        rendering.string();
+    }
+}
+
+object JsonRendering does JsonWriting {
+    has result is Atomic<string>;
+
+    JsonRendering() { result = Atomic(""); }
+
+    null_value() is void { self.appended("null"); }
+    boolean(value is bool) is void { self.appended(if value { "true"; } else { "false"; }); }
+    number(value is Decimal) is void { self.appended(JsonNumberSpelling(value).string()); }
+    text(value is string) is void { self.appended(json_quote(value)); }
+    elements(values is Sequencing<JsonValue>) is void {
+        let parts is @string = (0..values.size()).map() -> index {
+            JsonRendered(origin: values.item(index)).string();
+        };
+        self.appended("[" + parts.join(",") + "]");
+    }
+    members(members is Sequencing<JsonMember>) is void {
+        let parts is @string = (0..members.size()).map() -> index {
+            let member = members.item(index);
+            json_quote(member.name()) + ":" + JsonRendered(origin: member.value()).string();
+        };
+        self.appended("{" + parts.join(",") + "}");
+    }
+
+    string() is string { result.value(); }
+
+    private:
+    appended(text is string) is void { result.replace(result.value() + text); }
+}
+
+// JSON string literal spelling: quotes, backslashes and U+0000..U+001F are
+// escaped (\n, \r, \t by name, other controls as lowercase \u00xx); every
+// other scalar is written as is.
+object JsonQuoted {
+    has origin is string;
+    JsonQuoted(origin is string) { self.origin = origin; }
+    string() is string { json_quote(origin); }
 }
 
 object JsonTextOutput does JsonWriting {
@@ -32,27 +85,7 @@ object JsonTextOutput does JsonWriting {
         destination.write(if value { "true"; } else { "false"; });
     }
     number(value is Decimal) is void { destination.write(JsonNumberSpelling(value).string()); }
-    text(value is string) is void {
-        destination.write("\"");
-        for RegexMatches(value,Regex("[^\\\\\"\\x{0}-\\x{1f}]+|[\\\\\"\\x{0}-\\x{1f}]")) -> part {
-            let scalar = part.text();
-            if scalar.length()>1 {destination.write(scalar);next;}
-            let bytes = Utf8Encoded(origin: scalar).bytes();
-            if scalar == "\"" { destination.write("\\\""); }
-            else if scalar == "\\" { destination.write("\\\\"); }
-            else if scalar == "\n" { destination.write("\\n"); }
-            else if scalar == "\r" { destination.write("\\r"); }
-            else if scalar == "\t" { destination.write("\\t"); }
-            else if bytes[0].int() < 32 {
-                let code = bytes[0].int();
-                let digits = "0123456789abcdef";
-                destination.write("\\u00", digits.slice((code / 16).int(), (code / 16).int() + 1),
-                    digits.slice(code % 16, code % 16 + 1));
-            }
-            else { destination.write(scalar); }
-        }
-        destination.write("\"");
-    }
+    text(value is string) is void { destination.write(json_quote(value)); }
     elements(values is Sequencing<JsonValue>) is void {
         destination.write("[");
         for (0..values.size()) -> index {
@@ -256,4 +289,27 @@ test "numbers are written positionally while short and exactly otherwise" {
     test.is(JsonNumberSpelling(Decimal("123456789012345678901")).string(), "123456789012345678901");
     test.is(JsonNumberSpelling(Decimal("1e21")).string(), "1e21");
     test.is(JsonNumberSpelling(Decimal("1e1000000")).string(), "1e1000000");
+}
+
+test "strings escape quotes, backslashes and every control character" {
+    test.is(JsonQuoted("").string(), "\"\"");
+    test.is(JsonQuoted("plain été 🙂 /").string(), "\"plain été 🙂 /\"");
+    test.is(JsonQuoted("say \"hi\"\\").string(), "\"say \\\"hi\\\"\\\\\"");
+    test.is(JsonQuoted("a\nb\rc\td").string(), "\"a\\nb\\rc\\td\"");
+    test.is(JsonQuoted("\u{0}\u{8}\u{c}\u{1b}\u{1f}\u{7f}").string(), "\"\\u0000\\u0008\\u000c\\u001b\\u001f\u{7f}\"");
+    test.is(JsonQuoted("\\u{41}\n\u{1}").string(), "\"\\\\u{41}\\n\\u0001\"");
+}
+
+test "compact text is the streamed text" {
+    let value = JsonObject([
+        JsonMember("name", JsonText("Ada \"\u{1}\"")),
+        JsonMember("tags", JsonArray([JsonText("a"), JsonNull(), JsonBoolean(false)])),
+        JsonMember("empty", JsonObject([])),
+        JsonMember("n", JsonNumber(Decimal("-0.5"))),
+    ]);
+    let expected = "{\"name\":\"Ada \\\"\\u0001\\\"\",\"tags\":[\"a\",null,false],\"empty\":{},\"n\":-0.5}";
+    test.is(CompactJson(origin: value).string(), expected);
+    let buffer = ByteBuffer();
+    value.print(JsonTextOutput(destination: Utf8Output(origin: buffer.writing())));
+    test.is(Utf8Decoded(origin: buffer.content().bytes()).string(), expected);
 }

@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.string.unicode-escape",
+  "title": "string and char \\u{H} escapes decode to Unicode scalar values",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.STRING-LITERALS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "\u001b|\u0000|é|🙂|􏿿|A|\\u{41}|12\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.3.0 (\\u{H} escapes)",
+    "expected_basis": "spec 4.2: \\u{H} names the code point U+H with 1 to 6 hex digits, either case, leading zeros allowed; \\\\u{41} stays literal."
+  },
+  "status": "mandatory"
+}

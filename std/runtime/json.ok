@@ -23,7 +23,13 @@ native json_node_size(origin is JsonNodeState) is int;
 native json_node_item(origin is JsonNodeState, index is int) is JsonNodeState;
 native json_member_name(origin is JsonNodeState, index is int) is string;
 native json_member_value(origin is JsonNodeState, index is int) is JsonNodeState;
+native json_member_position(origin is JsonNodeState, name is string) is int;
 
+// JSON string literal of any string: '"' and '\' escaped, \n, \r, \t by name,
+// the other controls U+0000..U+001F as lowercase \u00xx, everything else as is.
+native json_quote(origin is string) is string;
+
+// json_member_position is the index of the member with exactly that name, or -1.
 // Parsing is lazy and memoized. root() is available only after valid(); a
 // malformed source returns native invalid_data, never a partial tree. Scalar
 // accessors require their exact kind, and indices are zero-based; wrong kinds
@@ -67,4 +73,17 @@ test "JSON invalid observations use portable native failure codes" {
         test.is(try {json_member_name(table, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
         test.is(try {json_member_value(table, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
     }
+}
+test "JSON member positions and quoted strings" {
+    let table = json_parse_root(json_parse_state("{\"a\":1,\"\":2,\"é\":3}", 8));
+    test.is(json_member_position(table, "a"), 0);
+    test.is(json_member_position(table, ""), 1);
+    test.is(json_member_position(table, "é"), 2);
+    test.is(json_member_position(table, "A"), -1);
+    let array = json_parse_root(json_parse_state("[1]", 8));
+    test.is(try {json_member_position(array, "a"); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    test.is(json_quote(""), "\"\"");
+    test.is(json_quote("é🙂/\u{7f}"), "\"é🙂/\u{7f}\"");
+    test.is(json_quote("\"\\\n\r\t"), "\"\\\"\\\\\\n\\r\\t\"");
+    test.is(json_quote("\u{0}\u{8}\u{c}\u{1b}\u{1f}"), "\"\\u0000\\u0008\\u000c\\u001b\\u001f\"");
 }

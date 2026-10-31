@@ -471,6 +471,14 @@ impl Lexer<'_> {
                             self.error("Unfinished escape sequence in string literal.", span);
                             return;
                         }
+                        Some('u') => match self.unicode_escape() {
+                            Ok(decoded) => value.push(decoded),
+                            Err(problem) => {
+                                valid = false;
+                                let span = self.span_from(escape_start);
+                                self.error(format!("{problem} in string literal."), span);
+                            }
+                        },
                         Some(escape) => match decode_escape(escape, '"') {
                             Some(decoded) => value.push(decoded),
                             None => {
@@ -541,6 +549,14 @@ impl Lexer<'_> {
                             self.error("Unfinished escape sequence in char literal.", span);
                             return;
                         }
+                        Some('u') => match self.unicode_escape() {
+                            Ok(decoded) => value.push(decoded),
+                            Err(problem) => {
+                                valid = false;
+                                let span = self.span_from(escape_start);
+                                self.error(format!("{problem} in char literal."), span);
+                            }
+                        },
                         Some(escape) => match decode_escape(escape, '\'') {
                             Some(decoded) => value.push(decoded),
                             None => {
@@ -561,6 +577,27 @@ impl Lexer<'_> {
                 }
             }
         }
+    }
+
+    /// Decodes the rest of `\u{HEX}` after the `u`: one to six hexadecimal
+    /// digits naming a Unicode scalar value. Only the braces and the digits
+    /// are consumed, so a malformed escape never swallows the closing quote.
+    fn unicode_escape(&mut self) -> Result<char, String> {
+        const MALFORMED: &str = "Unicode escape must be \\u{HEX} with 1 to 6 hexadecimal digits";
+        if !self.eat(b'{') {
+            return Err(MALFORMED.into());
+        }
+        let digits_start = self.pos;
+        while self.peek().is_ascii_hexdigit() {
+            self.pos += 1;
+        }
+        let digits = &self.text[digits_start..self.pos];
+        if digits.is_empty() || digits.len() > 6 || !self.eat(b'}') {
+            return Err(MALFORMED.into());
+        }
+        let code = u32::from_str_radix(digits, 16).expect("hexadecimal digits");
+        char::from_u32(code)
+            .ok_or_else(|| format!("Unicode escape \\u{{{digits}}} is not a Unicode scalar value"))
     }
 
     fn fenced_string(&mut self) {

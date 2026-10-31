@@ -1,0 +1,110 @@
+module json/codec v1.0.0;
+
+import "json/value" take JsonValue, JsonArray, JsonText, JsonNumber, JsonBoolean;
+import "json/parse" take ParsedJson;
+import "json/read" take JsonView, WrongJsonKind;
+import "json/write" take CompactJson;
+import "math/decimal" take Decimal;
+
+// Explicit two-way mapping between a domain type and its JSON shape. A codec
+// is written by hand, with both directions side by side, so the member names
+// live in one object and the domain type never learns its wire format:
+//
+//     object LineJson does JsonCodec<Line> {
+//         LineJson();
+//         value(view is JsonView) is Line {
+//             Line(sku: view.text("sku"), qty: view.int("qty"));
+//         }
+//         json(line is Line) is JsonValue {
+//             JsonObject([JsonMember("sku", line.sku()), JsonMember("qty", line.quantity())]);
+//         }
+//     }
+//
+//     let lines = JsonDecoded(codec: JsonList(item: LineJson()), source: text).value();
+//     let text = JsonEncoded(codec: JsonList(item: LineJson()), origin: lines).string();
+//
+// Codecs compose: JsonList(item:) maps arrays, and a codec reads its nested
+// values through other codecs (JsonList(item: LineJson()).value(view.required("lines"))).
+// Reading failures are the JsonView errors, with the pointer of the failing value.
+
+role JsonCodec<T> {
+    value(view is JsonView) is T;
+    json(value is T) is JsonValue;
+}
+
+// A JSON array of values of one codec, in order.
+object JsonList<T> does JsonCodec<@T> {
+    has item is JsonCodec<T>;
+
+    JsonList(:item);
+
+    value(view is JsonView) is @T {
+        let values is @T = view.items().map() -> element { item.value(element); };
+        values;
+    }
+
+    json(values is @T) is JsonValue {
+        let elements is @JsonValue = values.map() -> value { item.json(value); };
+        JsonArray(elements);
+    }
+}
+
+// The value of a JSON text. Syntax errors are json/parse.InvalidJson and
+// DuplicateJsonMember; reading errors are those of the codec.
+object JsonDecoded<T> {
+    has codec is JsonCodec<T>;
+    has source is string;
+
+    JsonDecoded(:codec, :source);
+
+    value() is T { codec.value(JsonView(ParsedJson(source))); }
+}
+
+// The compact JSON text of a value.
+object JsonEncoded<T> {
+    has codec is JsonCodec<T>;
+    has origin is T;
+
+    JsonEncoded(:codec, :origin);
+
+    string() is string { CompactJson(origin: codec.json(origin)).string(); }
+}
+
+// Scalar codecs, for arrays of scalars: JsonList(item: JsonTextCodec()).
+object JsonTextCodec does JsonCodec<string> {
+    JsonTextCodec();
+    value(view is JsonView) is string { view.text(); }
+    json(value is string) is JsonValue { JsonText(value); }
+}
+
+object JsonIntCodec does JsonCodec<int> {
+    JsonIntCodec();
+    value(view is JsonView) is int { view.int(); }
+    json(value is int) is JsonValue { JsonNumber(value); }
+}
+
+object JsonBooleanCodec does JsonCodec<bool> {
+    JsonBooleanCodec();
+    value(view is JsonView) is bool { view.boolean(); }
+    json(value is bool) is JsonValue { JsonBoolean(value); }
+}
+
+object JsonDecimalCodec does JsonCodec<Decimal> {
+    JsonDecimalCodec();
+    value(view is JsonView) is Decimal { view.number(); }
+    json(value is Decimal) is JsonValue { JsonNumber(value); }
+}
+
+test "codecs round-trip arrays of scalars" {
+    let texts = JsonList(item: JsonTextCodec());
+    let decoded = JsonDecoded(codec: texts, source: "[\"a\",\"b\\n\"]").value();
+    test.is(decoded, ["a", "b\n"]);
+    test.is(JsonEncoded(codec: texts, origin: decoded).string(), "[\"a\",\"b\\n\"]");
+    let nested = JsonList(item: JsonList(item: JsonIntCodec()));
+    test.is(JsonEncoded(codec: nested, origin: JsonDecoded(codec: nested, source: "[[1,2],[],[3]]").value()).string(), "[[1,2],[],[3]]");
+    test.is(JsonDecoded(codec: JsonList(item: JsonBooleanCodec()), source: "[true,false]").value(), [true, false]);
+    test.is(JsonEncoded(codec: JsonDecimalCodec(), origin: Decimal("12.50")).string(), "12.5");
+    let empty is @string = [];
+    test.is(JsonEncoded(codec: texts, origin: empty).string(), "[]");
+    test.is(try { JsonDecoded(codec: texts, source: "[\"a\",1]").value(); ""; } catch failure is WrongJsonKind { failure.pointer(); }, "/1");
+}

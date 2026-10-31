@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.string.unicode-escape-malformed",
+  "title": "string literal: malformed \\u{H} escapes are lexer errors",
+  "purpose": "Malformed source is rejected by the lexer/parser.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.STRING-LITERALS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.3.0 (\\u{H} escapes)",
+    "expected_basis": "spec 4.2: \\u{H} needs 1 to 6 hexadecimal digits and both braces."
+  },
+  "status": "mandatory"
+}

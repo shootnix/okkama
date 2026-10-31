@@ -11,6 +11,10 @@ import "math/decimal" take Decimal;
 // builtin map iteration. It rejects duplicate names instead of choosing a
 // surprising first-wins or last-wins policy.
 //
+// Members of scalar values need no wrapper:
+//
+//     JsonObject([JsonMember("id", 42), JsonMember("name", "Ada"), JsonMember("vip", true)]);
+//
 // Broad JsonValue references are processed without casts through print():
 //
 //     for document.values() -> item {
@@ -50,6 +54,28 @@ object JsonMember {
         member_value = value;
     }
 
+    // Scalar members by the value's declared type: JsonMember("id", 42) is
+    // JsonMember("id", JsonNumber(42)), and likewise text, bool and Decimal.
+    JsonMember(name is string, value is string) {
+        member_name = name;
+        member_value = JsonText(value);
+    }
+
+    JsonMember(name is string, value is int) {
+        member_name = name;
+        member_value = JsonNumber(value);
+    }
+
+    JsonMember(name is string, value is bool) {
+        member_name = name;
+        member_value = JsonBoolean(value);
+    }
+
+    JsonMember(name is string, value is Decimal) {
+        member_name = name;
+        member_value = JsonNumber(value);
+    }
+
     name() is string { member_name; }
 
     value() is JsonValue { member_value; }
@@ -77,6 +103,8 @@ object JsonNumber does JsonValue {
     has origin is Decimal;
 
     JsonNumber(value is Decimal) { origin = value; }
+
+    JsonNumber(value is int) { origin = Decimal(value.string()); }
 
     kind() is JsonKind { JsonKind.number_value; }
 
@@ -116,18 +144,25 @@ object JsonObject does JsonValue {
 
     JsonObject(members is Sequencing<JsonMember>) {
         let snapshot is @JsonMember = members.map() -> member { member; };
-        // Capture each immutable name once. Stable key ordering retains input
-        // indices within equal-name groups; their second index is a duplicate.
-        let ranked is @Ranked<int,string> = (0..snapshot.size()).map() -> index {
-            Ranked(item: index, key: snapshot[index].name());
-        };
-        let ordered = ranked.ordering();
-        let duplicate = (0..ordered.size()).reduce(snapshot.size()) -> earliest, index {
-            if index > 0 && ordered[index-1].key() == ordered[index].key()
-                && ordered[index].item() < earliest {
-                ordered[index].item();
-            }
-            else { earliest; }
+        // Capture each immutable name once. The earliest repeated input index
+        // is the duplicate: found pairwise for small objects, otherwise by
+        // stable key ordering, which keeps input indices within equal names.
+        let names is @string = snapshot.map() -> member { member.name(); };
+        let duplicate = if names.size() <= 8 {
+            JsonRepeatedName(names: names).index();
+        }
+        else {
+            let ranked is @Ranked<int,string> = (0..names.size()).map() -> index {
+                Ranked(item: index, key: names[index]);
+            };
+            let ordered = ranked.ordering();
+            (0..ordered.size()).reduce(names.size()) -> earliest, index {
+                if index > 0 && ordered[index-1].key() == ordered[index].key()
+                    && ordered[index].item() < earliest {
+                    ordered[index].item();
+                }
+                else { earliest; }
+            };
         };
         confirm duplicate == snapshot.size()
             else throw DuplicateJsonMember(snapshot[duplicate].name());
@@ -149,6 +184,28 @@ object JsonObject does JsonValue {
     members() is Sequencing<JsonMember> { origin; }
 
     print(to is JsonWriting) is void { to.members(self.members()); }
+}
+
+// The first index whose name repeats an earlier one, or size() when the
+// names are distinct. Quadratic: only for a handful of names.
+object JsonRepeatedName {
+    has names is @string;
+
+    JsonRepeatedName(:names);
+
+    index() is int {
+        if names.size() < 2 {
+            names.size();
+        }
+        else {
+            (1..names.size()).reduce(names.size()) -> earliest, later {
+                let repeated = earliest == names.size() && (0..later).reduce(false) -> found, sooner {
+                    found || names[sooner] == names[later];
+                };
+                if repeated { later; } else { earliest; }
+            };
+        }
+    }
 }
 
 object JsonMemberIndex {
@@ -239,4 +296,29 @@ object DuplicateJsonMember does Error {
     }
 
     text() is string { "duplicate JSON member \"" + origin + "\""; }
+}
+
+test "duplicate names report the earliest repeated input index" {
+    test.is(JsonRepeatedName(names: []).index(), 0);
+    test.is(JsonRepeatedName(names: ["a"]).index(), 1);
+    test.is(JsonRepeatedName(names: ["a", "b", "c"]).index(), 3);
+    test.is(JsonRepeatedName(names: ["b", "a", "a", "b"]).index(), 2);
+    test.is(JsonRepeatedName(names: ["", "x", ""]).index(), 2);
+    for [3, 8, 9, 20] -> width {
+        let distinct is @JsonMember = (0..width).map() -> index { JsonMember("m" + index.string(), JsonNull()); };
+        test.is(JsonObject(distinct).members().size(), width);
+        let repeated is @JsonMember = (0..width).map() -> index {
+            JsonMember(if index == width - 1 { "m1"; } else { "m" + index.string(); }, JsonNull());
+        };
+        test.is(try { JsonObject(repeated); ""; } catch failure is DuplicateJsonMember { failure.name(); }, "m1");
+    }
+}
+
+test "scalar members wrap their value by declared type" {
+    let value = JsonObject([JsonMember("i", 42), JsonMember("s", "x"), JsonMember("b", false),
+        JsonMember("d", Decimal("1.5")), JsonMember("v", JsonNull())]);
+    let kinds is @JsonKind = value.members().map() -> member { member.value().kind(); };
+    test.is(kinds, [JsonKind.number_value, JsonKind.string_value, JsonKind.boolean_value,
+        JsonKind.number_value, JsonKind.null_value]);
+    test.is(JsonNumber(-7).kind(), JsonKind.number_value);
 }

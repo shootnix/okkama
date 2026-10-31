@@ -6,6 +6,62 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- **`\u{H}` escapes** in string and char literals: one to six hexadecimal digits name a
+  Unicode scalar value, `"\u{1b}[1m"`, `"\u{e9}"`, `'\u{0}'`. Surrogates, values above
+  `10FFFF`, missing braces and empty or overlong digit runs are lexer errors (spec §4.2).
+  Until now control characters other than `\n`, `\r`, `\t` could not be written in source.
+- **`json/codec`**: `role JsonCodec<T>` maps a domain type to JSON and back with a
+  hand-written object, both directions side by side. `JsonList(item:)` handles arrays and
+  nests, `JsonDecoded(codec:, source:)` and `JsonEncoded(codec:, origin:)` read and write
+  text, and `JsonTextCodec`, `JsonIntCodec`, `JsonBooleanCodec`, `JsonDecimalCodec` cover
+  arrays of scalars (`docs/std/json-codec.md`, case `L09.json.codec`).
+- **Optional JSON members**: `JsonView.optional(name)` is a `JsonOption`; each reader takes
+  the value for an absent or `null` member — `view.optional("nick").text("anonymous")`,
+  `view.optional("address").optional("city").text("")`, `view.optional("tags").items()`.
+  A present member of another kind is still `WrongJsonKind`. `JsonView.required(name)` is
+  `member(name)`. There is no null-like value: a `JsonOption` holds zero or one view.
+- **Scalar JSON members**: `JsonMember("id", 42)`, `JsonMember("name", "Ada")`,
+  `JsonMember("vip", true)` and `Decimal` values wrap themselves by declared type;
+  `JsonNumber(value is int)`.
+- `json/parse.JsonNode` reads its own kind directly: `text()`, `spelling()`, `number()`,
+  `boolean()`, `size()`, `item(index)`, `name(index)`, `names()`, `members()`,
+  `membership(name)`, `member(name)`, `optional(name)`; `ParsedJson.node()` is the root node.
+- Natives `runtime/json.json_member_position` (a member's index by name, one call) and
+  `runtime/json.json_quote` (a JSON string literal), in the Rust and JVM providers.
+
+### Changed
+
+- **Functional suffixes are postfix forms.** `-> bindings { … }` belongs to its
+  `map`/`filter`/`reduce` call like a further member call, so it can stand inside any
+  operator, argument or condition: `total + xs.reduce(0) -> s, x { s + x; }`,
+  `ready && xs.filter() -> x { x > 3; }.size() > 0`. Before, it was accepted only as a
+  whole expression. The top level of a `for` source still gives the arrow to the loop.
+- `json/read.JsonView` of a value declared as `ParsedJson` or `JsonNode` reads the parsed
+  tree directly instead of through `print()`, with the same values, pointers and errors
+  (case `L09.json.parsed-reading`). Views of other `JsonValue`s are unchanged.
+
+### Performance
+
+Reading 10 000 orders (2.7 MB) into domain objects and writing them back (1.5 MB), Sparrow:
+7.0 s → 1.2 s in total.
+
+- `JsonView` member and scalar reads of parsed documents: decoding 1.9 s → 0.49 s. A member
+  is found by one native call, and scalar kinds are checked by the native read itself.
+  Member pointers escape with two replacements instead of two split/join pairs.
+- `CompactJson.string()` renders containers by joining their children's text instead of
+  writing through a byte buffer, and `CompactJson` and `JsonTextOutput` escape strings
+  natively instead of a regex split per string: 4.8 s → 0.45 s, byte-for-byte the same
+  output.
+- `JsonObject` checks up to 8 member names pairwise instead of sorting them.
+
+### Removed
+
+- `conformance/contracts/stdlib-inventory.json`: the snapshot of the std public surface had
+  fallen far behind `std/` and nothing read it. `tools/inventory_std.py` now writes only
+  the per-module coverage contracts in `contracts/stdlib.json`.
+
 ## [0.3.0] — 2026-10-31
 
 ### Added

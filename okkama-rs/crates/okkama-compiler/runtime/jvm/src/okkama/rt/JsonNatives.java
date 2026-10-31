@@ -512,4 +512,36 @@ public final class JsonNatives {
         }
         return node.values.get(index(node, position, "json_member_value", "JSON member index is outside the node"));
     }
+
+    public static BigInteger runtime_json__json_member_position(Object handle, String name) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            throw failure("invalid_input", "json_member_position", 2, "JSON node is not an object");
+        }
+        return BigInteger.valueOf(node.names.indexOf(name));
+    }
+
+    // A JSON string literal: '"' and backslash escaped, \n, \r, \t by name, the
+    // other controls U+0000..U+001F as lowercase u00xx escapes, everything else as is.
+    public static String runtime_json__json_quote(String origin) {
+        StringBuilder quoted = new StringBuilder(origin.length() + 2);
+        quoted.append('"');
+        for (int at = 0; at < origin.length(); at++) {
+            char character = origin.charAt(at);
+            switch (character) {
+                case '"': quoted.append("\\\""); break;
+                case '\\': quoted.append("\\\\"); break;
+                case '\n': quoted.append("\\n"); break;
+                case '\r': quoted.append("\\r"); break;
+                case '\t': quoted.append("\\t"); break;
+                default:
+                    if (character < 0x20) {
+                        quoted.append(String.format("\\u%04x", (int) character));
+                    } else {
+                        quoted.append(character);
+                    }
+            }
+        }
+        return quoted.append('"').toString();
+    }
 }

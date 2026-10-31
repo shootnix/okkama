@@ -5,7 +5,8 @@ import "json/value" take
     JsonValue,
     JsonMember,
     JsonWriting,
-    DuplicateJsonMember;
+    DuplicateJsonMember,
+    MissingJsonMember;
 import "math/decimal" take Decimal;
 import "runtime/json" take
     JsonParseState,
@@ -25,7 +26,8 @@ import "runtime/json" take
     json_node_size,
     json_node_item,
     json_member_name,
-    json_member_value;
+    json_member_value,
+    json_member_position;
 
 // Strict RFC-style JSON parsing into immutable json/value objects.
 //
@@ -64,6 +66,11 @@ object ParsedJson does JsonValue {
         JsonNode(origin: self.root()).print(to);
     }
 
+    // The parsed root, for direct reading; parses on first use like kind().
+    node() is JsonNode {
+        JsonNode(origin: self.root());
+    }
+
     private:
     root() is JsonNodeState {
         if json_parse_valid(state) {
@@ -91,10 +98,52 @@ object ParsedJson does JsonValue {
     }
 }
 
+// One value of a parsed document. Besides printing itself, a node answers
+// reads of its own kind directly, without materializing its siblings: text(),
+// spelling() (the exact number text), boolean(), size(), item(index),
+// name(index), member(name), optional(name) and membership(name). Asking a node of another
+// kind, or for a missing index, is a NativeFailure; json/read.JsonView checks
+// kinds and bounds first and reports typed errors.
 object JsonNode does JsonValue {
     has origin is JsonNodeState;
 
     JsonNode(:origin);
+
+    text() is string { json_node_text(origin); }
+
+    spelling() is string { json_node_number(origin); }
+
+    number() is Decimal { Decimal(json_node_number(origin)); }
+
+    boolean() is bool { json_node_boolean(origin); }
+
+    size() is int { json_node_size(origin); }
+
+    item(index is int) is JsonNode { JsonNode(origin: json_node_item(origin, index)); }
+
+    name(index is int) is string { json_member_name(origin, index); }
+
+    names() is @string {
+        let names is @string = (0..json_node_size(origin)).map() -> index {
+            json_member_name(origin, index);
+        };
+        names;
+    }
+
+    membership(name is string) is bool { self.position(name) >= 0; }
+
+    // The member as zero or one node.
+    optional(name is string) is @JsonNode {
+        let index = self.position(name);
+        let found is @JsonNode = if index < 0 { []; } else { [JsonNode(origin: json_member_value(origin, index))]; };
+        found;
+    }
+
+    member(name is string) is JsonNode {
+        let index = self.position(name);
+        confirm index >= 0 else throw MissingJsonMember(name);
+        JsonNode(origin: json_member_value(origin, index));
+    }
 
     kind() is JsonKind {
         match json_node_kind(origin) {
@@ -125,20 +174,24 @@ object JsonNode does JsonValue {
                 to.elements(values);
             }
             else {
-                let members is @JsonMember = (
-                    0..json_node_size(origin)
-                ).map() -> index {
-                    JsonMember(
-                        name: json_member_name(origin, index),
-                        value: JsonNode(
-                            origin: json_member_value(origin, index),
-                        ),
-                    );
-                };
-                to.members(members);
+                to.members(self.members());
             }
         }
     }
+
+    // Members of the same object are never duplicates: the parser rejects them.
+    members() is @JsonMember {
+        let members is @JsonMember = (0..json_node_size(origin)).map() -> index {
+            JsonMember(
+                name: json_member_name(origin, index),
+                value: JsonNode(origin: json_member_value(origin, index)),
+            );
+        };
+        members;
+    }
+
+    private:
+    position(name is string) is int { json_member_position(origin, name); }
 }
 
 object InvalidJson does Error {

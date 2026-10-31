@@ -386,6 +386,53 @@ fn string_escapes_decode_and_keep_lexeme() {
 }
 
 #[test]
+fn unicode_escapes_name_scalar_values() {
+    for (text, expected) in [
+        (r#""\u{0}""#, "\u{0}"),
+        (r#""\u{1f}\u{7F}""#, "\u{1f}\u{7f}"),
+        (r#""\u{e9}t\u{E9}""#, "été"),
+        (r#""\u{1F642}""#, "🙂"),
+        (r#""\u{10FFFF}""#, "\u{10ffff}"),
+        (r#""\u{000041}""#, "A"),
+        (r#""\\u{41}""#, "\\u{41}"),
+    ] {
+        let token = single(text);
+        assert_eq!(string_value(&token), (expected, StringForm::Quoted), "{text}");
+        assert_eq!(&text[token.span.range()], text);
+    }
+    assert_eq!(single(r"'\u{1b}'").value, Some(TokenValue::Char('\u{1b}')));
+    assert_eq!(single(r"'\u{1F642}'").value, Some(TokenValue::Char('🙂')));
+}
+
+#[test]
+fn malformed_unicode_escapes_are_lexer_errors() {
+    let malformed = "Unicode escape must be \\u{HEX} with 1 to 6 hexadecimal digits";
+    for text in [
+        r#""\u""#,
+        r#""\u41""#,
+        r#""\u{}""#,
+        r#""\u{1234567}""#,
+        r#""\u{41""#,
+        r#""\u{4G}""#,
+        r#""\u{ 41}""#,
+    ] {
+        assert_eq!(errors(text), vec![format!("{malformed} in string literal.")], "{text}");
+    }
+    assert_eq!(errors(r"'\u{}'"), vec![format!("{malformed} in char literal.")]);
+    assert_eq!(
+        errors(r#""\u{D800}""#),
+        vec!["Unicode escape \\u{D800} is not a Unicode scalar value in string literal."]
+    );
+    assert_eq!(
+        errors(r"'\u{110000}'"),
+        vec!["Unicode escape \\u{110000} is not a Unicode scalar value in char literal."]
+    );
+    // One error per literal: the scan resumes at the closing quote.
+    assert_eq!(errors(r#""\u{}" "ok""#).len(), 1);
+    assert_eq!(errors(r"'\u{41}\u{42}'"), vec!["Char literal must contain exactly one character."]);
+}
+
+#[test]
 fn char_escapes_decode_before_the_length_check() {
     for (text, expected) in [
         (r"'\n'", '\n'),

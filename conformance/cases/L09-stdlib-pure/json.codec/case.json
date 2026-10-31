@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.json.codec",
+  "title": "hand-written codecs decode and encode nested values with optional members",
+  "purpose": "json/codec composes JsonCodec objects through JsonList; optional members read as the given fallback when absent or null; reading errors keep the pointer of the failing value.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.JSON.READ",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[{\"id\":7,\"note\":\"-\",\"total\":12.5,\"tags\":[],\"lines\":[{\"sku\":\"A\",\"qty\":2},{\"sku\":\"B\",\"qty\":1}]},{\"id\":8,\"note\":\"gift \\\"wrap\\\"\",\"total\":100,\"tags\":[\"x\",\"y\"],\"lines\":[]}]\nJSON value at /0/lines/0/qty must be number, found string\nJSON value at /0/lines is missing\n"
+    }
+  },
+  "spec_refs": [
+    "std/json/read.ok",
+    "RFC 6901"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.4.0 (json/codec, JsonView.optional/required)",
+    "expected_basis": "null note and absent qty/tags take their fallbacks (\"-\", 1, []); 12.50 and 1e2 are written positionally as 12.5 and 100; a string qty is WrongJsonKind at /0/lines/0/qty; absent required lines is MissingJsonValue at /0/lines."
+  },
+  "status": "mandatory"
+}

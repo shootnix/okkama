@@ -268,6 +268,27 @@ fn functional_suffixes() {
     );
     // Without an arrow, `map()` is an ordinary call.
     assert_eq!(expr_sexpr("mapper.map()"), "(call (. mapper map))");
+    // The suffix is postfix: it binds tighter than every operator.
+    assert_eq!(
+        expr_sexpr("total + xs.reduce(0) -> s, x { s + x; }"),
+        "(+ total (reduce xs 0 -> [s x] {(+ s x)}))"
+    );
+    assert_eq!(
+        expr_sexpr("ready && xs.filter() -> x { x; }.size() > 0"),
+        "(&& ready (> (call (. (filter xs -> [x] {x}) size)) 0))"
+    );
+    assert_eq!(
+        expr_sexpr("!xs.map() -> x { x; }.empty()"),
+        "(! (call (. (map xs -> [x] {x}) empty)))"
+    );
+    assert_eq!(
+        expr_sexpr("f(xs.map() -> x { x; }, 1)"),
+        "(call f (map xs -> [x] {x}) 1)"
+    );
+    assert_eq!(
+        expr_sexpr("xs.reduce(0) -> s, x { s + ys.reduce(0) -> t, y { t + y; }; }"),
+        "(reduce xs 0 -> [s x] {(+ s (reduce ys 0 -> [t y] {(+ t y)}))})"
+    );
 }
 
 #[test]
@@ -301,6 +322,10 @@ fn functional_suffix_errors() {
         ("values.map() -> value;", "Expect \"{\" before block."),
         (
             "values.fold(0) -> sum, value { sum; };",
+            "Unsupported functional operation \"fold\".",
+        ),
+        (
+            "1 + values.fold(0) -> sum, value { sum; };",
             "Unsupported functional operation \"fold\".",
         ),
         (

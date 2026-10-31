@@ -51,6 +51,10 @@ pub(crate) struct Parser<'s> {
     /// While parsing the body of an external `cap Owner::Name { }`, the owner
     /// name: `Owner::field` then means a private field read.
     external_cap_owner: Option<String>,
+    /// While parsing the top level of a `for` source: an arrow there belongs
+    /// to the `for`, not to a functional call. Every nested expression
+    /// (parentheses, arguments, indices, blocks) clears it.
+    for_source: bool,
 }
 
 impl<'s> Parser<'s> {
@@ -67,6 +71,7 @@ impl<'s> Parser<'s> {
             depth: 0,
             max_depth: options.max_nesting,
             external_cap_owner: None,
+            for_source: false,
         }
     }
 

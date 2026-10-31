@@ -245,7 +245,7 @@ resources they create. A fixture that fails to start BLOCKS the case.
 `contracts/*.json` (schema `ocs-contracts/1`) inventory contracts with status
 `mandatory`, `unresolved`, `deferred` or `informative` and a requirement for
 each aspect (`required` or `n/a: <justification>`). Standard-library contracts
-are generated per module from the audited inventory (`tools/inventory_std.py`);
+are generated per module from a scan of `std/` (`tools/inventory_std.py`);
 importing a module never counts as coverage. `ocs coverage` writes
 `coverage/matrix.json` (contract → cases → observed results) and
 `coverage/COVERAGE.md`, and reports missing aspects, uncovered mandatory

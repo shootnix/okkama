@@ -366,9 +366,9 @@ impl Parser<'_> {
 
     /// `for source "->" binding ("," binding)* block`.
     ///
-    /// The source is parsed at `logic_or` level, below the functional `->`
-    /// suffix, so a top-level arrow always belongs to the `for` itself; a
-    /// functional source has to be grouped.
+    /// A top-level arrow in the source always belongs to the `for` itself,
+    /// so a functional call there is not completed and a functional source
+    /// has to be grouped.
     fn for_statement(&mut self) -> PResult<StmtKind> {
         self.advance();
         if self.check(TokenKind::LeftBrace) {
@@ -378,7 +378,10 @@ impl Parser<'_> {
                 "Source-less \"for\" is not supported; use \"loop { ... }\".",
             ));
         }
-        let source = self.logic_or()?;
+        let enclosing = std::mem::replace(&mut self.for_source, true);
+        let source = self.logic_or();
+        self.for_source = enclosing;
+        let source = source?;
         if !self.eat(TokenKind::Arrow) {
             return Err(self.error_here("Expect \"->\" and a binding after for source."));
         }

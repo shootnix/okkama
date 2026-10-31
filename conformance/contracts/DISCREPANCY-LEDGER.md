@@ -183,7 +183,7 @@ Summary: 4 deferred, 43 resolved.
 - Observed: Those import paths do not exist under std/; std/ provides testing/*, runtime/debug, regex/* instead.
 - Intended contract: The active standard library is std/.
 - Authority: Task instruction: std/ is the active standard library; historical trees do not define behaviour.
-- Conformance expectation: Conformance cases import only modules that exist in the audited std/ inventory (contracts/stdlib-inventory.json).
+- Conformance expectation: Conformance cases import only modules that exist in std/.
 - Resolution: **resolved**
 
 ## D-011

@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.functional.inside-operators",
+  "title": "functional suffixes are postfix forms inside operators, arguments and conditions",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.FUNCTIONAL-SUFFIX",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "evens\n110 1 0 34 20\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.8",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.4.0 (postfix functional suffix)",
+    "expected_basis": "grammar: arrow_suffix is a postfix form of a map/filter/reduce member call. 100+10=110; one element >3; not all-true is false; 4 + (1+4+9+16)=34; nested sums 2+4+6+8=20; bool.string() spells true/false as 1/0."
+  },
+  "status": "mandatory"
+}
