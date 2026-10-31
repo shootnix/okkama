@@ -98,7 +98,9 @@ fn defers_run_on_exits_and_join_failures_as_secondary() {
         .iter()
         .filter(|block| matches!(block.term.kind, TermKind::Raise(_)))
         .count();
-    assert!(raises >= 2, "{module}");
+    // Цепочка отказа заканчивается одним `raise`: блоки, которые только
+    // передают отказ дальше, пропускаются.
+    assert_eq!(raises, 1, "{module}");
 }
 
 #[test]

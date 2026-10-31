@@ -60,8 +60,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   registers before). A result never shares a register with its own operands.
 - Sparrow JIT: `enum.case` and `enum.cmp` (enum constants, `match` and `==` on enums)
   run in machine code, `str.len` calls a direct helper; before, all three went through
-  the generic interpreter step. Walking JSON documents on Sparrow is 25–35% faster
-  (records 867 → 590 ms, deep 301 → 209, orders 189 → 138).
+  the generic interpreter step.
+- Sparrow JIT code is smaller: registers of types without references (`bool`, `float`,
+  `byte`, `char`, enums) are written without a release check, and the callee's
+  registers after a call are released by a helper loop instead of inline checks.
+  `Sums.plus` of the JSON benchmark compiles to 3618 Cranelift instructions instead of
+  9333 (5 ms instead of 13).
+- IR: unwind handlers that only pass a failure on (left by elided regions) are skipped,
+  so calls carry no empty handler path, and `undef` values nobody reads (left by
+  elided regions and removed blocks) are dropped instead of being executed on every
+  call. Walking JSON documents on Sparrow is 30–40% faster than in 0.3.1: records
+  867 → 555 ms, deep 301 → 185, numbers 161 → 90, orders 189 → 118.
 
 ## [0.3.1] — 2026-10-31
 

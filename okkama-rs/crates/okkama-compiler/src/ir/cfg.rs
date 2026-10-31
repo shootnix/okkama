@@ -9,7 +9,7 @@
 //! инструкции, поэтому в цели unwind видно только то, что определено до
 //! начала блока-источника.
 
-use super::{BlockId, Function, ValueId};
+use super::{BlockId, Function, Inst, InstKind, ValueId};
 
 /// Место определения значения.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -89,6 +89,117 @@ pub fn all_successors(function: &Function, block: BlockId) -> Vec<BlockId> {
         targets.push(unwind.block);
     }
     targets
+}
+
+/// Удалить блоки, недостижимые от входа, и перенумеровать остальные.
+pub fn remove_unreachable_blocks(function: &mut Function) {
+    let mut reachable = vec![false; function.blocks.len()];
+    let mut stack = vec![BlockId(0)];
+    reachable[0] = true;
+    while let Some(block) = stack.pop() {
+        for next in all_successors(function, block) {
+            if !reachable[next.0] {
+                reachable[next.0] = true;
+                stack.push(next);
+            }
+        }
+    }
+    if reachable.iter().all(|seen| *seen) {
+        return;
+    }
+    let mut renumbered = vec![0; reachable.len()];
+    let mut next = 0;
+    for (old, seen) in reachable.iter().enumerate() {
+        if *seen {
+            renumbered[old] = next;
+            next += 1;
+        }
+    }
+    let blocks = std::mem::take(&mut function.blocks);
+    let mut dropped = Vec::new();
+    for (block, seen) in blocks.into_iter().zip(&reachable) {
+        if *seen {
+            function.blocks.push(block);
+        } else {
+            dropped.extend(block.params);
+            dropped.extend(block.insts.iter().filter_map(|inst| inst.result));
+        }
+    }
+    // Значения удалённых блоков объявлены: они определяются на входе и нигде не читаются.
+    let span = function.span;
+    function.blocks[0]
+        .insts
+        .extend(dropped.into_iter().map(|value| Inst { result: Some(value), kind: InstKind::Undef, span }));
+    for block in &mut function.blocks {
+        for target in block.term.kind.targets_mut().into_iter().chain(block.unwind.as_mut()) {
+            target.block = BlockId(renumbered[target.block.0]);
+        }
+    }
+}
+
+/// Убрать `undef`, результат которых никто не читает, и сжать номера
+/// значений: остаются только определённые. Такие `undef` оставляют убранные
+/// регионы и удалённые блоки; машинный код исполнял бы каждый при каждом
+/// вызове.
+pub fn drop_unread_undef(function: &mut Function) {
+    let mut read = vec![false; function.values.len()];
+    for block in &function.blocks {
+        for inst in &block.insts {
+            for operand in inst.kind.operands() {
+                read[operand.0] = true;
+            }
+        }
+        for operand in block.term.kind.operands() {
+            read[operand.0] = true;
+        }
+        for target in block.term.kind.targets().into_iter().chain(block.unwind.as_ref()) {
+            for arg in &target.args {
+                read[arg.0] = true;
+            }
+        }
+    }
+    let mut removed = false;
+    for block in &mut function.blocks {
+        block.insts.retain(|inst| {
+            let unread = matches!(inst.kind, InstKind::Undef) && inst.result.is_none_or(|value| !read[value.0]);
+            removed |= unread;
+            !unread
+        });
+    }
+    if !removed {
+        return;
+    }
+    let mut defined = vec![false; function.values.len()];
+    for value in &function.params {
+        defined[value.0] = true;
+    }
+    for block in &function.blocks {
+        for value in block.params.iter().chain(block.insts.iter().filter_map(|inst| inst.result.as_ref())) {
+            defined[value.0] = true;
+        }
+    }
+    let mut renumbered = vec![ValueId(usize::MAX); function.values.len()];
+    let mut values = Vec::new();
+    for (old, ty) in function.values.iter().enumerate() {
+        if defined[old] {
+            renumbered[old] = ValueId(values.len());
+            values.push(ty.clone());
+        }
+    }
+    function.values = values;
+    let rename = |value: &mut ValueId| *value = renumbered[value.0];
+    function.params.iter_mut().for_each(rename);
+    for block in &mut function.blocks {
+        block.params.iter_mut().for_each(rename);
+        for inst in &mut block.insts {
+            inst.result.iter_mut().for_each(rename);
+            inst.kind.operands_mut().into_iter().for_each(rename);
+        }
+        block.term.kind.operands_mut().into_iter().for_each(rename);
+        for target in block.term.kind.targets_mut().into_iter().chain(block.unwind.as_mut()) {
+            target.args.iter_mut().for_each(rename);
+        }
+    }
 }
 
 fn start(block: BlockId) -> usize {

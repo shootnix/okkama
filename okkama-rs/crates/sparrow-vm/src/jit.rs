@@ -48,8 +48,10 @@ const SECOND: u32 = 3;
 const SLOT: i32 = 24;
 /// Запас стека, ниже которого вложенный вызов исполняет интерпретатор.
 const MARGIN: usize = 4 << 20;
-/// Наибольшее число регистров вызываемой функции, освобождаемых в коде.
-const INLINE_RELEASE: usize = 32;
+/// Наибольшее число регистров вызываемой функции, освобождаемых в коде;
+/// больше — циклом помощника (после раскраски регистров их немного, а код
+/// каждого вызова меньше и быстрее компилируется).
+const INLINE_RELEASE: usize = 2;
 /// Наибольшее число аргументов native-вызова, собираемых на стеке.
 const NATIVE_ARGS: usize = 8;
 
@@ -141,6 +143,16 @@ fn probe_object() -> Option<ObjectLayout> {
         (found.len() == 1).then(|| found[0] as i32 * 8)
     };
     Some(ObjectLayout { tag: tag_of(&value), inner, data: find(data)?, len: find(7)?, declaration: find(0x5a5a).unwrap_or(-1) })
+}
+
+/// Регистр типа, значения которого не ссылаются на кучу.
+fn plain_type(program: &Program, function: &Function, register: Register) -> bool {
+    use okkama_sparrow::Type as T;
+    function
+        .registers
+        .get(register.0 as usize)
+        .and_then(|ty| program.types.get(ty.0 as usize))
+        .is_some_and(|ty| matches!(ty, T::Bool | T::Byte | T::Float | T::Char | T::Enum(_) | T::Never))
 }
 
 fn tag_of(value: &Value) -> u8 {
@@ -352,6 +364,7 @@ impl Jit {
         let function = &program.functions[index];
         let eligible = function.native.is_none() && function.intrinsic.is_none() && !function.code.is_empty();
         let prepared = engine.prepared(index).ok();
+        let started = std::time::Instant::now();
         let result = match (eligible, prepared) {
             (true, Some(prepared)) => self.build(program, index, &prepared.constants),
             _ => Err("not eligible".to_string()),
@@ -361,7 +374,7 @@ impl Jit {
                 self.table[index].set(code);
                 self.states[index].set(State::Compiled);
                 if self.debug {
-                    eprintln!("jit: compiled {} ({} instructions)", function.symbol, function.code.len());
+                    eprintln!("jit: compiled {} ({} instructions) in {:.2} ms", function.symbol, function.code.len(), started.elapsed().as_secs_f64() * 1000.0);
                 }
                 Some(code)
             }
@@ -397,6 +410,9 @@ impl Jit {
             generator.function()?;
             generator.b.seal_all_blocks();
             generator.b.finalize(config);
+        }
+        if self.debug {
+            eprintln!("jit: {}: {} Cranelift instructions, {} blocks", program.functions[index].symbol, context.func.dfg.num_insts(), context.func.dfg.num_blocks());
         }
         module.define_function(id, &mut context).map_err(|error| format!("{error:?}"))?;
         module.clear_context(&mut context);
@@ -1338,6 +1354,15 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.b.ins().bor(listed, small)
     }
 
+    /// Освободить регистр функции перед записью; регистр типа без ссылок
+    /// (у регистра один тип) освобождать нечего.
+    fn release_register(&mut self, register: Register) {
+        if !plain_type(self.program, self.function, register) {
+            let regs = self.regs;
+            self.release(regs, offset(register));
+        }
+    }
+
     /// Освободить содержимое слота перед записью (значение кучи — помощником).
     fn release(&mut self, base: ir::Value, offset: i32) {
         let plain = self.plain(base, offset);
@@ -1428,24 +1453,24 @@ impl<'a, 'b> Gen<'a, 'b> {
             I::Const { dst, .. } => match &self.constants[pc] {
                 Value::Int(value) if value.to_i64().is_some() => {
                     let value = self.b.ins().iconst(types::I64, value.to_i64().expect("small"));
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.store_small(regs, offset(dst.0), value);
                 }
                 Value::Bool(value) => {
                     let value = self.b.ins().iconst(types::I8, i64::from(*value));
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.store_bool(regs, offset(dst.0), value);
                 }
                 Value::Float(value) => {
                     let bits = self.b.ins().iconst(types::I64, value.to_bits() as i64);
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.store8(self.layout.float, regs, offset(dst.0));
                     self.b.ins().store(flags(), bits, regs, offset(dst.0) + 8);
                 }
                 // Готовое значение константы (живёт, пока жив исполнитель).
                 constant => {
                     let address = self.b.ins().iconst(types::I64, constant as *const Value as i64);
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.clone_into(address, 0, regs, offset(dst.0));
                 }
             },
@@ -1488,7 +1513,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                     Cmp::Ge => FloatCC::GreaterThanOrEqual,
                 };
                 let result = self.b.ins().fcmp(cc, a, b);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1497,12 +1522,12 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(done);
             }
             I::Undef { dst } => {
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store8(self.layout.undef, regs, offset(dst.0));
             }
             I::Move { dst, source } if dst.0 != *source && !self.live.live_after(pc, *source) => {
                 // Последнее использование: значение переходит словами.
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.copy_words(regs, offset(*source), regs, offset(dst.0));
                 self.store8(self.layout.undef, regs, offset(*source));
             }
@@ -1530,7 +1555,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 let done = self.b.create_block();
                 self.b.ins().brif(plain, fast, &[], slow, &[]);
                 self.b.switch_to_block(fast);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.copy_words(regs, offset(*source), regs, offset(dst.0));
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1566,7 +1591,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(fast);
                 let pointer = self.b.ins().load(types::I64, flags(), regs, offset(*array) + 8);
                 let len = self.b.ins().load(types::I64, flags(), pointer, layout.inner + layout.len);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_small(regs, offset(dst.0), len);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1598,7 +1623,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                     Cmp::Ge => IntCC::SignedGreaterThanOrEqual,
                 };
                 let result = self.b.ins().icmp(cc, a, b);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1619,7 +1644,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(fast);
                 let cc = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
                 let result = self.b.ins().icmp(cc, a, b);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1686,7 +1711,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             // Вариант enum — два слова без ссылок, записываются в коде.
             I::EnumCase { dst, ty, case } if self.layout.enum_.is_some() => {
                 let layout = self.layout.enum_.expect("enum layout");
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store8(layout.tag, regs, offset(dst.0));
                 let declaration = self.b.ins().iconst(types::I64, i64::from(ty.0));
                 self.b.ins().store(flags(), declaration, regs, offset(dst.0) + layout.declaration);
@@ -1714,7 +1739,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(fast);
                 let cc = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
                 let result = self.b.ins().icmp(cc, a_case, b_case);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1732,7 +1757,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 let done = self.b.create_block();
                 self.b.ins().brif(fast_ok, fast, &[], slow, &[]);
                 self.b.switch_to_block(fast);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_small(regs, offset(dst.0), length);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1770,7 +1795,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let copy = self.b.create_block();
         self.b.ins().brif(bound, copy, &[], slow, &[]);
         self.b.switch_to_block(copy);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         self.clone_into(data, at, regs, offset(dst));
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(slow);
@@ -1861,7 +1886,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let data = self.b.ins().load(types::I64, flags(), pointer, layout.inner + layout.data);
         let scaled = self.b.ins().imul_imm_s(position, i64::from(SLOT));
         let element = self.b.ins().iadd(data, scaled);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         self.clone_into(element, 0, regs, offset(dst));
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(slow);
@@ -1992,7 +2017,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let fast = self.b.create_block();
         self.b.ins().brif(bit, fast, &[], slow, &[]);
         self.b.switch_to_block(fast);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         if self.live.live_after(pc, source) {
             self.clone_into(regs, offset(source), regs, offset(dst));
         } else {
@@ -2043,7 +2068,7 @@ impl<'a, 'b> Gen<'a, 'b> {
     fn finish_arithmetic(&mut self, pc: usize, write: Block, result: ir::Value, slow: Block, done: Block, dst: Register) -> Result<(), String> {
         let regs = self.regs;
         self.b.switch_to_block(write);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         self.store_small(regs, offset(dst), result);
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(slow);
@@ -2080,7 +2105,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             }
         }
         for (index, (dst, _)) in moves.iter().enumerate() {
-            self.release(regs, offset(*dst));
+            self.release_register(*dst);
             self.copy_words(temp, index as i32 * SLOT, regs, offset(*dst));
         }
         self.b.ins().jump(block, &[]);
@@ -2193,9 +2218,17 @@ impl<'a, 'b> Gen<'a, 'b> {
         let slow_status = self.helper(h_call_slow as *const () as usize, self.sigs.slow, &[ctx, base, out, callee_value]).expect("status");
         self.b.ins().jump(join, &[BlockArg::Value(slow_status)]);
         self.b.switch_to_block(join);
-        // Регистры вызываемой освобождаются после вызова.
-        if count <= INLINE_RELEASE {
-            for register in 0..count {
+        // Регистры вызываемой освобождаются после вызова; у известной
+        // вызываемой — только регистры типов со ссылками.
+        let releasing: Vec<usize> = match callee {
+            Callee::Static(index) => {
+                let target = &self.program.functions[index as usize];
+                (0..count).filter(|register| !plain_type(self.program, target, Register(*register as u32))).collect()
+            }
+            Callee::Dynamic(_) => (0..count).collect(),
+        };
+        if releasing.len() <= INLINE_RELEASE {
+            for register in releasing {
                 self.release(base, register as i32 * SLOT);
             }
         } else {
@@ -2205,7 +2238,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.check(status, pc)?;
         match dst {
             Some(dst) => {
-                self.release(regs, offset(dst));
+                self.release_register(dst);
                 self.copy_words(out, 0, regs, offset(dst));
             }
             None => self.release(out, 0),
