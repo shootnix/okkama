@@ -562,4 +562,5 @@ natives! {
     JsonJsonNodePointer = 559, "runtime/json@1::json_node_pointer/2", "(JsonNodeState, JsonNodeState) -> string";
     JsonJsonMemberValues = 560, "runtime/json@1::json_member_values/1", "(JsonNodeState) -> @JsonNodeState";
     JsonJsonNodeItems = 561, "runtime/json@1::json_node_items/1", "(JsonNodeState) -> @JsonNodeState";
+    JsonJsonMemberNames = 562, "runtime/json@1::json_member_names/1", "(JsonNodeState) -> @string";
 }

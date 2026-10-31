@@ -772,6 +772,10 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             Node::Object(_, values) => Ok(crate::heap::ArrayHeap.allocate(values.iter().map(|value| node_value(value.clone())).collect())),
             _ => Err(invalid("JSON node is not an object")),
         },
+        Native::JsonJsonMemberNames => match node(&args[0])?.as_ref() {
+            Node::Object(names, _) => Ok(crate::heap::ArrayHeap.allocate(names.iter().map(|name| Value::Str(name.clone())).collect())),
+            _ => Err(invalid("JSON node is not an object")),
+        },
         Native::JsonJsonNodeItems => match node(&args[0])?.as_ref() {
             Node::Array(values) => Ok(crate::heap::ArrayHeap.allocate(values.iter().map(|value| node_value(value.clone())).collect())),
             _ => Err(invalid("JSON node is not an array")),

@@ -77,8 +77,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   names and number spellings no longer copy the string on every read, and the parser
   builds each string once. Duplicate member names of small objects are found without
   a hash set. Parsing is 10–25% faster (records 110 → 90 ms, orders 21 → 16).
-- Walking JSON documents on Sparrow is 40–45% faster than in 0.3.1: records 867 →
-  470 ms, deep 301 → 171, numbers 161 → 86, orders 189 → 103, strings 35 → 18.
+- `Json.names()` reads all member names in one native call (new native
+  `runtime/json.json_member_names`, Rust and JVM) instead of one call per name.
+- Walking JSON documents on Sparrow is 45–50% faster than in 0.3.1: records 867 →
+  420 ms, deep 301 → 150, numbers 161 → 85, orders 189 → 91, wide 85 → 38, strings
+  35 → 18.
 
 ## [0.3.1] — 2026-10-31
 
