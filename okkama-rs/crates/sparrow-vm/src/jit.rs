@@ -67,6 +67,26 @@ struct Layout {
     object: Option<ObjectLayout>,
     /// Раскладка `Value::Array` (те же поля: тег, `Rc`, указатель и длина).
     array: Option<ObjectLayout>,
+    /// Раскладка `Value::Enum`: тег и смещения номеров объявления и варианта.
+    enum_: Option<EnumLayout>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EnumLayout {
+    tag: u8,
+    declaration: i32,
+    case: i32,
+}
+
+fn probe_enum() -> Option<EnumLayout> {
+    let value = Value::Enum { declaration: 0x5a5a_0001, case: 0x5a5a_0002 };
+    // SAFETY: чтение слов 24-байтового значения.
+    let word = |index: usize| unsafe { *(&value as *const Value).cast::<usize>().add(index) };
+    let find = |wanted: usize| {
+        let found: Vec<usize> = (1..3).filter(|&index| word(index) == wanted).collect();
+        (found.len() == 1).then(|| found[0] as i32 * 8)
+    };
+    Some(EnumLayout { tag: tag_of(&value), declaration: find(0x5a5a_0001)?, case: find(0x5a5a_0002)? })
 }
 
 fn probe_array() -> Option<ObjectLayout> {
@@ -155,6 +175,7 @@ fn probe() -> Option<Layout> {
     let layout = Layout {
         object: probe_object(),
         array: probe_array(),
+        enum_: probe_enum(),
         undef: tag_of(&Value::Undef),
         float: tag_of(&Value::Float(1.5)),
         int: tag_of(&small),
@@ -1050,6 +1071,15 @@ extern "C" fn h_drop_range(slots: *mut Value, count: usize) {
     }
 }
 
+/// Длина строки в символах; −1 — в слоте не строка.
+extern "C" fn h_str_len(slot: *const Value) -> i64 {
+    // SAFETY: слот содержит инициализированное значение.
+    match unsafe { &*slot } {
+        Value::Str(text) => text.chars().count() as i64,
+        _ => -1,
+    }
+}
+
 /// Записать копию `src` в `dst`, не освобождая прежнее содержимое `dst`.
 extern "C" fn h_clone(src: *const Value, dst: *mut Value) {
     // SAFETY: `src` — значение, `dst` — слот без значения кучи.
@@ -1072,6 +1102,7 @@ struct Sigs {
     fault: ir::SigRef,
     drop: ir::SigRef,
     clone: ir::SigRef,
+    len: ir::SigRef,
     next: ir::SigRef,
     frame: ir::SigRef,
 }
@@ -1138,6 +1169,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             fault: signature(&[pointer, types::I32, types::I32], &[types::I32]),
             drop: signature(&[pointer], &[]),
             clone: signature(&[pointer, pointer], &[]),
+            len: signature(&[pointer], &[types::I64]),
             next: signature(&[pointer, pointer, types::I32, types::I32, types::I64], &[types::I32]),
             frame: signature(&[pointer, pointer, types::I32, types::I32, pointer, types::I64], &[types::I32]),
         };
@@ -1650,6 +1682,63 @@ impl<'a, 'b> Gen<'a, 'b> {
             I::RegionLeave { .. } | I::RegionUnwind { .. } => {
                 let status = self.eval(h_region as *const () as usize, pc);
                 self.check(status, pc)?;
+            }
+            // Вариант enum — два слова без ссылок, записываются в коде.
+            I::EnumCase { dst, ty, case } if self.layout.enum_.is_some() => {
+                let layout = self.layout.enum_.expect("enum layout");
+                self.release(regs, offset(dst.0));
+                self.store8(layout.tag, regs, offset(dst.0));
+                let declaration = self.b.ins().iconst(types::I64, i64::from(ty.0));
+                self.b.ins().store(flags(), declaration, regs, offset(dst.0) + layout.declaration);
+                let case = self.b.ins().iconst(types::I64, i64::from(*case));
+                self.b.ins().store(flags(), case, regs, offset(dst.0) + layout.case);
+            }
+            // Варианты одного enum сравниваются в коде; остальное (ошибка
+            // разных объявлений) — `evaluate`.
+            I::EnumCmp { op, dst, left, right } if self.layout.enum_.is_some() => {
+                let layout = self.layout.enum_.expect("enum layout");
+                let mut word = |register: Register, at: i32| self.b.ins().load(types::I64, flags(), regs, offset(register) + at);
+                let (a_declaration, b_declaration) = (word(*left, layout.declaration), word(*right, layout.declaration));
+                let (a_case, b_case) = (word(*left, layout.case), word(*right, layout.case));
+                let a_tag = self.load8(regs, offset(*left));
+                let b_tag = self.load8(regs, offset(*right));
+                let a_enum = self.b.ins().icmp_imm_s(IntCC::Equal, a_tag, i64::from(layout.tag));
+                let b_enum = self.b.ins().icmp_imm_s(IntCC::Equal, b_tag, i64::from(layout.tag));
+                let same = self.b.ins().icmp(IntCC::Equal, a_declaration, b_declaration);
+                let both = self.b.ins().band(a_enum, b_enum);
+                let fast_ok = self.b.ins().band(both, same);
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(fast_ok, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                let cc = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
+                let result = self.b.ins().icmp(cc, a_case, b_case);
+                self.release(regs, offset(dst.0));
+                self.store_bool(regs, offset(dst.0), result);
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.generic(pc)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
+            }
+            // Длина строки — прямой помощник; не строка — `evaluate`.
+            I::StrLen { dst, text } => {
+                let address = self.b.ins().iadd_imm_s(regs, i64::from(offset(*text)));
+                let length = self.helper(h_str_len as *const () as usize, self.sigs.len, &[address]).expect("length");
+                let fast_ok = self.b.ins().icmp_imm_s(IntCC::SignedGreaterThanOrEqual, length, 0);
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(fast_ok, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                self.release(regs, offset(dst.0));
+                self.store_small(regs, offset(dst.0), length);
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.generic(pc)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
             }
             _ => self.generic(pc)?,
         }

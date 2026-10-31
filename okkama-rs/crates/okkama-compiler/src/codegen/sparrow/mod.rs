@@ -1,11 +1,14 @@
 //! Проверенный IR → программа Sparrow (SPB 9), как IR → JVM-байткод.
 //!
-//! Значение SSA `%n` становится регистром `rn` кадра; блоки раскладываются
+//! Значения SSA с непересекающейся жизнью делят регистр кадра
+//! (`registers`); блоки раскладываются
 //! подряд, переход к блоку — переход к его первой инструкции с параллельной
 //! записью параметров блока. Значение, которое IR передаёт последним
 //! параметром цели (`catch`, `lookup`, отказ `unwind`), пишет сама
 //! инструкция (или обработчик). Цель `unwind` блока — обработчик диапазона
 //! его инструкций, включая терминатор. Таблицы модуля переносятся целиком.
+mod registers;
+
 use crate::{ir, source::Span};
 use okkama_sparrow::{
     BitOp, CapDecl, CapRef, CatchKind, Cmp, Constant, Dst, EnumDecl, EnumRef, FuncRef, FutOp, Function,
@@ -456,6 +459,9 @@ impl FunctionGen<'_> {
 }
 
 fn function(module: &ir::Module, function: &ir::Function, types: &mut Types) -> Result<Function, GenerateError> {
+    // Значения с непересекающейся жизнью делят регистр.
+    let allocated = registers::allocate(function);
+    let function = &allocated;
     let registers = function.values.iter().map(|ty| types.intern(ty)).collect();
     let result = types.result(&function.result);
     let intrinsic = function.attrs.iter().find_map(|attr| match attr {

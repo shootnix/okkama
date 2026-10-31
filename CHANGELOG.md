@@ -53,6 +53,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   0.7–1.7× Python's time and writes at 0.3–1.3×, and is 7–1000× faster than JSON::PP.
   Walking a parsed document in Okkama code takes 2–7× Python's time on Sparrow and
   0.5–3× on the JVM.
+- **Sparrow registers are shared.** Sparrow codegen gives SSA values whose lifetimes
+  never overlap one register of their type, instead of one register per value: a
+  `match` over six cases no longer keeps the registers of all six, and every call
+  clears and releases fewer callee registers (`Sums.plus` of the JSON benchmark: 102
+  registers before). A result never shares a register with its own operands.
+- Sparrow JIT: `enum.case` and `enum.cmp` (enum constants, `match` and `==` on enums)
+  run in machine code, `str.len` calls a direct helper; before, all three went through
+  the generic interpreter step. Walking JSON documents on Sparrow is 25–35% faster
+  (records 867 → 590 ms, deep 301 → 209, orders 189 → 138).
 
 ## [0.3.1] — 2026-10-31
 
