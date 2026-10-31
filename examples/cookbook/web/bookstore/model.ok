@@ -13,7 +13,7 @@ import "db/value" take DbInteger;
 import "db/read" take RowReader;
 import "db/row" take RowsEnded;
 import "numbers/bigint" take BigInt;
-import "json/value" take JsonArray,JsonObject,JsonMember,JsonNumber;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "fs/path" take Path;
 import "web/exception" take Exception;
@@ -24,15 +24,15 @@ object BookShelf {
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
         await SqliteScript(c,"CREATE TABLE IF NOT EXISTS books(id INTEGER PRIMARY KEY,title TEXT NOT NULL,price_cents INTEGER NOT NULL CHECK(price_cents>=0),stock INTEGER NOT NULL CHECK(stock>=0)); CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY,book_id INTEGER NOT NULL REFERENCES books(id),quantity INTEGER NOT NULL CHECK(quantity>0),total_cents INTEGER NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); INSERT OR IGNORE INTO books VALUES(1,'Okkama на практике',3200,5),(2,'Функциональные идеи',4500,3);").executions();
     }
-    async books() is JsonArray {
+    async books() is Json {
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
         await QueryJson(c,Statement("SELECT id,title,price_cents,stock FROM books ORDER BY id")).value();
     }
-    async orders() is JsonArray{
+    async orders() is Json{
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
         await QueryJson(c,Statement("SELECT id,book_id,quantity,total_cents,created_at FROM orders ORDER BY id")).value();
     }
-    async purchase(book is int,quantity is int) is JsonObject{
+    async purchase(book is int,quantity is int) is Json{
         confirm book>0 && quantity>0 && quantity<=1000 else throw Exception(422,"Проверьте книгу и количество");
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
         let tx=await SqliteTransactions(c,SqliteTransactionMode.immediate).transaction(TransactionOptions());
@@ -43,6 +43,6 @@ object BookShelf {
         let total=fields.int("price_cents")*quantity;
         await tx.execution(Statement("UPDATE books SET stock=stock-? WHERE id=?",[DbInteger(BigInt(quantity.string())),DbInteger(BigInt(book.string()))]));
         await tx.execution(Statement("INSERT INTO orders(book_id,quantity,total_cents) VALUES(?,?,?)",[DbInteger(BigInt(book.string())),DbInteger(BigInt(quantity.string())),DbInteger(BigInt(total.string()))]));
-        await tx.commit();JsonObject([JsonMember("book",JsonNumber(Decimal(book.string()))),JsonMember("quantity",JsonNumber(Decimal(quantity.string()))),JsonMember("total_cents",JsonNumber(Decimal(total.string())))]);
+        await tx.commit();Json([JsonField("book",Json(Decimal(book.string()))),JsonField("quantity",Json(Decimal(quantity.string()))),JsonField("total_cents",Json(Decimal(total.string())))]);
     }
 }

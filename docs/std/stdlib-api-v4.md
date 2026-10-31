@@ -1040,68 +1040,25 @@ text-context recovery and preserves literal markup. Neither sanitizes HTML.
 | --- | --- | --- |
 | `Utf8Output` does `WritingText` | `Utf8Output(origin is Writing)` **named only** | `write(values is ...string) is void`<br>`writeln(values is ...string) is void` |
 
-## `json/parse`
+## `json`
 
-[Implementation](../../std/json/parse.ok) · [Design decision](stdlib-api-audit-v4.md#stdjsonparseok)
-
-| Declaration / role | Constructors | Public behavior |
-| --- | --- | --- |
-| `ParsedJson` does `JsonValue` | `ParsedJson(origin is string)`<br>`ParsedJson(origin is string, maximum_depth is int)` | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `JsonNode` does `JsonValue` | `JsonNode(origin is JsonNodeState)` **named only** | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `InvalidJson` does `Error` | `InvalidJson(offset is int, line is int, column is int, message is string)` | `offset() is int`<br>`line() is int`<br>`column() is int`<br>`text() is string` |
-
-## `json/value`
-
-[Implementation](../../std/json/value.ok) · [Design decision](stdlib-api-audit-v4.md#stdjsonvalueok)
+[Implementation](../../std/json.ok) · [Contract](json.md)
 
 | Declaration / role | Constructors | Public behavior |
 | --- | --- | --- |
-| `JsonKind` | — | Language/native contract; no declared actions |
-| `JsonWriting` | — | `null_value() is void`<br>`boolean(value is bool) is void`<br>`number(value is Decimal) is void`<br>`text(value is string) is void`<br>`elements(values is Sequencing<JsonValue>) is void`<br>`members(members is Sequencing<JsonMember>) is void` |
-| `JsonValue` | — | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `JsonMember` | `JsonMember(name is string, value is JsonValue)` | `name() is string`<br>`value() is JsonValue` |
-| `JsonNull` does `JsonValue` | `JsonNull()` | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `JsonBoolean` does `JsonValue` | `JsonBoolean(value is bool)` | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `JsonNumber` does `JsonValue` | `JsonNumber(value is Decimal)` | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `JsonText` does `JsonValue` | `JsonText(value is string)` | `kind() is JsonKind`<br>`print(to is JsonWriting) is void` |
-| `JsonArray` does `JsonValue` | `JsonArray(values is Sequencing<JsonValue>)` | `kind() is JsonKind`<br>`values() is Sequencing<JsonValue>`<br>`print(to is JsonWriting) is void` |
-| `JsonObject` does `JsonValue` | `JsonObject(members is Sequencing<JsonMember>)` | `kind() is JsonKind`<br>`membership(name is string) is bool`<br>`value(name is string) is JsonValue`<br>`members() is Sequencing<JsonMember>`<br>`print(to is JsonWriting) is void` |
-| `JsonMemberIndex` | `JsonMemberIndex(members is @JsonMember, name is string)` | `value() is int` |
-| `MissingJsonMember` does `Error` | `MissingJsonMember(name is string)` | `name() is string`<br>`text() is string` |
-| `DuplicateJsonMember` does `Error` | `DuplicateJsonMember(name is string)`<br>`DuplicateJsonMember(name is string, offset is int, line is int, column is int)` | `name() is string`<br>`located() is bool`<br>`offset() is int`<br>`line() is int`<br>`column() is int`<br>`text() is string` |
-| `MissingJsonLocation` does `Error` | `MissingJsonLocation(name is string)` | `name() is string`<br>`text() is string` |
-
-## `json/write`
-
-[Implementation](../../std/json/write.ok) · [Contract and limits](json-printing-guide.md)
-
-| Declaration / role | Constructors | Public behavior |
-| --- | --- | --- |
-| `CompactJson` | `CompactJson(origin is JsonValue)` **named only** | `#projected string() is string` |
-| `JsonTextOutput` does `JsonWriting` | `JsonTextOutput(destination is WritingText)` **named only** | `null_value() is void`<br>`boolean(value is bool) is void`<br>`number(value is Decimal) is void`<br>`text(value is string) is void`<br>`elements(values is Sequencing<JsonValue>) is void`<br>`members(members is Sequencing<JsonMember>) is void` |
-| `PrettyJson` | `PrettyJson(origin is JsonValue, indentation is int)`<br>`PrettyJson(origin is JsonValue, indentation is int, maximum_depth is int, maximum_bytes is int)` **named only** | `#projected string() is string` |
-| `JsonBoundedText` does `WritingText` | `JsonBoundedText(buffer is ByteBuffer, maximum_bytes is int)` **named only** | `write(values is ...string) is void`<br>`writeln(values is ...string) is void`<br>`padding(level is int, indentation is int) is void` |
-| `PrettyJsonOutput` does `JsonWriting` | `PrettyJsonOutput(destination is JsonBoundedText, indentation is int, level is int, maximum_depth is int)` **named only** | `null_value() is void`<br>`boolean(value is bool) is void`<br>`number(value is Decimal) is void`<br>`text(value is string) is void`<br>`elements(values is Sequencing<JsonValue>) is void`<br>`members(members is Sequencing<JsonMember>) is void` |
-| `InvalidJsonIndentation` does `Error` | `InvalidJsonIndentation(indentation is int)` | `indentation() is int`<br>`text() is string` |
-| `InvalidJsonPrintLimits` does `Error` | `InvalidJsonPrintLimits()` | `text() is string` |
-| `JsonPrintDepthExceeded` does `Error` | `JsonPrintDepthExceeded()` | `text() is string` |
-| `JsonPrintBytesExceeded` does `Error` | `JsonPrintBytesExceeded()` | `text() is string` |
-| `JsonNumberSpelling` | `JsonNumberSpelling(origin is Decimal)` | `string() is string`: exact positional spelling up to 21 integer digits and down to 1e-6, canonical form beyond ([number spelling](json-printing-guide.md#number-spelling-2026-10-13)) |
-| `JsonZeros` | `JsonZeros(count is int)` | `string() is string` |
-
-## `json/read`
-
-[Implementation](../../std/json/read.ok) · [Contract](json-reading.md)
-
-| Declaration / role | Constructors | Public behavior |
-| --- | --- | --- |
-| `JsonView` | `JsonView(origin is JsonValue)`<br>`JsonView(origin is JsonValue, pointer is string)` | `kind() is JsonKind`<br>`pointer() is string`<br>`value() is JsonValue`<br>`text() is string`<br>`number() is Decimal`<br>`integer() is BigInt`<br>`int() is int`<br>`boolean() is bool`<br>`size() is int`<br>`items() is @JsonView`<br>`item(index is int) is JsonView`<br>`members() is @JsonMember`<br>`names() is @string`<br>`membership(name is string) is bool`<br>`member(name is string) is JsonView`<br>`text/number/integer/int/boolean(name is string)` member shortcuts |
+| `JsonKind` | enum | `null_value`, `boolean_value`, `number_value`, `string_value`, `array_value`, `object_value` |
+| `Json` | `Json()`<br>`Json(value is string)`, `int`, `Decimal`, `BigInt`, `float`, `bool`<br>`Json(fields is @JsonField)`<br>`Json(items is @Json)` | `kind() is JsonKind`<br>`pointer() is string`<br>`text() is string`<br>`number() is Decimal`<br>`integer() is BigInt`<br>`int() is int`<br>`boolean() is bool`<br>`size() is int`<br>`at(index is int) is Json`<br>`items() is @Json`<br>`names() is @string`<br>`values() is @Json`<br>`fields() is @JsonField`<br>`has(name is string) is bool`<br>`get(name is string) is Json`<br>`text/number/integer/int/boolean(name is string)`<br>`list(name is string) is @Json`<br>`optional(name is string) is JsonOptional`<br>`string() is string`<br>`pretty(indentation is int) is string` |
+| `JsonField` | `JsonField(name is string, value is Json)`; the value may also be `string`, `int`, `Decimal`, `BigInt`, `float` or `bool` | `name() is string`<br>`value() is Json` |
+| `ParsedJson` | `ParsedJson(origin is string)`<br>`ParsedJson(origin is string, maximum_depth is int)` | `#projected value() is Json` |
+| `JsonOptional` | made by `Json.optional(name)` | `present() is bool`<br>`pointer() is string`<br>`value() is Json`<br>`text/number/integer/int/boolean(fallback)`<br>`items() is @Json`<br>`optional(name is string) is JsonOptional` |
 | `JsonPointerToken` | `JsonPointerToken(origin is string)` | `string() is string` (RFC 6901 escaping) |
-| `JsonPayload` does `JsonWriting` | `JsonPayload(expected is JsonKind, location is string)` | one-shot protocol receiver; implementation collaborator |
 | `WrongJsonKind` does `Error` | `WrongJsonKind(pointer is string, expected is JsonKind, actual is JsonKind)` | `pointer()`, `expected()`, `actual()`, `text()` |
 | `MissingJsonValue` does `Error` | `MissingJsonValue(pointer is string)` | `pointer()`, `text()` |
 | `InvalidJsonNumber` does `Error` | `InvalidJsonNumber(pointer is string, number is string, reason is string)` | `pointer()`, `number()`, `reason()`, `text()` |
-| `InvalidJsonProtocol` does `Error` | `InvalidJsonProtocol(pointer is string, reason is string)` | `pointer()`, `reason()`, `text()` |
+| `InvalidJson` does `Error` | `InvalidJson(offset is int, line is int, column is int, message is string)` | `offset() is int`<br>`line() is int`<br>`column() is int`<br>`text() is string` |
+| `DuplicateJsonMember` does `Error` | `DuplicateJsonMember(name is string)`<br>`DuplicateJsonMember(name, offset, line, column)` | `name()`, `located()`, `offset()`, `line()`, `column()`, `text()` |
+| `MissingJsonLocation` does `Error` | `MissingJsonLocation(name is string)` | `name()`, `text()` |
+| `InvalidJsonIndentation` does `Error` | `InvalidJsonIndentation(indentation is int)` | `indentation()`, `text()` |
 
 ## `math/aggregate`
 
@@ -3150,15 +3107,12 @@ TemplateLibrary() replaces the proposed EmptyTemplateLibrary wrapper.
 
 | Declaration | Constructors | Public behavior |
 | --- | --- | --- |
-| JsonTemplateStrings does TemplateStrings | origin is JsonValue; optional maximum_members, maximum_output are int | string(path is TemplatePath) is string; string(path is string) is string |
+| JsonTemplateStrings does TemplateStrings | origin is Json; optional maximum_members, maximum_output are int | string(path is TemplatePath) is string; string(path is string) is string |
 | NonScalarTemplateValue does Error | path is TemplatePath, kind is JsonKind | path() is TemplatePath; kind() is JsonKind; text() is string |
-| InvalidTemplateJsonLimits / InvalidTemplateJsonSize / InvalidTemplateJsonProtocol / TemplateJsonLimitExceeded | () | text() is string |
-| JsonTemplateObservation (internal) | named origin, path, index, maximum_members, maximum_output, destination | write() is void |
-| JsonTemplateVisitor does JsonWriting (internal) | named path, index, maximum_members, maximum_output, destination, seen | six JsonWriting emission actions, all void |
+| InvalidTemplateJsonLimits / TemplateJsonLimitExceeded | () | text() is string |
 
-Object-only paths through nominal printing, depth at most 64, default per-object
-1024 members/per-scalar 1048576 UTF-8 bytes. Exactly one event per visited value;
-source exceptions propagate. Strings remain literal, Decimal canonical, bool
+Object-only paths through `Json` member lookups, depth at most 64, default per-object
+1024 members/per-scalar 1048576 UTF-8 bytes. Strings remain literal, Decimal canonical, bool
 true/false and null empty. String path `.` observes the bound current item; other
 string paths parse dotted member names. Nominal TemplatePath retains literal-dot
 identity. No parent fallback, array indexing or implicit JSON conversion.
@@ -3223,7 +3177,7 @@ The string builder and streamed command share exact byte-budget validation.
 
 | Declaration | Constructors | Public behavior |
 | --- | --- | --- |
-| SectionTemplate | source is string; optional maximum_iterations, maximum_output, maximum_members are int | string(data is JsonValue) is string; write(data is JsonValue, destination is WritingText) is void |
+| SectionTemplate | source is string; optional maximum_iterations, maximum_output, maximum_members are int | string(data is Json) is string; write(data is Json, destination is WritingText) is void |
 | TemplateIterationLimitExceeded / InvalidTemplateSectionSize | () | text() is string |
 | UnsupportedTemplatePartial | name is string | name() is string; text() is string |
 
@@ -3274,7 +3228,7 @@ They use existing std binary/buffer capabilities and add no native primitives.
 
 | Declaration | Constructors | Public behavior |
 | --- | --- | --- |
-| HtmlTemplate | source is string; optional maximum_input, maximum_nodes, maximum_output are int | source() is string; string(data is JsonValue) is string; write(data is JsonValue, destination is WritingText) is void |
+| HtmlTemplate | source is string; optional maximum_input, maximum_nodes, maximum_output are int | source() is string; string(data is Json) is string; write(data is Json, destination is WritingText) is void |
 | InvalidHtmlTemplate | reason is string | text() is string |
 
 Defaults: 65536 source scalars, 10000 instructions, 1048576 output UTF-8 bytes;
@@ -3328,7 +3282,7 @@ rather than the withdrawn map candidate. See [current contract](locale-tag-guide
 [Implementation](../../std/plist/value.ok) · [Contract](plist-value-guide.md)
 
 PlistValue has kind() is PlistKind and print(to is PlistWriting). It is independent
-from JsonValue. PlistKind has boolean_value, integer_value, real_value, string_value,
+from Json. PlistKind has boolean_value, integer_value, real_value, string_value,
 data_value, date_value, array_value, dictionary_value and uid_value.
 
 | Value | Constructor payload / value() result | PlistWriting event |
@@ -4146,13 +4100,13 @@ below. Inventory is implementation evidence, not a runtime certification claim.
 |---|---|---|
 | logging/level | LogLevel(debug,info,warning,error,critical); LogLevelName(level); LogLevelFromName(text); LogLevelOrder(left,right) | string(); projected value() returns LogLevel /Order |
 | logging/name | LogName(Sequencing<string>); ChildLogName(name,segment) | segments(), string(), order(other); projected child value() |
-| logging/field | LogFields(Sequencing<JsonMember>); EmptyLogFields(); CombinedLogFields(base,added) | membership(name), value(name), values() is JsonObject, members(); projected combined/empty values |
+| logging/field | LogFields(Sequencing<JsonField>); EmptyLogFields(); CombinedLogFields(base,added) | membership(name), value(name), values() is Json, members(); projected combined/empty values |
 | logging/record | LogContext(name,fields,process); LogRecord(time,level,message,context[,cause]) | context coordinates; time(), level(), message(), context(), has_cause(), cause() |
 | logging/write | LogWriting; DiscardingLogs(); CollectedLogs([capacity]); BroadcastLogs(destinations); FallbackLogs(primary,fallback); BestEffortLogs(origin) | write(record); collector size()/records(); best-effort failures() is BigInt |
 | logging/named | Logging; NamedLogging(name,destination,clock,fields[,process_reader]); LogProcessReading /CurrentLogProcess | three log overloads; named name()/child(segment); process id() |
 | logging/enrichment | FieldLogging(origin,fields); ChildLogging(named,segment) | log overloads; projected child value() |
 | logging/filter | LogAllowing; LevelOverride(name,level); LevelThresholds(fallback,Sequencing<LevelOverride>); AllowedLogs(origin,allowing); EnabledLog(allowing,name,level) | allowed(name,level); write(record); projected enabled value() |
-| logging/redact | RedactedLogs(origin,Sequencing<string>,JsonValue); RedactedCauseLogs(origin,text) | write(record) with exact field/public cause replacement |
+| logging/redact | RedactedLogs(origin,Sequencing<string>,Json); RedactedCauseLogs(origin,text) | write(record) with exact field/public cause replacement |
 | logging/line | TextLogLine(record,TimeZone); JsonLogLine(record) | string() with no ending, bounded one-line representation |
 | logging/stream | TextStreamLogs(Writing,zone); JsonStreamLogs(Writing); LogStyle(level,TextStyle); TextTerminalLogs(output,zone,styles); JsonTerminalLogs(output,styles) | write(record), exactly one UTF8+LF submission; explicit terminal policy |
 | logging/file | FileLogOptions(permissions,flush_each,sync_each); LogFile(Path,options) | permissions()/flush_each()/sync_each(); owner write/flush/reopen/closed/close |
@@ -4171,8 +4125,8 @@ language has no module-private declarations. They are not alternate owner APIs.
 | Module | Constructors / roles | Public behavior |
 |---|---|---|
 | web/routing | ExceptionScope; WebRouting; Get/Post/Put/Patch/Delete(path,endpoint); Scope(prefix,routings); Scope(prefix,exceptions,routings); WebRoutes(routings,fallback); WebRoutes(routings,exceptions,fallback); WebRejection() does RouteRejecting; InvalidWebRoute(reason) | ExceptionScope.scoped(request,endpoint); WebRouting.routes(prefix,scopes) is @Route; WebRoutes does Handling, table() is Routes; WebRejection answers std Routes 400/405 with problem replies, Allow kept |
-| web/request | WebRequest(request,context); RequestJson(JsonView); MissingRouteParameter(name); InvalidBodyLimit(limit) | request(), context(), method(), path(name), query(name[,fallback]), parameters() is QueryParameters, header(name[,fallback]); async bytes/text/json/form(limit); json(limit) is RequestJson: JsonView reading API whose failures are Exception(422), view() |
-| web/reply | Text(status,text); Html(status,html); Json(status,JsonValue); Created(location,JsonValue); NoContent(); Redirect(status,location) | all do HandlingResult; status(); successor header(name,value) |
+| web/request | WebRequest(request,context); RequestJson(Json); MissingRouteParameter(name); InvalidBodyLimit(limit) | request(), context(), method(), path(name), query(name[,fallback]), parameters() is QueryParameters, header(name[,fallback]); async bytes/text/json/form(limit); json(limit) is RequestJson: JsonView reading API whose failures are Exception(422), view() |
+| web/reply | Text(status,text); Html(status,html); JsonReply(status,Json); Created(location,Json); NoContent(); Redirect(status,location) | all do HandlingResult; status(); successor header(name,value) |
 | web/exception | Exception(status,detail) does Error, HandlingResult | status(), detail(), title(), text(); successor header(name,value); RFC 9457 problem+json response() |
 | web/app | WebApplication(routes); WebApplication(routes,policy,clock) | async server(address,port) is HttpServer; async listen(address,port) is void |
 | web/internal/reply | ReplyHeaders(); ReplyHeaders(@Header); ReplyResponse; EmptyReplyResponse; ReplyFields; BodyStatus(status); InvalidReply(reason) | implementation collaborators; InvalidReply is the construction error of web/reply and web/exception |
@@ -4342,7 +4296,7 @@ is distinct from absence and retained by MessageCatalog snapshots.
 | Module | Constructors / roles | Public behavior |
 |---|---|---|
 | diff | UnifiedDiff(left,right[,context]); ContextDiff(left,right[,context]); MatchingBlocks(left,right); MatchingRatio(left,right); MatchingBlock(left,right,size) | cached string(); values() is Sequencing<MatchingBlock>; explicit LCS value(); block left/right/size |
-| testing/snapshot | SnapshotFile(DirectoryLocating,name); TextSnapshot(text); JsonSnapshot(JsonValue); RawSnapshot(bytes); Snapshot(ByteSource,file,limit); SnapshotUpdate(ByteSource,file,limit) | root/name; ByteSource.bytes(); contextual check(); separate explicit update() |
+| testing/snapshot | SnapshotFile(DirectoryLocating,name); TextSnapshot(text); JsonSnapshot(Json); RawSnapshot(bytes); Snapshot(ByteSource,file,limit); SnapshotUpdate(ByteSource,file,limit) | root/name; ByteSource.bytes(); contextual check(); separate explicit update() |
 | testing/runner | RecordedTestReport(JSON text) | value() is nominal TestReport; Base64 byte transport, positions, causes and terminal statuses |
 | testing/generation | DistinctReductions<T>(source,parentText) | Sequencing<Generated<T>>; stable reproduction-key deduplication with source order |
 | testing/result | TestFailureText(TestFailure) | bounded-depth cause text; TestFailure.causes()/depth(); TestResult.skip_reason() |

@@ -69,3 +69,15 @@ fn self_tail_calls_become_loops() {
     assert_eq!(self_calls(&module, "C.count"), 0, "tail call is a loop");
     assert_eq!(self_calls(&module, "C.fib"), 2, "non-tail calls stay calls");
 }
+
+#[test]
+fn tail_calls_in_both_branches_leave_no_unreachable_join() {
+    // Обе ветви — хвостовые вызовы: блок, где сходились их результаты, удаляется.
+    let module = lower(
+        "object F { has lo is int; has hi is int; F(:lo, :hi); #projected value() is int { if lo >= hi { lo; } else { let middle = lo + ((hi - lo) / 2).int(); if middle < 5 { value F(lo: middle + 1, hi: hi); } else { value F(lo: lo, hi: middle); } } } }",
+        "F(lo: 0, hi: 100).value();",
+    )
+    .expect("lowers");
+    ir::verify(&module).expect("verifies");
+    assert_eq!(self_calls(&module, "F.value"), 0, "both tail calls are loops");
+}

@@ -3,9 +3,7 @@ import "testing/result" take TestReport,TestResult,TestFailure,TestFailureText,T
 import "encoding/utf" take Utf8Encoded,Utf8Decoded;
 import "encoding/hex" take HexEncoded;
 import "encoding/base64" take Base64Encoded;
-import "json/value" take JsonValue,JsonObject,JsonArray,JsonMember,JsonText,JsonNumber,JsonBoolean,JsonNull;
-import "json/write" take CompactJson;
-import "math/decimal" take Decimal;
+import "json" take Json,JsonField;
 import "time/clock" take Instant;
 import "time/duration" take Duration,DurationUnit;
 import "xml/name" take XmlName;
@@ -67,29 +65,29 @@ object JsonTestReport {
     has origin is TestReport;JsonTestReport(origin is TestReport){self.origin=origin;}
     string() is string{
         let results=origin.results();let counts=origin.counts();
-        let values is @JsonValue=(0..results.size()).map()->index{self.result(results.item(index));};
-        CompactJson(origin:JsonObject([
-            JsonMember("seed",JsonNumber(Decimal(origin.seed().string()))),
-            JsonMember("start_unix_ns",JsonText(origin.start().unix_duration().nanoseconds().string())),
-            JsonMember("duration_ns",JsonText(origin.duration().nanoseconds().string())),
-            JsonMember("counts",JsonObject([JsonMember("passes",JsonNumber(Decimal(counts.passes().string()))),JsonMember("failures",JsonNumber(Decimal(counts.failures().string()))),JsonMember("skips",JsonNumber(Decimal(counts.skips().string()))),JsonMember("total",JsonNumber(Decimal(counts.total().string())))])),
-            JsonMember("results",JsonArray(values)),
-        ])).string();
+        let values is @Json=(0..results.size()).map()->index{self.result(results.item(index));};
+        Json([
+            JsonField("seed",Json(origin.seed())),
+            JsonField("start_unix_ns",Json(origin.start().unix_duration().nanoseconds().string())),
+            JsonField("duration_ns",Json(origin.duration().nanoseconds().string())),
+            JsonField("counts",Json([JsonField("passes",Json(counts.passes())),JsonField("failures",Json(counts.failures())),JsonField("skips",Json(counts.skips())),JsonField("total",Json(counts.total()))])),
+            JsonField("results",Json(items:values)),
+        ]).string();
     }
     private:
-    result(result is TestResult) is JsonValue{
-        let failures=result.failures();let problems is @JsonValue=(0..failures.size()).map()->index{self.failure(failures.item(index));};
-        JsonObject([JsonMember("name",JsonText(result.name())),JsonMember("status",JsonText(TestStatusName(result.status()).string())),
-            JsonMember("duration_ns",JsonText(result.duration().nanoseconds().string())),JsonMember("failures",JsonArray(problems)),
-            JsonMember("stdout_base64",JsonText(Base64Encoded(result.output().output()).string())),
-            JsonMember("stderr_base64",JsonText(Base64Encoded(result.output().errors()).string())),JsonMember("truncated",JsonBoolean(result.output().truncated())),JsonMember("skip_reason",JsonText(result.skip_reason()))]);
+    result(result is TestResult) is Json{
+        let failures=result.failures();let problems is @Json=(0..failures.size()).map()->index{self.failure(failures.item(index));};
+        Json([JsonField("name",Json(result.name())),JsonField("status",Json(TestStatusName(result.status()).string())),
+            JsonField("duration_ns",Json(result.duration().nanoseconds().string())),JsonField("failures",Json(items:problems)),
+            JsonField("stdout_base64",Json(Base64Encoded(result.output().output()).string())),
+            JsonField("stderr_base64",Json(Base64Encoded(result.output().errors()).string())),JsonField("truncated",Json(result.output().truncated())),JsonField("skip_reason",Json(result.skip_reason()))]);
     }
-    failure(failure is TestFailure) is JsonValue{
-        let position is JsonValue=if failure.located(){let place=failure.position();JsonObject([JsonMember("module",JsonText(place.source())),JsonMember("line",JsonNumber(Decimal(place.line().string()))),JsonMember("column",JsonNumber(Decimal(place.column().string())))]);}else{JsonNull();};
+    failure(failure is TestFailure) is Json{
+        let position is Json=if failure.located(){let place=failure.position();Json([JsonField("module",Json(place.source())),JsonField("line",Json(place.line())),JsonField("column",Json(place.column()))]);}else{Json();};
         let reasons=failure.causes();
-        let members is @JsonMember=[JsonMember("message",JsonText(failure.message())),JsonMember("position",position)];
-        if reasons.size()==0{JsonObject(members);}else{
-            JsonObject([members[0],members[1],JsonMember("cause",self.failure(reasons.item(0)))]);
+        let members is @JsonField=[JsonField("message",Json(failure.message())),JsonField("position",position)];
+        if reasons.size()==0{Json(members);}else{
+            Json([members[0],members[1],JsonField("cause",self.failure(reasons.item(0)))]);
         }
     }
 }

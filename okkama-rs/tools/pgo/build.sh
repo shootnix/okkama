@@ -35,7 +35,7 @@ for engine in sparrow ir; do
         "$okkama" run --engine "$engine" "$main" > /dev/null
     done
 done
-for module in json/read json/write json/value json/codec runtime/json strings/parse \
+for module in json runtime/json strings/parse \
     url/form url/percent template/html template/compile toml/parse plist/parse csv csv/input \
     encoding/utf encoding/pem numbers/float config/ini xml/node message/header mime/transfer \
     checksum/adler32 digest/blocks compression/read i18n/plural web/request web/reply http/auth; do

@@ -459,7 +459,7 @@ fn quote(origin: &str) -> String {
     quoted
 }
 
-/// The JSON spelling of an exact decimal (as `json/write.JsonNumberSpelling`):
+/// The JSON spelling of an exact decimal (as `json.Json` writes it):
 /// positional while that stays short — integers up to 21 digits, fractions
 /// down to 1e-6, the thresholds of JavaScript's `Number#toString` — and the
 /// canonical scientific form beyond them, so the value is never expanded.
@@ -495,6 +495,82 @@ fn member<'a>(object: &'a Value, name: &Value) -> Result<Option<&'a Node>, Error
             .map(|at| values[at].as_ref()),
         _ => None,
     })
+}
+
+/// JSON text of `node`: compact without `indentation`, otherwise one member
+/// or element per line, `level * indentation` spaces, `": "` after names,
+/// empty containers as `[]` and `{}` and no final line break. Numbers are
+/// written by [`number_text`], strings by [`push_quoted`].
+fn write_node(out: &mut String, node: &Node, indentation: Option<usize>, level: usize) {
+    let line = |out: &mut String, level: usize| {
+        if let Some(width) = indentation {
+            out.push('\n');
+            out.extend(std::iter::repeat_n(' ', width * level));
+        }
+    };
+    match node {
+        Node::Null => out.push_str("null"),
+        Node::Boolean(flag) => out.push_str(if *flag { "true" } else { "false" }),
+        Node::Number(spelling) => match super::numbers::components(spelling) {
+            Some(parts) => out.push_str(&number_text(&parts)),
+            None => out.push_str(spelling),
+        },
+        Node::Text(value) => push_quoted(out, value),
+        Node::Array(values) => {
+            out.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                line(out, level + 1);
+                write_node(out, value, indentation, level + 1);
+            }
+            if !values.is_empty() {
+                line(out, level);
+            }
+            out.push(']');
+        }
+        Node::Object(names, values) => {
+            out.push('{');
+            for (index, (name, value)) in names.iter().zip(values).enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                line(out, level + 1);
+                push_quoted(out, name);
+                out.push(':');
+                if indentation.is_some() {
+                    out.push(' ');
+                }
+                write_node(out, value, indentation, level + 1);
+            }
+            if !values.is_empty() {
+                line(out, level);
+            }
+            out.push('}');
+        }
+    }
+}
+
+/// The member names and item indices from `root` down to `target` (the
+/// same node, by identity), depth first; false when `target` is not inside.
+fn find_path(root: &Rc<Node>, target: &Rc<Node>, path: &mut Vec<String>) -> bool {
+    if Rc::ptr_eq(root, target) {
+        return true;
+    }
+    let children: Vec<(String, &Rc<Node>)> = match root.as_ref() {
+        Node::Array(values) => values.iter().enumerate().map(|(index, value)| (index.to_string(), value)).collect(),
+        Node::Object(names, values) => names.iter().cloned().zip(values).collect(),
+        _ => return false,
+    };
+    for (token, child) in children {
+        path.push(token);
+        if find_path(child, target, path) {
+            return true;
+        }
+        path.pop();
+    }
+    false
 }
 
 fn node(value: &Value) -> Result<&Rc<Node>, Error> {
@@ -625,6 +701,52 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 Ok(int_value(value.parse::<i64>().map_err(|_| invalid("JSON integer"))?))
             }
             _ => Err(invalid("JSON member is missing or not a short integer")),
+        },
+        Native::JsonJsonTextNode => Ok(node_value(Rc::new(Node::Text(string(&args[0])?.to_string())))),
+        Native::JsonJsonNumberNode => {
+            let spelling = string(&args[0])?;
+            super::numbers::components(spelling).ok_or_else(|| invalid("not a decimal number"))?;
+            Ok(node_value(Rc::new(Node::Number(spelling.to_string()))))
+        }
+        Native::JsonJsonBooleanNode => Ok(node_value(Rc::new(Node::Boolean(matches!(args[0], Value::Bool(true)))))),
+        Native::JsonJsonNullNode => Ok(node_value(Rc::new(Node::Null))),
+        Native::JsonJsonArrayNode => {
+            let values = items(&args[0])?.iter().map(|value| node(value).cloned()).collect::<Result<Vec<_>, _>>()?;
+            Ok(node_value(Rc::new(Node::Array(values))))
+        }
+        Native::JsonJsonObjectNode => {
+            let names = items(&args[0])?.iter().map(|name| Ok(name.as_string()?.to_string())).collect::<Result<Vec<_>, Error>>()?;
+            let values = items(&args[1])?.iter().map(|value| node(value).cloned()).collect::<Result<Vec<_>, _>>()?;
+            if names.len() != values.len() {
+                return Err(invalid("JSON member names and values differ in number"));
+            }
+            let mut seen = std::collections::HashSet::with_capacity(names.len());
+            if !names.iter().all(|name| seen.insert(name.as_str())) {
+                return Err(invalid("duplicate JSON member name"));
+            }
+            Ok(node_value(Rc::new(Node::Object(names, values))))
+        }
+        Native::JsonJsonNodeWrite => {
+            let indentation = int(&args[1])?.to_i64().ok_or_else(|| invalid("JSON indentation is out of range"))?;
+            let mut out = String::new();
+            write_node(&mut out, node(&args[0])?, usize::try_from(indentation).ok(), 0);
+            Ok(text(out))
+        }
+        Native::JsonJsonNodePointer => {
+            let (root, target) = (node(&args[0])?, node(&args[1])?);
+            let mut path = Vec::new();
+            if !find_path(root, target, &mut path) {
+                return Err(invalid("JSON node is not inside the document"));
+            }
+            Ok(text(path.iter().map(|token| format!("/{}", token.replace('~', "~0").replace('/', "~1"))).collect::<String>()))
+        }
+        Native::JsonJsonMemberValues => match node(&args[0])?.as_ref() {
+            Node::Object(_, values) => Ok(crate::heap::ArrayHeap.allocate(values.iter().map(|value| node_value(value.clone())).collect())),
+            _ => Err(invalid("JSON node is not an object")),
+        },
+        Native::JsonJsonNodeItems => match node(&args[0])?.as_ref() {
+            Node::Array(values) => Ok(crate::heap::ArrayHeap.allocate(values.iter().map(|value| node_value(value.clone())).collect())),
+            _ => Err(invalid("JSON node is not an array")),
         },
         Native::JsonJsonRepeatedName => {
             let names = items(&args[0])?;

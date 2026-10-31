@@ -1,7 +1,7 @@
 module runtime/json v1.0.0;
 
-// Private exact JSON parse tree and diagnostics. The public json/parse module
-// projects these opaque states into immutable json/value objects.
+// Private exact JSON parse tree and diagnostics. The public json module wraps
+// these opaque states in immutable Json values.
 native object JsonParseState;
 native object JsonNodeState;
 native object JsonOutputState;
@@ -56,6 +56,29 @@ native json_member_text(origin is JsonNodeState, name is string) is string;
 native json_member_spelling(origin is JsonNodeState, name is string) is string;
 native json_member_boolean(origin is JsonNodeState, name is string) is bool;
 native json_member_int(origin is JsonNodeState, name is string) is int;
+
+// Values built in code: a string, a number from its decimal text, a boolean,
+// null, an array of nodes, and an object of distinct names and their nodes
+// (invalid_input for differing counts or a repeated name).
+native json_text_node(value is string) is JsonNodeState;
+native json_number_node(decimal is string) is JsonNodeState;
+native json_boolean_node(value is bool) is JsonNodeState;
+native json_null_node() is JsonNodeState;
+native json_array_node(values is @JsonNodeState) is JsonNodeState;
+native json_object_node(names is @string, values is @JsonNodeState) is JsonNodeState;
+
+// JSON text of a node: compact for a negative indentation, otherwise one
+// member or element per line, level * indentation spaces, ": " after names,
+// [] and {} for empty containers and no final line break. Numbers are written
+// as json_number_text, strings as json_quote.
+native json_node_write(origin is JsonNodeState, indentation is int) is string;
+
+// The RFC 6901 pointer of target inside root (the same node, found depth
+// first; invalid_input when it is not inside), and the member values of an
+// object and the items of an array in order.
+native json_node_pointer(root is JsonNodeState, target is JsonNodeState) is string;
+native json_member_values(origin is JsonNodeState) is @JsonNodeState;
+native json_node_items(origin is JsonNodeState) is @JsonNodeState;
 
 // json_member_position is the index of the member with exactly that name, or -1.
 // Parsing is lazy and memoized. root() is available only after valid(); a
@@ -156,4 +179,15 @@ test "members are read in one call or refused" {
     test.is(try { json_member_spelling(row, "s"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
     let array = json_parse_root(json_parse_state("[1]", 8));
     test.is(try { json_member_text(array, "a"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+}
+
+test "JSON nodes built in code are written compact and pretty" {
+    let inner = json_object_node(["é", "n"], [json_text_node("a\"\u{1}"), json_number_node("1.25e1")]);
+    let empty is @JsonNodeState = [];
+    let root = json_array_node([inner, json_boolean_node(true), json_null_node(), json_array_node(empty)]);
+    test.is(json_node_write(root, -1), "[{\"é\":\"a\\\"\\u0001\",\"n\":12.5},true,null,[]]");
+    test.is(json_node_write(root, 2), "[\n  {\n    \"é\": \"a\\\"\\u0001\",\n    \"n\": 12.5\n  },\n  true,\n  null,\n  []\n]");
+    test.is(json_member_text(inner, "é"), "a\"\u{1}");
+    test.is(try { json_object_node(["a", "a"], [json_null_node(), json_null_node()]); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_number_node("1x"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
 }

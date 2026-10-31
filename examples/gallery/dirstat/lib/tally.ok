@@ -6,7 +6,7 @@ import "scan" take ScannedFile;
 import "collections/set" take OrderedSet;
 import "collections/ordering" take Sorted;
 import "compare" take Comparing,Order;
-import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 object KindTotal does Comparing<KindTotal> {
     has extension is string;has files,bytes is int;
@@ -15,7 +15,7 @@ object KindTotal does Comparing<KindTotal> {
     order(other is KindTotal) is Order{
         let by_size=other.bytes().order(bytes);if by_size==Order.equal{extension.order(other.extension());}else{by_size;}
     }
-    json() is JsonObject{JsonObject([JsonMember("extension",JsonText(extension)),JsonMember("files",JsonNumber(Decimal(files.string()))),JsonMember("bytes",JsonNumber(Decimal(bytes.string())))]);}
+    json() is Json{Json([JsonField("extension",Json(extension)),JsonField("files",Json(Decimal(files.string()))),JsonField("bytes",Json(Decimal(bytes.string())))]);}
 }
 object Tally {
     Tally();

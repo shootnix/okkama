@@ -7,27 +7,26 @@ module cookbook/web/blog/pages v1.0.0;
 import "../../support/http" take Page;
 import "model" take Draft,BlogPosts;
 import "web/request" take WebRequest;
-import "web/reply" take Json;
+import "web/reply" take JsonReply;
 import "web/exception" take Exception;
 import "http/handler" take HandlingResult;
 import "html/entities" take EscapedHtml;
-import "json/value" take JsonObject,JsonMember,JsonText;
-import "json/read" take JsonView;
+import "json" take Json, JsonField;
 import "strings/parse" take ParsedInt;
 
 object BlogPages {
     has posts is BlogPosts;BlogPages(posts is BlogPosts){self.posts=posts;}
     async index(request is WebRequest) is HandlingResult{
-        let list=JsonView(await posts.list()).items();let entries=list.map()->post{
+        let list=(await posts.list()).items();let entries=list.map()->post{
             "<article><h2><a href=/posts/"+post.int("id").string()+">"+EscapedHtml(post.text("title")).string()+"</a></h2><p>"+EscapedHtml(post.text("created_at")).string()+"</p></article>";
         };
         Page("Блог Okkama","<nav><a href=/api/posts>JSON</a></nav>"+entries.join("")+"<form id=publish><h2>Новая запись</h2><input name=title placeholder=Заголовок required maxlength=150><textarea name=body placeholder=Текст required maxlength=20000></textarea><button>Опубликовать</button><p id=result></p></form><script>document.querySelector('form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const r=await fetch('/api/posts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(f))});if(r.ok)location.reload();else document.querySelector('#result').textContent=await r.text()};</script>").reply();
     }
     async article(request is WebRequest) is HandlingResult{
-        let id=try{ParsedInt(request.path("id")).value();}catch error is Error{throw Exception(404,"Запись не найдена");};let post=JsonView(await posts.get(id));
+        let id=try{ParsedInt(request.path("id")).value();}catch error is Error{throw Exception(404,"Запись не найдена");};let post=(await posts.get(id));
         Page(post.text("title"),"<nav><a href=/>Все записи</a></nav><article><pre>"+EscapedHtml(post.text("body")).string()+"</pre></article>").reply();
     }
-    async api(request is WebRequest) is HandlingResult{Json(200,await posts.list());}
-    async publish(request is WebRequest) is HandlingResult{let body=await request.json(65536);await posts.publish(Draft(body.text("title"),body.text("body")));Json(201,JsonObject([JsonMember("status",JsonText("published"))]));}
+    async api(request is WebRequest) is HandlingResult{JsonReply(200,await posts.list());}
+    async publish(request is WebRequest) is HandlingResult{let body=await request.json(65536);await posts.publish(Draft(body.text("title"),body.text("body")));JsonReply(201,Json([JsonField("status",Json("published"))]));}
     async missing(request is WebRequest) is HandlingResult{Exception(404,"Страница не найдена");}
 }

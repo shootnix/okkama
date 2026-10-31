@@ -1,39 +1,27 @@
 module logging/field v1.0.0;
 import "collections/sequence" take Sequencing;
-import "json/value" take JsonValue,JsonMember,JsonObject,JsonWriting,JsonKind;
-import "json/parse" take ParsedJson;
-import "json/write" take PrettyJson;
-import "math/decimal" take Decimal;
-import "async/atomic" take Atomic;
-// Bound the complete rendered snapshot; custom JsonValue sources are observed
-// once at construction and never retained as mutable field capabilities.
+import "json" take Json,JsonField,ParsedJson;
+import "encoding/utf" take Utf8Encoded;
+// Fields form one JSON object of at most 256 members, 32 levels and 1 MiB of
+// compact text, checked once at construction; Json values are immutable.
 object LogFields{
-    has origin is JsonObject;
-    LogFields(members is Sequencing<JsonMember>){
+    has origin is Json;
+    LogFields(members is Sequencing<JsonField>){
         let size=members.size();confirm size>=0 && size<=256 else throw InvalidLogField("field count exceeds 256");
-        let snapshot is @JsonMember=(0..size).map()->index{let item=members.item(index);confirm item.name()!="" && item.name().length()<=4096 else throw InvalidLogField("invalid field name");item;};
+        let snapshot is @JsonField=(0..size).map()->index{let item=members.item(index);confirm item.name()!="" && item.name().length()<=4096 else throw InvalidLogField("invalid field name");item;};
         for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name()!=snapshot[previous].name() else throw InvalidLogField("duplicate field name");}}
-        if size==0{origin=JsonObject(snapshot);}else{
-        let text=PrettyJson(origin:JsonObject(snapshot),indentation:0,maximum_depth:32,maximum_bytes:1048576).string();
-        let frozen=ParsedJson(text,32);confirm frozen.kind()==JsonKind.object_value else throw InvalidLogField("fields must form a JSON object");
-        let collected=LogFieldSnapshot();frozen.print(collected);origin=collected.value();
+        let fields=Json(snapshot);
+        if size>0{
+            let text=fields.string();
+            confirm Utf8Encoded(text).bytes().size()<=1048576 else throw InvalidLogField("fields exceed 1 MiB");
+            ParsedJson(text,32).value();
         }
+        origin=fields;
     }
-    membership(name is string) is bool{origin.membership(name);}
-    value(name is string) is JsonValue{confirm self.membership(name) else throw MissingLogField(name);origin.value(name);}
-    values() is JsonObject{origin;}
-    members() is Sequencing<JsonMember>{origin.members();}
-}
-object LogFieldSnapshot does JsonWriting{
-    has origin is Atomic<@JsonMember>;
-    LogFieldSnapshot(){let empty is @JsonMember=[];origin=Atomic(empty);}
-    members(members is Sequencing<JsonMember>) is void{let snapshot is @JsonMember=(0..members.size()).map()->index{members.item(index);};origin.replace(snapshot);}
-    null_value() is void{throw InvalidLogField("expected object");}
-    boolean(value is bool) is void{throw InvalidLogField("expected object");}
-    number(value is Decimal) is void{throw InvalidLogField("expected object");}
-    text(value is string) is void{throw InvalidLogField("expected object");}
-    elements(values is Sequencing<JsonValue>) is void{throw InvalidLogField("expected object");}
-    value() is JsonObject{JsonObject(origin.value());}
+    membership(name is string) is bool{origin.has(name);}
+    value(name is string) is Json{confirm self.membership(name) else throw MissingLogField(name);origin.get(name);}
+    values() is Json{origin;}
+    members() is @JsonField{origin.fields();}
 }
 object EmptyLogFields{EmptyLogFields();#projected
     value() is LogFields{LogFields([]);}
@@ -46,9 +34,9 @@ object CombinedLogFields{
         let first=base.members();let second=added.members();
         if second.size()==0{return base;}
         if first.size()==0{return added;}
-        let replacements is @JsonMember=first.map()->member{if added.membership(member.name()){JsonMember(member.name(),added.value(member.name()));}else{member;}};
-        let tail is @JsonMember=second.filter()->member{!base.membership(member.name());}.map()->member{member;};
-        let merged is @JsonMember=(0..replacements.size()+tail.size()).map()->index{if index<replacements.size(){replacements[index];}else{tail[index-replacements.size()];}};
+        let replacements is @JsonField=first.map()->member{if added.membership(member.name()){JsonField(member.name(),added.value(member.name()));}else{member;}};
+        let tail is @JsonField=second.filter()->member{!base.membership(member.name());}.map()->member{member;};
+        let merged is @JsonField=(0..replacements.size()+tail.size()).map()->index{if index<replacements.size(){replacements[index];}else{tail[index-replacements.size()];}};
         LogFields(merged);
     }
 }

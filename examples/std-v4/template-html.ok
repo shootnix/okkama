@@ -1,8 +1,8 @@
 module app v1.0.0;
 import "template/html" take HtmlTemplate;
-import "json/value" take JsonText;
+import "json" take Json;
 import "io/stdout" take Stdout;
 main() is int {
-    HtmlTemplate("<p title=\"{{.}}\">Hello {{.}}</p>\n").write(JsonText("Ada & <friends>"),Stdout());
+    HtmlTemplate("<p title=\"{{.}}\">Hello {{.}}</p>\n").write(Json("Ada & <friends>"),Stdout());
     0;
 }

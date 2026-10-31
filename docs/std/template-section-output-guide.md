@@ -2,10 +2,10 @@
 
 ## Contract before implementation
 
-`SectionTemplate.write(data is JsonValue, destination is WritingText) is void`
+`SectionTemplate.write(data is Json, destination is WritingText) is void`
 streams the same text as string(data), using the same constructor limits and
 explicit library. string(data) delegates to this path with a local UTF-8 buffer,
-so both forms share traversal, protocol checks and resource accounting.
+so both forms share traversal and resource accounting.
 
 Each call compiles/validates the root before lookup or output. Reached partials
 compile before their own data access/output; earlier parent contributions can

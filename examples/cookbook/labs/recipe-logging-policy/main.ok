@@ -16,14 +16,14 @@ import "logging/name" take LogName;
 import "logging/level" take LogLevel;
 import "logging/field" take LogFields;
 import "logging/syslog" take SyslogMessage,SyslogOptions,SyslogFacility;
-import "json/value" take JsonMember,JsonText;
+import "json" take Json, JsonField;
 import "time/clock" take SystemClock;
 
 main() is int {
     let records = CollectedLogs();
     let sink = AllowedLogs(records, LevelThresholds(LogLevel.warning, []));
     let named = NamedLogging(LogName(["orders"]), sink, SystemClock(), LogFields([]));
-    let logger = FieldLogging(named, LogFields([JsonMember("tenant_id", JsonText("shop-7"))]));
+    let logger = FieldLogging(named, LogFields([JsonField("tenant_id", Json("shop-7"))]));
     logger.log(LogLevel.info, "запрос принят");
     logger.log(LogLevel.warning, "запрошен повтор");
     confirm records.size() == 1;

@@ -3,14 +3,14 @@ import "testing/snapshot" take SnapshotFile,TextSnapshot,JsonSnapshot,Snapshot,S
 import "fs/temp" take TemporaryDirectory;
 import "fs/directory" take Directory;
 import "fs/path" take Path;
-import "json/value" take JsonObject,JsonMember,JsonText;
+import "json" take Json, JsonField;
 main() is int {0;}
 test "explicit snapshot update and ordinary check" {
     let scratch=TemporaryDirectory(Directory(Path(".")),"okkama-snapshots-");
     defer scratch.close();
     let directory=Directory(scratch.path());
     let expected=SnapshotFile(directory,"invoice.json");
-    let actual=JsonSnapshot(JsonObject([JsonMember("customer",JsonText("Ada"))]));
+    let actual=JsonSnapshot(Json([JsonField("customer",Json("Ada"))]));
     SnapshotUpdate(actual,expected,4096).update();
     Snapshot(actual,expected,4096).check();
     test.is(TextSnapshot("first\r\nsecond\r").bytes(),TextSnapshot("first\nsecond\n").bytes());

@@ -33,8 +33,7 @@ import "async/channel" take ChannelClosed;
 import "url/value" take ParsedUrl;
 import "time/clock" take SystemClock;
 import "time/duration" take Duration,DurationUnit;
-import "json/parse" take ParsedJson;
-import "json/read" take JsonView;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 object ChatOutput {
     has member is ChatSubscription;has socket is WebSocketConnection;
@@ -57,7 +56,7 @@ object ChatSocket does WebSocketHandling {
         defer await room.leave(member);defer await ClientWork(member,group).close();group.start(ChatOutput(member,socket).run());
         try{loop{
             let message=await socket.message();confirm message.kind()==WebSocketMessageKind.text;
-            let text=JsonView(ParsedJson(message.text())).text("text");confirm text.length()<=2000;await room.publish(name,text);
+            let text=ParsedJson(message.text()).value().text("text");confirm text.length()<=2000;await room.publish(name,text);
         }}catch ended is WebSocketClosed{}self;
     }
 }
@@ -94,7 +93,7 @@ object SocketClient {
         await WebSocketConnecting(ParsedUrl("ws://"+address+path).value(),["gallery-chat"],Headers([Header(HeaderName("Origin"),"http://"+address)]),FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,SystemClock()).connection();
     }
     async event(socket is WebSocketConnection,expected is int,text is string) is void {
-        let message=await socket.message();let value=JsonView(ParsedJson(message.text()));
+        let message=await socket.message();let value=ParsedJson(message.text()).value();
         confirm value.int("seq")==expected && value.text("text")==text;
         Stdout().writeln(value.int("seq").string()+" "+value.text("from")+": "+value.text("text"));
     }

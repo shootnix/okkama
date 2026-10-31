@@ -3,9 +3,7 @@ import "http/handler" take HandlingResult,HandlingKind,WebSocketHandling,WrongHa
 import "http/message" take Response;
 import "http/status" take Status;
 import "http/websocket_server" take WebSocketUpgrade;
-import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber;
-import "json/write" take CompactJson;
-import "math/decimal" take Decimal;
+import "json" take Json,JsonField;
 import "encoding/utf" take Utf8Encoded;
 import "web/internal/reply" take ReplyHeaders,ReplyResponse,InvalidReply;
 
@@ -39,13 +37,13 @@ object Exception does Error, HandlingResult {
 
     kind() is HandlingKind { HandlingKind.response; }
     response() is Response {
-        let problem = JsonObject([
-            JsonMember("type", JsonText("about:blank")),
-            JsonMember("title", JsonText(self.title())),
-            JsonMember("status", JsonNumber(Decimal(code.string()))),
-            JsonMember("detail", JsonText(message))
+        let problem = Json([
+            JsonField("type", "about:blank"),
+            JsonField("title", self.title()),
+            JsonField("status", code),
+            JsonField("detail", message)
         ]);
-        ReplyResponse(code, "application/problem+json", Utf8Encoded(CompactJson(origin: problem).string()).bytes(), extra).response();
+        ReplyResponse(code, "application/problem+json", Utf8Encoded(problem.string()).bytes(), extra).response();
     }
     websocket() is WebSocketUpgrade { throw WrongHandlingKind(); }
     application() is WebSocketHandling { throw WrongHandlingKind(); }

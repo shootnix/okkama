@@ -12,11 +12,11 @@ import "config/document" take JsonSettings;
 import "config/source" take SettingSource,SettingSourceKind;
 import "config/key" take SettingKey;
 import "config/value" take ScalarSetting;
-import "json/value" take JsonObject,JsonMember,JsonText;
+import "json" take Json, JsonField;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let document = JsonObject([JsonMember("port", JsonText("8080"))]);
+    let document = Json([JsonField("port", Json("8080"))]);
     let settings = JsonSettings(document, SettingSource(SettingSourceKind.document, "service.json"));
     let port = ScalarSetting(settings, SettingKey(["port"])).value();
     confirm port == "8080";

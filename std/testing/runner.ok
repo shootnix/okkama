@@ -1,19 +1,17 @@
 module testing/runner v1.0.0;
 import "testing/result" take TestReport,TestResult,TestFailure,TestPosition,TestOutput,TestStatus,InvalidTestResult;
-import "json/read" take JsonView;
-import "json/parse" take ParsedJson;
+import "json" take Json,JsonKind,ParsedJson;
 import "strings/parse" take ParsedRat;
 import "time/clock" take Instant;
 import "time/duration" take Duration,DurationUnit;
 import "encoding/base64" take Base64Decoded;
-import "json/value" take JsonKind;
 
 // Explicit runner wire projection; arbitrary user objects are never inspected.
 object RecordedTestReport {
     has report is TestReport;
     RecordedTestReport(origin is string){
         confirm origin.length()<=16777216 else throw InvalidTestResult("runner wire budget");
-        let document=JsonView(ParsedJson(origin));let entries=document.member("results").items();
+        let document=ParsedJson(origin).value();let entries=document.get("results").items();
         confirm entries.size()<=4096 else throw InvalidTestResult("runner case budget");
         let results is @TestResult=entries.map()->entry{RecordedTestResult(entry).value();};
         report=TestReport(Instant(Duration(ParsedRat(document.text("start_ns")).value(),DurationUnit.nanosecond)),Duration(ParsedRat(document.text("duration_ns")).value(),DurationUnit.nanosecond),document.int("seed"),results);
@@ -22,31 +20,31 @@ object RecordedTestReport {
 }
 object RecordedTestResult {
     has result is TestResult;
-    RecordedTestResult(entry is JsonView){
+    RecordedTestResult(entry is Json){
         let label=entry.text("status");let status=match label{case "passed"{TestStatus.passed;}case "failed"{TestStatus.failed;}case "skipped"{TestStatus.skipped;}case "timed_out"{TestStatus.timed_out;}case "crashed"{TestStatus.crashed;}else{throw InvalidTestResult("unknown runner status");}};
-        let messages=entry.member("failures").items();confirm messages.size()<=1024 else throw InvalidTestResult("runner failures budget");
-        let details is @JsonView=if entry.membership("failure_details"){entry.member("failure_details").items();}else{[];};
+        let messages=entry.get("failures").items();confirm messages.size()<=1024 else throw InvalidTestResult("runner failures budget");
+        let details is @Json=if entry.has("failure_details"){entry.get("failure_details").items();}else{[];};
         let failures is @TestFailure=(0..messages.size()).map()->index{
             let message=messages[index].text();
-            let positions is @TestPosition=if index<details.size() && details[index].membership("position") && details[index].member("position").membership("source_name"){
-                let position=details[index].member("position");
-                if position.member("line").kind()==JsonKind.number_value && position.member("column").kind()==JsonKind.number_value{[TestPosition(position.text("source_name"),position.int("line"),position.int("column"))];}else{[];}
+            let positions is @TestPosition=if index<details.size() && details[index].has("position") && details[index].get("position").has("source_name"){
+                let position=details[index].get("position");
+                if position.get("line").kind()==JsonKind.number_value && position.get("column").kind()==JsonKind.number_value{[TestPosition(position.text("source_name"),position.int("line"),position.int("column"))];}else{[];}
             }else{[];};
-            let causes is @TestFailure=if index<details.size() && details[index].membership("cause"){[RecordedTestCause(details[index].member("cause"),0).value()];}else{[];};
+            let causes is @TestFailure=if index<details.size() && details[index].has("cause"){[RecordedTestCause(details[index].get("cause"),0).value()];}else{[];};
             TestFailure(message,positions,causes);
         };
         let output=Base64Decoded(entry.text("stdout_base64")).bytes();let errors=Base64Decoded(entry.text("stderr_base64")).bytes();
         confirm output.size()+errors.size()<=1048576 else throw InvalidTestResult("runner output budget");
-        result=TestResult(entry.text("name"),status,Duration(ParsedRat(entry.text("duration_ns")).value(),DurationUnit.nanosecond),failures,TestOutput(output,errors,entry.boolean("truncated")),if entry.membership("skip_reason"){entry.text("skip_reason");}else{"";});
+        result=TestResult(entry.text("name"),status,Duration(ParsedRat(entry.text("duration_ns")).value(),DurationUnit.nanosecond),failures,TestOutput(output,errors,entry.boolean("truncated")),if entry.has("skip_reason"){entry.text("skip_reason");}else{"";});
     }
     value() is TestResult{result;}
 }
 object RecordedTestCause {
     has failure is TestFailure;
-    RecordedTestCause(origin is JsonView,depth is int){
+    RecordedTestCause(origin is Json,depth is int){
         confirm depth>=0 && depth<31 else throw InvalidTestResult("runner cause depth");
         let positions is @TestPosition=[];
-        let causes is @TestFailure=if origin.membership("cause"){[RecordedTestCause(origin.member("cause"),depth+1).value()];}else{[];};
+        let causes is @TestFailure=if origin.has("cause"){[RecordedTestCause(origin.get("cause"),depth+1).value()];}else{[];};
         failure=TestFailure(origin.text("type")+": "+origin.text("message"),positions,causes);
     }
     value() is TestFailure{failure;}

@@ -1,17 +1,14 @@
 module app v1.0.0;
 
 import "io/stdout" take Stdout;
-import "json/parse" take ParsedJson;
-import "json/read" take JsonView;
-import "json/write" take CompactJson;
-import "json/value" take JsonObject, JsonMember, JsonNumber;
+import "json" take Json, JsonField, ParsedJson;
 import "db/sqlite" take SqliteMemory;
 import "db/statement" take Statement;
 import "db/value" take DbDecimal, ObservedDbValue;
 import "math/decimal" take Decimal;
 
 async main() is int {
-    let request = JsonView(origin: ParsedJson(origin: "{\"amount\": 123456789012345678901234567890.000000001}"));
+    let request = ParsedJson(origin: "{\"amount\": 123456789012345678901234567890.000000001}").value();
     let amount is Decimal = request.number("amount");
     let connection = await SqliteMemory().connection();
     defer await connection.settled();
@@ -22,8 +19,8 @@ async main() is int {
     let row = await rows.row();
     rows.close();
     let restored = Decimal(ObservedDbValue(row.value("amount")).text());
-    let reply = CompactJson(origin: JsonObject(members: [JsonMember("amount", JsonNumber(value: restored))])).string();
-    let reparsed is Decimal = JsonView(origin: ParsedJson(origin: reply)).number("amount");
+    let reply = (Json(fields: [JsonField("amount", Json(value: restored))])).string();
+    let reparsed is Decimal = ParsedJson(origin: reply).value().number("amount");
     Stdout().writeln(reparsed.coefficient().string() + " e" + reparsed.exponent().string());
     0;
 }

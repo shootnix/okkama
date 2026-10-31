@@ -4,10 +4,8 @@ import "template/library" take TemplateLibrary;
 import "template/tree" take TemplateTree, TemplateTreeNode, TemplateTreeKind;
 import "template/compile" take InvalidTemplateLimits, TemplateOutputLimitExceeded;
 import "template/path" take TemplatePathFromString;
-import "template/json" take JsonTemplateStrings, InvalidTemplateJsonSize, InvalidTemplateJsonProtocol, TemplateJsonLimitExceeded;
-import "json/value" take JsonValue, JsonWriting, JsonMember, JsonObject, JsonText, JsonBoolean, JsonNumber, JsonNull;
-import "collections/sequence" take Sequencing;
-import "math/decimal" take Decimal;
+import "template/json" take JsonTemplateStrings, TemplateJsonLimitExceeded;
+import "json" take Json, JsonKind;
 import "io/buffer" take ByteBuffer;
 import "encoding/utf" take Utf8Decoded, ByteOrder;
 import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
@@ -65,13 +63,13 @@ object SectionTemplate {
         self.maximum_iterations=maximum_iterations;self.maximum_output=maximum_output;self.maximum_members=maximum_members;
         self.maximum_partial_depth=maximum_partial_depth;
     }
-    string(data is JsonValue) is string {
+    string(data is Json) is string {
         let output=ByteBuffer();
         defer output.closing().close();
         self.write(data,Utf8Output(origin:output.writing()));
         Utf8Decoded(output.content().bytes()).string();
     }
-    write(data is JsonValue, destination is WritingText) is void {
+    write(data is Json, destination is WritingText) is void {
         let nodes=program.nodes();
         if !partials_enabled {self.validate(nodes);}
         let output=TemplateSectionOutput(destination,maximum_output);
@@ -120,7 +118,7 @@ object TemplateSectionRun {
         TemplateSectionRun(output:output,iterations:iterations,maximum_members:maximum_members,
             partials:partials,maximum_partial_depth:maximum_partial_depth,partial_depth:partial_depth,section_depth:section_depth+1);
     }
-    write(nodes is @TemplateTreeNode, data is JsonValue) is void {
+    write(nodes is @TemplateTreeNode, data is Json) is void {
         for nodes -> node {
             if node.kind()==TemplateTreeKind.literal {output.append(node.text());}
             else {
@@ -130,14 +128,14 @@ object TemplateSectionRun {
                 } else {
                     let path is @string=if node.text()=="." {[];}
                         else {TemplatePathFromString(node.text()).value().segments().map() -> part {part;};};
-                    TemplateSectionLookup(origin:data,path:path,index:0,maximum_members:maximum_members,
-                        destination:TemplateSectionVisitor(run:self,node:node,enclosing:data,iterations:iterations,maximum_members:maximum_members)).write();
+                    let found=TemplateSectionLookup(origin:data,path:path,maximum_members:maximum_members).value();
+                    TemplateSection(run:self,node:node,enclosing:data,iterations:iterations,maximum_members:maximum_members).render(found);
                 }}
             }
         }
     }
     private:
-    partial(name is string, data is JsonValue) is void {
+    partial(name is string, data is Json) is void {
         confirm partial_depth<maximum_partial_depth else throw TemplatePartialDepthExceeded();
         iterations.claim();
         let nodes=TemplateTree(partials.value(name).source()).nodes();
@@ -192,125 +190,73 @@ object TemplateSectionOutput {
     }
 }
 
-// Internal nominal path observation. Missing paths emit JSON null to the truth
-// visitor only; errors thrown by the source are not caught or reclassified.
-// A marker records start/completion (two bytes), or invalid reentry (three).
-// Suppressed duplicate-event and downstream errors remain visible after print
-// returns. No kind() reflection or data casts.
+// Internal path lookup: a missing member, or a member below a non-object, is
+// JSON null; every object on the way is bounded by maximum_members.
 object TemplateSectionLookup {
-    has origin is JsonValue;
+    has origin is Json;
     has path is @string;
-    has index, maximum_members is int;
-    has destination is JsonWriting;
-    TemplateSectionLookup(:origin,:path,:index,:maximum_members,:destination);
-    write() is void {
-        let seen=ByteBuffer();
-        defer seen.closing().close();
-        origin.print(TemplateSectionLookupVisitor(path:path,index:index,maximum_members:maximum_members,destination:destination,seen:seen));
-        confirm seen.content().size()==2 else throw InvalidTemplateJsonProtocol();
-    }
-}
-object TemplateSectionLookupVisitor does JsonWriting {
-    has path is @string;
-    has index, maximum_members is int;
-    has destination is JsonWriting;
-    has seen is ByteBuffer;
-    TemplateSectionLookupVisitor(:path,:index,:maximum_members,:destination,:seen);
-    null_value() is void {self.mark();destination.null_value();self.complete();}
-    boolean(value is bool) is void {
-        self.mark();if index==path.size() {destination.boolean(value);} else {destination.null_value();}
-        self.complete();
-    }
-    number(value is Decimal) is void {
-        self.mark();if index==path.size() {destination.number(value);} else {destination.null_value();}
-        self.complete();
-    }
-    text(value is string) is void {
-        self.mark();if index==path.size() {destination.text(value);} else {destination.null_value();}
-        self.complete();
-    }
-    elements(values is Sequencing<JsonValue>) is void {
-        self.mark();if index==path.size() {destination.elements(values);} else {destination.null_value();}
-        self.complete();
-    }
-    members(members is Sequencing<JsonMember>) is void {
-        self.mark();
-        if index==path.size() {destination.members(members);}
-        else {
-            let document=TemplateSectionObject(members,maximum_members).value();
-            if document.membership(path[index]) {
-                TemplateSectionLookup(origin:document.value(path[index]),path:path,index:index+1,maximum_members:maximum_members,destination:destination).write();
-            } else {destination.null_value();}
-        }
-        self.complete();
-    }
-    private:
-    mark() is void {
-        if seen.content().size()==0 {seen.writing() <- [byte(1)];}
-        else {
-            if seen.content().size()==1 {seen.writing() <- [byte(1),byte(1)];}
-            if seen.content().size()==2 {seen.writing() <- [byte(1)];}
-            throw InvalidTemplateJsonProtocol();
-        }
-    }
-    complete() is void {
-        confirm seen.content().size()==1 else throw InvalidTemplateJsonProtocol();
-        seen.writing() <- [byte(1)];
+    has maximum_members is int;
+    TemplateSectionLookup(:origin,:path,:maximum_members);
+    value() is Json {
+        let start is @Json=[origin];
+        let found=(0..path.size()).reduce(start) -> current, index {
+            if current.size()==0 {current;}
+            else {
+                let value=current[0];
+                if value.kind()!=JsonKind.object_value {let absent is @Json=[];absent;}
+                else {
+                    confirm value.size()<=maximum_members else throw TemplateJsonLimitExceeded();
+                    if value.has(path[index]) {[value.get(path[index])];} else {let absent is @Json=[];absent;}
+                }
+            }
+        };
+        if found.size()==0 {Json();} else {found[0];}
     }
 }
 
-// Internal bounded object snapshot. size once, budget before item reads, then
-// ascending reads once and duplicate validation before selection/body execution.
-object TemplateSectionObject {
-    has members is Sequencing<JsonMember>;
-    has maximum is int;
-    TemplateSectionObject(members is Sequencing<JsonMember>, maximum is int) {self.members=members;self.maximum=maximum;}
-    value() is JsonObject {
-        let size=members.size();
-        confirm size>=0 else throw InvalidTemplateJsonSize();
-        confirm size<=maximum else throw TemplateJsonLimitExceeded();
-        let snapshot is @JsonMember=(0..size).map() -> index {members.item(index);};
-        JsonObject(snapshot);
-    }
-}
-
-// Internal section truth/iteration visitor. Inverted collections inspect only
+// Internal section truth and iteration. Inverted collections inspect only
 // their truth (array size; objects always true). Positive object bodies receive
-// a bounded snapshot; array bodies borrow each item in source order.
-object TemplateSectionVisitor does JsonWriting {
+// the bounded object; array bodies receive each item in source order.
+object TemplateSection {
     has run is TemplateSectionRun;
     has node is TemplateTreeNode;
-    has enclosing is JsonValue;
+    has enclosing is Json;
     has iterations is TemplateIterationBudget;
     has maximum_members is int;
-    TemplateSectionVisitor(:run,:node,:enclosing,:iterations,:maximum_members);
-    null_value() is void {self.scalar(false,JsonNull());}
-    boolean(value is bool) is void {self.scalar(value,JsonBoolean(value));}
-    number(value is Decimal) is void {self.scalar(true,JsonNumber(value));}
-    text(value is string) is void {self.scalar(value!="",JsonText(value));}
-    elements(values is Sequencing<JsonValue>) is void {
-        let size=values.size();
-        confirm size>=0 else throw InvalidTemplateSectionSize();
-        if node.kind()==TemplateTreeKind.inverted {
-            if size==0 {self.body(enclosing);}
-        } else {
-            confirm size<=iterations.remaining() else throw TemplateIterationLimitExceeded();
-            for (0..size) -> index {
-                iterations.claim();
-                run.nested().write(node.children(),values.item(index));
+    TemplateSection(:run,:node,:enclosing,:iterations,:maximum_members);
+    render(value is Json) is void {
+        match value.kind() {
+            case JsonKind.null_value {self.scalar(false,value);}
+            case JsonKind.boolean_value {self.scalar(value.boolean(),value);}
+            case JsonKind.number_value {self.scalar(true,value);}
+            case JsonKind.string_value {self.scalar(value.text()!="",value);}
+            case JsonKind.array_value {
+                let items=value.items();
+                if node.kind()==TemplateTreeKind.inverted {
+                    if items.size()==0 {self.body(enclosing);}
+                } else {
+                    confirm items.size()<=iterations.remaining() else throw TemplateIterationLimitExceeded();
+                    for items -> item {
+                        iterations.claim();
+                        run.nested().write(node.children(),item);
+                    }
+                }
+            }
+            else {
+                if node.kind()!=TemplateTreeKind.inverted {
+                    confirm value.size()<=maximum_members else throw TemplateJsonLimitExceeded();
+                    self.body(value);
+                }
             }
         }
     }
-    members(members is Sequencing<JsonMember>) is void {
-        if node.kind()!=TemplateTreeKind.inverted {self.body(TemplateSectionObject(members,maximum_members).value());}
-    }
     private:
-    scalar(truth is bool, value is JsonValue) is void {
+    scalar(truth is bool, value is Json) is void {
         if node.kind()==TemplateTreeKind.inverted {
             if !truth {self.body(enclosing);}
         } else {if truth {self.body(value);}}
     }
-    body(value is JsonValue) is void {
+    body(value is Json) is void {
         iterations.claim();run.nested().write(node.children(),value);
     }
 }

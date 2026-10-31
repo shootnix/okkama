@@ -1029,7 +1029,14 @@ impl ModuleLoader for FileLoader {
         } else {
             format!("{path}.ok")
         };
-        let dirs = self.search_dirs(path, importer);
+        // A module never imports itself: `"json"` from app/json.ok skips
+        // app/json.ok and finds std/json.
+        let itself = std::fs::canonicalize(importer_path(importer)).ok();
+        let dirs: Vec<PathBuf> = self
+            .search_dirs(path, importer)
+            .into_iter()
+            .filter(|dir| itself.is_none() || std::fs::canonicalize(dir.join(&file)).ok() != itself)
+            .collect();
         self.load_from(&file, &dirs)
     }
 
@@ -1098,8 +1105,10 @@ impl FileLoader {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
+        // Std imports name modules from the std root (`"template/model"`), so
+        // the root comes first: `"json"` from std/template/json.ok is std/json.
         if self.in_std(&importer) {
-            return vec![base, self.stdlib.clone()];
+            return vec![self.stdlib.clone(), base];
         }
         let package = manifest::package_root(&importer);
         if let Some(package) = &package {
