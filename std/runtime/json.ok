@@ -74,9 +74,10 @@ native json_object_node(names is @string, values is @JsonNodeState) is JsonNodeS
 native json_node_write(origin is JsonNodeState, indentation is int) is string;
 
 // The RFC 6901 pointer of target inside root (the same node, found depth
-// first; invalid_input when it is not inside), and the member values of an
-// object and the items of an array in order.
+// first; invalid_input when it is not inside), and the member names and values
+// of an object and the items of an array in order.
 native json_node_pointer(root is JsonNodeState, target is JsonNodeState) is string;
+native json_member_names(origin is JsonNodeState) is @string;
 native json_member_values(origin is JsonNodeState) is @JsonNodeState;
 native json_node_items(origin is JsonNodeState) is @JsonNodeState;
 
@@ -188,6 +189,8 @@ test "JSON nodes built in code are written compact and pretty" {
     test.is(json_node_write(root, -1), "[{\"é\":\"a\\\"\\u0001\",\"n\":12.5},true,null,[]]");
     test.is(json_node_write(root, 2), "[\n  {\n    \"é\": \"a\\\"\\u0001\",\n    \"n\": 12.5\n  },\n  true,\n  null,\n  []\n]");
     test.is(json_member_text(inner, "é"), "a\"\u{1}");
+    test.is(json_member_names(inner).join(","), "é,n");
+    test.is(try { json_member_names(root); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
     test.is(try { json_object_node(["a", "a"], [json_null_node(), json_null_node()]); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
     test.is(try { json_number_node("1x"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
 }

@@ -53,6 +53,42 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   0.7–1.7× Python's time and writes at 0.3–1.3×, and is 7–1000× faster than JSON::PP.
   Walking a parsed document in Okkama code takes 2–7× Python's time on Sparrow and
   0.5–3× on the JVM.
+- **Sparrow registers are shared.** Sparrow codegen gives SSA values whose lifetimes
+  never overlap one register of their type, instead of one register per value: a
+  `match` over six cases no longer keeps the registers of all six, and every call
+  clears and releases fewer callee registers (`Sums.plus` of the JSON benchmark: 102
+  registers before). A result never shares a register with its own operands.
+- Sparrow JIT: `enum.case` and `enum.cmp` (enum constants, `match` and `==` on enums)
+  run in machine code, `str.len` calls a direct helper; before, all three went through
+  the generic interpreter step.
+- Sparrow JIT code is smaller: registers of types without references (`bool`, `float`,
+  `byte`, `char`, enums) are written without a release check, and the callee's
+  registers after a call are released by a helper loop instead of inline checks.
+  `Sums.plus` of the JSON benchmark compiles to 3618 Cranelift instructions instead of
+  9333 (5 ms instead of 13).
+- IR: unwind handlers that only pass a failure on (left by elided regions) are skipped,
+  so calls carry no empty handler path, and `undef` values nobody reads (left by
+  elided regions and removed blocks) are dropped instead of being executed on every
+  call.
+- Sparrow JIT: native calls pass their arguments as plain copies of the registers,
+  without reference counting (natives only read them); the callee's registers after a
+  call are released by a bitmask of its registers of reference types.
+- JSON nodes keep text, numbers and member names as shared strings: `text()`, member
+  names and number spellings no longer copy the string on every read, and the parser
+  builds each string once. Duplicate member names of small objects are found without
+  a hash set. Parsing is 10–25% faster (records 110 → 90 ms, orders 21 → 16).
+- Release checks in Sparrow JIT code follow the register type: an `int` register is
+  released only when it holds a long integer, a register of a reference type only when
+  it is not empty.
+- IR: empty jump blocks are skipped (an empty block with arguments only behind a
+  single jump, so a linear array builder is never passed on two branches), and
+  Sparrow codegen prefers one register for a jump argument and the parameter it
+  becomes, so most edge moves disappear.
+- `Json.names()` reads all member names in one native call (new native
+  `runtime/json.json_member_names`, Rust and JVM) instead of one call per name.
+- Walking JSON documents on Sparrow is about twice as fast as in 0.3.1: records 867 →
+  405 ms, deep 301 → 145, numbers 161 → 81, orders 189 → 85, wide 85 → 36, strings
+  35 → 16 (Python 3.9: 299, 94, 69, 56, 28, 5).
 
 ## [0.3.1] — 2026-10-31
 

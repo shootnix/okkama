@@ -867,6 +867,14 @@ public final class JsonNatives {
         return new ArrayList<Object>(node.values);
     }
 
+    public static List<Object> runtime_json__json_member_names(Object handle) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            throw failure("invalid_input", "json_member_names", 1, "JSON node is not an object");
+        }
+        return new ArrayList<Object>(node.names);
+    }
+
     public static List<Object> runtime_json__json_node_items(Object handle) {
         Node node = (Node) handle;
         if (node.kind != 4) {

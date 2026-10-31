@@ -48,8 +48,10 @@ const SECOND: u32 = 3;
 const SLOT: i32 = 24;
 /// Запас стека, ниже которого вложенный вызов исполняет интерпретатор.
 const MARGIN: usize = 4 << 20;
-/// Наибольшее число регистров вызываемой функции, освобождаемых в коде.
-const INLINE_RELEASE: usize = 32;
+/// Наибольшее число регистров вызываемой функции, освобождаемых в коде;
+/// больше — циклом помощника (после раскраски регистров их немного, а код
+/// каждого вызова меньше и быстрее компилируется).
+const INLINE_RELEASE: usize = 2;
 /// Наибольшее число аргументов native-вызова, собираемых на стеке.
 const NATIVE_ARGS: usize = 8;
 
@@ -67,6 +69,26 @@ struct Layout {
     object: Option<ObjectLayout>,
     /// Раскладка `Value::Array` (те же поля: тег, `Rc`, указатель и длина).
     array: Option<ObjectLayout>,
+    /// Раскладка `Value::Enum`: тег и смещения номеров объявления и варианта.
+    enum_: Option<EnumLayout>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EnumLayout {
+    tag: u8,
+    declaration: i32,
+    case: i32,
+}
+
+fn probe_enum() -> Option<EnumLayout> {
+    let value = Value::Enum { declaration: 0x5a5a_0001, case: 0x5a5a_0002 };
+    // SAFETY: чтение слов 24-байтового значения.
+    let word = |index: usize| unsafe { *(&value as *const Value).cast::<usize>().add(index) };
+    let find = |wanted: usize| {
+        let found: Vec<usize> = (1..3).filter(|&index| word(index) == wanted).collect();
+        (found.len() == 1).then(|| found[0] as i32 * 8)
+    };
+    Some(EnumLayout { tag: tag_of(&value), declaration: find(0x5a5a_0001)?, case: find(0x5a5a_0002)? })
 }
 
 fn probe_array() -> Option<ObjectLayout> {
@@ -123,6 +145,16 @@ fn probe_object() -> Option<ObjectLayout> {
     Some(ObjectLayout { tag: tag_of(&value), inner, data: find(data)?, len: find(7)?, declaration: find(0x5a5a).unwrap_or(-1) })
 }
 
+/// Регистр типа, значения которого не ссылаются на кучу.
+fn plain_type(program: &Program, function: &Function, register: Register) -> bool {
+    use okkama_sparrow::Type as T;
+    function
+        .registers
+        .get(register.0 as usize)
+        .and_then(|ty| program.types.get(ty.0 as usize))
+        .is_some_and(|ty| matches!(ty, T::Bool | T::Byte | T::Float | T::Char | T::Enum(_) | T::Never))
+}
+
 fn tag_of(value: &Value) -> u8 {
     // SAFETY: `Value` — `repr(C, u8)`: первый байт — тег варианта.
     unsafe { *(value as *const Value).cast::<u8>() }
@@ -155,6 +187,7 @@ fn probe() -> Option<Layout> {
     let layout = Layout {
         object: probe_object(),
         array: probe_array(),
+        enum_: probe_enum(),
         undef: tag_of(&Value::Undef),
         float: tag_of(&Value::Float(1.5)),
         int: tag_of(&small),
@@ -331,6 +364,7 @@ impl Jit {
         let function = &program.functions[index];
         let eligible = function.native.is_none() && function.intrinsic.is_none() && !function.code.is_empty();
         let prepared = engine.prepared(index).ok();
+        let started = std::time::Instant::now();
         let result = match (eligible, prepared) {
             (true, Some(prepared)) => self.build(program, index, &prepared.constants),
             _ => Err("not eligible".to_string()),
@@ -340,7 +374,7 @@ impl Jit {
                 self.table[index].set(code);
                 self.states[index].set(State::Compiled);
                 if self.debug {
-                    eprintln!("jit: compiled {} ({} instructions)", function.symbol, function.code.len());
+                    eprintln!("jit: compiled {} ({} instructions) in {:.2} ms", function.symbol, function.code.len(), started.elapsed().as_secs_f64() * 1000.0);
                 }
                 Some(code)
             }
@@ -376,6 +410,9 @@ impl Jit {
             generator.function()?;
             generator.b.seal_all_blocks();
             generator.b.finalize(config);
+        }
+        if self.debug {
+            eprintln!("jit: {}: {} Cranelift instructions, {} blocks", program.functions[index].symbol, context.func.dfg.num_insts(), context.func.dfg.num_blocks());
         }
         module.define_function(id, &mut context).map_err(|error| format!("{error:?}"))?;
         module.clear_context(&mut context);
@@ -611,14 +648,22 @@ extern "C" fn h_native(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) ->
             && target.intrinsic.is_none()
             && args.len() <= NATIVE_ARGS
         {
-            let mut values: [Value; NATIVE_ARGS] = std::array::from_fn(|_| Value::Undef);
+            // Побитовые копии регистров без счётчиков ссылок: native только
+            // читает аргументы, регистры во время вызова не меняются, а копии
+            // не освобождаются (результат пишется в регистр после вызова).
+            let mut values: [std::mem::MaybeUninit<Value>; NATIVE_ARGS] = [const { std::mem::MaybeUninit::uninit() }; NATIVE_ARGS];
             for (value, register) in values.iter_mut().zip(args) {
                 match machine::read(registers, *register) {
-                    Ok(read) => *value = read.clone(),
+                    // SAFETY: см. выше; копия живёт только на время вызова.
+                    Ok(read) => {
+                        value.write(unsafe { std::ptr::read(read) });
+                    }
                     Err(stop) => return stopped(ctx, stop, at),
                 }
             }
-            return match engine.native(callee.0 as usize, symbol, &values[..args.len()]) {
+            // SAFETY: первые `args.len()` элементов записаны.
+            let values = unsafe { std::slice::from_raw_parts(values.as_ptr().cast::<Value>(), args.len()) };
+            return match engine.native(callee.0 as usize, symbol, values) {
                 Ok(value) => {
                     if let Some(dst) = dst {
                         registers[dst.0.0 as usize] = value;
@@ -1033,20 +1078,48 @@ extern "C" fn h_drop(slot: *mut Value) {
     }));
 }
 
+/// Освободить слоты по битам `mask`: регистры вызываемой типов со ссылками.
+extern "C" fn h_drop_mask(slots: *mut Value, mask: u64) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let mut bits = mask;
+        while bits != 0 {
+            let index = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            // SAFETY: бит — регистр вызываемой (меньше числа её регистров).
+            let slot = unsafe { &mut *slots.add(index) };
+            if !plain_value(slot) {
+                drop(std::mem::replace(slot, Value::Undef));
+            }
+        }
+    }));
+}
+
 /// Освободить `count` слотов подряд.
 extern "C" fn h_drop_range(slots: *mut Value, count: usize) {
     // SAFETY: `slots` — регистры вызываемой функции (`count` слотов).
     let slots = unsafe { std::slice::from_raw_parts_mut(slots, count) };
     for slot in slots {
-        // Без ссылок — нечего освобождать (и деструктор не вызывается).
-        let plain = match slot {
-            Value::Undef | Value::Bool(_) | Value::Float(_) | Value::Byte(_) | Value::Char(_) | Value::Enum { .. } => true,
-            Value::Int(value) => value.to_i64().is_some(),
-            _ => false,
-        };
-        if !plain {
+        if !plain_value(slot) {
             h_drop(slot);
         }
+    }
+}
+
+/// Значение без ссылок: освобождать нечего (и деструктор не вызывается).
+fn plain_value(value: &Value) -> bool {
+    match value {
+        Value::Undef | Value::Bool(_) | Value::Float(_) | Value::Byte(_) | Value::Char(_) | Value::Enum { .. } => true,
+        Value::Int(value) => value.to_i64().is_some(),
+        _ => false,
+    }
+}
+
+/// Длина строки в символах; −1 — в слоте не строка.
+extern "C" fn h_str_len(slot: *const Value) -> i64 {
+    // SAFETY: слот содержит инициализированное значение.
+    match unsafe { &*slot } {
+        Value::Str(text) => text.chars().count() as i64,
+        _ => -1,
     }
 }
 
@@ -1072,6 +1145,7 @@ struct Sigs {
     fault: ir::SigRef,
     drop: ir::SigRef,
     clone: ir::SigRef,
+    len: ir::SigRef,
     next: ir::SigRef,
     frame: ir::SigRef,
 }
@@ -1138,6 +1212,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             fault: signature(&[pointer, types::I32, types::I32], &[types::I32]),
             drop: signature(&[pointer], &[]),
             clone: signature(&[pointer, pointer], &[]),
+            len: signature(&[pointer], &[types::I64]),
             next: signature(&[pointer, pointer, types::I32, types::I32, types::I64], &[types::I32]),
             frame: signature(&[pointer, pointer, types::I32, types::I32, pointer, types::I64], &[types::I32]),
         };
@@ -1306,6 +1381,39 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.b.ins().bor(listed, small)
     }
 
+    /// Освободить регистр функции перед записью; регистр типа без ссылок
+    /// (у регистра один тип) освобождать нечего.
+    fn release_register(&mut self, register: Register) {
+        use okkama_sparrow::Type as T;
+        if plain_type(self.program, self.function, register) {
+            return;
+        }
+        let regs = self.regs;
+        let at = offset(register);
+        let ty = self.function.registers.get(register.0 as usize).and_then(|ty| self.program.types.get(ty.0 as usize));
+        // Регистр `int` держит `undef` или целое: освобождать — только длинное.
+        // Другой — `undef` или значение со ссылкой (освобождение любого
+        // значения помощником верно, только медленнее).
+        let heap = if matches!(ty, Some(T::Int)) {
+            let tag = self.load8(regs, at);
+            let kind = self.load8(regs, at + 8);
+            let int = self.b.ins().icmp_imm_s(IntCC::Equal, tag, i64::from(self.layout.int));
+            let long = self.b.ins().icmp_imm_s(IntCC::NotEqual, kind, i64::from(self.layout.small));
+            self.b.ins().band(int, long)
+        } else {
+            let tag = self.load8(regs, at);
+            self.b.ins().icmp_imm_s(IntCC::NotEqual, tag, i64::from(self.layout.undef))
+        };
+        let release = self.b.create_block();
+        let done = self.b.create_block();
+        self.b.ins().brif(heap, release, &[], done, &[]);
+        self.b.switch_to_block(release);
+        let address = self.b.ins().iadd_imm_s(regs, i64::from(at));
+        self.helper(h_drop as *const () as usize, self.sigs.drop, &[address]);
+        self.b.ins().jump(done, &[]);
+        self.b.switch_to_block(done);
+    }
+
     /// Освободить содержимое слота перед записью (значение кучи — помощником).
     fn release(&mut self, base: ir::Value, offset: i32) {
         let plain = self.plain(base, offset);
@@ -1396,24 +1504,24 @@ impl<'a, 'b> Gen<'a, 'b> {
             I::Const { dst, .. } => match &self.constants[pc] {
                 Value::Int(value) if value.to_i64().is_some() => {
                     let value = self.b.ins().iconst(types::I64, value.to_i64().expect("small"));
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.store_small(regs, offset(dst.0), value);
                 }
                 Value::Bool(value) => {
                     let value = self.b.ins().iconst(types::I8, i64::from(*value));
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.store_bool(regs, offset(dst.0), value);
                 }
                 Value::Float(value) => {
                     let bits = self.b.ins().iconst(types::I64, value.to_bits() as i64);
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.store8(self.layout.float, regs, offset(dst.0));
                     self.b.ins().store(flags(), bits, regs, offset(dst.0) + 8);
                 }
                 // Готовое значение константы (живёт, пока жив исполнитель).
                 constant => {
                     let address = self.b.ins().iconst(types::I64, constant as *const Value as i64);
-                    self.release(regs, offset(dst.0));
+                    self.release_register(dst.0);
                     self.clone_into(address, 0, regs, offset(dst.0));
                 }
             },
@@ -1456,7 +1564,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                     Cmp::Ge => FloatCC::GreaterThanOrEqual,
                 };
                 let result = self.b.ins().fcmp(cc, a, b);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1465,12 +1573,12 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(done);
             }
             I::Undef { dst } => {
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store8(self.layout.undef, regs, offset(dst.0));
             }
             I::Move { dst, source } if dst.0 != *source && !self.live.live_after(pc, *source) => {
                 // Последнее использование: значение переходит словами.
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.copy_words(regs, offset(*source), regs, offset(dst.0));
                 self.store8(self.layout.undef, regs, offset(*source));
             }
@@ -1498,7 +1606,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 let done = self.b.create_block();
                 self.b.ins().brif(plain, fast, &[], slow, &[]);
                 self.b.switch_to_block(fast);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.copy_words(regs, offset(*source), regs, offset(dst.0));
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1534,7 +1642,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(fast);
                 let pointer = self.b.ins().load(types::I64, flags(), regs, offset(*array) + 8);
                 let len = self.b.ins().load(types::I64, flags(), pointer, layout.inner + layout.len);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_small(regs, offset(dst.0), len);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1566,7 +1674,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                     Cmp::Ge => IntCC::SignedGreaterThanOrEqual,
                 };
                 let result = self.b.ins().icmp(cc, a, b);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1587,7 +1695,7 @@ impl<'a, 'b> Gen<'a, 'b> {
                 self.b.switch_to_block(fast);
                 let cc = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
                 let result = self.b.ins().icmp(cc, a, b);
-                self.release(regs, offset(dst.0));
+                self.release_register(dst.0);
                 self.store_bool(regs, offset(dst.0), result);
                 self.b.ins().jump(done, &[]);
                 self.b.switch_to_block(slow);
@@ -1651,6 +1759,63 @@ impl<'a, 'b> Gen<'a, 'b> {
                 let status = self.eval(h_region as *const () as usize, pc);
                 self.check(status, pc)?;
             }
+            // Вариант enum — два слова без ссылок, записываются в коде.
+            I::EnumCase { dst, ty, case } if self.layout.enum_.is_some() => {
+                let layout = self.layout.enum_.expect("enum layout");
+                self.release_register(dst.0);
+                self.store8(layout.tag, regs, offset(dst.0));
+                let declaration = self.b.ins().iconst(types::I64, i64::from(ty.0));
+                self.b.ins().store(flags(), declaration, regs, offset(dst.0) + layout.declaration);
+                let case = self.b.ins().iconst(types::I64, i64::from(*case));
+                self.b.ins().store(flags(), case, regs, offset(dst.0) + layout.case);
+            }
+            // Варианты одного enum сравниваются в коде; остальное (ошибка
+            // разных объявлений) — `evaluate`.
+            I::EnumCmp { op, dst, left, right } if self.layout.enum_.is_some() => {
+                let layout = self.layout.enum_.expect("enum layout");
+                let mut word = |register: Register, at: i32| self.b.ins().load(types::I64, flags(), regs, offset(register) + at);
+                let (a_declaration, b_declaration) = (word(*left, layout.declaration), word(*right, layout.declaration));
+                let (a_case, b_case) = (word(*left, layout.case), word(*right, layout.case));
+                let a_tag = self.load8(regs, offset(*left));
+                let b_tag = self.load8(regs, offset(*right));
+                let a_enum = self.b.ins().icmp_imm_s(IntCC::Equal, a_tag, i64::from(layout.tag));
+                let b_enum = self.b.ins().icmp_imm_s(IntCC::Equal, b_tag, i64::from(layout.tag));
+                let same = self.b.ins().icmp(IntCC::Equal, a_declaration, b_declaration);
+                let both = self.b.ins().band(a_enum, b_enum);
+                let fast_ok = self.b.ins().band(both, same);
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(fast_ok, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                let cc = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
+                let result = self.b.ins().icmp(cc, a_case, b_case);
+                self.release_register(dst.0);
+                self.store_bool(regs, offset(dst.0), result);
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.generic(pc)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
+            }
+            // Длина строки — прямой помощник; не строка — `evaluate`.
+            I::StrLen { dst, text } => {
+                let address = self.b.ins().iadd_imm_s(regs, i64::from(offset(*text)));
+                let length = self.helper(h_str_len as *const () as usize, self.sigs.len, &[address]).expect("length");
+                let fast_ok = self.b.ins().icmp_imm_s(IntCC::SignedGreaterThanOrEqual, length, 0);
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(fast_ok, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                self.release_register(dst.0);
+                self.store_small(regs, offset(dst.0), length);
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.generic(pc)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
+            }
             _ => self.generic(pc)?,
         }
         Ok(())
@@ -1681,7 +1846,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let copy = self.b.create_block();
         self.b.ins().brif(bound, copy, &[], slow, &[]);
         self.b.switch_to_block(copy);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         self.clone_into(data, at, regs, offset(dst));
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(slow);
@@ -1772,7 +1937,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let data = self.b.ins().load(types::I64, flags(), pointer, layout.inner + layout.data);
         let scaled = self.b.ins().imul_imm_s(position, i64::from(SLOT));
         let element = self.b.ins().iadd(data, scaled);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         self.clone_into(element, 0, regs, offset(dst));
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(slow);
@@ -1903,7 +2068,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         let fast = self.b.create_block();
         self.b.ins().brif(bit, fast, &[], slow, &[]);
         self.b.switch_to_block(fast);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         if self.live.live_after(pc, source) {
             self.clone_into(regs, offset(source), regs, offset(dst));
         } else {
@@ -1954,7 +2119,7 @@ impl<'a, 'b> Gen<'a, 'b> {
     fn finish_arithmetic(&mut self, pc: usize, write: Block, result: ir::Value, slow: Block, done: Block, dst: Register) -> Result<(), String> {
         let regs = self.regs;
         self.b.switch_to_block(write);
-        self.release(regs, offset(dst));
+        self.release_register(dst);
         self.store_small(regs, offset(dst), result);
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(slow);
@@ -1991,7 +2156,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             }
         }
         for (index, (dst, _)) in moves.iter().enumerate() {
-            self.release(regs, offset(*dst));
+            self.release_register(*dst);
             self.copy_words(temp, index as i32 * SLOT, regs, offset(*dst));
         }
         self.b.ins().jump(block, &[]);
@@ -2104,11 +2269,23 @@ impl<'a, 'b> Gen<'a, 'b> {
         let slow_status = self.helper(h_call_slow as *const () as usize, self.sigs.slow, &[ctx, base, out, callee_value]).expect("status");
         self.b.ins().jump(join, &[BlockArg::Value(slow_status)]);
         self.b.switch_to_block(join);
-        // Регистры вызываемой освобождаются после вызова.
-        if count <= INLINE_RELEASE {
-            for register in 0..count {
+        // Регистры вызываемой освобождаются после вызова; у известной
+        // вызываемой — только регистры типов со ссылками.
+        let releasing: Vec<usize> = match callee {
+            Callee::Static(index) => {
+                let target = &self.program.functions[index as usize];
+                (0..count).filter(|register| !plain_type(self.program, target, Register(*register as u32))).collect()
+            }
+            Callee::Dynamic(_) => (0..count).collect(),
+        };
+        if releasing.len() <= INLINE_RELEASE {
+            for register in releasing {
                 self.release(base, register as i32 * SLOT);
             }
+        } else if matches!(callee, Callee::Static(_)) && count <= 64 {
+            let mask = releasing.iter().fold(0u64, |mask, register| mask | 1 << register);
+            let mask = self.b.ins().iconst(types::I64, mask as i64);
+            self.helper(h_drop_mask as *const () as usize, self.sigs.clone, &[base, mask]);
         } else {
             let length = self.b.ins().iconst(types::I64, count as i64);
             self.helper(h_drop_range as *const () as usize, self.sigs.clone, &[base, length]);
@@ -2116,7 +2293,7 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.check(status, pc)?;
         match dst {
             Some(dst) => {
-                self.release(regs, offset(dst));
+                self.release_register(dst);
                 self.copy_words(out, 0, regs, offset(dst));
             }
             None => self.release(out, 0),

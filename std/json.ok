@@ -22,7 +22,6 @@ import "runtime/json" take
     json_node_text,
     json_node_size,
     json_node_item,
-    json_member_name,
     json_member_value,
     json_member_position,
     json_member_text,
@@ -37,6 +36,7 @@ import "runtime/json" take
     json_object_node,
     json_node_write,
     json_node_pointer,
+    json_member_names,
     json_member_values,
     json_node_items,
     json_repeated_name;
@@ -227,9 +227,8 @@ object Json {
 
     // Member names in document order.
     names() is @string {
-        self.expect(JsonKind.object_value);
-        let names is @string = (0..json_node_size(node)).map() -> position { json_member_name(node, position); };
-        names;
+        try { json_member_names(node); }
+        catch failure is NativeFailure { throw self.wrong(JsonKind.object_value); }
     }
 
     // Member values in document order, as names() gives their names.
@@ -644,6 +643,11 @@ test "repeated names are rejected when built and when parsed" {
     test.is(parsed, "k@2:2");
     test.is(try { ParsedJson("[1,").value(); ""; } catch failure is InvalidJson { failure.line().string() + ":" + failure.column().string(); }, "1:4");
     test.is(try { ParsedJson("[[1]]", 1).value(); ""; } catch failure is InvalidJson { "deep"; }, "deep");
+    // Большой объект: повтор ищется не перебором, а по множеству имён.
+    let names is @string = (0..20).map() -> index { "\"m" + index.string() + "\":" + index.string(); };
+    let wide = "{" + names.join(",") + ",\"m3\":0}";
+    test.is(try { ParsedJson(wide).value(); ""; } catch failure is DuplicateJsonMember { failure.name(); }, "m3");
+    test.is(ParsedJson("{" + names.join(",") + "}").value().size(), 20);
 }
 
 test "reads check kinds and name the pointer" {

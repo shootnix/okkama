@@ -339,53 +339,7 @@ pub fn eliminate_tail_calls(module: &mut Module) -> usize {
         }
         // Переходы вместо вызовов могут оставить без входов блок, куда
         // сходились их результаты (`value` в обеих ветвях `if`).
-        remove_unreachable_blocks(function);
+        super::cfg::remove_unreachable_blocks(function);
     }
     replaced
-}
-
-/// Удалить блоки, недостижимые от входа, и перенумеровать остальные.
-fn remove_unreachable_blocks(function: &mut Function) {
-    let mut reachable = vec![false; function.blocks.len()];
-    let mut stack = vec![BlockId(0)];
-    reachable[0] = true;
-    while let Some(block) = stack.pop() {
-        for next in crate::ir::cfg::all_successors(function, block) {
-            if !reachable[next.0] {
-                reachable[next.0] = true;
-                stack.push(next);
-            }
-        }
-    }
-    if reachable.iter().all(|seen| *seen) {
-        return;
-    }
-    let mut renumbered = vec![0; reachable.len()];
-    let mut next = 0;
-    for (old, seen) in reachable.iter().enumerate() {
-        if *seen {
-            renumbered[old] = next;
-            next += 1;
-        }
-    }
-    let blocks = std::mem::take(&mut function.blocks);
-    let mut dropped = Vec::new();
-    for (block, seen) in blocks.into_iter().zip(&reachable) {
-        if *seen {
-            function.blocks.push(block);
-        } else {
-            dropped.extend(block.params);
-            dropped.extend(block.insts.iter().filter_map(|inst| inst.result));
-        }
-    }
-    // Значения удалённых блоков объявлены: они определяются на входе и нигде не читаются.
-    let span = function.span;
-    function.blocks[0]
-        .insts
-        .extend(dropped.into_iter().map(|value| Inst { result: Some(value), kind: InstKind::Undef, span }));
-    for block in &mut function.blocks {
-        for target in block.term.kind.targets_mut().into_iter().chain(block.unwind.as_mut()) {
-            target.block = BlockId(renumbered[target.block.0]);
-        }
-    }
 }
