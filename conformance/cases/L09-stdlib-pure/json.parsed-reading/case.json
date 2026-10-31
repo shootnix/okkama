@@ -2,7 +2,7 @@
   "schema": "ocs-case/1",
   "id": "L09.json.parsed-reading",
   "title": "reading a ParsedJson directly matches reading it through print()",
-  "purpose": "The parsed-tree fast path of JsonView observes the same values, pointers and typed errors as the generic JsonValue path.",
+  "purpose": "Reads of a parsed Json observe the values, pointers and typed errors that the std 0.3.0 JsonView observed.",
   "level": "L09",
   "contracts": [
     {
@@ -33,7 +33,7 @@
     }
   },
   "spec_refs": [
-    "std/json/read.ok",
+    "std/json.ok",
     "RFC 6901"
   ],
   "budget": {
@@ -41,7 +41,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.3.1 (JsonView parsed-tree reading)",
-    "expected_basis": "Output of the std 0.3.0 JsonView, which read every value through print(); the program also confirms both paths agree."
+    "expected_basis": "Output of the std 0.3.0 JsonView, which read every value through print(); the json module reads the parsed tree in the runtime."
   },
   "status": "mandatory"
 }

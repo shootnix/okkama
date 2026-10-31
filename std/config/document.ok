@@ -4,8 +4,7 @@ import "async/atomic" take Atomic;
 import "config/key" take SettingKey;
 import "config/source" take SettingReading,SettingEntry,SettingSource,Settings,DuplicateSetting,SettingLimitExceeded;
 import "compare" take Order;
-import "json/value" take JsonObject,JsonValue,JsonWriting,JsonMember;
-import "math/decimal" take Decimal;
+import "json" take Json,JsonKind;
 import "toml/value" take TomlTable,TomlValue,TomlVisitor,TomlMember,TomlLocalDate,TomlLocalTime,TomlLocalDateTime,TomlOffsetDateTime;
 import "config/ini" take IniDocument;
 
@@ -23,78 +22,63 @@ object SettingDocumentEntries{
     }
     settings() is Settings{Settings(origin.value());}
 }
+// A JSON object as settings: nested members extend the key path, an array
+// of scalars is one multi-value entry, other scalars are single entries.
 object JsonSettings does SettingReading{
     has origin is Settings;
-    JsonSettings(document is JsonObject,source is SettingSource){
+    JsonSettings(document is Json,source is SettingSource){
+        confirm document.kind()==JsonKind.object_value else throw InvalidSettingDocument("settings document must be a JSON object");
         let entries=SettingDocumentEntries();
-        let visitor=JsonSettingVisitor([],source,entries,64);
-        document.print(visitor);visitor.valid();
+        JsonSettingTree([],source,entries,64).add(document);
         origin=entries.settings();
     }
     membership(key is SettingKey) is bool{origin.membership(key);}
     entry(key is SettingKey) is SettingEntry{origin.entry(key);}
     keys() is Sequencing<SettingKey>{origin.keys();}
 }
-object JsonSettingVisitor does JsonWriting{
+object JsonSettingTree{
     has path is @string;
     has source is SettingSource;
     has entries is SettingDocumentEntries;
     has depth is int;
-    has emission is SettingEmission;
-    JsonSettingVisitor(path is @string,source is SettingSource,entries is SettingDocumentEntries,depth is int){
+    JsonSettingTree(path is @string,source is SettingSource,entries is SettingDocumentEntries,depth is int){
         confirm depth>0 else throw InvalidSettingDocument("document nesting exceeds 64");
-        self.path=path;self.source=source;self.entries=entries;self.depth=depth;emission=SettingEmission();
+        self.path=path;self.source=source;self.entries=entries;self.depth=depth;
     }
-    null_value() is void{self.scalar("null");}
-    boolean(value is bool) is void{self.scalar(if value{"true";}else{"false";});}
-    number(value is Decimal) is void{self.scalar(value.string());}
-    text(value is string) is void{self.scalar(value);}
-    elements(values is Sequencing<JsonValue>) is void{
-        self.once();
-        try{
-        let size=values.size();
-        confirm size>=0 && size<=1024 else throw SettingLimitExceeded();
-        let texts is @string=(0..size).map()->index{
-            let scalar=JsonSettingScalar();values.item(index).print(scalar);scalar.value();
-        };
-        entries.append(SettingEntry(SettingKey(path),texts,source));
-            }catch e is Error{emission.poison();throw e;}
-    }
-    members(members is Sequencing<JsonMember>) is void{
-        self.once();
-        try{
-        let size=members.size();
-        confirm size>=0 && size<=4096 else throw SettingLimitExceeded();
-        for (0..size)->index{
-            let member=members.item(index);
-            let child is @string=(0..path.size()+1).map()->at{if at<path.size(){path[at];}else{member.name();}};
-            let visitor=JsonSettingVisitor(child,source,entries,depth-1);
-            member.value().print(visitor);visitor.valid();
+    add(value is Json) is void{
+        match value.kind(){
+            case JsonKind.object_value{
+                let fields=value.fields();
+                confirm fields.size()<=4096 else throw SettingLimitExceeded();
+                for fields->field{
+                    let child is @string=(0..path.size()+1).map()->at{if at<path.size(){path[at];}else{field.name();}};
+                    JsonSettingTree(child,source,entries,depth-1).add(field.value());
+                }
+            }
+            case JsonKind.array_value{
+                let items=value.items();
+                confirm items.size()<=1024 else throw SettingLimitExceeded();
+                let texts is @string=items.map()->item{JsonSettingText(item).value();};
+                entries.append(SettingEntry(SettingKey(path),texts,source));
+            }
+            else{entries.append(SettingEntry(SettingKey(path),[JsonSettingText(value).value()],source));}
         }
-            }catch e is Error{emission.poison();throw e;}
-    }
-    valid() is void{emission.valid();}
-    private:
-    once() is void{emission.start();}
-    scalar(text is string) is void{
-        self.once();
-        try{entries.append(SettingEntry(SettingKey(path),[text],source));}
-        catch e is Error{emission.poison();throw e;}
     }
 }
-object JsonSettingScalar does JsonWriting{
-    has origin is Atomic<string>;
-    has emission is SettingEmission;
-    JsonSettingScalar(){origin=Atomic("");emission=SettingEmission();}
-    value() is string{emission.valid();origin.value();}
-    null_value() is void{self.scalar("null");}
-    boolean(value is bool) is void{self.scalar(if value{"true";}else{"false";});}
-    number(value is Decimal) is void{self.scalar(value.string());}
-    text(value is string) is void{self.scalar(value);}
-    elements(values is Sequencing<JsonValue>) is void{emission.poison();throw InvalidSettingDocument("nested arrays are not settings");}
-    members(members is Sequencing<JsonMember>) is void{emission.poison();throw InvalidSettingDocument("object-valued arrays are not settings");}
-    private:
-    scalar(text is string) is void{emission.start();origin.replace(text);}
+// Canonical text of a scalar setting; arrays and objects inside arrays are not settings.
+object JsonSettingText{
+    has origin is Json;
+    JsonSettingText(origin is Json){self.origin=origin;}
+    value() is string{
+        match origin.kind(){
+            case JsonKind.null_value{"null";}
+            case JsonKind.boolean_value{if origin.boolean(){"true";}else{"false";}}
+            case JsonKind.number_value{origin.number().string();}
+            case JsonKind.string_value{origin.text();}
+            case JsonKind.array_value{throw InvalidSettingDocument("nested arrays are not settings");}
+            else{throw InvalidSettingDocument("object-valued arrays are not settings");}
+        }
+    }
 }
 object TomlSettings does SettingReading{
     has origin is Settings;

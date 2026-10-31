@@ -18,7 +18,6 @@ import "../support/http" take LocalWeb;
 import "../web/blog/model" take Draft,BlogPosts;
 import "../web/blog/pages" take BlogPages;
 import "web/routing" take WebRoutes,Get,Post;
-import "json/write" take PrettyJson;
 import "io/stdout" take Stdout;
 
 async main() is int{
@@ -28,7 +27,7 @@ async main() is int{
     match command{
         case "init"{await posts.initialize();}
         case "publish"{await posts.publish(Draft(args.text(2),args.text(3)));}
-        case "list"{Stdout().writeln(PrettyJson(indentation:2,origin:await posts.list()).string());}
+        case "list"{Stdout().writeln((await posts.list()).pretty(2));}
         case "serve"{let pages=BlogPages(posts);await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/posts/:id",pages.article),Get("/api/posts",pages.api),Post("/api/posts",pages.publish)],pages.missing),args.integer(2,8082));}
         else{throw Usage("unknown blog command");}
     }0;

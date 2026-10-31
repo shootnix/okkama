@@ -6,6 +6,54 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **One JSON module.** `import "json"` replaces `json/value`, `json/parse`, `json/read`,
+  `json/write` and `json/codec` (removed). A value is one immutable `Json` over a node of
+  the runtime's tree, parsed (`ParsedJson(text).value()`) or built in code (`Json(42)`,
+  `Json([JsonField("id", 42)])`, `Json(items: [...])`, `Json()` for null, also from
+  `BigInt` and `float`). Reads are one native call each: `text/int/number/boolean(name)`,
+  `get`, `list`, `at`, `items`, `names`, `values`, `fields`, `has`, `optional(name)` with
+  fallbacks; errors keep their RFC 6901 pointer, which the runtime computes only when
+  asked. `string()` and `pretty(n)` write the whole tree in one native call, with the
+  same text as before. A codec is a plain object with `value(Json)` and `json(T)`; the
+  `JsonValue`/`JsonWriting`/`JsonReading` roles, `JsonView`, `JsonOption`, `CompactJson`,
+  `PrettyJson` and `JsonCodec` are gone. See `docs/std/json.md` and the migration table in
+  `docs/std/stdlib-v4-migration.md`.
+- `web/reply.Json` is now `JsonReply(status, value)`; `web/request.RequestJson` wraps a
+  `Json` (`value()` gives it) and gains `RequestJsonOptional`. `logging`, `testing`,
+  `template/json`, `template/sections`, `template/html` and `config/document` take `Json`.
+  `template/json` lost `InvalidTemplateJsonSize` and `InvalidTemplateJsonProtocol`, which
+  only a custom `print()` could trigger.
+- Imports: a std module resolves imports from the std root first, so `"json"` from
+  `std/template/json.ok` is `std/json`; a file never imports itself, so `app/json.ok`
+  importing `"json"` finds `std/json`.
+
+### Added
+
+- Natives `runtime/json.json_text_node`, `json_number_node`, `json_boolean_node`,
+  `json_null_node`, `json_array_node`, `json_object_node`, `json_node_write`,
+  `json_node_pointer`, `json_member_values`, `json_node_items`, `json_member_text`,
+  `json_member_spelling`, `json_member_boolean`, `json_member_int` (Rust and JVM).
+- `benchmarks/json`: parse, walk and write six document shapes (many small records, a
+  few wide objects, deep nesting, long strings, numbers, orders) in Okkama on Sparrow
+  and on the JVM, Python `json` and Perl `JSON::PP`, with a checksum check.
+
+### Fixed
+
+- Internal compiler error "block is unreachable" when both branches of an `if` end in a
+  self tail call (`value Next(...)` in a `#projected` action, a recursive binary search):
+  tail-call elimination now drops the join block it leaves without entries. It broke
+  `collections/ordering` searches (`config/document`, `http/media`, `locale`), so seven
+  cookbook labs failed to compile.
+
+### Performance
+
+- Parsing and writing JSON run in the runtime: on the six shapes Okkama parses at
+  0.7–1.7× Python's time and writes at 0.3–1.3×, and is 7–1000× faster than JSON::PP.
+  Walking a parsed document in Okkama code takes 2–7× Python's time on Sparrow and
+  0.5–3× on the JVM.
+
 ## [0.3.1] — 2026-10-31
 
 ### Added

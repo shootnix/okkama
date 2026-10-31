@@ -2,7 +2,7 @@
   "schema": "ocs-case/1",
   "id": "L09.json.codec",
   "title": "hand-written codecs decode and encode nested values with optional members",
-  "purpose": "json/codec composes JsonCodec objects through JsonList; optional members read as the given fallback when absent or null; reading errors keep the pointer of the failing value.",
+  "purpose": "Codecs are plain objects over Json: optional members read as the given fallback when absent or null; reading errors keep the pointer of the failing value.",
   "level": "L09",
   "contracts": [
     {
@@ -33,15 +33,15 @@
     }
   },
   "spec_refs": [
-    "std/json/read.ok",
+    "std/json.ok",
     "RFC 6901"
   ],
   "budget": {
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS 0.3.1 (json/codec, JsonView.optional/required)",
-    "expected_basis": "null note and absent qty/tags take their fallbacks (\"-\", 1, []); 12.50 and 1e2 are written positionally as 12.5 and 100; a string qty is WrongJsonKind at /0/lines/0/qty; absent required lines is MissingJsonValue at /0/lines."
+    "origin": "authored for OCS 0.3.1 (json/codec); rewritten for the json module (Json.optional, Json.list)",
+    "expected_basis": "null note and absent qty/tags take their fallbacks (\"-\", 1, []); 12.50 and 1e2 are written positionally as 12.5 and 100; a string qty is WrongJsonKind at /0/lines/0/qty; absent lines read by list() is MissingJsonValue at /0/lines."
   },
   "status": "mandatory"
 }

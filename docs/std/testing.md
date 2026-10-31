@@ -183,8 +183,8 @@ verify structure, counts, durations, positions and arbitrary byte roundtrips.
 beneath an explicit directory. Names are one Unicode component, at most 255 UTF-8
 bytes: empty, dot, parent traversal, separators and NUL are rejected.
 `TextSnapshot(text)` normalizes CRLF and CR to LF and strictly encodes UTF-8.
-`RawSnapshot(bytes)` preserves every octet. `JsonSnapshot(JsonValue)` uses ordered
-Stage 13 CompactJson with a final LF. These are explicit ByteSource values; they
+`RawSnapshot(bytes)` preserves every octet. `JsonSnapshot(Json)` uses ordered
+compact JSON (`Json.string()`) with a final LF. These are explicit ByteSource values; they
 perform no filesystem access during construction.
 
 `Snapshot(source,file,limit).check()` requires context, observes actual bytes once,

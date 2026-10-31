@@ -1,0 +1,701 @@
+module json v1.0.0;
+
+import "math/decimal" take Decimal;
+import "numbers/bigint" take BigInt, BigProduct, BigPower, BigPowerLimitExceeded;
+import "compare" take Order;
+import "runtime/number_text" take int_parse_valid, int_parse;
+import "runtime/json" take
+    JsonParseState,
+    JsonNodeState,
+    json_parse_state,
+    json_parse_valid,
+    json_parse_offset,
+    json_parse_line,
+    json_parse_column,
+    json_parse_message,
+    json_parse_duplicate,
+    json_parse_has_duplicate,
+    json_parse_root,
+    json_node_kind,
+    json_node_boolean,
+    json_node_number,
+    json_node_text,
+    json_node_size,
+    json_node_item,
+    json_member_name,
+    json_member_value,
+    json_member_position,
+    json_member_text,
+    json_member_spelling,
+    json_member_boolean,
+    json_member_int,
+    json_text_node,
+    json_number_node,
+    json_boolean_node,
+    json_null_node,
+    json_array_node,
+    json_object_node,
+    json_node_write,
+    json_node_pointer,
+    json_member_values,
+    json_node_items,
+    json_repeated_name;
+
+// JSON values: one immutable Json, parsed or built in code, read without
+// casts and written by the runtime in one call.
+//
+//     let order = ParsedJson(text).value();
+//     order.int("id");                                // 4711
+//     order.get("customer").text("name");             // "Ada"
+//     order.optional("note").text("");                // "" when absent or null
+//     let lines = order.list("items").map() -> line {
+//         Line(sku: line.text("sku"), qty: line.int("qty"));
+//     };
+//
+//     let reply = Json([
+//         JsonField("id", 4711),
+//         JsonField("customer", Json([JsonField("name", "Ada")])),
+//         JsonField("tags", Json(items: [Json("new"), Json("vip")])),
+//     ]);
+//     reply.string();                                 // compact text
+//     reply.pretty(2);                                // indented text
+//
+// Reads check kinds: a value of another kind is WrongJsonKind, a missing
+// member or index MissingJsonValue, a number that is not the integer asked
+// for InvalidJsonNumber; each names the RFC 6901 pointer of the value
+// ("" is the root). Strict RFC 8259 parsing keeps member order, rejects
+// repeated names (DuplicateJsonMember) and nests at most 128 values deep
+// unless told otherwise. Numbers are exact: Decimal, BigInt or int, never
+// float. Text output writes numbers positionally while that stays short
+// (integers up to 21 digits, fractions down to 1e-6) and exactly otherwise.
+
+enum JsonKind = (
+    null_value,
+    boolean_value,
+    number_value,
+    string_value,
+    array_value,
+    object_value
+);
+
+object Json {
+    has node is JsonNodeState;
+    has root is JsonNodeState;
+
+    // The runtime node of any Json, for building arrays and objects of them.
+    cap Node { state is JsonNodeState { node; } }
+
+    // null
+    Json() {
+        let made = json_null_node();
+        node = made;
+        root = made;
+    }
+
+    Json(value is string) {
+        let made = json_text_node(value);
+        node = made;
+        root = made;
+    }
+
+    Json(value is int) {
+        let made = json_number_node(value.string());
+        node = made;
+        root = made;
+    }
+
+    Json(value is Decimal) {
+        let made = json_number_node(value.string());
+        node = made;
+        root = made;
+    }
+
+    Json(value is BigInt) {
+        let made = json_number_node(value.string());
+        node = made;
+        root = made;
+    }
+
+    // The shortest decimal of the float, written exactly as that decimal.
+    Json(value is float) {
+        let made = json_number_node(value.string());
+        node = made;
+        root = made;
+    }
+
+    Json(value is bool) {
+        let made = json_boolean_node(value);
+        node = made;
+        root = made;
+    }
+
+    // An object; repeated names are DuplicateJsonMember. Json(fields: []) is {}.
+    Json(fields is @JsonField) {
+        let names is @string = fields.map() -> field { field.name(); };
+        let repeated = json_repeated_name(names);
+        confirm repeated == names.size() else throw DuplicateJsonMember(names[repeated]);
+        let values is @JsonNodeState = fields.map() -> field { field.value()::Node::state; };
+        let made = json_object_node(names, values);
+        node = made;
+        root = made;
+    }
+
+    // An array. Json(items: []) is [].
+    Json(items is @Json) {
+        let values is @JsonNodeState = items.map() -> item { item::Node::state; };
+        let made = json_array_node(values);
+        node = made;
+        root = made;
+    }
+
+    // A document of the runtime, as ParsedJson makes it.
+    Json(node is JsonNodeState) {
+        self.node = node;
+        root = node;
+    }
+
+    // A value inside the document root.
+    Json(node is JsonNodeState, root is JsonNodeState) {
+        self.node = node;
+        self.root = root;
+    }
+
+    kind() is JsonKind {
+        match json_node_kind(node) {
+            case 0 { JsonKind.null_value; }
+            case 1 { JsonKind.boolean_value; }
+            case 2 { JsonKind.number_value; }
+            case 3 { JsonKind.string_value; }
+            case 4 { JsonKind.array_value; }
+            else { JsonKind.object_value; }
+        }
+    }
+
+    // The RFC 6901 pointer of this value in its document ("" for the root),
+    // found only when asked; a value present twice in a built document is at
+    // its first place.
+    pointer() is string { json_node_pointer(root, node); }
+
+    text() is string {
+        try { json_node_text(node); }
+        catch failure is NativeFailure { throw self.wrong(JsonKind.string_value); }
+    }
+
+    number() is Decimal { Decimal(self.spelling()); }
+
+    boolean() is bool {
+        try { json_node_boolean(node); }
+        catch failure is NativeFailure { throw self.wrong(JsonKind.boolean_value); }
+    }
+
+    // The exact integer of any size; fractions and exponents beyond 4096 bits
+    // are InvalidJsonNumber.
+    integer() is BigInt { JsonInteger(exact: self.number(), origin: self).value(); }
+
+    // A builtin int: the integer must fit the signed 64-bit range.
+    int() is int {
+        let spelling = self.spelling();
+        if spelling.length() <= 18 && int_parse_valid(spelling, 10) {
+            int_parse(spelling, 10);
+        }
+        else {
+            JsonInt(exact: Decimal(spelling), origin: self).value();
+        }
+    }
+
+    // Number of items of an array or members of an object.
+    size() is int {
+        let actual = self.kind();
+        confirm actual == JsonKind.array_value || actual == JsonKind.object_value
+            else throw WrongJsonKind(self.pointer(), JsonKind.array_value, actual);
+        json_node_size(node);
+    }
+
+    at(index is int) is Json {
+        self.expect(JsonKind.array_value);
+        confirm index >= 0 && index < json_node_size(node)
+            else throw MissingJsonValue(self.pointer() + "/" + index.string());
+        Json(json_node_item(node, index), root);
+    }
+
+    items() is @Json {
+        let nodes = try { json_node_items(node); }
+            catch failure is NativeFailure { throw self.wrong(JsonKind.array_value); };
+        let items is @Json = nodes.map() -> item { Json(item, root); };
+        items;
+    }
+
+    // Member names in document order.
+    names() is @string {
+        self.expect(JsonKind.object_value);
+        let names is @string = (0..json_node_size(node)).map() -> position { json_member_name(node, position); };
+        names;
+    }
+
+    // Member values in document order, as names() gives their names.
+    values() is @Json {
+        let nodes = try { json_member_values(node); }
+            catch failure is NativeFailure { throw self.wrong(JsonKind.object_value); };
+        let values is @Json = nodes.map() -> value { Json(value, root); };
+        values;
+    }
+
+    // Members in document order.
+    fields() is @JsonField {
+        let names = self.names();
+        let values = self.values();
+        let fields is @JsonField = (0..names.size()).map() -> position { JsonField(names[position], values[position]); };
+        fields;
+    }
+
+    has(name is string) is bool { self.position(name) >= 0; }
+
+    get(name is string) is Json {
+        let position = self.position(name);
+        confirm position >= 0 else throw MissingJsonValue(self.pointer() + "/" + JsonPointerToken(name).string());
+        Json(json_member_value(node, position), root);
+    }
+
+    // Members read in one runtime call; a member that is missing, of another
+    // kind or not a short integer is read again the long way for its error.
+    text(name is string) is string {
+        try { json_member_text(node, name); }
+        catch failure is NativeFailure { self.get(name).text(); }
+    }
+
+    number(name is string) is Decimal {
+        try { Decimal(json_member_spelling(node, name)); }
+        catch failure is NativeFailure { self.get(name).number(); }
+    }
+
+    int(name is string) is int {
+        try { json_member_int(node, name); }
+        catch failure is NativeFailure { self.get(name).int(); }
+    }
+
+    boolean(name is string) is bool {
+        try { json_member_boolean(node, name); }
+        catch failure is NativeFailure { self.get(name).boolean(); }
+    }
+
+    integer(name is string) is BigInt { self.get(name).integer(); }
+
+    list(name is string) is @Json { self.get(name).items(); }
+
+    // A member that may be absent: absent and null members read as the
+    // fallback the caller gives; a member of another kind is WrongJsonKind.
+    optional(name is string) is JsonOptional {
+        let position = self.position(name);
+        let found is @Json = if position < 0 { []; } else { [Json(json_member_value(node, position), root)]; };
+        let present is @Json = found.filter() -> member { member.kind() != JsonKind.null_value; };
+        let path is @string = [name];
+        JsonOptional(origin: present, parent: self, path: path);
+    }
+
+    // Compact JSON text.
+    string() is string { json_node_write(node, -1); }
+
+    // Indented JSON text: one member or item per line, indentation spaces
+    // per level, ": " after names, no final line break.
+    pretty(indentation is int) is string {
+        confirm indentation >= 0 else throw InvalidJsonIndentation(indentation);
+        json_node_write(node, indentation);
+    }
+
+    private:
+    expect(expected is JsonKind) is void {
+        let actual = self.kind();
+        confirm actual == expected else throw WrongJsonKind(self.pointer(), expected, actual);
+    }
+
+    wrong(expected is JsonKind) is WrongJsonKind { WrongJsonKind(self.pointer(), expected, self.kind()); }
+
+    spelling() is string {
+        try { json_node_number(node); }
+        catch failure is NativeFailure { throw self.wrong(JsonKind.number_value); }
+    }
+
+    position(name is string) is int {
+        try { json_member_position(node, name); }
+        catch failure is NativeFailure { throw self.wrong(JsonKind.object_value); }
+    }
+}
+
+// One member of an object: a name and its value. Scalars need no Json:
+// JsonField("id", 42), JsonField("name", "Ada"), JsonField("vip", true).
+object JsonField {
+    has member is string;
+    has content is Json;
+
+    JsonField(name is string, value is Json) { member = name; content = value; }
+    JsonField(name is string, value is string) { member = name; content = Json(value); }
+    JsonField(name is string, value is int) { member = name; content = Json(value); }
+    JsonField(name is string, value is Decimal) { member = name; content = Json(value); }
+    JsonField(name is string, value is bool) { member = name; content = Json(value); }
+    JsonField(name is string, value is BigInt) { member = name; content = Json(value); }
+    JsonField(name is string, value is float) { member = name; content = Json(value); }
+
+    name() is string { member; }
+    value() is Json { content; }
+}
+
+// Strict JSON text parsed on value(): InvalidJson for a syntax error,
+// DuplicateJsonMember for a repeated member name.
+object ParsedJson {
+    has state is JsonParseState;
+
+    ParsedJson(origin is string) { state = json_parse_state(origin, 128); }
+
+    ParsedJson(origin is string, maximum_depth is int) {
+        confirm maximum_depth > 0 else throw InvalidJson(
+            offset: 0, line: 1, column: 1, message: "maximum JSON depth must be positive");
+        state = json_parse_state(origin, maximum_depth);
+    }
+
+    #projected
+    value() is Json {
+        if json_parse_valid(state) {
+            Json(json_parse_root(state));
+        }
+        else if json_parse_has_duplicate(state) {
+            throw DuplicateJsonMember(
+                name: json_parse_duplicate(state),
+                offset: json_parse_offset(state),
+                line: json_parse_line(state),
+                column: json_parse_column(state),
+            );
+        }
+        else {
+            throw InvalidJson(
+                offset: json_parse_offset(state),
+                line: json_parse_line(state),
+                column: json_parse_column(state),
+                message: json_parse_message(state),
+            );
+        }
+    }
+}
+
+// A member that may be absent: zero or one value, never a null-like one.
+// parent and path (member names below it) name it while it is absent.
+object JsonOptional {
+    has origin is @Json;
+    has parent is Json;
+    has path is @string;
+
+    JsonOptional(:origin, :parent, :path);
+
+    present() is bool { origin.size() > 0; }
+
+    pointer() is string {
+        if origin.size() > 0 { origin[0].pointer(); }
+        else { path.reduce(parent.pointer()) -> pointer, name { pointer + "/" + JsonPointerToken(name).string(); }; }
+    }
+
+    // The member; MissingJsonValue when it is absent or null.
+    value() is Json {
+        confirm origin.size() > 0 else throw MissingJsonValue(self.pointer());
+        origin[0];
+    }
+
+    text(fallback is string) is string { if origin.size() > 0 { origin[0].text(); } else { fallback; } }
+    number(fallback is Decimal) is Decimal { if origin.size() > 0 { origin[0].number(); } else { fallback; } }
+    integer(fallback is BigInt) is BigInt { if origin.size() > 0 { origin[0].integer(); } else { fallback; } }
+    int(fallback is int) is int { if origin.size() > 0 { origin[0].int(); } else { fallback; } }
+    boolean(fallback is bool) is bool { if origin.size() > 0 { origin[0].boolean(); } else { fallback; } }
+
+    // An absent or null array has no items.
+    items() is @Json {
+        if origin.size() > 0 {
+            origin[0].items();
+        }
+        else {
+            let empty is @Json = [];
+            empty;
+        }
+    }
+
+    // A member of this member; absent whenever this one is.
+    optional(name is string) is JsonOptional {
+        if origin.size() > 0 {
+            origin[0].optional(name);
+        }
+        else {
+            let absent is @Json = [];
+            let longer = @string(path..., name);
+            JsonOptional(origin: absent, parent: parent, path: longer);
+        }
+    }
+}
+
+// RFC 6901 reference token: "~" becomes "~0" and "/" becomes "~1".
+object JsonPointerToken {
+    has origin is string;
+    JsonPointerToken(origin is string) { self.origin = origin; }
+    string() is string { origin.replace("~", "~0").replace("/", "~1"); }
+}
+
+// The exact integer value of a JSON number.
+object JsonInteger {
+    has exact is Decimal;
+    has origin is Json;
+    JsonInteger(:exact, :origin);
+
+    value() is BigInt {
+        confirm exact.exponent() >= 0 else throw InvalidJsonNumber(origin.pointer(), exact.string(), "integer required");
+        if exact.exponent() == 0 {
+            exact.coefficient();
+        }
+        else {
+            let scale = try {
+                BigPower(BigInt("10"), exact.exponent(), 4096).value();
+            }
+            catch failure is BigPowerLimitExceeded {
+                throw InvalidJsonNumber(origin.pointer(), exact.string(), "integer exceeds 4096 bits");
+            };
+            BigProduct(left: exact.coefficient(), right: scale).value();
+        }
+    }
+}
+
+// A JSON number as builtin int: an integer in the signed 64-bit range.
+object JsonInt {
+    has exact is Decimal;
+    has origin is Json;
+    JsonInt(:exact, :origin);
+
+    value() is int {
+        let integer = JsonInteger(exact: exact, origin: origin).value();
+        confirm integer.order(BigInt("9223372036854775807")) != Order.greater && integer.order(BigInt("-9223372036854775808")) != Order.less
+            else throw InvalidJsonNumber(origin.pointer(), integer.string(), "integer outside int range");
+        int_parse(integer.string(), 10);
+    }
+}
+
+object JsonKindName {
+    has origin is JsonKind;
+    JsonKindName(origin is JsonKind) { self.origin = origin; }
+    string() is string {
+        match origin {
+            case JsonKind.null_value { "null"; }
+            case JsonKind.boolean_value { "boolean"; }
+            case JsonKind.number_value { "number"; }
+            case JsonKind.string_value { "string"; }
+            case JsonKind.array_value { "array"; }
+            else { "object"; }
+        }
+    }
+}
+
+object JsonLocation {
+    has origin is string;
+    JsonLocation(origin is string) { self.origin = origin; }
+    string() is string { if origin == "" { "the document root"; } else { origin; } }
+}
+
+object WrongJsonKind does Error {
+    has location is string;
+    has wanted is JsonKind;
+    has found is JsonKind;
+
+    WrongJsonKind(pointer is string, expected is JsonKind, actual is JsonKind) {
+        location = pointer;
+        wanted = expected;
+        found = actual;
+    }
+
+    pointer() is string { location; }
+    expected() is JsonKind { wanted; }
+    actual() is JsonKind { found; }
+    text() is string { "JSON value at " + JsonLocation(location).string() + " must be " + JsonKindName(wanted).string() + ", found " + JsonKindName(found).string(); }
+}
+
+object MissingJsonValue does Error {
+    has location is string;
+    MissingJsonValue(pointer is string) { location = pointer; }
+    pointer() is string { location; }
+    text() is string { "JSON value at " + JsonLocation(location).string() + " is missing"; }
+}
+
+object InvalidJsonNumber does Error {
+    has location is string;
+    has spelling is string;
+    has reason is string;
+
+    InvalidJsonNumber(pointer is string, number is string, reason is string) {
+        location = pointer;
+        spelling = number;
+        self.reason = reason;
+    }
+
+    pointer() is string { location; }
+    number() is string { spelling; }
+    reason() is string { reason; }
+    text() is string { "JSON number " + spelling + " at " + JsonLocation(location).string() + ": " + reason; }
+}
+
+object InvalidJson does Error {
+    has source_offset is int;
+    has source_line is int;
+    has source_column is int;
+    has message is string;
+
+    InvalidJson(offset is int, line is int, column is int, message is string) {
+        source_offset = offset;
+        source_line = line;
+        source_column = column;
+        self.message = message;
+    }
+
+    offset() is int { source_offset; }
+    line() is int { source_line; }
+    column() is int { source_column; }
+
+    text() is string {
+        message + " at line " + source_line.string() + ", column " + source_column.string();
+    }
+}
+
+object MissingJsonLocation does Error {
+    has origin is string;
+    MissingJsonLocation(name is string) { origin = name; }
+    name() is string { origin; }
+    text() is string { "JSON member \"" + origin + "\" has no source location"; }
+}
+
+// A member name given twice: by a parsed text (located) or by Json(fields).
+object DuplicateJsonMember does Error {
+    has origin is string;
+    has source_offset is int;
+    has source_line is int;
+    has source_column is int;
+    has source_located is bool;
+
+    DuplicateJsonMember(name is string) {
+        origin = name;
+        source_offset = 0;
+        source_line = 1;
+        source_column = 1;
+        source_located = false;
+    }
+
+    DuplicateJsonMember(name is string, offset is int, line is int, column is int) {
+        confirm offset >= 0;
+        confirm line > 0;
+        confirm column > 0;
+        source_located = true;
+        origin = name;
+        source_offset = offset;
+        source_line = line;
+        source_column = column;
+    }
+
+    name() is string { origin; }
+    located() is bool { source_located; }
+
+    offset() is int {
+        if source_located { source_offset; }
+        else { throw MissingJsonLocation(origin); }
+    }
+
+    line() is int {
+        if source_located { source_line; }
+        else { throw MissingJsonLocation(origin); }
+    }
+
+    column() is int {
+        if source_located { source_column; }
+        else { throw MissingJsonLocation(origin); }
+    }
+
+    text() is string { "duplicate JSON member \"" + origin + "\""; }
+}
+
+object InvalidJsonIndentation does Error {
+    has amount is int;
+    InvalidJsonIndentation(indentation is int) { amount = indentation; }
+    indentation() is int { amount; }
+    text() is string { "JSON indentation must be non-negative"; }
+}
+
+test "values built in code are written compact and pretty" {
+    let value = Json([
+        JsonField("name", "Ada \"\u{1}\" é 🙂 /"),
+        JsonField("tags", Json(items: [Json("a"), Json(), Json(false)])),
+        JsonField("empty", Json(fields: [])),
+        JsonField("none", Json(items: [])),
+        JsonField("n", Decimal("-0.50")),
+        JsonField("i", 42),
+    ]);
+    test.is(value.string(), "{\"name\":\"Ada \\\"\\u0001\\\" é 🙂 /\",\"tags\":[\"a\",null,false],\"empty\":{},\"none\":[],\"n\":-0.5,\"i\":42}");
+    test.is(Json(items: [Json(BigInt("123456789012345678901")), Json(1.5), Json(0.000000025)]).string(), "[123456789012345678901,1.5,2.5e-8]");
+    test.is(Json(items: [Json([JsonField("a", 1)]), Json(items: [])]).pretty(2), "[\n  {\n    \"a\": 1\n  },\n  []\n]");
+    test.is(Json(fields: []).pretty(0), "{}");
+    test.is(try { Json(1).pretty(-1); ""; } catch failure is InvalidJsonIndentation { failure.indentation().string(); }, "-1");
+    for [["404", "404"], ["1000", "1000"], ["0.000001", "0.000001"], ["0.0000001", "1e-7"], ["1e21", "1e21"], ["123456789012345678901", "123456789012345678901"]] -> pair {
+        test.is(Json(Decimal(pair[0])).string(), pair[1]);
+    }
+}
+
+test "repeated names are rejected when built and when parsed" {
+    test.is(try { Json([JsonField("a", 1), JsonField("b", 2), JsonField("a", 3)]); ""; } catch failure is DuplicateJsonMember { failure.name(); }, "a");
+    test.is(try { Json([JsonField("x", 1), JsonField("x", 2)]); false; } catch failure is DuplicateJsonMember { failure.located(); }, false);
+    let parsed = try { ParsedJson("{\"k\":1,\n \"k\":2}").value(); ""; } catch failure is DuplicateJsonMember { failure.name() + "@" + failure.line().string() + ":" + failure.column().string(); };
+    test.is(parsed, "k@2:2");
+    test.is(try { ParsedJson("[1,").value(); ""; } catch failure is InvalidJson { failure.line().string() + ":" + failure.column().string(); }, "1:4");
+    test.is(try { ParsedJson("[[1]]", 1).value(); ""; } catch failure is InvalidJson { "deep"; }, "deep");
+}
+
+test "reads check kinds and name the pointer" {
+    let doc = ParsedJson("{\"a/b\":{\"~\":[1,-2,0.5,1e2,123456789012345678,1234567890123456789,9223372036854775808]},\"s\":\"x\",\"t\":true,\"n\":null,\"o\":{\"k\":\"v\"}}").value();
+    let numbers = doc.get("a/b").list("~");
+    test.is(numbers[0].int() + numbers[1].int(), -1);
+    test.is(numbers[3].int(), 100);
+    test.is(numbers[4].int(), 123456789012345678);
+    test.is(numbers[5].int(), 1234567890123456789);
+    test.is(numbers[2].number().string(), "5e-1");
+    test.is(numbers[6].integer().string(), "9223372036854775808");
+    test.is(try { numbers[2].int(); ""; } catch failure is InvalidJsonNumber { failure.text(); }, "JSON number 5e-1 at /a~1b/~0/2: integer required");
+    test.is(try { numbers[6].int(); ""; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/a~1b/~0/6");
+    test.is(doc.text("s") + doc.get("o").text("k"), "xv");
+    test.is(doc.boolean("t"), true);
+    test.is(doc.get("n").kind() == JsonKind.null_value, true);
+    test.is(try { doc.int("s"); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /s must be number, found string");
+    test.is(try { doc.text("missing"); ""; } catch failure is MissingJsonValue { failure.text(); }, "JSON value at /missing is missing");
+    test.is(try { doc.get("s").text("k"); ""; } catch failure is WrongJsonKind { failure.pointer(); }, "/s");
+    test.is(try { doc.get("a/b").get("~").at(7); ""; } catch failure is MissingJsonValue { failure.pointer(); }, "/a~1b/~0/7");
+    test.is(try { doc.size(); 0; } catch failure is WrongJsonKind { 1; }, 0);
+    test.is(try { doc.get("s").size(); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /s must be array, found string");
+    test.is(try { doc.text(); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at the document root must be string, found object");
+    test.is(doc.names(), ["a/b", "s", "t", "n", "o"]);
+    let fields is @string = doc.fields().map() -> field { field.name() + "=" + JsonKindName(field.value().kind()).string(); };
+    test.is(fields.join(" "), "a/b=object s=string t=boolean n=null o=object");
+    test.is(doc.has("t") && !doc.has("u"), true);
+    test.is(doc.get("o").string(), "{\"k\":\"v\"}");
+}
+
+test "optional members read as the given fallback when absent or null" {
+    let doc = ParsedJson("{\"name\":\"Ada\",\"nick\":null,\"age\":36,\"tags\":[\"a\"],\"address\":{\"city\":\"Oslo\",\"zip\":null},\"empty\":null}").value();
+    test.is(doc.optional("name").text("anonymous"), "Ada");
+    test.is(doc.optional("nick").text("anonymous"), "anonymous");
+    test.is(doc.optional("missing").text("anonymous"), "anonymous");
+    test.is(doc.optional("age").int(0), 36);
+    test.is(doc.optional("height").int(-1), -1);
+    test.is(doc.optional("vip").boolean(false), false);
+    test.is(doc.optional("address").optional("city").text(""), "Oslo");
+    test.is(doc.optional("address").optional("zip").text("none"), "none");
+    test.is(doc.optional("empty").optional("city").text("nowhere"), "nowhere");
+    test.is(doc.optional("missing").optional("city").optional("x").pointer(), "/missing/city/x");
+    test.is(doc.optional("tags").items().size(), 1);
+    test.is(doc.optional("labels").items().size(), 0);
+    test.is(doc.optional("name").present() && !doc.optional("nick").present(), true);
+    test.is(try { doc.optional("nick").value(); ""; } catch failure is MissingJsonValue { failure.pointer(); }, "/nick");
+    test.is(try { doc.optional("age").text(""); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /age must be string, found number");
+}
+
+test "parsed text is written back exactly" {
+    let source = "{\"a\":[1,2.50,-0,1E2,\"\\u00e9\\n\\\"\"],\"b\":{\"c\":true,\"d\":null}}";
+    test.is(ParsedJson(source).value().string(), "{\"a\":[1,2.5,0,100,\"é\\n\\\"\"],\"b\":{\"c\":true,\"d\":null}}");
+    let built = Json([JsonField("doc", ParsedJson(source).value().get("b"))]);
+    test.is(built.string(), "{\"doc\":{\"c\":true,\"d\":null}}");
+}

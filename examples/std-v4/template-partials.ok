@@ -2,11 +2,11 @@ module app v1.0.0;
 import "template/sections" take SectionTemplate;
 import "template/library" take TemplateLibrary, NamedTemplate;
 import "template/compile" take TextTemplate;
-import "json/parse" take ParsedJson;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 main() is int {
     let partials=TemplateLibrary([NamedTemplate("row",TextTemplate("- {{name}}\n"))]);
     let template=SectionTemplate("Users:\n{{#users}}{{>row}}{{/users}}",partials);
-    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}")));
+    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}").value()));
     0;
 }

@@ -1053,11 +1053,13 @@
     "boundary": {
      "cases": [
       "L03.overloads.named-shape",
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overloaded"
      ],
      "mandatory_cases": [
       "L03.overloads.named-shape",
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overloaded"
      ],
      "requirement": "required"
     },
@@ -1071,22 +1073,26 @@
       "L03.overloads.ambiguous",
       "L03.overloads.incompatible-returns",
       "L03.overloads.no-candidate",
-      "L03.variadic.overloaded"
+      "L03.variadic.overload-duplicate-signature",
+      "L03.variadic.overload-empty-tail-ambiguous"
      ],
      "mandatory_cases": [
       "L03.overloads.ambiguous",
       "L03.overloads.incompatible-returns",
       "L03.overloads.no-candidate",
-      "L03.variadic.overloaded"
+      "L03.variadic.overload-duplicate-signature",
+      "L03.variadic.overload-empty-tail-ambiguous"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overload-by-tail-type"
      ],
      "mandatory_cases": [
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overload-by-tail-type"
      ],
      "requirement": "required"
     }
@@ -1098,7 +1104,7 @@
     "docs/okkama-spec-11072026.md#11.8"
    ],
    "status": "mandatory",
-   "title": "Typed overload selection by arity, names, runtime types and specificity; ambiguity fails"
+   "title": "Typed overload selection by arity, names, types and specificity; fixed before variadic; ambiguity fails"
   },
   {
    "aspects": {
@@ -1113,10 +1119,12 @@
     },
     "interaction": {
      "cases": [
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overloaded"
      ],
      "mandatory_cases": [
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overloaded"
      ],
      "requirement": "required"
     },
@@ -1126,7 +1134,7 @@
       "L03.variadic.bare-binding",
       "L03.variadic.missing-prefix",
       "L03.variadic.named-call",
-      "L03.variadic.overloaded",
+      "L03.variadic.overload-empty-tail-ambiguous",
       "L03.variadic.tail-type"
      ],
      "mandatory_cases": [
@@ -1134,7 +1142,7 @@
       "L03.variadic.bare-binding",
       "L03.variadic.missing-prefix",
       "L03.variadic.named-call",
-      "L03.variadic.overloaded",
+      "L03.variadic.overload-empty-tail-ambiguous",
       "L03.variadic.tail-type"
      ],
      "requirement": "required"
@@ -1142,11 +1150,13 @@
     "normal": {
      "cases": [
       "L01.gram.unpack.forms",
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overload-by-tail-type"
      ],
      "mandatory_cases": [
       "L01.gram.unpack.forms",
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overload-by-tail-type"
      ],
      "requirement": "required"
     }
@@ -3650,9 +3660,11 @@
     },
     "interaction": {
      "cases": [
+      "L01.gram.functional.inside-operators",
       "L01.gram.functional.suffix"
      ],
      "mandatory_cases": [
+      "L01.gram.functional.inside-operators",
       "L01.gram.functional.suffix"
      ],
      "requirement": "required"
@@ -3676,9 +3688,11 @@
     },
     "normal": {
      "cases": [
+      "L01.gram.functional.inside-operators",
       "L01.gram.functional.suffix"
      ],
      "mandatory_cases": [
+      "L01.gram.functional.inside-operators",
       "L01.gram.functional.suffix"
      ],
      "requirement": "required"
@@ -5490,11 +5504,13 @@
     "boundary": {
      "cases": [
       "L01.lex.string.empty-and-escape-only",
-      "L01.lex.string.no-interpolation"
+      "L01.lex.string.no-interpolation",
+      "L01.lex.string.unicode-escape"
      ],
      "mandatory_cases": [
       "L01.lex.string.empty-and-escape-only",
-      "L01.lex.string.no-interpolation"
+      "L01.lex.string.no-interpolation",
+      "L01.lex.string.unicode-escape"
      ],
      "requirement": "required"
     },
@@ -5510,11 +5526,15 @@
     "invalid": {
      "cases": [
       "L01.lex.string.trailing-backslash",
+      "L01.lex.string.unicode-escape-malformed",
+      "L01.lex.string.unicode-escape-surrogate",
       "L01.lex.string.unknown-escape",
       "L01.lex.string.unterminated"
      ],
      "mandatory_cases": [
       "L01.lex.string.trailing-backslash",
+      "L01.lex.string.unicode-escape-malformed",
+      "L01.lex.string.unicode-escape-surrogate",
       "L01.lex.string.unknown-escape",
       "L01.lex.string.unterminated"
      ],
@@ -5522,10 +5542,12 @@
     },
     "normal": {
      "cases": [
-      "L01.lex.string.escapes"
+      "L01.lex.string.escapes",
+      "L01.lex.string.unicode-escape"
      ],
      "mandatory_cases": [
-      "L01.lex.string.escapes"
+      "L01.lex.string.escapes",
+      "L01.lex.string.unicode-escape"
      ],
      "requirement": "required"
     }
@@ -5537,7 +5559,7 @@
     "docs/okkama-spec-11072026.md#4.2"
    ],
    "status": "mandatory",
-   "title": "Double-quoted strings with escapes \\n \\r \\t \\\" \\\\; unknown escapes, lone trailing backslash and unterminated strings are lexer errors"
+   "title": "Double-quoted strings with escapes \\n \\r \\t \\\" \\\\ \\u{H}; unknown or malformed escapes, lone trailing backslash and unterminated strings are lexer errors"
   },
   {
    "aspects": {
@@ -6207,12 +6229,14 @@
     "invalid": {
      "cases": [
       "L00.entry.duplicate-main-multifile-rejected",
+      "L00.src.multifile-version-mismatch",
       "L06.multifile.different-name",
       "L06.multifile.different-version",
       "L06.multifile.duplicate-declaration"
      ],
      "mandatory_cases": [
       "L00.entry.duplicate-main-multifile-rejected",
+      "L00.src.multifile-version-mismatch",
       "L06.multifile.different-name",
       "L06.multifile.different-version",
       "L06.multifile.duplicate-declaration"
@@ -6377,6 +6401,52 @@
    ],
    "status": "mandatory",
    "title": "Import paths are source paths resolved local-first (importer directory, then stdlib); .ok is appended; local shadows stdlib"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L06.std-path.qualified"
+     ],
+     "mandatory_cases": [
+      "L06.std-path.qualified"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L06.std-path.module-not-declaration",
+      "L06.std-path.reserved-name"
+     ],
+     "mandatory_cases": [
+      "L06.std-path.module-not-declaration",
+      "L06.std-path.reserved-name"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L06.std-path.qualified"
+     ],
+     "mandatory_cases": [
+      "L06.std-path.qualified"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "MOD.STD-PATH",
+   "discrepancies": [],
+   "family": "Modules and native boundaries",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2.1"
+   ],
+   "status": "mandatory",
+   "title": "std.module.Declaration names a standard library declaration in place, in expressions and type positions, as a namespace import of that module"
   },
   {
    "aspects": {
@@ -6678,10 +6748,12 @@
     },
     "interaction": {
      "cases": [
-      "L04.ctor.field-bind-forms"
+      "L04.ctor.field-bind-forms",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "mandatory_cases": [
-      "L04.ctor.field-bind-forms"
+      "L04.ctor.field-bind-forms",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "requirement": "required"
     },
@@ -6702,10 +6774,12 @@
     },
     "normal": {
      "cases": [
-      "L04.ctor.full-selection"
+      "L04.ctor.full-selection",
+      "L04.ctor.typed-overload"
      ],
      "mandatory_cases": [
-      "L04.ctor.full-selection"
+      "L04.ctor.full-selection",
+      "L04.ctor.typed-overload"
      ],
      "requirement": "required"
     }
@@ -6717,7 +6791,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "Full constructors: exact-arity selection, named or positional, complete initialization"
+   "title": "Full constructors: selection by arity, names and parameter types, named or positional, complete initialization"
   },
   {
    "aspects": {
@@ -7113,10 +7187,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "mandatory_cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "requirement": "required"
     },
@@ -7127,23 +7203,25 @@
     },
     "invalid": {
      "cases": [
+      "L04.variadic-ctor.duplicate-signature",
       "L04.variadic-ctor.mixed-tail",
-      "L04.variadic-ctor.named-call",
-      "L04.variadic-ctor.with-other-constructor"
+      "L04.variadic-ctor.named-call"
      ],
      "mandatory_cases": [
+      "L04.variadic-ctor.duplicate-signature",
       "L04.variadic-ctor.mixed-tail",
-      "L04.variadic-ctor.named-call",
-      "L04.variadic-ctor.with-other-constructor"
+      "L04.variadic-ctor.named-call"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.generic-overload"
      ],
      "mandatory_cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.generic-overload"
      ],
      "requirement": "required"
     }
@@ -7155,7 +7233,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "A variadic full constructor is the only constructor and is positional-only"
+   "title": "A variadic full constructor is positional-only and overloads with other constructors; fixed ones are preferred"
   },
   {
    "aspects": {
@@ -7404,10 +7482,12 @@
     "boundary": {
      "cases": [
       "L00.src.empty-file",
+      "L00.src.module-without-version",
       "L00.src.two-part-version"
      ],
      "mandatory_cases": [
       "L00.src.empty-file",
+      "L00.src.module-without-version",
       "L00.src.two-part-version"
      ],
      "requirement": "required"
@@ -7422,12 +7502,14 @@
       "L00.src.bad-version-format",
       "L00.src.declaration-before-module",
       "L00.src.missing-module-declaration",
+      "L00.src.multifile-version-mismatch",
       "L00.src.uppercase-module-name"
      ],
      "mandatory_cases": [
       "L00.src.bad-version-format",
       "L00.src.declaration-before-module",
       "L00.src.missing-module-declaration",
+      "L00.src.multifile-version-mismatch",
       "L00.src.uppercase-module-name"
      ],
      "requirement": "required"
@@ -7450,7 +7532,7 @@
     "docs/okkama-grammar-1.0.ebnf"
    ],
    "status": "mandatory",
-   "title": "Every file starts with `module name vMAJOR.MINOR.PATCH;` with lowercase /-separated names"
+   "title": "Every file starts with `module name;` or `module name vMAJOR.MINOR.PATCH;` with lowercase /-separated names"
   },
   {
    "aspects": {
@@ -8571,7 +8653,7 @@
     "std/collections/frequencies.ok"
    ],
    "status": "mandatory",
-   "title": "std collections/frequencies public contract (Frequencies, Frequency, FrequencyBuilding, FrequencyRevision)"
+   "title": "std collections/frequencies public contract (Frequencies, Frequency, FrequencyBuilding, FrequencyRevision, FrequencyTally)"
   },
   {
    "aspects": {
@@ -15030,18 +15112,22 @@
    "discrepancies": [],
    "family": "Standard library: json",
    "spec_refs": [
-    "std/json/parse.ok"
+    "std/json.ok"
    ],
    "status": "mandatory",
-   "title": "std json/parse public contract (InvalidJson, JsonNode, ParsedJson)"
+   "title": "std json parsing contract (ParsedJson, InvalidJson, DuplicateJsonMember with location)"
   },
   {
    "aspects": {
     "boundary": {
      "cases": [
+      "L09.json.codec",
+      "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
+      "L09.json.codec",
+      "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "requirement": "required"
@@ -15053,18 +15139,26 @@
     },
     "invalid": {
      "cases": [
+      "L09.json.codec",
+      "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
+      "L09.json.codec",
+      "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L09.json.codec",
+      "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
+      "L09.json.codec",
+      "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "requirement": "required"
@@ -15074,10 +15168,10 @@
    "discrepancies": [],
    "family": "Standard library: json",
    "spec_refs": [
-    "std/json/read.ok"
+    "std/json.ok"
    ],
    "status": "mandatory",
-   "title": "std json/read public contract (InvalidJsonNumber, InvalidJsonProtocol, JsonKindName, JsonLocation, JsonPayload, JsonPointerToken, JsonView, MissingJsonValue, WrongJsonKind)"
+   "title": "std json reading contract (Json reads, JsonOptional, JsonPointerToken, JsonKindName, JsonLocation, WrongJsonKind, MissingJsonValue, InvalidJsonNumber)"
   },
   {
    "aspects": {
@@ -15112,10 +15206,10 @@
    "discrepancies": [],
    "family": "Standard library: json",
    "spec_refs": [
-    "std/json/value.ok"
+    "std/json.ok"
    ],
    "status": "mandatory",
-   "title": "std json/value public contract (DuplicateJsonMember, JsonArray, JsonBoolean, JsonKind, JsonMember, JsonMemberIndex, JsonNull, JsonNumber, JsonObject, JsonText, JsonValue, JsonWriting, MissingJsonLocation, MissingJsonMember)"
+   "title": "std json building contract (Json constructors, JsonField, JsonKind, DuplicateJsonMember, MissingJsonLocation)"
   },
   {
    "aspects": {
@@ -15150,10 +15244,10 @@
    "discrepancies": [],
    "family": "Standard library: json",
    "spec_refs": [
-    "std/json/write.ok"
+    "std/json.ok"
    ],
    "status": "mandatory",
-   "title": "std json/write public contract (CompactJson, InvalidJsonIndentation, InvalidJsonPrintLimits, JsonBoundedText, JsonNumberSpelling, JsonPrintBytesExceeded, JsonPrintDepthExceeded, JsonTextOutput, JsonZeros, PrettyJson, PrettyJsonOutput)"
+   "title": "std json writing contract (Json.string, Json.pretty, InvalidJsonIndentation, exact number spelling)"
   },
   {
    "aspects": {
@@ -22305,6 +22399,38 @@
     "boundary": {
      "cases": [],
      "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "normal": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.RUNTIME.NUMBER_TEXT",
+   "discrepancies": [],
+   "family": "Standard library: runtime",
+   "spec_refs": [
+    "std/runtime/number_text.ok"
+   ],
+   "status": "informative",
+   "title": "std runtime/number_text public contract (no public declarations)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
      "requirement": "required"
     },
     "interaction": {
@@ -27932,7 +28058,7 @@
    "family": "Cross-feature interactions",
    "spec_refs": [
     "std/encoding/utf.ok",
-    "std/json/parse.ok"
+    "std/json.ok"
    ],
    "status": "mandatory",
    "title": "Malformed inputs are rejected with typed errors at decoding/resource boundaries"
@@ -29633,5 +29759,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "be2fa7ee8ca095f54b0b2a105c4cb4a818eef53e738220ec0395ee96d33fb1b6"
+ "suite_tree_sha256": "94494da9608e95ef3b5e832c28055fc0e0e4f0d97eafbbc8567c40d6f069b911"
 }

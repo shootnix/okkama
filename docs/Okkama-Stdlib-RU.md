@@ -407,25 +407,24 @@ main() is int {
 
 **Задача.** Собрать короткое уведомление с подстановками: Formatted связывает шаблон и значения слотов {}.
 
-**Какие библиотеки использовать.** [`strings/format`](../std/strings/format.ok), [`json/value`](../std/json/value.ok), [`json/write`](../std/json/write.ok), [`math/decimal`](../std/math/decimal.ok).
+**Какие библиотеки использовать.** [`strings/format`](../std/strings/format.ok), [`json`](../std/json.ok), [`math/decimal`](../std/math/decimal.ok).
 
-**Как использовать.** Formatted получает строки для слотов, затем JsonObject связывает сообщение с точным Decimal. CompactJson сериализует готовое дерево.
+**Как использовать.** Formatted получает строки для слотов, затем `Json` из `JsonField` связывает сообщение с точным Decimal. `string()` записывает готовое значение.
 
 ```okkama
 module example v1.0.0;
 
 import "strings/format" take Formatted;
-import "json/value" take JsonObject, JsonMember, JsonText, JsonNumber;
-import "json/write" take CompactJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 
 object ExampleResult {
     ExampleResult();
     value() is string {
         let greeting = Formatted(pattern: "Hello, {}!", values: ["Ada"]);
-        CompactJson(origin: JsonObject(members: [
-            JsonMember(name: "greeting", value: JsonText(greeting.string())),
-            JsonMember(name: "amount", value: JsonNumber(Decimal("12.50"))),
+        (Json(fields: [
+            JsonField(name: "greeting", value: Json(greeting.string())),
+            JsonField(name: "amount", value: Json(Decimal("12.50"))),
         ])).string();
     }
 }
@@ -957,7 +956,7 @@ async main() is int {
 
 **Задача.** Настройки порта заданы документом и должны читаться тем же способом, что аргументы команды.
 
-**Какие библиотеки использовать.** [`config/document`](../std/config/document.ok), [`config/source`](../std/config/source.ok), [`config/key`](../std/config/key.ok), [`config/value`](../std/config/value.ok), [`json/value`](../std/json/value.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`config/document`](../std/config/document.ok), [`config/source`](../std/config/source.ok), [`config/key`](../std/config/key.ok), [`config/value`](../std/config/value.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** Адаптер переводит документ в SettingReading. После этого файл можно включить в LayeredSettings вместе с defaults, EnvironmentSettings и настройками Invocation.
 
@@ -967,11 +966,11 @@ import "config/document" take JsonSettings;
 import "config/source" take SettingSource,SettingSourceKind;
 import "config/key" take SettingKey;
 import "config/value" take ScalarSetting;
-import "json/value" take JsonObject,JsonMember,JsonText;
+import "json" take Json, JsonField;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let document = JsonObject([JsonMember("port", JsonText("8080"))]);
+    let document = Json([JsonField("port", Json("8080"))]);
     let settings = JsonSettings(document, SettingSource(SettingSourceKind.document, "service.json"));
     let port = ScalarSetting(settings, SettingKey(["port"])).value();
     confirm port == "8080";
@@ -1519,10 +1518,7 @@ main() is int {
 | [`csv`](../std/csv.ok) | Описать CSV-выгрузку товаров: CsvField, CsvRecord, CsvRows и CsvString задают записи и строковое представление. | `CsvString`, `CsvRecord`, `CsvField`, `CsvRows`, `CsvMode` | [Рецепт](#example-csv) |
 | [`html/entities`](../std/html/entities.ok) | Показать пользовательское имя в HTML: EscapedHtml кодирует специальные символы, UnescapedHtml декодирует ссылки. | `EscapedHtml`, `UnescapedHtml` | [Рецепт](#example-html-entities) |
 | [`html/events`](../std/html/events.ok) | Извлечь события из готового HTML: HtmlEvent и HandlingHtmlEvent дают последовательность тегов, текста и комментариев. | `HtmlEventKind`, `HtmlAttribute`, `StartingHtmlTag`, `EndingHtmlTag`, `ContainingHtmlText` | [Рецепт](#recipe-html-events) |
-| [`json/parse`](../std/json/parse.ok) | Прочитать JSON-тело запроса: ParsedJson откладывает разбор до value и возвращает JsonValue. | `ParsedJson`, `JsonNode` | [Рецепт](#recipe-json-read) |
-| [`json/read`](../std/json/read.ok) | Извлечь id и имя из JSON: JsonView предоставляет строгие проекции и путь до ошибочного значения. | `JsonView`, `JsonPointerToken`, `JsonPayload`, `JsonKindName`, `JsonLocation` | [Рецепт](#recipe-json-read) |
-| [`json/value`](../std/json/value.ok) | Собрать JSON-ответ о заказе: JsonObject, JsonMember, JsonArray и скаляры образуют типизированное дерево. | `JsonKind`, `JsonWriting`, `JsonValue`, `JsonMember`, `JsonNull` | [Рецепт](#recipe-json-settings) |
-| [`json/write`](../std/json/write.ok) | Вернуть компактный API-ответ или читаемый файл: CompactJson и PrettyJson выбирают представление одного JsonValue. | `CompactJson`, `JsonTextOutput`, `PrettyJson`, `JsonBoundedText`, `PrettyJsonOutput` | [Рецепт](#recipe-runner-report) |
+| [`json`](../std/json.ok) | Прочитать, собрать и записать JSON: один неизменяемый `Json` с типизированными чтениями, путём RFC 6901 в ошибках и записью одним вызовом runtime. | `Json`, `JsonField`, `ParsedJson`, `JsonOptional`, `JsonKind`, `WrongJsonKind`, `MissingJsonValue` | [Рецепт](#recipe-json-read) |
 | [`plist/parse`](../std/plist/parse.ok) | Прочитать XML или binary plist: ParsedPlist получает байты и возвращает типизированное дерево. | `ParsedPlist`, `PlistParsedItems`, `PlistParsedNode`, `PlistParsePosition`, `PlistXmlSource` | [Рецепт](#example-plist-parse) |
 | [`plist/value`](../std/plist/value.ok) | Представить настройки приложения Apple: PlistValue, PlistMember и скаляры сохраняют типы property list. | `PlistKind`, `PlistValue`, `PlistWriting`, `PlistBoolean`, `PlistInteger` | [Рецепт](#example-plist-write) |
 | [`plist/write`](../std/plist/write.ok) | Записать настройки в нужном plist-представлении: EncodedPlist выбирает PlistFormat и выдаёт bytes. | `PlistFormat`, `EncodedPlist`, `PlistWireSession`, `PlistWireValue`, `PlistWrittenNames` | [Рецепт](#example-plist-write) |
@@ -1575,20 +1571,19 @@ main() is int {
 
 **Задача.** Из API пришли номер заказа и имя клиента; значения следует прочитать со строгими типами.
 
-**Какие библиотеки использовать.** [`json/parse`](../std/json/parse.ok), [`json/read`](../std/json/read.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
-**Как использовать.** JsonView сохраняет путь вложенного значения. member выбирает объект, а int/text задают ожидаемое представление конкретного поля.
+**Как использовать.** `Json` помнит путь вложенного значения. get выбирает объект, а int/text задают ожидаемое представление конкретного поля.
 
 ```okkama
 module cookbook/json_read v1.0.0;
-import "json/parse" take ParsedJson;
-import "json/read" take JsonView;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let order = JsonView(ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}"));
+    let order = ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}").value();
     confirm order.int("id") == 4711;
-    Stdout().writeln(order.member("customer").text("name"));
+    Stdout().writeln(order.get("customer").text("name"));
     0;
 }
 ```
@@ -1598,7 +1593,7 @@ main() is int {
 Для HTTP используйте `web/request.RequestJson`, полученный через
 `await request.json(4096)`: он связывает ошибки чтения с HTTP-статусами400/422.
 Проверяйте права до разбора тела, связывайте поля с конструкторами доменных
-значений и формируйте ответ через выбранное представление и `JsonObject`.
+значений и формируйте ответ через выбранное представление и `Json`.
 [Практический рецепт с адресом клиента](json-http-codecs.md) включает реальный
 codec, обработчик, OpenAPI и проверки Unicode, вложенных полей и точных сумм.
 
@@ -1954,7 +1949,7 @@ main() is int {
 | [`template/compile`](../std/template/compile.ok) | Составить текст письма по шаблону: TextTemplate связывает текст с именованными подстановками. | `TextTemplate`, `TemplateInstruction`, `TemplateProgram`, `TemplateScanner`, `TemplateTextParts` | [Рецепт](#example-template-json) |
 | [`template/html`](../std/template/html.ok) | Сформировать HTML-карточку клиента: HtmlTemplate применяет экранирование по контексту подстановки. | `HtmlTemplate`, `HtmlTemplateInstruction`, `HtmlTemplateProgram`, `HtmlTemplatePlan`, `HtmlTemplateContext` | [Рецепт](#example-template-html) |
 | [`template/html_library`](../std/template/html_library.ok) | Переиспользовать HTML-фрагменты по именам: HtmlTemplateLibrary хранит NamedHtmlTemplate для рендеринга partials. | `NamedHtmlTemplate`, `HtmlTemplateLibrary`, `HtmlTemplateLibrarySnapshot`, `DuplicateHtmlTemplate` | [Рецепт](#example-template-html-library) |
-| [`template/json`](../std/template/json.ok) | Подать JSON в текстовый шаблон: JsonTemplateStrings адаптирует скаляры через протокол JsonWriting. | `JsonTemplateStrings`, `JsonTemplateObservation`, `JsonTemplateVisitor`, `NonScalarTemplateValue` | [Рецепт](#example-template-json) |
+| [`template/json`](../std/template/json.ok) | Подать JSON в текстовый шаблон: JsonTemplateStrings подставляет скаляры документа Json. | `JsonTemplateStrings`, `JsonTemplateObservation`, `JsonTemplateVisitor`, `NonScalarTemplateValue` | [Рецепт](#example-template-json) |
 | [`template/library`](../std/template/library.ok) | Собрать набор текстовых писем по именам: TemplateLibrary и NamedTemplate удерживают именованные шаблоны. | `NamedTemplate`, `TemplateLibrary`, `TemplateLibrarySnapshot`, `DuplicateTemplate` | [Рецепт](#example-template-partials) |
 | [`template/model`](../std/template/model.ok) | Передать имя клиента и номер заказа в шаблон: TemplateBindings удерживает явные строковые значения по путям. | `TemplateStrings`, `TemplateBinding`, `TemplateBindings`, `TemplateBindingSnapshot`, `DuplicateTemplateValue` | [Рецепт](#example-template-library) |
 | [`template/path`](../std/template/path.ok) | Назвать вложенное значение шаблона: TemplatePath сохраняет точные сегменты user.name. | `TemplatePath`, `TemplatePathFromString`, `TemplatePathSnapshot`, `TemplatePathParts` | [Рецепт](#example-template-path) |
@@ -1968,20 +1963,20 @@ main() is int {
 
 **Задача.** Составить текст письма по шаблону: TextTemplate связывает текст с именованными подстановками.
 
-**Какие библиотеки использовать.** [`template/compile`](../std/template/compile.ok), [`template/json`](../std/template/json.ok), [`json/parse`](../std/json/parse.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`template/compile`](../std/template/compile.ok), [`template/json`](../std/template/json.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
-**Как использовать.** JsonTemplateStrings адаптирует явно переданный JsonValue. TextTemplate разрешает именованные пути через этот интерфейс.
+**Как использовать.** JsonTemplateStrings адаптирует явно переданный Json. TextTemplate разрешает именованные пути через этот интерфейс.
 
 ```okkama
 module app v1.0.0;
 
 import "template/compile" take TextTemplate;
 import "template/json" take JsonTemplateStrings;
-import "json/parse" take ParsedJson;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}"));
+    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}").value());
     Stdout().writeln(TextTemplate("Hello {{user.name}}! Active: {{active}}").string(data));
     0;
 }
@@ -1995,17 +1990,17 @@ main() is int {
 
 **Задача.** Сформировать HTML-карточку клиента: HtmlTemplate применяет экранирование по контексту подстановки.
 
-**Какие библиотеки использовать.** [`template/html`](../std/template/html.ok), [`json/value`](../std/json/value.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`template/html`](../std/template/html.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** HtmlTemplate получает шаблон и данные. Контекст подстановки задаёт представление текста внутри HTML.
 
 ```okkama
 module app v1.0.0;
 import "template/html" take HtmlTemplate;
-import "json/value" take JsonText;
+import "json" take Json;
 import "io/stdout" take Stdout;
 main() is int {
-    HtmlTemplate("<p title=\"{{.}}\">Hello {{.}}</p>\n").write(JsonText("Ada & <friends>"),Stdout());
+    HtmlTemplate("<p title=\"{{.}}\">Hello {{.}}</p>\n").write(Json("Ada & <friends>"),Stdout());
     0;
 }
 ```
@@ -2018,7 +2013,7 @@ main() is int {
 
 **Задача.** Сформировать HTML-карточку клиента: HtmlTemplate применяет экранирование по контексту подстановки.
 
-**Какие библиотеки использовать.** [`template/html`](../std/template/html.ok), [`template/html_library`](../std/template/html_library.ok), [`json/value`](../std/json/value.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`template/html`](../std/template/html.ok), [`template/html_library`](../std/template/html_library.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** NamedHtmlTemplate связывает имя с фрагментом. HtmlTemplateLibrary передаётся при рендеринге повторно используемых HTML partials.
 
@@ -2026,11 +2021,11 @@ main() is int {
 module app v1.0.0;
 import "template/html" take HtmlTemplate;
 import "template/html_library" take HtmlTemplateLibrary, NamedHtmlTemplate;
-import "json/value" take JsonText;
+import "json" take Json;
 import "io/stdout" take Stdout;
 main() is int {
     let library=HtmlTemplateLibrary([NamedHtmlTemplate("item",HtmlTemplate("<b>{{.}}</b>"))]);
-    Stdout().writeln(library.value("item").string(JsonText("Ada & Grace")));
+    Stdout().writeln(library.value("item").string(Json("Ada & Grace")));
     0;
 }
 ```
@@ -2041,21 +2036,21 @@ main() is int {
 
 ### 16.4. Различить текст и HTML при подстановке
 
-**Задача.** Подать JSON в текстовый шаблон: JsonTemplateStrings адаптирует скаляры через протокол JsonWriting.
+**Задача.** Подать JSON в текстовый шаблон: JsonTemplateStrings подставляет скаляры документа Json.
 
-**Какие библиотеки использовать.** [`template/json`](../std/template/json.ok), [`json/value`](../std/json/value.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`template/json`](../std/template/json.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** Один набор значений применяется к выбранному виду шаблона. Контекст HTML проверяется до выдачи результата.
 
 ```okkama
 module app v1.0.0;
 import "template/json" take JsonTemplateStrings;
-import "json/value" take JsonText, JsonObject, JsonMember;
+import "json" take Json, JsonField;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let item=JsonTemplateStrings(JsonText("Ada"));
-    let user=JsonTemplateStrings(JsonObject([JsonMember("name",JsonText("Grace"))]));
+    let item=JsonTemplateStrings(Json("Ada"));
+    let user=JsonTemplateStrings(Json([JsonField("name",Json("Grace"))]));
     Stdout().writeln(item.string("."));
     Stdout().writeln(user.string("name"));
     0;
@@ -2070,7 +2065,7 @@ main() is int {
 
 **Задача.** Повторить строки счёта и подключить partial: SectionTemplate выполняет ограниченные секции над JSON.
 
-**Какие библиотеки использовать.** [`template/sections`](../std/template/sections.ok), [`template/library`](../std/template/library.ok), [`template/compile`](../std/template/compile.ok), [`json/parse`](../std/json/parse.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`template/sections`](../std/template/sections.ok), [`template/library`](../std/template/library.ok), [`template/compile`](../std/template/compile.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** Соберите именованные шаблоны в TemplateLibrary. SectionTemplate получает библиотеку вместе с данными и бюджетом исполнения.
 
@@ -2079,12 +2074,12 @@ module app v1.0.0;
 import "template/sections" take SectionTemplate;
 import "template/library" take TemplateLibrary, NamedTemplate;
 import "template/compile" take TextTemplate;
-import "json/parse" take ParsedJson;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 main() is int {
     let partials=TemplateLibrary([NamedTemplate("row",TextTemplate("- {{name}}\n"))]);
     let template=SectionTemplate("Users:\n{{#users}}{{>row}}{{/users}}",partials);
-    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}")));
+    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}").value()));
     0;
 }
 ```
@@ -2197,19 +2192,19 @@ main() is int {
 
 **Задача.** Повторить строки счёта и подключить partial: SectionTemplate выполняет ограниченные секции над JSON.
 
-**Какие библиотеки использовать.** [`template/sections`](../std/template/sections.ok), [`json/parse`](../std/json/parse.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`template/sections`](../std/template/sections.ok), [`json`](../std/json.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** SectionTemplate получает JSON-данные, а секция повторяет её тело для элементов. Задайте бюджеты дерева, обхода и результата.
 
 ```okkama
 module app v1.0.0;
 import "template/sections" take SectionTemplate;
-import "json/parse" take ParsedJson;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
     let source="{{#users}}{{name}}:{{#tags}} {{.}}{{/tags}}{{^tags}} no tags{{/tags}}\n{{/users}}";
-    let users=ParsedJson("{\"users\":[{\"name\":\"Ada\",\"tags\":[\"math\",\"code\"]},{\"name\":\"Grace\",\"tags\":[]}]}");
+    let users=ParsedJson("{\"users\":[{\"name\":\"Ada\",\"tags\":[\"math\",\"code\"]},{\"name\":\"Grace\",\"tags\":[]}]}").value();
     Stdout().write(SectionTemplate(source).string(users));
     0;
 }
@@ -6015,7 +6010,7 @@ async main() is int {
 
 **Задача.** Для отчёта нужны только warning и выше, с общим контекстом клиента.
 
-**Какие библиотеки использовать.** [`logging/write`](../std/logging/write.ok), [`logging/filter`](../std/logging/filter.ok), [`logging/enrichment`](../std/logging/enrichment.ok), [`logging/named`](../std/logging/named.ok), [`logging/name`](../std/logging/name.ok), [`logging/level`](../std/logging/level.ok), [`logging/field`](../std/logging/field.ok), [`logging/syslog`](../std/logging/syslog.ok), [`json/value`](../std/json/value.ok), [`time/clock`](../std/time/clock.ok).
+**Какие библиотеки использовать.** [`logging/write`](../std/logging/write.ok), [`logging/filter`](../std/logging/filter.ok), [`logging/enrichment`](../std/logging/enrichment.ok), [`logging/named`](../std/logging/named.ok), [`logging/name`](../std/logging/name.ok), [`logging/level`](../std/logging/level.ok), [`logging/field`](../std/logging/field.ok), [`logging/syslog`](../std/logging/syslog.ok), [`json`](../std/json.ok), [`time/clock`](../std/time/clock.ok).
 
 **Как использовать.** Декораторы выполняются в порядке композиции: FieldLogging добавляет контекст, AllowedLogs отбирает записи, CollectedLogs удерживает результат. SyslogMessage показывает байтовое представление той же записи для syslog.
 
@@ -6029,14 +6024,14 @@ import "logging/name" take LogName;
 import "logging/level" take LogLevel;
 import "logging/field" take LogFields;
 import "logging/syslog" take SyslogMessage,SyslogOptions,SyslogFacility;
-import "json/value" take JsonMember,JsonText;
+import "json" take Json, JsonField;
 import "time/clock" take SystemClock;
 
 main() is int {
     let records = CollectedLogs();
     let sink = AllowedLogs(records, LevelThresholds(LogLevel.warning, []));
     let named = NamedLogging(LogName(["orders"]), sink, SystemClock(), LogFields([]));
-    let logger = FieldLogging(named, LogFields([JsonMember("tenant_id", JsonText("shop-7"))]));
+    let logger = FieldLogging(named, LogFields([JsonField("tenant_id", Json("shop-7"))]));
     logger.log(LogLevel.info, "запрос принят");
     logger.log(LogLevel.warning, "запрошен повтор");
     confirm records.size() == 1;
@@ -6098,7 +6093,7 @@ async main() is int {
 
 **Задача.** Писать события от имени сервиса: NamedLogging объединяет часы, process id, имя и назначение.
 
-**Какие библиотеки использовать.** [`logging/named`](../std/logging/named.ok), [`logging/name`](../std/logging/name.ok), [`logging/level`](../std/logging/level.ok), [`logging/field`](../std/logging/field.ok), [`logging/stream`](../std/logging/stream.ok), [`logging/redact`](../std/logging/redact.ok), [`json/value`](../std/json/value.ok), [`time/clock`](../std/time/clock.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`logging/named`](../std/logging/named.ok), [`logging/name`](../std/logging/name.ok), [`logging/level`](../std/logging/level.ok), [`logging/field`](../std/logging/field.ok), [`logging/stream`](../std/logging/stream.ok), [`logging/redact`](../std/logging/redact.ok), [`json`](../std/json.ok), [`time/clock`](../std/time/clock.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** NamedLogging получает имя, sink, clock и общие поля. RedactedLogs заменяет выбранные поля до JsonStreamLogs.
 
@@ -6110,15 +6105,15 @@ import "logging/level" take LogLevel;
 import "logging/field" take LogFields;
 import "logging/stream" take JsonStreamLogs;
 import "logging/redact" take RedactedLogs;
-import "json/value" take JsonMember,JsonText;
+import "json" take Json, JsonField;
 import "time/clock" take SystemClock;
 import "io/stdout" take Stdout;
 
 main() is int{
-    let destination=RedactedLogs(JsonStreamLogs(Stdout()),["token"],JsonText("[redacted]"));
-    let logger=NamedLogging(LogName(["example"]),destination,SystemClock(),LogFields([JsonMember("service",JsonText("demo"))]));
+    let destination=RedactedLogs(JsonStreamLogs(Stdout()),["token"],Json("[redacted]"));
+    let logger=NamedLogging(LogName(["example"]),destination,SystemClock(),LogFields([JsonField("service",Json("demo"))]));
     logger.log(LogLevel.info,"started");
-    logger.child("worker").log(LogLevel.warning,"retry\nrequested",LogFields([JsonMember("token",JsonText("private"))]));
+    logger.child("worker").log(LogLevel.warning,"retry\nrequested",LogFields([JsonField("token",Json("private"))]));
     0;
 }
 ```
@@ -6197,7 +6192,7 @@ test "уведомления и время" {
 
 **Задача.** Промежуточный JSON-отчёт нужно превратить в типизированный результат и сериализовать для CI.
 
-**Какие библиотеки использовать.** [`testing/runner`](../std/testing/runner.ok), [`testing/report`](../std/testing/report.ok), [`json/value`](../std/json/value.ok), [`json/write`](../std/json/write.ok), [`math/decimal`](../std/math/decimal.ok), [`io/stdout`](../std/io/stdout.ok).
+**Какие библиотеки использовать.** [`testing/runner`](../std/testing/runner.ok), [`testing/report`](../std/testing/report.ok), [`json`](../std/json.ok), [`math/decimal`](../std/math/decimal.ok), [`io/stdout`](../std/io/stdout.ok).
 
 **Как использовать.** RecordedTestReport читает явный runner wire-format. JUnitTestReport получает тот же TestReport, который можно представить через HumanTestReport, TapTestReport или JsonTestReport.
 
@@ -6205,17 +6200,16 @@ test "уведомления и время" {
 module cookbook/runner_report v1.0.0;
 import "testing/runner" take RecordedTestReport;
 import "testing/report" take JUnitTestReport;
-import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber,JsonArray;
-import "json/write" take CompactJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let wire = CompactJson(origin: JsonObject([
-        JsonMember("start_ns", JsonText("0")),
-        JsonMember("duration_ns", JsonText("0")),
-        JsonMember("seed", JsonNumber(Decimal("42"))),
-        JsonMember("results", JsonArray([]))
+    let wire = (Json([
+        JsonField("start_ns", Json("0")),
+        JsonField("duration_ns", Json("0")),
+        JsonField("seed", Json(Decimal("42"))),
+        JsonField("results", Json(items: []))
     ])).string();
     let report = RecordedTestReport(wire).value();
     Stdout().writeln(JUnitTestReport(report, "cookbook").string());
@@ -6295,7 +6289,7 @@ main() is int {
 
 **Задача.** Сравнить JSON-отчёт с эталоном: SnapshotFile, JsonSnapshot и Snapshot разделяют проверку и явное обновление.
 
-**Какие библиотеки использовать.** [`testing/snapshot`](../std/testing/snapshot.ok), [`fs/temp`](../std/fs/temp.ok), [`fs/directory`](../std/fs/directory.ok), [`fs/path`](../std/fs/path.ok), [`json/value`](../std/json/value.ok).
+**Какие библиотеки использовать.** [`testing/snapshot`](../std/testing/snapshot.ok), [`fs/temp`](../std/fs/temp.ok), [`fs/directory`](../std/fs/directory.ok), [`fs/path`](../std/fs/path.ok), [`json`](../std/json.ok).
 
 **Как использовать.** SnapshotFile указывает эталон, JsonSnapshot задаёт нормализованное представление результата. Update и check вызываются явно и отдельно.
 
@@ -6305,14 +6299,14 @@ import "testing/snapshot" take SnapshotFile,TextSnapshot,JsonSnapshot,Snapshot,S
 import "fs/temp" take TemporaryDirectory;
 import "fs/directory" take Directory;
 import "fs/path" take Path;
-import "json/value" take JsonObject,JsonMember,JsonText;
+import "json" take Json, JsonField;
 main() is int {0;}
 test "explicit snapshot update and ordinary check" {
     let scratch=TemporaryDirectory(Directory(Path(".")),"okkama-snapshots-");
     defer scratch.close();
     let directory=Directory(scratch.path());
     let expected=SnapshotFile(directory,"invoice.json");
-    let actual=JsonSnapshot(JsonObject([JsonMember("customer",JsonText("Ada"))]));
+    let actual=JsonSnapshot(Json([JsonField("customer",Json("Ada"))]));
     SnapshotUpdate(actual,expected,4096).update();
     Snapshot(actual,expected,4096).check();
     test.is(TextSnapshot("first\r\nsecond\r").bytes(),TextSnapshot("first\nsecond\n").bytes());
@@ -6460,7 +6454,7 @@ test "explicit snapshot update and ordinary check" {
 | [`runtime/ini`](../std/runtime/ini.ok) | Хранить проверенное дерево INI и диагностические координаты. | [`config/ini`](#example-ini-codec) |
 | [`runtime/input_state`](../std/runtime/input_state.ok) | Удерживать undecoded bytes и состояние одного UTF-8 input. | [`io/stdin`](#recipe-stdin) |
 | [`runtime/io_decorators`](../std/runtime/io_decorators.ok) | Удерживать счётчики и состояние потоковых IO-декораторов. | [`io/decorators`](#example-mime-transfer) |
-| [`runtime/json`](../std/runtime/json.ok) | Хранить проверенное точное дерево JSON и его диагностику. | [`json/parse`](#recipe-json-read) |
+| [`runtime/json`](../std/runtime/json.ok) | Хранить проверенное точное дерево JSON и его диагностику. | [`json`](#recipe-json-read) |
 | [`runtime/layout`](../std/runtime/layout.ok) | Выполнять bulk-операции отступов и разбиения текста. | [`text/layout`](#recipe-text-unicode) |
 | [`runtime/locale`](../std/runtime/locale.ok) | Получать системный снимок языковых предпочтений. | [`locale/system`](#recipe-locale-list) |
 | [`runtime/math_aggregate`](../std/runtime/math_aggregate.ok) | Выполнять finite-float primitive для устойчивых числовых агрегатов. | [`math/aggregate`](#recipe-measurements), [`statistics`](#recipe-measurements) |
@@ -6710,10 +6704,7 @@ test "explicit snapshot update and ordinary check" {
 | [`io/stdout`](../std/io/stdout.ok) | [IO: потоки, буферы и консоль](#chapter-io) |
 | [`io/stream`](../std/io/stream.ok) | [IO: потоки, буферы и консоль](#chapter-io) |
 | [`io/text`](../std/io/text.ok) | [IO: потоки, буферы и консоль](#chapter-io) |
-| [`json/parse`](../std/json/parse.ok) | [JSON, CSV, TOML, plist, XML и HTML](#chapter-formats) |
-| [`json/read`](../std/json/read.ok) | [JSON, CSV, TOML, plist, XML и HTML](#chapter-formats) |
-| [`json/value`](../std/json/value.ok) | [JSON, CSV, TOML, plist, XML и HTML](#chapter-formats) |
-| [`json/write`](../std/json/write.ok) | [JSON, CSV, TOML, plist, XML и HTML](#chapter-formats) |
+| [`json`](../std/json.ok) | [JSON, CSV, TOML, plist, XML и HTML](#chapter-formats) |
 | [`locale/collation`](../std/locale/collation.ok) | [Локализация и переводы](#chapter-locale) |
 | [`locale/currency`](../std/locale/currency.ok) | [Локализация и переводы](#chapter-locale) |
 | [`locale/data`](../std/locale/data.ok) | [Локализация и переводы](#chapter-locale) |

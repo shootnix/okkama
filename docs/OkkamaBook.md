@@ -2789,7 +2789,7 @@ and the [completion guide](std/stdlib-completion-todo-v4.md).
 `File` owns closing; `File.binary()` and `File.text()` expose separate stream roles.
 Tree deletion and temporary-file preservation are explicit void commands.
 `Formatted(pattern: "{}", values: ["Ada"]).string()` performs typed interpolation;
-`CompactJson(origin: document).string()` uses `JsonValue.print(JsonWriting)` without reflection.
+`document.string()` writes a `Json` value without reflection.
 See the [migration guide](std/stdlib-v4-migration.md) for removed APIs.
 
 The historical inventory and examples below describe **legacy `stdlib/`**.

@@ -3,7 +3,7 @@
 ## Contract before implementation
 
 `SectionTemplate(source is string)` binds a TemplateTree and accepts explicit
-JsonValue data via `string(data)`. An overload `(source, maximum_iterations,
+`Json` data via `string(data)`. An overload `(source, maximum_iterations,
 maximum_output, maximum_members)` sets nonnegative budgets (defaults 10000,
 1048576 UTF-8 bytes, 1024 members per traversed object). The tree retains its
 existing input/token/depth limits. Construction validates limits without parsing
@@ -14,7 +14,7 @@ bounded expansion. TextTemplate keeps its flat API.
 
 Variables use JsonTemplateStrings: dotted members, current item `.`, typed
 missing/non-scalar errors, no parent fallback, reflection or HTML escaping.
-Sections select through JsonValue.print only. Missing/non-object intermediate
+Sections select through `Json` member lookups only. Missing/non-object intermediate
 paths are false; source exceptions are never translated into absence.
 
 - Arrays iterate in order with each item as the current context.

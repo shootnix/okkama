@@ -14,11 +14,9 @@ import "db/connection" take DbExecuting;
 import "db/statement" take Statement;
 import "db/value" take DbText,DbInteger;
 import "numbers/bigint" take BigInt;
-import "json/read" take JsonView;
-import "json/parse" take ParsedJson;
 import "web/routing" take WebRoutes,Get,Post,Delete;
 import "web/request" take WebRequest;
-import "web/reply" take Text,Json,Created,Redirect;
+import "web/reply" take Text,JsonReply,Created,Redirect;
 import "web/exception" take Exception;
 import "http/handler" take HandlingResult;
 import "http/server" take HttpServer;
@@ -34,19 +32,19 @@ object BooksApi {
         let b=try{ParsedInt(request.path("b")).value();}catch error is Error{throw Exception(400,"integer required");};Text(200,(a+b).string());
     }
     async search(request is WebRequest) is HandlingResult{Text(200,"q="+request.query("q")+" limit="+request.query("limit","10"));}
-    async list(request is WebRequest) is HandlingResult{Json(200,await QueryJson(db,Statement("SELECT id,title,year FROM books ORDER BY id")).value());}
+    async list(request is WebRequest) is HandlingResult{JsonReply(200,await QueryJson(db,Statement("SELECT id,title,year FROM books ORDER BY id")).value());}
     async one(request is WebRequest) is HandlingResult{
-        let id=ParsedInt(request.path("id")).value();let found=JsonView(await QueryJson(db,Statement("SELECT id,title,year FROM books WHERE id=?",[DbInteger(BigInt(id.string()))])).value()).items();
-        confirm found.size()==1 else throw Exception(404,"book not found");Json(200,found[0].value());
+        let id=ParsedInt(request.path("id")).value();let found=(await QueryJson(db,Statement("SELECT id,title,year FROM books WHERE id=?",[DbInteger(BigInt(id.string()))])).value()).items();
+        confirm found.size()==1 else throw Exception(404,"book not found");JsonReply(200,found[0]);
     }
     async create(request is WebRequest) is HandlingResult{
         let body=await request.json(16384);let title=body.text("title");confirm title.length()>0 && title.length()<=200 else throw Exception(422,"title required");
         let year=body.int("year");confirm year>0 && year<10000 else throw Exception(422,"year required");
         let created=await QueryJson(db,Statement("INSERT INTO books(title,year) VALUES(?,?) RETURNING id,title,year",[DbText(title),DbInteger(BigInt(year.string()))])).value();
-        let record=JsonView(created).items()[0];Created("/books/"+record.int("id").string(),record.value());
+        let record=created.items()[0];Created("/books/"+record.int("id").string(),record);
     }
     async remove(request is WebRequest) is HandlingResult{
-        let id=ParsedInt(request.path("id")).value();let deleted=JsonView(await QueryJson(db,Statement("DELETE FROM books WHERE id=? RETURNING id",[DbInteger(BigInt(id.string()))])).value()).items();
+        let id=ParsedInt(request.path("id")).value();let deleted=(await QueryJson(db,Statement("DELETE FROM books WHERE id=? RETURNING id",[DbInteger(BigInt(id.string()))])).value()).items();
         confirm deleted.size()==1 else throw Exception(404,"book not found");Text(200,"deleted");
     }
     async headers(request is WebRequest) is HandlingResult{Text(200,"agent="+request.header("X-Agent","none"));}

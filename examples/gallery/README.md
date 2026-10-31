@@ -47,7 +47,7 @@ OKKAMA_STDLIB_DIR="$PWD/std" ./okkama-pl/okkama examples/gallery/matrix.ok
 | Программа | Задача и результат | Как устроена |
 |---|---|---|
 | [calculator.ok](calculator.ok) | `1 + 2 * 3 = 7`, `(1 + 2) * 3 = 9`, `0.1 + 0.2 = 3/10` | Recursive descent с приоритетами; `ParseResult` содержит `rat` и следующую позицию |
-| [json.ok](json.ok) | Дерево данных Voyager 1 и точное расстояние `1639/10` | `ParsedJson`, `JsonView`, `JsonKind`, обход объекта и массива, печать и повторный разбор |
+| [json-tree.ok](json-tree.ok) | Дерево данных Voyager 1 и точное расстояние `1639/10` | `ParsedJson`, `Json`, `JsonKind`, обход объекта и массива, печать и повторный разбор |
 | [rpn.ok](rpn.ok) | `3 4 + 5 * = 35`, `1 3 / = 1/3` | Неизменяемый стек и действия-преемники |
 | [brainfuck.ok](brainfuck.ok) | `Hello World!` | Восемь инструкций, байтовая лента, таблица пар скобок и снимки машины |
 

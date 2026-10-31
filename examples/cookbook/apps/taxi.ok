@@ -22,7 +22,6 @@ import "db/statement" take Statement;
 import "db/value" take DbText, DbInteger;
 import "numbers/bigint" take BigInt;
 import "time/iso" take DateFromIso;
-import "json/write" take PrettyJson;
 import "io/stdout" take Stdout;
 import "fs/path" take Path;
 
@@ -83,7 +82,7 @@ object TaxiCommands {
             );
         };
         Stdout().writeln(
-            PrettyJson(indentation: 2, origin: await QueryJson(target, statement).value()).string()
+            (await QueryJson(target, statement).value()).pretty(2)
         );
     }
 }

@@ -9,12 +9,12 @@
 
 module app v1.0.0;
 import "template/sections" take SectionTemplate;
-import "json/parse" take ParsedJson;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
     let source="{{#users}}{{name}}:{{#tags}} {{.}}{{/tags}}{{^tags}} no tags{{/tags}}\n{{/users}}";
-    let users=ParsedJson("{\"users\":[{\"name\":\"Ada\",\"tags\":[\"math\",\"code\"]},{\"name\":\"Grace\",\"tags\":[]}]}");
+    let users=ParsedJson("{\"users\":[{\"name\":\"Ada\",\"tags\":[\"math\",\"code\"]},{\"name\":\"Grace\",\"tags\":[]}]}").value();
     Stdout().write(SectionTemplate(source).string(users));
     0;
 }

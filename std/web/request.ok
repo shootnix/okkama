@@ -7,11 +7,9 @@ import "http/media_type" take HttpMediaType,InvalidHttpMediaType;
 import "url/value" take UrlQuery;
 import "url/query" take QueryParameters,QueryLimitExceeded;
 import "url/form" take ParsedForm,InvalidFormEncoding;
-import "json/parse" take ParsedJson,InvalidJson;
-import "json/value" take DuplicateJsonMember,JsonKind,JsonMember;
+import "json" take Json,JsonKind,JsonField,JsonOptional,ParsedJson,InvalidJson,DuplicateJsonMember,WrongJsonKind,MissingJsonValue,InvalidJsonNumber;
 import "math/decimal" take Decimal;
 import "numbers/bigint" take BigInt;
-import "json/read" take JsonView,WrongJsonKind,MissingJsonValue,InvalidJsonNumber;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded,Utf8Decoded,InvalidUtf8;
@@ -106,11 +104,10 @@ object WebRequest {
     // reading errors of the returned RequestJson are 422.
     async json(limit is int) is RequestJson {
         self.media("json");
-        let document = ParsedJson(await self.text(limit));
-        try { document.kind(); }
-        catch failure is InvalidJson { throw Exception(400, "invalid JSON body: " + failure.text()); }
-        catch failure is DuplicateJsonMember { throw Exception(400, "invalid JSON body: " + failure.text()); }
-        RequestJson(JsonView(document));
+        let document = try { ParsedJson(await self.text(limit)).value(); }
+            catch failure is InvalidJson { throw Exception(400, "invalid JSON body: " + failure.text()); }
+            catch failure is DuplicateJsonMember { throw Exception(400, "invalid JSON body: " + failure.text()); };
+        RequestJson(document);
     }
 
     // Requires application/x-www-form-urlencoded.
@@ -152,16 +149,16 @@ object InvalidBodyLimit does Error {
     text() is string { "request body limit must be nonnegative: " + origin.string(); }
 }
 
-// The request body as JSON. Same reading API as json/read.JsonView, but every
-// reading failure is the client's: it becomes Exception(422) naming the JSON
-// pointer. Server-side JSON read through a plain JsonView keeps its own errors,
-// so a bug in server data is never reported to the client as 422.
+// The request body as JSON. Same reading API as json.Json, but every reading
+// failure is the client's: it becomes Exception(422) naming the JSON pointer.
+// Server-side JSON read through a plain Json keeps its own errors, so a bug in
+// server data is never reported to the client as 422.
 object RequestJson {
-    has origin is JsonView;
+    has origin is Json;
 
-    RequestJson(origin is JsonView) { self.origin = origin; }
+    RequestJson(origin is Json) { self.origin = origin; }
 
-    view() is JsonView { origin; }
+    value() is Json { origin; }
     kind() is JsonKind { origin.kind(); }
     pointer() is string { origin.pointer(); }
 
@@ -172,37 +169,72 @@ object RequestJson {
     int() is int { try { origin.int(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } catch e is InvalidJsonNumber { throw Exception(422, e.text()); } }
     size() is int { try { origin.size(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
     names() is @string { try { origin.names(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
-    members() is @JsonMember { try { origin.members(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
-    membership(name is string) is bool { try { origin.membership(name); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    fields() is @JsonField { try { origin.fields(); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    has(name is string) is bool { try { origin.has(name); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
 
     items() is @RequestJson {
-        let views = try { origin.items(); } catch e is WrongJsonKind { throw Exception(422, e.text()); };
-        let wrapped is @RequestJson = views.map() -> view { RequestJson(view); };
+        let values = try { origin.items(); } catch e is WrongJsonKind { throw Exception(422, e.text()); };
+        let wrapped is @RequestJson = values.map() -> value { RequestJson(value); };
         wrapped;
     }
 
-    item(index is int) is RequestJson {
-        try { RequestJson(origin.item(index)); }
+    at(index is int) is RequestJson {
+        try { RequestJson(origin.at(index)); }
         catch e is WrongJsonKind { throw Exception(422, e.text()); }
         catch e is MissingJsonValue { throw Exception(422, e.text()); }
     }
 
-    member(name is string) is RequestJson {
-        try { RequestJson(origin.member(name)); }
+    get(name is string) is RequestJson {
+        try { RequestJson(origin.get(name)); }
         catch e is WrongJsonKind { throw Exception(422, e.text()); }
         catch e is MissingJsonValue { throw Exception(422, e.text()); }
     }
 
-    text(name is string) is string { self.member(name).text(); }
-    number(name is string) is Decimal { self.member(name).number(); }
-    integer(name is string) is BigInt { self.member(name).integer(); }
-    int(name is string) is int { self.member(name).int(); }
-    boolean(name is string) is bool { self.member(name).boolean(); }
+    // A member that may be absent or null: the fallback readers of json.JsonOptional,
+    // with a present member of another kind as 422.
+    optional(name is string) is RequestJsonOptional {
+        try { RequestJsonOptional(origin.optional(name)); }
+        catch e is WrongJsonKind { throw Exception(422, e.text()); }
+    }
+
+    text(name is string) is string { self.get(name).text(); }
+    number(name is string) is Decimal { self.get(name).number(); }
+    integer(name is string) is BigInt { self.get(name).integer(); }
+    int(name is string) is int { self.get(name).int(); }
+    boolean(name is string) is bool { self.get(name).boolean(); }
+    list(name is string) is @RequestJson { self.get(name).items(); }
+}
+
+object RequestJsonOptional {
+    has origin is JsonOptional;
+
+    RequestJsonOptional(origin is JsonOptional) { self.origin = origin; }
+
+    present() is bool { origin.present(); }
+    pointer() is string { origin.pointer(); }
+
+    value() is RequestJson {
+        try { RequestJson(origin.value()); }
+        catch e is MissingJsonValue { throw Exception(422, e.text()); }
+    }
+
+    text(fallback is string) is string { try { origin.text(fallback); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    number(fallback is Decimal) is Decimal { try { origin.number(fallback); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    boolean(fallback is bool) is bool { try { origin.boolean(fallback); } catch e is WrongJsonKind { throw Exception(422, e.text()); } }
+    int(fallback is int) is int { try { origin.int(fallback); } catch e is WrongJsonKind { throw Exception(422, e.text()); } catch e is InvalidJsonNumber { throw Exception(422, e.text()); } }
+
+    items() is @RequestJson {
+        let values = try { origin.items(); } catch e is WrongJsonKind { throw Exception(422, e.text()); };
+        let wrapped is @RequestJson = values.map() -> value { RequestJson(value); };
+        wrapped;
+    }
 }
 
 test "request JSON reading failures are 422 exceptions at the pointer" {
-    let body = RequestJson(JsonView(ParsedJson("{\"name\":\"Ada\",\"age\":\"x\"}")));
+    let body = RequestJson(ParsedJson("{\"name\":\"Ada\",\"age\":\"x\",\"nick\":null}").value());
     test.is(body.text("name"), "Ada");
     test.is(try { body.int("age"); "no"; } catch e is Exception { e.status().string() + " " + e.detail(); }, "422 JSON value at /age must be number, found string");
     test.is(try { body.text("missing"); "no"; } catch e is Exception { e.detail(); }, "JSON value at /missing is missing");
+    test.is(body.optional("nick").text("anonymous"), "anonymous");
+    test.is(try { body.optional("age").int(0); "no"; } catch e is Exception { e.status().string() + " " + e.detail(); }, "422 JSON value at /age must be number, found string");
 }

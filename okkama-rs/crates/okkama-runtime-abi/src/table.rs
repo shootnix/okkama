@@ -548,4 +548,18 @@ natives! {
     JsonJsonOutputMember = 545, "runtime/json@1::json_output_member/3", "(JsonOutputState, string, bool) -> int";
     JsonJsonOutputString = 546, "runtime/json@1::json_output_string/1", "(JsonOutputState) -> string";
     JsonJsonRepeatedName = 547, "runtime/json@1::json_repeated_name/1", "(@string) -> int";
+    JsonJsonMemberText = 548, "runtime/json@1::json_member_text/2", "(JsonNodeState, string) -> string";
+    JsonJsonMemberSpelling = 549, "runtime/json@1::json_member_spelling/2", "(JsonNodeState, string) -> string";
+    JsonJsonMemberBoolean = 550, "runtime/json@1::json_member_boolean/2", "(JsonNodeState, string) -> bool";
+    JsonJsonMemberInt = 551, "runtime/json@1::json_member_int/2", "(JsonNodeState, string) -> int";
+    JsonJsonTextNode = 552, "runtime/json@1::json_text_node/1", "(string) -> JsonNodeState";
+    JsonJsonNumberNode = 553, "runtime/json@1::json_number_node/1", "(string) -> JsonNodeState";
+    JsonJsonBooleanNode = 554, "runtime/json@1::json_boolean_node/1", "(bool) -> JsonNodeState";
+    JsonJsonNullNode = 555, "runtime/json@1::json_null_node/0", "() -> JsonNodeState";
+    JsonJsonArrayNode = 556, "runtime/json@1::json_array_node/1", "(@JsonNodeState) -> JsonNodeState";
+    JsonJsonObjectNode = 557, "runtime/json@1::json_object_node/2", "(@string, @JsonNodeState) -> JsonNodeState";
+    JsonJsonNodeWrite = 558, "runtime/json@1::json_node_write/2", "(JsonNodeState, int) -> string";
+    JsonJsonNodePointer = 559, "runtime/json@1::json_node_pointer/2", "(JsonNodeState, JsonNodeState) -> string";
+    JsonJsonMemberValues = 560, "runtime/json@1::json_member_values/1", "(JsonNodeState) -> @JsonNodeState";
+    JsonJsonNodeItems = 561, "runtime/json@1::json_node_items/1", "(JsonNodeState) -> @JsonNodeState";
 }

@@ -2971,7 +2971,7 @@ import "io/stdout" as output take Stdout;
 `File` владеет закрытием; `File.binary()` и `File.text()` предоставляют раздельные
 потоковые роли. Удаление дерева и сохранение временного файла — явные void-команды.
 `Formatted(pattern: "{}", values: ["Ada"]).string()` форматирует явные строки;
-`CompactJson(origin: document).string()` использует `JsonValue.print(JsonWriting)`
+`document.string()` записывает значение `Json`
 без рефлексии. Удалённые API перечислены в [гайде миграции](std/stdlib-v4-migration.md).
 
 Следующие исторический перечень и примеры относятся к **прежней `stdlib/`**.

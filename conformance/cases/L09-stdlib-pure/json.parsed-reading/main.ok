@@ -1,12 +1,10 @@
 module app v1.0.0;
 
-import "json/parse" take ParsedJson;
-import "json/read" take JsonView, WrongJsonKind, MissingJsonValue, InvalidJsonNumber;
-import "json/value" take JsonKind, JsonValue;
+import "json" take Json, JsonKind, ParsedJson, WrongJsonKind, MissingJsonValue, InvalidJsonNumber;
 import "io/stdout" take Stdout;
 
 object Outcome {
-    has view is JsonView;
+    has view is Json;
     Outcome(:view);
 
     string() is string {
@@ -14,7 +12,7 @@ object Outcome {
             match view.kind() {
                 case JsonKind.object_value {
                     let parts is @string = view.names().map() -> name {
-                        name + "=" + Outcome(view: view.member(name)).string();
+                        name + "=" + Outcome(view: view.get(name)).string();
                     };
                     "{" + parts.join(",") + "|" + view.size().string() + "}";
                 }
@@ -47,9 +45,9 @@ main() is int {
         "\"\"",
     ];
     for sources -> source {
-        let printed is JsonValue = ParsedJson(source);
-        let direct = Outcome(view: JsonView(ParsedJson(source))).string();
-        confirm direct == Outcome(view: JsonView(printed)).string();
+        let printed is Json = ParsedJson(source).value();
+        let direct = Outcome(view: ParsedJson(source).value()).string();
+        confirm direct == Outcome(view: printed).string();
         Stdout().writeln(direct);
     }
     0;

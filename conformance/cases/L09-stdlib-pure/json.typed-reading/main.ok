@@ -1,18 +1,15 @@
 module app v1.0.0;
 
 import "conformance/check" take Checks;
-import "json/parse" take ParsedJson, InvalidJson;
-import "json/write" take CompactJson;
-import "json/read" take JsonView, InvalidJsonNumber;
-import "json/value" take JsonText, JsonNumber, DuplicateJsonMember;
+import "json" take ParsedJson, InvalidJsonNumber;
 import "math/decimal" take Decimal;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("text member", JsonView(origin: ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}")).text("name"), "Ada");
-    c = c.same_int("int member", JsonView(origin: ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}")).int("age"), 36);
-    c = c.same_text("exact big integer", JsonView(origin: ParsedJson(origin: "{\"n\":123456789012345678901234567890}")).integer("n").string(), "123456789012345678901234567890");
-    c = c.same_text("big integer is not int", try { let probe = JsonView(origin: ParsedJson(origin: "{\"n\":123456789012345678901234567890}")).int("n"); "no error"; } catch e is InvalidJsonNumber { e.pointer(); }, "/n");
-    c = c.same_int("array items", JsonView(origin: ParsedJson(origin: "[1,[2,3],4]")).items().size(), 3);
+    c = c.same_text("text member", ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}").value().text("name"), "Ada");
+    c = c.same_int("int member", ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}").value().int("age"), 36);
+    c = c.same_text("exact big integer", ParsedJson(origin: "{\"n\":123456789012345678901234567890}").value().integer("n").string(), "123456789012345678901234567890");
+    c = c.same_text("big integer is not int", try { let probe = ParsedJson(origin: "{\"n\":123456789012345678901234567890}").value().int("n"); "no error"; } catch e is InvalidJsonNumber { e.pointer(); }, "/n");
+    c = c.same_int("array items", ParsedJson(origin: "[1,[2,3],4]").value().items().size(), 3);
     c.done();
 }

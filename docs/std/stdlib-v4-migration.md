@@ -112,7 +112,7 @@ must be updated; parsers see the same numbers. `template/json` is unaffected.
 
 Reading parsed JSON no longer needs custom JsonWriting visitors: use
 `json/read.JsonView(value)` with `text/int/integer/number/boolean`, `member`,
-`items` and the member shortcuts. See [JSON reading](json-reading.md).
+`items` and the member shortcuts. See [JSON reading](json.md).
 
 New `web/*` composes controllers over http/routing and http/server. Existing
 Handling-based servers keep working unchanged; WebRoutes is itself a Handling, so
@@ -216,3 +216,26 @@ options select fresh process workers and std reports; test_results(1) exposes
 metadata and structured causes. SnapshotUpdate is explicitly constructed; no
 ordinary invocation or environment setting rewrites expected snapshots.
 See [testing.md](testing.md) for bounds, timeout grace and backend requirements.
+
+## JSON module (after 0.3.1)
+
+`json/value`, `json/parse`, `json/read`, `json/write` and `json/codec` were replaced by
+one module, `json` ([JSON](json.md)):
+
+| Before | Now |
+|---|---|
+| `JsonText(s)`, `JsonNumber(d)`, `JsonBoolean(b)`, `JsonNull()` | `Json(s)`, `Json(d)`, `Json(b)`, `Json()` |
+| `JsonObject([JsonMember("id", 1)])` | `Json([JsonField("id", 1)])` |
+| `JsonArray(values)` | `Json(items: values)` |
+| `JsonView(ParsedJson(text))` | `ParsedJson(text).value()` |
+| `view.member(name)`, `required(name)` | `get(name)` |
+| `item(i)`, `members()`, `membership(name)` | `at(i)`, `fields()`, `has(name)` |
+| `JsonOption`, `view()` | `JsonOptional`, `value()` |
+| `CompactJson(origin: v).string()` | `v.string()` |
+| `PrettyJson(origin: v, indentation: 2).string()` | `v.pretty(2)` |
+| `JsonCodec<T>`, `JsonList`, `JsonDecoded`, `JsonEncoded` | a plain object with `value(Json)` and `json(T)`; `map()` over `items()` |
+| `web/reply.Json(status, v)` | `JsonReply(status, v)` |
+| custom `JsonValue` with `print(JsonWriting)` | build a `Json` |
+
+`PrettyJson`'s depth and byte limits are gone; parsing keeps its depth limit.
+

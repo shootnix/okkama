@@ -4,13 +4,12 @@
 // Uses immutable text, JSON string quoting and an ASCII marker.
 // Task: https://github.com/ash/rakupp/blob/main/examples/quine.raku
 module gallery/quine v1.0.0;
-import "json/value" take JsonText;
-import "json/write" take CompactJson;
+import "json" take Json;
 import "encoding/single_byte" take AsciiDecoded;
 import "io/stdout" take Stdout;
 main() is int {
-    let source = "// Quine: prints this complete source, including documentation, without file IO.\n// Run: ./examples/gallery/run quine\n// Check: compare stdout byte for byte with examples/gallery/quine.ok.\n// Uses immutable text, JSON string quoting and an ASCII marker.\n// Task: https://github.com/ash/rakupp/blob/main/examples/quine.raku\nmodule gallery/quine v1.0.0;\nimport \"json/value\" take JsonText;\nimport \"json/write\" take CompactJson;\nimport \"encoding/single_byte\" take AsciiDecoded;\nimport \"io/stdout\" take Stdout;\nmain() is int {\n    let source = @;\n    let marker = AsciiDecoded([64.byte()]).string();\n    Stdout().write(source.replace(marker, CompactJson(origin:JsonText(source)).string()));\n    0;\n}\n";
+    let source = "// Quine: prints this complete source, including documentation, without file IO.\n// Run: ./examples/gallery/run quine\n// Check: compare stdout byte for byte with examples/gallery/quine.ok.\n// Uses immutable text, JSON string quoting and an ASCII marker.\n// Task: https://github.com/ash/rakupp/blob/main/examples/quine.raku\nmodule gallery/quine v1.0.0;\nimport \"json\" take Json;\nimport \"encoding/single_byte\" take AsciiDecoded;\nimport \"io/stdout\" take Stdout;\nmain() is int {\n    let source = @;\n    let marker = AsciiDecoded([64.byte()]).string();\n    Stdout().write(source.replace(marker, Json(source).string()));\n    0;\n}\n";
     let marker = AsciiDecoded([64.byte()]).string();
-    Stdout().write(source.replace(marker, CompactJson(origin:JsonText(source)).string()));
+    Stdout().write(source.replace(marker, Json(source).string()));
     0;
 }

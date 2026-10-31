@@ -1,11 +1,11 @@
 module app v1.0.0;
 import "template/json" take JsonTemplateStrings;
-import "json/value" take JsonText, JsonObject, JsonMember;
+import "json" take Json, JsonField;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let item=JsonTemplateStrings(JsonText("Ada"));
-    let user=JsonTemplateStrings(JsonObject([JsonMember("name",JsonText("Grace"))]));
+    let item=JsonTemplateStrings(Json("Ada"));
+    let user=JsonTemplateStrings(Json([JsonField("name",Json("Grace"))]));
     Stdout().writeln(item.string("."));
     Stdout().writeln(user.string("name"));
     0;

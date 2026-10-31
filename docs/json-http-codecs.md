@@ -12,11 +12,12 @@
 авторизованный обработчик. Сохранение и идемпотентный ключ остаются в application/
 infrastructure, вне codec.
 
-Ответ составляется из выбранного typed cap через `JsonObject`, `JsonMember` и
-`JsonText`; скалярные поля пишутся напрямую: `JsonMember("id", 42)`, `JsonMember("name", name)`,
-точные суммы — `JsonMember("total", amount)` для `Decimal`. Повторно используемое
-отображение типа удобно оформить как `json/codec.JsonCodec<T>` (см. [json-codec](std/json-codec.md)).
-`web/reply.Json` использует `CompactJson` и UTF8. Для структурированного адреса
+Ответ собирается из выбранного typed cap как `Json` из `JsonField`; скалярные
+поля пишутся напрямую: `JsonField("id", 42)`, `JsonField("name", name)`, точные
+суммы — `JsonField("total", amount)` для `Decimal`. Повторно используемое
+отображение типа — обычный объект с `value(view is Json)` и `json(item) is Json`
+(см. [JSON](std/json.md#codecs)). `web/reply.JsonReply` пишет `Json` компактно в UTF-8.
+Для структурированного адреса
 ответ содержит customer_id/address; для других представлений выбирается свой
 явный набор полей.
 
