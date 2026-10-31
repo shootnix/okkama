@@ -6,8 +6,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-31
+
 ### Added
 
+- **PGO builds**: `make pgo` (and `make install-pgo`) builds the release binaries with
+  profile-guided optimization (`okkama-rs/tools/pgo/build.sh`): an instrumented build, a
+  training run of `tools/pgo/json.ok`, the benchmarks on Sparrow and IR and std inline
+  tests, then the final build with the merged profile. Needs `rustup component add
+  llvm-tools`. Against the plain release build: JSON 14–18% faster, the benchmarks 6%.
+  `-C target-cpu`, thin LTO and `panic = "abort"` were measured too: no gain from the first
+  two, and abort (5% on JSON) would turn internal errors into aborts while the JIT still
+  catches panics as a fallback, so the profile keeps unwinding.
 - **`\u{H}` escapes** in string and char literals: one to six hexadecimal digits name a
   Unicode scalar value, `"\u{1b}[1m"`, `"\u{e9}"`, `'\u{0}'`. Surrogates, values above
   `10FFFF`, missing braces and empty or overlong digit runs are lexer errors (spec §4.2).
@@ -315,6 +325,7 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/shootnix/okkama/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/shootnix/okkama/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shootnix/okkama/releases/tag/v0.2.0

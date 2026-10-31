@@ -1,0 +1,91 @@
+// PGO training: JSON written, parsed and read back through codecs.
+//
+// Builds 3 000 orders in code, writes them with CompactJson and PrettyJson,
+// parses the text and decodes it through JsonView and json/codec. Prints a
+// checksum so a broken build fails the training run.
+
+module pgo/json;
+
+import "json/codec" take JsonCodec, JsonList, JsonDecoded, JsonEncoded;
+import "json/parse" take ParsedJson;
+import "json/read" take JsonView;
+import "json/value" take JsonValue, JsonObject, JsonMember, JsonArray, JsonText;
+import "json/write" take CompactJson, PrettyJson;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+
+object Line {
+    has sku is string;
+    has qty is int;
+    Line(:sku, :qty);
+    sku() is string { sku; }
+    quantity() is int { qty; }
+}
+
+object Order {
+    has id is int;
+    has name is string;
+    has note is string;
+    has total is Decimal;
+    has paid is bool;
+    has lines is @Line;
+    Order(:id, :name, :note, :total, :paid, :lines);
+    id() is int { id; }
+    name() is string { name; }
+    note() is string { note; }
+    total() is Decimal { total; }
+    paid() is bool { paid; }
+    lines() is @Line { lines; }
+    quantity() is int { lines.reduce(0) -> sum, line { sum + line.quantity(); }; }
+}
+
+object LineJson does JsonCodec<Line> {
+    LineJson();
+    value(view is JsonView) is Line { Line(sku: view.text("sku"), qty: view.optional("qty").int(1)); }
+    json(line is Line) is JsonValue { JsonObject([JsonMember("sku", line.sku()), JsonMember("qty", line.quantity())]); }
+}
+
+object OrderJson does JsonCodec<Order> {
+    OrderJson();
+
+    value(view is JsonView) is Order {
+        Order(
+            id: view.int("id"),
+            name: view.required("customer").text("name"),
+            note: view.optional("note").text(""),
+            total: view.number("total"),
+            paid: view.optional("paid").boolean(false),
+            lines: JsonList(item: LineJson()).value(view.required("lines"))
+        );
+    }
+
+    json(order is Order) is JsonValue {
+        JsonObject([
+            JsonMember("id", order.id()),
+            JsonMember("customer", JsonObject([JsonMember("name", order.name())])),
+            JsonMember("note", order.note()),
+            JsonMember("total", order.total()),
+            JsonMember("paid", order.paid()),
+            JsonMember("tags", JsonArray([JsonText("a"), JsonText("b \"q\"\n")])),
+            JsonMember("lines", JsonList(item: LineJson()).json(order.lines()))
+        ]);
+    }
+}
+
+main() is int {
+    let orders is @Order = (0..3000).map() -> id {
+        let lines is @Line = (0..(id % 4 + 1)).map() -> index { Line(sku: "SKU-" + index.string(), qty: index + 1); };
+        Order(id: id, name: "Customer " + id.string(), note: if id % 3 == 0 { "gift"; } else { ""; },
+            total: Decimal(id.string() + "." + (id % 100).string()), paid: id % 2 == 0, lines: lines);
+    };
+    let codec = JsonList(item: OrderJson());
+    let text = JsonEncoded(codec: codec, origin: orders).string();
+    let decoded = JsonDecoded(codec: codec, source: text).value();
+    let pretty = PrettyJson(origin: ParsedJson(text), indentation: 2, maximum_depth: 64, maximum_bytes: 16777216).string();
+    let view = JsonView(ParsedJson(pretty));
+    let names = view.items().reduce(0) -> sum, row { sum + row.member("customer").text("name").length(); };
+    let quantity = decoded.reduce(0) -> sum, order { sum + order.quantity(); };
+    Stdout().writeln(decoded.size().string() + " " + quantity.string() + " " + names.string() + " "
+        + CompactJson(origin: ParsedJson(text)).string().length().string());
+    0;
+}
