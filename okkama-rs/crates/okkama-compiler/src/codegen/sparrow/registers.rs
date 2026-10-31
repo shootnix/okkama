@@ -91,6 +91,16 @@ pub(super) fn allocate(function: &Function) -> Function {
             conflict(*param, &live);
         }
     }
+    // Аргумент перехода и параметр цели в одном регистре — без записи на ребре.
+    let mut affinity: Vec<Vec<usize>> = vec![Vec::new(); count];
+    for block in &function.blocks {
+        for target in block.term.kind.targets() {
+            for (param, arg) in function.blocks[target.block.0].params.iter().zip(&target.args) {
+                affinity[param.0].push(arg.0);
+                affinity[arg.0].push(param.0);
+            }
+        }
+    }
     // Параметры функции — первыми: их регистры различны и малы.
     let mut order: Vec<usize> = function.params.iter().map(|param| param.0).collect();
     order.extend((0..count).filter(|value| !function.params.contains(&ValueId(*value))));
@@ -99,7 +109,9 @@ pub(super) fn allocate(function: &Function) -> Function {
     for value in order {
         let taken: Vec<usize> = conflicts[value].iter().filter_map(|other| colors[*other]).collect();
         let ty = &function.values[value];
-        let color = (0..types.len()).find(|color| types[*color] == *ty && !taken.contains(color)).unwrap_or_else(|| {
+        let free = |color: &usize| types[*color] == *ty && !taken.contains(color);
+        let preferred = affinity[value].iter().filter_map(|other| colors[*other]).find(free);
+        let color = preferred.or_else(|| (0..types.len()).find(free)).unwrap_or_else(|| {
             types.push(ty.clone());
             types.len() - 1
         });

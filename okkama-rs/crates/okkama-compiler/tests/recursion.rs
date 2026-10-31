@@ -81,3 +81,14 @@ fn tail_calls_in_both_branches_leave_no_unreachable_join() {
     ir::verify(&module).expect("verifies");
     assert_eq!(self_calls(&module, "F.value"), 0, "both tail calls are loops");
 }
+
+#[test]
+fn skipped_empty_blocks_keep_builders_linear() {
+    // Пустые блоки ветвления не сливаются в `cond` с одним сборщиком в двух переходах.
+    let module = lower(
+        "object T { T() {} }",
+        "let empty is @int = []; let mapped is @string = empty.map() -> v { v.string(); }; let kept = [1, 2].filter() -> v { v > 5; }; mapped.size() + kept.size();",
+    )
+    .expect("lowers");
+    ir::verify(&module).expect("verifies");
+}

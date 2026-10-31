@@ -374,7 +374,9 @@ fn lower_modules(
     // Регионы, которые ничем не владеют, не открываются и не закрываются.
     ir::regions::elide_unused_regions(&mut module);
     // `undef`, которые никто не читает (от убранных регионов и блоков), — тоже.
+    // Пустые блоки-трамплины пропускаются.
     for function in &mut module.functions {
+        ir::cfg::thread_jumps(function);
         ir::cfg::drop_unread_undef(function);
     }
     // Lowering обязан выдавать только корректный IR: нарушение — ошибка компилятора.

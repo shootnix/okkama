@@ -77,11 +77,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   names and number spellings no longer copy the string on every read, and the parser
   builds each string once. Duplicate member names of small objects are found without
   a hash set. Parsing is 10–25% faster (records 110 → 90 ms, orders 21 → 16).
+- Release checks in Sparrow JIT code follow the register type: an `int` register is
+  released only when it holds a long integer, a register of a reference type only when
+  it is not empty.
+- IR: empty jump blocks are skipped (an empty block with arguments only behind a
+  single jump, so a linear array builder is never passed on two branches), and
+  Sparrow codegen prefers one register for a jump argument and the parameter it
+  becomes, so most edge moves disappear.
 - `Json.names()` reads all member names in one native call (new native
   `runtime/json.json_member_names`, Rust and JVM) instead of one call per name.
-- Walking JSON documents on Sparrow is 45–50% faster than in 0.3.1: records 867 →
-  420 ms, deep 301 → 150, numbers 161 → 85, orders 189 → 91, wide 85 → 38, strings
-  35 → 18.
+- Walking JSON documents on Sparrow is about twice as fast as in 0.3.1: records 867 →
+  405 ms, deep 301 → 145, numbers 161 → 81, orders 189 → 85, wide 85 → 36, strings
+  35 → 16 (Python 3.9: 299, 94, 69, 56, 28, 5).
 
 ## [0.3.1] — 2026-10-31
 

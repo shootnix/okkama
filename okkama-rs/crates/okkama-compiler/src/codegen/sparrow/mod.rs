@@ -135,7 +135,8 @@ impl FunctionGen<'_> {
         }
         Ok(Target {
             pc: self.starts[target.block.0],
-            moves: params.iter().zip(&target.args).map(|(param, arg)| (reg(*param), reg(*arg))).collect(),
+            // Параметр и аргумент в одном регистре — записи нет.
+            moves: params.iter().zip(&target.args).map(|(param, arg)| (reg(*param), reg(*arg))).filter(|(param, arg)| param != arg).collect(),
         })
     }
 
@@ -151,7 +152,7 @@ impl FunctionGen<'_> {
         Ok((
             Target {
                 pc: self.starts[target.block.0],
-                moves: rest.iter().zip(&target.args).map(|(param, arg)| (reg(*param), reg(*arg))).collect(),
+                moves: rest.iter().zip(&target.args).map(|(param, arg)| (reg(*param), reg(*arg))).filter(|(param, arg)| param != arg).collect(),
             },
             reg(*last),
         ))

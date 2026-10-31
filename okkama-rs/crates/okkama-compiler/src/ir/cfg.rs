@@ -137,6 +137,51 @@ pub fn remove_unreachable_blocks(function: &mut Function) {
     }
 }
 
+/// Пропустить пустые блоки-трамплины: без параметров и инструкций, с
+/// переходом `br` дальше. Переходы к ним ведут сразу к их цели, сами блоки
+/// удаляются; true — что-то изменилось.
+pub fn thread_jumps(function: &mut Function) -> bool {
+    let forward = |function: &Function, block: BlockId| -> Option<super::Target> {
+        let body = &function.blocks[block.0];
+        match &body.term.kind {
+            super::TermKind::Br(target) if block.0 != 0 && body.params.is_empty() && body.insts.is_empty() && target.block != block => {
+                Some(target.clone())
+            }
+            _ => None,
+        }
+    };
+    let mut changed = false;
+    for index in 0..function.blocks.len() {
+        let mut targets: Vec<super::Target> = function.blocks[index].term.kind.targets().into_iter().cloned().collect();
+        // Аргументы трамплина переносятся только в единственный переход: у
+        // ветвления два перехода с одним сборщиком читали бы его дважды.
+        let single = targets.len() == 1;
+        for target in &mut targets {
+            // Цепочка трамплинов — не длиннее числа блоков (цикл из них не зациклит проход).
+            for _ in 0..function.blocks.len() {
+                if !target.args.is_empty() {
+                    break;
+                }
+                let Some(next) = forward(function, target.block) else {
+                    break;
+                };
+                if !single && !next.args.is_empty() {
+                    break;
+                }
+                *target = next;
+                changed = true;
+            }
+        }
+        for (slot, target) in function.blocks[index].term.kind.targets_mut().into_iter().zip(targets) {
+            *slot = target;
+        }
+    }
+    if changed {
+        remove_unreachable_blocks(function);
+    }
+    changed
+}
+
 /// Убрать `undef`, результат которых никто не читает, и сжать номера
 /// значений: остаются только определённые. Такие `undef` оставляют убранные
 /// регионы и удалённые блоки; машинный код исполнял бы каждый при каждом

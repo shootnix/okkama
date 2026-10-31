@@ -1384,10 +1384,34 @@ impl<'a, 'b> Gen<'a, 'b> {
     /// Освободить регистр функции перед записью; регистр типа без ссылок
     /// (у регистра один тип) освобождать нечего.
     fn release_register(&mut self, register: Register) {
-        if !plain_type(self.program, self.function, register) {
-            let regs = self.regs;
-            self.release(regs, offset(register));
+        use okkama_sparrow::Type as T;
+        if plain_type(self.program, self.function, register) {
+            return;
         }
+        let regs = self.regs;
+        let at = offset(register);
+        let ty = self.function.registers.get(register.0 as usize).and_then(|ty| self.program.types.get(ty.0 as usize));
+        // Регистр `int` держит `undef` или целое: освобождать — только длинное.
+        // Другой — `undef` или значение со ссылкой (освобождение любого
+        // значения помощником верно, только медленнее).
+        let heap = if matches!(ty, Some(T::Int)) {
+            let tag = self.load8(regs, at);
+            let kind = self.load8(regs, at + 8);
+            let int = self.b.ins().icmp_imm_s(IntCC::Equal, tag, i64::from(self.layout.int));
+            let long = self.b.ins().icmp_imm_s(IntCC::NotEqual, kind, i64::from(self.layout.small));
+            self.b.ins().band(int, long)
+        } else {
+            let tag = self.load8(regs, at);
+            self.b.ins().icmp_imm_s(IntCC::NotEqual, tag, i64::from(self.layout.undef))
+        };
+        let release = self.b.create_block();
+        let done = self.b.create_block();
+        self.b.ins().brif(heap, release, &[], done, &[]);
+        self.b.switch_to_block(release);
+        let address = self.b.ins().iadd_imm_s(regs, i64::from(at));
+        self.helper(h_drop as *const () as usize, self.sigs.drop, &[address]);
+        self.b.ins().jump(done, &[]);
+        self.b.switch_to_block(done);
     }
 
     /// Освободить содержимое слота перед записью (значение кучи — помощником).
