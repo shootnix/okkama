@@ -17,7 +17,8 @@ is enforced by the runtime — not by code review.**
 [Книга](docs/OkkamaBook-RU.md) ·
 [Specification](docs/okkama-spec-11072026.md) ·
 [Grammar](docs/okkama-grammar-1.0.md) ·
-[LLM Context Pack](docs/okkama-llm-context-1.0.md)
+[LLM Context Pack](docs/okkama-llm-context-1.0.md) ·
+[Roadmap: hardening](docs/roadmap/hardening.md)
 
 </div>
 
