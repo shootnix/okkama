@@ -265,6 +265,30 @@ pub(crate) struct Jit {
     layout: Layout,
     threshold: u32,
     debug: bool,
+    /// Отладка (H-21): `OKKAMA_JIT_ONLY` — компилировать только эти
+    /// функции, `OKKAMA_JIT_SKIP` — не компилировать эти, `OKKAMA_JIT_DUMP` —
+    /// печатать их CLIF; символы через запятую.
+    only: Option<Vec<String>>,
+    skip: Vec<String>,
+    dump: Vec<String>,
+    /// Счётчики для `OKKAMA_JIT_STATS`.
+    counters: Counters,
+}
+
+/// Сколько функций скомпилировано и отвергнуто, сколько входов в машинный
+/// код из интерпретатора и сколько из них — в середину функции (OSR).
+#[derive(Debug, Default)]
+struct Counters {
+    compiled: Cell<u64>,
+    refused: Cell<u64>,
+    entries: Cell<u64>,
+    osr: Cell<u64>,
+}
+
+/// Список символов из переменной окружения (через запятую).
+fn symbols(variable: &str) -> Option<Vec<String>> {
+    let text = std::env::var(variable).ok()?;
+    Some(text.split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_string).collect())
 }
 
 impl std::fmt::Debug for Jit {
@@ -277,6 +301,14 @@ impl Jit {
     /// Печать `OKKAMA_JIT_STATS` в конце запуска.
     pub(crate) fn report(&self) {
         if let Some(stats) = &self.ctx.stats {
+            let counters = &self.counters;
+            eprintln!(
+                "jit: compiled {}, refused {}, entries {}, osr {}",
+                counters.compiled.get(),
+                counters.refused.get(),
+                counters.entries.get(),
+                counters.osr.get()
+            );
             let mut rows: Vec<_> = stats.borrow().iter().map(|(name, count)| (*count, name.clone())).collect();
             rows.sort_unstable_by(|a, b| b.cmp(a));
             eprintln!("jit: helper calls by instruction");
@@ -345,8 +377,16 @@ impl Jit {
             ctx,
             role_maps: RefCell::new(std::collections::HashMap::new()),
             layout,
-            threshold: if mode == "eager" { 1 } else { THRESHOLD },
+            threshold: match std::env::var("OKKAMA_JIT_THRESHOLD").ok().and_then(|text| text.parse::<u32>().ok()) {
+                Some(threshold) => threshold.max(1),
+                None if mode == "eager" => 1,
+                None => THRESHOLD,
+            },
             debug: std::env::var_os("OKKAMA_JIT_DEBUG").is_some(),
+            only: symbols("OKKAMA_JIT_ONLY"),
+            skip: symbols("OKKAMA_JIT_SKIP").unwrap_or_default(),
+            dump: symbols("OKKAMA_JIT_DUMP").unwrap_or_default(),
+            counters: Counters::default(),
         }))
     }
 
@@ -376,16 +416,19 @@ impl Jit {
         let program = &engine.program;
         let function = &program.functions[index];
         let eligible = function.native.is_none() && function.intrinsic.is_none() && !function.code.is_empty();
+        let filtered = self.only.as_ref().is_some_and(|only| !only.contains(&function.symbol)) || self.skip.contains(&function.symbol);
         let prepared = engine.prepared(index).ok();
         let started = std::time::Instant::now();
-        let result = match (eligible, prepared) {
-            (true, Some(prepared)) => self.build(program, index, &prepared.constants),
+        let result = match (eligible, filtered, prepared) {
+            (_, true, _) => Err("filtered out by OKKAMA_JIT_ONLY/OKKAMA_JIT_SKIP".to_string()),
+            (true, false, Some(prepared)) => self.build(program, index, &prepared.constants),
             _ => Err("not eligible".to_string()),
         };
         match result {
             Ok(code) => {
                 self.table[index].set(code);
                 self.states[index].set(State::Compiled);
+                self.counters.compiled.set(self.counters.compiled.get() + 1);
                 if self.debug {
                     eprintln!("jit: compiled {} ({} instructions) in {:.2} ms", function.symbol, function.code.len(), started.elapsed().as_secs_f64() * 1000.0);
                 }
@@ -393,6 +436,7 @@ impl Jit {
             }
             Err(error) => {
                 self.states[index].set(State::Failed);
+                self.counters.refused.set(self.counters.refused.get() + 1);
                 if self.debug {
                     eprintln!("jit: {} not compiled: {error}", function.symbol);
                 }
@@ -431,6 +475,9 @@ impl Jit {
         if self.debug {
             eprintln!("jit: {}: {} Cranelift instructions, {} blocks", program.functions[index].symbol, context.func.dfg.num_insts(), context.func.dfg.num_blocks());
         }
+        if self.dump.contains(&program.functions[index].symbol) {
+            eprintln!("jit: CLIF of {}\n{}", program.functions[index].symbol, context.func.display());
+        }
         module.define_function(id, &mut context).map_err(|error| format!("{error:?}"))?;
         // Адрес публикуется только для кадра в пределах запаса стека.
         let frame = context
@@ -452,6 +499,10 @@ impl Jit {
         // SAFETY: `code` — адрес функции, скомпилированной с сигнатурой `Entry`.
         let function: Entry = unsafe { std::mem::transmute::<usize, Entry>(code) };
         let mut out = Value::Undef;
+        self.counters.entries.set(self.counters.entries.get() + 1);
+        if entry != 0 {
+            self.counters.osr.set(self.counters.osr.get() + 1);
+        }
         sched::native_enter();
         // SAFETY: регистры — слоты кадра этой функции (их число задаёт
         // программа), `out` — инициализированный слот результата.

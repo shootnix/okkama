@@ -13,6 +13,17 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 - [Trust model](docs/security-model.md): what Okkama handles safely today for source
   code, `.spb` bytecode, natives and embedding, what it does not, and which roadmap
   tasks move each boundary (H-01).
+- JIT debugging switches (H-21): `OKKAMA_JIT_THRESHOLD=N` sets the hotness threshold,
+  `OKKAMA_JIT_ONLY` / `OKKAMA_JIT_SKIP` (comma-separated symbols) limit which functions
+  are compiled — for bisecting which compiled function changes a result —, and
+  `OKKAMA_JIT_DUMP` prints their Cranelift IR. `OKKAMA_JIT_STATS` now also prints how
+  many functions were compiled and refused, and how many times machine code was entered,
+  in the middle of a function (OSR) among them.
+- Release gate (H-08): `make gate` (`tools/gate/gate.sh`) builds, runs the Rust tests
+  in release, conformance on IR, JVM and Sparrow and on Sparrow again with JIT `eager`
+  and hotness thresholds 2 and 10 (mixed execution and OSR), checks that machine code
+  and OSR actually ran, and runs the inline tests of every std module on IR and Sparrow
+  against a list of known failures (`tools/gate/known-failures.txt`).
 
 ### Fixed
 
