@@ -1,0 +1,361 @@
+sparrow 9
+module "bench/closures" "v1.0.0"
+type t0 role role1
+type t1 byte
+type t2 array t1
+type t3 str
+type t4 array t3
+type t5 int
+type t6 object obj0
+type t7 fn [t5] -> t5
+type t8 bool
+type t9 builder t7
+type t10 array t7
+type t11 object obj1
+type t12 object obj2
+type t13 object obj3
+type t14 object obj4
+enum enum0 "encoding.utf::ByteOrder" ["big", "little"]
+role role0 "io.stream::Writing" {
+    method "write" [t0] -> void
+    method "flush" [] -> void
+}
+role role1 "io.stream::ByteSource" {
+    method "bytes" [] -> t2
+}
+role role2 "io.stream::WritingText" {
+    method "write" [t4] -> void
+    method "writeln" [t4] -> void
+}
+role role3 "Error" builtin {
+    method "text" [] -> t3
+}
+object obj0 "Pipeline" {
+}
+object obj1 "io.stdout::Stdout" {
+    does role0 [f9, f10]
+    does role2 [f11, f12]
+}
+object obj2 "io.stream::IncompleteWrite" {
+    field "amount" t5
+    does role3 [f17]
+}
+object obj3 "encoding.utf::Utf8Encoded" {
+    field "origin" t3
+}
+object obj4 "error::InvalidArgument" {
+    field "message" t3
+    does role3 [f22]
+}
+function f0 "Pipeline.new#0" {
+    registers [t6]
+    params []
+    result t6
+    0: obj.new r0, obj0, []
+    1: ret r0
+}
+function f1 "Pipeline.compose" {
+    registers [t6, t7, t7, t7]
+    params [r0, r1, r2]
+    result t7
+    0: fn.closure r3, f5, [r0, r2, r1]
+    1: ret r3
+}
+function f2 "Pipeline.adder" {
+    registers [t6, t5, t7]
+    params [r0, r1]
+    result t7
+    0: fn.closure r2, f6, [r0, r1]
+    1: ret r2
+}
+function f3 "Pipeline.multiplier" {
+    registers [t6, t5, t7]
+    params [r0, r1]
+    result t7
+    0: fn.closure r2, f7, [r0, r1]
+    1: ret r2
+}
+function f4 "main" {
+    registers [t6, t5, t5, t8, t9, t5, t5, t5, t5, t7, t5, t9, t5, t10, t7, t7, t5, t5, t5, t5, t5, t5, t11, t3, t3, t3, t4]
+    params []
+    result t5
+    0: call r0, f0, []
+    1: const r1, int 0
+    2: const r2, int 8
+    3: int.cmp le, r3, r1, r2
+    4: const r5, int 2
+    5: const r7, int 0
+    6: const r8, int 1
+    7: const r10, int 2
+    8: const r12, int 1
+    9: const r16, int 1
+    10: const r17, int 1000000007
+    11: const r18, int 1
+    12: const r19, int 1
+    13: const r20, int 1000003
+    14: const r21, int 1
+    15: br r3, @16, @97
+    16: builder.new r4
+    17: jmp @18
+    18: int.cmp lt, r3, r1, r2
+    19: br r3, @20, @33
+    20: int.mod r6, r1, r5
+    21: int.cmp eq, r3, r6, r7
+    22: br r3, @23, @26
+    23: int.add r6, r1, r8
+    24: call r9, f2, [r0, r6]
+    25: jmp @29
+    26: int.add r6, r1, r10
+    27: call r9, f3, [r0, r6]
+    28: jmp @29
+    29: builder.push r11, r4, r9
+    30: jmp @31
+    31: int.add r6, r1, r12
+    32: jmp @18(r1 <- r6, r4 <- r11)
+    33: builder.finish r13, r4
+    34: fn.closure r9, f8, []
+    35: const r1, int 0
+    36: arr.len r2, r13
+    37: jmp @38
+    38: int.cmp lt, r3, r1, r2
+    39: br r3, @40, @45
+    40: arr.get r14, r13, r1
+    41: call r15, f1, [r0, r9, r14]
+    42: jmp @43
+    43: int.add r5, r1, r16
+    44: jmp @38(r1 <- r5, r9 <- r15)
+    45: const r1, int 0
+    46: const r2, int 12000000
+    47: int.cmp le, r3, r1, r2
+    48: br r3, @49, @96
+    49: const r5, int 0
+    50: jmp @51
+    51: int.cmp lt, r3, r1, r2
+    52: br r3, @53, @59
+    53: call.fn r6, r9, [r1]
+    54: int.add r7, r5, r6
+    55: int.mod r5, r7, r17
+    56: jmp @57
+    57: int.add r6, r1, r18
+    58: jmp @51(r1 <- r6)
+    59: const r1, int 0
+    60: const r2, int 50000
+    61: int.cmp le, r3, r1, r2
+    62: br r3, @63, @95
+    63: builder.new r4
+    64: jmp @65
+    65: int.cmp lt, r3, r1, r2
+    66: br r3, @67, @72
+    67: call r9, f2, [r0, r1]
+    68: builder.push r11, r4, r9
+    69: jmp @70
+    70: int.add r6, r1, r19
+    71: jmp @65(r1 <- r6, r4 <- r11)
+    72: builder.finish r13, r4
+    73: const r1, int 0
+    74: const r2, int 0
+    75: arr.len r6, r13
+    76: jmp @77
+    77: int.cmp lt, r3, r2, r6
+    78: br r3, @79, @85
+    79: arr.get r9, r13, r2
+    80: call.fn r7, r9, [r1]
+    81: int.mod r1, r7, r20
+    82: jmp @83
+    83: int.add r7, r2, r21
+    84: jmp @77(r2 <- r7)
+    85: call r22, f13, []
+    86: cvt r23, r5
+    87: const r24, str " "
+    88: str.concat r25, r23, r24
+    89: cvt r23, r1
+    90: str.concat r24, r25, r23
+    91: arr.new r26, [r24]
+    92: call _, f12, [r22, r26]
+    93: const r1, int 0
+    94: ret r1
+    95: trap range, "Range start must be less than or equal to range end"
+    96: trap range, "Range start must be less than or equal to range end"
+    97: trap range, "Range start must be less than or equal to range end"
+}
+function f5 "lambda#0" {
+    registers [t6, t7, t7, t5, t5]
+    params [r0, r1, r2, r3]
+    result t5
+    0: call.fn r4, r2, [r3]
+    1: call.fn r3, r1, [r4]
+    2: ret r3
+}
+function f6 "lambda#1" {
+    registers [t6, t5, t5, t5]
+    params [r0, r1, r2]
+    result t5
+    0: int.add r3, r2, r1
+    1: ret r3
+}
+function f7 "lambda#2" {
+    registers [t6, t5, t5, t5]
+    params [r0, r1, r2]
+    result t5
+    0: int.mul r3, r2, r1
+    1: const r1, int 1000003
+    2: int.mod r2, r3, r1
+    3: ret r2
+}
+function f8 "lambda#3" {
+    registers [t5]
+    params [r0]
+    result t5
+    0: ret r0
+}
+function f9 "io.stdout::Stdout.write#0" {
+    registers [t11, t0, t2]
+    params [r0, r1]
+    result void
+    0: call.role r2, r1, role1, 0, []
+    1: call _, f14, [r0, r2]
+    2: ret _
+}
+function f10 "io.stdout::Stdout.flush" {
+    registers [t11]
+    params [r0]
+    result void
+    0: ret _
+}
+function f11 "io.stdout::Stdout.write#1" {
+    registers [t11, t4, t5, t5, t8, t3, t5, t5]
+    params [r0, r1]
+    result void
+    0: const r2, int 0
+    1: arr.len r3, r1
+    2: const r6, int 1
+    3: jmp @4
+    4: int.cmp lt, r4, r2, r3
+    5: br r4, @6, @11
+    6: arr.get r5, r1, r2
+    7: call _, f15, [r0, r5]
+    8: jmp @9
+    9: int.add r7, r2, r6
+    10: jmp @4(r2 <- r7)
+    11: ret _
+}
+function f12 "io.stdout::Stdout.writeln" {
+    registers [t11, t4, t5, t5, t8, t3, t5, t5]
+    params [r0, r1]
+    result void
+    0: const r2, int 0
+    1: arr.len r3, r1
+    2: const r6, int 1
+    3: jmp @4
+    4: int.cmp lt, r4, r2, r3
+    5: br r4, @6, @11
+    6: arr.get r5, r1, r2
+    7: call _, f15, [r0, r5]
+    8: jmp @9
+    9: int.add r7, r2, r6
+    10: jmp @4(r2 <- r7)
+    11: const r5, str "\n"
+    12: call _, f15, [r0, r5]
+    13: ret _
+}
+function f13 "io.stdout::Stdout.new#0" {
+    registers [t11]
+    params []
+    result t11
+    0: obj.new r0, obj1, []
+    1: ret r0
+}
+function f14 "io.stdout::Stdout.write_bytes" {
+    registers [t11, t2, t5, t5, t8, t12]
+    params [r0, r1]
+    result void
+    0: call r2, f16, [r1]
+    1: arr.len r3, r1
+    2: int.cmp eq, r4, r2, r3
+    3: br r4, @4, @5
+    4: ret _
+    5: call r5, f18, [r2]
+    6: throw r5
+}
+function f15 "io.stdout::Stdout.write_text" {
+    registers [t11, t3, t13, t2]
+    params [r0, r1]
+    result void
+    0: call r2, f19, [r1]
+    1: call r3, f20, [r2]
+    2: call _, f14, [r0, r3]
+    3: ret _
+}
+function f16 "runtime.stdio::stdout_write" native "runtime/stdio@1::stdout_write/1" {
+    registers [t2]
+    params [r0]
+    result t5
+}
+function f17 "io.stream::IncompleteWrite.text" {
+    registers [t12, t3, t5, t3, t3]
+    params [r0]
+    result t3
+    0: const r1, str "incomplete write after "
+    1: obj.get r2, r0, 0
+    2: cvt r3, r2
+    3: str.concat r4, r1, r3
+    4: const r1, str " bytes"
+    5: str.concat r3, r4, r1
+    6: ret r3
+}
+function f18 "io.stream::IncompleteWrite.new#0" {
+    registers [t5, t5, t8, t12, t3, t14]
+    params [r0]
+    result t12
+    0: const r1, int 0
+    1: int.cmp ge, r2, r0, r1
+    2: br r2, @3, @5
+    3: obj.new r3, obj2, [r0]
+    4: ret r3
+    5: const r4, str "written byte count cannot be negative"
+    6: call r5, f23, [r4]
+    7: throw r5
+}
+function f19 "encoding.utf::Utf8Encoded.new#0" {
+    registers [t3, t13]
+    params [r0]
+    result t13
+    0: obj.new r1, obj3, [r0]
+    1: ret r1
+}
+function f20 "encoding.utf::Utf8Encoded.bytes" {
+    registers [t13, t3, t2]
+    params [r0]
+    result t2
+    0: obj.get r1, r0, 0
+    1: call r2, f24, [r1]
+    2: ret r2
+}
+function f21 "error::InvalidArgument.default.message" {
+    registers [t3]
+    params []
+    result t3
+    0: const r0, str "invalid argument"
+    1: ret r0
+}
+function f22 "error::InvalidArgument.text" {
+    registers [t14, t3]
+    params [r0]
+    result t3
+    0: obj.get r1, r0, 0
+    1: ret r1
+}
+function f23 "error::InvalidArgument.new#1" {
+    registers [t3, t3, t14]
+    params [r0]
+    result t14
+    0: call r1, f21, []
+    1: obj.new r2, obj4, [r0]
+    2: ret r2
+}
+function f24 "runtime.utf::utf8_encode" native "runtime/utf@1::utf8_encode/1" {
+    registers [t3]
+    params [r0]
+    result t2
+}
+entry f4
