@@ -1,58 +1,172 @@
 module db/statement v1.0.0;
-import "db/value" take DbValue,ObservedDbValue;
+
+import "db/value" take DbValue, ObservedDbValue;
 import "db/error" take AffectedRowsUnknown;
 import "collections/sequence" take Sequencing;
-import "encoding/utf" take Utf8Encoded,Utf8Decoded;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "numbers/bigint" take BigInt;
 import "async/atomic" take Atomic;
 
 object DbLimits {
-    has values,bytes,sql_bytes is int;
-    DbLimits(){values=1024;bytes=8388608;sql_bytes=1048576;}
-    DbLimits(values is int,bytes is int,sql_bytes is int){
-        confirm values>=0 && values<=1024 && bytes>=0 && bytes<=8388608 && sql_bytes>=0 && sql_bytes<=1048576 else throw DbBoundaryLimit("invalid limits");
-        self.values=values;self.bytes=bytes;self.sql_bytes=sql_bytes;
+    has values, bytes, sql_bytes is int;
+
+    DbLimits() {
+        values = 1024;
+        bytes = 8388608;
+        sql_bytes = 1048576;
     }
-    values() is int{values;}bytes() is int{bytes;}sql_bytes() is int{sql_bytes;}
+
+    DbLimits(values is int, bytes is int, sql_bytes is int) {
+        confirm values >= 0
+            && values <= 1024
+            && bytes >= 0
+            && bytes <= 8388608
+            && sql_bytes >= 0
+            && sql_bytes <= 1048576
+            else throw DbBoundaryLimit("invalid limits");
+        self.values = values;
+        self.bytes = bytes;
+        self.sql_bytes = sql_bytes;
+    }
+
+    values() is int {
+        values;
+    }
+
+    bytes() is int {
+        bytes;
+    }
+
+    sql_bytes() is int {
+        sql_bytes;
+    }
 }
+
 object DbValueSnapshot {
     has origin is @DbValue;
-    DbValueSnapshot(values is Sequencing<DbValue>,limits is DbLimits){
-        let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("value count");
-        let used=Atomic(0);let snapshot is @DbValue=(0..count).map()->index{
-            let value=ObservedDbValue(values.item(index));let width=value.width();
-            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");used.replace(used.value()+width);value.value();
-        };origin=snapshot;
+
+    DbValueSnapshot(values is Sequencing<DbValue>, limits is DbLimits) {
+        let count = values.size();
+        confirm count >= 0 && count <= limits.values() else throw DbBoundaryLimit("value count");
+        let used = Atomic(0);
+        let snapshot is @DbValue = (0..count).map() -> index {
+            let value = ObservedDbValue(values.item(index));
+            let width = value.width();
+            confirm width <= limits.bytes() - used.value()
+                else throw DbBoundaryLimit("value bytes");
+            used.replace(used.value() + width);
+            value.value();
+        };
+        origin = snapshot;
     }
-    values() is @DbValue{origin;}
+
+    values() is @DbValue {
+        origin;
+    }
 }
+
 object Statement {
-    has text is string;has values is @DbValue;
-    Statement(text is string){self.text=DbSqlText(text,DbLimits()).string();values=[];}
-    Statement(text is string,values is Sequencing<DbValue>){let limits=DbLimits();self.text=DbSqlText(text,limits).string();self.values=DbValueSnapshot(values,limits).values();}
-    Statement(text is string,values is Sequencing<DbValue>,limits is DbLimits){self.text=DbSqlText(text,limits).string();self.values=DbValueSnapshot(values,limits).values();}
-    text() is string{text;}values() is Sequencing<DbValue>{values;}
+    has text is string;
+    has values is @DbValue;
+
+    Statement(text is string) {
+        self.text = DbSqlText(text, DbLimits()).string();
+        values = [];
+    }
+
+    Statement(text is string, values is Sequencing<DbValue>) {
+        let limits = DbLimits();
+        self.text = DbSqlText(text, limits).string();
+        self.values = DbValueSnapshot(values, limits).values();
+    }
+
+    Statement(text is string, values is Sequencing<DbValue>, limits is DbLimits) {
+        self.text = DbSqlText(text, limits).string();
+        self.values = DbValueSnapshot(values, limits).values();
+    }
+
+    text() is string {
+        text;
+    }
+
+    values() is Sequencing<DbValue> {
+        values;
+    }
 }
+
 object DbSqlText {
     has origin is string;
-    DbSqlText(origin is string,limits is DbLimits){
-        confirm origin.length()<=limits.sql_bytes() && Utf8Encoded(origin).bytes().size()<=limits.sql_bytes() else throw DbBoundaryLimit("SQL bytes");
-        let stripped=origin.replace(" ","").replace("\t","").replace("\r","").replace("\n","");
-        confirm stripped!="" && origin.split(Utf8Decoded([0.byte()]).string()).size()==1 else throw InvalidStatement();self.origin=origin;
+
+    DbSqlText(origin is string, limits is DbLimits) {
+        confirm origin.length() <= limits.sql_bytes()
+            && Utf8Encoded(origin).bytes().size() <= limits.sql_bytes()
+            else throw DbBoundaryLimit("SQL bytes");
+        let stripped = origin.replace(" ", "").replace("\t", "").replace("\r", "").replace("\n", "");
+        confirm stripped != "" && origin.split(Utf8Decoded([0.byte()]).string()).size() == 1
+            else throw InvalidStatement();
+        self.origin = origin;
     }
-    string() is string{origin;}
+
+    string() is string {
+        origin;
+    }
 }
+
 object Execution {
     has affected is @BigInt;
-    Execution(){affected=[];}
-    Execution(affected is BigInt){confirm affected.sign()>=0 else throw InvalidExecution();self.affected=[affected];}
-    affected_known() is bool{affected.size()==1;}
-    affected_rows() is BigInt{confirm self.affected_known() else throw AffectedRowsUnknown();affected[0];}
+
+    Execution() {
+        affected = [];
+    }
+
+    Execution(affected is BigInt) {
+        confirm affected.sign() >= 0 else throw InvalidExecution();
+        self.affected = [affected];
+    }
+
+    affected_known() is bool {
+        affected.size() == 1;
+    }
+
+    affected_rows() is BigInt {
+        confirm self.affected_known() else throw AffectedRowsUnknown();
+        affected[0];
+    }
 }
-object DbBoundaryLimit does Error{has kind is string;DbBoundaryLimit(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"database boundary limit: "+kind;}}
-object InvalidStatement does Error{InvalidStatement();text() is string{"database SQL must be nonempty and contain no NUL";}}
-object InvalidExecution does Error{InvalidExecution();text() is string{"database affected row count must be nonnegative";}}
+
+object DbBoundaryLimit does Error {
+    has kind is string;
+
+    DbBoundaryLimit(kind is string) {
+        self.kind = kind;
+    }
+
+    kind() is string {
+        kind;
+    }
+
+    text() is string {
+        "database boundary limit: " + kind;
+    }
+}
+
+object InvalidStatement does Error {
+    InvalidStatement();
+
+    text() is string {
+        "database SQL must be nonempty and contain no NUL";
+    }
+}
+
+object InvalidExecution does Error {
+    InvalidExecution();
+
+    text() is string {
+        "database affected row count must be nonnegative";
+    }
+}
 
 test "statement parameters remain distinct from SQL text" {
-    test.is(Statement("SELECT ?").text(),"SELECT ?");test.ok(!Execution().affected_known());
+    test.is(Statement("SELECT ?").text(), "SELECT ?");
+    test.ok(!Execution().affected_known());
 }

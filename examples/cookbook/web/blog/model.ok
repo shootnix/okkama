@@ -4,38 +4,87 @@
 // Запуск и формат данных: README.md в этой папке.
 
 module cookbook/web/blog/model v1.0.0;
+
 import "../../support/sql" take QueryJson;
-import "db/sqlite" take SqliteDatabase,SqliteOptions;
+import "db/sqlite" take SqliteDatabase, SqliteOptions;
 import "db/sqlite/script" take SqliteScript;
 import "db/statement" take Statement;
-import "db/value" take DbText,DbInteger;
+import "db/value" take DbText, DbInteger;
 import "numbers/bigint" take BigInt;
 import "fs/path" take Path;
 import "json" take Json;
 import "web/exception" take Exception;
 
 object Draft {
-    has title,body is string;
-    Draft(title is string,body is string){confirm title.length()>0 && title.length()<=150 && body.length()>0 && body.length()<=20000 else throw Exception(422,"Заголовок: 1..150, текст: 1..20000 символов");self.title=title;self.body=body;}
-    title() is string{title;}body() is string{body;}
+    has title, body is string;
+
+    Draft(title is string, body is string) {
+        confirm title.length() > 0
+            && title.length() <= 150
+            && body.length() > 0
+            && body.length() <= 20000
+            else throw Exception(422, "Заголовок: 1..150, текст: 1..20000 символов");
+        self.title = title;
+        self.body = body;
+    }
+
+    title() is string {
+        title;
+    }
+
+    body() is string {
+        body;
+    }
 }
+
 object BlogPosts {
-    has path is string;BlogPosts(path is string){self.path=path;}
-    async initialize() is void{
-        let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
-        await SqliteScript(c,"CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);").executions();
+    has path is string;
+
+    BlogPosts(path is string) {
+        self.path = path;
     }
-    async list() is Json{
-        let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();await QueryJson(c,Statement("SELECT id,title,body,created_at FROM posts ORDER BY id DESC")).value();
+
+    async initialize() is void {
+        let c = await SqliteDatabase(Path(path), SqliteOptions()).connection();
+        defer await c.settled();
+        defer c.close();
+        await SqliteScript(
+            c,
+            "CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);"
+        ).executions();
     }
-    async get(id is int) is Json{
-        let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
-        let values=(await QueryJson(c,Statement("SELECT id,title,body,created_at FROM posts WHERE id=?",[DbInteger(BigInt(id.string()))])).value()).items();
-        confirm values.size()==1 else throw Exception(404,"Запись не найдена");
+
+    async list() is Json {
+        let c = await SqliteDatabase(Path(path), SqliteOptions()).connection();
+        defer await c.settled();
+        defer c.close();
+        await QueryJson(c, Statement("SELECT id,title,body,created_at FROM posts ORDER BY id DESC")).value();
+    }
+
+    async get(id is int) is Json {
+        let c = await SqliteDatabase(Path(path), SqliteOptions()).connection();
+        defer await c.settled();
+        defer c.close();
+        let values = (await QueryJson(
+            c,
+            Statement(
+                "SELECT id,title,body,created_at FROM posts WHERE id=?",
+                [DbInteger(BigInt(id.string()))]
+            )
+        ).value()).items();
+        confirm values.size() == 1 else throw Exception(404, "Запись не найдена");
         Json(values[0].fields());
     }
-    async publish(draft is Draft) is void{
-        let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
-        await c.execution(Statement("INSERT INTO posts(title,body) VALUES(?,?)",[DbText(draft.title()),DbText(draft.body())]));
+
+    async publish(draft is Draft) is void {
+        let c = await SqliteDatabase(Path(path), SqliteOptions()).connection();
+        defer await c.settled();
+        defer c.close();
+        await c.execution(
+            Statement(
+                "INSERT INTO posts(title,body) VALUES(?,?)",
+                [DbText(draft.title()), DbText(draft.body())]
+            )
+        );
     }
 }

@@ -255,6 +255,10 @@ object Json {
         Json(json_member_value(node, position), root);
     }
 
+    required(name is string) is Json {
+        self.get(name);
+    }
+
     // Members read in one runtime call; a member that is missing, of another
     // kind or not a short integer is read again the long way for its error.
     text(name is string) is string {

@@ -137,3 +137,20 @@ OKKAMA_JIT_STATS=1 okkama-rs/target/release/okkama run --engine sparrow \
 ## Целостность материалов
 
 `evidence/SHA256SUMS` содержит хеши файлов evidence, кроме самого манифеста. Он фиксирует состав отчёта, но не является цифровой подписью. Логи содержат исходные локальные пути и служебные идентификаторы процессов; сетевых секретов и приватных ключей в набор не добавлялось.
+
+## Повторная проверка оптимизаций (раздел 11)
+
+Новые материалы находятся в `evidence/optimization-recheck/`. `summary.json` содержит медиану/min/max каждого измерения; raw JSON сохраняет повторы. `provenance.json` фиксирует SHA исходной Rust-реализации и хеши использованных CLI/SPB. Во время проверки пользователь сохранил прежний отчёт коммитом `2f669ba7`; Rust-дерево между ним и `61f388bc` не отличается.
+
+Скрипты сохранены с фактическими путями `/tmp/okkama-opt-recheck-20261101` и `/tmp/okkama-audit-20261101`. Для переноса поменять их **в копиях** и использовать пустой временный каталог. Это лабораторные сценарии, не установленные инструменты проекта.
+
+1. Собрать `alloc_probe.rs` и `micro_probe.rs` через rustc с `--edition=2024 -Copt-level=3 -Clto=fat`, соответствующими release rlib из `okkama-rs/target/release/deps` и `-L dependency=...`. Первому нужны `--extern okkama_sparrow=...` и `--extern sparrow_vm=...`, второму — `--extern okkama_runtime_core=...`. Использовать тот же rustc, которым собран workspace.
+2. Собрать исходные workloads `04-bigint`, `06-collections`, `09-closures`, `10-app` через `okkama build ... --target sparrow`. Сам runtime и benchmark sources не менять.
+3. Для O11 собрать сохранённые `closures-original.spa` и пять `closures-extra-*.spa` в соответствующие SPB. Варианты отличаются только невызываемыми дополнительными функциями; `closures-extra-513-not-target` — отрицательный контроль. Не подменять исходный benchmark этими файлами.
+4. `run_checks.py` выполняет O11, проверяет равенство stdout (включая off-controls), снимает JIT_STATS отдельно, затем базовые замеры, allocation counts, строки, byte RSS и import graph. Тесты идут последовательно. Для первой калибровки импортов был запуск, пересекавшийся со сборкой harness; его результаты заменены последовательным повтором в конце script. Итоговый `import-reparse.json` относится к этому повтору.
+5. `source_differential.py` создаёт 60 корректных программ и сравнивает результаты с Python oracle в пяти режимах. Полный corpus восстанавливается по seed, один пример включён в evidence. Первый невалидный генератор был отклонён и исправлен до этой кампании.
+6. Для sample использована `closures-profile.spa`: главный цикл увеличен в 20 раз только для достаточной длительности. Запускается отдельный дочерний Sparrow; `/usr/bin/sample <его PID> 2 1 -file <отчёт>` собирает две секунды, после чего завершается только этот дочерний процесс. Окончательного результата такой прерванной программы не требуется: это CPU sample, не проверка семантики и не замер полного runtime. Два запуска — default и `OKKAMA_JIT=off`. В песочнице первый sample не разрешён; повтор с разрешённым доступом к своему процессу успешен, оба статуса сохранены.
+
+Allocator-counter делегирует **System**, тогда как CLI делегирует **mimalloc**. Число и сумма запросов характеризуют Rust allocation traffic на instrumented run; это не профиль внутренних malloc arenas production CLI. `requested_bytes` включает полные новые размеры realloc, а `peak_extra_live_bytes` измеряет изменение живых Rust allocations относительно состояния после decode. Нельзя трактовать сумму 3,6 ГиБ на closures off как одновременно занятую память или leak. Instrumentation-time не используется в performance-таблице.
+
+Byte RSS относится к отдельной микропробе на System. Сравнение repeated slice/iterator показывает разницу алгоритмов обхода; iterator не является drop-in реализацией произвольного random access. Профиль sample содержит несимволизированные адреса JIT; доли вычислены по **top-of-stack**, без суммирования inclusive counts.
