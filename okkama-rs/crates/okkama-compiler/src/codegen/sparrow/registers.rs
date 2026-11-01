@@ -42,6 +42,12 @@ impl Set {
     }
 }
 
+/// Наибольшее число рёбер графа конфликтов. Функция, где тысячи значений
+/// живут одновременно, даёт квадратичный граф (20 000 живых значений —
+/// сотни миллионов рёбер и гигабайты памяти); сверх бюджета каждое значение
+/// получает свой регистр, как без раскраски.
+const EDGE_BUDGET: usize = 1 << 22;
+
 /// Функция, в которой номер значения — номер регистра после раскраски.
 pub(super) fn allocate(function: &Function) -> Function {
     let count = function.values.len();
@@ -50,13 +56,16 @@ pub(super) fn allocate(function: &Function) -> Function {
     }
     let live_in = live_in(function);
     let mut conflicts: Vec<Vec<usize>> = vec![Vec::new(); count];
+    let mut edges = 0usize;
     let mut conflict = |value: ValueId, live: &Set| {
         for other in live.values() {
             if other != value {
                 conflicts[value.0].push(other.0);
                 conflicts[other.0].push(value.0);
+                edges += 1;
             }
         }
+        edges <= EDGE_BUDGET
     };
     for (index, block) in function.blocks.iter().enumerate() {
         let unwind = unwind_live(function, index, &live_in);
@@ -71,7 +80,9 @@ pub(super) fn allocate(function: &Function) -> Function {
                 busy.insert(operand);
             }
             if let Some(result) = inst.result {
-                conflict(result, &busy);
+                if !conflict(result, &busy) {
+                    return function.clone();
+                }
                 live.remove(result);
             }
             for operand in inst.kind.operands() {
@@ -88,7 +99,9 @@ pub(super) fn allocate(function: &Function) -> Function {
             live.insert(*param);
         }
         for param in &params {
-            conflict(*param, &live);
+            if !conflict(*param, &live) {
+                return function.clone();
+            }
         }
     }
     // Аргумент перехода и параметр цели в одном регистре — без записи на ребре.

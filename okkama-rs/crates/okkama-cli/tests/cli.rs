@@ -1334,3 +1334,35 @@ fn blade_project_rejects_undeclared_dependencies_and_file_versions() {
     let output = in_dir(&loose.path(""), &["run", &loose.path("main.ok")]);
     assert_eq!(output.status.code(), Some(4), "{}", stderr(&output));
 }
+
+/// H-02: a function with more registers than the JIT accepts stays with the
+/// interpreter, and a direct call to it from machine code goes through the
+/// helper instead of an area in the caller's frame; the result is the same in
+/// every mode. 20 000 values that are live together make the register
+/// allocator fall back to one register per value (H-28).
+#[test]
+fn functions_with_huge_frames_stay_interpreted_under_eager_jit() {
+    let count = 20_000;
+    let lets: String = (0..count).map(|i| format!("        let v{i} = seed + {i};\n")).collect();
+    let values: Vec<String> = (0..count).map(|i| format!("v{i}")).collect();
+    let source = format!(
+        "module app v1.0.0;\nobject Wide {{\n    Wide();\n    sum(seed is int) is int {{\n{lets}        let values is @int = [{}];\n        values.reduce(0) -> total, value {{ total + value; }};\n    }}\n}}\nmain() is int {{ let wide = Wide(); (wide.sum(1) + wide.sum(2)) % 251; }}\n",
+        values.join(", ")
+    );
+    // Σ(seed + i) for seed 1 and 2 over i < 20 000, modulo 251.
+    let expected = ((count * (count - 1) + 3 * count) % 251) as i32;
+    let file = TempFile::new("wide-frame.ok", source.as_bytes());
+    for mode in ["off", "eager"] {
+        let output = okkama()
+            .args(["run", "--engine", "sparrow"])
+            .arg(&file.0)
+            .env("OKKAMA_JIT", mode)
+            .env("OKKAMA_JIT_DEBUG", "1")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(expected), "{mode}: {}", stderr(&output));
+        if mode == "eager" {
+            assert!(stderr(&output).contains("Wide.sum not compiled:"), "{}", stderr(&output));
+        }
+    }
+}

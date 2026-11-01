@@ -8,6 +8,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 
+### Added
+
+- [Trust model](docs/security-model.md): what Okkama handles safely today for source
+  code, `.spb` bytecode, natives and embedding, what it does not, and which roadmap
+  tasks move each boundary (H-01).
+
 ### Fixed
 
 - **Long expression chains no longer crash the compiler** (H-03). The parser bounds
@@ -23,6 +29,23 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 - Syntax trees are freed without recursion: `Expr` moves its sub-expressions to a
   queue, so dropping a deep tree (on an error path, or one built in code) no longer
   overflows the stack (H-03).
+- **JIT address arithmetic and machine frames are bounded** (H-02). A register slot
+  offset was `register × 24` in `i32` without a check, so a hand-made `.spb` function
+  with more than about 89 million registers made machine code write outside its frame.
+  The JIT now refuses functions with more than 2^14 registers before generating code,
+  calls functions with more than 512 registers through the helper instead of an area in
+  the caller's frame, and publishes code only when Cranelift's frame for it is at most
+  1 MiB, a quarter of the stack margin checked before every call. A function over a
+  limit stays with the interpreter (`OKKAMA_JIT_DEBUG` prints why).
+- **Building Sparrow bytecode for a function with thousands of values live at once no
+  longer takes minutes and gigabytes** (regression of 0.3.2, H-28). 20 000 such values
+  made the register allocator's conflict graph hundreds of millions of edges: 132 s and
+  10.6 GB for one 20 000-line method. Above 2^22 edges a function now keeps one register
+  per value, as before 0.3.2.
+- The IR verifier checked the linearity of every array builder version by walking the
+  whole function again: quadratic in a function with many `builder.push` (an array
+  literal of 20 000 elements took 6.5 s in `okkama ir`). Builder uses are now collected
+  in one pass; the same program builds in 1 s instead of 132 s (H-39).
 
 ## [0.3.2] — 2026-11-01
 

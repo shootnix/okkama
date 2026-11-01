@@ -48,6 +48,19 @@ const SECOND: u32 = 3;
 const SLOT: i32 = 24;
 /// Запас стека, ниже которого вложенный вызов исполняет интерпретатор.
 const MARGIN: usize = 4 << 20;
+/// Наибольшее число регистров компилируемой функции (H-02): смещение
+/// регистра `register × SLOT` считается в `i32`, и предел, проверенный до
+/// генерации кода, исключает его переполнение. Больше — интерпретатор.
+const MAX_JIT_REGISTERS: usize = 1 << 14;
+/// Наибольшая область регистров вызываемой в кадре вызывающего: вызов
+/// функции с большим числом регистров идёт через помощник, без области.
+const MAX_AREA_REGISTERS: usize = 512;
+/// Наибольший машинный кадр (по раскладке Cranelift). Он меньше запаса
+/// стека, который проверяется перед каждым вызовом, поэтому проверенный
+/// запас покрывает кадр вызываемой целиком (H-02).
+const MAX_FRAME_BYTES: u32 = 1 << 20;
+const _: () = assert!(MARGIN >= 2 * MAX_FRAME_BYTES as usize);
+const _: () = assert!(MAX_JIT_REGISTERS * (SLOT as usize) < i32::MAX as usize);
 /// Наибольшее число регистров вызываемой функции, освобождаемых в коде;
 /// больше — циклом помощника (после раскраски регистров их немного, а код
 /// каждого вызова меньше и быстрее компилируется).
@@ -389,6 +402,10 @@ impl Jit {
     }
 
     fn build(&self, program: &Program, index: usize, constants: &[Value]) -> Result<usize, String> {
+        let registers = program.functions[index].registers.len();
+        if registers > MAX_JIT_REGISTERS {
+            return Err(format!("{registers} registers (the limit is {MAX_JIT_REGISTERS})"));
+        }
         let mut slot = self.module.borrow_mut();
         let module = slot.as_mut().ok_or("module is gone")?;
         let mut context = module.make_context();
@@ -415,7 +432,16 @@ impl Jit {
             eprintln!("jit: {}: {} Cranelift instructions, {} blocks", program.functions[index].symbol, context.func.dfg.num_insts(), context.func.dfg.num_blocks());
         }
         module.define_function(id, &mut context).map_err(|error| format!("{error:?}"))?;
+        // Адрес публикуется только для кадра в пределах запаса стека.
+        let frame = context
+            .compiled_code()
+            .and_then(|code| code.buffer.frame_layout())
+            .map(|layout| layout.frame_to_fp_offset)
+            .ok_or("frame layout is unknown")?;
         module.clear_context(&mut context);
+        if frame > MAX_FRAME_BYTES {
+            return Err(format!("frame of {frame} bytes (the limit is {MAX_FRAME_BYTES})"));
+        }
         module.finalize_definitions().map_err(|error| error.to_string())?;
         Ok(module.get_finalized_function(id) as usize)
     }
@@ -730,7 +756,7 @@ fn closure_registers(program: &Program) -> usize {
         }
     }
     let largest = targets.iter().map(|index| program.functions[*index].registers.len()).max().unwrap_or(0);
-    if largest <= 512 { largest } else { 0 }
+    if largest <= MAX_AREA_REGISTERS { largest } else { 0 }
 }
 
 /// `call.fn` с целью из набора `fn.closure`: захваты (копией) и аргументы
@@ -1182,7 +1208,10 @@ fn flags() -> MemFlagsData {
     MemFlagsData::trusted()
 }
 
+/// Смещение слота регистра: номер меньше `MAX_JIT_REGISTERS` (проверено до
+/// генерации кода функции и областей вызова), поэтому `i32` не переполнится.
 fn offset(register: Register) -> i32 {
+    debug_assert!((register.0 as usize) < MAX_JIT_REGISTERS);
     register.0 as i32 * SLOT
 }
 
@@ -2189,6 +2218,11 @@ impl<'a, 'b> Gen<'a, 'b> {
         if args.len() != target.params.len() {
             return self.generic(pc);
         }
+        // Большой кадр вызываемой — через помощник, без области в своём кадре.
+        if target.registers.len() > MAX_AREA_REGISTERS {
+            let status = self.eval(h_call as *const () as usize, pc);
+            return self.check(status, pc);
+        }
         self.call_into(pc, dst, Callee::Static(callee), &target.params, target.registers.len(), args)
     }
 
@@ -2371,7 +2405,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             return Ok(false);
         }
         let count = candidates.iter().map(|function| function.registers.len()).max().unwrap_or(0);
-        if count > 512 {
+        if count > MAX_AREA_REGISTERS {
             return Ok(false);
         }
         let target = match self.layout.object.filter(|object| object.declaration >= 0) {
@@ -2395,5 +2429,48 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(done);
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod limits {
+    use super::*;
+    use okkama_sparrow::{Constant, Dst, FuncRef, Type, TypeRef};
+
+    /// `main` пишет в последний регистр (наибольшее смещение) и возвращает его.
+    fn program(registers: usize) -> Program {
+        let last = Register(registers as u32 - 1);
+        Program {
+            module: "app".into(),
+            version: "1.0.0".into(),
+            types: vec![Type::Int],
+            functions: vec![Function {
+                symbol: "main".into(),
+                is_async: false,
+                native: None,
+                intrinsic: None,
+                registers: vec![TypeRef(0); registers],
+                params: Vec::new(),
+                result: Some(TypeRef(0)),
+                code: vec![I::Const { dst: Dst(last), value: Constant::Int("1".into()) }, I::Return { value: Some(last) }],
+                handlers: Vec::new(),
+            }],
+            entry: Some(FuncRef(0)),
+            ..Program::default()
+        }
+    }
+
+    #[test]
+    fn functions_over_the_register_limit_are_not_compiled() {
+        for (registers, compiled) in [(MAX_JIT_REGISTERS, true), (MAX_JIT_REGISTERS + 1, false)] {
+            let program = program(registers);
+            let engine = machine::new_engine(&program);
+            let Some(jit) = &engine.jit else {
+                return; // OKKAMA_JIT=off
+            };
+            let prepared = engine.prepared(0).expect("prepared");
+            let built = jit.build(&program, 0, &prepared.constants);
+            assert_eq!(built.is_ok(), compiled, "{registers}: {built:?}");
+        }
     }
 }

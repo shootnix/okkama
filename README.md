@@ -18,7 +18,8 @@ is enforced by the runtime — not by code review.**
 [Specification](docs/okkama-spec-11072026.md) ·
 [Grammar](docs/okkama-grammar-1.0.md) ·
 [LLM Context Pack](docs/okkama-llm-context-1.0.md) ·
-[Roadmap: hardening](docs/roadmap/hardening.md)
+[Roadmap: hardening](docs/roadmap/hardening.md) ·
+[Trust model](docs/security-model.md)
 
 </div>
 
