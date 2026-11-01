@@ -80,13 +80,13 @@ impl Parser<'_> {
             "Expect \"->\" before functional bindings.",
         )?;
         let start = call.span;
-        let ExprKind::Call { callee, args } = call.kind else {
+        let ExprKind::Call { callee, args } = call.into_kind() else {
             unreachable!("finish_functional is only called for member calls");
         };
         let ExprKind::Get {
             object: receiver,
             name: operation_name,
-        } = callee.kind
+        } = callee.into_kind()
         else {
             unreachable!("finish_functional is only called for member calls");
         };

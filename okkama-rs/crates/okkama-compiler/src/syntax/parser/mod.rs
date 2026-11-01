@@ -38,7 +38,19 @@ pub(crate) type PResult<T> = Result<T, Diagnostic>;
 /// Parses a token stream produced by [`lex`](crate::syntax::lexer::lex)
 /// from the same `text`. The stream must end with an `EOF` token.
 pub fn parse_tokens(text: &str, tokens: Vec<Token>, options: ParseOptions) -> PResult<Program> {
-    Parser::new(text, tokens, options).parse_program()
+    let (max_depth, max_nodes) = (options.max_tree_depth, options.max_nodes);
+    // Узел дерева занимает хотя бы один токен (кроме немногих синтетических),
+    // поэтому заведомо слишком большой файл отвергается до построения дерева.
+    if tokens.len() / 4 > max_nodes {
+        let span = tokens.last().map_or(Span::empty(0), |token| token.span);
+        return Err(Diagnostic::syntax_limit(
+            format!("Program is too large (the limit is {max_nodes} syntax nodes)."),
+            span,
+        ));
+    }
+    let program = Parser::new(text, tokens, options).parse_program()?;
+    crate::syntax::limits::check(&program, max_depth, max_nodes)?;
+    Ok(program)
 }
 
 pub(crate) struct Parser<'s> {

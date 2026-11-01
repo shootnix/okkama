@@ -57,6 +57,17 @@ impl Diagnostic {
         }
     }
 
+    /// A syntax error about the tree as a whole (its depth or size), not
+    /// about one token.
+    pub fn syntax_limit(message: impl Into<String>, span: Span) -> Self {
+        Diagnostic {
+            kind: DiagnosticKind::Syntax,
+            message: message.into(),
+            span,
+            found: None,
+        }
+    }
+
     pub fn syntax(message: impl Into<String>, span: Span, found: Found) -> Self {
         Diagnostic {
             kind: DiagnosticKind::Syntax,

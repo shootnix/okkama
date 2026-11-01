@@ -6,6 +6,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
+
+### Fixed
+
+- **Long expression chains no longer crash the compiler** (H-03). The parser bounds
+  its own recursion, but builds left-associative chains (`a + a + … + a`, `x.a.b.c…`,
+  `x.f().f()…`, `x[0][0]…`) by a loop, so the tree was as deep as the chain was long and
+  the recursive phases overflowed the stack: `okkama check` at about 6 000 links,
+  `okkama ast` at 100 000. The tree is now measured right after parsing, by a walk with
+  an explicit stack: deeper than 128 levels (`ParseOptions::max_tree_depth`; the
+  deepest file in the repository has 37) or larger than 2^20 nodes (`max_nodes`) is a
+  syntax error at the offending expression. A file with more than four tokens per
+  allowed node is rejected before the tree is built. A chain of a million links is
+  rejected in 0.2 s by every command.
+- Syntax trees are freed without recursion: `Expr` moves its sub-expressions to a
+  queue, so dropping a deep tree (on an error path, or one built in code) no longer
+  overflows the stack (H-03).
+
 ## [0.3.2] — 2026-11-01
 
 ### Changed

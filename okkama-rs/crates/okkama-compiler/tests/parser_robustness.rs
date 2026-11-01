@@ -7,6 +7,8 @@ mod common;
 use common::parse_in;
 use okkama_compiler::source::SourceFile;
 use okkama_compiler::syntax::{ParseMode, ParseOptions, lexer, parse};
+use okkama_compiler::syntax::ast::{BinaryOp, Expr, ExprKind, Name};
+use okkama_compiler::source::Span;
 
 const SAMPLE: &str = include_str!("fixtures/all-syntax.ok");
 
@@ -86,6 +88,7 @@ fn nesting_limit_is_configurable() {
     let source = SourceFile::new("deep.ok", text).unwrap();
     let options = ParseOptions {
         max_nesting: 1000,
+        max_tree_depth: 2000,
         ..ParseOptions::default()
     };
     // A larger limit needs a larger stack; the caller owns that decision.
@@ -305,3 +308,95 @@ fn syntax_errors_point_at_the_offending_token() {
         "t.ok:1:35: syntax error at end of input: Expect \"}\" after block."
     );
 }
+
+/// Chains the parser builds by a loop, not by recursion (H-03): the tree is
+/// as deep as the chain is long, so only the tree budget bounds it.
+fn chain(shape: &str, length: usize) -> String {
+    let body = match shape {
+        "field" => format!("x{}", ".a".repeat(length)),
+        "call" => format!("x{}", ".f()".repeat(length)),
+        "index" => format!("x{}", "[0]".repeat(length)),
+        "select" => format!("x{}", "::a".repeat(length)),
+        operator => vec!["a"; length + 1].join(&format!(" {operator} ")),
+    };
+    format!("module app v1.0.0; main() is int {{ let a = 1; let x = 1; let b = {body}; 0; }}")
+}
+
+const CHAINS: [&str; 15] = [
+    "||", "&&", "<-", "==", "!=", "<", "|", "^", "&", "<<", "+", "*", "field", "call", "index",
+];
+
+#[test]
+fn long_chains_are_reported_not_overflowed() {
+    on_small_stack(|| {
+        for shape in CHAINS {
+            let longest = if shape == "+" { 1_000_000 } else { 300_000 };
+            for length in [10_000, longest] {
+                let message = parse_in(&chain(shape, length), ParseMode::Full).expect_err(shape).0;
+                assert!(message.starts_with("Expression nesting is too deep"), "{shape} × {length}: {message}");
+                // The same chain with a syntax error after it: still a diagnostic.
+                let broken = chain(shape, length).replace("; 0; }", " 0; }");
+                assert!(parse_in(&broken, ParseMode::Full).is_err(), "{shape} × {length}");
+            }
+        }
+        let message = parse_in(&chain("select", 100_000), ParseMode::Full).expect_err("select").0;
+        assert!(!message.is_empty());
+    });
+}
+
+#[test]
+fn chains_up_to_the_tree_limit_pass_every_phase_on_a_small_stack() {
+    use okkama_compiler::syntax::{format, print};
+    on_small_stack(|| {
+        for shape in CHAINS {
+            let mut length = ParseOptions::DEFAULT_MAX_TREE_DEPTH;
+            while parse_in(&chain(shape, length), ParseMode::Full).is_err() {
+                length -= 1;
+                assert!(length > 0, "{shape}: even length 1 fails");
+            }
+            // A `.f()` link is two nodes (`Get` and `Call`).
+            assert!(length >= 60, "{shape}: only {length} links are accepted");
+            let file = common::source(&chain(shape, length));
+            let program = parse(&file, &ParseOptions::default()).unwrap();
+            // Semantic errors are expected (`||` over integers); the phases
+            // must finish, not overflow.
+            let _ = okkama_compiler::lowering::lower_program(&program);
+            let _ = print::print_program(&program, &file, print::Format::Tree, Default::default());
+            let _ = print::print_program(&program, &file, print::Format::Json, Default::default());
+            let _ = format::format(&file);
+        }
+    });
+}
+
+#[test]
+fn deep_expressions_drop_without_recursion() {
+    on_small_stack(|| {
+        let leaf = || Expr {
+            kind: ExprKind::Name(Name { text: "a".into(), span: Span::empty(0) }),
+            span: Span::empty(0),
+        };
+        let mut expr = leaf();
+        for _ in 0..1_000_000 {
+            expr = Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::Add,
+                    op_span: Span::empty(0),
+                    left: Box::new(expr),
+                    right: Box::new(leaf()),
+                },
+                span: Span::empty(0),
+            };
+        }
+        drop(expr);
+    });
+}
+
+#[test]
+fn program_size_is_limited() {
+    let text = format!("module app v1.0.0; main() is int {{ {} 0; }}", "let x = 1; ".repeat(2000));
+    let source = SourceFile::new("big.ok", text).unwrap();
+    let options = ParseOptions { max_nodes: 1000, ..ParseOptions::default() };
+    let error = parse(&source, &options).expect_err("too large");
+    assert!(error[0].message.starts_with("Program is too large"), "{}", error[0].message);
+}
+

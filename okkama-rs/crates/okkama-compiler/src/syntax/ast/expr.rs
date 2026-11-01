@@ -262,3 +262,84 @@ impl FunctionalOp {
         }
     }
 }
+
+impl Expr {
+    /// Вид узла; оставшаяся оболочка освобождается без детей.
+    pub fn into_kind(mut self) -> ExprKind {
+        std::mem::replace(&mut self.kind, ExprKind::SelfValue)
+    }
+}
+
+/// Освобождение без рекурсии (H-03): цепочки `a + a + … + a` и `x.a.b.c…`
+/// парсер строит циклом, и дерево получается глубиной в длину цепочки, а
+/// рекурсивное освобождение `Box<Expr>` переполнило бы стек. Дочерние
+/// выражения переносятся в очередь; блоки внутри выражений освобождаются
+/// обычным путём — их вложенность ограничена рекурсией парсера.
+impl Drop for Expr {
+    fn drop(&mut self) {
+        let mut pending = Vec::new();
+        self.kind.take_children(&mut pending);
+        while let Some(mut expr) = pending.pop() {
+            expr.kind.take_children(&mut pending);
+        }
+    }
+}
+
+impl ExprKind {
+    /// Переносит дочерние выражения в `out`, оставляя на их месте листья.
+    fn take_children(&mut self, out: &mut Vec<Expr>) {
+        let mut take = |expr: &mut Box<Expr>| {
+            out.push(std::mem::replace(&mut **expr, Expr { kind: ExprKind::SelfValue, span: Span::default() }));
+        };
+        match self {
+            ExprKind::Grouping(operand)
+            | ExprKind::Unary { operand, .. }
+            | ExprKind::Unpack { operand, .. }
+            | ExprKind::Get { object: operand, .. }
+            | ExprKind::Select { object: operand, .. }
+            | ExprKind::Projection { construction: operand, .. }
+            | ExprKind::Panic { value: operand }
+            | ExprKind::Await { value: operand }
+            | ExprKind::Spawn { call: operand }
+            | ExprKind::If { condition: operand, .. } => take(operand),
+            ExprKind::Binary { left, right, .. }
+            | ExprKind::StreamWrite { sink: left, source: right, .. }
+            | ExprKind::Range { start: left, end: right, .. } => {
+                take(left);
+                take(right);
+            }
+            ExprKind::Index { object, index, fallback } => {
+                take(object);
+                take(index);
+                if let Some(fallback) = fallback {
+                    take(fallback);
+                }
+            }
+            ExprKind::Call { callee, args } => {
+                take(callee);
+                out.extend(args.drain(..).map(|arg| arg.value));
+            }
+            ExprKind::Functional { receiver, args, .. } => {
+                take(receiver);
+                out.extend(args.drain(..).map(|arg| arg.value));
+            }
+            ExprKind::ArrayCast { args, .. } => out.extend(args.drain(..).map(|arg| arg.value)),
+            ExprKind::Array { elements } => out.append(elements),
+            ExprKind::Map { entries } => {
+                for entry in entries.drain(..) {
+                    out.push(entry.key);
+                    out.push(entry.value);
+                }
+            }
+            ExprKind::Literal(_)
+            | ExprKind::Name(_)
+            | ExprKind::SelfValue
+            | ExprKind::OwnerField { .. }
+            | ExprKind::AnonymousAction { .. }
+            | ExprKind::Match(_)
+            | ExprKind::Loop { .. }
+            | ExprKind::Try(_) => {}
+        }
+    }
+}
+
