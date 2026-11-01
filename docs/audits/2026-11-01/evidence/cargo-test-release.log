@@ -1,0 +1,906 @@
+   Compiling okkama-compiler v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-compiler)
+   Compiling blade-cli v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/blade-cli)
+   Compiling blade v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/blade)
+   Compiling sparrow-vm v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/sparrow-vm)
+   Compiling sparrow-cli v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/sparrow-cli)
+   Compiling okkama-cli v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-cli)
+   Compiling okkama-runtime v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-runtime)
+    Finished `release` profile [optimized] target(s) in 4m 46s
+     Running unittests src/lib.rs (target/release/deps/blade-6387408acc5bbe89)
+
+running 9 tests
+test manifest::tests::malformed_manifests_are_reported ... ok
+test manifest::tests::imports_resolve_to_whole_segment_dependencies ... ok
+test manifest::tests::short_and_table_dependencies_parse ... ok
+test version::tests::plain_versions_are_compatible_ranges ... ok
+test version::tests::versions_parse_with_or_without_v ... ok
+test lock::tests::lock_text_round_trips ... ok
+test version::tests::wildcards_exact_and_any ... ok
+test manifest::tests::dependencies_are_edited_in_place ... ok
+test manifest::tests::installed_packages_belong_to_the_project_holding_them ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/install.rs (target/release/deps/install-636fb7d225fdd891)
+
+running 4 tests
+test local_directories_install_by_their_version_and_remove_cleanly ... ok
+test bad_packages_and_conflicts_leave_the_project_as_it_was ... ok
+test a_moved_tag_is_refused_until_update ... ok
+test git_dependencies_take_the_newest_compatible_version_and_stay_locked ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+
+     Running unittests src/main.rs (target/release/deps/blade-c3634f3ef918c30c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/okkama-2e5437acd9b29ed9)
+
+running 6 tests
+test lsp::tests::file_uris_round_trip_with_escapes ... ok
+test tests::ast_only_options_are_rejected_for_tokens ... ok
+test tests::missing_values_and_extra_inputs_are_usage_errors ... ok
+test tests::options_accept_separate_and_inline_values ... ok
+test tests::unknown_command_is_a_usage_error ... ok
+test import_paths::tests::import_strings_complete_pkg_dependencies_and_their_modules ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/release/deps/cli-03a7bf0049d6689b)
+
+running 43 tests
+test build_reports_input_io_errors ... ok
+test failed_build_preserves_an_existing_output_file ... ok
+test build_reports_output_write_errors ... ok
+test check_reports_warnings_without_failing ... ok
+test invalid_utf8_is_a_source_error ... ok
+test ir_control_flow_uses_blocks_and_parameters ... ok
+test build_reports_frontend_errors_before_invoking_the_backend ... ok
+test ir_accepts_role_bound_actions_worker_spawn_and_native_handles ... ok
+test ir_keeps_all_statements_and_nested_additions ... ok
+test ir_explicit_return_is_canonical_and_missing_imports_are_errors ... ok
+test ir_lowering_error_points_at_the_offending_operand ... ok
+test ast_formats_spans_and_stdin ... ok
+test ir_file_and_stdin_include_module_function_and_return ... ok
+test blade_project_imports_resolve_from_package_roots_and_lib ... ok
+test blade_project_rejects_undeclared_dependencies_and_file_versions ... ok
+test no_arguments_prints_help_and_fails ... ok
+test legacy_backend_alias_is_supported_but_conflicts_are_errors ... ok
+test lexical_errors_exit_one_for_both_commands ... ok
+test every_project_example_parses ... ok
+test native_run_does_not_ignore_arguments_or_fallback_to_java ... ok
+test native_stdio_preserves_bytes_and_shared_input_state_in_both_engines ... ok
+test ir_reports_unsupported_and_invalid_code_without_partial_output ... ok
+test production_mode_and_pruning ... ok
+test build_option_errors_are_usage_errors ... ok
+test ocs_capabilities_follow_the_selected_engine ... ok
+test native_run_engines_execute_source_without_java ... ok
+test help_and_version ... ok
+test sparrow_build_and_exec_need_neither_source_nor_java ... ok
+test several_files_form_one_module ... ok
+test standard_stdout_uses_real_native_providers_in_the_ir_interpreter ... ok
+test sparrow_build_failure_preserves_artifact ... ok
+test tokens_text_and_json ... ok
+test repl_keeps_variables_and_declarations_between_inputs ... ok
+test syntax_errors_exit_one_with_nothing_on_stdout ... ok
+test sparrow_cli_executes_control_flow_and_v2_function_calls ... ok
+test unreadable_input_exits_three ... ok
+test uncaught_failure_prints_place_and_call_stack ... ok
+test sparrow_exec_usage_and_io_errors ... ok
+test ocs_native_engines_report_execution_and_limitations_without_java ... ok
+test build_dispatches_file_and_stdin_to_jvm_and_writes_a_class_file ... ok
+test usage_errors_exit_two ... ok
+test sparrow_exec_validates_file_and_exit_status ... ok
+test functions_with_huge_frames_stay_interpreted_under_eager_jit ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+     Running tests/jvm.rs (target/release/deps/jvm-744677ae1584f5e4)
+
+running 43 tests
+test a_jar_output_is_one_executable_file ... ok
+test a_failed_constructor_invariant_is_a_runtime_error ... ok
+test an_uncaught_throw_prints_the_error_type_and_text ... ok
+test anonymous_and_bound_actions_are_fn_values ... ok
+test caps_recompute_fields_over_their_owner ... ok
+test async_futures_are_lazy_cached_and_spawned_eagerly ... ok
+test builtin_order_returns_compare_order_cases ... ok
+test any_values_are_opaque_boxes ... ok
+test bound_role_actions_and_future_selectors_run_on_the_jvm ... ok
+test arrays_and_scalars_cross_standard_role_boundaries_through_adapters ... ok
+test async_intrinsics_run_in_the_jvm_runtime ... ok
+test for_in_value_position_yields_the_last_iteration ... ok
+test import_errors_point_at_the_importing_file ... ok
+test child_exit_codes_and_signals_are_exact ... ok
+test imported_modules_and_std_stdout_run_on_the_jvm ... ok
+test huge_literals_are_outlined_under_the_method_limit ... ok
+test iterating_objects_are_traversed_through_their_cursor ... ok
+test native_failures_are_catchable_system_objects ... ok
+test integer_arithmetic_is_exact_beyond_sixty_four_bits ... ok
+test float_text_and_arithmetic_follow_the_language_rules ... ok
+test deep_recursion_runs_on_the_program_stack_and_tail_calls_loop ... ok
+test collection_failures_use_the_interpreter_diagnostics ... ok
+test range_values_compare_and_iterate ... ok
+test one_plus_one_builds_verifies_and_exits_with_two ... ok
+test generic_programs_compute_the_same_results_as_the_interpreter ... ok
+test rat_values_are_exact_fractions_on_the_jvm ... ok
+test stream_writes_go_through_the_writing_protocol ... ok
+test rat_failures_use_the_interpreter_texts ... ok
+test collection_programs_compute_the_same_results_as_the_interpreter ... ok
+test objects_become_final_classes_next_to_the_main_class ... ok
+test object_programs_compute_the_same_results_as_the_interpreter ... ok
+test test_mode_runs_tests_with_fakes_and_reports_failures ... ok
+test synchronous_spawn_runs_in_a_worker_process ... ok
+test exact_results_and_unicode_class_names_are_observable ... ok
+test wide_local_indices_and_long_constants_execute ... ok
+test typed_failures_are_caught_by_type_and_by_the_error_role ... ok
+test control_flow_programs_exit_with_their_computed_status ... ok
+test runtime_failures_print_a_diagnostic_and_exit_one ... ok
+test enum_and_match_programs_compute_the_same_results_as_the_interpreter ... ok
+test map_programs_compute_the_same_results_as_the_interpreter ... ok
+test worker_receivers_are_destroyed_and_cancelled_workers_stop ... ok
+test byte_and_char_programs_compute_the_same_results_as_the_interpreter ... ok
+test ownership_cleanup_order_matches_the_interpreter ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.91s
+
+     Running unittests src/lib.rs (target/release/deps/okkama_compiler-673e754e009e15be)
+
+running 84 tests
+test codegen::jar::tests::crc32_matches_the_zip_check_value ... ok
+test diagnostics::tests::end_of_input_and_lexical_headlines ... ok
+test diagnostics::tests::multi_line_spans_underline_to_end_of_first_line ... ok
+test diagnostics::tests::renders_headline_snippet_and_caret ... ok
+test ide::std_paths::tests::other_paths_are_not_std ... ok
+test ide::tests::doc_comments_are_the_lines_right_above ... ok
+test ide::tests::a_clean_program_has_no_diagnostics_and_an_outline ... ok
+test ide::tests::line_index_counts_utf16_units ... ok
+test ide::tests::lint_accepts_used_names_closures_and_snake_case ... ok
+test ide::tests::a_fresh_name_is_not_taken_for_the_checked_name_it_replaced ... ok
+test ide::tests::errors_keep_the_index_and_point_at_their_span ... ok
+test ide::tests::constructors_fields_enum_cases_and_types_resolve ... ok
+test codegen::jvm::runtime::tests::every_built_runtime_class_is_embedded ... ok
+test ide::tests::argument_names_complete_unnamed_parameters ... ok
+test ide::tests::missing_imports_are_reported_on_the_import ... ok
+test ide::tests::lint_reports_unused_imports_lets_privates_and_unreachable_code ... ok
+test ide::tests::argument_names_are_not_offered_where_names_are_rejected ... ok
+test ide::tests::members_of_locals_and_call_results_complete_while_the_text_does_not_parse ... ok
+test ide::tests::locals_hover_with_their_type_and_lead_to_their_binding ... ok
+test ide::tests::signature_help_names_the_active_parameter ... ok
+test ide::tests::plain_names_are_locals_fields_types_and_keywords_in_scope ... ok
+test ide::tests::methods_of_imported_objects_show_signature_and_doc ... ok
+test ide::tests::syntax_errors_are_reported_without_symbols ... ok
+test lowering::std_paths::tests::paths_become_one_hidden_import_per_module ... ok
+test ide::tests::freshly_typed_receivers_resolve_by_name_and_through_calls ... ok
+test lowering::std_paths::tests::reserved_word_and_module_only_paths_are_errors ... ok
+test source::tests::line_text_strips_line_terminators ... ok
+test source::tests::lone_cr_does_not_start_a_line ... ok
+test source::tests::locations_count_scalar_values_and_split_on_lf ... ok
+test source::tests::offsets_past_the_end_are_clamped ... ok
+test source::tests::slice_never_panics_on_foreign_spans ... ok
+test ide::tests::std_paths_are_not_unused_imports ... ok
+test syntax::format::tests::author_line_breaks_and_trailing_commas_keep_lists_open ... ok
+test syntax::format::tests::closures_hug_the_call_and_logical_chains_break_before_operators ... ok
+test syntax::format::tests::comments_stay_with_their_code ... ok
+test syntax::format::tests::compressed_code_is_expanded_one_member_and_statement_per_line ... ok
+test syntax::format::tests::else_and_catch_start_their_own_line ... ok
+test syntax::format::tests::glued_generic_close_and_assignment_split_safely ... ok
+test syntax::format::tests::invalid_source_is_a_syntax_error ... ok
+test syntax::format::tests::long_lists_break_one_item_per_line_and_short_ones_stay_inline ... ok
+test syntax::lexer::tests::active_keywords ... ok
+test syntax::format::tests::match_cases_and_private_sections_are_laid_out ... ok
+test syntax::lexer::tests::ampersand_forms_and_projection_hash ... ok
+test syntax::lexer::tests::bad_escape_does_not_turn_the_rest_into_code ... ok
+test syntax::lexer::tests::based_literals_are_limited_to_int64_max ... ok
+test syntax::lexer::tests::char_escapes_decode_before_the_length_check ... ok
+test syntax::lexer::tests::comments_are_skipped_and_do_not_nest ... ok
+test syntax::lexer::tests::contextual_and_former_words_are_identifiers ... ok
+test ide::tests::self_enum_strings_and_take_lists_complete ... ok
+test syntax::lexer::tests::endl_is_an_exact_newline_alias ... ok
+test syntax::lexer::tests::eof_is_always_last_with_an_empty_span ... ok
+test syntax::lexer::tests::fenced_raw_string_errors ... ok
+test syntax::lexer::tests::fenced_raw_strings ... ok
+test syntax::lexer::tests::fenced_raw_strings_discard_carriage_returns ... ok
+test syntax::lexer::tests::float_literals_need_digits_after_the_dot ... ok
+test syntax::lexer::tests::integer_literals_keep_digits_and_radix ... ok
+test syntax::lexer::tests::line_accounting_across_multiline_literals_and_comments ... ok
+test syntax::lexer::tests::literal_errors ... ok
+test syntax::lexer::tests::longest_match_for_overlapping_operators ... ok
+test syntax::lexer::tests::malformed_based_literals_are_errors ... ok
+test ide::tests::signature_help_follows_argument_names ... ok
+test syntax::lexer::tests::module_header_punctuation ... ok
+test syntax::lexer::tests::malformed_unicode_escapes_are_lexer_errors ... ok
+test syntax::lexer::tests::lexer_terminates_on_arbitrary_bytes ... ok
+test syntax::lexer::tests::reserved_words_tokenize_distinctly ... ok
+test syntax::lexer::tests::spans_are_contiguous_with_source_spelling ... ok
+test syntax::lexer::tests::stream_write_versus_less_than_negative ... ok
+test syntax::lexer::tests::string_escapes_decode_and_keep_lexeme ... ok
+test syntax::lexer::tests::token_spans_map_to_lines_and_columns ... ok
+test syntax::lexer::tests::underscores_only_between_decimal_digits ... ok
+test syntax::lexer::tests::unexpected_characters_are_reported_and_skipped ... ok
+test syntax::lexer::tests::unicode_escapes_name_scalar_values ... ok
+test syntax::lexer::tests::whitespace_includes_cr_and_tabs_only ... ok
+test syntax::print::json::tests::quoting_escapes_json_specials_only ... ok
+test syntax::print::json::tests::writer_layout_is_stable ... ok
+test syntax::prune::tests::full_parse_keeps_every_test_and_fake ... ok
+test syntax::prune::tests::production_parse_keeps_nodes_with_skipped_bodies ... ok
+test syntax::token::tests::integer_values_are_exact_and_overflow_aware ... ok
+test syntax::prune::tests::pruning_removes_exactly_tests_and_fakes ... ok
+test syntax::token::tests::keywords_are_exact_spellings ... ok
+test syntax::token::tests::reserved_set_is_exactly_the_removed_syntax ... ok
+test syntax::token::tests::word_shapes ... ok
+test ide::std_paths::tests::std_lists_folders_modules_and_whole_paths ... ok
+test ide::std_paths::tests::module_path_lists_declarations_and_enum_cases ... ok
+
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/analysis.rs (target/release/deps/analysis-1ae1d6c126685192)
+
+running 16 tests
+test every_independent_error_is_reported ... ok
+test byte_values_are_not_map_keys ... ok
+test errors_do_not_cascade_from_poisoned_values ... ok
+test boundaries_are_explicit_coercions_in_thir ... ok
+test heterogeneous_literals_box_their_elements_into_any ... ok
+test a_for_loop_produces_the_value_of_its_last_iteration ... ok
+test generic_bodies_are_checked_without_a_specialization ... ok
+test constructs_without_a_backend_are_still_checked ... ok
+test constructor_fields_are_checked_before_lowering ... ok
+test bound_actions_are_called_only_after_an_action_type_boundary ... ok
+test branch_values_cross_the_expected_type_one_by_one ... ok
+test a_for_loop_value_needs_a_body_that_runs ... ok
+test map_keys_have_exactly_one_type ... ok
+test values_holding_any_are_never_compared ... ok
+test objects_cross_role_parameters_and_overloads_pick_the_most_specific ... ok
+test successor_obligations_are_checked_before_lowering ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/codegen.rs (target/release/deps/codegen-01d9a2a86b9558e7)
+
+running 4 tests
+test invalid_ir_is_rejected_before_serialization ... ok
+test unresolved_imports_missing_entry_and_method_collisions_are_errors ... ok
+test generates_a_deterministic_java_8_class_from_module_ir ... ok
+test invalid_class_names_and_jvm_size_limits_are_errors ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.52s
+
+     Running tests/corpus.rs (target/release/deps/corpus-f3f5c6be2baeb1e8)
+
+running 2 tests
+test conformance_sources_meet_their_parse_expectations ... ok
+test std_and_examples_parse_in_both_modes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/ir_program.rs (target/release/deps/ir_program-f931556213986137)
+
+running 2 tests
+test empty_library_module_keeps_its_import_metadata ... ok
+test return_and_instruction_spans_refer_to_original_source ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ir_verify.rs (target/release/deps/ir_verify-67d76894fb13c4c0)
+
+running 13 tests
+test a_well_formed_diamond_verifies ... ok
+test branches_must_match_target_parameters ... ok
+test results_and_entry_signature_are_checked ... ok
+test builders_are_used_at_most_once_on_every_path ... ok
+test every_block_must_be_reachable ... ok
+test map_keys_are_int_bool_or_str ... ok
+test uses_must_be_dominated_by_their_definitions ... ok
+test values_are_defined_exactly_once_and_typed ... ok
+test successor_results_must_be_taken_on_every_normal_path ... ok
+test calls_check_arguments_and_privacy ... ok
+test object_instructions_require_the_owner_authority ... ok
+test unwind_arguments_must_exist_before_the_source_block_starts ... ok
+test catch_handlers_receive_the_caught_type_and_throw_requires_error ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering.rs (target/release/deps/lowering-d93a61d014f0cb00)
+
+running 14 tests
+test if_expression_joins_through_a_block_parameter ... ok
+test every_operator_maps_to_one_instruction_family ... ok
+test integer_addition_has_the_canonical_module_text ... ok
+test logical_operators_short_circuit ... ok
+test statement_if_chains_and_early_returns_leave_no_dead_blocks ... ok
+test confirm_and_panic_become_terminators ... ok
+test strings_concatenate_and_compare_and_print_escaped ... ok
+test semantic_errors_are_reported_with_okkama_messages ... ok
+test let_bindings_reuse_values_and_check_declared_types ... ok
+test literals_are_exact_canonical_integers ... ok
+test role_bound_actions_worker_spawn_and_root_native_objects_lower ... ok
+test loops_carry_last_values_and_ranges_check_their_bounds ... ok
+test test_declarations_are_pruned_before_lowering ... ok
+test unsupported_constructs_are_errors_not_silent_drops ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering_collections.rs (target/release/deps/lowering_collections-fcadaa920b46b118)
+
+running 5 tests
+test collection_rule_violations_are_semantic_errors ... ok
+test first_and_last_trap_with_the_empty_sequence_text ... ok
+test map_threads_a_linear_builder_through_the_loop_header ... ok
+test constants_outside_loops_stay_in_their_branch ... ok
+test map_literals_and_lookups_have_their_own_instructions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering_failures.rs (target/release/deps/lowering_failures-d41502ab87e658b2)
+
+running 5 tests
+test roles_are_declared_with_witness_tables ... ok
+test rethrow_and_confirm_else_throw ... ok
+test role_boundaries_wrap_and_role_calls_use_slots ... ok
+test failure_rules_use_okkama_messages ... ok
+test try_catch_lowers_to_dispatch_handlers_and_causes ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering_generics.rs (target/release/deps/lowering_generics-fe1f5aae0e9d4ed9)
+
+running 2 tests
+test generic_rule_violations_use_the_interpreter_texts ... ok
+test each_specialization_is_one_object_with_its_own_functions ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering_match.rs (target/release/deps/lowering_match-5e14452e9fae53a5)
+
+running 3 tests
+test enum_and_match_rule_violations_are_semantic_errors ... ok
+test a_covering_enum_match_skips_the_last_test ... ok
+test case_patterns_are_tested_lazily_left_to_right ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering_objects.rs (target/release/deps/lowering_objects-4eb348aef2b5f8c8)
+
+running 9 tests
+test successors_read_original_fields_and_stage_the_last_value ... ok
+test construction_and_access_errors_use_okkama_messages ... ok
+test constructor_bodies_follow_the_perl_scope_rules ... ok
+test a_field_bound_on_some_paths_is_checked_after_the_body ... ok
+test overloads_and_named_arguments_resolve_statically ... ok
+test shorthand_constructors_are_specialized_by_given_fields ... ok
+test objects_and_defaults_are_declared_in_source_order ... ok
+test rebinding_in_loops_and_branches_threads_values_through_parameters ... ok
+test successor_results_follow_the_perl_must_use_rules ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/lowering_ownership.rs (target/release/deps/lowering_ownership-7bb7592cc9a90a72)
+
+running 5 tests
+test destroy_rules_are_semantic_errors ... ok
+test modules_without_destroy_emit_no_regions ... ok
+test bindings_own_and_call_results_are_tracked ... ok
+test regions_without_identities_are_elided ... ok
+test defers_run_on_exits_and_join_failures_as_secondary ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lowering_scalars.rs (target/release/deps/lowering_scalars-f035e0a33ce7a589)
+
+running 3 tests
+test byte_and_char_rule_violations_are_semantic_errors ... ok
+test float_never_mixes_with_other_numeric_types ... ok
+test bytes_widen_to_int_for_arithmetic_and_stay_bytes_for_bits ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/parser_declarations.rs (target/release/deps/parser_declarations-7462cbf5b92f5c4f)
+
+running 20 tests
+test generic_declarations ... ok
+test enums ... ok
+test import_errors ... ok
+test imports ... ok
+test caps_and_owner_field_reads ... ok
+test constructor_and_member_errors ... ok
+test module_header_forms ... ok
+test module_header_errors ... ok
+test native_declarations ... ok
+test only_main_is_declared_at_module_scope ... ok
+test object_members ... ok
+test constructor_forms_stay_distinct ... ok
+test production_mode_skips_test_and_fake_bodies_but_keeps_the_nodes ... ok
+test removed_allow_and_while_forms_stay_invalid ... ok
+test removed_object_views ... ok
+test roles_fakes_and_tests ... ok
+test shorthand_accepts_the_grammar_trailing_comma ... ok
+test variadic_parameters ... ok
+test type_references ... ok
+test with_names_are_forbidden_in_action_positions ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/parser_expressions.rs (target/release/deps/parser_expressions-6cead73bf01f9380)
+
+running 24 tests
+test anonymous_action_errors ... ok
+test arithmetic_precedence_and_left_associativity ... ok
+test array_casts_have_a_closed_target_set ... ok
+test async_await_and_spawn ... ok
+test bitwise_and_shift_precedence ... ok
+test calls_arguments_and_trailing_commas ... ok
+test comparison_equality_and_logic_levels ... ok
+test collection_literals ... ok
+test functional_suffix_errors ... ok
+test generic_closers_split_compound_tokens ... ok
+test anonymous_actions ... ok
+test functional_suffixes ... ok
+test if_match_loop_and_try_expressions ... ok
+test literal_forms ... ok
+test malformed_operator_extensions_are_rejected ... ok
+test named_constructor_projections ... ok
+test panic_takes_a_whole_expression ... ok
+test postfix_chains_left_to_right ... ok
+test ranges_sit_between_equality_and_comparison ... ok
+test removed_projection_spellings_have_migration_errors ... ok
+test stream_write_chains_left_and_binds_below_equality ... ok
+test stream_write_with_endl_and_unpacked_array_cast ... ok
+test unary_operators_bind_tighter_than_binary ... ok
+test unpack_applies_to_any_postfix_operand ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/parser_robustness.rs (target/release/deps/parser_robustness-88cfaf310999e5c3)
+
+running 14 tests
+test lexical_errors_prevent_parsing_and_are_all_reported ... ok
+test program_size_is_limited ... ok
+test syntax_errors_point_at_the_offending_token ... ok
+test incomplete_inputs_end_with_a_diagnostic ... ok
+test trailing_garbage_is_rejected ... ok
+test nesting_limit_is_configurable ... ok
+test nesting_up_to_the_limit_fits_a_small_stack ... ok
+test chains_up_to_the_tree_limit_pass_every_phase_on_a_small_stack ... ok
+test random_token_soup_terminates ... ok
+test deep_nesting_is_reported_not_overflowed ... ok
+test deleting_any_single_token_terminates ... ok
+test deep_expressions_drop_without_recursion ... ok
+test every_prefix_of_a_program_terminates ... ok
+test long_chains_are_reported_not_overflowed ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.52s
+
+     Running tests/parser_statements.rs (target/release/deps/parser_statements-43a3e232b22f9ab7)
+
+running 10 tests
+test postfix_if_on_expression_statements ... ok
+test nested_block_statements ... ok
+test match_statements ... ok
+test statement_errors ... ok
+test let_defer_confirm_and_bindings ... ok
+test for_statements_own_the_top_level_arrow ... ok
+test reserved_words_cannot_be_bindings ... ok
+test if_statements_chain_else_if ... ok
+test loop_next_and_last ... ok
+test try_throw_and_return ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/printer.rs (target/release/deps/printer-826dcc94f7ed86e3)
+
+running 7 tests
+test spans_are_byte_ranges_with_line_columns ... ok
+test production_snapshot_shows_skipped_bodies ... ok
+test the_fixture_exercises_every_node_kind ... ok
+test span_snapshots ... ok
+test tree_and_json_snapshots ... ok
+test every_kind_appears_in_both_formats ... ok
+test printing_is_deterministic_and_json_is_well_formed ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/recursion.rs (target/release/deps/recursion-acb0c568f5a7c091)
+
+running 5 tests
+test tail_calls_in_both_branches_leave_no_unreachable_join ... ok
+test recursion_without_a_finishing_path_is_rejected ... ok
+test self_tail_calls_become_loops ... ok
+test skipped_empty_blocks_keep_builders_linear ... ok
+test recursion_with_a_base_case_or_a_possible_failure_is_accepted ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/okkama_native-7a822c1f54b9c090)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vectors.rs (target/release/deps/vectors-ea3ae4d41deacaf8)
+
+running 9 tests
+test digest_states_branch_without_changing_the_origin ... ok
+test macs_and_key_derivation_match_rfc_vectors ... ok
+test constant_time_equality_and_entropy ... ok
+test digests_match_reference_vectors ... ok
+test aead_matches_gcm_vectors_and_rejects_tampering ... ok
+test ed25519_and_x25519_match_rfc_vectors ... ok
+test ecdsa_signs_and_verifies_on_both_curves ... ok
+test rsa_signatures_and_oaep_round_trip ... ok
+test argon2id_hashes_verify_and_reject_wrong_passwords ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (target/release/deps/okkama_runtime-adc4f77a15c77732)
+
+running 1 test
+test tests::unit::doubles_print_like_java ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/arrays.rs (target/release/deps/arrays-a829c51c10cca369)
+
+running 10 tests
+test object_elements_keep_old_values_after_successor_rebinding ... ok
+test empty_array_branches_receive_the_expected_type ... ok
+test lookup_continues_with_the_correct_values_in_a_loop ... ok
+test invalid_indices_report_a_program_error_at_the_index_expression ... ok
+test arrays_survive_frames_and_pass_through_generic_fields ... ok
+test literals_sizes_and_indices_work_for_supported_element_types ... ok
+test fallback_is_lazy_and_propagates_errors_when_selected ... ok
+test found_payload_preserves_nested_arrays_and_objects ... ok
+test slices_preserve_elements_aliases_and_exact_bounds ... ok
+test lookup_uses_fallback_only_for_missing_indices ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/calls.rs (target/release/deps/calls-713042f1f7b65386)
+
+running 5 tests
+test void_and_bool_calls_return_to_the_caller ... ok
+test errors_in_a_callee_return_to_the_host_and_do_not_poison_later_runs ... ok
+test string_arguments_and_results_survive_serialized_calls ... ok
+test nested_calls_keep_locals_and_resume_after_the_call ... ok
+test deep_recursion_uses_the_explicit_stack_and_unwinds_results ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/enums.rs (target/release/deps/enums-62ac1820bd83e848)
+
+running 3 tests
+test shared_enum_comparison_rejects_cross_type_and_undefined_values ... ok
+test enum_values_survive_arrays_generic_fields_and_role_dispatch ... ok
+test enum_match_selects_cases_and_default ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/equality.rs (target/release/deps/equality-5c3ffd689faa5adf)
+
+running 3 tests
+test successor_keeps_the_original_comparison_value ... ok
+test role_equality_uses_concrete_type_and_never_calls_user_methods ... ok
+test arrays_and_generic_private_fields_compare_structurally ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/execute.rs (target/release/deps/execute-735c5a1337f066e7)
+
+running 7 tests
+test invalid_ir_is_rejected_before_execution ... ok
+test loop_edge_swaps_parameters_simultaneously ... ok
+test large_ir_constants_use_exact_arithmetic ... ok
+test unsupported_programs_return_errors ... ok
+test source_to_ir_to_result_in_the_same_process ... ok
+test every_comparison_selects_the_correct_branch ... ok
+test branches_and_loops_execute_from_source ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/failures.rs (target/release/deps/failures-31c0f9f29eefe8fa)
+
+running 11 tests
+test caught_failure_and_success_leave_no_trace ... ok
+test ir_unwind_runs_defer_in_reverse_order_and_keeps_primary_failure ... ok
+test ir_new_failure_keeps_handled_failure_as_its_cause ... ok
+test ir_program_errors_unwind_and_panic_bypasses_error_catches ... ok
+test ir_uncaught_typed_failure_formats_text_only_at_the_boundary ... ok
+test panic_preserves_computed_unicode_message_across_calls ... ok
+test uncaught_failure_reports_place_and_call_stack_on_both_engines ... ok
+test untaken_panic_is_lazy_and_bytecode_message_must_be_a_string ... ok
+test sparrow_unwind_preserves_primary_and_cleanup_failures_across_calls ... ok
+test sparrow_typed_diagnostics_causes_and_uncatchable_failures_match_ir ... ok
+test ir_typed_failure_matches_nominal_catches_and_role_references ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/integers.rs (target/release/deps/integers-6da17c9d71a5fed8)
+
+running 4 tests
+test computed_slice_bounds_use_subtraction ... ok
+test arithmetic_is_exact_beyond_signed_64_r01 ... ok
+test negation_is_exact_and_preserves_canonical_zero ... ok
+test subtraction_handles_signs_borrows_and_large_results ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/native.rs (target/release/deps/native-37f59b0220347e75)
+
+running 6 tests
+test ir_native_failure_runs_cleanup_and_preserves_causes ... ok
+test native_identity_and_signature_are_checked_before_execution ... ok
+test sparrow_native_failure_unwinds_cleanup ... ok
+test malformed_native_data_keeps_structured_failure_fields ... ok
+test utf_native_calls_preserve_scalars_and_byte_order ... ok
+test ir_native_failure_is_caught_as_concrete_type_or_error_role ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/objects.rs (target/release/deps/objects-22471fd75f5393fa)
+
+running 5 tests
+test destroy_runs_when_the_owning_region_closes ... ok
+test generic_objects_are_already_specialized_by_lowering ... ok
+test nested_objects_and_returned_receivers_survive_their_call_frames ... ok
+test constructors_defaults_and_methods_execute_from_source ... ok
+test methods_can_branch_and_recurse_with_the_same_receiver ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/providers.rs (target/release/deps/providers-f4a3dd3641b37f0e)
+
+running 5 tests
+test buffers_are_mutable_handles_with_typed_close_failures ... ok
+test base64_alphabets_and_padding_follow_rfc_4648 ... ok
+test hex_round_trips_and_rejects_odd_input_like_the_jvm ... ok
+test host_crypto_digests_branch_in_both_engines ... ok
+test bigint_and_decimal_are_exact ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ranges.rs (target/release/deps/ranges-284c01a12ca6fe15)
+
+running 3 tests
+test range_equality_preserves_inclusive_flag ... ok
+test loop_counters_cross_signed_integer_boundary_exactly ... ok
+test stored_ranges_iterate_with_their_original_bounds ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/roles.rs (target/release/deps/roles-65b29b39e02652ab)
+
+running 4 tests
+test successor_does_not_retarget_existing_role_references ... ok
+test role_calls_support_parameters_recursion_and_void_results ... ok
+test narrowing_checks_nominal_witness_and_keeps_the_failure_lazy ... ok
+test role_dispatch_uses_actual_object_and_specialized_fields ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scalars.rs (target/release/deps/scalars-f06059dcf8153597)
+
+running 7 tests
+test utf8_instruction_preserves_scalar_encoding_and_zero_bytes ... ok
+test array_builders_execute_map_and_filter_without_mutating_inputs ... ok
+test byte_casts_trap_without_truncation_and_keep_argument_context ... ok
+test ranges_in_arrays_preserve_exact_endpoints_and_order ... ok
+test byte_bitwise_operations_are_eight_bit_and_shifts_check_exact_counts ... ok
+test integer_bitwise_operations_use_signed_words_and_exact_shift_counts ... ok
+test exact_scalar_conversions_keep_types_and_decimal_text ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sparrow.rs (target/release/deps/sparrow-ae78d7b409ff1b7a)
+
+running 11 tests
+test one_plus_one_lowers_to_register_code ... ok
+test malformed_sparrow_is_rejected_before_register_access ... ok
+test loop_edge_swaps_parameters_simultaneously ... ok
+test subtraction_and_negation_read_before_overwriting ... ok
+test register_reuse_and_signed_constants_work_without_ir_execution ... ok
+test values_of_separate_branches_share_registers ... ok
+test modulo_by_zero_fails_only_on_the_executed_path ... ok
+test selected_loop_traps_preserve_messages ... ok
+test generation_covers_floats_and_rationals_and_rejects_invalid_ir ... ok
+test control_flow_matches_ir_before_and_after_serialization ... ok
+test source_ir_sparrow_and_vm_agree_on_exact_arithmetic ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/strings.rs (target/release/deps/strings-eef98eb3c9ddd6c4)
+
+running 9 tests
+test strings_cross_branch_parameters_and_generic_return_types ... ok
+test strings_pass_through_fields_calls_and_successors ... ok
+test concatenation_preserves_the_original_and_its_alias ... ok
+test length_counts_code_points_not_utf8_bytes_or_graphemes ... ok
+test literals_concat_and_equality_preserve_unicode_and_empty_strings ... ok
+test slices_use_exclusive_code_point_boundaries ... ok
+test invalid_slice_bounds_return_program_errors_with_source_spans ... ok
+test split_and_join_preserve_empty_fields_and_unicode_code_points ... ok
+test trim_chomp_and_literal_replacement_match_language_boundaries ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/successors.rs (target/release/deps/successors-72fd1f224e9e6cd0)
+
+running 5 tests
+test verifier_rejects_invalid_successor_updates_before_execution ... ok
+test old_aliases_and_chained_successors_keep_distinct_values ... ok
+test staged_updates_read_original_fields_and_keep_the_last_assignment ... ok
+test successors_preserve_and_replace_nested_object_references ... ok
+test rebinding_across_loops_and_branches_preserves_unmodified_fields ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/okkama_runtime_abi-15e504210f051edc)
+
+running 1 test
+test tests::wire_ids_and_symbols_are_unique ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/okkama_runtime_core-18305913c7f23fd7)
+
+running 41 tests
+test failure::tests::trace_records_each_frame_once ... ok
+test failure::tests::frame_names_drop_overload_numbers_but_keep_lambdas ... ok
+test bignum::tests::division_truncates_and_text_round_trips ... ok
+test gc::tests::unreachable_cycles_are_freed_and_reachable_ones_kept ... ok
+test heap::equality_tests::equality_checks_nominal_types_private_state_and_invalid_values ... ok
+test gc::tests::cycles_held_by_unknown_owners_are_conservatively_kept ... ok
+test float::tests::conversions_check_ranges_and_traps ... ok
+test float::tests::text_follows_go_shortest_g_format ... ok
+test heap::tests::map_keys_follow_key_order_and_literals_keep_the_first_key ... ok
+test failure::tests::stack_text_collapses_recursion_and_elides_long_stacks ... ok
+test float::tests::printf_g_rounds_the_exact_binary_value ... ok
+test float::tests::fixed_and_scientific_round_half_even_on_the_exact_value ... ok
+test native::encoding::tests::quoted_printable_escapes_and_round_trips ... ok
+test native::inspect::tests::type_names_drop_module_prefixes ... ok
+test native::numbers::tests::decimal_components_match_the_jvm_parser ... ok
+test native::numbers::tests::large_values_divide_gcd_and_measure_bits ... ok
+test native::encoding::tests::ascii85_round_trips_and_zero_groups_shrink ... ok
+test integer::tests::signed_addition_matches_small_integer_arithmetic ... ok
+test native::encoding::tests::rfc4648_vectors ... ok
+test native::stdio::tests::broken_output_is_a_structured_provider_failure ... ok
+test native::stdio::tests::writes_preserve_binary_prefix_counts_and_separate_streams ... ok
+test native::stdio::tests::line_and_raw_reads_share_buffer_and_stable_eof ... ok
+test native::tests::malformed_prefix_starts_at_the_whole_scalar ... ok
+test native::tests::unicode_boundaries_and_bom_roundtrip_without_normalization ... ok
+test native::text::number_text_tests::integers_parse_like_parsed_int ... ok
+test rat::tests::float_conversions_use_canonical_decimal_text ... ok
+test rat::tests::fractions_are_reduced_with_positive_denominators ... ok
+test scalar::tests::all_byte_shifts_match_masked_unsigned_words ... ok
+test native::numbers::tests::arithmetic_matches_small_integers ... ok
+test native::stdio::tests::limits_are_positive_exact_and_bound_the_read_allocation ... ok
+test sched::tests::cancellation_reaches_the_innermost_awaited_future ... ok
+test sched::tests::offloaded_work_is_delivered_by_the_event_loop ... ok
+test sched::tests::completion_resumes_waiters_in_order_and_caches_the_outcome ... ok
+test native::jre::tests::split_follows_java_trailing_rules ... ok
+test heap::tests::builders_collect_in_place_and_finish_into_arrays ... ok
+test sched::tests::async_main_without_progress_is_a_program_error ... ok
+test native::fs::tests::file_spec_paths_match_perl ... ok
+test data::tests::categories_come_from_the_shared_table ... ok
+test gc::tests::many_cycles_are_collected_incrementally ... ok
+test heap::equality_tests::equality_is_iterative_and_reuses_shared_subgraphs ... ok
+test heap::tests::deep_chains_are_released_without_recursion ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running unittests src/lib.rs (target/release/deps/okkama_sparrow-63f42b459e565272)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/codec.rs (target/release/deps/codec-52959f834e40923c)
+
+running 5 tests
+test assembly_errors_name_the_line ... ok
+test decoding_verifies_the_program ... ok
+test decoding_rejects_malformed_files ... ok
+test encoding_is_deterministic_and_round_trips ... ok
+test assembly_round_trips_to_the_same_program ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verify.rs (target/release/deps/verify-5c1d2f028b0ea5d9)
+
+running 6 tests
+test bodiless_functions_have_no_code ... ok
+test accepts_recursion_branches_and_register_reuse ... ok
+test handlers_must_be_ordered_and_define_their_failure_register ... ok
+test rejects_falling_off_the_code_and_duplicate_edge_assignments ... ok
+test rejects_out_of_bounds_references ... ok
+test rejects_reads_of_registers_not_written_on_every_path ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/sparrow-e75d8f4f617c3e9c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/release/deps/cli-63c22a4f20346eaf)
+
+running 6 tests
+test check_does_not_execute_a_valid_infinite_loop ... ok
+test uncaught_failures_are_reported_like_okkama ... ok
+test assembly_round_trips_through_the_command_line ... ok
+test help_version_and_usage_are_explicit ... ok
+test standalone_run_and_check_report_exit_codes ... ok
+test malformed_large_and_missing_files_are_diagnostics ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running unittests src/lib.rs (target/release/deps/sparrow_vm-22a1bc8044e79928)
+
+running 1 test
+test jit::limits::functions_over_the_register_limit_are_not_compiled ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/execute.rs (target/release/deps/execute-499b936fb7cf5323)
+
+running 4 tests
+test exact_values_traps_and_handlers_are_independent_of_source_locations ... ok
+test hot_code_handlers_catch_failures ... ok
+test hot_code_falls_back_to_exact_integers_on_overflow ... ok
+test recursion_and_serialization_work_without_the_compiler ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+   Doc-tests blade
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests okkama_compiler
+
+running 1 test
+test crates/okkama-compiler/src/syntax/mod.rs - syntax (line 5) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 8.56s; merged doctests compilation took 8.21s
+   Doc-tests okkama_native
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests okkama_runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests okkama_runtime_abi
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests okkama_runtime_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests okkama_sparrow
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests sparrow_vm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
