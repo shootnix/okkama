@@ -67,7 +67,9 @@ fi
 step "JIT and OSR actually ran"
 compiled=0; osr=0
 for bench in 01-arith 02-calls 07-objects 09-closures; do
-    line="$(OKKAMA_JIT_STATS=1 OKKAMA_JIT_THRESHOLD=2 "$OKKAMA" run --engine sparrow "$ROOT/benchmarks/$bench/main.ok" 2>&1 >/dev/null \
+    # Предел времени: сломанный быстрый путь JIT может зациклить программу.
+    line="$(OKKAMA_JIT_STATS=1 OKKAMA_JIT_THRESHOLD=2 perl -e 'alarm shift; exec @ARGV' 300 \
+        "$OKKAMA" run --engine sparrow "$ROOT/benchmarks/$bench/main.ok" 2>&1 >/dev/null \
         | grep '^jit: compiled' || true)"
     echo "$bench: ${line:-no JIT statistics}"
     if [[ "$line" =~ compiled\ ([0-9]+),.*osr\ ([0-9]+) ]]; then
