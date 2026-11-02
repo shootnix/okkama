@@ -68,7 +68,6 @@ object BigInt does Comparing<BigInt> {
 object InvalidBigInt does Error {
     InvalidBigInt();
 
-    #projected
     text() is string {
         "invalid arbitrary-precision integer";
     }
@@ -78,7 +77,6 @@ object BigDifference {
     has left is BigInt;
     has right is BigInt;
     BigDifference(:left, :right);
-    #projected
     value() is BigInt { BigInt(bigint_difference(left.string(), right.string())); }
 }
 
@@ -88,7 +86,6 @@ object BigSum {
 
     BigSum(:left, :right);
 
-    #projected
     value() is BigInt {
         BigInt(bigint_sum(left.string(), right.string()));
     }
@@ -100,7 +97,6 @@ object BigProduct {
 
     BigProduct(:left, :right);
 
-    #projected
     value() is BigInt {
         BigInt(bigint_product(left.string(), right.string()));
     }
@@ -112,7 +108,6 @@ object BigQuotient {
 
     BigQuotient(:left, :right);
 
-    #projected
     value() is BigInt {
         confirm right.sign() != 0 else throw BigDivisionByZero();
         BigInt(bigint_quotient(left.string(), right.string()));
@@ -125,7 +120,6 @@ object BigRemainder {
 
     BigRemainder(:left, :right);
 
-    #projected
     value() is BigInt {
         confirm right.sign() != 0 else throw BigDivisionByZero();
         BigInt(bigint_remainder(left.string(), right.string()));
@@ -135,7 +129,6 @@ object BigRemainder {
 object BigDivisionByZero does Error {
     BigDivisionByZero();
 
-    #projected
     text() is string { "BigInt division by zero"; }
 }
 
@@ -145,7 +138,6 @@ object BigGcd {
 
     BigGcd(:left, :right);
 
-    #projected
     value() is BigInt {
         BigInt(bigint_gcd(left.string(), right.string()));
     }
@@ -157,7 +149,6 @@ object BigLcm {
 
     BigLcm(:left, :right);
 
-    #projected
     value() is BigInt {
         BigInt(bigint_lcm(left.string(), right.string()));
     }
@@ -186,7 +177,6 @@ object BigPower {
         confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit(maximum_bits: self.maximum_bits);
     }
 
-    #projected
     value() is BigInt {
         try {
             BigInt(bigint_power(base.string(), exponent, maximum_bits));
@@ -206,7 +196,6 @@ object InvalidBigExponent does Error {
     InvalidBigExponent(exponent is int) { value = exponent; }
     exponent() is int { value; }
 
-    #projected
     text() is string { "BigInt exponent must be non-negative"; }
 }
 
@@ -216,7 +205,6 @@ object InvalidBigPowerLimit does Error {
     InvalidBigPowerLimit(maximum_bits is int) { limit = maximum_bits; }
     maximum_bits() is int { limit; }
 
-    #projected
     text() is string { "BigInt power bit limit must be positive"; }
 }
 
@@ -226,6 +214,5 @@ object BigPowerLimitExceeded does Error {
     BigPowerLimitExceeded(maximum_bits is int) { limit = maximum_bits; }
     maximum_bits() is int { limit; }
 
-    #projected
     text() is string { "BigInt power exceeds " + limit.string() + " bits"; }
 }

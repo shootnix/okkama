@@ -5,7 +5,6 @@ enum Plan = (basic, pro);
 object HalfEven {
     has value is rat;
     HalfEven(:value);
-    #projected(cents)
     rounded() is int {
         let floor = value.int();
         let fraction = value - floor.rat();
@@ -29,7 +28,7 @@ object InvoiceLine {
             case Plan.pro { 2500; }
             else { 0; }
         };
-        cents HalfEven(value: monthly * seats * days_used / days_in_period);
+        HalfEven(value: monthly * seats * days_used / days_in_period).rounded();
     }
 }
 
@@ -39,6 +38,6 @@ object Invoice {
     Invoice(:lines, :tax_basis_points);
     line_cents() is @int { lines.map() -> line { line.cents(); }; }
     subtotal() is int { self.line_cents().reduce(0) -> sum, v { sum + v; }; }
-    tax() is int { cents HalfEven(value: self.subtotal() * tax_basis_points / 10000); }
+    tax() is int { HalfEven(value: self.subtotal() * tax_basis_points / 10000).rounded(); }
     total() is int { self.subtotal() + self.tax(); }
 }

@@ -15,7 +15,6 @@ object CompactJson {
     has origin is JsonValue;
     CompactJson(:origin);
 
-    #projected
     string() is string {
         let output = ByteBuffer();
         origin.print(JsonTextOutput(destination: Utf8Output(origin: output.writing())));
@@ -97,7 +96,6 @@ object PrettyJson {
             else throw InvalidJsonPrintLimits();
     }
 
-    #projected
     string() is string {
         let buffer = ByteBuffer();
         let output = JsonBoundedText(buffer: buffer, maximum_bytes: maximum_bytes);

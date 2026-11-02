@@ -41,7 +41,6 @@ object AllowedLogs does LogWriting{
 object EnabledLog{
     has origin is LogAllowing;has name is LogName;has level is LogLevel;
     EnabledLog(origin is LogAllowing,name is LogName,level is LogLevel){self.origin=origin;self.name=name;self.level=level;}
-    #projected
     value() is bool{origin.allowed(name,level);}
 }
 object InvalidLogThreshold does Error{InvalidLogThreshold();text() is string{"invalid or duplicate log threshold override";}}

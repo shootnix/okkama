@@ -53,7 +53,6 @@ object TemplatePathFromString {
         confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit();
         self.origin = origin; self.maximum_segments = maximum_segments; self.maximum_length = maximum_length;
     }
-    #projected
     value() is TemplatePath {
         confirm origin.length() <= maximum_length else throw TemplatePathLimitExceeded();
         confirm origin != "" && origin != "." else throw InvalidTemplatePath("empty or reserved template path");

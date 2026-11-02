@@ -28,6 +28,26 @@ impl Checker<'_, '_> {
     pub(super) fn expr(&mut self, expr: &ast::Expr, want: bool, expected: Option<&Ty>) -> Expr {
         let span = expr.span;
         match &expr.kind {
+            ast::ExprKind::Throw(value) => {
+                let value = self.thrown(value);
+                Self::diverged(
+                    ExprKind::Block(crate::analysis::thir::Block {
+                        stmts: vec![crate::analysis::thir::Stmt {
+                            kind: crate::analysis::thir::StmtKind::Throw(value),
+                            span,
+                        }],
+                        span,
+                    }),
+                    span,
+                )
+            }
+            ast::ExprKind::TypeValue(_) => {
+                self.error(span, "A type is not a value");
+                Self::poisoned(span)
+            }
+            ast::ExprKind::Coalesce { value, fallback } => {
+                self.optional_fallback(value, fallback, expected, span)
+            }
             ast::ExprKind::Literal(literal) => self.literal(literal, span),
             ast::ExprKind::Name(name) => self.read_name(name),
             ast::ExprKind::SelfValue => self.self_expr(span),
@@ -50,7 +70,7 @@ impl Checker<'_, '_> {
                     return self.binary_values(*op, lhs, rhs, span);
                 }
                 let lhs = self.value(left, None);
-                let rhs = if is_fake_get(right) {
+                let rhs = if is_fake_get(right) || matches!(lhs.ty, Some(Ty::Variant(..))) {
                     let ty = Self::ty_of(&lhs).taken();
                     self.value(right, Some(&ty))
                 } else {
@@ -103,10 +123,6 @@ impl Checker<'_, '_> {
                 index,
                 fallback,
             } => self.index(object, index, fallback.as_deref(), want, expected, span),
-            ast::ExprKind::Projection {
-                prefix,
-                construction,
-            } => self.projection(prefix, construction, span),
             ast::ExprKind::Functional {
                 operation,
                 receiver,
@@ -257,7 +273,9 @@ impl Checker<'_, '_> {
                 ast::ExprKind::Literal(ast::Literal::Int(int)) => {
                     return match int_value(int) {
                         Some(value) => Self::typed(
-                            ExprKind::Constant(Constant::Int(value.negated().to_string().to_string())),
+                            ExprKind::Constant(Constant::Int(
+                                value.negated().to_string().to_string(),
+                            )),
                             Ty::Int,
                             span,
                         ),
@@ -359,6 +377,11 @@ impl Checker<'_, '_> {
             (lhs, rhs)
         };
         let (left, right) = (Self::ty_of(&lhs).taken(), Self::ty_of(&rhs).taken());
+        if left == right && matches!(op, B::Equal | B::NotEqual) {
+            if let Ty::Variant(id, types) = &left {
+                return self.variant_compare(lhs, rhs, *id, types.clone(), op == B::NotEqual, span);
+            }
+        }
         if left.is_error() || right.is_error() {
             return Self::poisoned(span);
         }
@@ -623,6 +646,9 @@ impl Checker<'_, '_> {
     ) -> Expr {
         let subject = Self::consume(self.value(&body.subject, None));
         let subject_ty = Self::ty_of(&subject).taken();
+        if let Ty::Variant(id, args) = &subject_ty {
+            return self.variant_match(body, subject, *id, args.clone(), want, expected, span);
+        }
         let mut cases = Vec::new();
         let mut arms: Vec<Expr> = Vec::new();
         for case in &body.cases {

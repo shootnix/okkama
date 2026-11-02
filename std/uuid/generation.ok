@@ -36,13 +36,12 @@ object Uuid3 {
         self.name = name;
     }
 
-    #projected
     value() is Uuid {
-        value UuidFromBytes(origin: uuid_named(
+        UuidFromBytes(origin: uuid_named(
             namespace.bytes(),
             Utf8Encoded(origin: name).bytes(),
             3,
-        ));
+        )).value();
     }
 }
 
@@ -55,13 +54,12 @@ object Uuid5 {
         self.name = name;
     }
 
-    #projected
     value() is Uuid {
-        value UuidFromBytes(origin: uuid_named(
+        UuidFromBytes(origin: uuid_named(
             namespace.bytes(),
             Utf8Encoded(origin: name).bytes(),
             5,
-        ));
+        )).value();
     }
 }
 
@@ -82,9 +80,8 @@ object Uuid8 {
         self.low = low;
     }
 
-    #projected
     value() is Uuid {
-        value UuidFromBytes(origin: uuid_custom(high, middle, low));
+        UuidFromBytes(origin: uuid_custom(high, middle, low)).value();
     }
 }
 
@@ -96,6 +93,6 @@ object Uuid4s does Distribution<Uuid> {
     }
 
     sample() is Uuid {
-        value UuidFromBytes(origin: uuid_versioned(random.bytes(16), 4));
+        UuidFromBytes(origin: uuid_versioned(random.bytes(16), 4)).value();
     }
 }

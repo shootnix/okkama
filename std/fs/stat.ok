@@ -61,13 +61,13 @@ object FileTimes {
         created = creation;
     }
 
-    access() is Instant { value EpochInstant(seconds: accessed); }
-    modification() is Instant { value EpochInstant(seconds: modified); }
-    change() is Instant { value EpochInstant(seconds: changed); }
+    access() is Instant { EpochInstant(seconds: accessed).value(); }
+    modification() is Instant { EpochInstant(seconds: modified).value(); }
+    change() is Instant { EpochInstant(seconds: changed).value(); }
 
     creation() is Instant {
         confirm created >= 0 else throw MissingCreationTime();
-        value EpochInstant(seconds: created);
+        EpochInstant(seconds: created).value();
     }
 }
 
@@ -111,9 +111,9 @@ object PermissionMode {
     }
 
     // These are integer bit fields; division produces a rat in Okkama.
-    owner() is Permissions { value PermissionBits(bits: (bits >> 6) & 7); }
-    group() is Permissions { value PermissionBits(bits: (bits >> 3) & 7); }
-    others() is Permissions { value PermissionBits(bits: bits % 8); }
+    owner() is Permissions { PermissionBits(bits: (bits >> 6) & 7).value(); }
+    group() is Permissions { PermissionBits(bits: (bits >> 3) & 7).value(); }
+    others() is Permissions { PermissionBits(bits: bits % 8).value(); }
     special() is int { bits >> 9; }
 }
 
@@ -122,10 +122,9 @@ object FileStatFromMap {
 
     FileStatFromMap(:origin);
 
-    #projected
     value() is FileStat {
         FileStat(
-            kind: value FileKindFromCode(code: origin["kind"]),
+            kind: FileKindFromCode(code: origin["kind"]).value(),
             size: origin["size"],
             mode: PermissionMode(bits: origin["permissions"]),
             times: FileTimes(
@@ -147,7 +146,6 @@ object EpochInstant {
 
     EpochInstant(:seconds);
 
-    #projected
     value() is Instant {
         Instant(origin: Duration(
             value: seconds.rat(),
@@ -161,7 +159,6 @@ object PermissionBits {
 
     PermissionBits(:bits);
 
-    #projected
     value() is Permissions {
         Permissions(
             readable: (bits & 4) != 0,
@@ -176,7 +173,6 @@ object FileKindFromCode {
 
     FileKindFromCode(:code);
 
-    #projected
     value() is FileKind {
         if code == 1 { FileKind.file; }
         else if code == 2 { FileKind.directory; }
@@ -192,7 +188,6 @@ object FileKindFromCode {
 object MissingCreationTime does Error {
     MissingCreationTime();
 
-    #projected
     text() is string { "filesystem does not expose a creation time"; }
 }
 
@@ -203,7 +198,6 @@ object InvalidPermissionMode does Error {
         self.bits = bits;
     }
 
-    #projected
     text() is string {
         "invalid permission mode " + bits.string();
     }

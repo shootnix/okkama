@@ -18,7 +18,6 @@ object ShortestFloat {
         bits=IntegerFromBytes(magnitude,Signedness.unsigned,ByteOrder.big).value();
     }
     negative() is bool{negative;}
-    #projected
     value() is Decimal {
         if bits==0{return Decimal("0");}
         let interval=Binary64RoundingInterval(bits);let lower=interval.lower();let upper=interval.upper();

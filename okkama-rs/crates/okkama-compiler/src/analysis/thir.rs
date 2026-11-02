@@ -271,6 +271,15 @@ pub enum CastTarget {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    VariantNew {
+        case: usize,
+        values: Vec<Expr>,
+    },
+    VariantTag(Box<Expr>),
+    VariantGet {
+        value: Box<Expr>,
+        field: usize,
+    },
     Constant(Constant),
     Local(LocalId),
     SelfValue,
@@ -349,12 +358,6 @@ pub enum ExprKind {
     ArrayCast {
         element: CastTarget,
         parts: Vec<CastPart>,
-    },
-    /// `prefix Object(...)`: конструирование, затем действие `#projected`.
-    Projection {
-        construction: Box<Expr>,
-        object: ObjectId,
-        method: usize,
     },
     /// Новый массив из распаковки `xs...` (массив или variadic-привязка).
     Unpack(Box<Expr>),

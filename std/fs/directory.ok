@@ -115,7 +115,7 @@ object DirectoryEntry {
 
     stat() is FileStat {
         try {
-            value FileStatFromMap(origin: lstat(path_encode(origin.string())));
+            FileStatFromMap(origin: lstat(path_encode(origin.string()))).value();
         }
         catch failure is NativeFailure {
             throw FileSystemFailure(failure.code(), failure.message());
@@ -179,10 +179,10 @@ object Descendants does Iterating<DirectoryEntry> {
 
     cursor() is Cursor<DirectoryEntry> {
         let following is List<Cursor<DirectoryEntry>> = EmptyList();
-        value DescendantCursorFrom(
+        DescendantCursorFrom(
             current: DirectoryEntries(origin: origin).cursor(),
             following: following,
-        );
+        ).value();
     }
 }
 
@@ -200,18 +200,18 @@ object DescendantCursor does Cursor<DirectoryEntry> {
         let entry is DirectoryEntry = current.item();
         let sibling is Cursor<DirectoryEntry> = current.successor();
         if entry.kind() == FileKind.directory {
-            value DescendantCursorFrom(
+            DescendantCursorFrom(
                 current: DirectoryEntries(
                     origin: Directory(path: entry.path()),
                 ).cursor(),
                 following: following.prefix(sibling),
-            );
+            ).value();
         }
         else {
-            value DescendantCursorFrom(
+            DescendantCursorFrom(
                 current: sibling,
                 following: following,
-            );
+            ).value();
         }
     }
 }
@@ -222,17 +222,16 @@ object DescendantCursorFrom {
 
     DescendantCursorFrom(:current, :following);
 
-    #projected
     value() is Cursor<DirectoryEntry> {
         if current.available() {
             DescendantCursor(current: current, following: following);
         }
         else {
             if following.size() > 0 {
-                value DescendantCursorFrom(
+                DescendantCursorFrom(
                     current: following.first(),
                     following: following.tail(),
-                );
+                ).value();
             }
             else {
                 ExhaustedDescendantCursor();
@@ -278,7 +277,6 @@ object DirectoryNotEmpty does Error {
 
     path() is Path { origin; }
 
-    #projected
     text() is string {
         "directory is not empty: " + origin.string();
     }

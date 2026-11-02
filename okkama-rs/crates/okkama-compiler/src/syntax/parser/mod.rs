@@ -374,7 +374,7 @@ impl<'s> Parser<'s> {
 
     /// Any name token (keyword-shaped words included).
     fn consume_name(&mut self, message: &str) -> PResult<Name> {
-        if self.check_name() {
+        if self.check_name() || self.check(TokenKind::None) {
             let token = self.advance();
             return Ok(self.name_of(&token));
         }
@@ -395,6 +395,10 @@ impl<'s> Parser<'s> {
 
     /// A real lower-case identifier (fields, parameters, aliases, ...).
     fn consume_identifier(&mut self, message: &str) -> PResult<Name> {
+        if self.check(TokenKind::None) {
+            let token = self.advance();
+            return Ok(self.name_of(&token));
+        }
         let name = self.consume_binding_name(message)?;
         if !is_lower_word(&name.text) {
             return Err(self.error_at(&self.previous().clone(), message));

@@ -44,14 +44,14 @@ object LogArchiveCatalog{
     records() is @LogArchive{
         let lexical=if path.style()==PathStyle.windows{path.string().split("\\").join("/");}else{path.string();};
         let parts=lexical.split("/");let prefix=parts[parts.size()-1]+".archive.";
-        let names=try{fs.directory_entries(fs.path_encode(path.parent().string()));}catch failure is NativeFailure{throw value FileError(failure:failure);};
+        let names=try{fs.directory_entries(fs.path_encode(path.parent().string()));}catch failure is NativeFailure{throw FileError(failure:failure).value();};
         let empty is List<LogArchive>=EmptyList();
         let entries is List<LogArchive>=names.reduce(empty)->old,text{
             if text.length()>prefix.length() && text.slice(0,prefix.length())==prefix{
                 let tail=text.slice(prefix.length(),text.length());let parts=tail.split(".");
                 let valid=try{let generation=BigInt(parts[0]);generation.sign()>0 && generation.string()==parts[0] && parts.size()>1;}catch e is InvalidBigInt{false;};
                 if valid{
-                    let entry=path.parent().child(text);let kind=try{fs.lstat(fs.path_encode(entry.string()))["kind"];}catch failure is NativeFailure{throw value FileError(failure:failure);};
+                    let entry=path.parent().child(text);let kind=try{fs.lstat(fs.path_encode(entry.string()))["kind"];}catch failure is NativeFailure{throw FileError(failure:failure).value();};
                     confirm kind==1 else throw InvalidLogRotation("archive namespace contains a non-regular file");old.prefix(LogArchive(entry,BigInt(parts[0])));
                 }else{old;}
             }else{old;}
@@ -67,7 +67,7 @@ object LogArchiveCatalog{
         let count=if records.size()>retained{records.size()-retained;}else{0;};
         for (0..count)->index{
             let oldest=ordered.item(index);
-            try{fs.unlink(fs.path_encode(oldest.path().string()));}catch failure is NativeFailure{throw value FileError(failure:failure);}
+            try{fs.unlink(fs.path_encode(oldest.path().string()));}catch failure is NativeFailure{throw FileError(failure:failure).value();}
         }
     }
 }
@@ -97,7 +97,7 @@ object RotatingLogFile does Writing,Closing{
         try{
             let metadata=fs.lstat(fs.path_encode(path.string()));
             confirm metadata["kind"]==1 else throw InvalidLogRotation("active log must be a regular file");BigInt(metadata["size"].string());
-        }catch failure is NativeFailure{if failure.code()=="not_found"{BigInt("0");}else{throw value FileError(failure:failure);}}
+        }catch failure is NativeFailure{if failure.code()=="not_found"{BigInt("0");}else{throw FileError(failure:failure).value();}}
     }
     rotate(now is Instant) is void{
         let catalog=LogArchiveCatalog(path);let records=catalog.records();let generation=catalog.next(records);
@@ -105,7 +105,7 @@ object RotatingLogFile does Writing,Closing{
         confirm suffix.length()>0 && suffix.length()<=128 && suffix!="." && suffix!=".." && suffix.split("/").size()==1 && suffix.split("\\").size()==1 && suffix.split(":").size()==1 else throw InvalidLogRotation("invalid archive suffix");
         let target=Path(path.string()+".archive."+generation.string()+"."+suffix,path.style());
         file.release();
-        try{if backups==0{fs.unlink(fs.path_encode(path.string()));}else{fs.rename(fs.path_encode(path.string()),fs.path_encode(target.string()));}}catch failure is NativeFailure{throw value FileError(failure:failure);}
+        try{if backups==0{fs.unlink(fs.path_encode(path.string()));}else{fs.rename(fs.path_encode(path.string()),fs.path_encode(target.string()));}}catch failure is NativeFailure{throw FileError(failure:failure).value();}
         if backups>0{catalog.trim(catalog.records(),backups);}else{catalog.trim(records,0);}
         file.reopen();opened.replace([now]);
     }

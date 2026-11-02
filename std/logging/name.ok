@@ -12,7 +12,6 @@ object LogName does Comparing<LogName>{
 object ChildLogName{
     has origin is LogName;has segment is string;
     ChildLogName(origin is LogName,segment is string){self.origin=origin;self.segment=segment;}
-    #projected
     value() is LogName{
         let base=origin.segments();
         let parts is @string=(0..base.size()+1).map()->index{if index<base.size(){base.item(index);}else{segment;}};

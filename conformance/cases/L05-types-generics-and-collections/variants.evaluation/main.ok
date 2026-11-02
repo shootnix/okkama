@@ -1,0 +1,12 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+object Reader {
+    Reader();
+    get() is Maybe<int> { Stdout().writeln("get"); Maybe.some(0); }
+    fallback() is int { Stdout().writeln("fallback"); 42; }
+}
+main() is int {
+    let present = Reader().get() else Reader().fallback();
+    let absent = Maybe<int>.none else Reader().fallback();
+    if present == 0 && absent == 42 { 0; } else { 1; }
+}

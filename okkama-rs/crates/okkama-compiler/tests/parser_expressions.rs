@@ -406,19 +406,17 @@ fn panic_takes_a_whole_expression() {
 }
 
 #[test]
-fn named_constructor_projections() {
-    assert_eq!(
-        expr_sexpr("value ParsedInt(answer)"),
-        "(projection value (call ParsedInt answer))"
-    );
-    assert_eq!(
-        expr_sexpr("value strings.ParsedInt(answer).less(100)"),
-        "(call (. (projection value (call (. strings ParsedInt) answer)) less) 100)"
-    );
-    assert_eq!(
-        expr_sexpr("of Outer(item: of Inner(source))"),
-        "(projection of (call Outer item:(projection of (call Inner source))))"
-    );
+fn named_constructor_projections_are_removed() {
+    for source in [
+        "value ParsedInt(answer)",
+        "value strings.ParsedInt(answer).less(100)",
+        "of Outer(item: of Inner(source))",
+    ] {
+        assert_rejects(
+            &format!("module app v1.0.0; main() is int {{ {source}; }}"),
+            "Constructor projections have been removed",
+        );
+    }
     // `of(Max(1))` is an ordinary call; `of Max(1)` is a projection.
     assert_eq!(expr_sexpr("of(Max(1))"), "(call of (call Max 1))");
     // A lowercase juxtaposition is not a projection.
@@ -441,15 +439,15 @@ fn named_constructor_projections() {
 fn removed_projection_spellings_have_migration_errors() {
     assert_rejects(
         "module app v1.0.0; main() is int { &parser(answer); }",
-        "Constructor projections use a declared prefix, not \"&\".",
+        "Constructor projections have been removed; use Type(args).method().",
     );
     assert_rejects(
         "module app v1.0.0; main() is int { ParsedInt:(answer); }",
-        "Constructor projections use a declared prefix, not \":\".",
+        "Constructor projections have been removed; use Type(args).method().",
     );
     assert_rejects(
         "module app v1.0.0; main() is int { f(Parsed:(x)); }",
-        "Constructor projections use a declared prefix, not \":\".",
+        "Constructor projections have been removed; use Type(args).method().",
     );
 }
 

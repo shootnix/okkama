@@ -158,7 +158,7 @@ fn object_members() {
         is(actual is any, expected is any) is void {} \
         has(expected is string) is bool { false; } \
         withdrawal() is int { 1; } \
-        private: helper() is void {} #projected(of) value() is int { 1; } \
+        private: helper() is void {} value() is int { 1; } \
         }";
     let program = parse_ok(source);
     let Item::Object(object) = &program.items[0] else {
@@ -202,17 +202,6 @@ fn object_members() {
             .actions
             .iter()
             .all(|a| a.visibility == Visibility::Private)
-    );
-    assert_eq!(
-        section.actions[1]
-            .projection
-            .as_ref()
-            .unwrap()
-            .alias
-            .as_ref()
-            .unwrap()
-            .text,
-        "of"
     );
     let ObjectMember::Test(test) = &object.members[6] else {
         panic!()
@@ -329,19 +318,19 @@ fn constructor_and_member_errors() {
         ),
         (
             "object Box { Box(); &value() is int { 1; } }",
-            "Object projection declarations use \"#projected\", not \"&\".",
+            "Constructor projections have been removed; use Type(args).method().",
         ),
         (
             "object Box { Box(); #projectd(of) value() is int { 1; } }",
-            "Unknown object action directive \"projectd\".",
+            "Action directives have been removed",
         ),
         (
             "object Box { Box(); #projected() value() is int { 1; } }",
-            "Projection alias must be a lowercase identifier.",
+            "Action directives have been removed",
         ),
         (
             "object Box { Box(); #projected #projected value() is int { 1; } }",
-            "Expect action name.",
+            "Action directives have been removed",
         ),
         (
             "object Box { Box(); private helper() is void {} }",
@@ -365,7 +354,6 @@ fn with_names_are_forbidden_in_action_positions() {
         "object Box { Box(); with() is void {} }",
         "role Boxed { with_value(value is int) is void; }",
         "object Box { Box(); private: with_value(value is int) is void {} }",
-        "object Box { Box(); #projected with_value() is int { 1; } }",
         "native with_value(value is int) is int;",
         "object Box { Box(); } main() is int { Box().with_value(1); }",
     ] {

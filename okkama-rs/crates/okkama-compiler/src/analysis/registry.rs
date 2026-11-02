@@ -105,7 +105,6 @@ pub struct MethodInfo<'a> {
     pub private: bool,
     pub variadic: bool,
     pub is_async: bool,
-    pub projection: Option<String>,
     /// Системные действия (`NativeFailure.code()`) тела не имеют.
     pub decl: Option<&'a ast::ActionDecl>,
 }
@@ -155,6 +154,9 @@ pub struct RoleInfo<'a> {
 
 #[derive(Clone, Debug)]
 pub struct EnumInfo {
+    pub params: Vec<ParamId>,
+    pub payloads: Vec<Vec<(String, Ty)>>,
+    pub variant: bool,
     pub name: String,
     pub module: usize,
     pub cases: Vec<String>,
@@ -341,6 +343,7 @@ impl<'a> Registry<'a> {
         }
         for module in 0..count {
             registry.current = module;
+            registry.collect_enum_payloads(module);
             registry.collect_signatures(module);
         }
         for module in 0..count {
@@ -351,6 +354,7 @@ impl<'a> Registry<'a> {
             registry.current = module;
             registry.collect_does(module);
         }
+        registry.check_variant_recursion();
         registry.find_standard();
         registry.add_adapters();
         for (module, ty, span) in std::mem::take(&mut registry.pending_bounds) {
@@ -473,6 +477,27 @@ impl<'a> Registry<'a> {
 
     fn add_system(&mut self) {
         let module = self.root();
+        for (name, cases) in [
+            ("Maybe", vec!["some", "none"]),
+            ("Presence", vec!["some", "none", "missing"]),
+        ] {
+            let param = ParamId(self.params.len());
+            self.params.push(ParamInfo {
+                name: "T".into(),
+                bound: None,
+            });
+            let mut payloads = vec![Vec::new(); cases.len()];
+            payloads[0] = vec![("value".into(), Ty::Param(param))];
+            self.enums.push(EnumInfo {
+                name: name.into(),
+                module,
+                params: vec![param],
+                payloads,
+                variant: true,
+                cases: cases.into_iter().map(str::to_string).collect(),
+                span: Span::empty(0),
+            });
+        }
         self.roles.push(RoleInfo {
             name: "Error".to_string(),
             module,
@@ -494,7 +519,6 @@ impl<'a> Registry<'a> {
             private: false,
             variadic: false,
             is_async: false,
-            projection: None,
             decl: None,
         };
         for (name, methods) in [
@@ -618,7 +642,9 @@ impl<'a> Registry<'a> {
                 }
                 ast::Item::Role(decl) => {
                     let name = &decl.name.text;
-                    if name == "Error" || self.own_type(module, name).is_some() {
+                    if matches!(name.as_str(), "Error" | "Maybe" | "Presence")
+                        || self.own_type(module, name).is_some()
+                    {
                         self.error(
                             decl.name.span,
                             format!("Role \"{name}\" is already declared"),
@@ -641,7 +667,9 @@ impl<'a> Registry<'a> {
                 }
                 ast::Item::Enum(decl) => {
                     let name = &decl.name.text;
-                    if name == "Error" || self.own_type(module, name).is_some() {
+                    if matches!(name.as_str(), "Error" | "Maybe" | "Presence")
+                        || self.own_type(module, name).is_some()
+                    {
                         self.error(
                             decl.name.span,
                             format!("Enum \"{name}\" is already declared"),
@@ -660,7 +688,12 @@ impl<'a> Registry<'a> {
                         cases.push(case.text.clone());
                     }
                     let id = EnumId(self.enums.len());
+                    let params = self.new_params(&decl.generics);
                     self.enums.push(EnumInfo {
+                        params,
+                        payloads: vec![Vec::new(); cases.len()],
+                        variant: !decl.generics.is_empty()
+                            || decl.payloads.iter().any(|p| !p.is_empty()),
                         name: name.clone(),
                         module,
                         cases,
@@ -900,7 +933,16 @@ impl<'a> Registry<'a> {
 
     /// Тип по имени в области модуля `module` (`None` — не объявлен).
     pub fn find_type(&self, module: usize, name: &str) -> Option<TypeRef> {
-        self.modules[module].scope.types.get(name).copied()
+        self.modules[module]
+            .scope
+            .types
+            .get(name)
+            .copied()
+            .or_else(|| match name {
+                "Maybe" => Some(TypeRef::Enum(EnumId(0))),
+                "Presence" => Some(TypeRef::Enum(EnumId(1))),
+                _ => None,
+            })
     }
 
     /// `ns.Name`: собственное объявление модуля пространства имён.
@@ -1127,7 +1169,8 @@ impl<'a> Registry<'a> {
         let arity = match found {
             TypeRef::Object(id) => self.objects[id.0].params.len(),
             TypeRef::Role(id) => self.roles[id.0].params.len(),
-            TypeRef::Enum(_) | TypeRef::Handle(_) => 0,
+            TypeRef::Enum(id) => self.enums[id.0].params.len(),
+            TypeRef::Handle(_) => 0,
         };
         if arity == 0 && !args.is_empty() {
             self.error(
@@ -1150,6 +1193,7 @@ impl<'a> Registry<'a> {
         let result = match found {
             TypeRef::Object(id) => Ty::Object(id, resolved),
             TypeRef::Role(id) => Ty::Role(id, resolved),
+            TypeRef::Enum(id) if self.enums[id.0].variant => Ty::Variant(id, resolved),
             TypeRef::Enum(id) => Ty::Enum(id),
             TypeRef::Handle(id) => Ty::Handle(id),
         };
@@ -1224,6 +1268,90 @@ impl<'a> Registry<'a> {
         }
     }
 
+    fn check_variant_recursion(&mut self) {
+        fn walk(
+            reg: &Registry<'_>,
+            ty: &Ty,
+            path: &mut Vec<EnumId>,
+            objects: &mut Vec<ObjectId>,
+        ) -> bool {
+            match ty {
+                Ty::Variant(id, args) => {
+                    if args.iter().any(|t| walk(reg, t, path, objects)) {
+                        return true;
+                    }
+                    if path.contains(id) {
+                        return true;
+                    }
+                    path.push(*id);
+                    let decl = &reg.enums[id.0];
+                    let found = decl
+                        .payloads
+                        .iter()
+                        .flatten()
+                        .any(|(_, t)| walk(reg, t, path, objects));
+                    path.pop();
+                    found
+                }
+                Ty::Object(id, args) => {
+                    if args.iter().any(|t| walk(reg, t, path, objects)) {
+                        return true;
+                    }
+                    if objects.contains(id) {
+                        return false;
+                    }
+                    objects.push(*id);
+                    let decl = &reg.objects[id.0];
+                    let found = decl.fields.iter().any(|f| walk(reg, &f.ty, path, objects));
+                    objects.pop();
+                    found
+                }
+                Ty::Array(t) | Ty::Successor(t) | Ty::Varargs(t) => walk(reg, t, path, objects),
+                Ty::Map(k, v) => walk(reg, k, path, objects) || walk(reg, v, path, objects),
+                _ => false,
+            }
+        }
+        for index in 0..self.enums.len() {
+            let decl = &self.enums[index];
+            let ty = Ty::Variant(
+                EnumId(index),
+                decl.params.iter().copied().map(Ty::Param).collect(),
+            );
+            if decl.variant && walk(self, &ty, &mut Vec::new(), &mut Vec::new()) {
+                let span = decl.span;
+                self.current = decl.module;
+                self.error(span, "Recursive variant payload types are not supported");
+            }
+        }
+    }
+
+    fn collect_enum_payloads(&mut self, module: usize) {
+        for item in &self.modules[module].program.items {
+            let ast::Item::Enum(decl) = item else {
+                continue;
+            };
+            let Some(TypeRef::Enum(id)) = self.own_type(module, &decl.name.text) else {
+                continue;
+            };
+            let params = self.enums[id.0].params.clone();
+            let names: Vec<_> = decl
+                .generics
+                .iter()
+                .zip(&params)
+                .map(|(g, p)| (g.name.text.clone(), *p))
+                .collect();
+            let mut payloads = Vec::new();
+            for fields in &decl.payloads {
+                let (fields, variadic) = self.signature_params(fields, &names);
+                if variadic {
+                    self.error(decl.span, "Variant payloads cannot be variadic");
+                }
+                payloads.push(fields);
+            }
+            self.enums[id.0].payloads = payloads;
+        }
+    }
+
     fn collect_signatures(&mut self, module: usize) {
         let program = self.modules[module].program;
         let root = self.is_root(module);
@@ -1292,10 +1420,7 @@ impl<'a> Registry<'a> {
                     }
                     let entry_signature =
                         "The module entry point must be declared `main() is int`.";
-                    if !action.params.is_empty()
-                        || action.projection.is_some()
-                        || action.name.text != "main"
-                    {
+                    if !action.params.is_empty() || action.name.text != "main" {
                         self.error(action.span, entry_signature);
                     } else if let ast::ResultSpec::Type(result) = &action.result {
                         if self.resolve(result, &[]) != Ty::Int {
@@ -1727,54 +1852,6 @@ impl<'a> Registry<'a> {
                     result = Some(Ty::Error);
                 }
             }
-            let projection = match &action.projection {
-                None => None,
-                Some(directive) => {
-                    let prefix = directive.alias.as_ref().unwrap_or(&action.name).clone();
-                    let rule = |what: &str| {
-                        format!(
-                            "Projection action \"{}\" on object \"{name}\" {what}",
-                            action.name.text
-                        )
-                    };
-                    let violation = if !action.params.is_empty() {
-                        Some(rule("cannot declare parameters"))
-                    } else if successor {
-                        Some(rule("cannot return a successor type"))
-                    } else if private {
-                        Some(rule("must be public"))
-                    } else if action.is_async {
-                        Some(rule("must be synchronous"))
-                    } else if result.is_none() {
-                        Some(rule("requires an explicit return type"))
-                    } else if result.as_ref() == Some(&self_type) {
-                        Some(rule(&format!(
-                            "must return a type different from {}",
-                            self.type_name(&self_type)
-                        )))
-                    } else {
-                        None
-                    };
-                    if let Some(message) = violation {
-                        self.error(action.name.span, message);
-                        None
-                    } else if methods
-                        .iter()
-                        .any(|other| other.projection.as_deref() == Some(prefix.text.as_str()))
-                    {
-                        self.error(
-                            prefix.span,
-                            format!(
-                                "Object \"{name}\" declares projection prefix \"{}\" more than once",
-                                prefix.text
-                            ),
-                        );
-                        None
-                    } else {
-                        Some(prefix.text)
-                    }
-                }
-            };
             if successor && private {
                 self.error(
                     action.name.span,
@@ -1789,7 +1866,6 @@ impl<'a> Registry<'a> {
                 private,
                 variadic,
                 is_async: action.is_async,
-                projection,
                 decl: Some(action),
             };
             if let Some(message) = overload_conflict(&methods, &candidate, &name) {
@@ -1905,9 +1981,8 @@ impl<'a> Registry<'a> {
                     }
                 } else if let Some(first) = named.first() {
                     // Та же арность; среди перегрузок — с той же вариадичностью.
-                    let same_arity = |candidate: &&&MethodInfo<'_>| {
-                        candidate.params.len() == params.len()
-                    };
+                    let same_arity =
+                        |candidate: &&&MethodInfo<'_>| candidate.params.len() == params.len();
                     match named
                         .iter()
                         .filter(same_arity)
@@ -2017,7 +2092,6 @@ impl<'a> Registry<'a> {
             private: false,
             variadic: false,
             is_async: false,
-            projection: None,
             decl: None,
         };
         let field = |name: &str, ty: Ty| FieldInfo {
@@ -2330,6 +2404,21 @@ impl<'a> Registry<'a> {
             Ty::Map(key, value) => format!("%{}:{}", self.type_name(key), self.type_name(value)),
             Ty::Object(id, args) => self.applied(&self.objects[id.0].name, args),
             Ty::Role(id, args) => self.applied(&self.roles[id.0].name, args),
+            Ty::Variant(id, args) => {
+                let name = &self.enums[id.0].name;
+                if args.is_empty() {
+                    name.clone()
+                } else {
+                    format!(
+                        "{}<{}>",
+                        name,
+                        args.iter()
+                            .map(|t| self.type_name(t))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }
+            }
             Ty::Enum(id) => self.enums[id.0].name.clone(),
             Ty::Handle(id) => self.handles[id.0].name.clone(),
             Ty::Successor(inner) => format!("^{}", self.type_name(inner)),

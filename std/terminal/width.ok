@@ -3,7 +3,6 @@ import "runtime/unicode_character" take display_clusters,display_widths,display_
 object DisplayWidth{
     has origin is string;
     DisplayWidth(origin is string){self.origin=origin;}
-    #projected
     value() is int{
         let invalid=display_invalid_index(origin);
         confirm invalid<0 else throw InvalidDisplayText(invalid,"control character in display text");

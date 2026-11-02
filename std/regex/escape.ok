@@ -11,6 +11,5 @@ import "runtime/regex" take regex_escape;
 object EscapedRegex {
     has source is string;
     EscapedRegex(origin is string) { source = origin; }
-    #projected
     string() is string { regex_escape(source); }
 }

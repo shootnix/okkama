@@ -35,13 +35,11 @@ object LogFieldSnapshot does JsonWriting{
     elements(values is Sequencing<JsonValue>) is void{throw InvalidLogField("expected object");}
     value() is JsonObject{JsonObject(origin.value());}
 }
-object EmptyLogFields{EmptyLogFields();#projected
-    value() is LogFields{LogFields([]);}
+object EmptyLogFields{EmptyLogFields();value() is LogFields{LogFields([]);}
 }
 object CombinedLogFields{
     has base,added is LogFields;
     CombinedLogFields(base is LogFields,added is LogFields){self.base=base;self.added=added;}
-    #projected
     value() is LogFields{
         let first=base.members();let second=added.members();
         if second.size()==0{return base;}

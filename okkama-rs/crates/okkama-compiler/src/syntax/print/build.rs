@@ -48,10 +48,13 @@ fn module_node(module: &ModuleDecl) -> Node {
         .field("path", names(&module.path))
         .field(
             "version",
-            module.version.as_ref().map_or(Value::Absent, |version| Value::Name {
-                text: version.text(),
-                span: version.span,
-            }),
+            module
+                .version
+                .as_ref()
+                .map_or(Value::Absent, |version| Value::Name {
+                    text: version.text(),
+                    span: version.span,
+                }),
         )
 }
 
@@ -66,9 +69,27 @@ fn item_node(item: &Item) -> Node {
     match item {
         Item::Object(decl) => object_node(decl),
         Item::Role(decl) => role_node(decl),
-        Item::Enum(decl) => Node::new("EnumDecl", decl.span)
-            .field("name", name(&decl.name))
-            .field("cases", names(&decl.cases)),
+        Item::Enum(decl) => {
+            let node = Node::new("EnumDecl", decl.span)
+                .field("name", name(&decl.name))
+                .field("cases", names(&decl.cases));
+            if decl.generics.is_empty() && decl.payloads.iter().all(Vec::is_empty) {
+                node
+            } else {
+                node.field("generics", list(&decl.generics, generic_node))
+                    .field(
+                        "variants",
+                        list(
+                            &decl.cases.iter().zip(&decl.payloads).collect::<Vec<_>>(),
+                            |(case, fields)| {
+                                Node::new("EnumVariant", case.span)
+                                    .field("name", name(case))
+                                    .field("fields", list(fields, param_node))
+                            },
+                        ),
+                    )
+            }
+        }
         Item::Test(decl) => test_node(decl),
         Item::NativeAction(decl) => Node::new("NativeActionDecl", decl.span)
             .field("async", Value::Bool(decl.is_async))
@@ -162,13 +183,6 @@ fn action_node(decl: &ActionDecl) -> Node {
     Node::new("ActionDecl", decl.span)
         .field("async", Value::Bool(decl.is_async))
         .field("visibility", Value::word(decl.visibility.as_str()))
-        .field(
-            "projection",
-            opt_node(decl.projection.as_ref(), |directive| {
-                Node::new("ProjectionDirective", directive.span)
-                    .field("alias", opt_name(directive.alias.as_ref()))
-            }),
-        )
         .field("name", name(&decl.name))
         .field("params", list(&decl.params, param_node))
         .field("result", Value::node(result_node(&decl.result)))
@@ -414,6 +428,13 @@ fn int_literal_node(literal: &IntLiteral, span: Span) -> Node {
 fn expr_node(expr: &Expr) -> Node {
     let span = expr.span;
     match &expr.kind {
+        ExprKind::Throw(value) => {
+            Node::new("ThrowExpression", span).field("value", Value::node(expr_node(value)))
+        }
+        ExprKind::TypeValue(ty) => type_node(ty),
+        ExprKind::Coalesce { value, fallback } => Node::new("OptionalFallback", span)
+            .field("value", Value::node(expr_node(value)))
+            .field("fallback", Value::node(expr_node(fallback))),
         ExprKind::Literal(literal) => match literal {
             Literal::Int(value) => int_literal_node(value, span),
             Literal::Float(value) => {
@@ -501,12 +522,6 @@ fn expr_node(expr: &Expr) -> Node {
             operand,
             ellipsis: _,
         } => Node::new("Unpack", span).field("operand", Value::node(expr_node(operand))),
-        ExprKind::Projection {
-            prefix,
-            construction,
-        } => Node::new("Projection", span)
-            .field("prefix", name(prefix))
-            .field("construction", Value::node(expr_node(construction))),
         ExprKind::Functional {
             operation: _,
             operation_name,

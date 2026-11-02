@@ -6,7 +6,6 @@ object Formatted {
     has values is @string;
     Formatted(:pattern, :values);
 
-    #projected
     string() is string {
         let parts is @string = pattern.split("{}");
         confirm parts.size() == values.size() + 1 else throw InvalidFormat();
@@ -18,6 +17,5 @@ object Formatted {
 
 object InvalidFormat does Error {
     InvalidFormat();
-    #projected
     text() is string { "format slot count differs from argument count"; }
 }

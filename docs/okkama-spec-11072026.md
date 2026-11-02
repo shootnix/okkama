@@ -609,7 +609,7 @@ let parsed is Json = json JsonSource("{\"emoji\":\"\\uD83D\\uDE00\"}");
 
 Every constructor binds state only. `encoded()` validates and emits compact
 deterministic JSON; `JsonSource` performs strict recursive parsing in its
-`#projected json()` projection. Object order is retained, duplicate names are rejected,
+ordinary `json()` method. Object order is retained, duplicate names are rejected,
 and array bounds fail through typed errors. JSON strings support every JSON
 escape, combine valid UTF-16 surrogate pairs, reject lone surrogates and use
 canonical control escapes when encoded.
@@ -2969,7 +2969,7 @@ cannot unwrap the owner. Diagnostic formatting may safely name the cap type.
 This is an interface boundary with no general secrecy, purity or revocation
 promise. Other full references retain their capabilities.
 
-Object views have been removed. Roles and `#projected` keep their
+Object views have been removed. Roles keep their
 separate contracts. OIR Profile 0 remains int-only and explicitly refuses
 objects and caps. See the [working example](../examples/object-caps.ok) and
 [full guide](object-caps-0.0.1-ru.md).
@@ -3046,59 +3046,17 @@ Member(:id, :name) {
 with a named-only empty signature and is distinct in the AST from
 `Marker() {}`.
 
-An object may expose one or more public, synchronous, zero-argument actions as
-named constructor projections. `#projected` uses the action name as the
-prefix; `#projected(alias)` selects an explicit prefix:
-
-```okkama
-object ParsedInt {
-    has source is string;
-    ParsedInt(:source);
-
-    #projected(value)
-    integer() is int {
-        42; // abbreviated derivation from source
-    }
-}
-
-value ParsedInt(answer)                    // ParsedInt(answer).integer()
-value numbers.ParsedInt(answer)            // qualified target
-```
-
-The prefix applies only to a constructor whose target is an object name or a
-namespace-qualified object name. It does not apply to variables, member calls,
-parenthesized expressions, or arbitrary values. Full,
-shorthand, empty, variadic, overloaded, and generic constructor selection is
-unchanged. Construction and its `confirm` checks complete before the marked action is
-called. Arguments evaluate exactly once in their ordinary left-to-right order;
-a construction failure never calls the projection.
-
-The projection action MUST declare no parameters, MUST have an explicit
-non-successor return type, and MUST return a type different from the enclosing
-object type (`Object<T>` counts as the object type of a generic declaration).
-An object may declare multiple projected actions, but every effective prefix
-(the alias, or the action name when no alias is present) MUST be unique within
-that object. These declaration rules and use of an undeclared prefix are
-semantic errors before execution.
-
-The directive marks one action declaration and thereby chooses the action
-invoked by its prefix. Prefixes are resolved from the statically resolved
-constructor target during semantic analysis; they are not variables, imported
-bindings, dynamic operators, or role contracts. Unmarked fixed overloads of
-the same action name remain callable normally; all overloads still obey the
-ordinary common-return-type rule. Projection dispatch uses the ordinary
-zero-argument action pipeline, including duplicate-signature ambiguity, typed
-return checks, failures, and ownership.
+Constructor projections and action directives (`#projected`, including aliases)
+are removed. Construct the object and invoke its method explicitly:
+`ParsedInt(source: answer).integer()`. Constructor arguments evaluate once,
+left to right; construction and `confirm` finish before the method is called.
+A constructor failure never invokes the method. Methods declare their complete
+result type, including `Maybe<T>` or `Presence<T>`; calls never implicitly unwrap it.
 
 Rules:
 
 - Constructor calls use `Object(...)`.
-- Named constructor projections use `prefix Object(...)` and are exactly
-  equivalent to the corresponding construction followed by the action
-  registered for that prefix.
-- `#projected` registers the action name; `#projected(alias)` registers the
-  lowercase alias. Effective prefixes are unique per object.
-- Single `&` projection syntax is removed; `&&` remains boolean conjunction.
+- Projection prefixes and `#` action directives are syntax errors.
 - Constructor name MUST match the enclosing object.
 - Full constructor parameters are typed.
 - Constructor parameter types are checked.
@@ -3955,16 +3913,67 @@ Enum cases are referenced with member syntax:
 Status.ready
 ```
 
-Runtime enum rules:
+Variants may carry positional typed payloads, and enums may declare invariant
+generic parameters:
 
-- enum declarations are registered before `main` executes;
-- duplicate enum declarations are runtime errors;
-- duplicate cases inside one enum are runtime errors;
-- `Enum.case` evaluates to an enum runtime value;
-- enum values infer as their enum type;
-- typed runtime boundaries accept only values of the matching enum type;
-- enum equality compares enum type and case;
-- enum values work in `match` cases through normal equality.
+```okkama
+enum Reading<T> = (empty, value(item is T), pair(left is T, right is T));
+let reading = Reading.pair(20, 22);
+let sum = match reading {
+    case Reading.empty { 0; }
+    case Reading.value(item) { item; }
+    case Reading.pair(left, right) { left + right; }
+};
+```
+
+Declarations are checked before execution. Duplicate enum names, cases, payload
+names, invalid arity and incompatible payload types are static errors. Values
+have nominal identity, including generic arguments. Generic arguments come from
+an expected type, payload arguments, or an explicit qualifier (`Reading<int>.empty`).
+Unresolved type arguments are errors. Payloads are immutable, evaluated once in
+argument order, and retain their ordinary ownership semantics.
+
+Variant patterns bind payloads inside their arm; `_` discards a field. Duplicate
+variants and missing variants without `else` are errors. Nested patterns, pattern
+guards, variadic payloads, generic bounds on enums, and recursive payload enum
+declarations are not supported in this implementation. Scalar enums retain their
+existing equality-based match behaviour and map-key support. Payload/generic enums
+cannot be map keys. Equality compares nominal type, active variant and its payload
+using the existing equality rules for those payload types.
+
+The standard generic enums are available without imports:
+
+```okkama
+// These declarations describe the standard types; do not redeclare them.
+enum Maybe<T> = (some(value is T), none);
+enum Presence<T> = (some(value is T), none, missing);
+```
+
+`some("")`, `some(false)`, `some(0)` and `some([])` are present values. `none`
+represents explicit absence; `Presence.missing` distinguishes an omitted field.
+They are qualified variants, not untyped null literals or exceptions.
+
+```okkama
+value() is Maybe<string> { Maybe.some("Anton"); }
+let optional = data.value();                 // Maybe<string>
+let name = data.value() else "anonymous";   // string
+let absent is Maybe<int> = Maybe.none;
+let other = Maybe<int>.none else 42;
+```
+
+`Maybe<T> else fallback` evaluates its left operand once. For some it returns the
+payload without evaluating fallback; for none it evaluates fallback, which must
+produce T or diverge (`throw` / `panic`). It never catches errors from the left.
+This fallback has lower precedence than binary operators and functional suffixes;
+nested fallback associates to the right. Parentheses make compound policies explicit.
+The existing index fallback retains its meaning. In a `confirm` statement the
+ungrouped `else` belongs to `confirm`; group an optional expression when needed.
+
+`Presence<T> else T` is rejected. `.collapse()` explicitly converts Presence to
+Maybe, merging missing and none. `.as_presence()` converts Maybe to Presence
+without inventing missing. Nested wrappers are preserved, never flattened.
+Calls, assignment and return boundaries never wrap, unwrap or collapse implicitly.
+No `.?` / `.??` call modes exist.
 
 ## 16. Access Control
 

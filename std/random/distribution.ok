@@ -106,7 +106,7 @@ object NormalDistribution does Distribution<float> {
             center;
         }
         else {
-            center + spread * (value StandardNormal(random: random));
+            center + spread * (StandardNormal(random: random).value());
         }
     }
 }
@@ -118,12 +118,11 @@ object StandardNormal {
         self.random = random;
     }
 
-    #projected
     value() is float {
         let radius is float = distribution_sqrt(
             -2.0 * distribution_log(1.0 - random.float())
         );
-        let angle is float = (value Tau()) * random.float();
+        let angle is float = (Tau().value()) * random.float();
         radius * distribution_cos(angle);
     }
 }
@@ -164,7 +163,7 @@ object GammaDistribution does Distribution<float> {
     }
 
     sample() is float {
-        scale * (value GammaUnit(random: random, shape: shape));
+        scale * (GammaUnit(random: random, shape: shape).value());
     }
 }
 
@@ -177,17 +176,16 @@ object GammaUnit {
         self.shape = shape;
     }
 
-    #projected
     value() is float {
         if shape < 1.0 {
-            let boosted is float = value GammaUnit(
+            let boosted is float = GammaUnit(
                 random: random,
                 shape: shape + 1.0,
-            );
+            ).value();
             boosted * distribution_power(random.float(), 1.0 / shape);
         }
         else {
-            value GammaCandidate(random: random, shape: shape);
+            GammaCandidate(random: random, shape: shape).value();
         }
     }
 }
@@ -201,11 +199,10 @@ object GammaCandidate {
         self.shape = shape;
     }
 
-    #projected
     value() is float {
         let adjusted is float = shape - 0.3333333333333333;
         let factor is float = 1.0 / distribution_sqrt(9.0 * adjusted);
-        let normal is float = value StandardNormal(random: random);
+        let normal is float = StandardNormal(random: random).value();
         let base is float = 1.0 + factor * normal;
         if base <= 0.0 {
             self.value();
@@ -248,7 +245,7 @@ object BetaDistribution does Distribution<float> {
     }
 
     sample() is float {
-        value BetaSample(random: random, alpha: alpha, beta: beta);
+        BetaSample(random: random, alpha: alpha, beta: beta).value();
     }
 }
 
@@ -263,10 +260,9 @@ object BetaSample {
         self.beta = beta;
     }
 
-    #projected
     value() is float {
-        let left is float = value GammaUnit(random: random, shape: alpha);
-        let right is float = value GammaUnit(random: random, shape: beta);
+        let left is float = GammaUnit(random: random, shape: alpha).value();
+        let right is float = GammaUnit(random: random, shape: beta).value();
         if left == 0.0 && right == 0.0 {
             self.value();
         }
@@ -316,7 +312,7 @@ object LogNormalDistribution does Distribution<float> {
         }
         else {
             distribution_exp(
-                center + spread * (value StandardNormal(random: random))
+                center + spread * (StandardNormal(random: random).value())
             );
         }
     }
@@ -342,14 +338,14 @@ object VonMisesDistribution does Distribution<float> {
 
     sample() is float {
         if concentration <= 0.000001 {
-            distribution_angle(center + (value Tau()) * random.float());
+            distribution_angle(center + (Tau().value()) * random.float());
         }
         else {
-            value VonMisesSample(
+            VonMisesSample(
                 random: random,
                 mean: center,
                 concentration: concentration,
-            );
+            ).value();
         }
     }
 }
@@ -369,16 +365,15 @@ object VonMisesSample {
         self.concentration = concentration;
     }
 
-    #projected
     value() is float {
         let scaling is float = 0.5 / concentration;
         let ratio is float = scaling
             + distribution_sqrt(1.0 + scaling * scaling);
-        value VonMisesCandidate(
+        VonMisesCandidate(
             random: random,
             mean: center,
             ratio: ratio,
-        );
+        ).value();
     }
 }
 
@@ -397,10 +392,9 @@ object VonMisesCandidate {
         self.ratio = ratio;
     }
 
-    #projected
     value() is float {
         let cosine is float = distribution_cos(
-            (value Pi()) * random.float()
+            (Pi().value()) * random.float()
         );
         let delta is float = cosine / (ratio + cosine);
         let uniform is float = random.float();
@@ -546,14 +540,14 @@ object WeightedChoices<T> does Distribution<T> {
     }
 
     sample() is T {
-        value WeightedSelection(
+        WeightedSelection(
             values: origin,
             weights: weights,
             scaling: scaling,
             target: distribution_uniform(0.0, total, random.float()),
             position: 0,
             cumulative: 0.0,
-        );
+        ).value();
     }
 }
 
@@ -581,7 +575,6 @@ object WeightedSelection<T> {
         self.cumulative = cumulative;
     }
 
-    #projected
     value() is T {
         let following is float = cumulative
             + weights.item(position) / scaling;
@@ -589,14 +582,14 @@ object WeightedSelection<T> {
             values.item(position);
         }
         else {
-            value WeightedSelection(
+            WeightedSelection(
                 values: values,
                 weights: weights,
                 scaling: scaling,
                 target: target,
                 position: position + 1,
                 cumulative: following,
-            );
+            ).value();
         }
     }
 }
@@ -629,12 +622,12 @@ object Samples<T> does Distribution<@T> {
             let positions is List<int> = (0..origin.size()).reduce(no_positions)
                 -> items, index { items.prefix(index); };
             let no_selected is List<int> = EmptyList();
-            let reversed is List<int> = value IndexSamples(
+            let reversed is List<int> = IndexSamples(
                 random: random,
                 positions: positions,
                 count: amount,
                 selected: no_selected,
-            );
+            ).value();
             let ordered is List<int> = reversed.reduce(EmptyList())
                 -> items, index { items.prefix(index); };
             ordered.map() -> index { origin.item(index); };
@@ -660,7 +653,6 @@ object IndexSamples {
         self.selected = selected;
     }
 
-    #projected
     value() is List<int> {
         if amount == 0 {
             selected;
@@ -670,12 +662,12 @@ object IndexSamples {
                 origin: positions,
                 index: random.integer(0, positions.size()),
             );
-            value IndexSamples(
+            IndexSamples(
                 random: random,
                 positions: removal.remainder(),
                 count: amount - 1,
                 selected: selected.prefix(removal.item()),
-            );
+            ).value();
         }
     }
 }
@@ -731,7 +723,6 @@ object InvalidDistribution does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

@@ -191,7 +191,6 @@ object InstantFromLocal {
         self.fold = fold;
     }
 
-    #projected
     value() is Instant {
         zone.instant(origin, fold);
     }
@@ -200,7 +199,6 @@ object InstantFromLocal {
 object TimeZoneDatabaseVersion {
     TimeZoneDatabaseVersion();
 
-    #projected
     string() is string {
         timezone_version();
     }
@@ -213,7 +211,6 @@ object UnknownTimeZone does Error {
         self.name = name;
     }
 
-    #projected
     text() is string {
         "unknown bundled time zone: " + name;
     }
@@ -226,7 +223,6 @@ object InvalidTimeZone does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }
@@ -241,7 +237,6 @@ object MissingLocalTime does Error {
         self.local = local;
     }
 
-    #projected
     text() is string {
         "local time does not exist in zone " + zone_name;
     }

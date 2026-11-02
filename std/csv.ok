@@ -85,7 +85,6 @@ object CsvString {
         origin = snapshot.rows();
     }
 
-    #projected
     string() is string {
         let printed = origin.reduce(CsvPrintPrefix(maximum_output, dialect)) -> prefix, row {
             prefix.following(row);
@@ -98,7 +97,6 @@ object CsvRecord {
     has fields is @string;
     CsvRecord(:fields);
 
-    #projected
     string() is string {
         confirm fields.size() > 0 else throw EmptyCsvRecord();
         let encoded is @string = fields.map() -> field {
@@ -119,7 +117,6 @@ object CsvField {
         else { origin.length(); }
     }
 
-    #projected
     string() is string {
         if self.quoted() { "\"" + origin.replace("\"", "\"\"") + "\""; }
         else { origin; }

@@ -39,7 +39,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
     }
 
     plus(duration is Duration) is LocalDateTime {
-        let ordinal is int = value DateOrdinal(origin: date_value);
+        let ordinal is int = DateOrdinal(origin: date_value).value();
         let day_seconds is rat = (
             time_value.hour() * 3600
                 + time_value.minute() * 60
@@ -77,7 +77,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
         let nano is int = after_minute - second * 1000000000;
 
         LocalDateTime(
-            date: value ShiftedDate(origin: date_value, days: days),
+            date: ShiftedDate(origin: date_value, days: days).value(),
             time: TimeOfDay(
                 hour: hour,
                 minute: minute,
@@ -88,10 +88,10 @@ object LocalDateTime does Comparing<LocalDateTime> {
     }
 
     minus(other is LocalDateTime) is Duration {
-        let days is int = value DaysBetween(
+        let days is int = DaysBetween(
             left: other.date(),
             right: date_value,
-        );
+        ).value();
         let own_seconds is rat = (
             time_value.hour() * 3600
                 + time_value.minute() * 60

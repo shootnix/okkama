@@ -132,7 +132,6 @@ object CompletedPipeline {
 object EmptyPipeline does Error {
     EmptyPipeline();
 
-    #projected
     text() is string { "pipeline must contain at least one command"; }
 }
 
@@ -145,7 +144,6 @@ object InvalidPipelineCaptureLimit does Error {
 
     limit() is int { origin; }
 
-    #projected
     text() is string {
         "pipeline capture limit must be positive, got " + origin.string();
     }
@@ -172,6 +170,5 @@ object PipelineCaptureLimitExceeded does Error {
 
     limit() is int { origin_limit; }
 
-    #projected
     text() is string { "pipeline capture limit exceeded"; }
 }

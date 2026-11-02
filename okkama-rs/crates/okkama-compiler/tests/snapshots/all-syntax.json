@@ -207,7 +207,6 @@
                 "node": "ActionDecl",
                 "async": false,
                 "visibility": "public",
-                "projection": null,
                 "name": "order",
                 "params": [
                   {
@@ -249,7 +248,6 @@
                 "node": "ActionDecl",
                 "async": true,
                 "visibility": "public",
-                "projection": null,
                 "name": "refresh",
                 "params": [],
                 "result": {
@@ -297,7 +295,6 @@
                 "node": "ActionDecl",
                 "async": false,
                 "visibility": "public",
-                "projection": null,
                 "name": "has",
                 "params": [
                   {
@@ -823,10 +820,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": {
-            "node": "ProjectionDirective",
-            "alias": null
-          },
           "name": "total",
           "params": [],
           "result": {
@@ -854,10 +847,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": {
-            "node": "ProjectionDirective",
-            "alias": "described"
-          },
           "name": "describe",
           "params": [],
           "result": {
@@ -888,7 +877,6 @@
           "node": "ActionDecl",
           "async": true,
           "visibility": "public",
-          "projection": null,
           "name": "load",
           "params": [
             {
@@ -948,7 +936,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "order",
           "params": [
             {
@@ -990,7 +977,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "is",
           "params": [
             {
@@ -1030,7 +1016,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "has",
           "params": [
             {
@@ -1071,7 +1056,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "deposit",
           "params": [
             {
@@ -1211,7 +1195,6 @@
               "node": "ActionDecl",
               "async": false,
               "visibility": "private",
-              "projection": null,
               "name": "helper",
               "params": [],
               "result": {
@@ -1226,10 +1209,6 @@
               "node": "ActionDecl",
               "async": false,
               "visibility": "private",
-              "projection": {
-                "node": "ProjectionDirective",
-                "alias": "secret"
-              },
               "name": "hidden",
               "params": [],
               "result": {
@@ -1412,10 +1391,49 @@
       }
     },
     {
+      "node": "EnumDecl",
+      "name": "Reading",
+      "cases": [
+        "empty",
+        "value"
+      ],
+      "generics": [
+        {
+          "node": "GenericParam",
+          "name": "T",
+          "bound": null
+        }
+      ],
+      "variants": [
+        {
+          "node": "EnumVariant",
+          "name": "empty",
+          "fields": []
+        },
+        {
+          "node": "EnumVariant",
+          "name": "value",
+          "fields": [
+            {
+              "node": "Param",
+              "name": "item",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "T"
+                ],
+                "args": []
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "node": "ActionDecl",
       "async": true,
       "visibility": "public",
-      "projection": null,
       "name": "main",
       "params": [],
       "result": {
@@ -1428,6 +1446,86 @@
       "body": {
         "node": "Block",
         "statements": [
+          {
+            "node": "LetStatement",
+            "name": "optional",
+            "type": null,
+            "value": {
+              "node": "OptionalFallback",
+              "value": {
+                "node": "Get",
+                "object": {
+                  "node": "NamedType",
+                  "path": [
+                    "Maybe"
+                  ],
+                  "args": [
+                    {
+                      "node": "NamedType",
+                      "path": [
+                        "int"
+                      ],
+                      "args": []
+                    }
+                  ]
+                },
+                "name": "none"
+              },
+              "fallback": {
+                "node": "IntLiteral",
+                "radix": "decimal",
+                "digits": "42"
+              }
+            }
+          },
+          {
+            "node": "LetStatement",
+            "name": "failed",
+            "type": null,
+            "value": {
+              "node": "OptionalFallback",
+              "value": {
+                "node": "Get",
+                "object": {
+                  "node": "NamedType",
+                  "path": [
+                    "Maybe"
+                  ],
+                  "args": [
+                    {
+                      "node": "NamedType",
+                      "path": [
+                        "int"
+                      ],
+                      "args": []
+                    }
+                  ]
+                },
+                "name": "none"
+              },
+              "fallback": {
+                "node": "ThrowExpression",
+                "value": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "NameExpression",
+                    "name": "Problem"
+                  },
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": null,
+                      "value": {
+                        "node": "StringLiteral",
+                        "form": "quoted",
+                        "value": "missing"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
           {
             "node": "LetStatement",
             "name": "out",
@@ -1994,35 +2092,39 @@
             "name": "projected",
             "type": null,
             "value": {
-              "node": "Projection",
-              "prefix": "described",
-              "construction": {
-                "node": "Call",
-                "callee": {
-                  "node": "NameExpression",
-                  "name": "Account"
-                },
-                "arguments": [
-                  {
-                    "node": "Argument",
-                    "name": "owner",
-                    "value": {
-                      "node": "StringLiteral",
-                      "form": "quoted",
-                      "value": "ada"
-                    }
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "NameExpression",
+                    "name": "Account"
                   },
-                  {
-                    "node": "Argument",
-                    "name": "nickname",
-                    "value": {
-                      "node": "StringLiteral",
-                      "form": "quoted",
-                      "value": "a"
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": "owner",
+                      "value": {
+                        "node": "StringLiteral",
+                        "form": "quoted",
+                        "value": "ada"
+                      }
+                    },
+                    {
+                      "node": "Argument",
+                      "name": "nickname",
+                      "value": {
+                        "node": "StringLiteral",
+                        "form": "quoted",
+                        "value": "a"
+                      }
                     }
-                  }
-                ]
-              }
+                  ]
+                },
+                "name": "describe"
+              },
+              "arguments": []
             }
           },
           {
@@ -2030,30 +2132,34 @@
             "name": "qualified",
             "type": null,
             "value": {
-              "node": "Projection",
-              "prefix": "total",
-              "construction": {
-                "node": "Call",
-                "callee": {
-                  "node": "Get",
-                  "object": {
-                    "node": "NameExpression",
-                    "name": "channels"
+              "node": "Call",
+              "callee": {
+                "node": "Get",
+                "object": {
+                  "node": "Call",
+                  "callee": {
+                    "node": "Get",
+                    "object": {
+                      "node": "NameExpression",
+                      "name": "channels"
+                    },
+                    "name": "Channel"
                   },
-                  "name": "Channel"
-                },
-                "arguments": [
-                  {
-                    "node": "Argument",
-                    "name": "capacity",
-                    "value": {
-                      "node": "IntLiteral",
-                      "radix": "decimal",
-                      "digits": "1"
+                  "arguments": [
+                    {
+                      "node": "Argument",
+                      "name": "capacity",
+                      "value": {
+                        "node": "IntLiteral",
+                        "radix": "decimal",
+                        "digits": "1"
+                      }
                     }
-                  }
-                ]
-              }
+                  ]
+                },
+                "name": "total"
+              },
+              "arguments": []
             }
           },
           {

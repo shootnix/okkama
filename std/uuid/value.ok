@@ -70,7 +70,6 @@ object UuidFromBytes {
         self.origin = origin;
     }
 
-    #projected
     value() is Uuid {
         confirm origin.size() == 16
             else throw InvalidUuid("UUID binary value must contain sixteen bytes");
@@ -85,7 +84,6 @@ object InvalidUuid does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

@@ -382,13 +382,11 @@ object NumberReading {
 object LocalizedDecimalFromString {
     has origin is string;has locale is Locale;has format is NumberFormat;
     LocalizedDecimalFromString(origin is string,locale is Locale,format is NumberFormat){self.origin=origin;self.locale=locale;self.format=format;}
-    #projected
     value() is Decimal{NumberReading(origin,locale,format).value();}
 }
 object LocalizedIntegerFromString {
     has origin is string;has locale is Locale;has grouping is NumberGrouping;
     LocalizedIntegerFromString(origin is string,locale is Locale,grouping is NumberGrouping){self.origin=origin;self.locale=locale;self.grouping=grouping;}
-    #projected
     value() is BigInt {
         let format=NumberFormat(NumberNotation.standard,grouping,NumberSign.automatic,NumberPrecision(1,0,0,Rounding.toward_zero));
         let value=NumberReading(origin,locale,format).value();

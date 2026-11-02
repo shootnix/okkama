@@ -133,7 +133,12 @@ impl Rewrite {
                     }
                 }
             }
-            ast::Item::Enum(_) | ast::Item::NativeObject(_) => {}
+            ast::Item::Enum(decl) => {
+                for fields in &mut decl.payloads {
+                    self.params(fields);
+                }
+            }
+            ast::Item::NativeObject(_) => {}
             ast::Item::Test(test) => self.test(test),
             ast::Item::NativeAction(decl) => {
                 self.params(&mut decl.params);
@@ -369,6 +374,12 @@ impl Rewrite {
             return;
         }
         match &mut expr.kind {
+            ExprKind::Throw(value) => self.expr(value, false),
+            ExprKind::TypeValue(ty) => self.ty(ty),
+            ExprKind::Coalesce { value, fallback } => {
+                self.expr(value, false);
+                self.expr(fallback, false);
+            }
             ExprKind::Literal(_) | ExprKind::SelfValue | ExprKind::OwnerField { .. } => {}
             ExprKind::Name(name) => {
                 if name.text == "std" {
@@ -403,7 +414,6 @@ impl Rewrite {
                     self.expr(fallback, false);
                 }
             }
-            ExprKind::Projection { construction, .. } => self.expr(construction, false),
             ExprKind::Functional { receiver, args, bindings, body, .. } => {
                 self.expr(receiver, false);
                 self.args(args);

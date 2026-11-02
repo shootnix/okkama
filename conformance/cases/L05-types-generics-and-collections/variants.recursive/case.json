@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.variants.recursive",
+  "title": "variants.recursive",
+  "purpose": "Verify variant and optional value semantics.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.VARIANTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "Authored for variant enums and explicit Maybe/Presence contracts",
+    "expected_basis": "Explicit nominal types, exhaustive payload patterns, and lazy Maybe fallback."
+  },
+  "status": "mandatory"
+}

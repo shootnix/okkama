@@ -46,7 +46,7 @@ object FileLock does Closing, FileLocking {
     FileLock(origin is File, mode is FileLockMode) {
         try {
             lease = origin.locking(
-                value FileLockModeCode(origin: mode),
+                FileLockModeCode(origin: mode).value(),
                 0,
             );
             owner = origin;
@@ -72,8 +72,8 @@ object FileLock does Closing, FileLocking {
     ) {
         try {
             lease = origin.locking(
-                value FileLockModeCode(origin: mode),
-                value FileLockWaitingCode(origin: waiting),
+                FileLockModeCode(origin: mode).value(),
+                FileLockWaitingCode(origin: waiting).value(),
             );
             owner = origin;
         }
@@ -104,7 +104,6 @@ object FileLockModeCode {
 
     FileLockModeCode(:origin);
 
-    #projected
     value() is int {
         if origin == FileLockMode.shared { 0; } else { 1; }
     }
@@ -115,7 +114,6 @@ object FileLockWaitingCode {
 
     FileLockWaitingCode(:origin);
 
-    #projected
     value() is int {
         if origin == FileLockWaiting.wait { 0; } else { 1; }
     }
@@ -124,6 +122,5 @@ object FileLockWaitingCode {
 object UnavailableFileLock does Error {
     UnavailableFileLock();
 
-    #projected
     text() is string { "file lock is unavailable"; }
 }

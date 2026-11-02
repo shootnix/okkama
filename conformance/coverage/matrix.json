@@ -1053,11 +1053,13 @@
     "boundary": {
      "cases": [
       "L03.overloads.named-shape",
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overloaded"
      ],
      "mandatory_cases": [
       "L03.overloads.named-shape",
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overloaded"
      ],
      "requirement": "required"
     },
@@ -1071,22 +1073,26 @@
       "L03.overloads.ambiguous",
       "L03.overloads.incompatible-returns",
       "L03.overloads.no-candidate",
-      "L03.variadic.overloaded"
+      "L03.variadic.overload-duplicate-signature",
+      "L03.variadic.overload-empty-tail-ambiguous"
      ],
      "mandatory_cases": [
       "L03.overloads.ambiguous",
       "L03.overloads.incompatible-returns",
       "L03.overloads.no-candidate",
-      "L03.variadic.overloaded"
+      "L03.variadic.overload-duplicate-signature",
+      "L03.variadic.overload-empty-tail-ambiguous"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overload-by-tail-type"
      ],
      "mandatory_cases": [
-      "L03.overloads.selection"
+      "L03.overloads.selection",
+      "L03.variadic.overload-by-tail-type"
      ],
      "requirement": "required"
     }
@@ -1098,7 +1104,7 @@
     "docs/okkama-spec-11072026.md#11.8"
    ],
    "status": "mandatory",
-   "title": "Typed overload selection by arity, names, runtime types and specificity; ambiguity fails"
+   "title": "Typed overload selection by arity, names, types and specificity; fixed before variadic; ambiguity fails"
   },
   {
    "aspects": {
@@ -1113,10 +1119,12 @@
     },
     "interaction": {
      "cases": [
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overloaded"
      ],
      "mandatory_cases": [
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overloaded"
      ],
      "requirement": "required"
     },
@@ -1126,7 +1134,7 @@
       "L03.variadic.bare-binding",
       "L03.variadic.missing-prefix",
       "L03.variadic.named-call",
-      "L03.variadic.overloaded",
+      "L03.variadic.overload-empty-tail-ambiguous",
       "L03.variadic.tail-type"
      ],
      "mandatory_cases": [
@@ -1134,7 +1142,7 @@
       "L03.variadic.bare-binding",
       "L03.variadic.missing-prefix",
       "L03.variadic.named-call",
-      "L03.variadic.overloaded",
+      "L03.variadic.overload-empty-tail-ambiguous",
       "L03.variadic.tail-type"
      ],
      "requirement": "required"
@@ -1142,11 +1150,13 @@
     "normal": {
      "cases": [
       "L01.gram.unpack.forms",
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overload-by-tail-type"
      ],
      "mandatory_cases": [
       "L01.gram.unpack.forms",
-      "L03.variadic.calls"
+      "L03.variadic.calls",
+      "L03.variadic.overload-by-tail-type"
      ],
      "requirement": "required"
     }
@@ -4272,7 +4282,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "`#projected` / `#projected(alias)` marks constructor projections; single `&` projection syntax is removed"
+   "title": "Constructor projections and action directives are removed; use ordinary method calls"
   },
   {
    "aspects": {
@@ -6207,12 +6217,14 @@
     "invalid": {
      "cases": [
       "L00.entry.duplicate-main-multifile-rejected",
+      "L00.src.multifile-version-mismatch",
       "L06.multifile.different-name",
       "L06.multifile.different-version",
       "L06.multifile.duplicate-declaration"
      ],
      "mandatory_cases": [
       "L00.entry.duplicate-main-multifile-rejected",
+      "L00.src.multifile-version-mismatch",
       "L06.multifile.different-name",
       "L06.multifile.different-version",
       "L06.multifile.duplicate-declaration"
@@ -6377,6 +6389,52 @@
    ],
    "status": "mandatory",
    "title": "Import paths are source paths resolved local-first (importer directory, then stdlib); .ok is appended; local shadows stdlib"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L06.std-path.qualified"
+     ],
+     "mandatory_cases": [
+      "L06.std-path.qualified"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L06.std-path.module-not-declaration",
+      "L06.std-path.reserved-name"
+     ],
+     "mandatory_cases": [
+      "L06.std-path.module-not-declaration",
+      "L06.std-path.reserved-name"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L06.std-path.qualified"
+     ],
+     "mandatory_cases": [
+      "L06.std-path.qualified"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "MOD.STD-PATH",
+   "discrepancies": [],
+   "family": "Modules and native boundaries",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.2.1"
+   ],
+   "status": "mandatory",
+   "title": "std.module.Declaration names a standard library declaration in place, in expressions and type positions, as a namespace import of that module"
   },
   {
    "aspects": {
@@ -6678,10 +6736,12 @@
     },
     "interaction": {
      "cases": [
-      "L04.ctor.field-bind-forms"
+      "L04.ctor.field-bind-forms",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "mandatory_cases": [
-      "L04.ctor.field-bind-forms"
+      "L04.ctor.field-bind-forms",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "requirement": "required"
     },
@@ -6702,10 +6762,12 @@
     },
     "normal": {
      "cases": [
-      "L04.ctor.full-selection"
+      "L04.ctor.full-selection",
+      "L04.ctor.typed-overload"
      ],
      "mandatory_cases": [
-      "L04.ctor.full-selection"
+      "L04.ctor.full-selection",
+      "L04.ctor.typed-overload"
      ],
      "requirement": "required"
     }
@@ -6717,7 +6779,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "Full constructors: exact-arity selection, named or positional, complete initialization"
+   "title": "Full constructors: selection by arity, names and parameter types, named or positional, complete initialization"
   },
   {
    "aspects": {
@@ -7055,7 +7117,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "`#projected` constructor projections: prefix calls equal construction then the marked action"
+   "title": "Constructor projections and action directives are removed; use ordinary method calls"
   },
   {
    "aspects": {
@@ -7113,10 +7175,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "mandatory_cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.with-other-constructor"
      ],
      "requirement": "required"
     },
@@ -7127,23 +7191,25 @@
     },
     "invalid": {
      "cases": [
+      "L04.variadic-ctor.duplicate-signature",
       "L04.variadic-ctor.mixed-tail",
-      "L04.variadic-ctor.named-call",
-      "L04.variadic-ctor.with-other-constructor"
+      "L04.variadic-ctor.named-call"
      ],
      "mandatory_cases": [
+      "L04.variadic-ctor.duplicate-signature",
       "L04.variadic-ctor.mixed-tail",
-      "L04.variadic-ctor.named-call",
-      "L04.variadic-ctor.with-other-constructor"
+      "L04.variadic-ctor.named-call"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.generic-overload"
      ],
      "mandatory_cases": [
-      "L04.variadic-ctor.calls"
+      "L04.variadic-ctor.calls",
+      "L04.variadic-ctor.generic-overload"
      ],
      "requirement": "required"
     }
@@ -7155,7 +7221,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "A variadic full constructor is the only constructor and is positional-only"
+   "title": "A variadic full constructor is positional-only and overloads with other constructors; fixed ones are preferred"
   },
   {
    "aspects": {
@@ -7404,10 +7470,12 @@
     "boundary": {
      "cases": [
       "L00.src.empty-file",
+      "L00.src.module-without-version",
       "L00.src.two-part-version"
      ],
      "mandatory_cases": [
       "L00.src.empty-file",
+      "L00.src.module-without-version",
       "L00.src.two-part-version"
      ],
      "requirement": "required"
@@ -7422,12 +7490,14 @@
       "L00.src.bad-version-format",
       "L00.src.declaration-before-module",
       "L00.src.missing-module-declaration",
+      "L00.src.multifile-version-mismatch",
       "L00.src.uppercase-module-name"
      ],
      "mandatory_cases": [
       "L00.src.bad-version-format",
       "L00.src.declaration-before-module",
       "L00.src.missing-module-declaration",
+      "L00.src.multifile-version-mismatch",
       "L00.src.uppercase-module-name"
      ],
      "requirement": "required"
@@ -7450,7 +7520,7 @@
     "docs/okkama-grammar-1.0.ebnf"
    ],
    "status": "mandatory",
-   "title": "Every file starts with `module name vMAJOR.MINOR.PATCH;` with lowercase /-separated names"
+   "title": "Every file starts with `module name;` or `module name vMAJOR.MINOR.PATCH;` with lowercase /-separated names"
   },
   {
    "aspects": {
@@ -8571,7 +8641,7 @@
     "std/collections/frequencies.ok"
    ],
    "status": "mandatory",
-   "title": "std collections/frequencies public contract (Frequencies, Frequency, FrequencyBuilding, FrequencyRevision)"
+   "title": "std collections/frequencies public contract (Frequencies, Frequency, FrequencyBuilding, FrequencyRevision, FrequencyTally)"
   },
   {
    "aspects": {
@@ -22305,6 +22375,38 @@
     "boundary": {
      "cases": [],
      "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: module owns no public declarations"
+    },
+    "normal": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.RUNTIME.NUMBER_TEXT",
+   "discrepancies": [],
+   "family": "Standard library: runtime",
+   "spec_refs": [
+    "std/runtime/number_text.ok"
+   ],
+   "status": "informative",
+   "title": "std runtime/number_text public contract (no public declarations)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
      "requirement": "required"
     },
     "interaction": {
@@ -25924,6 +26026,58 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L05.maybe.states"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.states"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.maybe.presence",
+      "L05.maybe.throw"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.presence",
+      "L05.maybe.throw"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.maybe.no-collapse"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.no-collapse"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.maybe.presence",
+      "L05.maybe.states"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.presence",
+      "L05.maybe.states"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "TYPE.MAYBE-PRESENCE",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+   ],
+   "status": "mandatory",
+   "title": "Maybe and Presence preserve absence states; explicit collapse and lazy fallback"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -25971,6 +26125,64 @@
    ],
    "status": "mandatory",
    "title": "Object, role and enum types are nominal; same shape is not same type"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L05.variants.nested"
+     ],
+     "mandatory_cases": [
+      "L05.variants.nested"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.variants.evaluation",
+      "L05.variants.modules",
+      "L05.variants.ownership",
+      "L05.variants.payload"
+     ],
+     "mandatory_cases": [
+      "L05.variants.evaluation",
+      "L05.variants.modules",
+      "L05.variants.ownership",
+      "L05.variants.payload"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.variants.exhaustiveness",
+      "L05.variants.payload-type",
+      "L05.variants.recursive"
+     ],
+     "mandatory_cases": [
+      "L05.variants.exhaustiveness",
+      "L05.variants.payload-type",
+      "L05.variants.recursive"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.variants.payload"
+     ],
+     "mandatory_cases": [
+      "L05.variants.payload"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "TYPE.VARIANTS",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+   ],
+   "status": "mandatory",
+   "title": "Nominal generic enums carry typed payloads and require exhaustive patterns"
   },
   {
    "aspects": {
@@ -29633,5 +29845,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "be2fa7ee8ca095f54b0b2a105c4cb4a818eef53e738220ec0395ee96d33fb1b6"
+ "suite_tree_sha256": "9319f5cbff9c03b87901cb574faf21bbc83f5d10b618753f0603392cd731c9b4"
 }

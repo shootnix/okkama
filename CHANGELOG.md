@@ -6,6 +6,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- Nominal generic enum variants with positional typed payloads, exhaustive payload
+  patterns, scoped bindings and `_` wildcards. Enum type arguments can be inferred
+  or supplied explicitly. Variant equality includes the active payload.
+- Standard `Maybe<T>` (`some`, `none`) and `Presence<T>` (`some`, `none`, `missing`),
+  available without imports. `Maybe<T> else fallback` is lazy and accepts throwing
+  or panicking branches. Presence requires explicit `.collapse()`; Maybe supports
+  `.as_presence()`. Empty strings, zero and false remain present values.
+- IR, Sparrow/JIT and JVM execution and conformance coverage for variant payloads,
+  generic inference, absence, errors, module boundaries and resource lifetimes.
+
+### Removed
+
+- Action directives and constructor projections, including `#projected`. Use
+  `Object(arguments).method()`; stdlib and positive conformance examples are migrated.
+  Method signatures state the complete result type, with no implicit unwrapping.
+
 ## [0.3.0] — 2026-10-31
 
 ### Added

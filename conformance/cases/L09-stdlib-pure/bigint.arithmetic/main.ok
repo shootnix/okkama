@@ -7,12 +7,12 @@ import "numbers/bigrational" take BigRational, BigRationalSum, ZeroBigRationalDe
 main() is int {
     let c = Checks();
     c = c.same_int("bits of 2^64", BigInt("18446744073709551616").bits(), 65);
-    c = c.same_text("square of 2^64", (value BigProduct(left: BigInt("18446744073709551616"), right: BigInt("18446744073709551616"))).string(), "340282366920938463463374607431768211456");
-    c = c.same_text("2^100", (value BigPower(base: BigInt("2"), exponent: 100)).string(), "1267650600228229401496703205376");
-    c = c.same_text("truncating quotient", (value BigQuotient(left: BigInt("-7"), right: BigInt("2"))).string(), "-3");
-    c = c.same_text("remainder sign", (value BigRemainder(left: BigInt("-7"), right: BigInt("2"))).string(), "-1");
-    c = c.same_text("gcd", (value BigGcd(left: BigInt("12"), right: BigInt("18"))).string(), "6");
-    c = c.same_text("lcm", (value BigLcm(left: BigInt("12"), right: BigInt("18"))).string(), "36");
+    c = c.same_text("square of 2^64", (BigProduct(left: BigInt("18446744073709551616"), right: BigInt("18446744073709551616")).value()).string(), "340282366920938463463374607431768211456");
+    c = c.same_text("2^100", (BigPower(base: BigInt("2"), exponent: 100).value()).string(), "1267650600228229401496703205376");
+    c = c.same_text("truncating quotient", (BigQuotient(left: BigInt("-7"), right: BigInt("2")).value()).string(), "-3");
+    c = c.same_text("remainder sign", (BigRemainder(left: BigInt("-7"), right: BigInt("2")).value()).string(), "-1");
+    c = c.same_text("gcd", (BigGcd(left: BigInt("12"), right: BigInt("18")).value()).string(), "6");
+    c = c.same_text("lcm", (BigLcm(left: BigInt("12"), right: BigInt("18")).value()).string(), "36");
     c = c.same_text("normalised zeros", BigInt("-0007").string(), "-7");
     c = c.same_int("sign", BigInt("-5").sign(), -1);
     c.done();

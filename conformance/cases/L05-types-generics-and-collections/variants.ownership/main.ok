@@ -1,0 +1,20 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+object Resource {
+    Resource();
+    read() is int { 42; }
+    destroy { Stdout().writeln("closed"); }
+}
+object Reader {
+    Reader();
+    get() is Maybe<Resource> { Maybe.some(Resource()); }
+}
+main() is int {
+    let optional = Reader().get();
+    let resource = match optional {
+        case Maybe.some(value) { value; }
+        case Maybe.none { panic "missing"; }
+    };
+    Stdout().writeln(resource.read().string());
+    0;
+}

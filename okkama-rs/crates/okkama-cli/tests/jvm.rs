@@ -2395,5 +2395,38 @@ fn deep_recursion_runs_on_the_program_stack_and_tail_calls_loop() {
     dir.build_source("Deep", source);
     let output = dir.java("Deep", &[]);
     let expected = (1_000_000u64 * 1_000_001 / 2 + 10_000_000u64 * 10_000_001 / 2) % 256;
-    assert_eq!(output.status.code(), Some(expected as i32), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        output.status.code(),
+        Some(expected as i32),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn variant_payloads_optional_fallback_and_presence_run_on_jvm() {
+    let work = WorkDir::new();
+    work.build_source(
+        "Variants",
+        r#"module app v1.0.0;
+        enum Pair<T> = (empty, two(a is T, b is T));
+        main() is int {
+            let pair = Pair.two(20, 22);
+            let sum = match pair {
+                case Pair.empty { 0; }
+                case Pair.two(a, b) { a + b; }
+            };
+            let missing = Presence<int>.missing.collapse() else 0;
+            let present = Maybe.some(sum) else panic "must stay lazy";
+            if pair == Pair.two(20, 22) { present + missing; } else { 1; }
+        }
+    "#,
+    );
+    let output = work.java("Variants", &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(42),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

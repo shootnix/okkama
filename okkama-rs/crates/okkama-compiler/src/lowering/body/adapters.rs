@@ -219,6 +219,105 @@ pub(super) fn lower_new(
     })
 }
 
+pub(super) fn lower_variant_get(
+    ctx: &mut Ctx<'_, '_>,
+    symbol: String,
+    object: ObjectId,
+    field: usize,
+) -> Result<ir::Function> {
+    let span = ctx.objects[object.0].span;
+    let ty = ctx.objects[object.0].fields[field].1.clone();
+    let mut b = FnBuilder::new();
+    let receiver = b.new_value(Type::Object(object));
+    if let Some(case) = ctx.variant_field_case(object, field) {
+        let tag = b.emit(
+            InstKind::ObjGet {
+                object: receiver,
+                field: 0,
+            },
+            Type::Int,
+            span,
+        );
+        let expected = b.emit(
+            InstKind::Const(Constant::Int(IntValue::parse(&case.to_string()).unwrap())),
+            Type::Int,
+            span,
+        );
+        let matches = b.emit(
+            InstKind::IntCompare {
+                op: CompareOp::Eq,
+                left: tag,
+                right: expected,
+            },
+            Type::Bool,
+            span,
+        );
+        let found = b.new_block();
+        let invalid = b.new_block();
+        b.terminate(
+            TermKind::Cond {
+                condition: matches,
+                then_target: Target::new(found),
+                else_target: Target::new(invalid),
+            },
+            span,
+        );
+        b.switch_to(invalid);
+        b.terminate(
+            TermKind::Trap {
+                code: TrapCode::Empty,
+                message: "Cannot extract payload of an inactive enum variant".into(),
+            },
+            span,
+        );
+        b.switch_to(found);
+    }
+    let value = b.emit(
+        InstKind::ObjGet {
+            object: receiver,
+            field,
+        },
+        ty.clone(),
+        span,
+    );
+    let (value, ty) = if field > 0 {
+        let Type::Array(inner) = ty else {
+            return Err(internal(span, "variant payload slot must be an array"));
+        };
+        let zero = b.emit(
+            InstKind::Const(Constant::Int(IntValue::from_i64(0))),
+            Type::Int,
+            span,
+        );
+        (
+            b.emit(
+                InstKind::ArrayGet {
+                    array: value,
+                    index: zero,
+                },
+                (*inner).clone(),
+                span,
+            ),
+            *inner,
+        )
+    } else {
+        (value, ty)
+    };
+    b.terminate(TermKind::Ret(Some(value)), span);
+    let (values, blocks, params) = b
+        .finish(&[receiver])
+        .map_err(|message| internal(span, &message))?;
+    Ok(ir::Function {
+        symbol,
+        params,
+        result: ResultType::Value(ty),
+        attrs: vec![Attr::Method(object)],
+        values,
+        blocks,
+        span,
+    })
+}
+
 #[derive(Copy, Clone)]
 enum AdapterKind {
     Sequence,

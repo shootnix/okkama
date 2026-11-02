@@ -1,10 +1,12 @@
 # POC: вариантные типы с данными, Maybe и Presence
 
-**Статус:** проект решения для обсуждения; реализация компилятора не изменена.  
+**Статус:** первая версия реализована; актуальный контракт — [спецификация, §15](../okkama-spec-11072026.md#15-enums).
 **Дата:** 2 ноября 2026.  
-**Основа:** текущая Rust-реализация Okkama, `2f669ba7`.
+**Основа исходного POC:** Rust-реализация Okkama, `2f669ba7`.
 
-Все примеры новых enum, patterns и optional fallback ниже описывают **предлагаемый синтаксис**, а не возможности текущего компилятора. Документ фиксирует достаточно правил, чтобы реализовать ограниченный сквозной прототип и проверить его, не превращая эксперимент в перепроектирование языка.
+**Обновление:** выбраны явные типы результата и обычные вызовы (§4.5–4.7); директивы и проекции исключены из целевой модели. JSON API в рабочей ветке уже перенесён в `std/json/`; старые примеры Json/get/optional ниже относятся к исходной базе POC. Это иллюстрации семантики, не инструкция миграции нынешнего JsonView. Новый контракт проверяется отдельным адаптером.
+
+Основная модель enum/payload, Maybe/Presence, match и fallback реализована. JSON/SQL API ниже остаются предложениями отдельной миграции. План этапов сохранён как история проектирования; реализация использует существующие инструкции объектов и массивов, без смены формата SPB. Неактивный payload хранится пустым типизированным слотом, активный — одноэлементным; извлечение проверяет тег. Это обеспечивает совместимость с владением, GC и сравнением контейнеров, но пока добавляет аллокации. Worker-передача вариантов, рекурсивные ADT и generic bounds enum явно не поддерживаются.
 
 ## 1. Что хотим получить
 
@@ -68,7 +70,10 @@ let user = User(
 | `Presence` → `Maybe` | Явное преобразование с потерей различия `missing`/`none` |
 | `maybe T` | Возможный будущий сахар для `Maybe<T>`; не нужен первому прототипу |
 | `maybe expression` | Не вводим в POC; не перехватываем произвольные ошибки |
-| `??` | Не вводим одновременно с `else`: сначала один механизм |
+| Контракт действия | Явный результат T, Maybe<T> или Presence<T>; тело соответствует сигнатуре |
+| Вызов | Возвращает объявленный тип, без автоматической распаковки |
+| Директивы и проекции | Убираем синтаксис директив `#`, включая `#projected`, и проекционные вызовы |
+| Селекторы `?` / `??` | Не вводим; для обработки результата используются match, else и явные преобразования |
 | Внутренний `Undef` | Не является пользовательским `none` |
 | Произвольные union types, structural subtyping | Вне POC |
 
@@ -129,7 +134,7 @@ Presence.missing → Maybe.none
 
 Первое преобразование не теряет информацию. Второе намеренно теряет различие между явно пустым значением и отсутствующим полем. Предлагаемые стандартные операции: `as_presence()` и `collapse()`. В POC они могут быть узкими, определёнными для этих двух стандартных типов операциями; общий механизм методов enum — отдельный вопрос.
 
-**Не вводить неявный collapse.** Так нельзя случайно потерять семантику PATCH.
+**Не вводить неявный collapse.** Потеря различия разрешена через явное `.collapse()`. Обычное присваивание и fallback этого не делают.
 
 ## 4. Декларации и конструирование
 
@@ -207,6 +212,46 @@ Maybe<Maybe<int>>
 Это три различимых состояния. Автоматического flatten нет. Это важно для композиции lookup и optional значения в контейнере.
 
 Рекурсивные enum, например список с собственным enum в payload, **не входят в первую фазу**. Компилятор должен диагностировать прямую или косвенную рекурсию в описании типов, включая generic expansions, а не бесконечно специализировать их. Поддержка рекурсивных сумм — следующий отдельный эксперимент с явным storage/lifetime контрактом.
+
+### 4.5. Явный тип результата — полный контракт действия
+
+```okkama
+object Data {
+    Data();
+
+    value() is Maybe<string> {
+        Maybe.some("Anton");
+    }
+}
+
+let optional = Data().value();          // Maybe<string>
+let name = Data().value() else "anonymous"; // string
+```
+
+Тип результата в сигнатуре описывает весь возвращаемый результат. Если указан `Maybe<string>`, тело возвращает `Maybe<string>` и вызов имеет тот же тип. Голая строка вместо обёртки — ошибка типа. Метод с результатом `string` не может вернуть `Maybe.none`.
+
+| Объявленный результат | Результат обычного вызова |
+|---|---|
+| T | T |
+| Maybe<T> | Maybe<T> |
+| Presence<T> | Presence<T> |
+| Maybe<Maybe<T>> | Maybe<Maybe<T>> |
+
+Нет автоматического wrap, unwrap, collapse или flatten. Вызывающий код обрабатывает варианты через match, применяет `else` к Maybe или явно преобразует Presence в Maybe. Ошибки выполнения распространяются по обычным правилам и не превращаются в отсутствие.
+
+### 4.6. Убираем директивы и проекции
+
+Целевая модель не содержит синтаксиса директив `#`: ни `#maybe`, ни `#presence`, ни существующего `#projected`. Убираем также вызовы проекций вроде `value Data()`: используется обычный `Data().value()`. Если у проекции был алиас `value`, а действие называлось `get`, замена — `Data().get()`.
+
+Селекторы `.?value()` / `.??value()`, префиксы `?value` / `??value` и альтернативный селектор `.!value()` не вводим. Отдельного режима strict-вызова нет: строгая функция явно возвращает T и сама определяет ошибки своего контракта.
+
+Удаление уже реализованной поддержки проекций — отдельная задача реализации: найти декларации и применения, заменить вызовы, удалить обработку директив и проекций из parser/AST/analysis/lowering, обновить spec, grammar, тесты и tooling. При замене сохранить однократное вычисление аргументов и порядок: конструктор и confirm завершаются до вызова метода. Примеры старого синтаксиса должны давать понятную диагностику. Implementation status: projection support has now been removed from parser, AST, analysis and lowering; stdlib and positive conformance examples use ordinary calls.
+
+### 4.7. Статический анализ
+
+Компилятор проверяет тело относительно объявленного результата, а тип вызова получает из сигнатуры с обычной подстановкой generic-параметров. Места вызова не изменяют контракт метода. Ожидаемый тип может участвовать в обычном generic inference, но не переключает метод между T, Maybe<T> и Presence<T>.
+
+Отдельные поля `absence` и `call mode` в AST не нужны. Maybe/Presence проходят как номинальные generic enum; специальная семантика требуется для optional fallback (§6), а не для вызова. Role-контракты и ссылки на действия должны сохранять полный тип результата. Для async действуют существующие правила async-вызова; дополнительной автоматической распаковки Maybe/Presence не появляется.
 
 ## 5. Pattern matching
 
@@ -332,7 +377,7 @@ let age = value else 0;
 let name = json.presence_text("name").collapse() else "anonymous";
 ```
 
-или обрабатывает три состояния отдельно. Это немного длиннее, зато PATCH не превращается в случайный reset поля.
+или обрабатывает три состояния отдельно. Для PATCH сохраняем Presence до обработки, чтобы различать missing и null. Метод `maybe_text(name) is Maybe<string>` может быть обычной библиотечной обёрткой над `presence_text(name).collapse()`; имя не имеет специального значения для компилятора.
 
 ## 7. JSON: несколько форм одного значения
 
@@ -412,10 +457,13 @@ match node.kind() {
 |---|---|---|
 | `get(name)` | `Json` | Текущий строгий контракт сохраняется |
 | `find(name)` | `Maybe<Json>` | Missing → none; явный JSON null остаётся внутри some(Json) |
+| `text(name)` | `string` | Строгий контракт, ошибки задаёт реализация метода |
 | `presence_text(name)` | `Presence<string>` | Missing/null/string различаются; другой тип — ошибка |
 | `maybe_text(name)` | `Maybe<string>` | Явно объединяет missing и null; другой тип — ошибка |
 | `maybe_int(name)` | `Maybe<int>` | Та же политика, с существующими строгими правилами int |
 | Схемный reader UserInput | `Presence<UserInput>` | Принимает только объявленные формы |
+
+Таблица описывает предлагаемый API экспериментального адаптера. Каждый метод явно объявляет полный тип результата; названия maybe_text/presence_text — библиотечная договорённость, не механизм языка. Методы могут делегировать общему reader, чтобы не дублировать чтение и проверку типов. Текущий JsonView автоматически не меняем. У Maybe.none нет причины отсутствия, а у Presence нет JSON pointer: строгий reader должен сохранять необходимый контекст для своих ошибок до такого преобразования.
 
 `find` на не-объекте не должен считать ошибку формы отсутствующим полем: сохранить `WrongJsonKind`.
 
@@ -470,7 +518,9 @@ binding      := identifier | "_"
 coalesce     := expression "else" (expression | throw_form | panic_form)
 ```
 
-Последняя продукция нуждается в приоритетах и разграничениях из §6: нельзя просто добавить её в рекурсивный expression parser и считать синтаксис определённым.
+Продукция coalesce нуждается в приоритетах и разграничениях из §6: нельзя просто добавить её в рекурсивный expression parser и считать синтаксис определённым.
+
+Сигнатуры используют обычный `is type`, включая generic enum. Новая грамматика режимов вызова не нужна. Синтаксис директив и проекций удаляется; `.?value()`, `.??value()` и postfix `?` не входят в POC.
 
 Ожидаемые диагностики:
 
@@ -484,6 +534,9 @@ Expected a Maybe<T> operand for optional fallback, found Presence<string>.
 Fallback must produce int, found string.
 Recursive variant payload types are not supported by this POC.
 Payload enum UserInput cannot be used as a map key.
+Expected Maybe<string> as the action result, found string.
+Expected string as the action result, found Maybe<string>.
+Action directives are no longer supported; use an explicit result type.
 ```
 
 Тексты иллюстративны; реальные diagnostics должны использовать обычные spans и стиль compiler diagnostics. Данные JSON должны сохранять pointer/path ошибки.
@@ -515,7 +568,10 @@ Payload enum UserInput cannot be used as a map key.
 - Стандартные декларации Maybe/Presence, известная компилятору идентичность Maybe.
 - Явные преобразования as_presence/collapse; их точная API-форма утверждается до реализации.
 - `Maybe else` с ленивой веткой без catch.
-- Json find/maybe_text/maybe_int/presence_text и прикладной UserInput reader.
+- Явные generic-типы результата, проверка тела и сохранение типа при обычном вызове.
+- Удаление директив и проекций по §4.6, включая миграцию применений и tooling.
+- Экспериментальный JSON adapter с явно типизированными readers и прикладной UserInput reader.
+- Проверка сохранения JSON path и строгих ошибок в библиотечных adapters.
 - SQL adapter для одного nullable типа, без переделки всего db API.
 
 ### Этап D. Паритет и критерий готовности
@@ -545,6 +601,10 @@ Payload enum UserInput cannot be used as a map key.
 | Группа | Обязательные случаи |
 |---|---|
 | Декларации | Старый enum без payload; несколько payload-типов; duplicate variant/field; неправильная арность |
+| Сигнатуры | Тело соответствует полному результату; T вместо Maybe<T> и обратно отвергаются |
+| Вызовы | Тип результата сохраняется; добавление потребителя не меняет контракт; receiver/arguments/body вычисляются один раз |
+| Обёртки | Нет unwrap/wrap/collapse/flatten; nested Maybe сохраняется; throw/panic не становятся none |
+| Удалённый синтаксис | Директивы и проекции отвергаются; их применения заменены обычными вызовами; порядок вычисления сохранён |
 | Generic | Вывод из some; none с ожидаемым типом; явный Maybe<int>.none; ошибка без контекста; nested Maybe |
 | Match | Полный; пропущенный вариант; duplicate; неверный enum; неверное число bindings; область видимости; `_` |
 | Тип результата | Совместимые ветви; несовместимые ветви; throw/panic branch; без неявного any/union |
@@ -569,12 +629,15 @@ Payload enum UserInput cannot be used as a map key.
 4. Утвердить generic qualification `Maybe<int>.none` и правила inference.
 5. Выбрать storage для первого runtime-прототипа и записать lifetime/GC-инварианты до JIT-оптимизации.
 6. Решить, когда ужесточать exhaustiveness старых enum matches: отдельно от вводимой проверки новых payload enum.
+7. Выбрать имена и границы библиотечных readers; проверить сохранение строгих ошибок и JSON path без восстановления контекста из none.
 
-Отложено: `maybe` как keyword-модификатор типа, `maybe expression`, optional chaining, `??`, arbitrary unions, automatic flatten, recursive ADT, pattern guards, общий custom fallback protocol, автоматические derived codecs.
+Выбрано для POC: полный тип результата явно указан в сигнатуре и сохраняется при вызове. Синтаксис директив, включая #projected, и проекции удаляем. Контракт не выводится из мест вызова; специальных режимов вызова нет.
+
+Отложено: `maybe` как keyword-модификатор типа, `maybe expression`, optional chaining, инфиксный `a ?? b`, arbitrary unions, automatic flatten, recursive ADT, pattern guards, общий custom fallback protocol, автоматические derived codecs.
 
 ## 15. Связь с текущим кодом и источники
 
-В текущем [Json](../../std/json.ok) `get` возвращает Json и бросает MissingJsonValue, а optional объединяет missing/null. [JSON docs](../std/json.md) описывают это различие. [DbValue](../../std/db/value.ok) — динамический SQL-value protocol; [Row](../../std/db/row.ok) различает missing column и SQL NULL.
+В исходной базе POC Json.get возвращал Json и бросал MissingJsonValue, а optional объединял missing/null. В текущей рабочей ветке см. [JsonView](../../std/json/read.ok) и [JSON reading](../std/json-reading.md): member/name-accessors сохраняют WrongJsonKind/MissingJsonValue и JSON pointer; membership позволяет проверить наличие поля. [DbValue](../../std/db/value.ok) — динамический SQL-value protocol; [Row](../../std/db/row.ok) различает missing column и SQL NULL.
 
 Основные места будущих изменений:
 
@@ -592,3 +655,25 @@ Payload enum UserInput cannot be used as a map key.
 - [Zig optionals](https://ziglang.org/documentation/master/#Optional-Type): typed optional и отдельный fallback; обработка ошибок — отдельный механизм.
 
 Эти источники подтверждают общие модели, но конкретный синтаксис, выбор номинального Presence, правила совместимости и этапы реализации выше — предложения для Okkama.
+
+## 16. Проверка первой реализации
+
+Рабочий пример исходной JSON-задачи: [examples/variants.ok](../../examples/variants.ok).
+Запуск: `okkama run examples/variants.ok`. Он различает missing, null, пустую строку,
+имя строкой и объект с именем; fallback применяется явно.
+
+Проверки в ветке `feature/maybe.poc`, 2 ноября 2026:
+
+| Проверка | Результат |
+|---|---|
+| `cargo test --release --workspace --no-fail-fast` | 526 тестов, 0 ошибок, 0 пропусков |
+| Conformance `portable-core`, IR | 725/725 PASS |
+| Conformance `portable-stdlib`, IR | 61/61 PASS |
+| 12 новых conformance-кейсов + миграция invoice | 13/13 PASS отдельно на IR, Sparrow и JVM |
+| 12 новых кейсов, Sparrow `OKKAMA_JIT=eager` | 12/12 PASS |
+| `ocs validate` | Метаданные 799 кейсов валидны |
+
+Проверены generic inference, payload разных типов, вложенные обёртки, сравнение в
+коллекциях, границы ролей и модулей, ленивость fallback, распространение ошибок,
+exhaustiveness и время жизни ресурса с `destroy`. Полная conformance release gate
+не заявляется: у общего каталога остаются прежние незакрытые coverage obligations.

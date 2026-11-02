@@ -31,7 +31,6 @@ object SettingKey does Comparing<SettingKey> {
 object SettingKeyFromString{
     has origin,separator is string;
     SettingKeyFromString(origin is string,separator is string){self.origin=origin;self.separator=separator;}
-    #projected
     value() is SettingKey{
         confirm separator!="" else throw InvalidSettingKey("empty key separator");
         confirm origin.length()<=4096 else throw InvalidSettingKey("key exceeds 4096 scalars");

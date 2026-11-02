@@ -54,7 +54,7 @@ object StorageUsage {
     }
 
     capacity() is BigInt { total_capacity; }
-    used() is BigInt { value BigDifference(left: total_capacity, right: available_capacity); }
+    used() is BigInt { BigDifference(left: total_capacity, right: available_capacity).value(); }
     available() is BigInt { available_capacity; }
     fits(amount is BigInt) is bool {
         confirm amount.sign() >= 0 else throw InvalidStorageUsage();
@@ -65,7 +65,6 @@ object StorageUsage {
 object InvalidStorageUsage does Error {
     InvalidStorageUsage();
 
-    #projected
     text() is string { "storage usage values must be non-negative"; }
 }
 
@@ -80,6 +79,5 @@ object StorageFailure does Error {
 
     code() is string { failure_code; }
 
-    #projected
     text() is string { message; }
 }

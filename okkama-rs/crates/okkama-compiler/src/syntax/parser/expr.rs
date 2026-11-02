@@ -20,7 +20,7 @@
 //! | shift          | `<<` `>>` `>>>`                 |
 //! | term           | `+` `-`                         |
 //! | factor         | `*` `/` `%`                     |
-//! | unary          | `!` `-` `~` `await` `spawn` `panic`, projections |
+//! | unary          | `!` `-` `~` `await` `spawn` `panic` |
 //! | postfix        | call, `.name`, `::name`, `[i] else f`, `...` |
 
 use super::{PResult, Parser};
@@ -38,6 +38,10 @@ impl Parser<'_> {
     /// a member call (`receiver.name(args)`); anything else leaves the arrow
     /// for the caller (for example the `for` statement).
     pub(super) fn expression(&mut self) -> PResult<Expr> {
+        self.expression_with_fallback(true)
+    }
+
+    pub(super) fn expression_with_fallback(&mut self, optional: bool) -> PResult<Expr> {
         self.nested(|parser| {
             let mut expr = parser.logic_or()?;
             while parser.check(TokenKind::Arrow) {
@@ -53,6 +57,29 @@ impl Parser<'_> {
                 }
                 expr = parser.finish_functional(expr)?;
                 expr = parser.finish_postfix(expr)?;
+            }
+            if optional
+                && parser.check(TokenKind::Else)
+                && parser.nth(1).kind != TokenKind::LeftBrace
+            {
+                parser.advance();
+                let fallback = if parser.eat(TokenKind::Throw) {
+                    let start = parser.previous().span;
+                    let value = parser.expression()?;
+                    Expr {
+                        span: start.to(value.span),
+                        kind: ExprKind::Throw(Box::new(value)),
+                    }
+                } else {
+                    parser.expression()?
+                };
+                expr = Expr {
+                    span: expr.span.to(fallback.span),
+                    kind: ExprKind::Coalesce {
+                        value: Box::new(expr),
+                        fallback: Box::new(fallback),
+                    },
+                };
             }
             Ok(expr)
         })
@@ -225,7 +252,7 @@ impl Parser<'_> {
         }
         if self.check(TokenKind::Amp) {
             return Err(
-                self.error_here("Constructor projections use a declared prefix, not \"&\".")
+                self.error_here("Constructor projections have been removed; use Type(args).method().")
             );
         }
         if self.eat(TokenKind::Await) {
@@ -269,7 +296,9 @@ impl Parser<'_> {
             });
         }
         if self.starts_named_projection() {
-            return self.named_projection();
+            return Err(self.error_here(
+                "Constructor projections have been removed; use Type(args).method().",
+            ));
         }
         self.postfix()
     }
@@ -320,40 +349,6 @@ impl Parser<'_> {
             && self.tokens[self.pos + 4].kind == TokenKind::LeftParen
     }
 
-    fn named_projection(&mut self) -> PResult<Expr> {
-        let prefix_token = self.advance();
-        let prefix = self.name_of(&prefix_token);
-        let mut target = self.primary()?;
-        if self.eat(TokenKind::Dot) {
-            let name = self.consume_name("Expect object name after \".\".")?;
-            target = Expr {
-                span: target.span.to(name.span),
-                kind: ExprKind::Get {
-                    object: Box::new(target),
-                    name,
-                },
-            };
-        }
-        if !is_projection_target(&target) {
-            return Err(self.error_at(
-                &prefix_token,
-                "Named constructor projection target must be an object name.",
-            ));
-        }
-        if !self.eat(TokenKind::LeftParen) {
-            return Err(self.error_here("Expect \"(\" after named constructor projection target."));
-        }
-        let construction = self.finish_call(target)?;
-        let projection = Expr {
-            span: prefix.span.to(construction.span),
-            kind: ExprKind::Projection {
-                prefix,
-                construction: Box::new(construction),
-            },
-        };
-        self.finish_postfix(projection)
-    }
-
     // ===== postfix ===========================================================
 
     fn postfix(&mut self) -> PResult<Expr> {
@@ -397,7 +392,7 @@ impl Parser<'_> {
                 && !self.starts_anonymous_action(self.pos + 1)
             {
                 return Err(
-                    self.error_here("Constructor projections use a declared prefix, not \":\".")
+                    self.error_here("Constructor projections have been removed; use Type(args).method().")
                 );
             }
             if self.eat(TokenKind::Dot) {
@@ -490,7 +485,7 @@ impl Parser<'_> {
             let colon = self.nth(1).clone();
             return Err(self.error_at(
                 &colon,
-                "Constructor projections use a declared prefix, not \":\".",
+                "Constructor projections have been removed; use Type(args).method().",
             ));
         }
         if self.check_name() && self.check_next(TokenKind::Colon) {
@@ -560,6 +555,18 @@ impl Parser<'_> {
                 self.if_expression(start)
             }
             TokenKind::Match => self.match_expression(start),
+            _ if (self.check_type_name() && self.check_next(TokenKind::Less))
+                || (self.check_name()
+                    && self.check_next(TokenKind::Dot)
+                    && is_type_word(self.lexeme(self.nth(2)))
+                    && self.nth(3).kind == TokenKind::Less) =>
+            {
+                let ty = self.type_expr()?;
+                Ok(Expr {
+                    span: ty.span,
+                    kind: ExprKind::TypeValue(ty),
+                })
+            }
             _ if self.check_name() => {
                 let token = self.advance();
                 Ok(Expr {
@@ -791,21 +798,6 @@ impl Parser<'_> {
 /// qualifier only has to be lower-case-shaped (the reference parser treats
 /// `self` like any other variable here); whether it names a module is a
 /// semantic question.
-fn is_projection_target(expr: &Expr) -> bool {
-    match &expr.kind {
-        ExprKind::Name(name) => is_type_word(&name.text),
-        ExprKind::Get { object, name } => {
-            let lower_qualifier = match &object.kind {
-                ExprKind::Name(module) => is_lower_word(&module.text),
-                ExprKind::SelfValue => true,
-                _ => false,
-            };
-            lower_qualifier && is_type_word(&name.text)
-        }
-        _ => false,
-    }
-}
-
 /// Binary precedence levels, lowest first (the grammar's ladder).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {

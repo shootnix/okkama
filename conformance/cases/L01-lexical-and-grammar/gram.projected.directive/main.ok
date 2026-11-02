@@ -8,16 +8,14 @@ object Number {
         origin = origin;
     }
 
-    #projected
     doubled() is int { origin * 2; }
 
-    #projected(text)
     rendered() is string { "n=" + origin.string(); }
 }
 
 main() is int {
     let out = Stdout();
-    out.writeln((doubled Number(21)).string());
-    out.writeln(text Number(5));
+    out.writeln((Number(21).doubled()).string());
+    out.writeln(Number(5).rendered());
     0;
 }

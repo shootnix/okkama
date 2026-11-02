@@ -49,7 +49,6 @@ object PluralNumber does PluralOperands {
 }
 object CanonicalPluralNumber {
     has origin is Decimal;CanonicalPluralNumber(origin is Decimal){self.origin=origin;}
-    #projected
     value() is PluralNumber {
         let coefficient=origin.coefficient().string();let negative=coefficient.slice(0,1)=="-";
         let digits=if negative {coefficient.slice(1,coefficient.length());} else {coefficient;};let exponent=origin.exponent();
@@ -67,7 +66,6 @@ object CanonicalPluralNumber {
 object PluralCategoryOf {
     has origin is PluralNumber;has locale is Locale;has kind is PluralKind;
     PluralCategoryOf(origin is PluralNumber,locale is Locale,kind is PluralKind){self.origin=origin;self.locale=locale;self.kind=kind;}
-    #projected
     value() is PluralCategory {
         let index=CldrPlurals().category(origin,locale.string(),kind==PluralKind.ordinal);
         match index {case 0{PluralCategory.zero;}case 1{PluralCategory.one;}case 2{PluralCategory.two;}

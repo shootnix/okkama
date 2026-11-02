@@ -76,6 +76,10 @@ pub(super) enum Task {
     AdapterNew {
         object: ObjectId,
     },
+    VariantGet {
+        object: ObjectId,
+        field: usize,
+    },
     /// Тело анонимного action: `Ctx::closures[index]`.
     Closure {
         index: usize,
@@ -160,6 +164,7 @@ pub(super) struct Ctx<'r, 'a> {
     body_index: HashMap<BodyOwner, usize>,
     pub objects: Vec<Instance>,
     object_map: HashMap<(DeclObject, Vec<Ty>), ObjectId>,
+    variant_map: HashMap<Ty, ObjectId>,
     pub roles: Vec<RoleInstance>,
     role_map: HashMap<(DeclRole, Vec<Ty>), RoleId>,
     /// Функции в порядке выделения: задача и символ.
@@ -211,6 +216,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             body_index,
             objects: Vec::new(),
             object_map: HashMap::new(),
+            variant_map: HashMap::new(),
             roles: Vec::new(),
             role_map: HashMap::new(),
             tasks: Vec::new(),
@@ -446,6 +452,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             | Task::Default { object, .. }
             | Task::Destroy { object }
             | Task::AdapterNew { object }
+            | Task::VariantGet { object, .. }
             | Task::Witness { object, .. }
             | Task::WorkerEntry { object, .. }
             | Task::WorkerBind { object, .. }
@@ -641,6 +648,85 @@ impl<'r, 'a> Ctx<'r, 'a> {
         func
     }
 
+    pub fn enum_id(&self, id: crate::analysis::ty::EnumId) -> ir::EnumId {
+        ir::EnumId(
+            self.reg.enums[..id.0]
+                .iter()
+                .filter(|decl| !decl.variant)
+                .count(),
+        )
+    }
+
+    pub fn variant_field_case(&self, object: ObjectId, field: usize) -> Option<usize> {
+        if field == 0 {
+            return None;
+        }
+        let (Ty::Variant(id, _), _) = self
+            .variant_map
+            .iter()
+            .find(|(_, value)| **value == object)?
+        else {
+            return None;
+        };
+        let mut offset = 1;
+        for (case, fields) in self.reg.enums[id.0].payloads.iter().enumerate() {
+            if field < offset + fields.len() {
+                return Some(case);
+            }
+            offset += fields.len();
+        }
+        None
+    }
+
+    pub fn variant_getter(&mut self, object: ObjectId, field: usize) -> FuncId {
+        let task = Task::VariantGet { object, field };
+        if let Some(func) = self.task_map.get(&task) {
+            return *func;
+        }
+        self.allocate(task, self.symbol(object, &format!(".$field{field}")))
+    }
+
+    fn variant_instance(&mut self, ty: &Ty, span: Span) -> Result<ObjectId> {
+        if let Some(id) = self.variant_map.get(ty) {
+            return Ok(*id);
+        }
+        let Ty::Variant(decl_id, args) = ty else {
+            unreachable!()
+        };
+        let decl = &self.reg.enums[decl_id.0];
+        let env: Vec<_> = decl.params.iter().copied().zip(args.clone()).collect();
+        let module = decl.module;
+        let payloads = decl.payloads.clone();
+        let id = ObjectId(self.objects.len());
+        self.variant_map.insert(ty.clone(), id);
+        self.objects.push(Instance {
+            decl: DeclObject(usize::MAX),
+            env: env.clone(),
+            name: format!("$variant_{}_{}", self.reg.enums[decl_id.0].name, id.0),
+            module,
+            fields: Vec::new(),
+            methods: Vec::new(),
+            destroy: None,
+            does: Vec::new(),
+            span,
+        });
+        let mut fields = vec![("$tag".into(), Type::Int, None)];
+        for (case, payload) in payloads.iter().enumerate() {
+            for (name, ty) in payload {
+                fields.push((
+                    format!("${case}_{name}"),
+                    Type::Array(Box::new(self.ir_type(&ty.subst(&env), span)?)),
+                    None,
+                ));
+            }
+        }
+        self.objects[id.0].fields = fields;
+        // A payload may own resources. Publish its plainness before callers emit
+        // region keep/track operations for the returned variant value.
+        self.compute_plain();
+        Ok(id)
+    }
+
     // ----- типы -----
 
     /// Тип OIR для типа анализа (после подстановки параметров).
@@ -662,7 +748,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
             ),
             Ty::Object(id, args) => Type::Object(self.object_instance(*id, args.clone(), span)?),
             Ty::Role(id, args) => Type::Role(self.role_instance(*id, args.clone(), span)?),
-            Ty::Enum(id) => Type::Enum(ir::EnumId(id.0)),
+            Ty::Enum(id) => Type::Enum(self.enum_id(*id)),
+            Ty::Variant(..) => Type::Object(self.variant_instance(ty, span)?),
             Ty::Successor(inner) => match self.ir_type(inner, span)? {
                 Type::Object(object) => Type::Successor(object),
                 // `^R` роли: обязательство проверил анализ; в OIR — ссылка роли.
@@ -1143,6 +1230,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             .reg
             .enums
             .iter()
+            .filter(|decl| !decl.variant)
             .map(|decl| ir::Enum {
                 name: format!("{}{}", self.prefixes[decl.module], decl.name),
                 cases: decl.cases.clone(),
@@ -1222,7 +1310,7 @@ fn decl_plain_ty(ty: &Ty, objects: &[bool], roles: &[bool]) -> bool {
         }
         Ty::Array(element) | Ty::Successor(element) => decl_plain_ty(element, objects, roles),
         Ty::Map(_, value) => decl_plain_ty(value, objects, roles),
-        Ty::Any | Ty::Action(_) | Ty::Cap(..) => false,
+        Ty::Any | Ty::Action(_) | Ty::Cap(..) | Ty::Variant(..) => false,
         _ => true,
     }
 }

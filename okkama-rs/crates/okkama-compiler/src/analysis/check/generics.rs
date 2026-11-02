@@ -13,11 +13,11 @@ use crate::analysis::registry::CtorShape;
 use crate::analysis::ty::{ObjectId, ParamId, Ty};
 use crate::source::Span;
 
-struct Inference {
-    object: String,
-    params: Vec<ParamId>,
-    bindings: Vec<Option<Ty>>,
-    conflict: Option<String>,
+pub(super) struct Inference {
+    pub(super) object: String,
+    pub(super) params: Vec<ParamId>,
+    pub(super) bindings: Vec<Option<Ty>>,
+    pub(super) conflict: Option<String>,
 }
 
 impl Checker<'_, '_> {
@@ -83,12 +83,15 @@ impl Checker<'_, '_> {
         span: Span,
     ) -> Option<Vec<Ty>> {
         let count = self.reg.objects[object.0].ctors.len();
-        let variadic = |ctor: &CtorShape<'_>| matches!(ctor, CtorShape::Full { variadic: true, .. });
+        let variadic =
+            |ctor: &CtorShape<'_>| matches!(ctor, CtorShape::Full { variadic: true, .. });
         let mut order: Vec<usize> = (0..count)
             .filter(|ctor| !variadic(&self.reg.objects[object.0].ctors[*ctor].shape))
             .collect();
         let tails = order.len();
-        order.extend((0..count).filter(|ctor| variadic(&self.reg.objects[object.0].ctors[*ctor].shape)));
+        order.extend(
+            (0..count).filter(|ctor| variadic(&self.reg.objects[object.0].ctors[*ctor].shape)),
+        );
         let mut found: Vec<Vec<Ty>> = Vec::new();
         let mut failure = None;
         let mut shaped = false;
@@ -126,7 +129,10 @@ impl Checker<'_, '_> {
                     .zip(resolved.iter().cloned())
                     .collect();
                 let shapes = self.ctor_shapes(object, &env);
-                !self.ctor_candidates(object, &shapes, call, &env).1.is_empty()
+                !self
+                    .ctor_candidates(object, &shapes, call, &env)
+                    .1
+                    .is_empty()
             });
         }
         match found.len() {
@@ -305,7 +311,7 @@ impl Checker<'_, '_> {
     }
 
     /// Сопоставить образец (в параметрах объявления) с фактическим типом.
-    fn unify(&self, inference: &mut Inference, pattern: &Ty, actual: &Ty) {
+    pub(super) fn unify(&self, inference: &mut Inference, pattern: &Ty, actual: &Ty) {
         if actual.is_error() {
             return;
         }
@@ -334,6 +340,11 @@ impl Checker<'_, '_> {
                     self.unify(inference, left, right);
                 }
                 if let (Some(left), Some(right)) = (&want.result, &have.result) {
+                    self.unify(inference, left, right);
+                }
+            }
+            (Ty::Variant(id, args), Ty::Variant(other, actual_args)) if id == other => {
+                for (left, right) in args.iter().zip(actual_args) {
                     self.unify(inference, left, right);
                 }
             }

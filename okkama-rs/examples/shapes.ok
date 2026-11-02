@@ -35,7 +35,6 @@ object Rectangle does Shape {
         perimeter is int { 2 * (width + height); }
     }
 
-    #projected(described)
     description() is string { label + " " + self.area().string(); }
 
     private:
@@ -59,7 +58,7 @@ main() is int {
         out <- name + " " + shape.area().string() <- endl;
     }
     let size is Rectangle::Size = Rectangle(2, 5)::Size;
-    let boxed is Box<string> = Box(item: described Rectangle(1, 4));
+    let boxed is Box<string> = Box(item: Rectangle(1, 4).description());
     out <- boxed.item() + " / " + size::perimeter.string() <- endl;
     0;
 }

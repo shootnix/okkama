@@ -83,12 +83,16 @@ impl Version {
 impl ModuleDecl {
     /// `v1.0.0`, or an empty string for a module without a version.
     pub fn version_text(&self) -> String {
-        self.version.as_ref().map_or_else(String::new, Version::text)
+        self.version
+            .as_ref()
+            .map_or_else(String::new, Version::text)
     }
 
     /// ABI major of native symbols (§5.9); a module without a version is major `0`.
     pub fn major(&self) -> &str {
-        self.version.as_ref().map_or("0", |version| version.major.as_str())
+        self.version
+            .as_ref()
+            .map_or("0", |version| version.major.as_str())
     }
 }
 
@@ -283,19 +287,10 @@ impl Visibility {
     }
 }
 
-/// `#projected` or `#projected(alias)` in front of an action.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProjectionDirective {
-    pub alias: Option<Name>,
-    pub span: Span,
-}
-
-/// An action with a body.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ActionDecl {
     pub is_async: bool,
     pub visibility: Visibility,
-    pub projection: Option<ProjectionDirective>,
     pub name: Name,
     pub params: Vec<Param>,
     pub result: ResultSpec,
@@ -365,6 +360,8 @@ pub enum FakeBody {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnumDecl {
     pub name: Name,
+    pub generics: Vec<GenericParam>,
+    pub payloads: Vec<Vec<Param>>,
     pub cases: Vec<Name>,
     pub span: Span,
 }

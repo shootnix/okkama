@@ -121,7 +121,6 @@ object InvalidRegex does Error {
 
     offset() is int { source_offset; }
 
-    #projected
     text() is string {
         message + " at offset " + source_offset.string();
     }
@@ -140,7 +139,6 @@ object RegexLimitExceeded does Error {
 
     limit() is int { maximum; }
 
-    #projected
     text() is string { "regex compilation limit exceeded"; }
 }
 
@@ -161,13 +159,11 @@ object RegexRangeOutsideInput does Error {
     }
     range() is RegexRange { selected; }
     length() is int { source_length; }
-    #projected
     text() is string { "regex range lies outside its input"; }
 }
 
 object NoRegexMatch does Error {
     NoRegexMatch();
-    #projected
     text() is string { "no regex match"; }
 }
 

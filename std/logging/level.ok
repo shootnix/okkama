@@ -9,7 +9,6 @@ object LogLevelName{
 object LogLevelFromName{
     has origin is string;
     LogLevelFromName(origin is string){self.origin=origin;}
-    #projected
     value() is LogLevel{
         confirm origin.length()>0 && origin.length()<=8 else throw InvalidLogLevel(origin);
         let alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ";let lower="abcdefghijklmnopqrstuvwxyz";
@@ -19,7 +18,6 @@ object LogLevelFromName{
 object LogLevelOrder{
     has left,right is LogLevel;
     LogLevelOrder(left is LogLevel,right is LogLevel){self.left=left;self.right=right;}
-    #projected
     value() is Order{LogLevelRank(left).value().order(LogLevelRank(right).value());}
 }
 object LogLevelRank{

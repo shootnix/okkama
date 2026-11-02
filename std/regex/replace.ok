@@ -90,7 +90,7 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
             value;
         }
         else if kind == "index" {
-            let capture = found.capture(value ParsedInt(value));
+            let capture = found.capture(ParsedInt(value).value());
             if capture.matched() { capture.text(); } else { ""; }
         }
         else {
@@ -283,7 +283,6 @@ object InvalidRegexReplacement does Error {
         self.message = message;
     }
     offset() is int { source_offset; }
-    #projected
     text() is string {
         message + " at offset " + source_offset.string();
     }
@@ -293,6 +292,5 @@ object InvalidRegexReplacementLimit does Error {
     has maximum is int;
     InvalidRegexReplacementLimit(limit is int) { maximum = limit; }
     limit() is int { maximum; }
-    #projected
     text() is string { "regex replacement limit must be positive"; }
 }

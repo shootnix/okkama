@@ -52,7 +52,6 @@ object ParsedQueryParameters {
         confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument("query limits must be nonnegative");
         self.origin=origin;self.maximum_parameters=maximum_parameters;self.maximum_bytes=maximum_bytes;
     }
-    #projected
     value() is QueryParameters {
         confirm origin.string().length()<=maximum_bytes else throw QueryLimitExceeded("bytes");
         ParameterParsing(Utf8Encoded(origin.string()).bytes(),false,maximum_parameters,maximum_bytes).parameters();

@@ -268,7 +268,7 @@ impl Parser<'_> {
     /// `confirm expr ("else" ("panic" | "throw") expr)? ";"`
     fn confirm_statement(&mut self) -> PResult<StmtKind> {
         self.advance();
-        let condition = self.expression()?;
+        let condition = self.expression_with_fallback(false)?;
         let mut fallback = None;
         if self.eat(TokenKind::Else) {
             if self.eat(TokenKind::Panic) {
