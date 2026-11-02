@@ -463,7 +463,7 @@ impl Checker<'_, '_> {
         }
     }
 
-    fn thrown(&mut self, value: &ast::Expr) -> Expr {
+    pub(super) fn thrown(&mut self, value: &ast::Expr) -> Expr {
         let error = self.value(value, None);
         let ty = Self::ty_of(&error);
         if !error.diverges && !ty.is_error() && !self.throwable(&ty) {

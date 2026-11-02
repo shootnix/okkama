@@ -65,6 +65,7 @@ pub enum TokenKind {
     DoubleColon,
     /// `?` — removed optional-type marker (reserved).
     Question,
+    Choice,
     /// `?.` — removed optional chaining (reserved).
     QuestionDot,
     /// `^` — successor marker and bitwise XOR.
@@ -256,6 +257,7 @@ impl TokenKind {
             Colon => "COLON",
             DoubleColon => "DOUBLE_COLON",
             Question => "QUESTION",
+            Choice => "CHOICE",
             QuestionDot => "QUESTION_DOT",
             Caret => "CAP",
             At => "AT",

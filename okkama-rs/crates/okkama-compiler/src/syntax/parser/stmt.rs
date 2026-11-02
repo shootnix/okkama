@@ -55,7 +55,9 @@ impl Parser<'_> {
             TokenKind::LeftBrace => self.block_statement()?,
             TokenKind::If => {
                 self.advance();
-                StmtKind::If(self.if_statement(start)?)
+                let statement = self.if_statement(start)?;
+                self.eat(TokenKind::Semicolon);
+                StmtKind::If(statement)
             }
             TokenKind::Match => {
                 self.advance();
@@ -186,7 +188,9 @@ impl Parser<'_> {
         } else {
             None
         };
-        self.consume(TokenKind::Semicolon, "Expect \";\" after expression.")?;
+        if !self.check(TokenKind::RightBrace) {
+            self.consume(TokenKind::Semicolon, "Expect \";\" after expression.")?;
+        }
         Ok(StmtKind::Expr { expr, condition })
     }
 
@@ -268,7 +272,7 @@ impl Parser<'_> {
     /// `confirm expr ("else" ("panic" | "throw") expr)? ";"`
     fn confirm_statement(&mut self) -> PResult<StmtKind> {
         self.advance();
-        let condition = self.expression()?;
+        let condition = self.expression_with_fallback(false)?;
         let mut fallback = None;
         if self.eat(TokenKind::Else) {
             if self.eat(TokenKind::Panic) {

@@ -1,0 +1,3 @@
+module app v1.0.0;
+
+enum Pair<T> = (empty, two(a is T, b is T)); main() is int { let p = Pair.two(20, 22); let n = match p { case Pair.empty { 0; } case Pair.two(a,b) { a+b; } }; if n == 42 && p == Pair.two(20,22) && p != Pair<int>.empty { 0; } else { 1; } }

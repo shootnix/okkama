@@ -58,10 +58,8 @@ object Account<T: Comparing<T>, U> does Comparing<T>, io.Printable {
         public_balance is int { balance; }
     }
 
-    #projected
     total() is int { balance; }
 
-    #projected(described)
     describe() is string { self.owner; }
 
     async load(id is int) is @T { await fetch(id); }
@@ -75,7 +73,7 @@ object Account<T: Comparing<T>, U> does Comparing<T>, io.Printable {
 
     private:
     helper() is void {}
-    #projected(secret) hidden() is string { "x"; }
+    hidden() is string { "x"; }
 }
 
 cap Account::Audit {
@@ -90,7 +88,11 @@ async test "module async test" {
     let value = await Account().load(1);
 }
 
+enum Reading<T> = (empty, value(item is T));
+
 async main() is int {
+    let optional = Maybe<int>.none else 42;
+    let failed = Maybe<int>.none else throw Problem("missing");
     let out = Stdout();
     let count is int = 0x1F + 0b1010 + 1_000 - 7 * 3 / 2 % 4;
     let ratio = 3.14;
@@ -111,8 +113,8 @@ async main() is int {
     let cast = @byte(104, 105) ;
     let spread = @string(list..., 4);
     let single = byte(112);
-    let projected = described Account(owner: "ada", nickname: "a");
-    let qualified = total channels.Channel(capacity: 1);
+    let projected = Account(owner: "ada", nickname: "a").describe();
+    let qualified = channels.Channel(capacity: 1).total();
     let doubled = list.map() -> item { item * 2; };
     let evens = list.filter() -> item { item % 2 == 0; };
     let sum = list.reduce(0) -> acc, item { acc + item; };

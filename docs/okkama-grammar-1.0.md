@@ -15,7 +15,8 @@ token in an unambiguous namespace position; it includes active keyword tokens
 but excludes removed/deferred reserved words. It is used only for module path
 segments, source action labels, and member spellings after `.`. Keywords remain
 invalid as variables, fields, parameters, constructors, types, import aliases,
-native action names, enum names, and enum cases.
+native action names and enum names. Enum cases and qualified members additionally
+accept `none` for the standard absence variants.
 
 Every action-name position additionally rejects the exact spelling `with` and
 every identifier whose spelling begins with `with_`. This lexical predicate
@@ -38,7 +39,7 @@ and do not publish that closure to consumers.
 program             = module_decl import_decl* declaration* EOF ;
 
 module_decl         = "module" module_name version? ";" ;
-module_name         = CONTEXT_IDENT ("/" CONTEXT_IDENT)* ;
+module_name         = IDENT ("/" IDENT)* ;
 version             = "v" INT "." INT "." INT ;
 
 import_decl         = "import" STRING ("as" IDENT)? take_clause? ";" ;
@@ -69,11 +70,10 @@ object_member       = has_decl
                     | destroy_block
                     | test_block
                     | private_section
-                    | projection_action_decl
                     | action_decl
                     ;
 
-private_section     = "private" ":" (projection_action_decl | action_decl)* ;
+private_section     = "private" ":" action_decl* ;
 
 has_decl            = "has" attr_name_list has_type? has_default? ";" ;
 attr_name_list      = IDENT ("," IDENT)* ;
@@ -96,16 +96,16 @@ destroy_block       = "destroy" block ;
 role_decl           = "role" TYPE_NAME generic_params? role_body ;
 role_body           = "{" role_member* "}" ;
 role_member         = role_action_decl | fake_block | test_block ;
-role_action_decl    = async_mark? CONTEXT_IDENT "(" param_list? ")" result_spec ";" ;
+role_action_decl    = async_mark? IDENT "(" param_list? ")" result_spec ";" ;
 fake_block          = "fake" object_body ;
 
-enum_decl           = "enum" IDENT "=" "(" enum_cases? ")" ";" ;
-enum_cases          = IDENT ("," IDENT)* ;
+enum_decl           = "enum" TYPE_NAME generic_params? "=" "(" enum_cases? ")" ";" ;
+enum_cases          = enum_case ("," enum_case)* ;
+enum_case           = IDENT ("(" param_list? ")")? ;
 
 test_block          = "test" STRING block ;
 
-action_decl         = async_mark? CONTEXT_IDENT "(" param_list? ")" result_spec block ;
-projection_action_decl = "#" "projected" ("(" IDENT ")")? action_decl ;
+action_decl         = async_mark? IDENT "(" param_list? ")" result_spec block ;
 async_mark          = "async" ;
 param_list          = param ("," param)* trailing_comma? ;
 param               = IDENT "is" variadic_mark? type_ref ;
@@ -128,7 +128,6 @@ statement           = let_stmt
                     | defer_stmt
                     | return_stmt
                     | confirm_stmt
-                    | throw_stmt
                     | try_stmt
                     | successor_assign
                     | block_stmt
@@ -149,9 +148,7 @@ defer_stmt          = "defer" expr ";" ;
 return_stmt         = "return" expr? ";" ;
 
 confirm_stmt        = "confirm" expr confirm_else? ";" ;
-confirm_else        = "else" ("throw" | "panic") expr ;
-
-throw_stmt          = "throw" expr? ";" ;
+confirm_else        = "else" "panic" expr ;
 
 try_stmt            = "try" block catch_clause+ ;
 catch_clause        = "catch" BINDING_NAME "is" type_ref block ;
@@ -160,10 +157,11 @@ successor_assign    = "^" IDENT "=" expr ";" ;
 
 block_stmt          = block ;
 
-field_bind_stmt     = [ "self" "." ] IDENT "=" expr ";" ;
+field_bind_stmt     = IDENT "=" expr ";" ;
                     /* valid only in constructor bodies */
 
-if_stmt             = "if" expr block ("else" (if_stmt | block))? ;
+if_stmt             = if_chain ";"? ;
+if_chain            = "if" expr block ("else" (if_chain | block))? ;
 
 match_stmt          = "match" expr "{" match_case* match_else? "}" ;
 match_case          = "case" case_values block ;
@@ -180,11 +178,23 @@ next_stmt           = "next" postfix_if? ";" ;
 last_stmt           = "last" ("if" expr | expr postfix_if?)? ";" ;
 postfix_if          = "if" expr ;
 
-expr_stmt           = expr postfix_if? ";" ;
+expr_stmt           = expr postfix_if? (";" | BEFORE_RIGHT_BRACE) ;
+(* BEFORE_RIGHT_BRACE is zero-width lookahead: only the last expression in a
+   block may omit its semicolon. let/return/throw/defer/etc. still require it. *)
 
-expr                = assignment_free_expr ;
-(* arrow_suffix is a postfix form: it applies only directly after an eligible
-   functional member call, e.g. map(), and binds tighter than every operator. *)
+expr                = assignment_free_expr optional_else? compact_choice? ;
+compact_choice      = "??" choice_value "!!" choice_value
+                    | "??" choice_arm ("!!" choice_arm)* ;
+choice_arm          = choice_pattern ":" choice_value ;
+choice_pattern      = "." IDENT ("(" IDENT ("," IDENT)* ")")? | "_" ;
+choice_value        = "throw" expr | expr ;
+(* No compact choice may contain another compact choice anywhere in its subject
+   or branches, including parentheses, calls, collections and blocks.
+   .variant and _: select pattern form; boolean form has exactly two branches.
+   A wildcard branch must be last. !! is two adjacent ! tokens in infix position;
+   prefix !!value continues to mean double boolean negation. *)
+optional_else       = "else" ("throw" expr | expr) ;
+(* arrow_suffix applies directly to an eligible member call, at postfix precedence. *)
 arrow_suffix        = "->" arrow_bindings? block ;
 arrow_bindings      = IDENT ("," IDENT)* ;
 assignment_free_expr= logic_or ;
@@ -200,19 +210,18 @@ bitwise_and         = shift_expr ("&" shift_expr)* ;
 shift_expr          = term (("<<" | ">>" | ">>>") term)* ;
 term                = factor (("+" | "-") factor)* ;
 factor              = unary (("*" | "/" | "%") unary)* ;
-unary               = ("!" | "-" | "~") unary | named_constructor_projection | await_expr | spawn_expr ;
+unary               = ("!" | "-" | "~") unary | await_expr | spawn_expr ;
 await_expr          = "await" unary | postfix ;
 spawn_expr          = "spawn" call_expr ;
-call_expr           = postfix ;  // semantic form: direct Worker(...).action(...)
+call_expr           = postfix ;  (* semantic form: direct Worker(...).action(...) *)
 postfix             = primary postfix_op* ;
 postfix_op          = call_args arrow_suffix? | member_access | cap_select | index_access | unpack_op ;
 cap_select          = "::" BINDING_NAME ;
 unpack_op           = "..." ;
-member_access       = "." CONTEXT_IDENT ;
+member_access       = "." IDENT ;
 index_access        = "[" expr "]" lookup_else? ;
 lookup_else         = "else" expr ;
 call_args           = "(" arg_list? ")" ;
-named_constructor_projection = IDENT (TYPE_NAME | IDENT "." TYPE_NAME) call_args ;
 arg_list            = arg ("," arg)* trailing_comma? ;
 arg                 = IDENT ":" expr | expr ;
 
@@ -221,11 +230,10 @@ primary             = literal
                     | TYPE_NAME
                     | qualified_name
                     | "self"
-                    | "panic" expr
+                    | "panic" expr?
                     | anonymous_action
                     | "(" expr ")"
                     | bracket_lit
-                    | array_cast
                     | try_expr
                     | if_expr
                     | match_expr
@@ -242,28 +250,27 @@ anonymous_action_param = IDENT "is" type_ref ;
 
 qualified_name      = IDENT "." IDENT | IDENT "." TYPE_NAME | TYPE_NAME "." IDENT ;
 
-array_cast          = "@" cast_target call_args ;
-cast_target         = "int" | "float" | "byte" | "string" ;
-// Array casts accept positional arguments and one-level expression unpack in any slot.
-
 bracket_lit         = array_lit | map_lit ;
 array_lit           = "[" (expr ("," expr)* trailing_comma?)? "]" ;
 map_lit             = "[" (":" | map_entry ("," map_entry)* trailing_comma?) "]" ;
 map_entry           = expr ":" expr ;
 
-literal             = INT | FLOAT | DECIMAL | STRING | RAW_STRING | CHAR
-                    | "true" | "false"
-                    ;
+literal             = INT | FLOAT | DECIMAL | STRING | CHAR | "true" | "false" ;
 trailing_comma      = "," ;
 
 BINDING_NAME        = /[a-zA-Z_][a-zA-Z0-9_]*/ ;
 IDENT               = /[a-z_][a-zA-Z0-9_]*/ ;
 TYPE_NAME           = /[A-Z][a-zA-Z0-9_]*/ ;
 INT                 = /[0-9]+/ | /0[bB][01]+(?:_[01]+)*/ | /0[xX][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*/ ;
+(* Based literals are nonnegative, <= INT64_MAX. xor is an ordinary identifier; infix ^ is XOR.
+   <- is one contiguous token; a < -b is comparison with unary minus.
+   The type parser splits >> and >>> into generic closers when consuming >. *)
 FLOAT               = /[0-9]+\.[0-9]+/ ;
 DECIMAL             = implementation_defined_decimal_token ;
 STRING              = double_quoted_string ;
-RAW_STRING          = "```" raw_string_character* "```" ;
+CHAR                = single_quoted_char ;
+ELLIPSIS            = "..." ;
+```" raw_string_character* "```" ;
 CHAR                = single_quoted_char ;
 ELLIPSIS            = "..." ;
 ```
@@ -299,7 +306,7 @@ variadic parameters are valid only on object actions, role action signatures, fa
 a variadic parameter must be unique, final, explicitly typed, and have no default value;
 a variadic full constructor is positional-call-only and rejects named calls;
 a variadic full constructor overloads with other constructors; a fitting fixed or shorthand constructor is preferred;
-generic declaration parameters are valid on objects and roles;
+generic declaration parameters are valid on objects, roles and variant enums;
 generic parameters must be uppercase, ordered, unique, and may not shadow their declaration name;
 applied object and role types must provide exactly the declaration's generic arity;
 generic role fakes obtain their exact specialization from a declared target type;
@@ -309,12 +316,7 @@ full constructor calls are selected like action overloads: by arity, named-param
 constructor field shorthand is named-only and selected by allowed/required field compatibility;
 constructor field shorthand entries must name explicitly typed fields on the same object;
 constructor selection never falls back to all has fields or their order;
-named constructor-projection syntax is valid only when a lowercase prefix is followed immediately by an object-name constructor call; it is equivalent to constructing the object and calling the action registered for that prefix;
-`#projected` registers the action name as its prefix and `#projected(alias)` registers the lowercase alias; an object may register multiple projections, but each effective prefix must be unique within that object;
-a projected action must be public, synchronous, zero-argument, explicitly typed, non-successor, and return a type different from the object type;
-projection prefixes are resolved from the statically resolved constructor target during semantic analysis; they are not module bindings and do not apply to arbitrary expressions;
-the directive marks one declaration and selects its action name; unmarked fixed overloads of that name remain available, and projection invokes the ordinary zero-argument overload;
-single `&` projection declaration/expression syntax is removed; `&&` remains boolean conjunction;
+constructor projections and action directives are removed; use ordinary constructor and method calls;
 actions with a variadic parameter overload with fixed and other variadic actions; a variadic tail counts as one parameter of the arity, and a call that fits a fixed signature never selects a variadic one;
 fixed action overloads are selected by arity, named-parameter shape, runtime
 argument compatibility, and specificity; declaration order is never a
@@ -407,3 +409,9 @@ by the available operand type, not identifier casing. Field bodies use ordinary
 synchronous blocks without self or owner writes. Nominal boundaries, result
 checks, lifetime and service-operation restrictions are defined in
 [the caps contract](object-caps-0.0.1-ru.md). Object views have been removed.
+
+Compact choices use `condition ?? yes !! no` or
+`value ?? .variant(binding): result !! _: fallback`. Nested compact choices
+are forbidden, including through parentheses. See specification §15.1.
+`Maybe<T>` and `Presence<T>` are explicit standard enums; constructor projections
+and `#projected` are removed.

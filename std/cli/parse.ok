@@ -21,7 +21,6 @@ object ParsedCommand{
         confirm length<=1048576 else throw CliFailure(0,"","argument text budget");
         self.origin=origin;self.arguments=snapshot;
     }
-    #projected
     value() is Invocation{CliParsing(origin,arguments).value();}
 }
 object Invocation{

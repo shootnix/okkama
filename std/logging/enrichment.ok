@@ -12,6 +12,5 @@ object FieldLogging does Logging{
 object ChildLogging{
     has origin is NamedLogging;has segment is string;
     ChildLogging(origin is NamedLogging,segment is string){self.origin=origin;self.segment=segment;}
-    #projected
     value() is NamedLogging{origin.child(segment);}
 }

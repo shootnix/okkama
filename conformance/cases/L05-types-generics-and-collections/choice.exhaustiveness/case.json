@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.choice.exhaustiveness",
+  "title": "choice.exhaustiveness",
+  "purpose": "Verify compact choice evaluation, typing and the nesting prohibition.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "TYPE.COMPACT-CHOICE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "Authored for compact choices",
+    "expected_basis": "One evaluation of the subject, lazy branches, exhaustive enum cases, and no nested compact choices."
+  },
+  "status": "mandatory"
+}

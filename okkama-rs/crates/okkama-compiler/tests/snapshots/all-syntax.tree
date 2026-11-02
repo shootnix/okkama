@@ -104,7 +104,6 @@ Program
               - ActionDecl
                 async: false
                 visibility: public
-                projection: (none)
                 name: order
                 params:
                   - Param
@@ -126,7 +125,6 @@ Program
               - ActionDecl
                 async: true
                 visibility: public
-                projection: (none)
                 name: refresh
                 params: []
                 result: SuccessorResult
@@ -150,7 +148,6 @@ Program
               - ActionDecl
                 async: false
                 visibility: public
-                projection: (none)
                 name: has
                 params:
                   - Param
@@ -392,8 +389,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: ProjectionDirective
-            alias: (none)
           name: total
           params: []
           result: NamedType
@@ -408,8 +403,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: ProjectionDirective
-            alias: described
           name: describe
           params: []
           result: NamedType
@@ -425,7 +418,6 @@ Program
         - ActionDecl
           async: true
           visibility: public
-          projection: (none)
           name: load
           params:
             - Param
@@ -454,7 +446,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: order
           params:
             - Param
@@ -476,7 +467,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: is
           params:
             - Param
@@ -497,7 +487,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: has
           params:
             - Param
@@ -518,7 +507,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: deposit
           params:
             - Param
@@ -587,7 +575,6 @@ Program
             - ActionDecl
               async: false
               visibility: private
-              projection: (none)
               name: helper
               params: []
               result: VoidResult
@@ -596,8 +583,6 @@ Program
             - ActionDecl
               async: false
               visibility: private
-              projection: ProjectionDirective
-                alias: secret
               name: hidden
               params: []
               result: NamedType
@@ -685,10 +670,29 @@ Program
                     value: IntLiteral
                       radix: decimal
                       digits: 1
+    - EnumDecl
+      name: Reading
+      cases: [empty, value]
+      generics:
+        - GenericParam
+          name: T
+          bound: (none)
+      variants:
+        - EnumVariant
+          name: empty
+          fields: []
+        - EnumVariant
+          name: value
+          fields:
+            - Param
+              name: item
+              variadic: false
+              type: NamedType
+                path: [T]
+                args: []
     - ActionDecl
       async: true
       visibility: public
-      projection: (none)
       name: main
       params: []
       result: NamedType
@@ -696,6 +700,43 @@ Program
         args: []
       body: Block
         statements:
+          - LetStatement
+            name: optional
+            type: (none)
+            value: OptionalFallback
+              value: Get
+                object: NamedType
+                  path: [Maybe]
+                  args:
+                    - NamedType
+                      path: [int]
+                      args: []
+                name: none
+              fallback: IntLiteral
+                radix: decimal
+                digits: 42
+          - LetStatement
+            name: failed
+            type: (none)
+            value: OptionalFallback
+              value: Get
+                object: NamedType
+                  path: [Maybe]
+                  args:
+                    - NamedType
+                      path: [int]
+                      args: []
+                name: none
+              fallback: ThrowExpression
+                value: Call
+                  callee: NameExpression
+                    name: Problem
+                  arguments:
+                    - Argument
+                      name: (none)
+                      value: StringLiteral
+                        form: quoted
+                        value: "missing"
           - LetStatement
             name: out
             type: (none)
@@ -1005,38 +1046,42 @@ Program
           - LetStatement
             name: projected
             type: (none)
-            value: Projection
-              prefix: described
-              construction: Call
-                callee: NameExpression
-                  name: Account
-                arguments:
-                  - Argument
-                    name: owner
-                    value: StringLiteral
-                      form: quoted
-                      value: "ada"
-                  - Argument
-                    name: nickname
-                    value: StringLiteral
-                      form: quoted
-                      value: "a"
+            value: Call
+              callee: Get
+                object: Call
+                  callee: NameExpression
+                    name: Account
+                  arguments:
+                    - Argument
+                      name: owner
+                      value: StringLiteral
+                        form: quoted
+                        value: "ada"
+                    - Argument
+                      name: nickname
+                      value: StringLiteral
+                        form: quoted
+                        value: "a"
+                name: describe
+              arguments: []
           - LetStatement
             name: qualified
             type: (none)
-            value: Projection
-              prefix: total
-              construction: Call
-                callee: Get
-                  object: NameExpression
-                    name: channels
-                  name: Channel
-                arguments:
-                  - Argument
-                    name: capacity
-                    value: IntLiteral
-                      radix: decimal
-                      digits: 1
+            value: Call
+              callee: Get
+                object: Call
+                  callee: Get
+                    object: NameExpression
+                      name: channels
+                    name: Channel
+                  arguments:
+                    - Argument
+                      name: capacity
+                      value: IntLiteral
+                        radix: decimal
+                        digits: 1
+                name: total
+              arguments: []
           - LetStatement
             name: doubled
             type: (none)

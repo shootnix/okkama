@@ -1,0 +1,11 @@
+module app v1.0.0;
+import "lib/values";
+main() is int {
+    let a = values.Reading<int>.empty;
+    let b = values.Reading.value(42);
+    let n = match b {
+        case values.Reading.empty { 0; }
+        case values.Reading.value(v) { v; }
+    };
+    if a != b && n == 42 { 0; } else { 1; }
+}

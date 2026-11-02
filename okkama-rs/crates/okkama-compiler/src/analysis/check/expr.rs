@@ -28,9 +28,85 @@ impl Checker<'_, '_> {
     pub(super) fn expr(&mut self, expr: &ast::Expr, want: bool, expected: Option<&Ty>) -> Expr {
         let span = expr.span;
         match &expr.kind {
+            ast::ExprKind::Throw(value) => {
+                let value = self.thrown(value);
+                Self::diverged(
+                    ExprKind::Block(crate::analysis::thir::Block {
+                        stmts: vec![crate::analysis::thir::Stmt {
+                            kind: crate::analysis::thir::StmtKind::Throw(value),
+                            span,
+                        }],
+                        span,
+                    }),
+                    span,
+                )
+            }
+            ast::ExprKind::TypeValue(_) => {
+                self.error(span, "A type is not a value");
+                Self::poisoned(span)
+            }
+            ast::ExprKind::Coalesce { value, fallback } => {
+                self.optional_fallback(value, fallback, expected, span)
+            }
             ast::ExprKind::Literal(literal) => self.literal(literal, span),
             ast::ExprKind::Name(name) => self.read_name(name),
             ast::ExprKind::SelfValue => self.self_expr(span),
+            ast::ExprKind::Choice(inner) => {
+                if let ast::ExprKind::If {
+                    condition,
+                    then_block,
+                    else_block,
+                } = &inner.kind
+                {
+                    let check = self.value(condition, Some(&Ty::Bool));
+                    self.expect(&check, &Ty::Bool, condition.span, "Choice condition");
+                    let yes = self.block(then_block, true, expected);
+                    let no = self.block(else_block, true, expected);
+                    let (ty, diverges) = self.join(&[&yes, &no], true, span);
+                    if ty.is_none() && !diverges {
+                        self.error(
+                            span,
+                            "Compact choice branches must produce a value or diverge",
+                        );
+                    }
+                    return Expr {
+                        diverges: check.diverges || diverges,
+                        kind: ExprKind::If {
+                            condition: Box::new(check),
+                            then_block: self.block_of(yes),
+                            else_block: Some(self.block_of(no)),
+                        },
+                        ty,
+                        span,
+                    };
+                }
+                let result = self.expr(inner, true, expected);
+                if result.ty.is_none() && !result.diverges {
+                    self.error(
+                        span,
+                        "Compact choice branches must produce a value or diverge",
+                    );
+                }
+                if let ast::ExprKind::Match(body) = &inner.kind {
+                    let mut names = std::collections::HashSet::new();
+                    for arm in &body.cases {
+                        if let ast::ExprKind::Get { name, .. } = &arm.patterns[0].kind {
+                            if !names.insert(&name.text) {
+                                self.error(name.span, "Duplicate variant pattern");
+                            }
+                        }
+                    }
+                    if let ExprKind::Match(found) = &result.kind {
+                        if !matches!(Self::ty_of(&found.subject), Ty::Enum(_)) {
+                            self.error(span, "Compact patterns require an enum value");
+                        }
+                        if !found.exhaustive && found.else_block.is_none() {
+                            self.error(span, "Non-exhaustive compact match");
+                        }
+                    }
+                }
+                result
+            }
             ast::ExprKind::Grouping(inner) => self.expr(inner, want, expected),
             ast::ExprKind::Unary { op, operand, .. } => self.unary(*op, operand, span),
             ast::ExprKind::Binary {
@@ -50,7 +126,7 @@ impl Checker<'_, '_> {
                     return self.binary_values(*op, lhs, rhs, span);
                 }
                 let lhs = self.value(left, None);
-                let rhs = if is_fake_get(right) {
+                let rhs = if is_fake_get(right) || matches!(lhs.ty, Some(Ty::Variant(..))) {
                     let ty = Self::ty_of(&lhs).taken();
                     self.value(right, Some(&ty))
                 } else {
@@ -103,10 +179,6 @@ impl Checker<'_, '_> {
                 index,
                 fallback,
             } => self.index(object, index, fallback.as_deref(), want, expected, span),
-            ast::ExprKind::Projection {
-                prefix,
-                construction,
-            } => self.projection(prefix, construction, span),
             ast::ExprKind::Functional {
                 operation,
                 receiver,
@@ -257,7 +329,9 @@ impl Checker<'_, '_> {
                 ast::ExprKind::Literal(ast::Literal::Int(int)) => {
                     return match int_value(int) {
                         Some(value) => Self::typed(
-                            ExprKind::Constant(Constant::Int(value.negated().to_string().to_string())),
+                            ExprKind::Constant(Constant::Int(
+                                value.negated().to_string().to_string(),
+                            )),
                             Ty::Int,
                             span,
                         ),
@@ -359,6 +433,11 @@ impl Checker<'_, '_> {
             (lhs, rhs)
         };
         let (left, right) = (Self::ty_of(&lhs).taken(), Self::ty_of(&rhs).taken());
+        if left == right && matches!(op, B::Equal | B::NotEqual) {
+            if let Ty::Variant(id, types) = &left {
+                return self.variant_compare(lhs, rhs, *id, types.clone(), op == B::NotEqual, span);
+            }
+        }
         if left.is_error() || right.is_error() {
             return Self::poisoned(span);
         }
@@ -623,12 +702,38 @@ impl Checker<'_, '_> {
     ) -> Expr {
         let subject = Self::consume(self.value(&body.subject, None));
         let subject_ty = Self::ty_of(&subject).taken();
+        if let Ty::Variant(id, args) = &subject_ty {
+            return self.variant_match(body, subject, *id, args.clone(), want, expected, span);
+        }
         let mut cases = Vec::new();
         let mut arms: Vec<Expr> = Vec::new();
         for case in &body.cases {
             let mut patterns = Vec::new();
             for pattern in &case.patterns {
-                let value = self.value(pattern, Some(&subject_ty));
+                let value = if let (Ty::Enum(id), ast::ExprKind::Get { object, name }) =
+                    (&subject_ty, &pattern.kind)
+                {
+                    if matches!(&object.kind, ast::ExprKind::Name(n) if n.text == "$choice") {
+                        if let Some(case) = self.reg.enums[id.0]
+                            .cases
+                            .iter()
+                            .position(|c| c == &name.text)
+                        {
+                            Self::typed(
+                                ExprKind::EnumCase { ty: *id, case },
+                                subject_ty.clone(),
+                                pattern.span,
+                            )
+                        } else {
+                            self.error(pattern.span, "Unknown enum variant");
+                            Self::poisoned(pattern.span)
+                        }
+                    } else {
+                        self.value(pattern, Some(&subject_ty))
+                    }
+                } else {
+                    self.value(pattern, Some(&subject_ty))
+                };
                 // Совпадение — тот же `==`, что и в выражениях.
                 let probe =
                     Self::typed(ExprKind::Unreachable, subject_ty.clone(), body.subject.span);
@@ -682,7 +787,8 @@ impl Checker<'_, '_> {
                     if let ast::ExprKind::Get { object, name } = &strip_grouping(pattern).kind {
                         if let ast::ExprKind::Name(enum_name) = &strip_grouping(object).kind {
                             if self.local(&enum_name.text).is_none()
-                                && self.enum_named(&enum_name.text) == Some(*id)
+                                && (enum_name.text == "$choice"
+                                    || self.enum_named(&enum_name.text) == Some(*id))
                             {
                                 if let Some(case) = self.reg.enums[id.0]
                                     .cases

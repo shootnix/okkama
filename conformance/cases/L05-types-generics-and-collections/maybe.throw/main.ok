@@ -1,0 +1,3 @@
+module app v1.0.0;
+
+object Absent does Error { Absent(); text() is string { "absent"; } } main() is int { try { Maybe<int>.none else throw Absent(); } catch e is Absent { 0; } }

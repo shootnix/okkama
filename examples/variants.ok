@@ -1,0 +1,62 @@
+module variants v1.0.0;
+
+import "io/stdout" take Stdout;
+import "json" take ParsedJson, JsonKind;
+
+object UserDetails {
+    has name is string;
+    UserDetails(:name);
+    name() is string { name; }
+}
+
+enum UserInput = (name(value is string), details(value is UserDetails));
+
+object UserReader {
+    has source is string;
+    UserReader(:source);
+
+    read() is Presence<UserInput> {
+        let root = ParsedJson(source).value();
+        if !root.has("user") {
+            Presence.missing;
+        } 
+        else {
+            let user = root.get("user");
+            match user.kind() {
+                case JsonKind.null_value { Presence.none; }
+                case JsonKind.object_value {
+                    Presence.some(UserInput.details(UserDetails(name: user.text("name"))));
+                }
+                else {
+                    // Empty strings stay present; wrong types retain the JSON error/path.
+                    Presence.some(UserInput.name(user.text()));
+                }
+            }
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    for ["{}", "{\"user\":null}", "{\"user\":\"Anton\"}", "{\"user\":\"\"}", "{\"user\":{\"name\":\"Anton\"}}"] -> source {
+        let description = match UserReader(source: source).read() {
+            case Presence.missing { "missing" }
+            case Presence.none { "none" }
+            case Presence.some(user) {
+                match user {
+                    case UserInput.name(name) { "name: " + name; }
+                    case UserInput.details(details) { "details: " + details.name(); }
+                }
+            }
+        };
+        out.writeln(description);
+    }
+    let name = Presence<string>.missing.fold() else "anonymous";
+    out.writeln(name);
+    let label = UserReader(source: "{}").read()
+        ?? .some(_): "present"
+        !! .none: "null"
+        !! .missing: "missing";
+    out.writeln(label);
+    0;
+}

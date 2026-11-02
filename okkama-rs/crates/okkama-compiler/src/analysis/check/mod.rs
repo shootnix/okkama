@@ -15,6 +15,7 @@ mod collections;
 mod expr;
 mod generics;
 mod stmt;
+mod variants;
 
 use std::collections::HashMap;
 

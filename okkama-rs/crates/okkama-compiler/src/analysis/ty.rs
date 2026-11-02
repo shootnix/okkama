@@ -45,6 +45,8 @@ pub enum Ty {
     /// Ограниченная ссылка роли с аргументами типа.
     Role(RoleId, Vec<Ty>),
     Enum(EnumId),
+    /// Nominal tagged variants, including generic enums.
+    Variant(EnumId, Vec<Ty>),
     Handle(HandleId),
     /// `^C`: обязательство использования результата successor (§11.9).
     Successor(Box<Ty>),
@@ -135,9 +137,10 @@ impl Ty {
             Ty::Error => true,
             Ty::Array(inner) | Ty::Successor(inner) | Ty::Varargs(inner) => inner.is_error(),
             Ty::Map(key, value) => key.is_error() || value.is_error(),
-            Ty::Object(_, args) | Ty::Role(_, args) | Ty::Cap(_, args, _) => {
-                args.iter().any(Ty::is_error)
-            }
+            Ty::Object(_, args)
+            | Ty::Role(_, args)
+            | Ty::Variant(_, args)
+            | Ty::Cap(_, args, _) => args.iter().any(Ty::is_error),
             Ty::Action(action) => {
                 action.params.iter().any(Ty::is_error)
                     || action.result.as_ref().is_some_and(Ty::is_error)
@@ -161,6 +164,9 @@ impl Ty {
             Ty::Successor(inner) => Ty::Successor(Box::new(inner.subst(env))),
             Ty::Varargs(inner) => Ty::Varargs(Box::new(inner.subst(env))),
             Ty::Map(key, value) => Ty::Map(Box::new(key.subst(env)), Box::new(value.subst(env))),
+            Ty::Variant(id, args) => {
+                Ty::Variant(*id, args.iter().map(|arg| arg.subst(env)).collect())
+            }
             Ty::Object(id, args) => {
                 Ty::Object(*id, args.iter().map(|arg| arg.subst(env)).collect())
             }
@@ -184,9 +190,10 @@ impl Ty {
             Ty::Param(_) => true,
             Ty::Array(inner) | Ty::Successor(inner) | Ty::Varargs(inner) => inner.mentions_param(),
             Ty::Map(key, value) => key.mentions_param() || value.mentions_param(),
-            Ty::Object(_, args) | Ty::Role(_, args) | Ty::Cap(_, args, _) => {
-                args.iter().any(Ty::mentions_param)
-            }
+            Ty::Object(_, args)
+            | Ty::Role(_, args)
+            | Ty::Variant(_, args)
+            | Ty::Cap(_, args, _) => args.iter().any(Ty::mentions_param),
             Ty::Action(action) => {
                 action.params.iter().any(Ty::mentions_param)
                     || action.result.as_ref().is_some_and(Ty::mentions_param)

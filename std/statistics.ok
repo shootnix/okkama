@@ -81,7 +81,6 @@ object Mean {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0
             else throw StatisticsError("mean requires at least one value");
@@ -96,7 +95,6 @@ object GeometricMean {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0 else throw StatisticsError(
             "geometric mean requires at least one value"
@@ -118,7 +116,6 @@ object HarmonicMean {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0 else throw StatisticsError(
             "harmonic mean requires at least one value"
@@ -140,7 +137,6 @@ object Median {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0
             else throw StatisticsError("median requires at least one value");
@@ -155,7 +151,6 @@ object MedianLow {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0
             else throw StatisticsError("median requires at least one value");
@@ -170,7 +165,6 @@ object MedianHigh {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0
             else throw StatisticsError("median requires at least one value");
@@ -227,7 +221,6 @@ object Mode<T> {
         origin = Modes(values: values);
     }
 
-    #projected
     value() is T {
         confirm origin.size() > 0
             else throw StatisticsError("mode requires at least one value");
@@ -310,7 +303,6 @@ object SampleVariance {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() >= 2 else throw StatisticsError(
             "sample variance requires at least two values"
@@ -326,7 +318,6 @@ object PopulationVariance {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0 else throw StatisticsError(
             "population variance requires at least one value"
@@ -342,7 +333,6 @@ object SampleDeviation {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() >= 2 else throw StatisticsError(
             "sample deviation requires at least two values"
@@ -358,7 +348,6 @@ object PopulationDeviation {
         origin = FloatSample(values: values);
     }
 
-    #projected
     value() is float {
         confirm origin.size() > 0 else throw StatisticsError(
             "population deviation requires at least one value"
@@ -376,7 +365,6 @@ object Covariance {
         self.right = FloatSample(values: right);
     }
 
-    #projected
     value() is float {
         confirm left.size() == right.size() else throw UnequalSizes();
         confirm left.size() >= 2 else throw StatisticsError(
@@ -395,7 +383,6 @@ object Correlation {
         self.right = FloatSample(values: right);
     }
 
-    #projected
     value() is float {
         confirm left.size() == right.size() else throw UnequalSizes();
         confirm left.size() >= 2 else throw StatisticsError(
@@ -452,7 +439,6 @@ object StatisticsError does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

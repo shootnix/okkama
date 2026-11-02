@@ -255,7 +255,9 @@ impl Lexer<'_> {
                 self.add(kind);
             }
             b'?' => {
-                let kind = if self.eat(b'.') {
+                let kind = if self.eat(b'?') {
+                    K::Choice
+                } else if self.eat(b'.') {
                     K::QuestionDot
                 } else {
                     K::Question

@@ -71,7 +71,7 @@ object SecureRandom does Randomizing {
 
     integer(start is int, stop is int) is int {
         confirm start < stop else throw InvalidRandomRange(start, stop);
-        value SecureInteger(start: start, stop: stop);
+        SecureInteger(start: start, stop: stop).value();
     }
 
     float() is float {
@@ -94,7 +94,6 @@ object SecureInteger {
         ending = stop;
     }
 
-    #projected
     value() is int {
         let sample is @byte = SecureBytes(size: 8).bytes();
         if random_sample_accepted(sample, beginning, ending) {
@@ -143,7 +142,6 @@ object InvalidRandomRange does Error {
     start() is int { beginning; }
     stop() is int { ending; }
 
-    #projected
     text() is string {
         "random range must satisfy start < stop";
     }
@@ -161,7 +159,6 @@ object InvalidRandomSize does Error {
     requested() is int { amount; }
     maximum() is int { limit; }
 
-    #projected
     text() is string {
         "random byte size must be between zero and " + limit.string();
     }
@@ -170,7 +167,6 @@ object InvalidRandomSize does Error {
 object UnavailableRandom does Error {
     UnavailableRandom();
 
-    #projected
     text() is string {
         "secure random source is unavailable";
     }

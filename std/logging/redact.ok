@@ -34,7 +34,6 @@ object RedactedLogCause does Error{
 object ChangedLogRecord{
     has origin is LogRecord;has fields is LogFields;has causes is @Error;
     ChangedLogRecord(origin is LogRecord,fields is LogFields,causes is @Error){confirm causes.size()<=1 else throw InvalidLogField("only one cause allowed");self.origin=origin;self.fields=fields;self.causes=causes;}
-    #projected
     value() is LogRecord{
         let context=LogContext(origin.context().name(),fields,origin.context().process());
         if causes.size()==0{LogRecord(origin.time(),origin.level(),origin.message(),context);}else{LogRecord(origin.time(),origin.level(),origin.message(),context,causes[0]);}

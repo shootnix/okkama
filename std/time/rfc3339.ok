@@ -50,7 +50,6 @@ object Rfc3339 {
         self.offset = offset;
     }
 
-    #projected
     string() is string {
         let epoch is LocalDateTime = LocalDateTime(
             date: Date(year: 1970, month: 1, day: 1),
@@ -84,7 +83,6 @@ object InstantFromRfc3339 {
         self.origin = origin;
     }
 
-    #projected
     value() is Instant {
         let length is int = origin.length();
         confirm length >= 20 else throw InvalidRfc3339(origin);
@@ -103,7 +101,7 @@ object InstantFromRfc3339 {
             origin.slice(0, length - 6);
         };
         let local is LocalDateTime = try {
-            value LocalDateTimeFromIso(origin: local_source);
+            LocalDateTimeFromIso(origin: local_source).value();
         }
         catch error is InvalidIsoLocalDateTime {
             throw InvalidRfc3339(origin);
@@ -114,12 +112,12 @@ object InstantFromRfc3339 {
         }
         else {
             try {
-                let hour is int = value ParsedInt(
+                let hour is int = ParsedInt(
                     origin.slice(length - 5, length - 3)
-                );
-                let minute is int = value ParsedInt(
+                ).value();
+                let minute is int = ParsedInt(
                     origin.slice(length - 2, length)
-                );
+                ).value();
                 confirm hour <= 23 && minute <= 59
                     else throw InvalidRfc3339(origin);
                 let sign is int = if origin.slice(length - 6, length - 5) == "-" {
@@ -153,7 +151,6 @@ object InvalidRfc3339 does Error {
         self.origin = origin;
     }
 
-    #projected
     text() is string {
         "invalid RFC 3339 timestamp: " + origin;
     }
@@ -166,7 +163,6 @@ object InvalidRfc3339Offset does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

@@ -28,7 +28,6 @@ object BigRational does Comparing<BigRational> {
 object BigRationalSum {
     has left, right is BigRational;
     BigRationalSum(:left, :right);
-    #projected
     value() is BigRational {
         let first = BigProduct(left: left.numerator(), right: right.denominator()).value();
         let second = BigProduct(left: right.numerator(), right: left.denominator()).value();
@@ -40,7 +39,6 @@ object BigRationalSum {
 object BigRationalDifference {
     has left, right is BigRational;
     BigRationalDifference(:left, :right);
-    #projected
     value() is BigRational {
         let first = BigProduct(left: left.numerator(), right: right.denominator()).value();
         let second = BigProduct(left: right.numerator(), right: left.denominator()).value();
@@ -52,7 +50,6 @@ object BigRationalDifference {
 object BigRationalProduct {
     has left, right is BigRational;
     BigRationalProduct(:left, :right);
-    #projected
     value() is BigRational {
         BigRational(numerator: BigProduct(left: left.numerator(), right: right.numerator()).value(),
             denominator: BigProduct(left: left.denominator(), right: right.denominator()).value());
@@ -62,7 +59,6 @@ object BigRationalProduct {
 object BigRationalQuotient {
     has left, right is BigRational;
     BigRationalQuotient(:left, :right);
-    #projected
     value() is BigRational {
         confirm right.numerator().sign() != 0 else throw BigRationalDivisionByZero();
         BigRational(numerator: BigProduct(left: left.numerator(), right: right.denominator()).value(),

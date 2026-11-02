@@ -81,8 +81,7 @@ impl Linter<'_, '_> {
                 callee: Callee::Method { object, method, .. },
                 ..
             }
-            | ExprKind::BoundAction { object, method, .. }
-            | ExprKind::Projection { object, method, .. } => found.push((object.0, *method)),
+            | ExprKind::BoundAction { object, method, .. } => found.push((object.0, *method)),
             _ => {}
         });
         self.called.extend(found);
@@ -202,7 +201,12 @@ impl Linter<'_, '_> {
             .collect();
         for import in &program.imports {
             // Скрытый импорт пути `std.…` пользователь не писал: путь и есть использование.
-            if import.path.literal.value.starts_with(crate::lowering::std_paths::STD_IMPORT) {
+            if import
+                .path
+                .literal
+                .value
+                .starts_with(crate::lowering::std_paths::STD_IMPORT)
+            {
                 continue;
             }
             if let Some(alias) = &import.alias {
@@ -444,6 +448,11 @@ fn walk_source(source: &thir::Source, visit: &mut dyn FnMut(&thir::Expr)) {
 fn walk_expr(expr: &thir::Expr, visit: &mut dyn FnMut(&thir::Expr)) {
     visit(expr);
     match &expr.kind {
+        ExprKind::VariantNew { values, .. } => {
+            for value in values {
+                walk_expr(value, visit);
+            }
+        }
         ExprKind::Constant(_)
         | ExprKind::Local(_)
         | ExprKind::SelfValue
@@ -454,17 +463,15 @@ fn walk_expr(expr: &thir::Expr, visit: &mut dyn FnMut(&thir::Expr)) {
         | ExprKind::TestCapability
         | ExprKind::Unreachable
         | ExprKind::Closure { .. } => {}
-        ExprKind::Unary { operand: value, .. }
+        ExprKind::VariantTag(value)
+        | ExprKind::VariantGet { value, .. }
+        | ExprKind::Unary { operand: value, .. }
         | ExprKind::Coerce { value, .. }
         | ExprKind::Cast { value, .. }
         | ExprKind::Panic(value)
         | ExprKind::Unpack(value)
         | ExprKind::Await(value)
         | ExprKind::Spawn(value)
-        | ExprKind::Projection {
-            construction: value,
-            ..
-        }
         | ExprKind::CapSelect { owner: value, .. }
         | ExprKind::CapRead { cap: value, .. }
         | ExprKind::BoundRoleAction {
@@ -669,17 +676,16 @@ fn children_of<'b>(
     blocks: &mut Vec<&'b thir::Block>,
 ) {
     match &expr.kind {
-        ExprKind::Unary { operand: value, .. }
+        ExprKind::VariantNew { values, .. } => out.extend(values),
+        ExprKind::VariantTag(value)
+        | ExprKind::VariantGet { value, .. }
+        | ExprKind::Unary { operand: value, .. }
         | ExprKind::Coerce { value, .. }
         | ExprKind::Cast { value, .. }
         | ExprKind::Panic(value)
         | ExprKind::Unpack(value)
         | ExprKind::Await(value)
         | ExprKind::Spawn(value)
-        | ExprKind::Projection {
-            construction: value,
-            ..
-        }
         | ExprKind::CapSelect { owner: value, .. }
         | ExprKind::CapRead { cap: value, .. }
         | ExprKind::BoundRoleAction {

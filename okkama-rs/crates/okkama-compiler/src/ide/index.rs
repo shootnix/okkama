@@ -597,6 +597,14 @@ impl<'r, 'a> Builder<'r, 'a> {
 
     fn expr(&mut self, expr: &thir::Expr, body: &Body, object: Option<ObjectId>) {
         match &expr.kind {
+            ExprKind::VariantNew { values, .. } => {
+                for value in values {
+                    self.expr(value, body, object);
+                }
+            }
+            ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
+                self.expr(value, body, object)
+            }
             ExprKind::Constant(_) | ExprKind::TestCapability | ExprKind::Unreachable => {}
             ExprKind::SelfValue => {
                 if let Some(object) = object {
@@ -731,7 +739,6 @@ impl<'r, 'a> Builder<'r, 'a> {
                     }
                 }
             }
-            ExprKind::Projection { construction, .. } => self.expr(construction, body, object),
             ExprKind::Pack { items, spread } => {
                 self.exprs(items, body, object);
                 if let Some(spread) = spread {

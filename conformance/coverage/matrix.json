@@ -4286,7 +4286,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "`#projected` / `#projected(alias)` marks constructor projections; single `&` projection syntax is removed"
+   "title": "Constructor projections and action directives are removed; use ordinary method calls"
   },
   {
    "aspects": {
@@ -4425,6 +4425,60 @@
    ],
    "status": "mandatory",
    "title": "Role declarations with signatures, an optional fake block and tests"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L01.gram.tail-expression"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression"
+     ],
+     "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
+    },
+    "interaction": {
+     "cases": [
+      "L01.gram.tail-expression"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression"
+     ],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L01.gram.tail-expression.let",
+      "L01.gram.tail-expression.return",
+      "L01.gram.tail-expression.separator"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression.let",
+      "L01.gram.tail-expression.return",
+      "L01.gram.tail-expression.separator"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L01.gram.tail-expression"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "GRAM.TAIL-EXPRESSION",
+   "discrepancies": [],
+   "family": "Grammar",
+   "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#9.7",
+    "docs/okkama-spec-11072026.md#8.11"
+   ],
+   "status": "mandatory",
+   "title": "Final expressions may omit semicolons before } without changing their value"
   },
   {
    "aspects": {
@@ -7129,7 +7183,7 @@
     "docs/okkama-spec-11072026.md#11.3"
    ],
    "status": "mandatory",
-   "title": "`#projected` constructor projections: prefix calls equal construction then the marked action"
+   "title": "Constructor projections and action directives are removed; use ordinary method calls"
   },
   {
    "aspects": {
@@ -26050,6 +26104,136 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "mandatory_cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "mandatory_cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.choice.exhaustiveness",
+      "L05.choice.mixed",
+      "L05.choice.nested-branch",
+      "L05.choice.nested-call",
+      "L05.choice.nested-subject",
+      "L05.choice.scope",
+      "L05.choice.types"
+     ],
+     "mandatory_cases": [
+      "L05.choice.exhaustiveness",
+      "L05.choice.mixed",
+      "L05.choice.nested-branch",
+      "L05.choice.nested-call",
+      "L05.choice.nested-subject",
+      "L05.choice.scope",
+      "L05.choice.types"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "mandatory_cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "TYPE.COMPACT-CHOICE",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+   ],
+   "status": "mandatory",
+   "title": "Non-nested lazy boolean and exhaustive enum choices with ?? and !!"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L05.maybe.states"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.states"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.maybe.presence",
+      "L05.maybe.throw"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.presence",
+      "L05.maybe.throw"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.maybe.no-collapse"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.no-collapse"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.maybe.presence",
+      "L05.maybe.states"
+     ],
+     "mandatory_cases": [
+      "L05.maybe.presence",
+      "L05.maybe.states"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "TYPE.MAYBE-PRESENCE",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+   ],
+   "status": "mandatory",
+   "title": "Maybe and Presence preserve absence states; explicit fold and lazy fallback"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -26097,6 +26281,64 @@
    ],
    "status": "mandatory",
    "title": "Object, role and enum types are nominal; same shape is not same type"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L05.variants.nested"
+     ],
+     "mandatory_cases": [
+      "L05.variants.nested"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.variants.evaluation",
+      "L05.variants.modules",
+      "L05.variants.ownership",
+      "L05.variants.payload"
+     ],
+     "mandatory_cases": [
+      "L05.variants.evaluation",
+      "L05.variants.modules",
+      "L05.variants.ownership",
+      "L05.variants.payload"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.variants.exhaustiveness",
+      "L05.variants.payload-type",
+      "L05.variants.recursive"
+     ],
+     "mandatory_cases": [
+      "L05.variants.exhaustiveness",
+      "L05.variants.payload-type",
+      "L05.variants.recursive"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.variants.payload"
+     ],
+     "mandatory_cases": [
+      "L05.variants.payload"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "TYPE.VARIANTS",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+   ],
+   "status": "mandatory",
+   "title": "Nominal generic enums carry typed payloads and require exhaustive patterns"
   },
   {
    "aspects": {
@@ -29759,5 +30001,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "94494da9608e95ef3b5e832c28055fc0e0e4f0d97eafbbc8567c40d6f069b911"
+ "suite_tree_sha256": "3cb4a14baee71dbe378618e3c29556ccdd224ee930214138a0e11b208ab53bce"
 }

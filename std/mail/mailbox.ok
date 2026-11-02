@@ -385,7 +385,7 @@ object MaildirPublication {
         self.path=path;self.temporary=temporary;self.entries=entries;self.random=random;
     }
     identifier() is string {
-        let source=FileEntry(value TemporaryFilePath(temporary));
+        let source=FileEntry(TemporaryFilePath(temporary).value());
         for (0..32) -> attempt {
             let bytes=random.bytes(24);confirm bytes.size()==24 else throw InvalidMailbox(0,"maildir randomness must return 24 bytes");
             let identifier=HexEncoded(bytes).string();

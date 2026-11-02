@@ -6,9 +6,9 @@ mod common;
 
 use common::parse_in;
 use okkama_compiler::source::SourceFile;
-use okkama_compiler::syntax::{ParseMode, ParseOptions, lexer, parse};
-use okkama_compiler::syntax::ast::{BinaryOp, Expr, ExprKind, Name};
 use okkama_compiler::source::Span;
+use okkama_compiler::syntax::ast::{BinaryOp, Expr, ExprKind, Name};
+use okkama_compiler::syntax::{ParseMode, ParseOptions, lexer, parse};
 
 const SAMPLE: &str = include_str!("fixtures/all-syntax.ok");
 
@@ -332,14 +332,24 @@ fn long_chains_are_reported_not_overflowed() {
         for shape in CHAINS {
             let longest = if shape == "+" { 1_000_000 } else { 300_000 };
             for length in [10_000, longest] {
-                let message = parse_in(&chain(shape, length), ParseMode::Full).expect_err(shape).0;
-                assert!(message.starts_with("Expression nesting is too deep"), "{shape} × {length}: {message}");
+                let message = parse_in(&chain(shape, length), ParseMode::Full)
+                    .expect_err(shape)
+                    .0;
+                assert!(
+                    message.starts_with("Expression nesting is too deep"),
+                    "{shape} × {length}: {message}"
+                );
                 // The same chain with a syntax error after it: still a diagnostic.
                 let broken = chain(shape, length).replace("; 0; }", " 0; }");
-                assert!(parse_in(&broken, ParseMode::Full).is_err(), "{shape} × {length}");
+                assert!(
+                    parse_in(&broken, ParseMode::Full).is_err(),
+                    "{shape} × {length}"
+                );
             }
         }
-        let message = parse_in(&chain("select", 100_000), ParseMode::Full).expect_err("select").0;
+        let message = parse_in(&chain("select", 100_000), ParseMode::Full)
+            .expect_err("select")
+            .0;
         assert!(!message.is_empty());
     });
 }
@@ -372,7 +382,10 @@ fn chains_up_to_the_tree_limit_pass_every_phase_on_a_small_stack() {
 fn deep_expressions_drop_without_recursion() {
     on_small_stack(|| {
         let leaf = || Expr {
-            kind: ExprKind::Name(Name { text: "a".into(), span: Span::empty(0) }),
+            kind: ExprKind::Name(Name {
+                text: "a".into(),
+                span: Span::empty(0),
+            }),
             span: Span::empty(0),
         };
         let mut expr = leaf();
@@ -393,10 +406,79 @@ fn deep_expressions_drop_without_recursion() {
 
 #[test]
 fn program_size_is_limited() {
-    let text = format!("module app v1.0.0; main() is int {{ {} 0; }}", "let x = 1; ".repeat(2000));
+    let text = format!(
+        "module app v1.0.0; main() is int {{ {} 0; }}",
+        "let x = 1; ".repeat(2000)
+    );
     let source = SourceFile::new("big.ok", text).unwrap();
-    let options = ParseOptions { max_nodes: 1000, ..ParseOptions::default() };
+    let options = ParseOptions {
+        max_nodes: 1000,
+        ..ParseOptions::default()
+    };
     let error = parse(&source, &options).expect_err("too large");
-    assert!(error[0].message.starts_with("Program is too large"), "{}", error[0].message);
+    assert!(
+        error[0].message.starts_with("Program is too large"),
+        "{}",
+        error[0].message
+    );
 }
 
+#[test]
+fn optional_and_compact_choices_obey_tree_budgets() {
+    on_small_stack(|| {
+        let deep = vec!["1"; 300].join(" + ");
+        for body in [
+            format!("true ?? {deep} !! 0"),
+            format!("Maybe.some(1) ?? .some(v): {deep} !! .none: 0"),
+            format!("Maybe<int>.none else {deep}"),
+            format!("Maybe<int>.none else throw Failure({deep})"),
+        ] {
+            let source = SourceFile::new(
+                "choices.ok",
+                format!("module app; main() is int {{ {body}; }}"),
+            )
+            .unwrap();
+            let error =
+                parse(&source, &ParseOptions::default()).expect_err("deep choice must be bounded");
+            assert!(
+                error[0]
+                    .message
+                    .starts_with("Expression nesting is too deep"),
+                "{}",
+                error[0].message
+            );
+        }
+        let short = SourceFile::new(
+            "choices.ok",
+            "module app; main() is int { Maybe<int>.none else 42; }",
+        )
+        .unwrap();
+        assert!(parse(&short, &ParseOptions::default()).is_ok());
+    });
+}
+
+#[test]
+fn optional_and_choice_nodes_drop_without_recursion() {
+    on_small_stack(|| {
+        let leaf = || Expr {
+            kind: ExprKind::SelfValue,
+            span: Span::empty(0),
+        };
+        let mut expr = leaf();
+        for index in 0..100_000 {
+            let kind = match index % 3 {
+                0 => ExprKind::Choice(Box::new(expr)),
+                1 => ExprKind::Throw(Box::new(expr)),
+                _ => ExprKind::Coalesce {
+                    value: Box::new(expr),
+                    fallback: Box::new(leaf()),
+                },
+            };
+            expr = Expr {
+                kind,
+                span: Span::empty(0),
+            };
+        }
+        drop(expr);
+    });
+}

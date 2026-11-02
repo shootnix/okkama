@@ -145,7 +145,6 @@ object InvalidCaptureLimit does Error {
 
     limit() is int { origin; }
 
-    #projected
     text() is string {
         "capture limit must be positive, got " + origin.string();
     }
@@ -164,6 +163,5 @@ object CaptureLimitExceeded does Error {
 
     limit() is int { capture_limit; }
 
-    #projected
     text() is string { "command capture limit exceeded"; }
 }

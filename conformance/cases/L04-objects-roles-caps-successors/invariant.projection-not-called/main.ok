@@ -14,7 +14,6 @@ object Checked {
         confirm value >= 0 else throw NegativeValue();
     }
 
-    #projected
     positive() is int {
         Stdout().writeln("projection ran");
         value;
@@ -24,11 +23,11 @@ object Checked {
 main() is int {
     let out = Stdout();
     let r = try {
-        positive Checked(-3);
+        Checked(-3).positive();
     } catch e is NegativeValue {
         -1;
     };
     out.writeln(r.string());
-    out.writeln((positive Checked(4)).string());
+    out.writeln((Checked(4).positive()).string());
     0;
 }

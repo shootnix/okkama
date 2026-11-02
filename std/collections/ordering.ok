@@ -148,9 +148,8 @@ object PositionOf<T: Comparing<T>> {
         sought = item;
     }
 
-    #projected
     value() is int {
-        let position = value LowerBound(origin: origin, item: sought);
+        let position = LowerBound(origin: origin, item: sought).value();
         confirm position < origin.size()
             && origin.item(position).order(sought) == Order.equal
             else throw MissingItem();
@@ -167,14 +166,13 @@ object LowerBound<T: Comparing<T>> {
         sought = item;
     }
 
-    #projected
     value() is int {
-        value LowerSearching(
+        LowerSearching(
             origin: origin,
             item: sought,
             start: 0,
             stop: origin.size(),
-        );
+        ).value();
     }
 }
 
@@ -187,14 +185,13 @@ object UpperBound<T: Comparing<T>> {
         sought = item;
     }
 
-    #projected
     value() is int {
-        value UpperSearching(
+        UpperSearching(
             origin: origin,
             item: sought,
             start: 0,
             stop: origin.size(),
-        );
+        ).value();
     }
 }
 
@@ -218,7 +215,6 @@ object LowerSearching<T: Comparing<T>> {
         ending = stop;
     }
 
-    #projected
     value() is int {
         if beginning >= ending {
             beginning;
@@ -226,20 +222,20 @@ object LowerSearching<T: Comparing<T>> {
         else {
             let middle = beginning + ((ending - beginning) / 2).int();
             if origin.item(middle).order(sought) == Order.less {
-                value LowerSearching(
+                LowerSearching(
                     origin: origin,
                     item: sought,
                     start: middle + 1,
                     stop: ending,
-                );
+                ).value();
             }
             else {
-                value LowerSearching(
+                LowerSearching(
                     origin: origin,
                     item: sought,
                     start: beginning,
                     stop: middle,
-                );
+                ).value();
             }
         }
     }
@@ -265,7 +261,6 @@ object UpperSearching<T: Comparing<T>> {
         ending = stop;
     }
 
-    #projected
     value() is int {
         if beginning >= ending {
             beginning;
@@ -273,20 +268,20 @@ object UpperSearching<T: Comparing<T>> {
         else {
             let middle = beginning + ((ending - beginning) / 2).int();
             if origin.item(middle).order(sought) == Order.greater {
-                value UpperSearching(
+                UpperSearching(
                     origin: origin,
                     item: sought,
                     start: beginning,
                     stop: middle,
-                );
+                ).value();
             }
             else {
-                value UpperSearching(
+                UpperSearching(
                     origin: origin,
                     item: sought,
                     start: middle + 1,
                     stop: ending,
-                );
+                ).value();
             }
         }
     }

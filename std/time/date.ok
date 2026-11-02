@@ -62,7 +62,7 @@ object Date does Comparing<Date> {
     }
 
     weekday() is Weekday {
-        match ((value DateOrdinal(origin: self)) - 1) % 7 {
+        match ((DateOrdinal(origin: self).value()) - 1) % 7 {
             case 0 { Weekday.monday; }
             case 1 { Weekday.tuesday; }
             case 2 { Weekday.wednesday; }
@@ -97,12 +97,11 @@ object ShiftedDate {
         self.days = days;
     }
 
-    #projected
     value() is Date {
-        let ordinal is int = value DateOrdinal(origin: origin);
+        let ordinal is int = DateOrdinal(origin: origin).value();
         confirm days >= 1 - ordinal && days <= 3652059 - ordinal
             else throw InvalidDate("shifted date is outside years 1..9999");
-        value OrdinalDate(origin: ordinal + days);
+        OrdinalDate(origin: ordinal + days).value();
     }
 }
 
@@ -115,10 +114,9 @@ object DaysBetween {
         self.right = right;
     }
 
-    #projected
     value() is int {
-        (value DateOrdinal(origin: right))
-            - (value DateOrdinal(origin: left));
+        (DateOrdinal(origin: right).value())
+            - (DateOrdinal(origin: left).value());
     }
 }
 
@@ -130,7 +128,6 @@ object DateOrdinal {
         self.origin = origin;
     }
 
-    #projected
     value() is int {
         let year is int = origin.year();
         let month is int = origin.month();
@@ -162,7 +159,6 @@ object OrdinalDate {
         self.origin = origin;
     }
 
-    #projected
     value() is Date {
         confirm origin >= 1 && origin <= 3652059
             else throw InvalidDate("date ordinal is outside years 1..9999");
@@ -205,7 +201,6 @@ object InvalidDate does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

@@ -32,7 +32,6 @@ object Minimum<T: Comparing<T>> {
         origin = values;
     }
 
-    #projected
     value() is T {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence();
@@ -49,7 +48,6 @@ object Maximum<T: Comparing<T>> {
         origin = values;
     }
 
-    #projected
     value() is T {
         let cursor = origin.cursor();
         confirm cursor.available() else throw EmptySequence();
@@ -66,7 +64,6 @@ object Sum {
         origin = values;
     }
 
-    #projected
     value() is float {
         origin.reduce(0.0) -> total, item { total + item; };
     }
@@ -79,7 +76,6 @@ object AccurateSum {
         origin = values;
     }
 
-    #projected
     value() is float {
         origin.reduce(AccurateTotal(sum: 0.0, correction: 0.0)) -> total, item {
             total.addition(item);
@@ -124,7 +120,6 @@ object Product {
         origin = values;
     }
 
-    #projected
     value() is float {
         origin.reduce(1.0) -> product, item { product * item; };
     }
@@ -139,7 +134,6 @@ object SumOfProducts {
         self.right = right;
     }
 
-    #projected
     value() is float {
         StrictlyZipped(left: left, right: right).reduce(0.0) -> total, pair {
             total + pair.first() * pair.second();
@@ -154,7 +148,6 @@ object Hypotenuse {
         origin = values;
     }
 
-    #projected
     value() is float {
         origin.reduce(ScaledSquares(scale: 0.0, squares: 1.0)) -> state, item {
             state.addition(item);
@@ -171,7 +164,6 @@ object Distance {
         self.right = right;
     }
 
-    #projected
     value() is float {
         confirm left.size() == right.size() else throw UnequalSizes();
         (0..left.size()).reduce(ScaledSquares(scale: 0.0, squares: 1.0)) -> state, index {

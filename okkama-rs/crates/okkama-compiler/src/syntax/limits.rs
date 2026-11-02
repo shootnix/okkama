@@ -48,7 +48,11 @@ impl Node<'_> {
 
 /// Глубина и размер дерева; при превышении предела — место первого узла
 /// сверх предела.
-pub fn measure<'a>(program: &'a Program, max_depth: usize, max_nodes: usize) -> Result<TreeSize, (Span, TreeSize)> {
+pub fn measure<'a>(
+    program: &'a Program,
+    max_depth: usize,
+    max_nodes: usize,
+) -> Result<TreeSize, (Span, TreeSize)> {
     let mut stack: Vec<(Node<'a>, usize)> = Vec::new();
     for item in &program.items {
         push_item(item, &mut stack);
@@ -78,7 +82,9 @@ pub fn measure<'a>(program: &'a Program, max_depth: usize, max_nodes: usize) -> 
             Node::Match(body) => {
                 push(Node::Expr(&body.subject));
                 for case in &body.cases {
-                    case.patterns.iter().for_each(|pattern| push(Node::Expr(pattern)));
+                    case.patterns
+                        .iter()
+                        .for_each(|pattern| push(Node::Expr(pattern)));
                     push(Node::Block(&case.body));
                 }
                 if let Some(block) = &body.else_block {
@@ -87,7 +93,9 @@ pub fn measure<'a>(program: &'a Program, max_depth: usize, max_nodes: usize) -> 
             }
             Node::Try(body) => {
                 push(Node::Block(&body.body));
-                body.catches.iter().for_each(|catch| push(Node::Block(&catch.body)));
+                body.catches
+                    .iter()
+                    .for_each(|catch| push(Node::Block(&catch.body)));
             }
         }
     }
@@ -165,7 +173,10 @@ fn push_members<'a>(members: &'a [ObjectMember], block: &mut impl FnMut(&'a Bloc
                 }
             }
             ObjectMember::Action(action) => block(&action.body),
-            ObjectMember::Private(section) => section.actions.iter().for_each(|action| block(&action.body)),
+            ObjectMember::Private(section) => section
+                .actions
+                .iter()
+                .for_each(|action| block(&action.body)),
         }
     }
 }
@@ -183,22 +194,43 @@ fn push_defaults<'a>(members: &'a [ObjectMember], stack: &mut Vec<(Node<'a>, usi
 fn expr_children<'a>(expr: &'a Expr, push: &mut impl FnMut(Node<'a>)) {
     let mut expr_node = |child: &'a Expr| push(Node::Expr(child));
     match &expr.kind {
-        ExprKind::Grouping(operand)
+        ExprKind::Choice(operand)
+        | ExprKind::Throw(operand)
+        | ExprKind::Grouping(operand)
         | ExprKind::Unary { operand, .. }
         | ExprKind::Unpack { operand, .. }
-        | ExprKind::Get { object: operand, .. }
-        | ExprKind::Select { object: operand, .. }
-        | ExprKind::Projection { construction: operand, .. }
+        | ExprKind::Get {
+            object: operand, ..
+        }
+        | ExprKind::Select {
+            object: operand, ..
+        }
         | ExprKind::Panic { value: operand }
         | ExprKind::Await { value: operand }
         | ExprKind::Spawn { call: operand } => expr_node(operand),
-        ExprKind::Binary { left, right, .. }
-        | ExprKind::StreamWrite { sink: left, source: right, .. }
-        | ExprKind::Range { start: left, end: right, .. } => {
+        ExprKind::Coalesce {
+            value: left,
+            fallback: right,
+        }
+        | ExprKind::Binary { left, right, .. }
+        | ExprKind::StreamWrite {
+            sink: left,
+            source: right,
+            ..
+        }
+        | ExprKind::Range {
+            start: left,
+            end: right,
+            ..
+        } => {
             expr_node(left);
             expr_node(right);
         }
-        ExprKind::Index { object, index, fallback } => {
+        ExprKind::Index {
+            object,
+            index,
+            fallback,
+        } => {
             expr_node(object);
             expr_node(index);
             if let Some(fallback) = fallback {
@@ -210,7 +242,12 @@ fn expr_children<'a>(expr: &'a Expr, push: &mut impl FnMut(Node<'a>)) {
             args.iter().for_each(|arg| expr_node(&arg.value));
         }
         ExprKind::ArrayCast { args, .. } => args.iter().for_each(|arg| expr_node(&arg.value)),
-        ExprKind::Functional { receiver, args, body, .. } => {
+        ExprKind::Functional {
+            receiver,
+            args,
+            body,
+            ..
+        } => {
             expr_node(receiver);
             args.iter().for_each(|arg| expr_node(&arg.value));
             push(Node::Block(body));
@@ -223,14 +260,22 @@ fn expr_children<'a>(expr: &'a Expr, push: &mut impl FnMut(Node<'a>)) {
                 expr_node(&entry.value);
             }
         }
-        ExprKind::If { condition, then_block, else_block } => {
+        ExprKind::If {
+            condition,
+            then_block,
+            else_block,
+        } => {
             expr_node(condition);
             push(Node::Block(then_block));
             push(Node::Block(else_block));
         }
         ExprKind::Match(body) => push(Node::Match(body)),
         ExprKind::Try(body) => push(Node::Try(body)),
-        ExprKind::Literal(_) | ExprKind::Name(_) | ExprKind::SelfValue | ExprKind::OwnerField { .. } => {}
+        ExprKind::TypeValue(_)
+        | ExprKind::Literal(_)
+        | ExprKind::Name(_)
+        | ExprKind::SelfValue
+        | ExprKind::OwnerField { .. } => {}
     }
 }
 
@@ -246,9 +291,9 @@ fn stmt_children<'a>(stmt: &'a Stmt, push: &mut impl FnMut(Node<'a>)) {
         | StmtKind::SuccessorAssign { value, .. }
         | StmtKind::FieldBind { value, .. }
         | StmtKind::SelfFieldBind { value, .. } => push(Node::Expr(value)),
-        StmtKind::Throw { value } | StmtKind::Return { value } | StmtKind::Next { condition: value } => {
-            optional(value, push)
-        }
+        StmtKind::Throw { value }
+        | StmtKind::Return { value }
+        | StmtKind::Next { condition: value } => optional(value, push),
         StmtKind::Last { value, condition } => {
             optional(value, push);
             optional(condition, push);
@@ -257,12 +302,15 @@ fn stmt_children<'a>(stmt: &'a Stmt, push: &mut impl FnMut(Node<'a>)) {
             push(Node::Expr(expr));
             optional(condition, push);
         }
-        StmtKind::Confirm { condition, fallback } => {
+        StmtKind::Confirm {
+            condition,
+            fallback,
+        } => {
             push(Node::Expr(condition));
             match fallback {
-                Some(ConfirmFallback::Panic { value, .. } | ConfirmFallback::Throw { value, .. }) => {
-                    push(Node::Expr(value))
-                }
+                Some(
+                    ConfirmFallback::Panic { value, .. } | ConfirmFallback::Throw { value, .. },
+                ) => push(Node::Expr(value)),
                 None => {}
             }
         }

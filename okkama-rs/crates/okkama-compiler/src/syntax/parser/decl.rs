@@ -6,10 +6,10 @@ use crate::syntax::ParseMode;
 use crate::syntax::ast::{
     ActionDecl, ActionSignature, CapDecl, ComputedField, ConstructorDecl, ConstructorForm,
     DestroyDecl, EnumDecl, FakeBody, FakeDecl, HasDecl, Item, Name, NativeActionDecl,
-    NativeObjectDecl, ObjectDecl, ObjectMember, Param, PrivateSection, ProjectionDirective,
-    RoleDecl, RoleMember, TestBody, TestDecl, Visibility,
+    NativeObjectDecl, ObjectDecl, ObjectMember, Param, PrivateSection, RoleDecl, RoleMember,
+    TestBody, TestDecl, Visibility,
 };
-use crate::syntax::token::{TokenKind, is_lower_word, is_type_word};
+use crate::syntax::token::{TokenKind, is_type_word};
 
 /// How a parameter list is used; selects the context-specific checks.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -68,7 +68,7 @@ impl Parser<'_> {
             return Err(self.error_at(&token, "Imports must appear before module declarations."));
         }
         if self.check_async_modifier() || self.check_name() {
-            let decl = self.action_declaration(Visibility::Public, None)?;
+            let decl = self.action_declaration(Visibility::Public)?;
             if decl.name.text != "main" {
                 return Err(self.error_at_span(
                     decl.name.span,
@@ -241,15 +241,13 @@ impl Parser<'_> {
                 let token = self.previous().clone();
                 return Err(self.error_at(
                     &token,
-                    "Object projection declarations use \"#projected\", not \"&\".",
+                    "Constructor projections have been removed; use Type(args).method().",
                 ));
             }
-            let directive = if self.eat(TokenKind::Hash) {
-                Some(self.projection_directive()?)
-            } else {
-                None
-            };
-            actions.push(self.action_declaration(Visibility::Private, directive)?);
+            if self.eat(TokenKind::Hash) {
+                self.reject_action_directive()?;
+            }
+            actions.push(self.action_declaration(Visibility::Private)?);
         }
         let end = actions.last().map_or(colon.span, |action| action.span);
         Ok(PrivateSection {
@@ -274,7 +272,7 @@ impl Parser<'_> {
         // `has(` is an action labelled `has`; `has name ...` declares state.
         if self.check(TokenKind::Has) && self.check_next(TokenKind::LeftParen) {
             return Ok(ObjectMember::Action(
-                self.action_declaration(Visibility::Public, None)?,
+                self.action_declaration(Visibility::Public)?,
             ));
         }
         if self.eat(TokenKind::Has) {
@@ -302,21 +300,21 @@ impl Parser<'_> {
             ));
         }
         if self.eat(TokenKind::Hash) {
-            let directive = self.projection_directive()?;
+            self.reject_action_directive()?;
             return Ok(ObjectMember::Action(
-                self.action_declaration(Visibility::Public, Some(directive))?,
+                self.action_declaration(Visibility::Public)?,
             ));
         }
         if self.eat(TokenKind::Amp) {
             let token = self.previous().clone();
             return Err(self.error_at(
                 &token,
-                "Object projection declarations use \"#projected\", not \"&\".",
+                "Constructor projections have been removed; use Type(args).method().",
             ));
         }
         if self.check_async_modifier() || self.check_name() {
             return Ok(ObjectMember::Action(
-                self.action_declaration(Visibility::Public, None)?,
+                self.action_declaration(Visibility::Public)?,
             ));
         }
         let token = self.peek().clone();
@@ -440,45 +438,13 @@ impl Parser<'_> {
     }
 
     /// After `#`: `projected` or `projected(alias)`.
-    fn projection_directive(&mut self) -> PResult<ProjectionDirective> {
-        let marker = self.previous().span;
-        let name = self.consume_name("Expect \"projected\" after \"#\".")?;
-        if name.text != "projected" {
-            return Err(self.error_at_span(
-                name.span,
-                &format!("Unknown object action directive \"{}\".", name.text),
-            ));
-        }
-        let mut end = name.span;
-        let mut alias = None;
-        if self.eat(TokenKind::LeftParen) {
-            if !self.check(TokenKind::Identifier) || !is_lower_word(self.lexeme(self.peek())) {
-                return Err(self.error_here("Projection alias must be a lowercase identifier."));
-            }
-            let token = self.advance();
-            alias = Some(self.name_of(&token));
-            end = self
-                .consume(
-                    TokenKind::RightParen,
-                    "Expect \")\" after projection alias.",
-                )?
-                .span;
-        }
-        Ok(ProjectionDirective {
-            alias,
-            span: marker.to(end),
-        })
+    fn reject_action_directive(&mut self) -> PResult<()> {
+        Err(self.error_here("Action directives have been removed; use an explicit result type and an ordinary method call."))
     }
 
     /// `async? name(params) is Result { body }`
-    fn action_declaration(
-        &mut self,
-        visibility: Visibility,
-        projection: Option<ProjectionDirective>,
-    ) -> PResult<ActionDecl> {
-        let start = projection
-            .as_ref()
-            .map_or(self.peek().span, |directive| directive.span);
+    fn action_declaration(&mut self, visibility: Visibility) -> PResult<ActionDecl> {
+        let start = self.peek().span;
         let is_async = if self.check_async_modifier() {
             self.advance();
             true
@@ -496,7 +462,6 @@ impl Parser<'_> {
         Ok(ActionDecl {
             is_async,
             visibility,
-            projection,
             name,
             params,
             result,
@@ -750,12 +715,24 @@ impl Parser<'_> {
     fn enum_declaration(&mut self) -> PResult<EnumDecl> {
         let keyword = self.previous().span;
         let name = self.consume_type_name("Expect enum name after \"enum\".")?;
+        let generics = self.generic_params("enum", &name)?;
+        if generics.iter().any(|g| g.bound.is_some()) {
+            return Err(self.error_here(
+                "Enum type parameter bounds are not supported; payload types are invariant.",
+            ));
+        }
         self.consume(TokenKind::Equal, "Expect \"=\" after enum name.")?;
         self.consume(TokenKind::LeftParen, "Expect \"(\" before enum cases.")?;
         let mut cases = Vec::new();
+        let mut payloads = Vec::new();
         if !self.check(TokenKind::RightParen) {
             loop {
                 cases.push(self.consume_identifier("Expect enum case name.")?);
+                payloads.push(if self.check(TokenKind::LeftParen) {
+                    self.parameter_list(ParamContext::Signature)?
+                } else {
+                    Vec::new()
+                });
                 if !self.eat(TokenKind::Comma) {
                     break;
                 }
@@ -766,6 +743,8 @@ impl Parser<'_> {
             self.consume(TokenKind::Semicolon, "Expect \";\" after enum declaration.")?;
         Ok(EnumDecl {
             name,
+            generics,
+            payloads,
             cases,
             span: keyword.to(semicolon.span),
         })

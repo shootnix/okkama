@@ -390,17 +390,18 @@ impl<'s> Printer<'s> {
             Item::Enum(decl) => {
                 self.word("enum ");
                 self.word(&decl.name.text);
-                self.word(" = ");
-                let close = decl.span.end;
-                self.list(
-                    "(",
-                    ")",
-                    &decl.cases,
-                    close,
-                    |p, case| p.word(&case.text),
-                    |case| case.span,
-                );
-                self.word(";");
+                self.generics(&decl.generics);
+                self.word(" = (");
+                for (index, case) in decl.cases.iter().enumerate() {
+                    if index > 0 {
+                        self.word(", ");
+                    }
+                    self.word(&case.text);
+                    if !decl.payloads[index].is_empty() {
+                        self.params(&decl.payloads[index], case.span.end);
+                    }
+                }
+                self.word(");");
             }
             Item::Test(test) => self.test(test),
             Item::NativeAction(decl) => {
@@ -549,10 +550,7 @@ impl<'s> Printer<'s> {
                 for action in &section.actions {
                     self.newline();
                     self.blank_line();
-                    let span = action
-                        .projection
-                        .as_ref()
-                        .map_or(action.span, |projection| projection.span.to(action.span));
+                    let span = action.span;
                     self.leading_comments(span.start, true);
                     self.action(action);
                     self.trailing_comment(action.span.end);
@@ -603,15 +601,6 @@ impl<'s> Printer<'s> {
     }
 
     fn action(&mut self, action: &ActionDecl) {
-        if let Some(projection) = &action.projection {
-            self.word("#projected");
-            if let Some(alias) = &projection.alias {
-                self.word("(");
-                self.word(&alias.text);
-                self.word(")");
-            }
-            self.newline();
-        }
         if action.is_async {
             self.word("async ");
         }
@@ -939,7 +928,12 @@ impl<'s> Printer<'s> {
                 self.word(";");
             }
             StmtKind::Block(block) => self.block(block),
-            StmtKind::If(found) => self.if_stmt(found),
+            StmtKind::If(found) => {
+                self.if_stmt(found);
+                if self.slice(stmt.span).trim_end().ends_with(';') {
+                    self.word(";");
+                }
+            }
             StmtKind::Match(body) => self.match_body(body),
             StmtKind::For {
                 source,
@@ -993,10 +987,8 @@ impl<'s> Printer<'s> {
             StmtKind::Expr { expr, condition } => {
                 self.expr(expr);
                 self.postfix_if(condition.as_ref());
-                // `;` после оператора-`loop` необязательна: как у автора.
-                let loop_without = matches!(expr.kind, ExprKind::Loop { .. })
-                    && !self.slice(stmt.span).trim_end().ends_with(';');
-                if !loop_without {
+                // Preserve optional terminators on tail expressions and loops.
+                if self.slice(stmt.span).trim_end().ends_with(';') {
                     self.word(";");
                 }
             }
@@ -1090,8 +1082,80 @@ impl<'s> Printer<'s> {
 
     // ---- выражения ----
 
+    fn choice_result(&mut self, block: &Block) {
+        if let StmtKind::Expr { expr, .. } = &block.stmts[0].kind {
+            self.expr(expr);
+        }
+    }
+
+    fn choice(&mut self, inner: &Expr) {
+        match &inner.kind {
+            ExprKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                self.expr(condition);
+                self.word(" ?? ");
+                self.choice_result(then_block);
+                self.word(" !! ");
+                self.choice_result(else_block);
+            }
+            ExprKind::Match(body) => {
+                self.expr(&body.subject);
+                let mut separator = " ?? ";
+                for arm in &body.cases {
+                    self.word(separator);
+                    separator = " !! ";
+                    let pattern = &arm.patterns[0];
+                    let (callee, args) = match &pattern.kind {
+                        ExprKind::Call { callee, args } => (&**callee, &args[..]),
+                        _ => (pattern, &[][..]),
+                    };
+                    if let ExprKind::Get { name, .. } = &callee.kind {
+                        self.word(".");
+                        self.word(&name.text);
+                    }
+                    if !args.is_empty() {
+                        self.word("(");
+                        for (i, arg) in args.iter().enumerate() {
+                            if i > 0 {
+                                self.word(", ");
+                            }
+                            if let Some(name) = &arg.name {
+                                self.word(&name.text);
+                                self.word(": ");
+                            }
+                            self.expr(&arg.value);
+                        }
+                        self.word(")");
+                    }
+                    self.word(": ");
+                    self.choice_result(&arm.body);
+                }
+                if let Some(block) = &body.else_block {
+                    self.word(separator);
+                    self.word("_: ");
+                    self.choice_result(block);
+                }
+            }
+            _ => unreachable!("compact choice is an if or match"),
+        }
+    }
+
     fn expr(&mut self, expr: &Expr) {
         match &expr.kind {
+            ExprKind::Choice(inner) => self.choice(inner),
+            ExprKind::Throw(value) => {
+                self.word("throw ");
+                self.expr(value);
+            }
+            ExprKind::TypeValue(ty) => self.ty(ty),
+            ExprKind::Coalesce { value, fallback } => {
+                self.expr(value);
+                self.word(" else ");
+                self.expr(fallback);
+            }
             ExprKind::Literal(_) => self.word(self.slice(expr.span)),
             ExprKind::Name(name) => self.word(&name.text),
             ExprKind::SelfValue => self.word("self"),
@@ -1199,14 +1263,6 @@ impl<'s> Printer<'s> {
             ExprKind::Unpack { operand, .. } => {
                 self.expr(operand);
                 self.word("...");
-            }
-            ExprKind::Projection {
-                prefix,
-                construction,
-            } => {
-                self.word(&prefix.text);
-                self.word(" ");
-                self.expr(construction);
             }
             ExprKind::Functional {
                 operation_name,

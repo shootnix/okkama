@@ -87,7 +87,6 @@ object ScaledDuration {
         self.factor = factor;
     }
 
-    #projected
     value() is Duration {
         Duration(
             value: origin.seconds() * factor,
@@ -103,7 +102,6 @@ object DurationString {
         self.origin = origin;
     }
 
-    #projected
     string() is string {
         origin.seconds().string() + "s";
     }
@@ -116,7 +114,6 @@ object InvalidDuration does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

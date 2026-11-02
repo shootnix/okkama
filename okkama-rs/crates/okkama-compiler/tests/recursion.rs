@@ -74,7 +74,7 @@ fn self_tail_calls_become_loops() {
 fn tail_calls_in_both_branches_leave_no_unreachable_join() {
     // Обе ветви — хвостовые вызовы: блок, где сходились их результаты, удаляется.
     let module = lower(
-        "object F { has lo is int; has hi is int; F(:lo, :hi); #projected value() is int { if lo >= hi { lo; } else { let middle = lo + ((hi - lo) / 2).int(); if middle < 5 { value F(lo: middle + 1, hi: hi); } else { value F(lo: lo, hi: middle); } } } }",
+        "object F { has lo is int; has hi is int; F(:lo, :hi); value() is int { if lo >= hi { lo; } else { let middle = lo + ((hi - lo) / 2).int(); if middle < 5 { F(lo: middle + 1, hi: hi).value(); } else { F(lo: lo, hi: middle).value(); } } } }",
         "F(lo: 0, hi: 100).value();",
     )
     .expect("lowers");

@@ -1,0 +1,254 @@
+Analysis of sampling sparrow (pid 73736) every 1 millisecond
+Process:         sparrow [73736]
+Path:            /Volumes/VOLUME/*/sparrow
+Load Address:    0x104f40000
+Identifier:      sparrow
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [73728]
+Target Type:     live task
+
+Date/Time:       2026-11-01 18:26:31.585 +0500
+Launch Time:     2026-11-01 18:26:31.552 +0500
+OS Version:      macOS 26.5.2 (25F84)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         2096K
+Physical footprint (peak):  2128K
+Idle exit:                  untracked
+----
+
+Call graph:
+    1662 Thread_218099313   DispatchQueue_1: com.apple.main-thread  (serial)
+      1656 start  (in dyld) + 6992  [0x18d657e00]
+      + 1656 main  (in sparrow) + 872  [0x104f47f00]
+      +   1656 _RINvNtNtCsa9BKTri5B3M_3std3sys9backtrace28___rust_begin_short_backtraceFENtNtB6_7process8ExitCodeB19_ECs5Dg12qLWvxy_7sparrow  (in sparrow) + 12  [0x104f4123c]
+      +     1656 _RNvCs5Dg12qLWvxy_7sparrow4main  (in sparrow) + 2412  [0x104f43c90]
+      +       1656 _RNvCs5Dg12qLWvxy_7sparrow7execute  (in sparrow) + 1772  [0x104f45a48]
+      +         1656 stack_call_trampoline  (in sparrow) + 16  [0x104f40950]
+      +           1656 _RINvNvNtCs5UGkmGprJE3_10corosensei9coroutine8on_stack7wrapperNCINvNtCs9vJEKCgJjuH_19okkama_runtime_core5sched14on_large_stackINtNtCsgtPOCBgevO_4core6result6ResultNtB14_8IntValueNtCsk76uzWmWOIn_10sparrow_vm5ErrorENCNvNtB2R_7machine13execute_inner0E0B1Z_EB2R_  (in sparrow) + 380  [0x1054a4c44]
+      +             1656 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine6invoke  (in sparrow) + 140  [0x105474b48]
+      +               683 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 3396  [0x105470244]
+      +               ! 243 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 11440  [0x1054952c8]
+      +               ! : 166 _RNvXs0_NtNtCslJsSqIQKwiA_5alloc3vec11spec_extendINtB7_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueEINtB5_10SpecExtendBU_INtNtB7_9into_iter8IntoIterBU_EE11spec_extendCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 192  [0x1054924b4]
+      +               ! : | 145 _RINvNvMs2_NtCslJsSqIQKwiA_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 88  [0x1055326f0]
+      +               ! : | + 109 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 88  [0x10553277c]
+      +               ! : | + ! 34 _mi_theap_realloc_zero  (in sparrow) + 352,44,...  [0x1055396c4,0x105539590,...]
+      +               ! : | + ! 20 _mi_theap_realloc_zero  (in sparrow) + 352  [0x1055396c4]
+      +               ! : | + ! : 16 _platform_memmove  (in libsystem_platform.dylib) + 36,12,...  [0x18da1f384,0x18da1f36c,...]
+      +               ! : | + ! : 4 DYLD-STUB$$memcpy  (in sparrow) + 4  [0x10553c154]
+      +               ! : | + ! 16 OUTLINED_FUNCTION_45  (in sparrow) + 12,0  [0x105505804,0x1055057f8]
+      +               ! : | + ! 14 mi_free  (in sparrow) + 44,76,...  [0x1055394e0,0x105539500,...]
+      +               ! : | + ! 12 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! : | + ! : 10 OUTLINED_FUNCTION_41  (in sparrow) + 16  [0x1055057e8]
+      +               ! : | + ! : 2 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! : | + ! 7 _mi_theap_realloc_zero  (in sparrow) + 280  [0x10553967c]
+      +               ! : | + ! : 7 OUTLINED_FUNCTION_16  (in sparrow) + 12  [0x1055056d4]
+      +               ! : | + ! 5 _mi_theap_realloc_zero  (in sparrow) + 388  [0x1055396e8]
+      +               ! : | + ! : 4 _mi_malloc_generic  (in sparrow) + 176,52,...  [0x10553a78c,0x10553a710,...]
+      +               ! : | + ! : 1 _mi_malloc_generic  (in sparrow) + 104  [0x10553a744]
+      +               ! : | + ! :   1 mi_bin  (in sparrow) + 0  [0x1054fe318]
+      +               ! : | + ! 1 mi_realloc_aligned  (in sparrow) + 20  [0x1054f4648]
+      +               ! : | + 31 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 36,0,...  [0x105532748,0x105532724,...]
+      +               ! : | + 5 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 116  [0x105532798]
+      +               ! : | +   3 mi_malloc_aligned  (in sparrow) + 32,96  [0x10553975c,0x10553979c]
+      +               ! : | +   2 mi_theap_malloc_zero_aligned_at_overalloc  (in sparrow) + 48,80  [0x105502084,0x1055020a4]
+      +               ! : | 12 _RINvNvMs2_NtCslJsSqIQKwiA_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 8,12,...  [0x1055326a0,0x1055326a4,...]
+      +               ! : | 9 _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 168,164  [0x1055327cc,0x1055327c8]
+      +               ! : 42 _RNvXs0_NtNtCslJsSqIQKwiA_5alloc3vec11spec_extendINtB7_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueEINtB5_10SpecExtendBU_INtNtB7_9into_iter8IntoIterBU_EE11spec_extendCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 108  [0x105492460]
+      +               ! : | 29 _platform_memmove  (in libsystem_platform.dylib) + 428,460,...  [0x18da1f50c,0x18da1f52c,...]
+      +               ! : | 13 DYLD-STUB$$memcpy  (in sparrow) + 4,0  [0x10553c154,0x10553c150]
+      +               ! : 32 _RNvXs0_NtNtCslJsSqIQKwiA_5alloc3vec11spec_extendINtB7_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueEINtB5_10SpecExtendBU_INtNtB7_9into_iter8IntoIterBU_EE11spec_extendCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 60,84,...  [0x105492430,0x105492448,...]
+      +               ! : 3 _RINvNvMs2_NtCslJsSqIQKwiA_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 112  [0x105532708]
+      +               ! 173 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 8172  [0x105494604]
+      +               ! : 58 _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow) + 64  [0x1052686e0]
+      +               ! : | 16 mi_malloc_aligned  (in sparrow) + 32,0,...  [0x10553975c,0x10553973c,...]
+      +               ! : | 13 mi_theap_malloc_zero_aligned_at_overalloc  (in sparrow) + 216,164,...  [0x10550212c,0x1055020f8,...]
+      +               ! : | 10 mi_theap_malloc_zero_aligned_at_generic  (in sparrow) + 80  [0x105501e44]
+      +               ! : | + 10 mi_bin  (in sparrow) + 16,0  [0x1054fe328,0x1054fe318]
+      +               ! : | 8 mi_theap_malloc_zero_aligned_at_overalloc  (in sparrow) + 244  [0x105502148]
+      +               ! : | + 8 _mi_malloc_generic  (in sparrow) + 412,16,...  [0x10553a878,0x10553a6ec,...]
+      +               ! : | 7 mi_theap_malloc_zero_aligned_at_generic  (in sparrow) + 232,0,...  [0x105501edc,0x105501df4,...]
+      +               ! : | 4 OUTLINED_FUNCTION_32  (in sparrow) + 0,4  [0x1055057a8,0x1055057ac]
+      +               ! : 55 _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow) + 124,144,...  [0x10526871c,0x105268730,...]
+      +               ! : 52 _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow) + 108  [0x10526870c]
+      +               ! : | 52 _RNvXs1_NtCs9vJEKCgJjuH_19okkama_runtime_core5valueNtB5_5ValueNtNtCsgtPOCBgevO_4core5clone5Clone5clone  (in sparrow) + 16,548,...  [0x1051af204,0x1051af418,...]
+      +               ! : 4 mi_malloc_aligned  (in sparrow) + 64  [0x10553977c]
+      +               ! : | 3 mi_malloc_aligned  (in sparrow) + 64  [0x10553977c]
+      +               ! : | 1 OUTLINED_FUNCTION_58  (in sparrow) + 12  [0x1055058a0]
+      +               ! : 4 mi_theap_malloc_zero_aligned_at_overalloc  (in sparrow) + 204  [0x105502120]
+      +               ! 168 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 8188  [0x105494614]
+      +               ! : 67 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_0B5_  (in sparrow) + 68  [0x105497750]
+      +               ! : | 42 _RNvXNtNtCsgtPOCBgevO_4core4iter8adaptersINtB2_12GenericShuntINtNtB2_3map3MapINtNtNtB6_5slice4iter4IterNtCs6ZcSY7sU8gw_14okkama_sparrow8RegisterENCNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_00EINtNtB6_6result6ResultNtNtB6_7convert10InfallibleNtB2o_4StopEENtNtNtB4_6traits8iterator8Iterator4nextB2q_  (in sparrow) + 36,96,...  [0x10549a3f8,0x10549a434,...]
+      +               ! : | 25 _RNvXNtNtCsgtPOCBgevO_4core4iter8adaptersINtB2_12GenericShuntINtNtB2_3map3MapINtNtNtB6_5slice4iter4IterNtCs6ZcSY7sU8gw_14okkama_sparrow8RegisterENCNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_00EINtNtB6_6result6ResultNtNtB6_7convert10InfallibleNtB2o_4StopEENtNtNtB4_6traits8iterator8Iterator4nextB2q_  (in sparrow) + 120  [0x10549a44c]
+      +               ! : |   25 _RNvXs1_NtCs9vJEKCgJjuH_19okkama_runtime_core5valueNtB5_5ValueNtNtCsgtPOCBgevO_4core5clone5Clone5clone  (in sparrow) + 20,228,...  [0x1051af208,0x1051af2d8,...]
+      +               ! : 40 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_0B5_  (in sparrow) + 92  [0x105497768]
+      +               ! : | 24 mi_malloc_aligned  (in sparrow) + 96,0,...  [0x10553979c,0x10553973c,...]
+      +               ! : | 6 mi_theap_malloc_zero_aligned_at_overalloc  (in sparrow) + 28,0,...  [0x105502070,0x105502054,...]
+      +               ! : | 4 mi_theap_malloc_zero_aligned_at_generic  (in sparrow) + 16,120  [0x105501e04,0x105501e6c]
+      +               ! : | 3 OUTLINED_FUNCTION_32  (in sparrow) + 0  [0x1055057a8]
+      +               ! : | 2 mi_theap_malloc_zero_aligned_at_generic  (in sparrow) + 80  [0x105501e44]
+      +               ! : | + 2 mi_bin  (in sparrow) + 0,80  [0x1054fe318,0x1054fe368]
+      +               ! : | 1 OUTLINED_FUNCTION_4  (in sparrow) + 0  [0x10550562c]
+      +               ! : 25 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_0B5_  (in sparrow) + 140,68,...  [0x105497798,0x105497750,...]
+      +               ! : 21 _RNvXNtNtCsgtPOCBgevO_4core4iter8adaptersINtB2_12GenericShuntINtNtB2_3map3MapINtNtNtB6_5slice4iter4IterNtCs6ZcSY7sU8gw_14okkama_sparrow8RegisterENCNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_00EINtNtB6_6result6ResultNtNtB6_7convert10InfallibleNtB2o_4StopEENtNtNtB4_6traits8iterator8Iterator4nextB2q_  (in sparrow) + 364,356  [0x10549a540,0x10549a538]
+      +               ! : 11 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_0B5_  (in sparrow) + 196  [0x1054977d0]
+      +               ! : | 11 _RNvXNtNtCsgtPOCBgevO_4core4iter8adaptersINtB2_12GenericShuntINtNtB2_3map3MapINtNtNtB6_5slice4iter4IterNtCs6ZcSY7sU8gw_14okkama_sparrow8RegisterENCNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_00EINtNtB6_6result6ResultNtNtB6_7convert10InfallibleNtB2o_4StopEENtNtNtB4_6traits8iterator8Iterator4nextB2q_  (in sparrow) + 36,16,...  [0x10549a3f8,0x10549a3e4,...]
+      +               ! : 2 mi_malloc_aligned  (in sparrow) + 64  [0x10553977c]
+      +               ! : | 2 OUTLINED_FUNCTION_58  (in sparrow) + 12  [0x1055058a0]
+      +               ! : 2 mi_malloc_aligned  (in sparrow) + 88  [0x105539794]
+      +               ! :   2 OUTLINED_FUNCTION_18  (in sparrow) + 20  [0x105505704]
+      +               ! 39 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 36,72,...  [0x10549263c,0x105492660,...]
+      +               ! 20 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! : 16 OUTLINED_FUNCTION_41  (in sparrow) + 16,0  [0x1055057e8,0x1055057d8]
+      +               ! : 4 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! 16 mi_free  (in sparrow) + 68,76,...  [0x1055394f8,0x105539500,...]
+      +               ! 9 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_0B5_  (in sparrow) + 388,396  [0x105497890,0x105497898]
+      +               ! 8 _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow) + 168,172  [0x105268748,0x10526874c]
+      +               ! 4 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 8132  [0x1054945dc]
+      +               ! : 4 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate0B5_  (in sparrow) + 20,28  [0x105495fc0,0x105495fc8]
+      +               ! 3 _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate0B5_  (in sparrow) + 136  [0x105496034]
+      +               375 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 2084,8564,...  [0x10546fd24,0x105471674,...]
+      +               360 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 8908  [0x1054717cc]
+      +               ! 181 _RNvMs2_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_5Frame3new  (in sparrow) + 288  [0x10549fd88]
+      +               ! : 120 _RINvXNtNtCslJsSqIQKwiA_5alloc3vec14spec_from_elemNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueNtB3_12SpecFromElem9from_elemNtNtB7_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 148  [0x1054763c0]
+      +               ! : | 62 _RNvMs3_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueE11extend_withCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 104,80,...  [0x105476898,0x105476880,...]
+      +               ! : | 58 _RNvMs3_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueE11extend_withCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 92  [0x10547688c]
+      +               ! : |   58 _RNvXs1_NtCs9vJEKCgJjuH_19okkama_runtime_core5valueNtB5_5ValueNtNtCsgtPOCBgevO_4core5clone5Clone5clone  (in sparrow) + 16,312,...  [0x1051af204,0x1051af32c,...]
+      +               ! : 22 _RINvXNtNtCslJsSqIQKwiA_5alloc3vec14spec_from_elemNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueNtB3_12SpecFromElem9from_elemNtNtB7_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 100  [0x105476390]
+      +               ! : | 18 mi_malloc_aligned  (in sparrow) + 12,72,...  [0x105539748,0x105539784,...]
+      +               ! : | 3 OUTLINED_FUNCTION_32  (in sparrow) + 0  [0x1055057a8]
+      +               ! : | 1 mi_theap_malloc_zero_aligned_at_generic  (in sparrow) + 276  [0x105501f08]
+      +               ! : 19 _RINvXNtNtCslJsSqIQKwiA_5alloc3vec14spec_from_elemNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueNtB3_12SpecFromElem9from_elemNtNtB7_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 44,100,...  [0x105476358,0x105476390,...]
+      +               ! : 13 _RNvMs3_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueE11extend_withCsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 216  [0x105476908]
+      +               ! : 5 mi_malloc_aligned  (in sparrow) + 64  [0x10553977c]
+      +               ! : | 5 OUTLINED_FUNCTION_58  (in sparrow) + 12  [0x1055058a0]
+      +               ! : 2 mi_malloc_aligned  (in sparrow) + 88  [0x105539794]
+      +               ! :   2 OUTLINED_FUNCTION_18  (in sparrow) + 20  [0x105505704]
+      +               ! 113 _RNvMs2_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_5Frame3new  (in sparrow) + 380,432,...  [0x10549fde4,0x10549fe18,...]
+      +               ! 43 _RNvMs2_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_5Frame3new  (in sparrow) + 464  [0x10549fe38]
+      +               ! : 43 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 36,0,...  [0x10546b444,0x10546b420,...]
+      +               ! 9 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! : 8 OUTLINED_FUNCTION_41  (in sparrow) + 16  [0x1055057e8]
+      +               ! : 1 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! 9 mi_free  (in sparrow) + 76,108,...  [0x105539500,0x105539520,...]
+      +               ! 4 _RINvXNtNtCslJsSqIQKwiA_5alloc3vec14spec_from_elemNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueNtB3_12SpecFromElem9from_elemNtNtB7_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 176  [0x1054763dc]
+      +               ! 1 _mi_page_retire  (in sparrow) + 288  [0x1054fe888]
+      +               131 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 2456  [0x10546fe98]
+      +               ! 67 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine7recycle  (in sparrow) + 252  [0x1054a01e0]
+      +               ! : 67 _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueECsk76uzWmWOIn_10sparrow_vm  (in sparrow) + 96,24,...  [0x10546b480,0x10546b438,...]
+      +               ! 64 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine7recycle  (in sparrow) + 236,260,...  [0x1054a01d0,0x1054a01e8,...]
+      +               22 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 2840  [0x105470018]
+      +               ! 22 _RNvMs1_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_6Engine8prepared  (in sparrow) + 32,24,...  [0x10547696c,0x105476964,...]
+      +               22 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 11968,11952  [0x1054954d8,0x1054954c8]
+      +               17 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               ! 13 OUTLINED_FUNCTION_41  (in sparrow) + 16,0  [0x1055057e8,0x1055057d8]
+      +               ! 4 mi_free  (in sparrow) + 8  [0x1055394bc]
+      +               14 _RNvMs1_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_6Engine8prepared  (in sparrow) + 548,540,...  [0x105476b70,0x105476b68,...]
+      +               12 mi_free  (in sparrow) + 76,44,...  [0x105539500,0x1055394e0,...]
+      +               8 _RNvMs2_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_5Frame3new  (in sparrow) + 228,212  [0x10549fd4c,0x10549fd3c]
+      +               8 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 1616  [0x10546fb50]
+      +               ! 8 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine18transfer_registers  (in sparrow) + 540,48,...  [0x10549bf9c,0x10549bdb0,...]
+      +               2 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 888  [0x10546f878]
+      +               ! 2 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine18transfer_registers  (in sparrow) + 48,2804  [0x10549bdb0,0x10549c874]
+      +               1 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow) + 1184  [0x10546f9a0]
+      +               ! 1 _RNvMs1_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_6Engine8prepared  (in sparrow) + 40  [0x105476974]
+      +               1 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine18transfer_registers  (in sparrow) + 2892  [0x10549c8cc]
+      6 ???  (in <unknown binary>)  [0x2f524360410]
+        4 ???  (in <unknown binary>)  [0x5]
+        ! 4 0x0
+        !   4 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 8172  [0x105494604]
+        !     4 _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow) + 20  [0x1052686b4]
+        2 ???  (in <unknown binary>)  [0x1b]
+          2 0x0
+            2 _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow) + 8172  [0x105494604]
+              2 _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow) + 16,20  [0x1052686b0,0x1052686b4]
+
+Total number in stack (recursive counted multiple, when >=5):
+        8       mi_free  (in sparrow) + 0  [0x1055394b4]
+        5       mi_malloc_aligned  (in sparrow) + 0  [0x10553973c]
+
+Sort by top of stack, same collapsed (when >= 5):
+        _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine16execute_function  (in sparrow)        375
+        _RNvXs1_NtCs9vJEKCgJjuH_19okkama_runtime_core5valueNtB5_5ValueNtNtCsgtPOCBgevO_4core5clone5Clone5clone  (in sparrow)        135
+        _RNvMs2_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_5Frame3new  (in sparrow)        121
+        _RINvNtCsgtPOCBgevO_4core3ptr9drop_glueNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueECsk76uzWmWOIn_10sparrow_vm  (in sparrow)        110
+        _RNvMs3_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueE11extend_withCsk76uzWmWOIn_10sparrow_vm  (in sparrow)        75
+        _RNvXNtNtCsgtPOCBgevO_4core4iter8adaptersINtB2_12GenericShuntINtNtB2_3map3MapINtNtNtB6_5slice4iter4IterNtCs6ZcSY7sU8gw_14okkama_sparrow8RegisterENCNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_00EINtNtB6_6result6ResultNtNtB6_7convert10InfallibleNtB2o_4StopEENtNtNtB4_6traits8iterator8Iterator4nextB2q_  (in sparrow)        74
+        _RNvXsa_NtCslJsSqIQKwiA_5alloc3vecINtB5_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueENtNtCsgtPOCBgevO_4core5clone5Clone5cloneBJ_  (in sparrow)        69
+        _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine7recycle  (in sparrow)        64
+        mi_malloc_aligned  (in sparrow)        64
+        mi_free  (in sparrow)        62
+        _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate  (in sparrow)        61
+        OUTLINED_FUNCTION_41  (in sparrow)        47
+        _platform_memmove  (in libsystem_platform.dylib)        45
+        _RNvMs4_NtCslJsSqIQKwiA_5alloc7raw_vecNtB5_11RawVecInner11finish_growCsk76uzWmWOIn_10sparrow_vm  (in sparrow)        40
+        _RNvMs1_NtCsk76uzWmWOIn_10sparrow_vm7machineNtB5_6Engine8prepared  (in sparrow)        37
+        _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluates7_0B5_  (in sparrow)        34
+        _mi_theap_realloc_zero  (in sparrow)        34
+        _RNvXs0_NtNtCslJsSqIQKwiA_5alloc3vec11spec_extendINtB7_3VecNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueEINtB5_10SpecExtendBU_INtNtB7_9into_iter8IntoIterBU_EE11spec_extendCsk76uzWmWOIn_10sparrow_vm  (in sparrow)        32
+        mi_theap_malloc_zero_aligned_at_overalloc  (in sparrow)        25
+        _RINvXNtNtCslJsSqIQKwiA_5alloc3vec14spec_from_elemNtNtCs9vJEKCgJjuH_19okkama_runtime_core5value5ValueNtB3_12SpecFromElem9from_elemNtNtB7_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow)        23
+        DYLD-STUB$$memcpy  (in sparrow)        17
+        OUTLINED_FUNCTION_45  (in sparrow)        16
+        _RINvNvMs2_NtCslJsSqIQKwiA_5alloc7raw_vecINtB8_11RawVecInnerpE7reserve21do_reserve_and_handleNtNtBa_5alloc6GlobalECsk76uzWmWOIn_10sparrow_vm  (in sparrow)        15
+        mi_bin  (in sparrow)        13
+        _mi_malloc_generic  (in sparrow)        12
+        mi_theap_malloc_zero_aligned_at_generic  (in sparrow)        12
+        _RNvNtCsk76uzWmWOIn_10sparrow_vm7machine18transfer_registers  (in sparrow)        11
+        OUTLINED_FUNCTION_32  (in sparrow)        10
+        OUTLINED_FUNCTION_58  (in sparrow)        8
+        OUTLINED_FUNCTION_16  (in sparrow)        7
+        _RNCNvNtCsk76uzWmWOIn_10sparrow_vm7machine8evaluate0B5_  (in sparrow)        7
+
+Binary Images:
+       0x104f40000 -        0x1057bbe1f +sparrow (0) <C966ADBD-2C23-3992-AD4F-BBFF32F9569E> /Volumes/*/sparrow
+       0x18d5b0000 -        0x18d602b4b  libobjc.A.dylib (951.7) <FF1D8AE4-ABEF-35F1-A30A-1183B9CB414F> /usr/lib/libobjc.A.dylib
+       0x18d603000 -        0x18d637d07  libdyld.dylib (1378) <B147D877-D0C2-388F-B38D-D3132E39905F> /usr/lib/system/libdyld.dylib
+       0x18d638000 -        0x18d6de217  dyld (1.0.0 - 1378) <F924BDD3-4365-3466-9580-8B1B3FA8F857> /usr/lib/dyld
+       0x18d6df000 -        0x18d6e2228  libsystem_blocks.dylib (96) <CC947089-488D-316B-A9C7-46DEC0F73145> /usr/lib/system/libsystem_blocks.dylib
+       0x18d6e3000 -        0x18d73755f  libxpc.dylib (3102.120.13) <C40FCAE8-7A17-3D82-87CB-3DA4802ADEF1> /usr/lib/system/libxpc.dylib
+       0x18d738000 -        0x18d7589ff  libsystem_trace.dylib (1861.120.4) <D0FABAB3-5AE7-3F10-8C62-60CBF5D70850> /usr/lib/system/libsystem_trace.dylib
+       0x18d759000 -        0x18d8075f7  libcorecrypto.dylib (1922.121.1) <A01A158D-6FE7-3B1C-A2C4-6BCB90D7314A> /usr/lib/system/libcorecrypto.dylib
+       0x18d808000 -        0x18d8581d7  libsystem_malloc.dylib (812.100.31) <5FAE4807-4D2B-3A95-A63A-DD96D3DA11B4> /usr/lib/system/libsystem_malloc.dylib
+       0x18d859000 -        0x18d8a023f  libdispatch.dylib (1542.100.32) <F071EFE4-299F-3089-ACC4-0025B8FFB52A> /usr/lib/system/libdispatch.dylib
+       0x18d8a1000 -        0x18d8a3ffb  libsystem_featureflags.dylib (103) <71FCFFBD-85F8-3365-AFE0-BECEA4369122> /usr/lib/system/libsystem_featureflags.dylib
+       0x18d8a4000 -        0x18d924d9f  libsystem_c.dylib (1752.120.2) <694B7881-1BF3-3D0F-8F19-B50AE4E8EF8A> /usr/lib/system/libsystem_c.dylib
+       0x18d925000 -        0x18d9b5ae7  libc++.1.dylib (2100.43) <5013C0F8-84A9-3B56-9FEB-C353816A750F> /usr/lib/libc++.1.dylib
+       0x18d9b6000 -        0x18d9d075f  libc++abi.dylib (2100.43) <E482D257-E5A0-3816-BD97-7B39342958DA> /usr/lib/libc++abi.dylib
+       0x18d9d1000 -        0x18da0e2af  libsystem_kernel.dylib (12377.121.10) <FCA53B98-3D6A-38B2-A0EC-DF0F7E05F171> /usr/lib/system/libsystem_kernel.dylib
+       0x18da0f000 -        0x18da1bb3b  libsystem_pthread.dylib (539.100.4) <4F33683C-18C8-39A1-800B-2E3BD43BCC13> /usr/lib/system/libsystem_pthread.dylib
+       0x18da1c000 -        0x18da24963  libsystem_platform.dylib (375.120.2) <160FD864-8D15-36FC-9E97-9725388CFAFE> /usr/lib/system/libsystem_platform.dylib
+       0x18da25000 -        0x18da546eb  libsystem_info.dylib (600) <3D62F2D9-F516-31BF-83C7-E203D872300B> /usr/lib/system/libsystem_info.dylib
+       0x1919ec000 -        0x1919f5e5f  libsystem_darwin.dylib (1752.120.2) <8858F025-745A-388E-9544-080781CC9A69> /usr/lib/system/libsystem_darwin.dylib
+       0x191e57000 -        0x191e691b6  libsystem_notify.dylib (348.120.4) <64D76451-1E0C-369B-A631-54DA3140E083> /usr/lib/system/libsystem_notify.dylib
+       0x194124000 -        0x19413ef7b  libsystem_networkextension.dylib (2226.121.1) <0331EE20-A1FB-3C0D-990A-F65939CFF505> /usr/lib/system/libsystem_networkextension.dylib
+       0x1941c1000 -        0x1941d8fdf  libsystem_asl.dylib (406) <F40838DF-2F15-3F62-970F-DEE25706BF1B> /usr/lib/system/libsystem_asl.dylib
+       0x195d7f000 -        0x195d87387  libsystem_symptoms.dylib (2169.120.7) <F5029F5C-1BF3-31C7-892E-BC8606AC829E> /usr/lib/system/libsystem_symptoms.dylib
+       0x19a023000 -        0x19a05b257  libsystem_containermanager.dylib (725.120.2) <518BE44D-AA31-31E6-B44B-A37AD5E47040> /usr/lib/system/libsystem_containermanager.dylib
+       0x19b434000 -        0x19b4385d7  libsystem_configuration.dylib (1405.120.5) <0F7BBC1C-3D50-3E59-A31F-E4672A80BCEB> /usr/lib/system/libsystem_configuration.dylib
+       0x19b439000 -        0x19b43f8cf  libsystem_sandbox.dylib (2680.120.12) <EC3A75EA-44C0-3A0B-9BF7-71C117B0A9C6> /usr/lib/system/libsystem_sandbox.dylib
+       0x19ca93000 -        0x19ca961fb  libquarantine.dylib (196.120.2) <5849009B-ACA3-3796-94C4-BBDF8D300EBA> /usr/lib/system/libquarantine.dylib
+       0x19d232000 -        0x19d238d03  libsystem_coreservices.dylib (191.4.5) <9576143B-C303-35A3-BA63-1FD06EDA2BB1> /usr/lib/system/libsystem_coreservices.dylib
+       0x19d7bd000 -        0x19d7faa77  libsystem_m.dylib (3312.100.1) <A7E0863C-101A-31A0-922B-ED9B02626151> /usr/lib/system/libsystem_m.dylib
+       0x19d7fb000 -        0x19d7fbc9b  libcharset.1.dylib (115.120.2) <338A5252-594A-3AC5-B274-5AB3CE5820C6> /usr/lib/libcharset.1.dylib
+       0x19d7fc000 -        0x19d7ff527  libmacho.dylib (1378) <755441B4-C034-3E3A-8E3C-F424FBB28261> /usr/lib/system/libmacho.dylib
+       0x19d819000 -        0x19d8263a7  libcommonCrypto.dylib (600035) <CE357BB1-2D49-37CC-9FFE-D093936B1475> /usr/lib/system/libcommonCrypto.dylib
+       0x19d827000 -        0x19d830ca3  libunwind.dylib (2100.2) <FC8F0C4E-6FB0-3E27-ABEF-B0FA720CD5E4> /usr/lib/system/libunwind.dylib
+       0x19d839000 -        0x19d8437ff  libcopyfile.dylib (240) <8ACFAC7A-88E9-3EF4-853F-A9140FF110E5> /usr/lib/system/libcopyfile.dylib
+       0x19d844000 -        0x19d847987  libcompiler_rt.dylib (103.3) <AA79151F-C19D-3C7C-92F8-B10F04D82C1C> /usr/lib/system/libcompiler_rt.dylib
+       0x19d848000 -        0x19d84c78b  libsystem_collections.dylib (1752.120.2) <72DB5BE7-EF78-37D0-8AAD-53E37CFE4287> /usr/lib/system/libsystem_collections.dylib
+       0x19d84d000 -        0x19d8504cf  libsystem_secinit.dylib (168.100.7) <E525C566-CDA4-3D99-B12B-1615FD54A1F3> /usr/lib/system/libsystem_secinit.dylib
+       0x19d851000 -        0x19d853bf7  libremovefile.dylib (85.100.6) <635E661D-80A7-340D-A165-3F7D318FDFC9> /usr/lib/system/libremovefile.dylib
+       0x19d854000 -        0x19d854f27  libkeymgr.dylib (31) <8C08891A-DF1C-3DCC-AB64-4742FD6BE9BA> /usr/lib/system/libkeymgr.dylib
+       0x19d855000 -        0x19d85de37  libsystem_dnssd.dylib (2881.120.11) <6F45DF3F-233B-3BC3-BA8C-B43E7DA884BF> /usr/lib/system/libsystem_dnssd.dylib
+       0x19d85e000 -        0x19d86309b  libcache.dylib (95) <189B576E-6176-3F82-8FA4-5914B0BEAEE7> /usr/lib/system/libcache.dylib
+       0x19d864000 -        0x19d865ce3  libSystem.B.dylib (1356) <BA6A669A-3BB9-3BC7-85E8-8F0C1E68351E> /usr/lib/libSystem.B.dylib
+       0x19d89e000 -        0x19d8a52bb  libiconv.2.dylib (115.120.2) <7C02D8F4-1921-323C-9D3D-A5D9B0ACDD78> /usr/lib/libiconv.2.dylib
+       0x290b20000 -        0x290b27349  libRosetta.dylib (367.9) <8651ED4F-6506-3788-B56B-32EE414A85CA> /usr/lib/libRosetta.dylib
+       0x29273d000 -        0x292740a4b  libsystem_darwindirectory.dylib (122) <CF277A2C-C818-3F16-8B3F-3C7B39FCD164> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x292741000 -        0x29274a5d3  libsystem_eligibility.dylib (319.121.1) <DDAC0531-0262-3DDC-8EC8-80EB9438847A> /usr/lib/system/libsystem_eligibility.dylib
+       0x29274b000 -        0x29275288b  libsystem_sanitizers.dylib (26.1) <44C4234F-8B2D-38D3-A774-B4B3C75AF3A7> /usr/lib/system/libsystem_sanitizers.dylib
+       0x292753000 -        0x292753bb7  libsystem_trial.dylib (474.2.18.2) <68C583BA-AFF5-3916-86AE-6E38BFEF98D6> /usr/lib/system/libsystem_trial.dylib

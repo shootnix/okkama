@@ -456,10 +456,7 @@ impl<'r> Flow<'r, '_> {
         // Вызов, дающий `^C`, создаёт новое обязательство.
         let produces = matches!(
             expr.kind,
-            ExprKind::Call { .. }
-                | ExprKind::CallValue { .. }
-                | ExprKind::Await(_)
-                | ExprKind::Projection { .. }
+            ExprKind::Call { .. } | ExprKind::CallValue { .. } | ExprKind::Await(_)
         ) && matches!(expr.ty, Some(Ty::Successor(_)));
         if produces {
             let ob = self.fresh();
@@ -483,6 +480,14 @@ impl<'r> Flow<'r, '_> {
     fn expr_inner(&mut self, expr: &'r Expr, want: bool, state: &mut State) -> Option<Obligations> {
         let none = || Some(Obligations::new());
         match &expr.kind {
+            ExprKind::VariantNew { values, .. } => {
+                self.values(values, state)?;
+                none()
+            }
+            ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
+                self.expr(value, true, state)?;
+                none()
+            }
             ExprKind::Constant(_)
             | ExprKind::SelfValue
             | ExprKind::Field(_)
@@ -777,10 +782,6 @@ impl<'r> Flow<'r, '_> {
                     let (CastPart::One(value) | CastPart::Spread(value)) = part;
                     self.expr(value, true, state)?;
                 }
-                none()
-            }
-            ExprKind::Projection { construction, .. } => {
-                self.expr(construction, true, state)?;
                 none()
             }
             ExprKind::Unpack(value) | ExprKind::Spawn(value) | ExprKind::Await(value) => {

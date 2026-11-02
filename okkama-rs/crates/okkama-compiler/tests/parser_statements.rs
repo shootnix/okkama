@@ -253,9 +253,14 @@ fn nested_block_statements() {
         body_sexpr("{ let a = 1; { a; } }"),
         "(BlockStatement statements=[(LetStatement name=a type=_ value=1) (BlockStatement statements=[a])])"
     );
-    // A statement-level `try`/`if` is not an expression: a following `;`
-    // is an empty expression statement, which is invalid.
-    assert_rejects(&wrap("if a { 1; } ;"), "Expect expression.");
+    // Tail expressions and a statement-level if have optional terminators.
+    assert_eq!(
+        body_sexpr("if a { 1 } else { 0 };"),
+        body_sexpr("if a { 1; } else { 0; }")
+    );
+    assert_eq!(body_sexpr("if a { 1; } ;"), body_sexpr("if a { 1; }"));
+    // Empty statements remain invalid; only one optional terminator is consumed.
+    assert_rejects(&wrap("if a { 1 } ;;"), "Expect expression.");
 }
 
 #[test]

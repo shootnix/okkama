@@ -99,7 +99,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "area",
           "params": [],
           "result": {
@@ -135,7 +134,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "kind",
           "params": [],
           "result": {
@@ -267,7 +265,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "area",
           "params": [],
           "result": {
@@ -303,7 +300,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "kind",
           "params": [],
           "result": {
@@ -386,10 +382,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": {
-            "node": "ProjectionDirective",
-            "alias": "described"
-          },
           "name": "description",
           "params": [],
           "result": {
@@ -452,7 +444,6 @@
               "node": "ActionDecl",
               "async": false,
               "visibility": "private",
-              "projection": null,
               "name": "unused",
               "params": [],
               "result": {
@@ -519,7 +510,6 @@
           "node": "ActionDecl",
           "async": false,
           "visibility": "public",
-          "projection": null,
           "name": "item",
           "params": [],
           "result": {
@@ -549,7 +539,6 @@
       "node": "ActionDecl",
       "async": false,
       "visibility": "public",
-      "projection": null,
       "name": "main",
       "params": [],
       "result": {
@@ -852,35 +841,39 @@
                   "node": "Argument",
                   "name": "item",
                   "value": {
-                    "node": "Projection",
-                    "prefix": "described",
-                    "construction": {
-                      "node": "Call",
-                      "callee": {
-                        "node": "NameExpression",
-                        "name": "Rectangle"
-                      },
-                      "arguments": [
-                        {
-                          "node": "Argument",
-                          "name": null,
-                          "value": {
-                            "node": "IntLiteral",
-                            "radix": "decimal",
-                            "digits": "1"
-                          }
+                    "node": "Call",
+                    "callee": {
+                      "node": "Get",
+                      "object": {
+                        "node": "Call",
+                        "callee": {
+                          "node": "NameExpression",
+                          "name": "Rectangle"
                         },
-                        {
-                          "node": "Argument",
-                          "name": null,
-                          "value": {
-                            "node": "IntLiteral",
-                            "radix": "decimal",
-                            "digits": "4"
+                        "arguments": [
+                          {
+                            "node": "Argument",
+                            "name": null,
+                            "value": {
+                              "node": "IntLiteral",
+                              "radix": "decimal",
+                              "digits": "1"
+                            }
+                          },
+                          {
+                            "node": "Argument",
+                            "name": null,
+                            "value": {
+                              "node": "IntLiteral",
+                              "radix": "decimal",
+                              "digits": "4"
+                            }
                           }
-                        }
-                      ]
-                    }
+                        ]
+                      },
+                      "name": "description"
+                    },
+                    "arguments": []
                   }
                 }
               ]

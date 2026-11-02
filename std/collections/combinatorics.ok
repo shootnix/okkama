@@ -332,12 +332,12 @@ object PermutationCursor<T> does Cursor<@T> {
                 );
             }
             else {
-                let candidate = value PermutationCandidate(
+                let candidate = PermutationCandidate(
                     positions: positions,
                     prefix: pivot,
                     origin_size: origin.size(),
                     start: positions[pivot] + 1,
-                );
+                ).value();
                 let following is @int = (0..amount).map() -> index {
                     if index < pivot {
                         positions[index];
@@ -347,13 +347,13 @@ object PermutationCursor<T> does Cursor<@T> {
                             candidate;
                         }
                         else {
-                            value PermutationAvailableIndex(
+                            PermutationAvailableIndex(
                                 positions: positions,
                                 prefix: pivot,
                                 selected: candidate,
                                 origin_size: origin.size(),
                                 offset: index - pivot - 1,
-                            );
+                            ).value();
                         }
                     }
                 };
@@ -611,7 +611,6 @@ object PermutationCandidate {
         beginning = start;
     }
 
-    #projected
     value() is int {
         if beginning >= source_size {
             -1;
@@ -641,12 +640,12 @@ object PermutationPivot {
     value() is int {
         for (0..origin.size()) -> offset {
             let index = origin.size() - offset - 1;
-            last index if value PermutationCandidate(
+            last index if PermutationCandidate(
                 positions: origin,
                 prefix: index,
                 origin_size: source_size,
                 start: origin[index] + 1,
-            ) >= 0;
+            ).value() >= 0;
             -1;
         }
     }
@@ -696,7 +695,6 @@ object PermutationAvailableIndex {
         self.offset = offset;
     }
 
-    #projected
     value() is int {
         for (0..source_size) -> candidate {
             let used = PrefixMembership(

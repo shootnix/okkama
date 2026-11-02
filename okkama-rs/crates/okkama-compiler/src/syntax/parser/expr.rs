@@ -7,7 +7,7 @@
 //!
 //! | level          | operators                       |
 //! |----------------|---------------------------------|
-//! | functional     | `call -> bindings { }` suffix   |
+//! | choice/fallback | `?? … !!`, `else`              |
 //! | logic_or       | `\|\|`                          |
 //! | logic_and      | `&&`                            |
 //! | stream_write   | `<-`                            |
@@ -20,8 +20,8 @@
 //! | shift          | `<<` `>>` `>>>`                 |
 //! | term           | `+` `-`                         |
 //! | factor         | `*` `/` `%`                     |
-//! | unary          | `!` `-` `~` `await` `spawn` `panic`, projections |
-//! | postfix        | call, `.name`, `::name`, `[i] else f`, `...` |
+//! | unary          | `!` `-` `~` `await` `spawn` `panic` |
+//! | postfix        | functional `->`, call, `.name`, `::name`, `[i] else f`, `...` |
 
 use super::{PResult, Parser};
 use crate::source::Span;
@@ -32,17 +32,50 @@ use crate::syntax::ast::{
 use crate::syntax::token::{TokenKind, TokenValue, is_lower_word, is_type_word};
 
 impl Parser<'_> {
-    /// `expr = logic_or`.
+    /// `expr = logic_or optional_else? compact_choice?`.
     ///
     /// The functional suffix `-> bindings { }` is a postfix form of a member
     /// call (`receiver.map(args)`, see [`Self::finish_postfix`]), so it binds
     /// tighter than every operator: `total + xs.reduce(0) -> a, x { a + x; }`.
     /// A nested expression is never the top level of a `for` source.
     pub(super) fn expression(&mut self) -> PResult<Expr> {
+        self.expression_with_fallback(true)
+    }
+
+    pub(super) fn expression_with_fallback(&mut self, optional: bool) -> PResult<Expr> {
         let enclosing = std::mem::replace(&mut self.for_source, false);
-        let expr = self.nested(|parser| parser.logic_or());
+        let result = self.nested(|parser| {
+            let mut expr = parser.logic_or()?;
+            if optional
+                && parser.check(TokenKind::Else)
+                && parser.nth(1).kind != TokenKind::LeftBrace
+            {
+                parser.advance();
+                let fallback = if parser.eat(TokenKind::Throw) {
+                    let start = parser.previous().span;
+                    let value = parser.expression()?;
+                    Expr {
+                        span: start.to(value.span),
+                        kind: ExprKind::Throw(Box::new(value)),
+                    }
+                } else {
+                    parser.expression()?
+                };
+                expr = Expr {
+                    span: expr.span.to(fallback.span),
+                    kind: ExprKind::Coalesce {
+                        value: Box::new(expr),
+                        fallback: Box::new(fallback),
+                    },
+                };
+            }
+            if parser.eat(TokenKind::Choice) {
+                expr = parser.finish_choice(expr)?;
+            }
+            Ok(expr)
+        });
         self.for_source = enclosing;
-        expr
+        result
     }
 
     /// The arrow after `receiver.name(args)` starts a functional block,
@@ -62,6 +95,142 @@ impl Parser<'_> {
             return Err(self.error_at_name(name, &message));
         }
         Ok(true)
+    }
+
+    fn choice_separator(&self) -> bool {
+        self.check(TokenKind::Bang)
+            && self.nth(1).kind == TokenKind::Bang
+            && self.peek().span.end == self.nth(1).span.start
+    }
+
+    fn choice_value(&mut self) -> PResult<Expr> {
+        if self.eat(TokenKind::Throw) {
+            let start = self.previous().span;
+            let value = self.expression()?;
+            Ok(Expr {
+                span: start.to(value.span),
+                kind: ExprKind::Throw(Box::new(value)),
+            })
+        } else {
+            self.expression()
+        }
+    }
+
+    fn choice_block(value: Expr) -> crate::syntax::ast::Block {
+        let span = value.span;
+        crate::syntax::ast::Block {
+            stmts: vec![crate::syntax::ast::Stmt {
+                kind: crate::syntax::ast::StmtKind::Expr {
+                    expr: value,
+                    condition: None,
+                },
+                span,
+            }],
+            span,
+        }
+    }
+
+    fn finish_choice(&mut self, subject: Expr) -> PResult<Expr> {
+        use crate::syntax::ast::{MatchBody, MatchCase};
+        let start = subject.span;
+        let patterned = self.check(TokenKind::Dot)
+            || (self.lexeme(self.peek()) == "_" && self.nth(1).kind == TokenKind::Colon);
+        let kind = if patterned {
+            let mut cases = Vec::new();
+            let mut else_block = None;
+            loop {
+                let arm_start = self.peek().span;
+                let pattern = if self.lexeme(self.peek()) == "_" {
+                    self.advance();
+                    None
+                } else {
+                    self.consume(TokenKind::Dot, "Expect .variant or _ in compact match.")?;
+                    let name = self.consume_member_name("Expect enum variant after dot.")?;
+                    let owner = Expr {
+                        kind: ExprKind::Name(Name {
+                            text: "$choice".into(),
+                            span: arm_start,
+                        }),
+                        span: arm_start,
+                    };
+                    let mut pattern = Expr {
+                        span: arm_start.to(name.span),
+                        kind: ExprKind::Get {
+                            object: Box::new(owner),
+                            name,
+                        },
+                    };
+                    if self.eat(TokenKind::LeftParen) {
+                        pattern = self.finish_call(pattern)?;
+                    }
+                    Some(pattern)
+                };
+                self.consume(TokenKind::Colon, "Expect : after compact match pattern.")?;
+                let body = Self::choice_block(self.choice_value()?);
+                if let Some(pattern) = pattern {
+                    cases.push(MatchCase {
+                        span: arm_start.to(body.span),
+                        patterns: vec![pattern],
+                        body,
+                    });
+                } else {
+                    else_block = Some(body);
+                    if self.choice_separator() {
+                        return Err(
+                            self.error_here("Wildcard must be the last compact match branch.")
+                        );
+                    }
+                    break;
+                }
+                if !self.choice_separator() {
+                    break;
+                }
+                self.advance();
+                self.advance();
+            }
+            ExprKind::Match(Box::new(MatchBody {
+                subject,
+                cases,
+                else_block,
+                span: start.to(self.previous().span),
+            }))
+        } else {
+            let then_block = Self::choice_block(self.choice_value()?);
+            if !self.choice_separator() {
+                return Err(self.error_here("Boolean choice requires !! and a false branch."));
+            }
+            self.advance();
+            self.advance();
+            let else_block = Self::choice_block(self.choice_value()?);
+            if self.choice_separator() {
+                return Err(self.error_here("Boolean choice has exactly two branches."));
+            }
+            ExprKind::If {
+                condition: Box::new(subject),
+                then_block,
+                else_block,
+            }
+        };
+        let span = start.to(self.previous().span);
+        // Include the subject and every branch, even choices hidden in parentheses,
+        // calls or blocks. Sibling expressions outside this span remain independent.
+        let first = self.tokens.partition_point(|t| t.span.start < span.start);
+        if self.tokens[first..self.pos]
+            .iter()
+            .filter(|t| t.kind == TokenKind::Choice)
+            .take(2)
+            .count()
+            > 1
+        {
+            return Err(self.error_at_span(
+                span,
+                "Nested ?? / !! choices are not allowed; use a local variable or match.",
+            ));
+        }
+        Ok(Expr {
+            kind: ExprKind::Choice(Box::new(Expr { kind, span })),
+            span,
+        })
     }
 
     fn error_at_name(&self, name: &Name, message: &str) -> crate::diagnostics::Diagnostic {
@@ -230,9 +399,9 @@ impl Parser<'_> {
             });
         }
         if self.check(TokenKind::Amp) {
-            return Err(
-                self.error_here("Constructor projections use a declared prefix, not \"&\".")
-            );
+            return Err(self.error_here(
+                "Constructor projections have been removed; use Type(args).method().",
+            ));
         }
         if self.eat(TokenKind::Await) {
             let value = self.operand()?;
@@ -275,7 +444,9 @@ impl Parser<'_> {
             });
         }
         if self.starts_named_projection() {
-            return self.named_projection();
+            return Err(self.error_here(
+                "Constructor projections have been removed; use Type(args).method().",
+            ));
         }
         self.postfix()
     }
@@ -326,40 +497,6 @@ impl Parser<'_> {
             && self.tokens[self.pos + 4].kind == TokenKind::LeftParen
     }
 
-    fn named_projection(&mut self) -> PResult<Expr> {
-        let prefix_token = self.advance();
-        let prefix = self.name_of(&prefix_token);
-        let mut target = self.primary()?;
-        if self.eat(TokenKind::Dot) {
-            let name = self.consume_name("Expect object name after \".\".")?;
-            target = Expr {
-                span: target.span.to(name.span),
-                kind: ExprKind::Get {
-                    object: Box::new(target),
-                    name,
-                },
-            };
-        }
-        if !is_projection_target(&target) {
-            return Err(self.error_at(
-                &prefix_token,
-                "Named constructor projection target must be an object name.",
-            ));
-        }
-        if !self.eat(TokenKind::LeftParen) {
-            return Err(self.error_here("Expect \"(\" after named constructor projection target."));
-        }
-        let construction = self.finish_call(target)?;
-        let projection = Expr {
-            span: prefix.span.to(construction.span),
-            kind: ExprKind::Projection {
-                prefix,
-                construction: Box::new(construction),
-            },
-        };
-        self.finish_postfix(projection)
-    }
-
     // ===== postfix ===========================================================
 
     fn postfix(&mut self) -> PResult<Expr> {
@@ -405,9 +542,9 @@ impl Parser<'_> {
                 && self.check_next(TokenKind::LeftParen)
                 && !self.starts_anonymous_action(self.pos + 1)
             {
-                return Err(
-                    self.error_here("Constructor projections use a declared prefix, not \":\".")
-                );
+                return Err(self.error_here(
+                    "Constructor projections have been removed; use Type(args).method().",
+                ));
             }
             if self.eat(TokenKind::Dot) {
                 let name = self.consume_member_name("Expect property name after \".\".")?;
@@ -499,7 +636,7 @@ impl Parser<'_> {
             let colon = self.nth(1).clone();
             return Err(self.error_at(
                 &colon,
-                "Constructor projections use a declared prefix, not \":\".",
+                "Constructor projections have been removed; use Type(args).method().",
             ));
         }
         if self.check_name() && self.check_next(TokenKind::Colon) {
@@ -569,6 +706,18 @@ impl Parser<'_> {
                 self.if_expression(start)
             }
             TokenKind::Match => self.match_expression(start),
+            _ if (self.check_type_name() && self.check_next(TokenKind::Less))
+                || (self.check_name()
+                    && self.check_next(TokenKind::Dot)
+                    && is_type_word(self.lexeme(self.nth(2)))
+                    && self.nth(3).kind == TokenKind::Less) =>
+            {
+                let ty = self.type_expr()?;
+                Ok(Expr {
+                    span: ty.span,
+                    kind: ExprKind::TypeValue(ty),
+                })
+            }
             _ if self.check_name() => {
                 let token = self.advance();
                 Ok(Expr {
@@ -800,21 +949,6 @@ impl Parser<'_> {
 /// qualifier only has to be lower-case-shaped (the reference parser treats
 /// `self` like any other variable here); whether it names a module is a
 /// semantic question.
-fn is_projection_target(expr: &Expr) -> bool {
-    match &expr.kind {
-        ExprKind::Name(name) => is_type_word(&name.text),
-        ExprKind::Get { object, name } => {
-            let lower_qualifier = match &object.kind {
-                ExprKind::Name(module) => is_lower_word(&module.text),
-                ExprKind::SelfValue => true,
-                _ => false,
-            };
-            lower_qualifier && is_type_word(&name.text)
-        }
-        _ => false,
-    }
-}
-
 /// Binary precedence levels, lowest first (the grammar's ladder).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {

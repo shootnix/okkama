@@ -12,6 +12,14 @@ pub struct Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {
+    /// Compact choice, represented internally by an If or Match expression.
+    Choice(Box<Expr>),
+    TypeValue(super::TypeExpr),
+    Throw(Box<Expr>),
+    Coalesce {
+        value: Box<Expr>,
+        fallback: Box<Expr>,
+    },
     Literal(Literal),
     /// A variable or any other bare name (types, actions, `test`, ...).
     Name(Name),
@@ -82,12 +90,6 @@ pub enum ExprKind {
     Unpack {
         operand: Box<Expr>,
         ellipsis: Span,
-    },
-    /// Named constructor projection `prefix Type(args)`; `construction` is
-    /// always the `Call` of the constructor.
-    Projection {
-        prefix: Name,
-        construction: Box<Expr>,
     },
     /// `receiver.map() -> a { }`, `.filter() -> a { }`, `.reduce(init) -> acc, a { }`.
     Functional {
@@ -289,26 +291,55 @@ impl ExprKind {
     /// Переносит дочерние выражения в `out`, оставляя на их месте листья.
     fn take_children(&mut self, out: &mut Vec<Expr>) {
         let mut take = |expr: &mut Box<Expr>| {
-            out.push(std::mem::replace(&mut **expr, Expr { kind: ExprKind::SelfValue, span: Span::default() }));
+            out.push(std::mem::replace(
+                &mut **expr,
+                Expr {
+                    kind: ExprKind::SelfValue,
+                    span: Span::default(),
+                },
+            ));
         };
         match self {
-            ExprKind::Grouping(operand)
+            ExprKind::Choice(operand)
+            | ExprKind::Throw(operand)
+            | ExprKind::Grouping(operand)
             | ExprKind::Unary { operand, .. }
             | ExprKind::Unpack { operand, .. }
-            | ExprKind::Get { object: operand, .. }
-            | ExprKind::Select { object: operand, .. }
-            | ExprKind::Projection { construction: operand, .. }
+            | ExprKind::Get {
+                object: operand, ..
+            }
+            | ExprKind::Select {
+                object: operand, ..
+            }
             | ExprKind::Panic { value: operand }
             | ExprKind::Await { value: operand }
             | ExprKind::Spawn { call: operand }
-            | ExprKind::If { condition: operand, .. } => take(operand),
-            ExprKind::Binary { left, right, .. }
-            | ExprKind::StreamWrite { sink: left, source: right, .. }
-            | ExprKind::Range { start: left, end: right, .. } => {
+            | ExprKind::If {
+                condition: operand, ..
+            } => take(operand),
+            ExprKind::Coalesce {
+                value: left,
+                fallback: right,
+            }
+            | ExprKind::Binary { left, right, .. }
+            | ExprKind::StreamWrite {
+                sink: left,
+                source: right,
+                ..
+            }
+            | ExprKind::Range {
+                start: left,
+                end: right,
+                ..
+            } => {
                 take(left);
                 take(right);
             }
-            ExprKind::Index { object, index, fallback } => {
+            ExprKind::Index {
+                object,
+                index,
+                fallback,
+            } => {
                 take(object);
                 take(index);
                 if let Some(fallback) = fallback {
@@ -331,7 +362,8 @@ impl ExprKind {
                     out.push(entry.value);
                 }
             }
-            ExprKind::Literal(_)
+            ExprKind::TypeValue(_)
+            | ExprKind::Literal(_)
             | ExprKind::Name(_)
             | ExprKind::SelfValue
             | ExprKind::OwnerField { .. }
@@ -342,4 +374,3 @@ impl ExprKind {
         }
     }
 }
-

@@ -1,7 +1,7 @@
 {
   "schema": "ocs-case/1",
   "id": "L01.gram.projected.removed-ampersand",
-  "title": "single `&` projection syntax is removed",
+  "title": "Removed projection syntax is rejected",
   "purpose": "Invalid source is rejected before execution.",
   "level": "L01",
   "contracts": [
@@ -27,14 +27,11 @@
     "outcome": "reject",
     "rejection": {
       "stages": [
-        "parse",
-        "check"
+        "parse"
       ],
       "categories": [
-        "syntax",
-        "semantic"
-      ],
-      "justification": "The contract requires rejection but the grammar marks this rule as context-sensitive (checked after parsing); detection while parsing is equally conforming."
+        "syntax"
+      ]
     }
   },
   "spec_refs": [
@@ -46,7 +43,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 11.3: single `&` projection syntax is removed (the EBNF still lists it: D-001)."
+    "expected_basis": "Action directives and projection prefixes are removed; construct the object and call its method normally."
   },
   "status": "mandatory"
 }

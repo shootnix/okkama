@@ -40,9 +40,10 @@ Okkama is a statically typed object language that turns the *Elegant Objects*
 discipline into enforced runtime rules. Internalize these before writing any
 code:
 
-1. **No null** in any spelling (`null`, `none`, `nil`, optionals, `?.` — all
-   parse errors). Absence is modeled with `else` fallbacks, typed throws, or
-   objects.
+1. **No untyped null.** Bare `null`, `none`, `nil`, `T?` and `?.` are rejected.
+   Use explicit `Maybe<T>` (`some`, `none`) or `Presence<T>` (`some`, `none`,
+   `missing`), qualified by their type. `Maybe<T> else fallback` is lazy;
+   `Presence.fold()` explicitly merges missing and none into `Maybe.none`.
 2. **No inheritance.** No `extends`, `isa`, `super`, `abstract`, `protected`.
    Behavior is shared via roles (contracts) and composition (fields).
 3. **Objects are immutable after construction.** The only state declaration is
@@ -81,7 +82,7 @@ code:
 These do not exist in Okkama 1.0. Producing them is always a bug:
 
 ```text
-null  none  nil  optional  T?  ?.          — no null, no optionals
+null  none  nil  T?  ?.                    — no untyped null; use Maybe<T> / Presence<T>
 isa  super  abstract  protected  extends   — no inheritance
 with / with_* actions, setters, mutable    — removed/forbidden API forms
 while / do-while                           — use `loop` with conditional `last`
@@ -96,8 +97,8 @@ catch scalar, collection, enum, `any`     — catch types must guarantee Error
 regex literals (/.../, qr//)               — use stdlib: Regex("pattern")
 byte literals (0x00)                       — construct with byte(0)
 ** power operator, string repetition *     — not in the language
-Type:(args) / Type:{ ... }                 — removed; use a declared prefix such as `value Type(...)`
-&action() / &Type(args)                    — removed anonymous projection syntax; use `#projected`
+Type:(args) / Type:{ ... }                 — removed; use `Type(...).method()`
+&action() / &Type(args) / #projected       — removed; use ordinary method calls
 ```
 
 Also never generate: an action that stages `^field` without `is ^Type`; a call
@@ -766,16 +767,8 @@ identifiers. OIR Profile 0 remains int-only. Full contract:
 - **Variadic constructor:** one final typed tail (`Min(first is T, rest is
   ...T)`), positional-only calls. It overloads with other constructors; a
   fitting fixed or shorthand constructor wins over it.
-- **Named constructor projection:** `#projected` registers the zero-argument
-  action name as a prefix; `#projected(alias)` registers an explicit lowercase
-  prefix. `value ParsedInt(text)` means exactly `ParsedInt(text).value()`.
-  Objects may register multiple unique prefixes. A projected action is public,
-  synchronous, explicitly typed, non-successor, parameterless, and returns a
-  type different from the object. Prefixes apply only to direct object
-  constructors (including named, empty, variadic, generic and qualified forms),
-  resolve statically from that constructor target, and are not role contracts
-  or dynamic operators. Construction and its `confirm` checks finish before ordinary action
-  dispatch. Single `&` projection syntax is removed; `&&` is unchanged.
+- **Constructor projections are removed.** Write `ParsedInt(text).value()`;
+  do not generate `#projected`, aliases or prefix projection calls.
 - Constructor bodies bind, normalize and validate with `confirm ... else throw`.
 
 ### Constructor validation
@@ -784,6 +777,37 @@ Use `confirm condition else throw TypedError(...)` directly in each constructor.
 Parameters, locals and initialized fields are in scope. A failure interrupts
 construction before the object is returned or a projection runs. Defers and owned
 resources are cleaned up. Successor actions check their own transitions.
+
+The last expression immediately before `}` may omit `;`: `if true { 1 } else { 0 };`.
+This never changes its value. Other statement terminators remain mandatory,
+including `let`, `return`, `throw` and `defer`. A whole statement-level `if`
+may have a trailing semicolon. Formatting preserves these optional terminators.
+
+## Optional values and compact choices
+
+`Maybe<T>` and `Presence<T>` are available without imports. Their variants are
+lowercase qualified members: `Maybe.some(value)`, `Maybe<T>.none`,
+`Presence<T>.missing`. Empty strings, false and zero remain present values.
+Return types must be explicit: no automatic wrapping or unwrapping.
+`Maybe.as_presence()` preserves some/none and cannot create missing.
+Payload enum syntax: `enum Reading<T> = (empty, value(item is T));`.
+Extract payloads with `case Reading.value(item) { item; }`, never `.value()`.
+
+```okkama
+let label = enabled ?? "enabled" !! "disabled";
+let name = user.name() else "anonymous"; // name() returns Maybe<string>
+let update = patch.name() // returns Presence<string>
+    ?? .some(v): v
+    !! .none: "clear"
+    !! .missing: "unchanged";
+```
+
+Compact choices are lazy, evaluate the subject once and require compatible
+result types. Boolean choices require bool. Enum choices require exhaustive
+patterns; a final `_:` covers the remaining variants. Payload names are local
+to their branch. **Never nest `?? / !!`, even in parentheses or call arguments
+inside another choice.** Extract decisions into independent variables, or use
+ordinary `if` / `match`. No `.?` or `.??` call modes exist.
 
 ## 15. Actions
 

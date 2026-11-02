@@ -55,11 +55,10 @@ object_member       = has_decl
                     | destroy_block
                     | test_block
                     | private_section
-                    | projection_action_decl
                     | action_decl
                     ;
 
-private_section     = "private" ":" (projection_action_decl | action_decl)* ;
+private_section     = "private" ":" action_decl* ;
 
 has_decl            = "has" attr_name_list has_type? has_default? ";" ;
 attr_name_list      = IDENT ("," IDENT)* ;
@@ -85,13 +84,13 @@ role_member         = role_action_decl | fake_block | test_block ;
 role_action_decl    = async_mark? IDENT "(" param_list? ")" result_spec ";" ;
 fake_block          = "fake" object_body ;
 
-enum_decl           = "enum" IDENT "=" "(" enum_cases? ")" ";" ;
-enum_cases          = IDENT ("," IDENT)* ;
+enum_decl           = "enum" TYPE_NAME generic_params? "=" "(" enum_cases? ")" ";" ;
+enum_cases          = enum_case ("," enum_case)* ;
+enum_case           = IDENT ("(" param_list? ")")? ;
 
 test_block          = "test" STRING block ;
 
 action_decl         = async_mark? IDENT "(" param_list? ")" result_spec block ;
-projection_action_decl = "&" action_decl ;
 async_mark          = "async" ;
 param_list          = param ("," param)* trailing_comma? ;
 param               = IDENT "is" variadic_mark? type_ref ;
@@ -146,7 +145,8 @@ block_stmt          = block ;
 field_bind_stmt     = IDENT "=" expr ";" ;
                     /* valid only in constructor bodies */
 
-if_stmt             = "if" expr block ("else" (if_stmt | block))? ;
+if_stmt             = if_chain ";"? ;
+if_chain            = "if" expr block ("else" (if_chain | block))? ;
 
 match_stmt          = "match" expr "{" match_case* match_else? "}" ;
 match_case          = "case" case_values block ;
@@ -163,11 +163,23 @@ next_stmt           = "next" postfix_if? ";" ;
 last_stmt           = "last" ("if" expr | expr postfix_if?)? ";" ;
 postfix_if          = "if" expr ;
 
-expr_stmt           = expr postfix_if? ";" ;
+expr_stmt           = expr postfix_if? (";" | BEFORE_RIGHT_BRACE) ;
+(* BEFORE_RIGHT_BRACE is zero-width lookahead: only the last expression in a
+   block may omit its semicolon. let/return/throw/defer/etc. still require it. *)
 
-expr                = assignment_free_expr ;
-(* arrow_suffix is a postfix form: it applies only directly after an eligible
-   functional member call, e.g. map(), and binds tighter than every operator. *)
+expr                = assignment_free_expr optional_else? compact_choice? ;
+compact_choice      = "??" choice_value "!!" choice_value
+                    | "??" choice_arm ("!!" choice_arm)* ;
+choice_arm          = choice_pattern ":" choice_value ;
+choice_pattern      = "." IDENT ("(" IDENT ("," IDENT)* ")")? | "_" ;
+choice_value        = "throw" expr | expr ;
+(* No compact choice may contain another compact choice anywhere in its subject
+   or branches, including parentheses, calls, collections and blocks.
+   .variant and _: select pattern form; boolean form has exactly two branches.
+   A wildcard branch must be last. !! is two adjacent ! tokens in infix position;
+   prefix !!value continues to mean double boolean negation. *)
+optional_else       = "else" ("throw" expr | expr) ;
+(* arrow_suffix applies directly to an eligible member call, at postfix precedence. *)
 arrow_suffix        = "->" arrow_bindings? block ;
 arrow_bindings      = IDENT ("," IDENT)* ;
 assignment_free_expr= logic_or ;
@@ -183,7 +195,7 @@ bitwise_and         = shift_expr ("&" shift_expr)* ;
 shift_expr          = term (("<<" | ">>" | ">>>") term)* ;
 term                = factor (("+" | "-") factor)* ;
 factor              = unary (("*" | "/" | "%") unary)* ;
-unary               = ("!" | "-" | "~") unary | constructor_projection | await_expr | spawn_expr ;
+unary               = ("!" | "-" | "~") unary | await_expr | spawn_expr ;
 await_expr          = "await" unary | postfix ;
 spawn_expr          = "spawn" call_expr ;
 call_expr           = postfix ;  (* semantic form: direct Worker(...).action(...) *)
@@ -195,7 +207,6 @@ member_access       = "." IDENT ;
 index_access        = "[" expr "]" lookup_else? ;
 lookup_else         = "else" expr ;
 call_args           = "(" arg_list? ")" ;
-constructor_projection = IDENT (TYPE_NAME | IDENT "." TYPE_NAME) call_args ;
 arg_list            = arg ("," arg)* trailing_comma? ;
 arg                 = IDENT ":" expr | expr ;
 
@@ -281,9 +292,6 @@ full constructor calls are selected like action overloads: by arity, named-param
 constructor field shorthand is named-only and selected by allowed/required field compatibility;
 constructor field shorthand entries must name explicitly typed fields on the same object;
 constructor selection never falls back to all has fields or their order;
-constructor-projection syntax is valid only on an object-name target and is equivalent to constructing it and calling that object's marked projection action;
-an object may mark at most one projection action; it must be public, synchronous, zero-argument, explicitly typed, non-successor, and return a type different from the object type;
-the projection marker marks one declaration and chooses its action name; unmarked fixed overloads of that name remain available, and projection uses ordinary zero-argument overload dispatch;
 actions with a variadic parameter overload with fixed and other variadic actions; a variadic tail counts as one parameter of the arity, and a call that fits a fixed signature never selects a variadic one;
 fixed action overloads are selected by arity, named-parameter shape, runtime
 argument compatibility, and specificity; declaration order is never a

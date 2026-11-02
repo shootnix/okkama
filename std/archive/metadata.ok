@@ -93,7 +93,6 @@ object ArchiveModificationFromEpoch {
     ArchiveModificationFromEpoch(seconds is rat) {
         elapsed = Duration(seconds, DurationUnit.second);
     }
-    #projected
     value() is LocalDateTime {
         LocalDateTime(Date(1970, 1, 1), TimeOfDay(0, 0, 0, 0)).plus(elapsed);
     }

@@ -14,7 +14,7 @@ main() is int {
     c = c.same_int("subtotal", invoice.subtotal(), 9417);
     c = c.same_int("tax", invoice.tax(), 777);
     c = c.same_int("total", invoice.total(), 10194);
-    c = c.same_int("tie rounds to even (12.5)", cents HalfEven(value: rat(25, 2)), 12);
-    c = c.same_int("tie rounds to even (13.5)", cents HalfEven(value: rat(27, 2)), 14);
+    c = c.same_int("tie rounds to even (12.5)", HalfEven(value: rat(25, 2)).rounded(), 12);
+    c = c.same_int("tie rounds to even (13.5)", HalfEven(value: rat(27, 2)).rounded(), 14);
     c.done();
 }

@@ -12,7 +12,7 @@ import "io/decorators" take ByteSnapshot;
 
 async main() is int {
     let out = Stdout();
-    let port = value ParsedInt(Utf8Arguments(ProcessArguments()).item(0));
+    let port = ParsedInt(Utf8Arguments(ProcessArguments()).item(0)).value();
     let connection = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
     defer connection.close();
     let collected = loop {

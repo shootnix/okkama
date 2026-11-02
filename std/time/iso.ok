@@ -25,7 +25,6 @@ object IsoDate {
         self.origin = origin;
     }
 
-    #projected
     string() is string {
         let year is string = origin.year().string();
         let month is string = origin.month().string();
@@ -45,7 +44,6 @@ object DateFromIso {
         self.origin = origin;
     }
 
-    #projected
     value() is Date {
         confirm origin.length() == 10
             && origin.slice(4, 5) == "-"
@@ -53,9 +51,9 @@ object DateFromIso {
             else throw InvalidIsoDate(origin);
         try {
             Date(
-                year: value ParsedInt(origin.slice(0, 4)),
-                month: value ParsedInt(origin.slice(5, 7)),
-                day: value ParsedInt(origin.slice(8, 10)),
+                year: ParsedInt(origin.slice(0, 4)).value(),
+                month: ParsedInt(origin.slice(5, 7)).value(),
+                day: ParsedInt(origin.slice(8, 10)).value(),
             );
         }
         catch error is InvalidInteger {
@@ -71,7 +69,6 @@ object IsoLocalDateTime {
         self.origin = origin;
     }
 
-    #projected
     string() is string {
         let time is TimeOfDay = origin.time();
         let hour is string = time.hour().string();
@@ -101,7 +98,6 @@ object LocalDateTimeFromIso {
         self.origin = origin;
     }
 
-    #projected
     value() is LocalDateTime {
         let length is int = origin.length();
         let fraction is bool = length > 19;
@@ -115,19 +111,19 @@ object LocalDateTimeFromIso {
         try {
             let nanosecond is int = if fraction {
                 let digits is string = origin.slice(20, length);
-                value ParsedInt(
+                ParsedInt(
                     (digits + "000000000").slice(0, 9)
-                );
+                ).value();
             }
             else {
                 0;
             };
             LocalDateTime(
-                date: value DateFromIso(origin.slice(0, 10)),
+                date: DateFromIso(origin.slice(0, 10)).value(),
                 time: TimeOfDay(
-                    hour: value ParsedInt(origin.slice(11, 13)),
-                    minute: value ParsedInt(origin.slice(14, 16)),
-                    second: value ParsedInt(origin.slice(17, 19)),
+                    hour: ParsedInt(origin.slice(11, 13)).value(),
+                    minute: ParsedInt(origin.slice(14, 16)).value(),
+                    second: ParsedInt(origin.slice(17, 19)).value(),
                     nanosecond: nanosecond,
                 ),
             );
@@ -145,7 +141,6 @@ object IsoFraction {
         self.origin = origin;
     }
 
-    #projected
     string() is string {
         let source is string = origin.string();
         self.digits(
@@ -172,7 +167,6 @@ object InvalidIsoDate does Error {
         self.origin = origin;
     }
 
-    #projected
     text() is string {
         "invalid ISO date: " + origin;
     }
@@ -185,7 +179,6 @@ object InvalidIsoLocalDateTime does Error {
         self.origin = origin;
     }
 
-    #projected
     text() is string {
         "invalid ISO local date-time: " + origin;
     }

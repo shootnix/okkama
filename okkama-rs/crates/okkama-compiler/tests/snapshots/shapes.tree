@@ -50,7 +50,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: area
           params: []
           result: NamedType
@@ -69,7 +68,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: kind
           params: []
           result: NamedType
@@ -133,7 +131,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: area
           params: []
           result: NamedType
@@ -152,7 +149,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: kind
           params: []
           result: NamedType
@@ -194,8 +190,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: ProjectionDirective
-            alias: described
           name: description
           params: []
           result: NamedType
@@ -228,7 +222,6 @@ Program
             - ActionDecl
               async: false
               visibility: private
-              projection: (none)
               name: unused
               params: []
               result: NamedType
@@ -262,7 +255,6 @@ Program
         - ActionDecl
           async: false
           visibility: public
-          projection: (none)
           name: item
           params: []
           result: NamedType
@@ -277,7 +269,6 @@ Program
     - ActionDecl
       async: false
       visibility: public
-      projection: (none)
       name: main
       params: []
       result: NamedType
@@ -428,22 +419,24 @@ Program
               arguments:
                 - Argument
                   name: item
-                  value: Projection
-                    prefix: described
-                    construction: Call
-                      callee: NameExpression
-                        name: Rectangle
-                      arguments:
-                        - Argument
-                          name: (none)
-                          value: IntLiteral
-                            radix: decimal
-                            digits: 1
-                        - Argument
-                          name: (none)
-                          value: IntLiteral
-                            radix: decimal
-                            digits: 4
+                  value: Call
+                    callee: Get
+                      object: Call
+                        callee: NameExpression
+                          name: Rectangle
+                        arguments:
+                          - Argument
+                            name: (none)
+                            value: IntLiteral
+                              radix: decimal
+                              digits: 1
+                          - Argument
+                            name: (none)
+                            value: IntLiteral
+                              radix: decimal
+                              digits: 4
+                      name: description
+                    arguments: []
           - ExpressionStatement
             expression: StreamWrite
               sink: StreamWrite

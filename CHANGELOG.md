@@ -10,6 +10,25 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 
 ### Added
 
+- Optional semicolons on the last expression before `}`, preserving its value;
+  `if true { 1 } else { 0 };` is accepted. Other statement terminators remain required.
+
+- Non-nested compact choices: `condition ?? yes !! no` and
+  `value ?? .some(v): v !! .none: fallback`. Branches are lazy and typed;
+  enum patterns are exhaustive, with an optional final `_:` wildcard.
+  Parentheses cannot bypass the nesting prohibition. Presence conversion is
+  named `fold()` (replacing the initial `collapse()` spelling).
+
+- Nominal generic enum variants with positional typed payloads, exhaustive payload
+  patterns, scoped bindings and `_` wildcards. Enum type arguments can be inferred
+  or supplied explicitly. Variant equality includes the active payload.
+- Standard `Maybe<T>` (`some`, `none`) and `Presence<T>` (`some`, `none`, `missing`),
+  available without imports. `Maybe<T> else fallback` is lazy and accepts throwing
+  or panicking branches. Presence requires explicit `.fold()`; Maybe supports
+  `.as_presence()`. Empty strings, zero and false remain present values.
+- IR, Sparrow/JIT and JVM execution and conformance coverage for variant payloads,
+  generic inference, absence, errors, module boundaries and resource lifetimes.
+
 - [Trust model](docs/security-model.md): what Okkama handles safely today for source
   code, `.spb` bytecode, natives and embedding, what it does not, and which roadmap
   tasks move each boundary (H-01).
@@ -57,6 +76,11 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   whole function again: quadratic in a function with many `builder.push` (an array
   literal of 20 000 elements took 6.5 s in `okkama ir`). Builder uses are now collected
   in one pass; the same program builds in 1 s instead of 132 s (H-39).
+
+### Removed
+- Action directives and constructor projections, including `#projected`. Use
+  `Object(arguments).method()`; stdlib and positive conformance examples are migrated.
+  Method signatures state the complete result type, with no implicit unwrapping.
 
 ## [0.3.2] — 2026-11-01
 

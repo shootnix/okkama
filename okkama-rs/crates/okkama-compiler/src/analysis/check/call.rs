@@ -372,6 +372,11 @@ impl Checker<'_, '_> {
         span: Span,
         expected: Option<&Ty>,
     ) -> Expr {
+        if let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind {
+            if let Some((id, explicit)) = self.variant_receiver(object) {
+                return self.variant_construct(id, explicit, name, args, expected, span);
+            }
+        }
         let named = args.iter().filter(|arg| arg.name.is_some()).count();
         if named != 0 && named != args.len() {
             self.error(span, "A call cannot mix positional and named arguments");
@@ -857,8 +862,10 @@ impl Checker<'_, '_> {
         }
         let variadic = |index: usize| shapes[index].0.variadic;
         let typed = Self::fixed_first(typed, variadic);
-        let mut by_shape: Vec<(usize, Vec<u8>)> =
-            by_shape.into_iter().map(|index| (index, Vec::new())).collect();
+        let mut by_shape: Vec<(usize, Vec<u8>)> = by_shape
+            .into_iter()
+            .map(|index| (index, Vec::new()))
+            .collect();
         by_shape = Self::fixed_first(by_shape, variadic);
         let omitted = |index: usize| match &info.ctors[index].shape {
             CtorShape::Shorthand { fields, .. } => fields
@@ -871,13 +878,20 @@ impl Checker<'_, '_> {
             if !named || found.len() < 2 {
                 return found;
             }
-            let least = found.iter().map(|(index, _)| omitted(*index)).min().unwrap_or(0);
+            let least = found
+                .iter()
+                .map(|(index, _)| omitted(*index))
+                .min()
+                .unwrap_or(0);
             found
                 .into_iter()
                 .filter(|(index, _)| omitted(*index) == least)
                 .collect::<Vec<_>>()
         };
-        let by_shape = fewest(by_shape).into_iter().map(|(index, _)| index).collect();
+        let by_shape = fewest(by_shape)
+            .into_iter()
+            .map(|(index, _)| index)
+            .collect();
         (by_shape, fewest(typed))
     }
 
@@ -1140,6 +1154,7 @@ impl Checker<'_, '_> {
         let target = self.value(receiver, None);
         let target_ty = Self::ty_of(&target).taken();
         match target_ty.clone() {
+            Ty::Variant(id, types) => self.variant_method(target, id, types, name, args, span),
             Ty::Object(object, type_args) => {
                 self.object_method(target, object, type_args, name, args, on_self, span)
             }
@@ -1417,6 +1432,9 @@ impl Checker<'_, '_> {
             self.no_field(name);
             return Self::poisoned(span);
         }
+        if let Some((id, explicit)) = self.variant_receiver(receiver) {
+            return self.variant_construct(id, explicit, name, &[], expected, span);
+        }
         // `Light.red`: case enum, если имя не перекрыто локальной привязкой.
         if let Some(id) = self.enum_receiver(receiver) {
             let decl = &self.reg.enums[id.0];
@@ -1547,7 +1565,10 @@ impl Checker<'_, '_> {
     }
 
     /// `Color` или `ns.Color` как receiver case enum.
-    fn enum_receiver(&mut self, receiver: &ast::Expr) -> Option<crate::analysis::ty::EnumId> {
+    pub(super) fn enum_receiver(
+        &mut self,
+        receiver: &ast::Expr,
+    ) -> Option<crate::analysis::ty::EnumId> {
         match &strip_grouping(receiver).kind {
             ast::ExprKind::Name(name) if self.local(&name.text).is_none() => {
                 self.enum_named(&name.text)
@@ -1648,83 +1669,6 @@ impl Checker<'_, '_> {
             Ty::Action(Box::new(ty)),
             span,
         ))
-    }
-
-    // ----- проекции -----
-
-    /// `prefix Object(...)`: конструирование, затем действие `#projected(prefix)`.
-    pub(super) fn projection(
-        &mut self,
-        prefix: &ast::Name,
-        construction: &ast::Expr,
-        span: Span,
-    ) -> Expr {
-        let target = match &construction.kind {
-            ast::ExprKind::Call { callee, .. } => match &strip_grouping(callee).kind {
-                ast::ExprKind::Name(name) => match self.reg.find_type(self.module, &name.text) {
-                    Some(TypeRef::Object(object)) => Some(object),
-                    _ => None,
-                },
-                ast::ExprKind::Get { object, name } => match &strip_grouping(object).kind {
-                    ast::ExprKind::Name(space) if self.local(&space.text).is_none() => {
-                        match self
-                            .reg
-                            .find_qualified(self.module, &space.text, &name.text)
-                        {
-                            Some(TypeRef::Object(object)) => Some(object),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                },
-                _ => None,
-            },
-            _ => None,
-        };
-        let Some(object) = target else {
-            self.error(
-                prefix.span,
-                "Constructor projection target must resolve to an object",
-            );
-            let _ = self.expr(construction, true, None);
-            return Self::poisoned(span);
-        };
-        let Some(method) = self.reg.objects[object.0]
-            .methods
-            .iter()
-            .position(|method| method.projection.as_deref() == Some(prefix.text.as_str()))
-        else {
-            let message = format!(
-                "Object \"{}\" has no projection prefix \"{}\"",
-                self.reg.objects[object.0].name, prefix.text
-            );
-            self.error(prefix.span, message);
-            let _ = self.expr(construction, true, None);
-            return Self::poisoned(span);
-        };
-        let built = self.value(construction, None);
-        let type_args = match Self::ty_of(&built).taken() {
-            Ty::Object(_, args) => args,
-            _ => return Self::poisoned(span),
-        };
-        let info = &self.reg.objects[object.0];
-        let env: Vec<(ParamId, Ty)> = info.params.iter().copied().zip(type_args).collect();
-        let result = info.methods[method]
-            .result
-            .as_ref()
-            .map_or(Ty::Error, |ty| ty.subst(&env));
-        let diverges = built.diverges;
-        let mut out = Self::typed(
-            ExprKind::Projection {
-                construction: Box::new(built),
-                object,
-                method,
-            },
-            result,
-            span,
-        );
-        out.diverges = diverges;
-        out
     }
 
     // ----- анонимные действия -----

@@ -34,7 +34,6 @@ object ParsedPlist {
         confirm maximum_input>=0 && maximum_nodes>=0 && maximum_depth>=0 else throw InvalidPlistLimits();
         self.origin=origin;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;self.maximum_depth=maximum_depth;
     }
-    #projected
     value() is PlistValue {
         confirm origin.size()<=maximum_input else throw InvalidPlist(0,"input budget exceeded");
         if origin.size()>=6 && origin.slice(0,6)==[byte(98),byte(112),byte(108),byte(105),byte(115),byte(116)] {

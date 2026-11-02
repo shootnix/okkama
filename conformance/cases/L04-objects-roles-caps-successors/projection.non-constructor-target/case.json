@@ -1,7 +1,7 @@
 {
   "schema": "ocs-case/1",
   "id": "L04.projection.non-constructor-target",
-  "title": "projection prefixes apply only to constructor targets",
+  "title": "Removed projection syntax is rejected",
   "purpose": "The construct is invalid and must not complete.",
   "level": "L04",
   "contracts": [
@@ -12,7 +12,7 @@
       ]
     }
   ],
-  "mode": "run",
+  "mode": "check",
   "sources": [
     "main.ok"
   ],
@@ -23,20 +23,14 @@
     ]
   },
   "expect": {
-    "outcome": "error",
+    "outcome": "reject",
     "rejection": {
       "stages": [
-        "parse",
-        "check"
+        "parse"
       ],
       "categories": [
-        "syntax",
-        "semantic"
-      ],
-      "justification": "spec 11.3: prefix use is resolved statically from the constructor target; the error precedes execution."
-    },
-    "stdout": {
-      "text": ""
+        "syntax"
+      ]
     }
   },
   "spec_refs": [
@@ -47,7 +41,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 11.3: prefixes do not apply to variables, member calls or arbitrary values."
+    "expected_basis": "Action directives and projection prefixes are removed; construct the object and call its method normally."
   },
   "status": "mandatory"
 }

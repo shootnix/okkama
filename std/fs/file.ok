@@ -106,30 +106,30 @@ object File does Closing {
     has state is FileState;
 
     File(mode is FileMode, path is Path) {
-        state = value ConfiguredFileState(
+        state = ConfiguredFileState(
             mode: mode,
             path: path,
             encoding: "utf-8",
             binary: false,
-        );
+        ).value();
     }
 
     File(mode is FileMode, path is Path, encoding is string) {
-        state = value ConfiguredFileState(
+        state = ConfiguredFileState(
             mode: mode,
             path: path,
             encoding: encoding,
             binary: false,
-        );
+        ).value();
     }
 
     File(mode is FileMode, path is Path, binary is bool) {
-        state = value ConfiguredFileState(
+        state = ConfiguredFileState(
             mode: mode,
             path: path,
             encoding: if binary { ""; } else { "utf-8"; },
             binary: binary,
-        );
+        ).value();
     }
 
     File(
@@ -141,12 +141,12 @@ object File does Closing {
         confirm !binary else throw InvalidFileOperation(
             "binary files cannot specify a text encoding"
         );
-        state = value ConfiguredFileState(
+        state = ConfiguredFileState(
             mode: mode,
             path: path,
             encoding: encoding,
             binary: false,
-        );
+        ).value();
     }
 
     destroy { self.close(); }
@@ -170,7 +170,7 @@ object File does Closing {
             file_state_read(state, limit);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     write_bytes(source is ByteSource) is void {
@@ -180,7 +180,7 @@ object File does Closing {
             confirm written == bytes.size() else throw IncompleteWrite(written);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     flush_bytes() is void {
@@ -188,7 +188,7 @@ object File does Closing {
             file_state_flush(state);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     read_line() is string {
@@ -200,14 +200,14 @@ object File does Closing {
                 throw EndOfInput();
             }
             else {
-                throw value FileError(failure: failure);
+                throw FileError(failure: failure).value();
             }
         }
     }
     read_text() is string {
         try { file_state_read_text(state); }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     write_text(values is ...string) is void {
@@ -216,7 +216,7 @@ object File does Closing {
             file_state_write_text(state, text, false);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     writeln_text(values is ...string) is void {
@@ -225,7 +225,7 @@ object File does Closing {
             file_state_write_text(state, text, true);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     flush_text() is void {
@@ -233,7 +233,7 @@ object File does Closing {
             file_state_flush(state);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     offset() is int {
@@ -241,7 +241,7 @@ object File does Closing {
             file_state_position(state);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     seek(offset is int, from is SeekOrigin) is void {
@@ -249,11 +249,11 @@ object File does Closing {
             file_state_seek(
                 state,
                 offset,
-                value SeekOriginCode(origin: from),
+                SeekOriginCode(origin: from).value(),
             );
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
     truncate(size is int) is void {
@@ -261,7 +261,7 @@ object File does Closing {
             file_state_truncate(state, size);
         }
         catch failure is NativeFailure {
-            throw value FileError(failure: failure);
+            throw FileError(failure: failure).value();
         }
     }
 
@@ -345,7 +345,7 @@ object FileEntry {
 
     stat() is FileStat {
         try {
-            value FileStatFromMap(origin: stat(path_encode(origin.string())));
+            FileStatFromMap(origin: stat(path_encode(origin.string()))).value();
         }
         catch failure is NativeFailure {
             throw FileSystemFailure(failure.code(), failure.message());
@@ -399,14 +399,13 @@ object ConfiguredFileState {
 
     ConfiguredFileState(:mode, :path, :encoding, :binary);
 
-    #projected
     value() is FileState {
-        confirm binary || value SupportedFileEncoding(origin: encoding)
+        confirm binary || SupportedFileEncoding(origin: encoding).value()
             else throw UnsupportedFileEncoding(encoding);
         try {
             file_state_create(
                 path_encode(path.string()),
-                value FileModeCode(origin: mode),
+                FileModeCode(origin: mode).value(),
                 encoding,
                 binary,
             );
@@ -422,7 +421,6 @@ object SupportedFileEncoding {
 
     SupportedFileEncoding(:origin);
 
-    #projected
     value() is bool {
         origin == "utf-8"
             || origin == "utf-16-le"
@@ -439,7 +437,6 @@ object FileModeCode {
 
     FileModeCode(:origin);
 
-    #projected
     value() is int {
         if origin == FileMode.reading { 0; }
         else if origin == FileMode.writing { 1; }
@@ -454,7 +451,6 @@ object SeekOriginCode {
 
     SeekOriginCode(:origin);
 
-    #projected
     value() is int {
         if origin == SeekOrigin.start { 0; }
         else if origin == SeekOrigin.current { 1; }
@@ -467,7 +463,6 @@ object FileError {
 
     FileError(:failure);
 
-    #projected
     value() is Error {
         if failure.code() == "invalid_input"
             || failure.code() == "already_closed" {
@@ -486,7 +481,6 @@ object InvalidFileOperation does Error {
         self.message = message;
     }
 
-    #projected
     text() is string { message; }
 }
 
@@ -497,7 +491,6 @@ object UnsupportedFileEncoding does Error {
         self.encoding = encoding;
     }
 
-    #projected
     text() is string {
         "unsupported file encoding: " + encoding;
     }
@@ -514,7 +507,6 @@ object FileSystemFailure does Error {
 
     code() is string { failure_code; }
 
-    #projected
     text() is string { message; }
 }
 

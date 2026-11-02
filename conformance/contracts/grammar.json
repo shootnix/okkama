@@ -165,7 +165,7 @@
     },
     {
       "id": "GRAM.PROJECTED-DIRECTIVE",
-      "title": "`#projected` / `#projected(alias)` marks constructor projections; single `&` projection syntax is removed",
+      "title": "Constructor projections and action directives are removed; use ordinary method calls",
       "spec_refs": [
         "docs/okkama-spec-11072026.md#11.3"
       ],
@@ -515,6 +515,23 @@
       "title": "Trailing commas are accepted where the grammar lists `trailing_comma`",
       "spec_refs": [
         "docs/okkama-grammar-1.0.ebnf"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "n/a: the contract defines no boundary values distinct from its normal behaviour",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Grammar"
+    },
+    {
+      "id": "GRAM.TAIL-EXPRESSION",
+      "title": "Final expressions may omit semicolons before } without changing their value",
+      "spec_refs": [
+        "docs/okkama-grammar-1.0.ebnf",
+        "docs/okkama-spec-11072026.md#9.7",
+        "docs/okkama-spec-11072026.md#8.11"
       ],
       "status": "mandatory",
       "aspects": {

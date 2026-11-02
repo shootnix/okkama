@@ -174,6 +174,9 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
             adapters::lower_method(ctx, symbol, object, method)
         }
         Task::AdapterNew { object } => adapters::lower_new(ctx, symbol, object),
+        Task::VariantGet { object, field } => {
+            adapters::lower_variant_get(ctx, symbol, object, field)
+        }
         Task::Closure { index } => lower_closure(ctx, symbol, index),
         Task::Test { index } => lower_test(ctx, symbol, index),
         Task::Runtime {
@@ -2011,12 +2014,77 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     }
                 }
             }
+            ExprKind::VariantNew { case, values } => {
+                let ty = self.expr_type(expr)?;
+                let Type::Object(object) = ty else {
+                    unreachable!()
+                };
+                let semantic = expr.ty.as_ref().unwrap().subst(&self.env);
+                let Ty::Variant(id, _) = semantic else {
+                    unreachable!()
+                };
+                let offset = 1 + self.ctx.reg.enums[id.0].payloads[..*case]
+                    .iter()
+                    .map(Vec::len)
+                    .sum::<usize>();
+                let field_types: Vec<_> = self.ctx.objects[object.0]
+                    .fields
+                    .iter()
+                    .map(|(_, t, _)| t.clone())
+                    .collect();
+                let mut fields = Vec::new();
+                for (index, ty) in field_types.into_iter().enumerate() {
+                    let value = if index == 0 {
+                        self.constant(
+                            Constant::Int(IntValue::parse(&case.to_string()).unwrap()),
+                            span,
+                        )
+                    } else if index >= offset && index < offset + values.len() {
+                        let Some(value) = self.value(&values[index - offset])? else {
+                            return Ok(Out::Diverged);
+                        };
+                        self.emit(InstKind::ArrayNew(vec![value.value]), ty, span)
+                    } else {
+                        self.emit(InstKind::ArrayNew(Vec::new()), ty, span)
+                    };
+                    fields.push(value.value);
+                }
+                let func = self.ctx.adapter_ctor(object);
+                Ok(Out::Value(self.emit(
+                    InstKind::Call { func, args: fields },
+                    Type::Object(object),
+                    span,
+                )))
+            }
+            ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
+                let field = if let ExprKind::VariantGet { field, .. } = &expr.kind {
+                    *field
+                } else {
+                    0
+                };
+                let Some(value) = self.value(value)? else {
+                    return Ok(Out::Diverged);
+                };
+                let Type::Object(object) = value.ty else {
+                    unreachable!()
+                };
+                let func = self.ctx.variant_getter(object, field);
+                let ty = self.expr_type(expr)?;
+                Ok(Out::Value(self.emit(
+                    InstKind::Call {
+                        func,
+                        args: vec![value.value],
+                    },
+                    ty,
+                    span,
+                )))
+            }
             ExprKind::EnumCase { ty, case } => Ok(Out::Value(self.emit(
                 InstKind::EnumCase {
-                    ty: ir::EnumId(ty.0),
+                    ty: self.ctx.enum_id(*ty),
                     case: *case,
                 },
-                Type::Enum(ir::EnumId(ty.0)),
+                Type::Enum(self.ctx.enum_id(*ty)),
                 span,
             ))),
             ExprKind::Unary { op, operand } => self.unary(*op, operand, span),
@@ -2069,11 +2137,6 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             } => self.index(object, index, fallback.as_deref(), want, span),
             ExprKind::Functional(functional) => self.functional(functional, expr, span),
             ExprKind::ArrayCast { element, parts } => self.array_cast(*element, parts, span),
-            ExprKind::Projection {
-                construction,
-                method,
-                ..
-            } => self.projection(construction, *method, expr, span),
             ExprKind::Unpack(value) => self.expr(value, true),
             ExprKind::Pack { items, spread } => self.pack(items, spread.as_deref(), expr, span),
             ExprKind::Unreachable => Err(LoweringError::invalid(

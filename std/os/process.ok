@@ -271,7 +271,6 @@ object ProcessErrors does Reading {
 object MissingExitCode does Error {
     MissingExitCode();
 
-    #projected
     text() is string { "process did not exit with a code"; }
 }
 
@@ -284,7 +283,6 @@ object UnsupportedSignal does Error {
 
     signal() is Signal { origin; }
 
-    #projected
     text() is string { "process signal is unsupported by this runtime"; }
 }
 
@@ -299,6 +297,5 @@ object ProcessFailure does Error {
 
     code() is string { failure_code; }
 
-    #projected
     text() is string { message; }
 }

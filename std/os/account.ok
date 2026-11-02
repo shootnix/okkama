@@ -231,7 +231,6 @@ object MissingUser does Error {
 
     name() is string { origin; }
 
-    #projected
     text() is string { "user was not found: " + origin; }
 }
 
@@ -244,7 +243,6 @@ object MissingGroup does Error {
 
     name() is string { origin; }
 
-    #projected
     text() is string { "group was not found: " + origin; }
 }
 
@@ -257,7 +255,6 @@ object MissingUserHome does Error {
 
     name() is string { origin; }
 
-    #projected
     text() is string { "user has no home directory: " + origin; }
 }
 
@@ -268,7 +265,6 @@ object InvalidAccountName does Error {
         origin = name;
     }
 
-    #projected
     text() is string { "invalid account name"; }
 }
 
@@ -279,6 +275,5 @@ object UnavailableAccountInformation does Error {
         self.message = message;
     }
 
-    #projected
     text() is string { message; }
 }

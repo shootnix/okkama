@@ -5,7 +5,6 @@ import "locale/internal/likely" take CldrLikely;
 // 'und' supplies the unknown language coordinate. Variants are preserved.
 object LikelyLocale {
     has origin is Locale;LikelyLocale(origin is Locale){self.origin=origin;}
-    #projected
     value() is Locale {
         let language=try{origin.language();}catch e is MissingLocaleSubtag{"";};
         if language==""{return origin;}

@@ -34,7 +34,7 @@ object Path does Comparing<Path> {
     Path(origin is string) {
         confirm !origin.empty() else throw InvalidPath("path cannot be empty");
         self.origin = origin;
-        path_style = value NativePathStyle();
+        path_style = NativePathStyle().value();
     }
 
     Path(origin is string, style is PathStyle) {
@@ -51,14 +51,14 @@ object Path does Comparing<Path> {
             confirm !part.empty()
                 else throw InvalidPath("path join rejects empty parts");
         }
-        let style is PathStyle = value NativePathStyle();
-        origin = path_join(values, value PathStyleCode(origin: style));
+        let style is PathStyle = NativePathStyle().value();
+        origin = path_join(values, PathStyleCode(origin: style).value());
         path_style = style;
     }
 
     parent() is Path {
         Path(
-            path_parent(origin, value PathStyleCode(origin: path_style)),
+            path_parent(origin, PathStyleCode(origin: path_style).value()),
             path_style,
         );
     }
@@ -69,14 +69,14 @@ object Path does Comparing<Path> {
             path_child(
                 origin,
                 part,
-                value PathStyleCode(origin: path_style),
+                PathStyleCode(origin: path_style).value(),
             ),
             path_style,
         );
     }
 
     absolute() is bool {
-        path_absolute(origin, value PathStyleCode(origin: path_style));
+        path_absolute(origin, PathStyleCode(origin: path_style).value());
     }
 
     order(other is Path) is Order {
@@ -95,7 +95,6 @@ object Path does Comparing<Path> {
 object NativePathStyle {
     NativePathStyle();
 
-    #projected
     value() is PathStyle {
         if system_platform() == "windows" {
             PathStyle.windows;
@@ -111,7 +110,6 @@ object PathStyleCode {
 
     PathStyleCode(:origin);
 
-    #projected
     value() is int {
         if origin == PathStyle.posix { 0; } else { 1; }
     }
@@ -124,7 +122,6 @@ object InvalidPath does Error {
         self.message = message;
     }
 
-    #projected
     text() is string {
         message;
     }

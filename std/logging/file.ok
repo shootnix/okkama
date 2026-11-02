@@ -34,20 +34,20 @@ object LogFileState does Writing,Closing{
             confirm written==bytes.size() else throw IncompleteWrite(written);
             if options.flush_each(){fs.flush(handle);}
             if options.sync_each(){fs.sync(handle);}
-        }catch failure is NativeFailure{throw value FileError(failure:failure);}
+        }catch failure is NativeFailure{throw FileError(failure:failure).value();}
     }
     flush() is void{
         confirm !self.closed() else throw ClosedLogFile();
-        if handles.value().size()>0{try{fs.flush(handles.value()[0]);}catch failure is NativeFailure{throw value FileError(failure:failure);}}
+        if handles.value().size()>0{try{fs.flush(handles.value()[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
     }
     reopen() is void{
         confirm !self.closed() else throw ClosedLogFile();
         let replacement=self.open();let previous=handles.value();handles.replace([replacement]);
-        if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw value FileError(failure:failure);}}
+        if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
     }
     release() is void{
         let previous=handles.value();let empty is @fs.FileHandle=[];handles.replace(empty);
-        if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw value FileError(failure:failure);}}
+        if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
     }
     closed() is bool{finished.value();}
     close() is void{if !self.closed(){finished.replace(true);self.release();}}
@@ -57,7 +57,7 @@ object LogFileState does Writing,Closing{
     open() is fs.FileHandle{
         confirm !self.closed() else throw ClosedLogFile();
         let mode=options.permissions();let bits=LogPermissionBits(mode.owner()).value()*64+LogPermissionBits(mode.group()).value()*8+LogPermissionBits(mode.others()).value()+mode.special()*512;
-        try{fs.open(fs.path_encode(path.string()),22,bits);}catch failure is NativeFailure{throw value FileError(failure:failure);}
+        try{fs.open(fs.path_encode(path.string()),22,bits);}catch failure is NativeFailure{throw FileError(failure:failure).value();}
     }
 }
 object LogFile does Writing,Closing{

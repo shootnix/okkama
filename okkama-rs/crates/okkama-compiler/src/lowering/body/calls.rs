@@ -348,36 +348,6 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
     }
 
-    /// `prefix Object(...)`: конструирование, затем действие `#projected`.
-    pub(super) fn projection(
-        &mut self,
-        construction: &'r thir::Expr,
-        method: usize,
-        expr: &'r thir::Expr,
-        span: Span,
-    ) -> Result<Out> {
-        let Some(built) = self.value(construction)? else {
-            return Ok(Out::Diverged);
-        };
-        let built = self.take(built, construction.span);
-        let Type::Object(object) = built.ty else {
-            return Err(LoweringError::invalid(
-                span,
-                "internal compiler error: a projection builds an object",
-            ));
-        };
-        let func = self.ctx.method_func(object, method, span)?;
-        let ty = self.expr_type(expr)?;
-        Ok(Out::Value(self.emit(
-            InstKind::Call {
-                func,
-                args: vec![built.value],
-            },
-            ty,
-            span,
-        )))
-    }
-
     // ----- builtins -----
 
     fn builtin(

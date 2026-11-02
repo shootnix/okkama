@@ -162,7 +162,7 @@ object MboxReplacement {
         lease.check();let temporary=TemporaryFile(Directory(path.parent()),".okkama-mbox-");
         try {
             temporary.write(ByteSnapshot(wire));temporary.flush();
-            FileEntry(value TemporaryFilePath(temporary)).move(path);
+            FileEntry(TemporaryFilePath(temporary).value()).move(path);
         } catch failure is Error {try {temporary.close();} catch cleanup is Error {} throw failure;}
         try {temporary.close();} catch failure is FileSystemFailure {
             try {lease.close();} catch cleanup is Error {}
