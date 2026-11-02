@@ -6,8 +6,8 @@ import "math/decimal" take Decimal;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("compact print", ParsedJson(origin: "{ \"b\": [1, 2.50, true, null], \"a\": \"x\" }").value().string(), "{\"b\":[1,2.5,true,null],\"a\":\"x\"}");
+    c = c.same_text("compact print", ParsedJson(origin: "{ \"b\": [1, 2.50, true, null], \"a\": \"x\" }").root().string(), "{\"b\":[1,2.5,true,null],\"a\":\"x\"}");
     c = c.same_text("integer spelling", (Json(value: Decimal("1000"))).string(), "1000");
-    c = c.same_text("text round trip", ParsedJson(origin: Json(value: "q\"\\ é\n").string()).value().text(), "q\"\\ é\n");
+    c = c.same_text("text round trip", ParsedJson(origin: Json(value: "q\"\\ é\n").string()).root().text(), "q\"\\ é\n");
     c.done();
 }

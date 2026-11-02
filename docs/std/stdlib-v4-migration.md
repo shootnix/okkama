@@ -227,7 +227,7 @@ one module, `json` ([JSON](json.md)):
 | `JsonText(s)`, `JsonNumber(d)`, `JsonBoolean(b)`, `JsonNull()` | `Json(s)`, `Json(d)`, `Json(b)`, `Json()` |
 | `JsonObject([JsonMember("id", 1)])` | `Json([JsonField("id", 1)])` |
 | `JsonArray(values)` | `Json(items: values)` |
-| `JsonView(ParsedJson(text))` | `ParsedJson(text).value()` |
+| `JsonView(ParsedJson(text))` | `ParsedJson(text).root()` |
 | `view.member(name)`, `required(name)` | `get(name)` |
 | `item(i)`, `members()`, `membership(name)` | `at(i)`, `fields()`, `has(name)` |
 | `JsonOption`, `view()` | `JsonOptional`, `value()` |

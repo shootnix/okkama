@@ -67,7 +67,7 @@ main() is int {
     let text = file.text().content();
     file.close();
     let t1 = clock.monotonic_instant();
-    let document = ParsedJson(text).value();
+    let document = ParsedJson(text).root();
     let parse = Milliseconds(clock: clock, start: t1).value();
     let t2 = clock.monotonic_instant();
     let sums = Sums(nodes: 0, chars: 0, numbers: 0, trues: 0).plus(document, 0);

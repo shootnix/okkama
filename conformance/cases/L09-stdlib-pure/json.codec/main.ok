@@ -60,7 +60,7 @@ object OrderJson {
 // Orders of a JSON array, and back.
 object OrdersJson {
     OrdersJson();
-    value(source is string) is @Order { ParsedJson(source).value().items().map() -> order { OrderJson().value(order); }; }
+    value(source is string) is @Order { ParsedJson(source).root().items().map() -> order { OrderJson().value(order); }; }
     string(orders is @Order) is string {
         let values is @Json = orders.map() -> order { OrderJson().json(order); };
         Json(items: values).string();

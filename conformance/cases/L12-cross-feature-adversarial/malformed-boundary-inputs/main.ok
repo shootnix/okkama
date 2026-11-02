@@ -19,7 +19,7 @@ main() is int {
     let decoded = try { Utf8Decoded(origin: raw).string(); } catch e is InvalidUtf8 { "invalid utf-8 at " + e.offset().string(); };
     out.writeln(decoded);
     let deep = try {
-        ParsedJson(origin: "[[[1]]]", maximum_depth: 2).value().items().size().string();
+        ParsedJson(origin: "[[[1]]]", maximum_depth: 2).root().items().size().string();
     } catch e is InvalidJson {
         "too deep";
     };

@@ -45,8 +45,8 @@ main() is int {
         "\"\"",
     ];
     for sources -> source {
-        let printed is Json = ParsedJson(source).value();
-        let direct = Outcome(view: ParsedJson(source).value()).string();
+        let printed is Json = ParsedJson(source).root();
+        let direct = Outcome(view: ParsedJson(source).root()).string();
         confirm direct == Outcome(view: printed).string();
         Stdout().writeln(direct);
     }

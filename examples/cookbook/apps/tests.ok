@@ -32,7 +32,7 @@ import "error" take InvalidArgument;
 import "io/stdout" take Stdout;
 main() is int{Stdout().writeln("Запуск: ./examples/cookbook/run tests");0;}
 test "payroll JSON cases and half-even rounding" {
-    let cases=ParsedJson(LocalFiles().text("examples/cookbook/data/payroll-cases.json")).value().items();
+    let cases=ParsedJson(LocalFiles().text("examples/cookbook/data/payroll-cases.json")).root().items();
     for cases->sample {
         let actual=PaidShift("Ада","2026-10-18",sample.int("minutes"),BigInt(sample.text("rate_cents"))).amount().string();
         TextEquals(actual,sample.text("expected_cents")).check();

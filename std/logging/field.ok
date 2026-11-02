@@ -14,7 +14,7 @@ object LogFields{
         if size>0{
             let text=fields.string();
             confirm Utf8Encoded(text).bytes().size()<=1048576 else throw InvalidLogField("fields exceed 1 MiB");
-            ParsedJson(text,32).value();
+            ParsedJson(text,32).root();
         }
         origin=fields;
     }

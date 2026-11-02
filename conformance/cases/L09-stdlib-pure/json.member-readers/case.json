@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.json.member-readers",
+  "title": "JSON member readers preserve absence and typed errors",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.JSON.READ",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - value preserves missing\nok 2 - value folds missing\nok 3 - value preserves none\nok 4 - value folds none\nok 5 - object preserves missing\nok 6 - object folds missing\nok 7 - object preserves none\nok 8 - object folds none\nok 9 - text preserves missing\nok 10 - text folds missing\nok 11 - text preserves none\nok 12 - text folds none\nok 13 - int preserves missing\nok 14 - int folds missing\nok 15 - int preserves none\nok 16 - int folds none\nok 17 - boolean preserves missing\nok 18 - boolean folds missing\nok 19 - boolean preserves none\nok 20 - boolean folds none\nok 21 - number preserves missing\nok 22 - number folds missing\nok 23 - number preserves none\nok 24 - number folds none\nok 25 - integer preserves missing\nok 26 - integer folds missing\nok 27 - integer preserves none\nok 28 - integer folds none\nok 29 - list preserves missing\nok 30 - list folds missing\nok 31 - list preserves none\nok 32 - list folds none\nok 33 - maybe reads empty\nok 34 - presence reads empty\nok 35 - maybe reads zero\nok 36 - presence reads zero\nok 37 - maybe reads flag\nok 38 - presence reads flag\nok 39 - maybe reads decimal\nok 40 - presence reads decimal\nok 41 - maybe reads big\nok 42 - presence reads big\nok 43 - maybe reads items\nok 44 - presence reads items\nok 45 - maybe reads object\nok 46 - presence reads object\nok 47 - lazy fallback\nok 48 - missing fallback\nok 49 - null fallback\nok 50 - maybe rejects zero as text\nok 51 - maybe rejects decimal as int\nok 52 - maybe rejects big as int\nok 53 - maybe rejects flag as list\nok 54 - maybe rejects items as object\nok 55 - maybe rejects object as list\nok 56 - maybe rejects scalar parent\nok 57 - presence rejects zero as text\nok 58 - presence rejects decimal as int\nok 59 - presence rejects big as int\nok 60 - presence rejects flag as list\nok 61 - presence rejects items as object\nok 62 - presence rejects object as list\nok 63 - presence rejects scalar parent\nchecks: 63, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/json.ok",
+    "RFC 6901"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "std/json.ok: presence readers distinguish missing/null; maybe readers fold both into none. Non-null values keep typed reading and errors; else is lazy."
+  },
+  "status": "mandatory"
+}

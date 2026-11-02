@@ -34,7 +34,7 @@ object BoundedLogJson{
     string() is string{
         let text=origin.string();
         confirm Utf8Encoded(text).bytes().size()<=1048576 else throw LogLineLimit();
-        ParsedJson(text,34).value();
+        ParsedJson(text,34).root();
         text;
     }
 }

@@ -15,7 +15,7 @@ import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}").value());
+    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}").root());
     Stdout().writeln(TextTemplate("Hello {{user.name}}! Active: {{active}}").string(data));
     0;
 }

@@ -39,7 +39,7 @@ object StockDocument {
     has items is @StockItem;
     StockDocument(format is string,text is string){
         let values is @StockItem=match format{
-            case "json"{ParsedJson(text).value().items().map()->row{StockItem(row.text("name"),row.int("quantity"));};}
+            case "json"{ParsedJson(text).root().items().map()->row{StockItem(row.text("name"),row.int("quantity"));};}
             case "csv"{
                 let ending=if text.split("\r\n").size()>1{"\r\n";}else{"\n";};
                 let rows=CsvRows(text,CsvDialect(",","\"",ending)).map()->row{row;};

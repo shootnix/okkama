@@ -56,7 +56,7 @@ object ChatSocket does WebSocketHandling {
         defer await room.leave(member);defer await ClientWork(member,group).close();group.start(ChatOutput(member,socket).run());
         try{loop{
             let message=await socket.message();confirm message.kind()==WebSocketMessageKind.text;
-            let text=ParsedJson(message.text()).value().text("text");confirm text.length()<=2000;await room.publish(name,text);
+            let text=ParsedJson(message.text()).root().text("text");confirm text.length()<=2000;await room.publish(name,text);
         }}catch ended is WebSocketClosed{}self;
     }
 }
@@ -93,7 +93,7 @@ object SocketClient {
         await WebSocketConnecting(ParsedUrl("ws://"+address+path).value(),["gallery-chat"],Headers([Header(HeaderName("Origin"),"http://"+address)]),FixedResolution([]),TlsClientPolicy(TrustedCertificates([])),policy,SystemClock()).connection();
     }
     async event(socket is WebSocketConnection,expected is int,text is string) is void {
-        let message=await socket.message();let value=ParsedJson(message.text()).value();
+        let message=await socket.message();let value=ParsedJson(message.text()).root();
         confirm value.int("seq")==expected && value.text("text")==text;
         Stdout().writeln(value.int("seq").string()+" "+value.text("from")+": "+value.text("text"));
     }

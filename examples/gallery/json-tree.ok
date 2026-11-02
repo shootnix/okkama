@@ -28,11 +28,11 @@ object JsonTree {
 }
 main() is int {
     let source="{\"mission\":\"Voyager 1\",\"launched\":1977,\"active\":true,\"distance_au\":163.9,\"instruments\":[\"ISS\",\"PLS\",\"MAG\"],\"target\":null,\"trajectory\":{\"escaped\":true,\"speed_km_s\":17.0}}";
-    let parsed=ParsedJson(source).value();let view=parsed;JsonTree().dump(view,0);
+    let parsed=ParsedJson(source).root();let view=parsed;JsonTree().dump(view,0);
     confirm view.text("mission")=="Voyager 1" && view.get("instruments").items()[0].text()=="ISS";
     let distance=view.number("distance_au");
     confirm distance.coefficient().string()=="1639" && distance.exponent()==-1;
     Stdout().writeln("distance exact: 1639/10");
     let rendered=parsed.pretty(2);
-    confirm ParsedJson(rendered).value().string()==parsed.string();0;
+    confirm ParsedJson(rendered).root().string()==parsed.string();0;
 }

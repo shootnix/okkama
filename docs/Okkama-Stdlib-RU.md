@@ -1581,7 +1581,7 @@ import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let order = ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}").value();
+    let order = ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}").root();
     confirm order.int("id") == 4711;
     Stdout().writeln(order.get("customer").text("name"));
     0;
@@ -1976,7 +1976,7 @@ import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}").value());
+    let data = JsonTemplateStrings(ParsedJson("{\"user\":{\"name\":\"Ada\"},\"active\":true}").root());
     Stdout().writeln(TextTemplate("Hello {{user.name}}! Active: {{active}}").string(data));
     0;
 }
@@ -2079,7 +2079,7 @@ import "io/stdout" take Stdout;
 main() is int {
     let partials=TemplateLibrary([NamedTemplate("row",TextTemplate("- {{name}}\n"))]);
     let template=SectionTemplate("Users:\n{{#users}}{{>row}}{{/users}}",partials);
-    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}").value()));
+    Stdout().write(template.string(ParsedJson("{\"users\":[{\"name\":\"Ada\"},{\"name\":\"Grace\"}]}").root()));
     0;
 }
 ```
@@ -2204,7 +2204,7 @@ import "io/stdout" take Stdout;
 
 main() is int {
     let source="{{#users}}{{name}}:{{#tags}} {{.}}{{/tags}}{{^tags}} no tags{{/tags}}\n{{/users}}";
-    let users=ParsedJson("{\"users\":[{\"name\":\"Ada\",\"tags\":[\"math\",\"code\"]},{\"name\":\"Grace\",\"tags\":[]}]}").value();
+    let users=ParsedJson("{\"users\":[{\"name\":\"Ada\",\"tags\":[\"math\",\"code\"]},{\"name\":\"Grace\",\"tags\":[]}]}").root();
     Stdout().write(SectionTemplate(source).string(users));
     0;
 }

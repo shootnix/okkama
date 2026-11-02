@@ -6,10 +6,10 @@ import "math/decimal" take Decimal;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("text member", ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}").value().text("name"), "Ada");
-    c = c.same_int("int member", ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}").value().int("age"), 36);
-    c = c.same_text("exact big integer", ParsedJson(origin: "{\"n\":123456789012345678901234567890}").value().integer("n").string(), "123456789012345678901234567890");
-    c = c.same_text("big integer is not int", try { let probe = ParsedJson(origin: "{\"n\":123456789012345678901234567890}").value().int("n"); "no error"; } catch e is InvalidJsonNumber { e.pointer(); }, "/n");
-    c = c.same_int("array items", ParsedJson(origin: "[1,[2,3],4]").value().items().size(), 3);
+    c = c.same_text("text member", ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}").root().text("name"), "Ada");
+    c = c.same_int("int member", ParsedJson(origin: "{\"name\":\"Ada\",\"age\":36}").root().int("age"), 36);
+    c = c.same_text("exact big integer", ParsedJson(origin: "{\"n\":123456789012345678901234567890}").root().integer("n").string(), "123456789012345678901234567890");
+    c = c.same_text("big integer is not int", try { let probe = ParsedJson(origin: "{\"n\":123456789012345678901234567890}").root().int("n"); "no error"; } catch e is InvalidJsonNumber { e.pointer(); }, "/n");
+    c = c.same_int("array items", ParsedJson(origin: "[1,[2,3],4]").root().items().size(), 3);
     c.done();
 }

@@ -8,7 +8,7 @@ import "db/value" take DbDecimal, ObservedDbValue;
 import "math/decimal" take Decimal;
 
 async main() is int {
-    let request = ParsedJson(origin: "{\"amount\": 123456789012345678901234567890.000000001}").value();
+    let request = ParsedJson(origin: "{\"amount\": 123456789012345678901234567890.000000001}").root();
     let amount is Decimal = request.number("amount");
     let connection = await SqliteMemory().connection();
     defer await connection.settled();
@@ -20,7 +20,7 @@ async main() is int {
     rows.close();
     let restored = Decimal(ObservedDbValue(row.value("amount")).text());
     let reply = (Json(fields: [JsonField("amount", Json(value: restored))])).string();
-    let reparsed is Decimal = ParsedJson(origin: reply).value().number("amount");
+    let reparsed is Decimal = ParsedJson(origin: reply).root().number("amount");
     Stdout().writeln(reparsed.coefficient().string() + " e" + reparsed.exponent().string());
     0;
 }

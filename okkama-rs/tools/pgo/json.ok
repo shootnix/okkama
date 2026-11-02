@@ -77,12 +77,12 @@ main() is int {
     };
     let values is @Json = orders.map() -> order { OrderJson().json(order); };
     let text = Json(items: values).string();
-    let decoded is @Order = ParsedJson(text).value().items().map() -> row { OrderJson().value(row); };
-    let pretty = ParsedJson(text).value().pretty(2);
-    let view = ParsedJson(pretty).value();
+    let decoded is @Order = ParsedJson(text).root().items().map() -> row { OrderJson().value(row); };
+    let pretty = ParsedJson(text).root().pretty(2);
+    let view = ParsedJson(pretty).root();
     let names = view.items().reduce(0) -> sum, row { sum + row.get("customer").text("name").length(); };
     let quantity = decoded.reduce(0) -> sum, order { sum + order.quantity(); };
     Stdout().writeln(decoded.size().string() + " " + quantity.string() + " " + names.string() + " "
-        + ParsedJson(text).value().string().length().string());
+        + ParsedJson(text).root().string().length().string());
     0;
 }

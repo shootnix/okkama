@@ -12,7 +12,7 @@ import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let order = ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}").value();
+    let order = ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}").root();
     confirm order.int("id") == 4711;
     Stdout().writeln(order.get("customer").text("name"));
     0;

@@ -11,7 +11,7 @@ object RecordedTestReport {
     has report is TestReport;
     RecordedTestReport(origin is string){
         confirm origin.length()<=16777216 else throw InvalidTestResult("runner wire budget");
-        let document=ParsedJson(origin).value();let entries=document.get("results").items();
+        let document=ParsedJson(origin).root();let entries=document.get("results").items();
         confirm entries.size()<=4096 else throw InvalidTestResult("runner case budget");
         let results is @TestResult=entries.map()->entry{RecordedTestResult(entry).value();};
         report=TestReport(Instant(Duration(ParsedRat(document.text("start_ns")).value(),DurationUnit.nanosecond)),Duration(ParsedRat(document.text("duration_ns")).value(),DurationUnit.nanosecond),document.int("seed"),results);

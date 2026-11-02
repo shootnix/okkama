@@ -5,10 +5,10 @@
 ```okkama
 import "json" take Json, JsonField, ParsedJson;
 
-let order = ParsedJson(text).value();
+let order = ParsedJson(text).root();
 order.int("id");                                // 4711
 order.get("customer").text("name");             // "Ada"
-order.optional("note").text("");                // "" when absent or null
+order.maybe("note").text() else "";                // "" when absent or null
 let lines = order.list("items").map() -> line {
     Line(sku: line.text("sku"), qty: line.int("qty"));
 };
@@ -22,11 +22,11 @@ reply.string();                                 // {"id":4711,"customer":{"name"
 reply.pretty(2);                                // the same, indented
 ```
 
-A `Json` holds a node of the runtime's tree. A read is one native call, and a child is one small object. There are no reading roles, pointer chains or option trees.
+A `Json` holds a node of the runtime's tree. Strict typed member reads have a single-native-call fast path. Optional reads select the member once and use ordinary stdlib reader objects with explicit Maybe/Presence return types.
 
 ## Parsing
 
-`ParsedJson(text)` and `ParsedJson(text, maximum_depth)` parse strict RFC 8259 text. `value()` returns the root `Json` or throws:
+`ParsedJson(text)` and `ParsedJson(text, maximum_depth)` parse strict RFC 8259 text. `root()` returns the root `Json` or throws:
 
 - `InvalidJson`: syntax errors and nesting deeper than `maximum_depth` (default 128). `offset()` is zero-based; `line()` and `column()` are one-based. A non-positive `maximum_depth` is `InvalidJson` too.
 - `DuplicateJsonMember`: a repeated member name, with the same source location.
@@ -49,6 +49,8 @@ Member order is kept. Numbers keep their exact spelling and are never read throu
 | `get(name)` | the member | `WrongJsonKind`; `MissingJsonValue` |
 | `text(name)`, `number(name)`, `int(name)`, `integer(name)`, `boolean(name)` | `get(name).text()` and so on | as above |
 | `list(name)` | `get(name).items()` | as above |
+| `maybe(name)` | `JsonMaybeReader`: typed readers return `Maybe<T>` | `WrongJsonKind` when the value is not an object |
+| `presence(name)` | `JsonPresenceReader`: typed readers return `Presence<T>` | `WrongJsonKind` when the value is not an object |
 | `optional(name)` | `JsonOptional`: the member, or absence when it is missing or `null` | `WrongJsonKind` when the value is not an object |
 
 `text(name)`, `number(name)`, `int(name)` and `boolean(name)` read the member in one native call. When that fails they read it again through `get(name)` only to raise the typed error.
@@ -57,7 +59,57 @@ Every error exposes `pointer()` and names the location in `text()`, for example 
 
 `null` is a kind, not a missing value: test it with `kind() == JsonKind.null_value`.
 
-## Optional members
+## Maybe and Presence readers
+
+Choose a missing-value policy, then the expected type:
+
+```okkama
+let name = body.maybe("name").text() else "anonymous";
+let age = body.maybe("age").int() else 18;
+let active = body.maybe("active").boolean() else true;
+
+let description = body.presence("name").text()
+    ?? .some(value): "New name: " + value
+    !! .none: "Clear the name"
+    !! .missing: "Keep the current name";
+
+let fallback = body.presence("name").text().fold() else "anonymous";
+```
+
+`maybe(name)` returns `JsonMaybeReader`; `presence(name)` returns
+`JsonPresenceReader`. Both select a member of an object. Calling either on a
+non-object throws `WrongJsonKind`, even if a fallback follows.
+
+| Reader method | Maybe result | Presence result |
+|---|---|---|
+| `value()` | `Maybe<Json>` | `Presence<Json>` |
+| `object()` | `Maybe<Json>` (object only) | `Presence<Json>` (object only) |
+| `text()` | `Maybe<string>` | `Presence<string>` |
+| `int()` | `Maybe<int>` | `Presence<int>` |
+| `integer()` | `Maybe<BigInt>` | `Presence<BigInt>` |
+| `number()` | `Maybe<Decimal>` | `Presence<Decimal>` |
+| `boolean()` | `Maybe<bool>` | `Presence<bool>` |
+| `list()` | `Maybe<@Json>` | `Presence<@Json>` |
+
+Missing fields yield `Presence.missing`; JSON null yields `Presence.none`.
+Maybe readers fold both into `Maybe.none`. All other values are present,
+including empty strings, zero, false, empty arrays and empty objects.
+Wrong kinds and invalid numbers still throw their typed errors with the
+original JSON pointer. Neither mode catches these errors as absence.
+
+The `else` fallback is lazy. Presence requires explicit `.fold()` before
+`else` so losing the missing/null distinction is visible. For heterogeneous
+JSON, use `.value()` and inspect the contained `Json.kind()`.
+Use `.object()` for null-or-object and `.list()` for null-or-array: empty
+objects/arrays remain present; other kinds throw. Both modes also permit a
+missing member. To require the field while permitting null, handle
+`Presence.missing` explicitly as an error.
+
+Migration from the initial `presence(name) is Presence<Json>` prototype:
+use `presence(name).value()` for the same result. Existing strict methods
+and the legacy `optional()` API remain available.
+
+## Legacy optional members
 
 `optional(name)` never fails for a member that is missing or `null`. Each reader of the returned `JsonOptional` takes the value to use in that case:
 
@@ -114,7 +166,7 @@ A codec is a plain object with two actions; no role is needed:
 ```okkama
 object LineJson {
     LineJson();
-    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.optional("qty").int(1)); }
+    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.maybe("qty").int() else 1); }
     json(line is Line) is Json { Json([JsonField("sku", line.sku()), JsonField("qty", line.quantity())]); }
 }
 

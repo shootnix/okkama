@@ -16,20 +16,19 @@ object UserReader {
     UserReader(:source);
 
     read() is Presence<UserInput> {
-        let root = ParsedJson(source).value();
-        if !root.has("user") {
-            Presence.missing;
-        } 
-        else {
-            let user = root.get("user");
-            match user.kind() {
-                case JsonKind.null_value { Presence.none; }
-                case JsonKind.object_value {
-                    Presence.some(UserInput.details(UserDetails(name: user.text("name"))));
-                }
-                else {
-                    // Empty strings stay present; wrong types retain the JSON error/path.
-                    Presence.some(UserInput.name(user.text()));
+        let root = ParsedJson(source).root();
+        match root.presence("user").value() {
+            case Presence.missing { Presence.missing; }
+            case Presence.none { Presence.none; }
+            case Presence.some(user) {
+                match user.kind() {
+                    case JsonKind.object_value {
+                        Presence.some(UserInput.details(UserDetails(name: user.text("name"))));
+                    }
+                    else {
+                        // Empty strings stay present; wrong types retain the JSON error/path.
+                        Presence.some(UserInput.name(user.text()));
+                    }
                 }
             }
         }

@@ -104,7 +104,7 @@ object WebRequest {
     // reading errors of the returned RequestJson are 422.
     async json(limit is int) is RequestJson {
         self.media("json");
-        let document = try { ParsedJson(await self.text(limit)).value(); }
+        let document = try { ParsedJson(await self.text(limit)).root(); }
             catch failure is InvalidJson { throw Exception(400, "invalid JSON body: " + failure.text()); }
             catch failure is DuplicateJsonMember { throw Exception(400, "invalid JSON body: " + failure.text()); };
         RequestJson(document);
@@ -231,7 +231,7 @@ object RequestJsonOptional {
 }
 
 test "request JSON reading failures are 422 exceptions at the pointer" {
-    let body = RequestJson(ParsedJson("{\"name\":\"Ada\",\"age\":\"x\",\"nick\":null}").value());
+    let body = RequestJson(ParsedJson("{\"name\":\"Ada\",\"age\":\"x\",\"nick\":null}").root());
     test.is(body.text("name"), "Ada");
     test.is(try { body.int("age"); "no"; } catch e is Exception { e.status().string() + " " + e.detail(); }, "422 JSON value at /age must be number, found string");
     test.is(try { body.text("missing"); "no"; } catch e is Exception { e.detail(); }, "JSON value at /missing is missing");
