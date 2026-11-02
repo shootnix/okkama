@@ -21,7 +21,8 @@ object UserReader {
         let root = JsonView(ParsedJson(source));
         if !root.membership("user") {
             Presence.missing;
-        } else {
+        } 
+        else {
             let user = root.member("user");
             match user.kind() {
                 case JsonKind.null_value { Presence.none; }
@@ -41,8 +42,8 @@ main() is int {
     let out = Stdout();
     for ["{}", "{\"user\":null}", "{\"user\":\"Anton\"}", "{\"user\":\"\"}", "{\"user\":{\"name\":\"Anton\"}}"] -> source {
         let description = match UserReader(source: source).read() {
-            case Presence.missing { "missing"; }
-            case Presence.none { "none"; }
+            case Presence.missing { "missing" }
+            case Presence.none { "none" }
             case Presence.some(user) {
                 match user {
                     case UserInput.name(name) { "name: " + name; }
@@ -52,7 +53,12 @@ main() is int {
         };
         out.writeln(description);
     }
-    let name = Presence<string>.missing.collapse() else "anonymous";
+    let name = Presence<string>.missing.fold() else "anonymous";
     out.writeln(name);
+    let label = UserReader(source: "{}").read()
+        ?? .some(_): "present"
+        !! .none: "null"
+        !! .missing: "missing";
+    out.writeln(label);
     0;
 }

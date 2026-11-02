@@ -374,7 +374,7 @@ impl Rewrite {
             return;
         }
         match &mut expr.kind {
-            ExprKind::Throw(value) => self.expr(value, false),
+            ExprKind::Choice(value) | ExprKind::Throw(value) => self.expr(value, false),
             ExprKind::TypeValue(ty) => self.ty(ty),
             ExprKind::Coalesce { value, fallback } => {
                 self.expr(value, false);

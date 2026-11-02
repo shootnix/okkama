@@ -51,6 +51,62 @@ impl Checker<'_, '_> {
             ast::ExprKind::Literal(literal) => self.literal(literal, span),
             ast::ExprKind::Name(name) => self.read_name(name),
             ast::ExprKind::SelfValue => self.self_expr(span),
+            ast::ExprKind::Choice(inner) => {
+                if let ast::ExprKind::If {
+                    condition,
+                    then_block,
+                    else_block,
+                } = &inner.kind
+                {
+                    let check = self.value(condition, Some(&Ty::Bool));
+                    self.expect(&check, &Ty::Bool, condition.span, "Choice condition");
+                    let yes = self.block(then_block, true, expected);
+                    let no = self.block(else_block, true, expected);
+                    let (ty, diverges) = self.join(&[&yes, &no], true, span);
+                    if ty.is_none() && !diverges {
+                        self.error(
+                            span,
+                            "Compact choice branches must produce a value or diverge",
+                        );
+                    }
+                    return Expr {
+                        diverges: check.diverges || diverges,
+                        kind: ExprKind::If {
+                            condition: Box::new(check),
+                            then_block: self.block_of(yes),
+                            else_block: Some(self.block_of(no)),
+                        },
+                        ty,
+                        span,
+                    };
+                }
+                let result = self.expr(inner, true, expected);
+                if result.ty.is_none() && !result.diverges {
+                    self.error(
+                        span,
+                        "Compact choice branches must produce a value or diverge",
+                    );
+                }
+                if let ast::ExprKind::Match(body) = &inner.kind {
+                    let mut names = std::collections::HashSet::new();
+                    for arm in &body.cases {
+                        if let ast::ExprKind::Get { name, .. } = &arm.patterns[0].kind {
+                            if !names.insert(&name.text) {
+                                self.error(name.span, "Duplicate variant pattern");
+                            }
+                        }
+                    }
+                    if let ExprKind::Match(found) = &result.kind {
+                        if !matches!(Self::ty_of(&found.subject), Ty::Enum(_)) {
+                            self.error(span, "Compact patterns require an enum value");
+                        }
+                        if !found.exhaustive && found.else_block.is_none() {
+                            self.error(span, "Non-exhaustive compact match");
+                        }
+                    }
+                }
+                result
+            }
             ast::ExprKind::Grouping(inner) => self.expr(inner, want, expected),
             ast::ExprKind::Unary { op, operand, .. } => self.unary(*op, operand, span),
             ast::ExprKind::Binary {
@@ -654,7 +710,30 @@ impl Checker<'_, '_> {
         for case in &body.cases {
             let mut patterns = Vec::new();
             for pattern in &case.patterns {
-                let value = self.value(pattern, Some(&subject_ty));
+                let value = if let (Ty::Enum(id), ast::ExprKind::Get { object, name }) =
+                    (&subject_ty, &pattern.kind)
+                {
+                    if matches!(&object.kind, ast::ExprKind::Name(n) if n.text == "$choice") {
+                        if let Some(case) = self.reg.enums[id.0]
+                            .cases
+                            .iter()
+                            .position(|c| c == &name.text)
+                        {
+                            Self::typed(
+                                ExprKind::EnumCase { ty: *id, case },
+                                subject_ty.clone(),
+                                pattern.span,
+                            )
+                        } else {
+                            self.error(pattern.span, "Unknown enum variant");
+                            Self::poisoned(pattern.span)
+                        }
+                    } else {
+                        self.value(pattern, Some(&subject_ty))
+                    }
+                } else {
+                    self.value(pattern, Some(&subject_ty))
+                };
                 // Совпадение — тот же `==`, что и в выражениях.
                 let probe =
                     Self::typed(ExprKind::Unreachable, subject_ty.clone(), body.subject.span);
@@ -708,7 +787,8 @@ impl Checker<'_, '_> {
                     if let ast::ExprKind::Get { object, name } = &strip_grouping(pattern).kind {
                         if let ast::ExprKind::Name(enum_name) = &strip_grouping(object).kind {
                             if self.local(&enum_name.text).is_none()
-                                && self.enum_named(&enum_name.text) == Some(*id)
+                                && (enum_name.text == "$choice"
+                                    || self.enum_named(&enum_name.text) == Some(*id))
                             {
                                 if let Some(case) = self.reg.enums[id.0]
                                     .cases

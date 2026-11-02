@@ -492,7 +492,7 @@ fn type_references() {
         ),
         (
             "value() is User?;",
-            "Optional types are not part of Okkama v1.0 syntax.",
+            "Single ? is not supported; use Maybe<T> or Presence<T> for optional types, or ?? / !! for selection.",
         ),
     ] {
         assert_rejects(

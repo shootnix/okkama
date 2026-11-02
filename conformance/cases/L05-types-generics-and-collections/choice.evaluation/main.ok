@@ -1,0 +1,13 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+object Reader {
+    Reader();
+    get() is Presence<int> { Stdout().writeln("subject"); Presence.some(42); }
+    selected(value is int) is int { Stdout().writeln("selected"); value; }
+    unused() is int { panic "unselected branch ran"; }
+}
+main() is int {
+    let r = Reader();
+    let answer = r.get() ?? .some(v): r.selected(v) !! .none: r.unused() !! .missing: r.unused();
+    answer == 42 ?? 0 !! 1;
+}

@@ -29,8 +29,8 @@ is_deeply($configuration->{comments}{blockComment}, ['/*', '*/'],
 my $repository = $grammar->{repository};
 for my $name (
     qw(
-        rawStrings comments directives strings numbers declarations
-        namedConstructorProjections keywords types functions
+        rawStrings comments strings numbers declarations
+        optionalVariants keywords types functions
         invalidSyntax operators punctuation
     )
 ) {
@@ -90,7 +90,7 @@ for my $type (qw(int float rat decimal string char bool byte number any void Nat
 }
 
 for my $operator (
-    qw(... .. ..= -> <- && || ! == != < <= > >= + - * / % = ^ & | ~ << >> >>>)
+    qw(... .. ..= -> <- && || ! == != < <= > >= + - * / % = ^ & | ~ << >> >>> ?? !!)
 ) {
     ok(section_matches('operators', $operator),
         qq{current operator "$operator" is highlighted});
@@ -125,12 +125,10 @@ for my $reserved (qw(isa super abstract protected null none nil with finally)) {
         qq{reserved word "$reserved" is marked invalid});
 }
 
-ok(section_matches('directives', '#projected'),
-    'default projection directive is highlighted');
-ok(section_matches('directives', '#projected(of)'),
-    'aliased projection directive is highlighted');
-ok(section_matches('namedConstructorProjections', 'of Max(1, 2)'),
-    'named constructor projection use is highlighted');
+ok(!exists($repository->{directives}), 'removed directives have no highlighting');
+ok(!exists($repository->{namedConstructorProjections}), 'removed projections have no highlighting');
+ok(!section_matches('invalidSyntax', '??'), 'compact choice is not a removed operator');
+ok(section_matches('optionalVariants', '.none'), 'qualified none is a variant');
 ok(!section_matches('invalidSyntax', '&'),
     'binary ampersand is valid; the parser rejects prefix projections');
 ok(!section_matches('invalidSyntax', '~'), 'bitwise inversion is valid');

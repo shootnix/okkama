@@ -81,7 +81,146 @@ impl Parser<'_> {
                     },
                 };
             }
+            if parser.eat(TokenKind::Choice) {
+                expr = parser.finish_choice(expr)?;
+            }
             Ok(expr)
+        })
+    }
+
+    fn choice_separator(&self) -> bool {
+        self.check(TokenKind::Bang)
+            && self.nth(1).kind == TokenKind::Bang
+            && self.peek().span.end == self.nth(1).span.start
+    }
+
+    fn choice_value(&mut self) -> PResult<Expr> {
+        if self.eat(TokenKind::Throw) {
+            let start = self.previous().span;
+            let value = self.expression()?;
+            Ok(Expr {
+                span: start.to(value.span),
+                kind: ExprKind::Throw(Box::new(value)),
+            })
+        } else {
+            self.expression()
+        }
+    }
+
+    fn choice_block(value: Expr) -> crate::syntax::ast::Block {
+        let span = value.span;
+        crate::syntax::ast::Block {
+            stmts: vec![crate::syntax::ast::Stmt {
+                kind: crate::syntax::ast::StmtKind::Expr {
+                    expr: value,
+                    condition: None,
+                },
+                span,
+            }],
+            span,
+        }
+    }
+
+    fn finish_choice(&mut self, subject: Expr) -> PResult<Expr> {
+        use crate::syntax::ast::{MatchBody, MatchCase};
+        let start = subject.span;
+        let patterned = self.check(TokenKind::Dot)
+            || (self.lexeme(self.peek()) == "_" && self.nth(1).kind == TokenKind::Colon);
+        let kind = if patterned {
+            let mut cases = Vec::new();
+            let mut else_block = None;
+            loop {
+                let arm_start = self.peek().span;
+                let pattern = if self.lexeme(self.peek()) == "_" {
+                    self.advance();
+                    None
+                } else {
+                    self.consume(TokenKind::Dot, "Expect .variant or _ in compact match.")?;
+                    let name = self.consume_member_name("Expect enum variant after dot.")?;
+                    let owner = Expr {
+                        kind: ExprKind::Name(Name {
+                            text: "$choice".into(),
+                            span: arm_start,
+                        }),
+                        span: arm_start,
+                    };
+                    let mut pattern = Expr {
+                        span: arm_start.to(name.span),
+                        kind: ExprKind::Get {
+                            object: Box::new(owner),
+                            name,
+                        },
+                    };
+                    if self.eat(TokenKind::LeftParen) {
+                        pattern = self.finish_call(pattern)?;
+                    }
+                    Some(pattern)
+                };
+                self.consume(TokenKind::Colon, "Expect : after compact match pattern.")?;
+                let body = Self::choice_block(self.choice_value()?);
+                if let Some(pattern) = pattern {
+                    cases.push(MatchCase {
+                        span: arm_start.to(body.span),
+                        patterns: vec![pattern],
+                        body,
+                    });
+                } else {
+                    else_block = Some(body);
+                    if self.choice_separator() {
+                        return Err(
+                            self.error_here("Wildcard must be the last compact match branch.")
+                        );
+                    }
+                    break;
+                }
+                if !self.choice_separator() {
+                    break;
+                }
+                self.advance();
+                self.advance();
+            }
+            ExprKind::Match(Box::new(MatchBody {
+                subject,
+                cases,
+                else_block,
+                span: start.to(self.previous().span),
+            }))
+        } else {
+            let then_block = Self::choice_block(self.choice_value()?);
+            if !self.choice_separator() {
+                return Err(self.error_here("Boolean choice requires !! and a false branch."));
+            }
+            self.advance();
+            self.advance();
+            let else_block = Self::choice_block(self.choice_value()?);
+            if self.choice_separator() {
+                return Err(self.error_here("Boolean choice has exactly two branches."));
+            }
+            ExprKind::If {
+                condition: Box::new(subject),
+                then_block,
+                else_block,
+            }
+        };
+        let span = start.to(self.previous().span);
+        // Include the subject and every branch, even choices hidden in parentheses,
+        // calls or blocks. Sibling expressions outside this span remain independent.
+        let first = self.tokens.partition_point(|t| t.span.start < span.start);
+        if self.tokens[first..self.pos]
+            .iter()
+            .filter(|t| t.kind == TokenKind::Choice)
+            .take(2)
+            .count()
+            > 1
+        {
+            return Err(self.error_at_span(
+                span,
+                "Nested ?? / !! choices are not allowed; use a local variable or match.",
+            ));
+        }
+        Ok(Expr {
+            kind: ExprKind::Choice(Box::new(Expr { kind, span })),
+            span,
         })
     }
 
@@ -251,9 +390,9 @@ impl Parser<'_> {
             });
         }
         if self.check(TokenKind::Amp) {
-            return Err(
-                self.error_here("Constructor projections have been removed; use Type(args).method().")
-            );
+            return Err(self.error_here(
+                "Constructor projections have been removed; use Type(args).method().",
+            ));
         }
         if self.eat(TokenKind::Await) {
             let value = self.operand()?;
@@ -391,9 +530,9 @@ impl Parser<'_> {
                 && self.check_next(TokenKind::LeftParen)
                 && !self.starts_anonymous_action(self.pos + 1)
             {
-                return Err(
-                    self.error_here("Constructor projections have been removed; use Type(args).method().")
-                );
+                return Err(self.error_here(
+                    "Constructor projections have been removed; use Type(args).method().",
+                ));
             }
             if self.eat(TokenKind::Dot) {
                 let name = self.consume_member_name("Expect property name after \".\".")?;

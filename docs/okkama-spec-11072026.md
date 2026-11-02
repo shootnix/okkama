@@ -3969,11 +3969,78 @@ nested fallback associates to the right. Parentheses make compound policies expl
 The existing index fallback retains its meaning. In a `confirm` statement the
 ungrouped `else` belongs to `confirm`; group an optional expression when needed.
 
-`Presence<T> else T` is rejected. `.collapse()` explicitly converts Presence to
+`Presence<T> else T` is rejected. `.fold()` explicitly converts Presence to
 Maybe, merging missing and none. `.as_presence()` converts Maybe to Presence
 without inventing missing. Nested wrappers are preserved, never flattened.
-Calls, assignment and return boundaries never wrap, unwrap or collapse implicitly.
+Calls, assignment and return boundaries never wrap, unwrap or fold implicitly.
 No `.?` / `.??` call modes exist.
+
+### Tail expression terminators
+
+The semicolon after an expression statement is optional immediately before the
+closing `}` of its block. Its presence does not discard or change the value:
+`{ 1 }` and `{ 1; }` have the same result. This applies to method bodies, `if`
+branches, match arms and functional blocks. Between statements the semicolon
+remains mandatory. `let`, `return`, `throw`, `defer`, field assignments and other
+non-expression statements retain their required terminators.
+A statement-level `if` additionally accepts one optional trailing semicolon:
+
+```okkama
+main() is int { if true { 1 } else { 0 }; }
+```
+
+The formatter preserves the presence or absence of these optional semicolons.
+
+### 15.1 Compact choices: `??` / `!!`
+
+Boolean selection requires a `bool` condition and exactly two result expressions:
+
+```okkama
+let label = enabled ?? "enabled" !! "disabled";
+```
+
+Pattern selection starts with `.variant:` / `.variant(bindings):` or `_:`.
+The enum type is inferred from the subject, including its generic arguments:
+
+```okkama
+let description = patch.name()
+    ?? .some(value): "New name: " + value
+    !! .none: "Clear the name"
+    !! .missing: "Keep the current name";
+let name = user.name() ?? .some(value): value !! _: "anonymous";
+```
+
+The two forms cannot be mixed. The subject is evaluated once, and only the
+selected result expression is evaluated. All result branches must have compatible
+types, even for literal boolean conditions. Each branch must produce a value
+or diverge; a void call cannot be used as a result branch. A branch may instead
+throw or panic.
+Patterns support both scalar and payload enums. Payload bindings are positional,
+scoped to their branch, and may use `_` to discard a field. The checker rejects
+unknown, duplicate and missing variants. A final `_:` branch covers remaining
+variants; it must be last. No implicit truthiness or optional unwrapping occurs.
+
+Compact selection binds below binary operators and functional suffixes.
+`else` retains its optional/index fallback meaning and may occur in an operand;
+use parentheses to make combinations explicit. Method calls still require `()`.
+The formatter preserves compact selection rather than expanding it into blocks.
+
+**Nested compact choices are forbidden**, including in the subject, in any branch,
+inside parentheses, call arguments, collections, and blocks within that expression.
+Both boolean-inside-pattern and pattern-inside-boolean nesting are prohibited.
+Use independent local variables or ordinary `if` / `match` for complex decisions.
+Separate choices in sibling arguments or independent statements remain valid.
+
+```okkama
+// Rejected, even with parentheses:
+let bad = enabled ?? (ready ?? "yes" !! "wait") !! "off";
+// Valid:
+let when_enabled = ready ?? "yes" !! "wait";
+let label = enabled ?? when_enabled !! "off";
+```
+
+`!!` is a branch separator in this infix context. Existing prefix double negation
+(`!!flag`) remains valid. Single `?` and optional-call syntax remain unsupported.
 
 ## 16. Access Control
 

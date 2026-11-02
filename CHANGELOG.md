@@ -8,12 +8,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Optional semicolons on the last expression before `}`, preserving its value;
+  `if true { 1 } else { 0 };` is accepted. Other statement terminators remain required.
+
+- Non-nested compact choices: `condition ?? yes !! no` and
+  `value ?? .some(v): v !! .none: fallback`. Branches are lazy and typed;
+  enum patterns are exhaustive, with an optional final `_:` wildcard.
+  Parentheses cannot bypass the nesting prohibition. Presence conversion is
+  named `fold()` (replacing the initial `collapse()` spelling).
+
 - Nominal generic enum variants with positional typed payloads, exhaustive payload
   patterns, scoped bindings and `_` wildcards. Enum type arguments can be inferred
   or supplied explicitly. Variant equality includes the active payload.
 - Standard `Maybe<T>` (`some`, `none`) and `Presence<T>` (`some`, `none`, `missing`),
   available without imports. `Maybe<T> else fallback` is lazy and accepts throwing
-  or panicking branches. Presence requires explicit `.collapse()`; Maybe supports
+  or panicking branches. Presence requires explicit `.fold()`; Maybe supports
   `.as_presence()`. Empty strings, zero and false remain present values.
 - IR, Sparrow/JIT and JVM execution and conformance coverage for variant payloads,
   generic inference, absence, errors, module boundaries and resource lifetimes.

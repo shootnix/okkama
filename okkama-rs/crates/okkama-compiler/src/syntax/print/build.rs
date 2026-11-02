@@ -431,6 +431,9 @@ fn expr_node(expr: &Expr) -> Node {
         ExprKind::Throw(value) => {
             Node::new("ThrowExpression", span).field("value", Value::node(expr_node(value)))
         }
+        ExprKind::Choice(inner) => {
+            Node::new("CompactChoice", span).field("expression", Value::node(expr_node(inner)))
+        }
         ExprKind::TypeValue(ty) => type_node(ty),
         ExprKind::Coalesce { value, fallback } => Node::new("OptionalFallback", span)
             .field("value", Value::node(expr_node(value)))

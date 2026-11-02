@@ -1,3 +1,3 @@
 module app v1.0.0;
 
-main() is int { let m = Presence<int>.missing; let n = Presence<int>.none; let a = m.collapse() else 21; let b = Maybe.some(21).as_presence().collapse() else 0; if m != n && a+b == 42 { 0; } else { 1; } }
+main() is int { let m = Presence<int>.missing; let n = Presence<int>.none; let a = m.fold() else 21; let b = Maybe.some(21).as_presence().fold() else 0; if m != n && a+b == 42 { 0; } else { 1; } }

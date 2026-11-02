@@ -80,9 +80,33 @@ fn equality_is_nominal_and_compares_only_the_active_payload() {
 #[test]
 fn explicit_conversions_and_empty_values() {
     check(
-        "main() is int { let a = Presence<string>.missing.collapse() else \"missing\"; let b = Presence.some(\"\").collapse() else \"wrong\"; let c = Maybe.some(false).as_presence(); if a == \"missing\" && b == \"\" && c == Presence.some(false) { 42; } else { 0; } }",
+        "main() is int { let a = Presence<string>.missing.fold() else \"missing\"; let b = Presence.some(\"\").fold() else \"wrong\"; let c = Maybe.some(false).as_presence(); if a == \"missing\" && b == \"\" && c == Presence.some(false) { 42; } else { 0; } }",
         "42",
     );
+}
+
+#[test]
+fn method_results_use_fallback_or_payload_patterns() {
+    check(
+        r#"object User { User(); name() is Maybe<string> { Maybe.some(""); } }
+        main() is int {
+            let obj = User();
+            let a = obj.name() else "no name";
+            let b = match obj.name() {
+                case Maybe.none { "no name"; }
+                case Maybe.some(value) { value; }
+            };
+            let c = Presence<string>.none.fold() else "no name";
+            if a == "" && b == "" && c == "no name" { 42; } else { 0; }
+        }"#,
+        "42",
+    );
+    for source in [
+        "main() is int { Maybe.some(42).some else 0; }",
+        "main() is int { Presence<int>.missing.collapse() else 0; }",
+    ] {
+        assert!(lower(source).is_err(), "must reject: {source}");
+    }
 }
 
 #[test]
@@ -161,5 +185,131 @@ fn formatter_preserves_variant_payloads_and_fallback() {
     check(formatted.split_once(';').unwrap().1, "42");
     let twice =
         syntax::format::format(&SourceFile::new("format.ok", formatted.clone()).unwrap()).unwrap();
+    assert_eq!(formatted, twice);
+}
+
+#[test]
+fn compact_choices_are_lazy_typed_and_preserve_payloads() {
+    check(
+        r#"
+        enum Color = (red, blue);
+        main() is int {
+            let a = true ?? 20 !! panic "unused";
+            let b = false ?? panic "unused" !! 22;
+            let name = Presence.some("") ?? .some(v): v !! .none: "null" !! .missing: "missing";
+            let n = Maybe<int>.none ?? .some(v): v !! _: 42;
+            let color = Color.red ?? .red: 42 !! .blue: 0;
+            let negated = !!false ?? 0 !! 42;
+            if name == "" && n == 42 && color == 42 && negated == 42 { a + b; } else { 0; }
+        }
+    "#,
+        "42",
+    );
+}
+
+#[test]
+fn compact_choice_rejects_nesting_and_invalid_contracts() {
+    for choice in [
+        "true ?? Sink().write() !! 0",
+        "Maybe.some(1) ?? .some(v): Sink().write() !! .none: 0",
+    ] {
+        let code = format!(
+            "object Sink {{ Sink(); write() is void {{}} }} main() is int {{ {choice}; 0; }}"
+        );
+        assert!(lower(&code).unwrap_err().contains("must produce a value"));
+    }
+
+    for source in [
+        "true ?? (false ?? 1 !! 2) !! 3",
+        "true ?? 1 !! (false ?? 2 !! 3)",
+        "(true ?? true !! false) ?? 1 !! 2",
+        "true ?? [false ?? 1 !! 2][0] !! 3",
+    ] {
+        let error = lower(&format!("main() is int {{ {source}; }}")).unwrap_err();
+        assert!(error.contains("Nested ?? / !!"), "{error}");
+    }
+
+    for source in [
+        "true ?? (false ?? 1 !! 2) !! 3",
+        "true ?? 1 !! (false ?? 2 !! 3)",
+        "(true ?? true !! false) ?? 1 !! 2",
+        "true ?? [false ?? 1 !! 2][0] !! 3",
+        "Maybe.some(1) ?? .some(v): (true ?? v !! 0) !! .none: 0",
+        "1 ?? 2 !! 3",
+        "true ?? 1 !! false",
+        "true ?? 1",
+        "true ?? 1 !! 2 !! 3",
+        "Maybe.some(1) ?? .some(v): v",
+        "Maybe.some(1) ?? .some(v): v !! .some(w): w !! .none: 0",
+        "Maybe.some(1) ?? .some(v): v !! .none: v",
+        "Maybe.some(1) ?? _: 0 !! .none: 1",
+        "Presence<int>.missing ?? .some(v): v !! .none: 0",
+        "true ?? _: 1",
+    ] {
+        assert!(
+            lower(&format!("main() is int {{ {source}; }}")).is_err(),
+            "accepted: {source}"
+        );
+    }
+    assert!(lower("enum Color = (red, blue); main() is int { Color.red ?? .red: 1; }").is_err());
+}
+
+#[test]
+fn compact_choice_formatter_roundtrip() {
+    let code = "module app v1.0.0; main() is int { let a=true??20!!0; let b=Maybe.some(22)??.some(v):v!!.none:0; a+b; }";
+    let source = SourceFile::new("choice.ok", code.to_owned()).unwrap();
+    let formatted = syntax::format::format(&source).unwrap();
+    assert!(formatted.contains(" ?? ") && formatted.contains(" !! "));
+    check(formatted.split_once(';').unwrap().1, "42");
+    let twice =
+        syntax::format::format(&SourceFile::new("choice.ok", formatted.clone()).unwrap()).unwrap();
+    assert_eq!(formatted, twice);
+}
+
+#[test]
+fn compact_choices_compose_without_nesting_and_can_throw() {
+    check(
+        r#"
+        object Absent does Error { Absent(); text() is string { "absent"; } }
+        object Pair { has a is int; has b is int; Pair(:a, :b); sum() is int { a + b; } }
+        main() is int {
+            let pair = Pair(a: true ?? 20 !! 0, b: Maybe.some(22) ?? .some(v): v !! _: 0);
+            try { Presence<int>.missing ?? .some(v): v !! _: throw Absent(); }
+            catch e is Absent { pair.sum(); }
+        }
+    "#,
+        "42",
+    );
+}
+
+#[test]
+fn tail_expression_semicolons_are_optional_without_changing_values() {
+    check("main() is int { if true { 42 } else { 0 }; }", "42");
+    check(
+        "main() is int { let a = if true { 20 } else { 0 }; let b = Maybe.some(22); match b { case Maybe.some(v) { a + v } case Maybe.none { 0 } } }",
+        "42",
+    );
+    check(
+        "object Answer { Answer(); value() is int { 42 } } main() is int { Answer().value() }",
+        "42",
+    );
+    for source in [
+        "main() is int { 1 42 }",
+        "main() is int { let a = 42 }",
+        "main() is int { return 42 }",
+        "main() is int { defer 1 }",
+    ] {
+        assert!(lower(source).is_err(), "accepted: {source}");
+    }
+    let source = SourceFile::new(
+        "tail.ok",
+        "module app v1.0.0; main() is int { if true { 42 } else { 0 }; }".to_string(),
+    )
+    .unwrap();
+    let formatted = syntax::format::format(&source).unwrap();
+    assert!(!formatted.contains("42;"), "{formatted}");
+    check(formatted.split_once(';').unwrap().1, "42");
+    let twice =
+        syntax::format::format(&SourceFile::new("tail.ok", formatted.clone()).unwrap()).unwrap();
     assert_eq!(formatted, twice);
 }

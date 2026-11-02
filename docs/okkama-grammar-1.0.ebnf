@@ -145,7 +145,8 @@ block_stmt          = block ;
 field_bind_stmt     = IDENT "=" expr ";" ;
                     /* valid only in constructor bodies */
 
-if_stmt             = "if" expr block ("else" (if_stmt | block))? ;
+if_stmt             = if_chain ";"? ;
+if_chain            = "if" expr block ("else" (if_chain | block))? ;
 
 match_stmt          = "match" expr "{" match_case* match_else? "}" ;
 match_case          = "case" case_values block ;
@@ -162,9 +163,21 @@ next_stmt           = "next" postfix_if? ";" ;
 last_stmt           = "last" ("if" expr | expr postfix_if?)? ";" ;
 postfix_if          = "if" expr ;
 
-expr_stmt           = expr postfix_if? ";" ;
+expr_stmt           = expr postfix_if? (";" | BEFORE_RIGHT_BRACE) ;
+(* BEFORE_RIGHT_BRACE is zero-width lookahead: only the last expression in a
+   block may omit its semicolon. let/return/throw/defer/etc. still require it. *)
 
-expr                = assignment_free_expr arrow_suffix* optional_else? ;
+expr                = assignment_free_expr arrow_suffix* optional_else? compact_choice? ;
+compact_choice      = "??" choice_value "!!" choice_value
+                    | "??" choice_arm ("!!" choice_arm)* ;
+choice_arm          = choice_pattern ":" choice_value ;
+choice_pattern      = "." IDENT ("(" IDENT ("," IDENT)* ")")? | "_" ;
+choice_value        = "throw" expr | expr ;
+(* No compact choice may contain another compact choice anywhere in its subject
+   or branches, including parentheses, calls, collections and blocks.
+   .variant and _: select pattern form; boolean form has exactly two branches.
+   A wildcard branch must be last. !! is two adjacent ! tokens in infix position;
+   prefix !!value continues to mean double boolean negation. *)
 optional_else       = "else" ("throw" expr | expr) ;
 (* arrow_suffix applies only to an eligible functional member call, e.g. map(). *)
 arrow_suffix        = "->" arrow_bindings? block postfix_op* ;

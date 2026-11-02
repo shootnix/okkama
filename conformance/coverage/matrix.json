@@ -4425,6 +4425,60 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L01.gram.tail-expression"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression"
+     ],
+     "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
+    },
+    "interaction": {
+     "cases": [
+      "L01.gram.tail-expression"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression"
+     ],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L01.gram.tail-expression.let",
+      "L01.gram.tail-expression.return",
+      "L01.gram.tail-expression.separator"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression.let",
+      "L01.gram.tail-expression.return",
+      "L01.gram.tail-expression.separator"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L01.gram.tail-expression"
+     ],
+     "mandatory_cases": [
+      "L01.gram.tail-expression"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "GRAM.TAIL-EXPRESSION",
+   "discrepancies": [],
+   "family": "Grammar",
+   "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#9.7",
+    "docs/okkama-spec-11072026.md#8.11"
+   ],
+   "status": "mandatory",
+   "title": "Final expressions may omit semicolons before } without changing their value"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -26027,6 +26081,84 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "mandatory_cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "mandatory_cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.choice.exhaustiveness",
+      "L05.choice.mixed",
+      "L05.choice.nested-branch",
+      "L05.choice.nested-call",
+      "L05.choice.nested-subject",
+      "L05.choice.scope",
+      "L05.choice.types"
+     ],
+     "mandatory_cases": [
+      "L05.choice.exhaustiveness",
+      "L05.choice.mixed",
+      "L05.choice.nested-branch",
+      "L05.choice.nested-call",
+      "L05.choice.nested-subject",
+      "L05.choice.scope",
+      "L05.choice.types"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "mandatory_cases": [
+      "L05.choice.boolean",
+      "L05.choice.enum",
+      "L05.choice.evaluation",
+      "L05.choice.variants"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "TYPE.COMPACT-CHOICE",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#15"
+   ],
+   "status": "mandatory",
+   "title": "Non-nested lazy boolean and exhaustive enum choices with ?? and !!"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
       "L05.maybe.states"
      ],
      "mandatory_cases": [
@@ -26073,7 +26205,7 @@
     "docs/okkama-spec-11072026.md#15"
    ],
    "status": "mandatory",
-   "title": "Maybe and Presence preserve absence states; explicit collapse and lazy fallback"
+   "title": "Maybe and Presence preserve absence states; explicit fold and lazy fallback"
   },
   {
    "aspects": {
@@ -29845,5 +29977,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "9319f5cbff9c03b87901cb574faf21bbc83f5d10b618753f0603392cd731c9b4"
+ "suite_tree_sha256": "7a9887b4f19c2f92e6aa3d1359dae1c6ebbb248bc146477f930ab48abc01b8bf"
 }

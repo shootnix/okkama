@@ -37,6 +37,10 @@ let checks = 0;
     try { assert.equal(Boolean(found), !absent, `${JSON.stringify(word)}: ${scope} in ${JSON.stringify(row.line)}; got ${JSON.stringify(token?.scopes)}`); }
     catch (error) { failures.push(error.message); }
   }
+  check('let name = p ?? .some(v): v !! .none: "none";', 0, '??', 'keyword.operator.choice.okkama');
+  check('let name = p ?? .some(v): v !! .none: "none";', 0, '!!', 'keyword.operator.choice.okkama');
+  check('let name = Presence<string>.none;', 0, 'none', 'invalid.illegal.reserved-word.okkama', true);
+  check('let name = Presence<string>.none;', 0, 'none', 'constant.other.enum.okkama');
   check('let result = spawn Worker().run();', 0, 'spawn', 'keyword.control.async.okkama');
   check('return Customer(7);', 0, 'return', 'keyword.control.exception.okkama');
   check('let ratio is rat = 1.rat();', 0, 'rat', 'storage.type.primitive.okkama');
@@ -48,7 +52,7 @@ let checks = 0;
   check('let n = 1_000;', 0, '1_000', 'constant.numeric.integer.okkama');
   check('let n = 1_000.25_5;', 0, '1_000.25_5', 'constant.numeric.float.okkama');
   check('let n = 0x7FFF_FFFF;', 0, '0x7FFF_FFFF', 'constant.numeric.integer.okkama');
-  check('of Max(1,2)', 0, 'of', 'support.function.projection.okkama');
+  check('of Max(1,2)', 0, 'of', 'support.function.projection.okkama', true);
   check('view()', 0, 'view', 'keyword.declaration.okkama', true);
   check('cap()', 0, 'cap', 'keyword.declaration.cap.okkama', true);
   check('test.skip("later")', 0, 'skip', 'support.function.assertion.okkama');
@@ -79,7 +83,7 @@ let checks = 0;
   check('```\ncap Card {\n```\nlet after is int = 1;', 1, 'cap', 'string.quoted.other.raw.fenced.okkama');
   check('cap Card {\n text is string { ```\n } cap Fake {\n ```; }\n nextValue is int { 1; }\n}', 4, 'nextValue', 'variable.other.property.cap.okkama');
   for (const file of ['examples/object-caps.ok',
-    'toaster/encapsulation/tester-one.ok']) {
+    'examples/choices.ok', 'examples/variants.ok']) {
     const source = fs.readFileSync(path.join(root, '..', file), 'utf8');
     const rows = tokenize(source + '\n__okkama_end__');
     checks++;

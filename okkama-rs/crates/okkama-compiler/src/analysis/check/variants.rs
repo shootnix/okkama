@@ -149,7 +149,13 @@ impl Checker<'_, '_> {
                     self.error(pattern.span, "Expected an enum variant pattern");
                     continue;
                 };
-                match self.variant_receiver(object) {
+                let receiver = if matches!(&object.kind, ast::ExprKind::Name(n) if n.text == "$choice")
+                {
+                    Some((id, None))
+                } else {
+                    self.variant_receiver(object)
+                };
+                match receiver {
                     Some((other, explicit)) if other == id => {
                         if let Some(explicit) = explicit {
                             let actual: Vec<_> = env.iter().map(|(_, t)| t.clone()).collect();
@@ -396,7 +402,7 @@ impl Checker<'_, '_> {
         span: Span,
     ) -> Expr {
         let output = match (id.0, name.text.as_str(), args.len()) {
-            (1, "collapse", 0) => EnumId(0),
+            (1, "fold", 0) => EnumId(0),
             (0, "as_presence", 0) => EnumId(1),
             _ => {
                 self.error(
@@ -483,7 +489,7 @@ impl Checker<'_, '_> {
         if id != EnumId(0) || args.len() != 1 {
             self.error(
                 span,
-                "Optional fallback requires Maybe<T>; collapse Presence explicitly",
+                "Optional fallback requires Maybe<T>; fold Presence explicitly",
             );
             return Self::poisoned(span);
         }

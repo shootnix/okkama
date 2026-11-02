@@ -132,9 +132,9 @@ Presence.none    → Maybe.none
 Presence.missing → Maybe.none
 ```
 
-Первое преобразование не теряет информацию. Второе намеренно теряет различие между явно пустым значением и отсутствующим полем. Предлагаемые стандартные операции: `as_presence()` и `collapse()`. В POC они могут быть узкими, определёнными для этих двух стандартных типов операциями; общий механизм методов enum — отдельный вопрос.
+Первое преобразование не теряет информацию. Второе намеренно теряет различие между явно пустым значением и отсутствующим полем. Предлагаемые стандартные операции: `as_presence()` и `fold()`. В POC они могут быть узкими, определёнными для этих двух стандартных типов операциями; общий механизм методов enum — отдельный вопрос.
 
-**Не вводить неявный collapse.** Потеря различия разрешена через явное `.collapse()`. Обычное присваивание и fallback этого не делают.
+**Не вводить неявный fold.** Потеря различия разрешена через явное `.fold()`. Обычное присваивание и fallback этого не делают.
 
 ## 4. Декларации и конструирование
 
@@ -237,7 +237,7 @@ let name = Data().value() else "anonymous"; // string
 | Presence<T> | Presence<T> |
 | Maybe<Maybe<T>> | Maybe<Maybe<T>> |
 
-Нет автоматического wrap, unwrap, collapse или flatten. Вызывающий код обрабатывает варианты через match, применяет `else` к Maybe или явно преобразует Presence в Maybe. Ошибки выполнения распространяются по обычным правилам и не превращаются в отсутствие.
+Нет автоматического wrap, unwrap, fold или flatten. Вызывающий код обрабатывает варианты через match, применяет `else` к Maybe или явно преобразует Presence в Maybe. Ошибки выполнения распространяются по обычным правилам и не превращаются в отсутствие.
 
 ### 4.6. Убираем директивы и проекции
 
@@ -374,10 +374,10 @@ let age = value else 0;
 В первом POC `Presence<T> else T` — ошибка типа. Разработчик выбирает политику:
 
 ```okkama
-let name = json.presence_text("name").collapse() else "anonymous";
+let name = json.presence_text("name").fold() else "anonymous";
 ```
 
-или обрабатывает три состояния отдельно. Для PATCH сохраняем Presence до обработки, чтобы различать missing и null. Метод `maybe_text(name) is Maybe<string>` может быть обычной библиотечной обёрткой над `presence_text(name).collapse()`; имя не имеет специального значения для компилятора.
+или обрабатывает три состояния отдельно. Для PATCH сохраняем Presence до обработки, чтобы различать missing и null. Метод `maybe_text(name) is Maybe<string>` может быть обычной библиотечной обёрткой над `presence_text(name).fold()`; имя не имеет специального значения для компилятора.
 
 ## 7. JSON: несколько форм одного значения
 
@@ -501,7 +501,7 @@ SQL NULL в типизированной ячейке → Maybe<T>.none
 - Для `.string()` новых payload enum не объявлять неявный стабильный wire format. На первом этапе — явный match или debug formatter без гарантии сериализации.
 - JSON не обязан содержать тег `name`/`details`: внешнюю форму задаёт adapter.
 - При обратной записи Presence.missing означает **пропустить поле объекта**, а Presence.none — записать JSON null. Для элемента массива «пропустить поле» не имеет того же смысла; требуется отдельная политика, нельзя молча удалить позицию.
-- `collapse()` необратим: после него serializer не может восстановить, был Missing или null.
+- `fold()` необратим: после него serializer не может восстановить, был Missing или null.
 - Если понадобится worker-передача enum, её формат должен сохранять номинальную идентичность/специализацию и payload. До реализации такой поддержки операция должна отвергать тип явно.
 
 ## 10. Синтаксическая дельта и диагностика
@@ -566,7 +566,7 @@ Action directives are no longer supported; use an explicit result type.
 ### Этап C. Maybe/Presence и fallback
 
 - Стандартные декларации Maybe/Presence, известная компилятору идентичность Maybe.
-- Явные преобразования as_presence/collapse; их точная API-форма утверждается до реализации.
+- Явные преобразования as_presence/fold; их точная API-форма утверждается до реализации.
 - `Maybe else` с ленивой веткой без catch.
 - Явные generic-типы результата, проверка тела и сохранение типа при обычном вызове.
 - Удаление директив и проекций по §4.6, включая миграцию применений и tooling.
@@ -603,7 +603,7 @@ Action directives are no longer supported; use an explicit result type.
 | Декларации | Старый enum без payload; несколько payload-типов; duplicate variant/field; неправильная арность |
 | Сигнатуры | Тело соответствует полному результату; T вместо Maybe<T> и обратно отвергаются |
 | Вызовы | Тип результата сохраняется; добавление потребителя не меняет контракт; receiver/arguments/body вычисляются один раз |
-| Обёртки | Нет unwrap/wrap/collapse/flatten; nested Maybe сохраняется; throw/panic не становятся none |
+| Обёртки | Нет unwrap/wrap/fold/flatten; nested Maybe сохраняется; throw/panic не становятся none |
 | Удалённый синтаксис | Директивы и проекции отвергаются; их применения заменены обычными вызовами; порядок вычисления сохранён |
 | Generic | Вывод из some; none с ожидаемым типом; явный Maybe<int>.none; ошибка без контекста; nested Maybe |
 | Match | Полный; пропущенный вариант; duplicate; неверный enum; неверное число bindings; область видимости; `_` |
@@ -611,7 +611,7 @@ Action directives are no longer supported; use an explicit result type.
 | Fallback | none включает RHS; some не включает; left ровно один раз; RHS side effect; ошибка слева не подавлена |
 | Значения | some(0), some(false), some(""), some(empty array) сохраняются |
 | Индекс | Missing key и присутствующий Maybe.none различимы; два уровня fallback; прежнее поведение не изменено |
-| Presence | missing/none/some различимы; collapse явный; as_presence не теряет значение; PATCH semantics |
+| Presence | missing/none/some различимы; fold явный; as_presence не теряет значение; PATCH semantics |
 | JSON | Все строки таблиц §3/§7; неправильный root; неверный nested type; обязательный missing name; сохранение pointer |
 | SQL | Нет строки; SQL NULL; 0/false/""; missing column; отказ базы |
 | Lifetime | Исходное значение доступно после match; payload переживает ветку; нет double drop/leak; shared DAG |
@@ -677,3 +677,32 @@ Action directives are no longer supported; use an explicit result type.
 коллекциях, границы ролей и модулей, ленивость fallback, распространение ошибок,
 exhaustiveness и время жизни ресурса с `destroy`. Полная conformance release gate
 не заявляется: у общего каталога остаются прежние незакрытые coverage obligations.
+
+## 17. Реализованный компактный выбор
+
+`condition ?? yes !! no` требует bool и две совместимые по типу ветки.
+`value ?? .some(v): v !! .none: "anonymous"` — короткий exhaustive match.
+Для Presence добавляется `.missing:`; последний `_:` покрывает остальные варианты.
+Субъект вычисляется один раз, результаты веток ленивые. Вложенность этих
+операторов запрещена в любом операнде, включая скобки и аргументы вызовов.
+Используйте отдельные переменные или обычный match. `fold()` заменил `collapse()`.
+Подробности и ограничения: [книга, глава 24](../OkkamaBook-RU.md#глава-24-перечисления),
+[пример](../../examples/choices.ok).
+
+Дополнительно: у последнего выражения перед `}` точка с запятой необязательна;
+`if true { 1 } else { 0 };` допустим. Для `let`, `return`, `throw`, `defer`
+и присваиваний правила завершения не меняются. Форматтер сохраняет написание.
+
+Проверки расширения (2 ноября 2026):
+
+| Проверка | Результат |
+|---|---|
+| Полный release workspace до добавления необязательной `;` | 531 PASS, 0 ошибок |
+| Финальный workspace (`RUST_MIN_STACK=16777216 cargo test --workspace --no-fail-fast`) | 532 PASS, 0 ошибок, 0 пропусков |
+| Финальная `cargo build --release --workspace` | PASS |
+| Runtime-тесты вариантов, компактного выбора и хвостовых выражений | 18 PASS, IR и Sparrow |
+| Conformance portable-core после изменения `;` | 740/740 PASS |
+| Conformance portable-stdlib после компактного выбора | 61/61 PASS |
+| 15 новых conformance-кейсов | 15/15 PASS отдельно на IR, JVM и Sparrow с eager JIT |
+| VS Code: правила грамматики / TextMate-токенизация | 226/226 и 49/49 PASS |
+| `ocs validate` | 814 кейсов, 726 контрактов, validation OK |

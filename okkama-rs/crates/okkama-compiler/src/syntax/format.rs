@@ -928,7 +928,12 @@ impl<'s> Printer<'s> {
                 self.word(";");
             }
             StmtKind::Block(block) => self.block(block),
-            StmtKind::If(found) => self.if_stmt(found),
+            StmtKind::If(found) => {
+                self.if_stmt(found);
+                if self.slice(stmt.span).trim_end().ends_with(';') {
+                    self.word(";");
+                }
+            }
             StmtKind::Match(body) => self.match_body(body),
             StmtKind::For {
                 source,
@@ -982,10 +987,8 @@ impl<'s> Printer<'s> {
             StmtKind::Expr { expr, condition } => {
                 self.expr(expr);
                 self.postfix_if(condition.as_ref());
-                // `;` после оператора-`loop` необязательна: как у автора.
-                let loop_without = matches!(expr.kind, ExprKind::Loop { .. })
-                    && !self.slice(stmt.span).trim_end().ends_with(';');
-                if !loop_without {
+                // Preserve optional terminators on tail expressions and loops.
+                if self.slice(stmt.span).trim_end().ends_with(';') {
                     self.word(";");
                 }
             }
@@ -1079,8 +1082,70 @@ impl<'s> Printer<'s> {
 
     // ---- выражения ----
 
+    fn choice_result(&mut self, block: &Block) {
+        if let StmtKind::Expr { expr, .. } = &block.stmts[0].kind {
+            self.expr(expr);
+        }
+    }
+
+    fn choice(&mut self, inner: &Expr) {
+        match &inner.kind {
+            ExprKind::If {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                self.expr(condition);
+                self.word(" ?? ");
+                self.choice_result(then_block);
+                self.word(" !! ");
+                self.choice_result(else_block);
+            }
+            ExprKind::Match(body) => {
+                self.expr(&body.subject);
+                let mut separator = " ?? ";
+                for arm in &body.cases {
+                    self.word(separator);
+                    separator = " !! ";
+                    let pattern = &arm.patterns[0];
+                    let (callee, args) = match &pattern.kind {
+                        ExprKind::Call { callee, args } => (&**callee, &args[..]),
+                        _ => (pattern, &[][..]),
+                    };
+                    if let ExprKind::Get { name, .. } = &callee.kind {
+                        self.word(".");
+                        self.word(&name.text);
+                    }
+                    if !args.is_empty() {
+                        self.word("(");
+                        for (i, arg) in args.iter().enumerate() {
+                            if i > 0 {
+                                self.word(", ");
+                            }
+                            if let Some(name) = &arg.name {
+                                self.word(&name.text);
+                                self.word(": ");
+                            }
+                            self.expr(&arg.value);
+                        }
+                        self.word(")");
+                    }
+                    self.word(": ");
+                    self.choice_result(&arm.body);
+                }
+                if let Some(block) = &body.else_block {
+                    self.word(separator);
+                    self.word("_: ");
+                    self.choice_result(block);
+                }
+            }
+            _ => unreachable!("compact choice is an if or match"),
+        }
+    }
+
     fn expr(&mut self, expr: &Expr) {
         match &expr.kind {
+            ExprKind::Choice(inner) => self.choice(inner),
             ExprKind::Throw(value) => {
                 self.word("throw ");
                 self.expr(value);

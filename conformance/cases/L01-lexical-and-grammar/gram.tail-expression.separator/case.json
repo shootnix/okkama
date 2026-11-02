@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.tail-expression.separator",
+  "title": "gram.tail-expression.separator",
+  "purpose": "Verify optional final expression terminators without weakening other statement separators.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.TAIL-EXPRESSION",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "parse",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse"
+      ],
+      "categories": [
+        "syntax"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "Authored for optional tail expression terminators",
+    "expected_basis": "Only an expression immediately before } may omit its semicolon."
+  },
+  "status": "mandatory"
+}

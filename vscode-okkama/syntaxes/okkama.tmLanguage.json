@@ -34,10 +34,10 @@
       "include": "#types"
     },
     {
-      "include": "#invalidSyntax"
+      "include": "#optionalVariants"
     },
     {
-      "include": "#namedConstructorProjections"
+      "include": "#invalidSyntax"
     },
     {
       "include": "#functions"
@@ -281,14 +281,6 @@
         }
       ]
     },
-    "namedConstructorProjections": {
-      "patterns": [
-        {
-          "name": "support.function.projection.okkama",
-          "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\s+(?:[a-z_][a-zA-Z0-9_]*\\.)?[A-Z][a-zA-Z0-9_]*\\s*\\()"
-        }
-      ]
-    },
     "keywords": {
       "patterns": [
         {
@@ -369,7 +361,7 @@
         },
         {
           "name": "invalid.illegal.removed-operator.okkama",
-          "match": "\\?\\.|\\?|\\*\\*"
+          "match": "\\?\\.|(?<!\\?)\\?(?!\\?)|\\*\\*"
         },
         {
           "name": "invalid.illegal.unknown-character.okkama",
@@ -379,6 +371,10 @@
     },
     "operators": {
       "patterns": [
+        {
+          "name": "keyword.operator.choice.okkama",
+          "match": "\\?\\?|!!"
+        },
         {
           "name": "keyword.operator.successor.okkama",
           "match": "\\^(?=\\s*[A-Za-z_][A-Za-z0-9_]*\\s*=)"
@@ -635,6 +631,14 @@
         },
         {
           "include": "#punctuation"
+        }
+      ]
+    },
+    "optionalVariants": {
+      "patterns": [
+        {
+          "name": "constant.other.enum.okkama",
+          "match": "(?<=\\.)\\s*(?:some|none|missing)\\b"
         }
       ]
     }

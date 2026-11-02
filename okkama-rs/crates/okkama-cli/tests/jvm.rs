@@ -2416,7 +2416,7 @@ fn variant_payloads_optional_fallback_and_presence_run_on_jvm() {
                 case Pair.empty { 0; }
                 case Pair.two(a, b) { a + b; }
             };
-            let missing = Presence<int>.missing.collapse() else 0;
+            let missing = Presence<int>.missing.fold() else 0;
             let present = Maybe.some(sum) else panic "must stay lazy";
             if pair == Pair.two(20, 22) { present + missing; } else { 1; }
         }
