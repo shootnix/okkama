@@ -48,6 +48,19 @@ const SECOND: u32 = 3;
 const SLOT: i32 = 24;
 /// Запас стека, ниже которого вложенный вызов исполняет интерпретатор.
 const MARGIN: usize = 4 << 20;
+/// Наибольшее число регистров компилируемой функции (H-02): смещение
+/// регистра `register × SLOT` считается в `i32`, и предел, проверенный до
+/// генерации кода, исключает его переполнение. Больше — интерпретатор.
+const MAX_JIT_REGISTERS: usize = 1 << 14;
+/// Наибольшая область регистров вызываемой в кадре вызывающего: вызов
+/// функции с большим числом регистров идёт через помощник, без области.
+const MAX_AREA_REGISTERS: usize = 512;
+/// Наибольший машинный кадр (по раскладке Cranelift). Он меньше запаса
+/// стека, который проверяется перед каждым вызовом, поэтому проверенный
+/// запас покрывает кадр вызываемой целиком (H-02).
+const MAX_FRAME_BYTES: u32 = 1 << 20;
+const _: () = assert!(MARGIN >= 2 * MAX_FRAME_BYTES as usize);
+const _: () = assert!(MAX_JIT_REGISTERS * (SLOT as usize) < i32::MAX as usize);
 /// Наибольшее число регистров вызываемой функции, освобождаемых в коде;
 /// больше — циклом помощника (после раскраски регистров их немного, а код
 /// каждого вызова меньше и быстрее компилируется).
@@ -252,6 +265,30 @@ pub(crate) struct Jit {
     layout: Layout,
     threshold: u32,
     debug: bool,
+    /// Отладка (H-21): `OKKAMA_JIT_ONLY` — компилировать только эти
+    /// функции, `OKKAMA_JIT_SKIP` — не компилировать эти, `OKKAMA_JIT_DUMP` —
+    /// печатать их CLIF; символы через запятую.
+    only: Option<Vec<String>>,
+    skip: Vec<String>,
+    dump: Vec<String>,
+    /// Счётчики для `OKKAMA_JIT_STATS`.
+    counters: Counters,
+}
+
+/// Сколько функций скомпилировано и отвергнуто, сколько входов в машинный
+/// код из интерпретатора и сколько из них — в середину функции (OSR).
+#[derive(Debug, Default)]
+struct Counters {
+    compiled: Cell<u64>,
+    refused: Cell<u64>,
+    entries: Cell<u64>,
+    osr: Cell<u64>,
+}
+
+/// Список символов из переменной окружения (через запятую).
+fn symbols(variable: &str) -> Option<Vec<String>> {
+    let text = std::env::var(variable).ok()?;
+    Some(text.split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_string).collect())
 }
 
 impl std::fmt::Debug for Jit {
@@ -264,6 +301,14 @@ impl Jit {
     /// Печать `OKKAMA_JIT_STATS` в конце запуска.
     pub(crate) fn report(&self) {
         if let Some(stats) = &self.ctx.stats {
+            let counters = &self.counters;
+            eprintln!(
+                "jit: compiled {}, refused {}, entries {}, osr {}",
+                counters.compiled.get(),
+                counters.refused.get(),
+                counters.entries.get(),
+                counters.osr.get()
+            );
             let mut rows: Vec<_> = stats.borrow().iter().map(|(name, count)| (*count, name.clone())).collect();
             rows.sort_unstable_by(|a, b| b.cmp(a));
             eprintln!("jit: helper calls by instruction");
@@ -332,8 +377,16 @@ impl Jit {
             ctx,
             role_maps: RefCell::new(std::collections::HashMap::new()),
             layout,
-            threshold: if mode == "eager" { 1 } else { THRESHOLD },
+            threshold: match std::env::var("OKKAMA_JIT_THRESHOLD").ok().and_then(|text| text.parse::<u32>().ok()) {
+                Some(threshold) => threshold.max(1),
+                None if mode == "eager" => 1,
+                None => THRESHOLD,
+            },
             debug: std::env::var_os("OKKAMA_JIT_DEBUG").is_some(),
+            only: symbols("OKKAMA_JIT_ONLY"),
+            skip: symbols("OKKAMA_JIT_SKIP").unwrap_or_default(),
+            dump: symbols("OKKAMA_JIT_DUMP").unwrap_or_default(),
+            counters: Counters::default(),
         }))
     }
 
@@ -363,16 +416,19 @@ impl Jit {
         let program = &engine.program;
         let function = &program.functions[index];
         let eligible = function.native.is_none() && function.intrinsic.is_none() && !function.code.is_empty();
+        let filtered = self.only.as_ref().is_some_and(|only| !only.contains(&function.symbol)) || self.skip.contains(&function.symbol);
         let prepared = engine.prepared(index).ok();
         let started = std::time::Instant::now();
-        let result = match (eligible, prepared) {
-            (true, Some(prepared)) => self.build(program, index, &prepared.constants),
+        let result = match (eligible, filtered, prepared) {
+            (_, true, _) => Err("filtered out by OKKAMA_JIT_ONLY/OKKAMA_JIT_SKIP".to_string()),
+            (true, false, Some(prepared)) => self.build(program, index, &prepared.constants),
             _ => Err("not eligible".to_string()),
         };
         match result {
             Ok(code) => {
                 self.table[index].set(code);
                 self.states[index].set(State::Compiled);
+                self.counters.compiled.set(self.counters.compiled.get() + 1);
                 if self.debug {
                     eprintln!("jit: compiled {} ({} instructions) in {:.2} ms", function.symbol, function.code.len(), started.elapsed().as_secs_f64() * 1000.0);
                 }
@@ -380,6 +436,7 @@ impl Jit {
             }
             Err(error) => {
                 self.states[index].set(State::Failed);
+                self.counters.refused.set(self.counters.refused.get() + 1);
                 if self.debug {
                     eprintln!("jit: {} not compiled: {error}", function.symbol);
                 }
@@ -389,6 +446,10 @@ impl Jit {
     }
 
     fn build(&self, program: &Program, index: usize, constants: &[Value]) -> Result<usize, String> {
+        let registers = program.functions[index].registers.len();
+        if registers > MAX_JIT_REGISTERS {
+            return Err(format!("{registers} registers (the limit is {MAX_JIT_REGISTERS})"));
+        }
         let mut slot = self.module.borrow_mut();
         let module = slot.as_mut().ok_or("module is gone")?;
         let mut context = module.make_context();
@@ -414,8 +475,20 @@ impl Jit {
         if self.debug {
             eprintln!("jit: {}: {} Cranelift instructions, {} blocks", program.functions[index].symbol, context.func.dfg.num_insts(), context.func.dfg.num_blocks());
         }
+        if self.dump.contains(&program.functions[index].symbol) {
+            eprintln!("jit: CLIF of {}\n{}", program.functions[index].symbol, context.func.display());
+        }
         module.define_function(id, &mut context).map_err(|error| format!("{error:?}"))?;
+        // Адрес публикуется только для кадра в пределах запаса стека.
+        let frame = context
+            .compiled_code()
+            .and_then(|code| code.buffer.frame_layout())
+            .map(|layout| layout.frame_to_fp_offset)
+            .ok_or("frame layout is unknown")?;
         module.clear_context(&mut context);
+        if frame > MAX_FRAME_BYTES {
+            return Err(format!("frame of {frame} bytes (the limit is {MAX_FRAME_BYTES})"));
+        }
         module.finalize_definitions().map_err(|error| error.to_string())?;
         Ok(module.get_finalized_function(id) as usize)
     }
@@ -426,6 +499,10 @@ impl Jit {
         // SAFETY: `code` — адрес функции, скомпилированной с сигнатурой `Entry`.
         let function: Entry = unsafe { std::mem::transmute::<usize, Entry>(code) };
         let mut out = Value::Undef;
+        self.counters.entries.set(self.counters.entries.get() + 1);
+        if entry != 0 {
+            self.counters.osr.set(self.counters.osr.get() + 1);
+        }
         sched::native_enter();
         // SAFETY: регистры — слоты кадра этой функции (их число задаёт
         // программа), `out` — инициализированный слот результата.
@@ -730,7 +807,7 @@ fn closure_registers(program: &Program) -> usize {
         }
     }
     let largest = targets.iter().map(|index| program.functions[*index].registers.len()).max().unwrap_or(0);
-    if largest <= 512 { largest } else { 0 }
+    if largest <= MAX_AREA_REGISTERS { largest } else { 0 }
 }
 
 /// `call.fn` с целью из набора `fn.closure`: захваты (копией) и аргументы
@@ -1182,7 +1259,10 @@ fn flags() -> MemFlagsData {
     MemFlagsData::trusted()
 }
 
+/// Смещение слота регистра: номер меньше `MAX_JIT_REGISTERS` (проверено до
+/// генерации кода функции и областей вызова), поэтому `i32` не переполнится.
 fn offset(register: Register) -> i32 {
+    debug_assert!((register.0 as usize) < MAX_JIT_REGISTERS);
     register.0 as i32 * SLOT
 }
 
@@ -2189,6 +2269,11 @@ impl<'a, 'b> Gen<'a, 'b> {
         if args.len() != target.params.len() {
             return self.generic(pc);
         }
+        // Большой кадр вызываемой — через помощник, без области в своём кадре.
+        if target.registers.len() > MAX_AREA_REGISTERS {
+            let status = self.eval(h_call as *const () as usize, pc);
+            return self.check(status, pc);
+        }
         self.call_into(pc, dst, Callee::Static(callee), &target.params, target.registers.len(), args)
     }
 
@@ -2371,7 +2456,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             return Ok(false);
         }
         let count = candidates.iter().map(|function| function.registers.len()).max().unwrap_or(0);
-        if count > 512 {
+        if count > MAX_AREA_REGISTERS {
             return Ok(false);
         }
         let target = match self.layout.object.filter(|object| object.declaration >= 0) {
@@ -2395,5 +2480,48 @@ impl<'a, 'b> Gen<'a, 'b> {
         self.b.ins().jump(done, &[]);
         self.b.switch_to_block(done);
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod limits {
+    use super::*;
+    use okkama_sparrow::{Constant, Dst, FuncRef, Type, TypeRef};
+
+    /// `main` пишет в последний регистр (наибольшее смещение) и возвращает его.
+    fn program(registers: usize) -> Program {
+        let last = Register(registers as u32 - 1);
+        Program {
+            module: "app".into(),
+            version: "1.0.0".into(),
+            types: vec![Type::Int],
+            functions: vec![Function {
+                symbol: "main".into(),
+                is_async: false,
+                native: None,
+                intrinsic: None,
+                registers: vec![TypeRef(0); registers],
+                params: Vec::new(),
+                result: Some(TypeRef(0)),
+                code: vec![I::Const { dst: Dst(last), value: Constant::Int("1".into()) }, I::Return { value: Some(last) }],
+                handlers: Vec::new(),
+            }],
+            entry: Some(FuncRef(0)),
+            ..Program::default()
+        }
+    }
+
+    #[test]
+    fn functions_over_the_register_limit_are_not_compiled() {
+        for (registers, compiled) in [(MAX_JIT_REGISTERS, true), (MAX_JIT_REGISTERS + 1, false)] {
+            let program = program(registers);
+            let engine = machine::new_engine(&program);
+            let Some(jit) = &engine.jit else {
+                return; // OKKAMA_JIT=off
+            };
+            let prepared = engine.prepared(0).expect("prepared");
+            let built = jit.build(&program, 0, &prepared.constants);
+            assert_eq!(built.is_ok(), compiled, "{registers}: {built:?}");
+        }
     }
 }

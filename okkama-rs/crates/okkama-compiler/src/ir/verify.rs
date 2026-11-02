@@ -459,14 +459,11 @@ impl<'a> FunctionVerifier<'a> {
     /// дописывает на месте, поэтому использование в аргументах unwind
     /// конфликтует с любым другим использованием в том же блоке.
     fn check_builders(&self) -> std::result::Result<(), String> {
-        for (index, ty) in self.function.values.iter().enumerate() {
-            if !ty.is_builder() {
-                continue;
-            }
+        let uses = self.builder_uses()?;
+        for (index, uses) in uses.iter().enumerate() {
             let value = ValueId(index);
-            let uses = self.builder_uses(value)?;
-            for at in &uses {
-                if self.builder_reused(value, *at, &uses) {
+            for at in uses {
+                if self.builder_reused(value, *at, uses) {
                     return Err(format!(
                         "builder {value} is used more than once on a path; builders are linear"
                     ));
@@ -476,38 +473,66 @@ impl<'a> FunctionVerifier<'a> {
         Ok(())
     }
 
-    /// Точки использования сборщика; повтор внутри одной точки — ошибка.
-    fn builder_uses(&self, value: ValueId) -> std::result::Result<Vec<UsePoint>, String> {
-        let twice =
-            || format!("builder {value} is used twice by one operation; builders are linear");
-        let count = |values: &[ValueId]| values.iter().filter(|used| **used == value).count();
-        let mut uses = Vec::new();
+    /// Точки использования каждого сборщика (по номеру значения; у прочих
+    /// значений — пусто); повтор внутри одной точки — ошибка. Один проход по
+    /// функции: каждая версия сборщика (`builder.push` даёт новую) иначе
+    /// обходила бы функцию заново.
+    fn builder_uses(&self) -> std::result::Result<Vec<Vec<UsePoint>>, String> {
+        let values = &self.function.values;
+        let mut uses: Vec<Vec<UsePoint>> = vec![Vec::new(); values.len()];
+        if !values.iter().any(Type::is_builder) {
+            return Ok(uses);
+        }
+        let twice = |value: ValueId| format!("builder {value} is used twice by one operation; builders are linear");
+        // Сборщики среди `used` и сколько раз встречается каждый.
+        let builders = |used: &[ValueId]| -> Vec<(ValueId, usize)> {
+            let mut found: Vec<(ValueId, usize)> = Vec::new();
+            for value in used.iter().filter(|value| values[value.0].is_builder()) {
+                match found.iter_mut().find(|(seen, _)| seen == value) {
+                    Some((_, count)) => *count += 1,
+                    None => found.push((*value, 1)),
+                }
+            }
+            found
+        };
         for (index, block) in self.function.blocks.iter().enumerate() {
             let id = BlockId(index);
             for (position, inst) in block.insts.iter().enumerate() {
-                match count(&inst.kind.operands()) {
-                    0 => {}
-                    1 => uses.push(UsePoint::Inst(id, position)),
-                    _ => return Err(twice()),
+                for (value, count) in builders(&inst.kind.operands()) {
+                    if count > 1 {
+                        return Err(twice(value));
+                    }
+                    uses[value.0].push(UsePoint::Inst(id, position));
                 }
             }
             let term = &block.term.kind;
-            let edges = term
-                .targets()
-                .iter()
-                .map(|target| count(&target.args))
-                .max()
-                .unwrap_or(0);
-            match count(&term.operands()) + edges {
-                0 => {}
-                1 => uses.push(UsePoint::Term(id)),
-                _ => return Err(twice()),
+            let operands = term.operands();
+            let targets = term.targets();
+            // Операнды терминатора плюс самый нагруженный переход: переходы
+            // взаимоисключающие, поэтому берётся наибольший.
+            let mut candidates: Vec<ValueId> = builders(&operands).into_iter().map(|(value, _)| value).collect();
+            for target in &targets {
+                for (value, _) in builders(&target.args) {
+                    if !candidates.contains(&value) {
+                        candidates.push(value);
+                    }
+                }
+            }
+            for value in candidates {
+                let count = |used: &[ValueId]| used.iter().filter(|used| **used == value).count();
+                let edges = targets.iter().map(|target| count(&target.args)).max().unwrap_or(0);
+                match count(&operands) + edges {
+                    0 => {}
+                    1 => uses[value.0].push(UsePoint::Term(id)),
+                    _ => return Err(twice(value)),
+                }
             }
             if let Some(unwind) = &block.unwind {
-                match count(&unwind.args) {
-                    0 => {}
-                    1 => uses.push(UsePoint::Unwind(id)),
-                    _ => return Err(twice()),
+                for (value, count) in builders(&unwind.args) {
+                    if count > 1 {
+                        return Err(twice(value));
+                    }
+                    uses[value.0].push(UsePoint::Unwind(id));
                 }
             }
         }

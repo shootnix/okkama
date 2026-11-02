@@ -17,6 +17,7 @@
 pub mod ast;
 pub mod format;
 pub mod lexer;
+pub mod limits;
 pub mod parser;
 pub mod print;
 pub mod prune;
@@ -60,6 +61,13 @@ pub struct ParseOptions {
     /// operators, types, `else if` links, ...). Deeper input is reported as
     /// a syntax error instead of exhausting the native stack.
     pub max_nesting: usize,
+    /// Maximum depth of the syntax tree (expressions, statements and blocks
+    /// on one path), checked after parsing: left-associative chains such as
+    /// `a + a + … + a` are built by a loop, not by recursion, so the nesting
+    /// limit alone does not bound the tree that later phases walk.
+    pub max_tree_depth: usize,
+    /// Maximum number of syntax nodes in one file.
+    pub max_nodes: usize,
 }
 
 impl ParseOptions {
@@ -72,6 +80,19 @@ impl ParseOptions {
     /// optimised) still fit a 2 MiB thread stack; `parser_robustness`
     /// checks this.
     pub const DEFAULT_MAX_NESTING: usize = 64;
+
+    /// The default tree depth limit.
+    ///
+    /// The deepest tree in `std/`, `examples/`, `benchmarks/` and the
+    /// conformance sources is 37 levels. Every recursive consumer (analysis,
+    /// lowering, printers, the formatter) handles 128 levels on a 2 MiB thread
+    /// stack in an unoptimised build (about 140 fit); optimised builds fit
+    /// more than 800.
+    pub const DEFAULT_MAX_TREE_DEPTH: usize = 128;
+
+    /// The default node limit: the largest file in the repository has about
+    /// 23 000 nodes.
+    pub const DEFAULT_MAX_NODES: usize = 1 << 20;
 }
 
 impl Default for ParseOptions {
@@ -79,6 +100,8 @@ impl Default for ParseOptions {
         ParseOptions {
             mode: ParseMode::Full,
             max_nesting: Self::DEFAULT_MAX_NESTING,
+            max_tree_depth: Self::DEFAULT_MAX_TREE_DEPTH,
+            max_nodes: Self::DEFAULT_MAX_NODES,
         }
     }
 }

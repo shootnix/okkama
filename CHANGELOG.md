@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
+
 ### Added
 
 - Optional semicolons on the last expression before `}`, preserving its value;
@@ -27,8 +29,55 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 - IR, Sparrow/JIT and JVM execution and conformance coverage for variant payloads,
   generic inference, absence, errors, module boundaries and resource lifetimes.
 
-### Removed
+- [Trust model](docs/security-model.md): what Okkama handles safely today for source
+  code, `.spb` bytecode, natives and embedding, what it does not, and which roadmap
+  tasks move each boundary (H-01).
+- JIT debugging switches (H-21): `OKKAMA_JIT_THRESHOLD=N` sets the hotness threshold,
+  `OKKAMA_JIT_ONLY` / `OKKAMA_JIT_SKIP` (comma-separated symbols) limit which functions
+  are compiled — for bisecting which compiled function changes a result —, and
+  `OKKAMA_JIT_DUMP` prints their Cranelift IR. `OKKAMA_JIT_STATS` now also prints how
+  many functions were compiled and refused, and how many times machine code was entered,
+  in the middle of a function (OSR) among them.
+- Release gate (H-08): `make gate` (`tools/gate/gate.sh`) builds, runs the Rust tests
+  in release, conformance on IR, JVM and Sparrow and on Sparrow again with JIT `eager`
+  and hotness thresholds 2 and 10 (mixed execution and OSR), checks that machine code
+  and OSR actually ran, and runs the inline tests of every std module on IR and Sparrow
+  against a list of known failures (`tools/gate/known-failures.txt`).
 
+### Fixed
+
+- **Long expression chains no longer crash the compiler** (H-03). The parser bounds
+  its own recursion, but builds left-associative chains (`a + a + … + a`, `x.a.b.c…`,
+  `x.f().f()…`, `x[0][0]…`) by a loop, so the tree was as deep as the chain was long and
+  the recursive phases overflowed the stack: `okkama check` at about 6 000 links,
+  `okkama ast` at 100 000. The tree is now measured right after parsing, by a walk with
+  an explicit stack: deeper than 128 levels (`ParseOptions::max_tree_depth`; the
+  deepest file in the repository has 37) or larger than 2^20 nodes (`max_nodes`) is a
+  syntax error at the offending expression. A file with more than four tokens per
+  allowed node is rejected before the tree is built. A chain of a million links is
+  rejected in 0.2 s by every command.
+- Syntax trees are freed without recursion: `Expr` moves its sub-expressions to a
+  queue, so dropping a deep tree (on an error path, or one built in code) no longer
+  overflows the stack (H-03).
+- **JIT address arithmetic and machine frames are bounded** (H-02). A register slot
+  offset was `register × 24` in `i32` without a check, so a hand-made `.spb` function
+  with more than about 89 million registers made machine code write outside its frame.
+  The JIT now refuses functions with more than 2^14 registers before generating code,
+  calls functions with more than 512 registers through the helper instead of an area in
+  the caller's frame, and publishes code only when Cranelift's frame for it is at most
+  1 MiB, a quarter of the stack margin checked before every call. A function over a
+  limit stays with the interpreter (`OKKAMA_JIT_DEBUG` prints why).
+- **Building Sparrow bytecode for a function with thousands of values live at once no
+  longer takes minutes and gigabytes** (regression of 0.3.2, H-28). 20 000 such values
+  made the register allocator's conflict graph hundreds of millions of edges: 132 s and
+  10.6 GB for one 20 000-line method. Above 2^22 edges a function now keeps one register
+  per value, as before 0.3.2.
+- The IR verifier checked the linearity of every array builder version by walking the
+  whole function again: quadratic in a function with many `builder.push` (an array
+  literal of 20 000 elements took 6.5 s in `okkama ir`). Builder uses are now collected
+  in one pass; the same program builds in 1 s instead of 132 s (H-39).
+
+### Removed
 - Action directives and constructor projections, including `#projected`. Use
   `Object(arguments).method()`; stdlib and positive conformance examples are migrated.
   Method signatures state the complete result type, with no implicit unwrapping.
