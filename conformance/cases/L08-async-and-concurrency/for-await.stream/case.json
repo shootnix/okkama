@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.for-await.stream",
+  "title": "Async iteration evaluates once and preserves loop control and cleanup",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.FOR-AWAIT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - source evaluated once\nok 2 - values in order\nok 3 - empty skips body\nok 4 - EOF fetch once\nok 5 - next and last\nok 6 - no fetch after last\nok 7 - per-iteration defer\nok 8 - loop does not own stream\nok 9 - nested loops\nok 10 - binding scope\nok 11 - generic role\nok 12 - fetch error propagates\nok 13 - error runs outer defer\nok 14 - no fetch after error\nok 15 - return from body\nok 16 - return closes via defer\nok 17 - return stops fetch\nchecks: 17, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/for-await.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "for await awaits next sequentially, stops at Maybe.none, scopes bindings, preserves next/last/return and propagates errors through normal defer cleanup."
+  },
+  "status": "mandatory"
+}

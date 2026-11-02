@@ -936,11 +936,12 @@ impl<'s> Printer<'s> {
             }
             StmtKind::Match(body) => self.match_body(body),
             StmtKind::For {
+                is_async,
                 source,
                 bindings,
                 body,
             } => {
-                self.word("for ");
+                self.word(if *is_async { "for await " } else { "for " });
                 self.expr(source);
                 self.word(" -> ");
                 for (index, binding) in bindings.iter().enumerate() {

@@ -303,7 +303,7 @@ impl Rewrite {
             S::Block(block) => self.block(block),
             S::If(stmt) => self.if_stmt(stmt),
             S::Match(body) => self.match_body(body),
-            S::For { source, bindings, body } => {
+            S::For { source, bindings, body, .. } => {
                 self.expr(source, false);
                 for binding in bindings.iter() {
                     self.binding(&binding.name);

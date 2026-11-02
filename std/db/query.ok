@@ -1,0 +1,126 @@
+module db/query v1.0.0;
+
+import "db/connection" take DbExecuting;
+import "db/statement" take Statement;
+import "db/row" take Row,RowReading,RowsEnded;
+import "db/error" take DbClosed,DbBusy;
+import "async/atomic" take Atomic;
+import "collections/list" take List,EmptyList;
+import "collections/sequence" take Sequencing;
+import "db/row" take Column;
+
+// Each call executes the statement anew. Owns its cursor, not the connection.
+object Query {
+    has origin is DbExecuting;
+    has statement is Statement;
+
+    Query(origin is DbExecuting, statement is Statement) {
+        self.origin = origin;
+        self.statement = statement;
+    }
+
+    async rows() is QueryRows { QueryRows(await origin.rows(statement)); }
+
+    // Read one extra row to distinguish exactly-at-limit from truncation.
+    async all(max_rows is int) is @Row {
+        confirm max_rows >= 0 else throw InvalidQueryLimit(max_rows);
+        let rows = await self.rows();
+        defer rows.close();
+        let collected = QueryRowsCollected();
+        loop {
+            let found = await rows.next();
+            match found {
+                case Maybe.none { last; }
+                case Maybe.some(row) {
+                    confirm collected.size() < max_rows else throw QueryLimitExceeded(max_rows);
+                    collected = collected.addition(row);
+                }
+            }
+        }
+        collected.values();
+    }
+
+    async one() is Row {
+        let found = await self.maybe();
+        found else throw NoRows();
+    }
+
+    async maybe() is Maybe<Row> {
+        let rows = await self.rows();
+        defer rows.close();
+        let first = await rows.next();
+        match first {
+            case Maybe.none { Maybe.none; }
+            case Maybe.some(row) {
+                let second = await rows.next();
+                match second {
+                    case Maybe.none { Maybe.some(row); }
+                    case Maybe.some(_) { throw TooManyRows(); }
+                }
+            }
+        }
+    }
+}
+
+// Owned streaming cursor. EOF is stable; concurrent next calls are rejected.
+object QueryRows {
+    has origin is RowReading;
+    has ended,stopped,busy is Atomic<bool>;
+    QueryRows(origin is RowReading) {
+        self.origin=origin;ended=Atomic(false);stopped=Atomic(false);busy=Atomic(false);
+    }
+    columns() is Sequencing<Column> { origin.columns(); }
+    closed() is bool { stopped.value() || origin.closed(); }
+    close() is void {
+        if stopped.compare_and_replace(false,true) { origin.close(); }
+    }
+    async next() is Maybe<Row> {
+        confirm busy.compare_and_replace(false,true) else throw DbBusy();
+        defer busy.replace(false);
+        if ended.value() { Maybe.none; }
+        else {
+            confirm !self.closed() else throw DbClosed();
+            try { Maybe.some(await origin.row()); }
+            catch eof is RowsEnded { ended.replace(true);self.close();Maybe.none; }
+            catch failure is Cancelled { self.close();throw; }
+            catch failure is Error { self.close();throw; }
+        }
+    }
+    destroy { self.close(); }
+}
+
+// Prefix in O(1), then materialize in source order without repeated array copies.
+object QueryRowsCollected {
+    has origin is List<Row>;
+    QueryRowsCollected() { let empty is List<Row> = EmptyList();origin=empty; }
+    size() is int { origin.size(); }
+    addition(row is Row) is ^QueryRowsCollected { ^origin=origin.prefix(row); }
+    values() is @Row {
+        let reversed is @Row = origin.map() -> row { row; };
+        let ordered is @Row = (0..reversed.size()).map() -> index { reversed[reversed.size()-index-1]; };
+        ordered;
+    }
+}
+
+object InvalidQueryLimit does Error {
+    has amount is int;
+    InvalidQueryLimit(limit is int) { amount=limit; }
+    limit() is int { amount; }
+    text() is string { "database query row limit must be non-negative"; }
+}
+object QueryLimitExceeded does Error {
+    has amount is int;
+    QueryLimitExceeded(limit is int) { amount=limit; }
+    limit() is int { amount; }
+    text() is string { "database query exceeded row limit " + amount.string(); }
+}
+
+object NoRows does Error {
+    NoRows();
+    text() is string { "database query expected one row, found none"; }
+}
+
+object TooManyRows does Error {
+    TooManyRows();
+    text() is string { "database query expected at most one row, found more than one"; }
+}

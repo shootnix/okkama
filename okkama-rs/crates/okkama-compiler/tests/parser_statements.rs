@@ -315,3 +315,15 @@ fn reserved_words_cannot_be_bindings() {
         "let var = 1; let optional = 2; let mutable = 3; let setters = 4;",
     ));
 }
+
+#[test]
+fn for_await_preserves_syntax_and_formatting() {
+    use okkama_compiler::{SourceFile, syntax};
+    let text = "module app v1.0.0; async main() is int { for await source -> row { next; } 0; }";
+    let source = SourceFile::new("async.ok", text).unwrap();
+    let formatted = syntax::format::format(&source).unwrap();
+    assert!(formatted.contains("for await source -> row"));
+    let again = SourceFile::new("async.ok", &formatted).unwrap();
+    assert_eq!(formatted, syntax::format::format(&again).unwrap());
+    assert!(body_sexpr("for await source -> row { next; }").contains("ForAwaitStatement"));
+}

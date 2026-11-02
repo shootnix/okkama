@@ -1,0 +1,95 @@
+module app v1.0.0;
+import "conformance/check" take Checks;
+import "async/atomic" take Atomic;
+
+role Reading<T> { async next() is Maybe<T>; }
+object Failed does Error { Failed();text() is string { "fetch failed"; } }
+object Stream does Reading<int> {
+    has position,calls,closed is Atomic<int>;
+    has end,fail_at is int;
+    Stream(end is int,fail_at is int) {
+        position=Atomic(0);calls=Atomic(0);closed=Atomic(0);
+        self.end=end;self.fail_at=fail_at;
+    }
+    count() is int { calls.value(); }
+    close() is void { closed.replace(closed.value()+1); }
+    closes() is int { closed.value(); }
+    async next() is Maybe<int> {
+        calls.replace(calls.value()+1);
+        let value=position.value();
+        if value==fail_at { throw Failed(); }
+        if value==end { Maybe.none; }
+        else { position.replace(value+1);Maybe.some(value); }
+    }
+}
+object Source {
+    has calls is Atomic<int>;
+    Source() { calls=Atomic(0); }
+    stream() is Stream { calls.replace(calls.value()+1);Stream(4,-1); }
+    count() is int { calls.value(); }
+}
+object Consumer<T> {
+    Consumer();
+    async count(source is Reading<T>) is int {
+        let count=Atomic(0);
+        for await source -> value { count.replace(count.value()+1); }
+        count.value();
+    }
+}
+object Returner {
+    Returner();
+    async first(stream is Stream) is int {
+        defer stream.close();
+        for await stream -> value { return value; }
+        -1;
+    }
+}
+
+async main() is int {
+    let c=Checks();
+    let source=Source();
+    let sum=Atomic(0);
+    for await source.stream() -> value { sum.replace(sum.value()+value); }
+    c=c.same_int("source evaluated once",source.count(),1);
+    c=c.same_int("values in order",sum.value(),6);
+    let empty=Stream(0,-1);
+    for await empty -> value { sum.replace(-100); }
+    c=c.same_int("empty skips body",sum.value(),6);
+    c=c.same_int("EOF fetch once",empty.count(),1);
+    let stream=Stream(10,-1);
+    let visited=Atomic(0);
+    let cleaned=Atomic(0);
+    for await stream -> value {
+        defer cleaned.replace(cleaned.value()+1);
+        next if value==0;
+        last if value==3;
+        visited.replace(visited.value()+value);
+    }
+    c=c.same_int("next and last",visited.value(),3);
+    c=c.same_int("no fetch after last",stream.count(),4);
+    c=c.same_int("per-iteration defer",cleaned.value(),4);
+    c=c.same_int("loop does not own stream",stream.closes(),0);
+    let nested=Atomic(0);
+    let value=99;
+    for await Stream(2,-1) -> value {
+        for await Stream(3,-1) -> value { nested.replace(nested.value()+value); }
+    }
+    c=c.same_int("nested loops",nested.value(),6);
+    c=c.same_int("binding scope",value,99);
+    let consumer is Consumer<int> = Consumer();
+    c=c.same_int("generic role",await consumer.count(Stream(3,-1)),3);
+    let failing=Stream(3,1);
+    let failed=try {
+        defer failing.close();
+        for await failing -> item { sum.replace(item); }
+        false;
+    } catch e is Failed { true; };
+    c=c.ok("fetch error propagates",failed);
+    c=c.same_int("error runs outer defer",failing.closes(),1);
+    c=c.same_int("no fetch after error",failing.count(),2);
+    let returned=Stream(4,-1);
+    c=c.same_int("return from body",await Returner().first(returned),0);
+    c=c.same_int("return closes via defer",returned.closes(),1);
+    c=c.same_int("return stops fetch",returned.count(),1);
+    c.done();
+}

@@ -375,6 +375,7 @@ impl Parser<'_> {
     /// has to be grouped.
     fn for_statement(&mut self) -> PResult<StmtKind> {
         self.advance();
+        let is_async = self.eat(TokenKind::Await);
         if self.check(TokenKind::LeftBrace) {
             let keyword = self.previous().clone();
             return Err(self.error_at(
@@ -395,6 +396,7 @@ impl Parser<'_> {
         }
         let body = self.block()?;
         Ok(StmtKind::For {
+            is_async,
             source,
             bindings,
             body,

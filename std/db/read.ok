@@ -1,54 +1,156 @@
 module db/read v1.0.0;
 
-import "db/row" take Row;
-import "db/value" take ObservedDbValue,DbValueKind,InvalidDbValue;
+import "db/value" take DbValue,ObservedDbValue,DbValueKind,InvalidDbValue;
 import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
 import "strings/parse" take ParsedInt;
 import "compare" take Order;
 
-// Strict named projections. MissingColumn and AmbiguousColumn propagate unchanged.
-// NULL is never replaced with a default; flag accepts INTEGER 0/1, not BOOLEAN.
+// Narrow input protocol keeps readers independent of the Row implementation.
+role RowValues {
+    value(name is string) is DbValue;
+}
+
+// Compatibility adapter; Row exposes these same strict methods directly.
 object RowReader {
-    has origin is Row;
+    has origin is RowValues;
+    RowReader(origin is RowValues) { self.origin = origin; }
+    int(name is string) is int { DbColumnReader(name, origin.value(name)).int(); }
+    integer(name is string) is BigInt { DbColumnReader(name, origin.value(name)).integer(); }
+    decimal(name is string) is Decimal { DbColumnReader(name, origin.value(name)).decimal(); }
+    floating(name is string) is float { DbColumnReader(name, origin.value(name)).floating(); }
+    boolean(name is string) is bool { DbColumnReader(name, origin.value(name)).boolean(); }
+    flag(name is string) is bool { DbColumnReader(name, origin.value(name)).flag(); }
+    text(name is string) is string { DbColumnReader(name, origin.value(name)).text(); }
+    bytes(name is string) is @byte { DbColumnReader(name, origin.value(name)).bytes(); }
+}
 
-    RowReader(origin is Row) { self.origin = origin; }
-
-    int(name is string) is int {
-        let value = origin.value(name);
-        try {
-            let exact = ObservedDbValue(value).integer();
+// A selected, validated row value. Errors retain the column and their cause.
+object DbColumnReader {
+    has name is string;
+    has origin is DbValue;
+    DbColumnReader(name is string, origin is DbValue) { self.name = name; self.origin = origin; }
+    value() is DbValue { origin; }
+    int() is int {
+        try { let exact = ObservedDbValue(origin).integer();
             confirm exact.order(BigInt("9223372036854775807")) != Order.greater
                 && exact.order(BigInt("-9223372036854775808")) != Order.less
                 else throw InvalidDbValue("integer outside int range");
-            ParsedInt(exact.string()).value();
-        }
-        catch failure is Error {
-            throw RowValueFailure(name, "int", value.kind(), failure);
-        }
+            ParsedInt(exact.string()).value(); }
+        catch failure is Error { throw RowValueFailure(name, "int", origin.kind(), failure); }
     }
+    integer() is BigInt {
+        try { ObservedDbValue(origin).integer(); }
+        catch failure is Error { throw RowValueFailure(name, "integer", origin.kind(), failure); }
+    }
+    decimal() is Decimal {
+        try { ObservedDbValue(origin).decimal(); }
+        catch failure is Error { throw RowValueFailure(name, "decimal", origin.kind(), failure); }
+    }
+    floating() is float {
+        try { ObservedDbValue(origin).floating(); }
+        catch failure is Error { throw RowValueFailure(name, "floating", origin.kind(), failure); }
+    }
+    boolean() is bool {
+        try { ObservedDbValue(origin).boolean(); }
+        catch failure is Error { throw RowValueFailure(name, "boolean", origin.kind(), failure); }
+    }
+    flag() is bool {
+        try { let exact = ObservedDbValue(origin).integer().string();
+            confirm exact == "0" || exact == "1" else throw InvalidDbValue("flag requires integer 0 or 1");
+            exact == "1"; }
+        catch failure is Error { throw RowValueFailure(name, "flag", origin.kind(), failure); }
+    }
+    text() is string {
+        try { ObservedDbValue(origin).text(); }
+        catch failure is Error { throw RowValueFailure(name, "text", origin.kind(), failure); }
+    }
+    bytes() is @byte {
+        try { ObservedDbValue(origin).bytes(); }
+        catch failure is Error { throw RowValueFailure(name, "bytes", origin.kind(), failure); }
+    }
+}
 
-    text(name is string) is string {
-        let value = origin.value(name);
-        try {
-            ObservedDbValue(value).text();
-        }
-        catch failure is Error {
-            throw RowValueFailure(name, "text", value.kind(), failure);
+object DbPresenceReader {
+    has origin is Presence<DbColumnReader>;
+    DbPresenceReader(origin is Presence<DbColumnReader>) { self.origin = origin; }
+    value() is Presence<DbValue> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.value()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
         }
     }
+    int() is Presence<int> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.int()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    integer() is Presence<BigInt> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.integer()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    decimal() is Presence<Decimal> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.decimal()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    floating() is Presence<float> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.floating()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    boolean() is Presence<bool> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.boolean()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    flag() is Presence<bool> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.flag()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    text() is Presence<string> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.text()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+    bytes() is Presence<@byte> {
+        match origin {
+            case Presence.some(column) { Presence.some(column.bytes()); }
+            case Presence.none { Presence.none; }
+            case Presence.missing { Presence.missing; }
+        }
+    }
+}
 
-    flag(name is string) is bool {
-        let value = origin.value(name);
-        try {
-            let exact = ObservedDbValue(value).integer().string();
-            confirm exact == "0" || exact == "1"
-                else throw InvalidDbValue("flag requires integer 0 or 1");
-            exact == "1";
-        }
-        catch failure is Error {
-            throw RowValueFailure(name, "flag", value.kind(), failure);
-        }
-    }
+object DbMaybeReader {
+    has origin is DbPresenceReader;
+    DbMaybeReader(origin is DbPresenceReader) { self.origin = origin; }
+    value() is Maybe<DbValue> { origin.value().fold(); }
+    int() is Maybe<int> { origin.int().fold(); }
+    integer() is Maybe<BigInt> { origin.integer().fold(); }
+    decimal() is Maybe<Decimal> { origin.decimal().fold(); }
+    floating() is Maybe<float> { origin.floating().fold(); }
+    boolean() is Maybe<bool> { origin.boolean().fold(); }
+    flag() is Maybe<bool> { origin.flag().fold(); }
+    text() is Maybe<string> { origin.text().fold(); }
+    bytes() is Maybe<@byte> { origin.bytes().fold(); }
 }
 
 object RowValueFailure does Error {

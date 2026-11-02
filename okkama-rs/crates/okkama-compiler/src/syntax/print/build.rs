@@ -360,10 +360,11 @@ fn stmt_node(stmt: &Stmt) -> Node {
         StmtKind::If(if_stmt) => if_stmt_node(if_stmt),
         StmtKind::Match(body) => match_fields(Node::new("MatchStatement", span), body),
         StmtKind::For {
+            is_async,
             source,
             bindings,
             body,
-        } => Node::new("ForStatement", span)
+        } => Node::new(if *is_async { "ForAwaitStatement" } else { "ForStatement" }, span)
             .field("source", Value::node(expr_node(source)))
             .field(
                 "bindings",

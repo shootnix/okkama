@@ -1,0 +1,56 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.db.row-readers",
+  "title": "Typed row readers preserve SQL NULL and column errors",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.DB.READ",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.DB.ROW",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - value NULL\nok 2 - value missing\nok 3 - value presence NULL\nok 4 - int NULL\nok 5 - int missing\nok 6 - int presence NULL\nok 7 - integer NULL\nok 8 - integer missing\nok 9 - integer presence NULL\nok 10 - decimal NULL\nok 11 - decimal missing\nok 12 - decimal presence NULL\nok 13 - floating NULL\nok 14 - floating missing\nok 15 - floating presence NULL\nok 16 - boolean NULL\nok 17 - boolean missing\nok 18 - boolean presence NULL\nok 19 - flag NULL\nok 20 - flag missing\nok 21 - flag presence NULL\nok 22 - text NULL\nok 23 - text missing\nok 24 - text presence NULL\nok 25 - bytes NULL\nok 26 - bytes missing\nok 27 - bytes presence NULL\nok 28 - strict empty\nok 29 - maybe empty\nok 30 - presence empty\nok 31 - strict zero\nok 32 - maybe zero\nok 33 - presence zero\nok 34 - strict flag\nok 35 - maybe flag\nok 36 - presence flag\nok 37 - strict zero\nok 38 - maybe zero\nok 39 - presence zero\nok 40 - strict one\nok 41 - maybe one\nok 42 - presence one\nok 43 - strict amount\nok 44 - maybe amount\nok 45 - presence amount\nok 46 - strict ratio\nok 47 - maybe ratio\nok 48 - presence ratio\nok 49 - strict data\nok 50 - maybe data\nok 51 - presence data\nok 52 - strict big\nok 53 - maybe big\nok 54 - presence big\nok 55 - strict min\nok 56 - maybe min\nok 57 - presence min\nok 58 - strict max\nok 59 - maybe max\nok 60 - presence max\nok 61 - missing stays error\nok 62 - strict rejects nil text\nok 63 - strict rejects empty int\nok 64 - maybe rejects empty int\nok 65 - strict rejects two flag\nok 66 - maybe rejects two flag\nok 67 - strict rejects flag flag\nok 68 - maybe rejects flag flag\nok 69 - strict rejects one boolean\nok 70 - maybe rejects one boolean\nok 71 - strict rejects big int\nok 72 - maybe rejects big int\nok 73 - ambiguous duplicate.text(\"x\")\nok 74 - ambiguous duplicate.maybe(\"x\").text()\nok 75 - ambiguous duplicate.presence(\"x\").text()\nok 76 - NULL fallback\nok 77 - legacy adapter\nchecks: 77, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/row.ok",
+    "std/db/read.ok",
+    "docs/std/db-values.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Row readers require existing unambiguous columns. Maybe folds SQL NULL only; Presence distinguishes missing and NULL. Wrong types and integer overflow retain RowValueFailure."
+  },
+  "status": "mandatory"
+}

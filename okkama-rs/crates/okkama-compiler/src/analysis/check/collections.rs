@@ -171,6 +171,80 @@ impl Checker<'_, '_> {
         }
     }
 
+    /// Async iteration is checked as a hygienic block/loop/match expansion.
+    /// Reusing these nodes preserves await, exception, defer and loop-control
+    /// semantics on every backend without a second execution protocol.
+    pub(super) fn for_await_stmt(
+        &mut self,
+        source: &ast::Expr,
+        bindings: &[ast::ForBinding],
+        body: &ast::Block,
+        span: Span,
+    ) -> (StmtKind, Flow) {
+        let [binding] = bindings else {
+            self.error(span, "for await requires exactly one binding");
+            let value = Self::poisoned(span);
+            return (StmtKind::Expr(value.clone()), Flow { ty: value.ty, diverges: false });
+        };
+        if binding.batch.is_some() {
+            self.error(binding.span, "for await does not support batched bindings");
+        }
+        let expr = |kind| ast::Expr { kind, span };
+        let name = |text: &str| ast::Name { text: text.into(), span };
+        // NUL cannot occur in a source identifier; nested scopes isolate it.
+        let temporary = name("\0async_iteration_source");
+        let member = |object, text| expr(ast::ExprKind::Get {
+            object: Box::new(object), name: name(text),
+        });
+        let variant = |text| member(expr(ast::ExprKind::Name(name("Maybe"))), text);
+        let call = expr(ast::ExprKind::Call {
+            callee: Box::new(member(expr(ast::ExprKind::Name(temporary.clone())), "next")),
+            args: vec![],
+        });
+        let subject = expr(ast::ExprKind::Await { value: Box::new(call) });
+        let some = expr(ast::ExprKind::Call {
+            callee: Box::new(variant("some")),
+            args: vec![ast::Argument {
+                name: None,
+                value: expr(ast::ExprKind::Name(binding.name.clone())),
+                span: binding.span,
+            }],
+        });
+        let matched = ast::Stmt {
+            kind: ast::StmtKind::Match(ast::MatchBody {
+                subject,
+                cases: vec![
+                    ast::MatchCase {
+                        patterns: vec![variant("none")],
+                        body: ast::Block { stmts: vec![ast::Stmt {
+                            kind: ast::StmtKind::Last { value: None, condition: None }, span,
+                        }], span },
+                        span,
+                    },
+                    ast::MatchCase { patterns: vec![some], body: body.clone(), span: body.span },
+                ],
+                else_block: None,
+                span,
+            }),
+            span,
+        };
+        let block = ast::Block {
+            stmts: vec![
+                ast::Stmt { kind: ast::StmtKind::Let {
+                    name: temporary, ty: None, value: source.clone(),
+                }, span: source.span },
+                ast::Stmt { kind: ast::StmtKind::Expr {
+                    expr: expr(ast::ExprKind::Loop { body: ast::Block { stmts: vec![matched], span } }),
+                    condition: None,
+                }, span },
+            ],
+            span,
+        };
+        let value = self.block(&block, false, None);
+        let flow = Flow { ty: value.ty.clone(), diverges: value.diverges };
+        (StmtKind::Expr(value), flow)
+    }
+
     /// `for source -> binding { body }`.
     pub(super) fn for_stmt(
         &mut self,

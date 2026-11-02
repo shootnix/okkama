@@ -1,0 +1,115 @@
+module app v1.0.0;
+import "conformance/check" take Checks;
+import "db/query" take Query,NoRows,TooManyRows,QueryLimitExceeded,InvalidQueryLimit;
+import "db/sqlite" take SqliteMemory;
+import "db/connection" take DbExecuting;
+import "db/statement" take Statement,Execution;
+import "db/row" take Row,Column,RowReading,RowsEnded;
+import "db/value" take DbInteger;
+import "db/error" take DbFailure,DbClosed;
+import "numbers/bigint" take BigInt;
+import "collections/sequence" take Sequencing;
+import "async/atomic" take Atomic;
+
+object FetchFailed does Error {
+    FetchFailed();
+    text() is string { "fetch failed"; }
+}
+object ProbeRows does RowReading {
+    has count,fail_at is int;
+    has reads,closes is Atomic<int>;
+    ProbeRows(count is int,fail_at is int) {
+        self.count=count;self.fail_at=fail_at;
+        reads=Atomic(0);closes=Atomic(0);
+    }
+    columns() is Sequencing<Column> { [Column(0,"id","")]; }
+    closed() is bool { closes.value()>0; }
+    close() is void { closes.replace(closes.value()+1); }
+    read_count() is int { reads.value(); }
+    close_count() is int { closes.value(); }
+    async row() is Row {
+        let index=reads.value();reads.replace(index+1);
+        if index==fail_at { throw FetchFailed(); }
+        confirm index<count else throw RowsEnded();
+        Row([Column(0,"id","")],[DbInteger(BigInt("7"))]);
+    }
+}
+object ProbeDb does DbExecuting {
+    has cursor is ProbeRows;
+    ProbeDb(cursor is ProbeRows) { self.cursor=cursor; }
+    async rows(statement is Statement) is RowReading { cursor; }
+    async execution(statement is Statement) is Execution { Execution(); }
+}
+
+async main() is int {
+    let c=Checks();
+    let connection=await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    let empty=Query(connection,Statement("SELECT 7 AS id WHERE 0"));
+    c=c.ok("zero maybe", (await empty.maybe()) ?? .none: true !! _: false);
+    c=c.ok("zero one", try { await empty.one();false; } catch e is NoRows { true; });
+    let single=Query(connection,Statement("SELECT 7 AS id, NULL AS nick"));
+    let row=await single.one();
+    c=c.same_int("one value",row.int("id"),7);
+    c=c.same_text("NULL cell is not absent row",row.maybe("nick").text() else "guest","guest");
+    c=c.ok("one maybe",(await single.maybe()) ?? .some(value): value.int("id")==7 !! _: false);
+    let multiple=Query(connection,Statement("SELECT 7 AS id UNION ALL SELECT 8"));
+    c=c.ok("many maybe",try { await multiple.maybe();false; } catch e is TooManyRows { true; });
+    c=c.ok("many one",try { await multiple.one();false; } catch e is TooManyRows { true; });
+    c=c.same_int("connection reusable after cardinality error",(await single.one()).int("id"),7);
+    c=c.ok("SQL error propagates",try { await Query(connection,Statement("SELECT * FROM absent_table")).maybe();false; } catch e is DbFailure { true; });
+    c=c.same_int("connection reusable after SQL error",(await single.one()).int("id"),7);
+    for [0,1,2,100] -> count {
+        let cursor=ProbeRows(count,-1);
+        let query=Query(ProbeDb(cursor),Statement("probe"));
+        let outcome=try { await query.maybe();true; } catch e is TooManyRows { false; };
+        c=c.same_bool("probe cardinality",outcome,count<2);
+        c=c.same_int("cursor closed once",cursor.close_count(),1);
+        c=c.same_int("at most two fetches",cursor.read_count(),if count==0 {1} else {2});
+    }
+    for [0,1] -> fail_at {
+        let cursor=ProbeRows(2,fail_at);
+        c=c.ok("fetch error propagates",try { await Query(ProbeDb(cursor),Statement("probe")).maybe();false; } catch e is FetchFailed { true; });
+        c=c.same_int("cursor closed on fetch error",cursor.close_count(),1);
+    }
+    let empty_cursor=ProbeRows(0,-1);
+    c=c.ok("one raises after cleanup",try { await Query(ProbeDb(empty_cursor),Statement("probe")).one();false; } catch e is NoRows { empty_cursor.closed(); });
+    let collected=await multiple.all(2);
+    c=c.same_int("all size",collected.size(),2);
+    c=c.same_int("all preserves first",collected[0].int("id"),7);
+    c=c.same_int("all preserves second",collected[1].int("id"),8);
+    c=c.same_int("empty zero limit",(await empty.all(0)).size(),0);
+    c=c.ok("limit never truncates",try { await multiple.all(1);false; } catch e is QueryLimitExceeded { e.limit()==1; });
+    c=c.ok("nonempty zero limit",try { await single.all(0);false; } catch e is QueryLimitExceeded { e.limit()==0; });
+    c=c.ok("negative limit rejected",try { await single.all(-1);false; } catch e is InvalidQueryLimit { e.limit()==-1; });
+    c=c.same_int("connection reusable after limit",(await single.one()).int("id"),7);
+    let stream=await multiple.rows();
+    defer stream.close();
+    c=c.ok("stream first",(await stream.next()) ?? .some(row): row.int("id")==7 !! _: false);
+    c=c.ok("stream second",(await stream.next()) ?? .some(row): row.int("id")==8 !! _: false);
+    c=c.ok("stream EOF",(await stream.next()) ?? .none: true !! _: false);
+    c=c.ok("stream stable EOF",(await stream.next()) ?? .none: true !! _: false);
+    c=c.ok("stream closes at EOF",stream.closed());
+    c=c.same_int("connection reusable after EOF",(await single.one()).int("id"),7);
+    let early=await multiple.rows();early.close();early.close();
+    c=c.ok("next after explicit close",try { await early.next();false; } catch e is DbClosed { true; });
+    c=c.same_int("connection reusable after early close",(await single.one()).int("id"),7);
+    let bounded=ProbeRows(100,-1);
+    c=c.ok("probe limit",try { await Query(ProbeDb(bounded),Statement("probe")).all(3);false; } catch e is QueryLimitExceeded { true; });
+    c=c.same_int("limit fetches one extra",bounded.read_count(),4);
+    c=c.same_int("limit closes once",bounded.close_count(),1);
+    let eof_probe=ProbeRows(0,-1);
+    let eof_stream=await Query(ProbeDb(eof_probe),Statement("probe")).rows();
+    await eof_stream.next();await eof_stream.next();eof_stream.close();
+    c=c.same_int("EOF not refetched",eof_probe.read_count(),1);
+    c=c.same_int("EOF closes once",eof_probe.close_count(),1);
+    let invalid_probe=ProbeRows(1,-1);
+    c=c.ok("invalid limit before acquisition",try { await Query(ProbeDb(invalid_probe),Statement("probe")).all(-1);false; } catch e is InvalidQueryLimit { invalid_probe.read_count()==0 && invalid_probe.close_count()==0; });
+    for [0,1] -> fail_at {
+        let failure_probe=ProbeRows(2,fail_at);
+        c=c.ok("all propagates fetch failure",try { await Query(ProbeDb(failure_probe),Statement("probe")).all(3);false; } catch e is FetchFailed { true; });
+        c=c.same_int("all failure closes once",failure_probe.close_count(),1);
+    }
+    c.done();
+}

@@ -104,10 +104,17 @@ impl Checker<'_, '_> {
                 (StmtKind::Expr(value), flow)
             }
             ast::StmtKind::For {
+                is_async,
                 source,
                 bindings,
                 body,
-            } => self.for_stmt(source, bindings, body, want, expected, span),
+            } => {
+                if *is_async {
+                    self.for_await_stmt(source, bindings, body, span)
+                } else {
+                    self.for_stmt(source, bindings, body, want, expected, span)
+                }
+            },
             ast::StmtKind::Next { condition } => self.next(condition.as_ref(), span),
             ast::StmtKind::Last { value, condition } => {
                 self.last(value.as_ref(), condition.as_ref(), span)

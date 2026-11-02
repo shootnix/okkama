@@ -1066,6 +1066,15 @@ Neither the collection nor an existing cursor changes. Normal completion and
 A false `available()` is ordinary exhaustion, with no sentinel, null or
 exception. Consumable I/O streams are deliberately a separate protocol.
 
+### Async streams: `for await`
+
+Inside an async action, use `for await stream -> item { ... }` to consume
+`async next() is Maybe<T>` sequentially. The source is evaluated once;
+`.some(item)` runs the body and `.none` ends the loop. `next`, `last`, `return`
+and `defer` keep their usual behavior. The loop does not implicitly close the
+stream: register `defer stream.close()` when you own it. This is a statement,
+not a value-producing loop. See [contract and examples](for-await.md).
+
 ### 12.6 `loop`
 
 `loop` is an unbounded loop and an expression. Its result is supplied

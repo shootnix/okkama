@@ -168,7 +168,7 @@ match_case          = "case" case_values block ;
 case_values         = expr ("," expr)* ;
 match_else          = "else" block ;
 
-for_stmt            = "for" for_source for_pattern block ;
+for_stmt            = "for" [ "await" ] for_source for_pattern block ;
 for_source          = assignment_free_expr ;
 for_pattern         = "->" pattern ;
 pattern             = BINDING_NAME ("," BINDING_NAME)* | BINDING_NAME "[" INT "]" ;
@@ -415,3 +415,7 @@ Compact choices use `condition ?? yes !! no` or
 are forbidden, including through parentheses. See specification §15.1.
 `Maybe<T>` and `Presence<T>` are explicit standard enums; constructor projections
 and `#projected` are removed.
+
+Async `for await` requires one unbatched binding and an accessible zero-argument
+`next()` returning `Future<Maybe<T>>`, inside an async action. It is statement-only.
+See [async iteration contract](for-await.md).

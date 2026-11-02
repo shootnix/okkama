@@ -1,0 +1,30 @@
+module db_query v1.0.0;
+import "db/sqlite" take SqliteMemory;
+import "db/query" take Query;
+import "db/statement" take Statement;
+import "db/param" take Param;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT, nickname TEXT)"));
+    await connection.execution(Statement("INSERT INTO users VALUES(7, 'Anton', NULL)"));
+    let query = Query(connection, Statement(
+        "SELECT id, name, nickname FROM users WHERE id = ?", [Param(7)]
+    ));
+    let user = await query.one();
+    Stdout().writeln(user.text("name") + " / " + (user.maybe("nickname").text() else "anonymous"));
+    let absent = await Query(connection, Statement("SELECT name FROM users WHERE id = 8")).maybe();
+    Stdout().writeln(absent ?? .some(row): row.text("name") !! .none: "User not found");
+    let users = await Query(connection, Statement("SELECT name FROM users ORDER BY id")).all(100);
+    Stdout().writeln("Rows: " + users.size().string());
+    let stream = await Query(connection, Statement("SELECT name FROM users ORDER BY id")).rows();
+    defer stream.close();
+    for await stream -> row {
+        Stdout().writeln(row.text("name"));
+    }
+
+    0;
+}

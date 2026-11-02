@@ -1,0 +1,63 @@
+module db/param v1.0.0;
+
+import "db/value" take DbValue,DbValueKind,DbValueWriting,DbNull,DbBoolean,DbInteger,DbFloating,DbDecimal,DbText,DbBytes;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+
+// A bound data value, never SQL text. Maybe.none explicitly binds SQL NULL.
+object Param does DbValue {
+    has origin is DbValue;
+    Param() { origin=DbNull(); }
+    Param(value is int) { origin=DbInteger(BigInt(value.string())); }
+    Param(value is BigInt) { origin=DbInteger(value); }
+    Param(value is Decimal) { origin=DbDecimal(value); }
+    Param(value is float) { origin=DbFloating(value); }
+    Param(value is bool) { origin=DbBoolean(value); }
+    Param(value is string) { origin=DbText(value); }
+    Param(value is @byte) { origin=DbBytes(value); }
+    Param(value is Maybe<int>) {
+        origin=match value {
+            case Maybe.some(value) { DbInteger(BigInt(value.string())); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+    Param(value is Maybe<BigInt>) {
+        origin=match value {
+            case Maybe.some(value) { DbInteger(value); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+    Param(value is Maybe<Decimal>) {
+        origin=match value {
+            case Maybe.some(value) { DbDecimal(value); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+    Param(value is Maybe<float>) {
+        origin=match value {
+            case Maybe.some(value) { DbFloating(value); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+    Param(value is Maybe<bool>) {
+        origin=match value {
+            case Maybe.some(value) { DbBoolean(value); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+    Param(value is Maybe<string>) {
+        origin=match value {
+            case Maybe.some(value) { DbText(value); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+    Param(value is Maybe<@byte>) {
+        origin=match value {
+            case Maybe.some(value) { DbBytes(value); }
+            case Maybe.none { DbNull(); }
+        };
+    }
+
+    kind() is DbValueKind { origin.kind(); }
+    print(output is DbValueWriting) is void { origin.print(output); }
+}

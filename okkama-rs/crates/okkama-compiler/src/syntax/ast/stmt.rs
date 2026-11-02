@@ -48,6 +48,7 @@ pub enum StmtKind {
     Match(MatchBody),
     /// `for source -> a, b { }`
     For {
+        is_async: bool,
         source: Expr,
         bindings: Vec<ForBinding>,
         body: Block,

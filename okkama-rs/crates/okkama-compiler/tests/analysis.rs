@@ -435,3 +435,16 @@ fn bound_actions_are_called_only_after_an_action_type_boundary() {
         .is_empty()
     );
 }
+
+#[test]
+fn for_await_checks_async_next_and_maybe_payload() {
+    let valid = "object Stream { Stream(); async next() is Maybe<int> { Maybe.none; } } ";
+    assert!(messages(&format!("{valid} async main() is int {{ for await Stream() -> item {{ let n = item + 1; next; }} 0; }}")).is_empty());
+    assert!(messages(&format!("{valid} main() is int {{ for await Stream() -> item {{}} 0; }}")).iter().any(|m| m.contains("only inside an async")));
+    assert!(!messages("object Stream { Stream(); next() is Maybe<int> { Maybe.none; } } async main() is int { for await Stream() -> item {} 0; }").is_empty());
+    assert!(!messages("object Stream { Stream(); async next() is int { 1; } } async main() is int { for await Stream() -> item {} 0; }").is_empty());
+    assert!(!messages("object Stream { Stream(); async next() is Presence<int> { Presence.none; } } async main() is int { for await Stream() -> item {} 0; }").is_empty());
+    assert!(messages(&format!("{valid} async main() is int {{ for await Stream() -> a, b {{}} 0; }}")).iter().any(|m| m.contains("exactly one binding")));
+    assert!(messages(&format!("{valid} async main() is int {{ for await Stream() -> a[2] {{}} 0; }}")).iter().any(|m| m.contains("batched")));
+    assert!(messages(&format!("{valid} async main() is int {{ for await Stream() -> item {{}} item; }}")).iter().any(|m| m.contains("Undefined variable")));
+}
