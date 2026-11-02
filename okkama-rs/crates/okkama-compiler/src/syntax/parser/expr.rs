@@ -7,7 +7,7 @@
 //!
 //! | level          | operators                       |
 //! |----------------|---------------------------------|
-//! | functional     | `call -> bindings { }` suffix   |
+//! | choice/fallback | `?? … !!`, `else`              |
 //! | logic_or       | `\|\|`                          |
 //! | logic_and      | `&&`                            |
 //! | stream_write   | `<-`                            |
@@ -21,7 +21,7 @@
 //! | term           | `+` `-`                         |
 //! | factor         | `*` `/` `%`                     |
 //! | unary          | `!` `-` `~` `await` `spawn` `panic` |
-//! | postfix        | call, `.name`, `::name`, `[i] else f`, `...` |
+//! | postfix        | functional `->`, call, `.name`, `::name`, `[i] else f`, `...` |
 
 use super::{PResult, Parser};
 use crate::source::Span;
@@ -32,32 +32,20 @@ use crate::syntax::ast::{
 use crate::syntax::token::{TokenKind, TokenValue, is_lower_word, is_type_word};
 
 impl Parser<'_> {
-    /// `expr = logic_or arrow_suffix*`.
+    /// `expr = logic_or optional_else? compact_choice?`.
     ///
-    /// The functional suffix `-> bindings { }` is accepted only directly after
-    /// a member call (`receiver.name(args)`); anything else leaves the arrow
-    /// for the caller (for example the `for` statement).
+    /// The functional suffix `-> bindings { }` is a postfix form of a member
+    /// call (`receiver.map(args)`, see [`Self::finish_postfix`]), so it binds
+    /// tighter than every operator: `total + xs.reduce(0) -> a, x { a + x; }`.
+    /// A nested expression is never the top level of a `for` source.
     pub(super) fn expression(&mut self) -> PResult<Expr> {
         self.expression_with_fallback(true)
     }
 
     pub(super) fn expression_with_fallback(&mut self, optional: bool) -> PResult<Expr> {
-        self.nested(|parser| {
+        let enclosing = std::mem::replace(&mut self.for_source, false);
+        let result = self.nested(|parser| {
             let mut expr = parser.logic_or()?;
-            while parser.check(TokenKind::Arrow) {
-                let ExprKind::Call { callee, .. } = &expr.kind else {
-                    break;
-                };
-                let ExprKind::Get { name, .. } = &callee.kind else {
-                    break;
-                };
-                if FunctionalOp::from_name(&name.text).is_none() {
-                    let message = format!("Unsupported functional operation \"{}\".", name.text);
-                    return Err(parser.error_at_name(name, &message));
-                }
-                expr = parser.finish_functional(expr)?;
-                expr = parser.finish_postfix(expr)?;
-            }
             if optional
                 && parser.check(TokenKind::Else)
                 && parser.nth(1).kind != TokenKind::LeftBrace
@@ -85,7 +73,28 @@ impl Parser<'_> {
                 expr = parser.finish_choice(expr)?;
             }
             Ok(expr)
-        })
+        });
+        self.for_source = enclosing;
+        result
+    }
+
+    /// The arrow after `receiver.name(args)` starts a functional block,
+    /// except at the top level of a `for` source, where it is the loop's.
+    fn functional_follows(&self, call: &Expr) -> PResult<bool> {
+        if self.for_source || !self.check(TokenKind::Arrow) {
+            return Ok(false);
+        }
+        let ExprKind::Call { callee, .. } = &call.kind else {
+            return Ok(false);
+        };
+        let ExprKind::Get { name, .. } = &callee.kind else {
+            return Ok(false);
+        };
+        if FunctionalOp::from_name(&name.text).is_none() {
+            let message = format!("Unsupported functional operation \"{}\".", name.text);
+            return Err(self.error_at_name(name, &message));
+        }
+        Ok(true)
     }
 
     fn choice_separator(&self) -> bool {
@@ -524,6 +533,9 @@ impl Parser<'_> {
             }
             if self.eat(TokenKind::LeftParen) {
                 expr = self.finish_call(expr)?;
+                if self.functional_follows(&expr)? {
+                    expr = self.finish_functional(expr)?;
+                }
                 continue;
             }
             if self.check(TokenKind::Colon)

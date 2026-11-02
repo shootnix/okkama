@@ -1,0 +1,85 @@
+// JSON benchmark in Okkama: parse, walk and write one document.
+//
+// JSON_FILE=<file> okkama run walk.ok — prints one JSON line with the phases
+// in ms and the checksum: values, characters of strings and member names,
+// numbers and true values, as walk.py and walk.pl count them.
+
+module bench/json;
+
+import "json" take Json, JsonField, JsonKind, ParsedJson;
+import "fs/file" take File, FileMode;
+import "fs/path" take Path;
+import "os/environment" take Environment;
+import "math/decimal" take Decimal;
+import "time/clock" take SystemClock, MonotonicInstant;
+import "io/stdout" take Stdout;
+
+// The checksum of the values seen so far; plus() adds a value and all of its
+// members or items, one Sums per value.
+object Sums {
+    has nodes is int;
+    has chars is int;
+    has numbers is int;
+    has trues is int;
+    Sums(:nodes, :chars, :numbers, :trues);
+
+    nodes() is int { nodes; }
+    chars() is int { chars; }
+    numbers() is int { numbers; }
+    trues() is int { trues; }
+
+    // This sum and value's, with names more characters of its member name.
+    plus(value is Json, names is int) is Sums {
+        match value.kind() {
+            case JsonKind.object_value {
+                let members = value.names();
+                let values = value.values();
+                (0..members.size()).reduce(self.counted(names, 0, 0)) -> sums, position {
+                    sums.plus(values[position], members[position].length());
+                };
+            }
+            case JsonKind.array_value {
+                value.items().reduce(self.counted(names, 0, 0)) -> sums, item { sums.plus(item, 0); };
+            }
+            case JsonKind.string_value { self.counted(names + value.text().length(), 0, 0); }
+            case JsonKind.number_value { self.counted(names, 1, 0); }
+            case JsonKind.boolean_value { self.counted(names, 0, if value.boolean() { 1; } else { 0; }); }
+            else { self.counted(names, 0, 0); }
+        }
+    }
+
+    private:
+    counted(more is int, number is int, truth is int) is Sums {
+        Sums(nodes: nodes + 1, chars: chars + more, numbers: numbers + number, trues: trues + truth);
+    }
+}
+
+object Milliseconds {
+    has clock is SystemClock;
+    has start is MonotonicInstant;
+    Milliseconds(:clock, :start);
+    value() is Decimal { Decimal(clock.monotonic_instant().minus(start).nanoseconds().string() + "e-6"); }
+}
+
+main() is int {
+    let clock = SystemClock();
+    let file = File(mode: FileMode.reading, path: Path(Environment().variable("JSON_FILE")));
+    let text = file.text().content();
+    file.close();
+    let t1 = clock.monotonic_instant();
+    let document = ParsedJson(text).value();
+    let parse = Milliseconds(clock: clock, start: t1).value();
+    let t2 = clock.monotonic_instant();
+    let sums = Sums(nodes: 0, chars: 0, numbers: 0, trues: 0).plus(document, 0);
+    let walk = Milliseconds(clock: clock, start: t2).value();
+    let t3 = clock.monotonic_instant();
+    let out = document.string();
+    let write = Milliseconds(clock: clock, start: t3).value();
+    Stdout().writeln(Json([
+        JsonField("parse", parse), JsonField("walk", walk), JsonField("write", write),
+        JsonField("nodes", sums.nodes()), JsonField("chars", sums.chars()),
+        JsonField("numbers", sums.numbers()), JsonField("trues", sums.trues()),
+        JsonField("length", out.length()),
+    ]).string());
+    0;
+}

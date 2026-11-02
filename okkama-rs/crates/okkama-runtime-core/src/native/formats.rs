@@ -12,12 +12,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 fn operation(native: Native) -> &'static str {
-    native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
+    native.name()
 }
 
 fn chars_of(text: &str) -> Vec<char> {

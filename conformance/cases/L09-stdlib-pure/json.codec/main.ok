@@ -1,0 +1,82 @@
+module app v1.0.0;
+
+import "json" take Json, JsonField, ParsedJson, WrongJsonKind, MissingJsonValue;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+
+object Line {
+    has sku is string;
+    has qty is int;
+    Line(:sku, :qty);
+    sku() is string { sku; }
+    quantity() is int { qty; }
+}
+
+object Order {
+    has id is int;
+    has note is string;
+    has total is Decimal;
+    has tags is @string;
+    has lines is @Line;
+    Order(:id, :note, :total, :tags, :lines);
+    id() is int { id; }
+    note() is string { note; }
+    total() is Decimal { total; }
+    tags() is @string { tags; }
+    lines() is @Line { lines; }
+}
+
+// A codec is a plain object: value() reads a Json, json() writes one.
+object LineJson {
+    LineJson();
+    value(view is Json) is Line { Line(sku: view.text("sku"), qty: view.optional("qty").int(1)); }
+    json(line is Line) is Json { Json([JsonField("sku", line.sku()), JsonField("qty", line.quantity())]); }
+}
+
+object OrderJson {
+    OrderJson();
+    value(view is Json) is Order {
+        Order(
+            id: view.int("id"),
+            note: view.optional("note").text("-"),
+            total: view.number("total"),
+            tags: view.optional("tags").items().map() -> tag { tag.text(); },
+            lines: view.list("lines").map() -> line { LineJson().value(line); }
+        );
+    }
+    json(order is Order) is Json {
+        let tags is @Json = order.tags().map() -> tag { Json(tag); };
+        let lines is @Json = order.lines().map() -> line { LineJson().json(line); };
+        Json([
+            JsonField("id", order.id()),
+            JsonField("note", order.note()),
+            JsonField("total", order.total()),
+            JsonField("tags", Json(items: tags)),
+            JsonField("lines", Json(items: lines))
+        ]);
+    }
+}
+
+// Orders of a JSON array, and back.
+object OrdersJson {
+    OrdersJson();
+    value(source is string) is @Order { ParsedJson(source).value().items().map() -> order { OrderJson().value(order); }; }
+    string(orders is @Order) is string {
+        let values is @Json = orders.map() -> order { OrderJson().json(order); };
+        Json(items: values).string();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let codec = OrdersJson();
+    let source = "[{\"id\":7,\"note\":null,\"total\":12.50,\"lines\":[{\"sku\":\"A\",\"qty\":2},{\"sku\":\"B\"}]},"
+        + "{\"id\":8,\"note\":\"gift \\\"wrap\\\"\",\"total\":1e2,\"tags\":[\"x\",\"y\"],\"lines\":[]}]";
+    let orders = codec.value(source);
+    out.writeln(codec.string(orders));
+    let broken = "[{\"id\":7,\"total\":1,\"lines\":[{\"sku\":\"A\",\"qty\":\"2\"}]}]";
+    out.writeln(try { codec.value(broken); ""; } catch failure is WrongJsonKind { failure.text(); });
+    let missing = "[{\"id\":7,\"total\":1}]";
+    out.writeln(try { codec.value(missing); ""; } catch failure is MissingJsonValue { failure.text(); });
+    0;
+}

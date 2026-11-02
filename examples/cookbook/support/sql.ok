@@ -1,7 +1,7 @@
 // QueryJson, SqlJson, Collected: снимок SQL-результата
 // Читает строки по порядку и переводит DbValue в JSON через явные типизированные проекции.
 // Пример: await QueryJson(connection,Statement("SELECT id,name FROM drivers")).value();
-// Collected<T>.addition возвращает successor; старые значения сохраняются. SQL-курсор закрывается до публикации JsonArray.
+// Collected<T>.addition возвращает successor; старые значения сохраняются. SQL-курсор закрывается до публикации Json.
 // Это модуль приложения; запускайте использующую его программу через ../run.
 
 module cookbook/sql v1.0.0;
@@ -9,38 +9,38 @@ import "db/connection" take DbExecuting;
 import "db/statement" take Statement;
 import "db/row" take Row,RowsEnded;
 import "db/value" take ObservedDbValue,DbValueKind;
-import "json/value" take JsonValue,JsonObject,JsonMember,JsonArray,JsonText,JsonNumber,JsonNull,JsonBoolean;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "encoding/base64" take Base64Encoded;
 import "collections/list" take List,EmptyList;
 object SqlJson {
     has row is Row;SqlJson(row is Row){self.row=row;}
-    value() is JsonObject {
-        let columns=row.columns();let members is @JsonMember=(0..columns.size()).map()->index{
+    value() is Json {
+        let columns=row.columns();let members is @JsonField=(0..columns.size()).map()->index{
             let name=columns.item(index).name();let observed=ObservedDbValue(row.item(index));
-            let value is JsonValue=match observed.kind(){
-                case DbValueKind.integer{JsonNumber(Decimal(observed.integer().string()));}
-                case DbValueKind.text{JsonText(observed.text());}
-                case DbValueKind.boolean{JsonBoolean(observed.boolean());}
-                case DbValueKind.floating{JsonNumber(Decimal(observed.floating().string()));}
-                case DbValueKind.decimal{JsonNumber(observed.decimal());}
-                case DbValueKind.bytes{JsonText(Base64Encoded(observed.bytes()).string());}
-                else{JsonNull();}
-            };JsonMember(name,value);
-        };JsonObject(members);
+            let value is Json=match observed.kind(){
+                case DbValueKind.integer{Json(Decimal(observed.integer().string()));}
+                case DbValueKind.text{Json(observed.text());}
+                case DbValueKind.boolean{Json(observed.boolean());}
+                case DbValueKind.floating{Json(Decimal(observed.floating().string()));}
+                case DbValueKind.decimal{Json(observed.decimal());}
+                case DbValueKind.bytes{Json(Base64Encoded(observed.bytes()).string());}
+                else{Json();}
+            };JsonField(name,value);
+        };Json(members);
     }
 }
 object QueryJson {
     has target is DbExecuting;has statement is Statement;
     QueryJson(target is DbExecuting,statement is Statement){self.target=target;self.statement=statement;}
-    async value() is JsonArray {
+    async value() is Json {
         let rows=await target.rows(statement);defer rows.close();
-        let collected is Collected<JsonValue>=Collected();
+        let collected is Collected<Json>=Collected();
         loop {
-            try{let row=await rows.row();let value is JsonValue=SqlJson(row).value();collected=collected.addition(value);}
+            try{let row=await rows.row();let value is Json=SqlJson(row).value();collected=collected.addition(value);}
             catch ended is RowsEnded{last;}
         }
-        JsonArray(collected.values());
+        Json(items: collected.values());
     }
 }
 

@@ -13,8 +13,7 @@ import "fs/directory" take Directory;
 import "fs/path" take Path;
 import "cli/arguments" take Utf8Arguments,ProcessArguments;
 import "strings/parse" take ParsedInt;
-import "json/value" take JsonArray,JsonValue,JsonObject,JsonMember,JsonText,JsonNumber;
-import "json/write" take PrettyJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "io/stdout" take Stdout;
 object ScanOptions {
@@ -34,9 +33,9 @@ main() is int {
     let files=Scan().files(Directory(Path(options.path())));let kinds=Tally().kinds(files);
     let total=files.reduce(0)->sum,file{sum+file.bytes();};let shown=if kinds.size()<options.top(){kinds.size();}else{options.top();};
     if options.json(){
-        let values is @JsonValue=(0..shown).map()->i{kinds[i].json();};
-        let result=JsonObject([JsonMember("directory",JsonText(options.path())),JsonMember("total_bytes",JsonNumber(Decimal(total.string()))),JsonMember("kinds",JsonArray(values))]);
-        Stdout().writeln(PrettyJson(origin:result,indentation:2).string());
+        let values is @Json=(0..shown).map()->i{kinds[i].json();};
+        let result=Json([JsonField("directory",Json(options.path())),JsonField("total_bytes",Json(Decimal(total.string()))),JsonField("kinds",Json(items: values))]);
+        Stdout().writeln(result.pretty(2));
     }else{
         Stdout().writeln(options.path()+": "+files.size().string()+" files, "+total.string()+" bytes");
         Stdout().writeln("extension\tfiles\tbytes");

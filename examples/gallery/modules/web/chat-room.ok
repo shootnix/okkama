@@ -7,8 +7,7 @@ module gallery/web/chat_room v1.0.0;
 import "async/channel" take Channel,ChannelClosed;
 import "uuid/generation" take Uuid4s;
 import "random/source" take SecureRandom;
-import "json/value" take JsonObject,JsonMember,JsonNumber,JsonText;
-import "json/write" take CompactJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 object ChatSubscription {
     has identity,name is string;has queue is Channel<string>;
@@ -28,8 +27,8 @@ object RoomState {
     left(id is string) is ^RoomState{^members=members.filter()->member{member.id()!=id;};^sequence=sequence+1;}
     advanced() is ^RoomState{^sequence=sequence+1;}
     async broadcast(sender is string,text is string) is void {
-        let json=JsonObject([JsonMember("seq",JsonNumber(Decimal(sequence.string()))),JsonMember("from",JsonText(sender)),JsonMember("text",JsonText(text))]);
-        let wire=CompactJson(origin:json).string();
+        let json=Json([JsonField("seq",Json(Decimal(sequence.string()))),JsonField("from",Json(sender)),JsonField("text",Json(text))]);
+        let wire=json.string();
         for members->member{try{await member.send(wire);}catch closed is ChannelClosed{}}
     }
 }

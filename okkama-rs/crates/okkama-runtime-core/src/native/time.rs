@@ -576,12 +576,7 @@ fn candidates(native: Native, name: &str, args: &[Value]) -> Checked<Vec<i64>> {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let operation = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let operation = native.name();
     match operation {
         "time_pattern_invalid_offset" => Ok(int_value(pattern_invalid_offset(
             string(&args[0])?,

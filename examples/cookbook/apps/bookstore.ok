@@ -19,7 +19,6 @@ import "../support/http" take LocalWeb;
 import "../web/bookstore/model" take BookShelf;
 import "../web/bookstore/pages" take StorePages;
 import "web/routing" take WebRoutes,Get,Post;
-import "json/write" take PrettyJson;
 import "io/stdout" take Stdout;
 
 async main() is int{
@@ -28,9 +27,9 @@ async main() is int{
     let shelf=BookShelf(args.text(1));
     match command{
         case "init"{await shelf.initialize();}
-        case "books"{Stdout().writeln(PrettyJson(indentation:2,origin:await shelf.books()).string());}
-        case "orders"{Stdout().writeln(PrettyJson(indentation:2,origin:await shelf.orders()).string());}
-        case "buy"{Stdout().writeln(PrettyJson(indentation:2,origin:await shelf.purchase(args.integer(2,0),args.integer(3,0))).string());}
+        case "books"{Stdout().writeln((await shelf.books()).pretty(2));}
+        case "orders"{Stdout().writeln((await shelf.orders()).pretty(2));}
+        case "buy"{Stdout().writeln((await shelf.purchase(args.integer(2,0),args.integer(3,0))).pretty(2));}
         case "serve"{let pages=StorePages(shelf);await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/api/books",pages.books),Get("/api/orders",pages.orders),Post("/api/orders",pages.buy)],pages.missing),args.integer(2,8081));}
         else{throw Usage("unknown bookstore command");}
     }0;

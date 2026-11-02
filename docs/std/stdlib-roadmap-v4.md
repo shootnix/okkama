@@ -1563,7 +1563,7 @@ empty/nested documents and nominal implementations are contract tests.
 PrettyJson now adds structural LF/indentation through the same nominal dispatch and
 scalar printer. Default depth is 128 and maximum UTF-8 output is 1048576 bytes;
 an explicit constructor supplies both limits. Configuration and exceeded budgets
-have distinct typed errors. See [printing contract](json-printing-guide.md).
+have distinct typed errors. See [printing contract](json.md).
 CompactJson remains unbounded. The new printer does not sandbox user print() code.
 
 ### `csv` - bounded printing and parsing with configurable grammar
@@ -1707,7 +1707,7 @@ are not silently counted as new-library implementations.
 | `json/value` | Reviewed existing module; audit + v4 corrections are authoritative |
 | `json/parse` | Reviewed existing module; audit + v4 corrections are authoritative |
 | `json/write` | Approved v4 implementation slice above; other proposed extras deferred |
-| `json/read` | [Verified typed views](json-reading.md): JsonView with RFC 6901 pointers, exact integers and typed failures; JSON writer spells numbers positionally (660 and consumers PASS) |
+| `json/read` | [Verified typed views](json.md): JsonView with RFC 6901 pointers, exact integers and typed failures; JSON writer spells numbers positionally (660 and consumers PASS) |
 | `csv` | Bounded configurable printing/parsing and explicit document input; incremental row reading remains deferred |
 | `toml/value` | Value model, temporal coordinates and bounded TOML 1.0 parser implemented; no document writer |
 | `toml/parse` | Deferred scope; v3 class/action signatures are withdrawn pending an object contract, native boundary and failure/lifetime tests |

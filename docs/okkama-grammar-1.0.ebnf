@@ -167,7 +167,7 @@ expr_stmt           = expr postfix_if? (";" | BEFORE_RIGHT_BRACE) ;
 (* BEFORE_RIGHT_BRACE is zero-width lookahead: only the last expression in a
    block may omit its semicolon. let/return/throw/defer/etc. still require it. *)
 
-expr                = assignment_free_expr arrow_suffix* optional_else? compact_choice? ;
+expr                = assignment_free_expr optional_else? compact_choice? ;
 compact_choice      = "??" choice_value "!!" choice_value
                     | "??" choice_arm ("!!" choice_arm)* ;
 choice_arm          = choice_pattern ":" choice_value ;
@@ -179,8 +179,8 @@ choice_value        = "throw" expr | expr ;
    A wildcard branch must be last. !! is two adjacent ! tokens in infix position;
    prefix !!value continues to mean double boolean negation. *)
 optional_else       = "else" ("throw" expr | expr) ;
-(* arrow_suffix applies only to an eligible functional member call, e.g. map(). *)
-arrow_suffix        = "->" arrow_bindings? block postfix_op* ;
+(* arrow_suffix applies directly to an eligible member call, at postfix precedence. *)
+arrow_suffix        = "->" arrow_bindings? block ;
 arrow_bindings      = IDENT ("," IDENT)* ;
 assignment_free_expr= logic_or ;
 logic_or            = logic_and ("||" logic_and)* ;
@@ -200,7 +200,7 @@ await_expr          = "await" unary | postfix ;
 spawn_expr          = "spawn" call_expr ;
 call_expr           = postfix ;  (* semantic form: direct Worker(...).action(...) *)
 postfix             = primary postfix_op* ;
-postfix_op          = call_args | member_access | cap_select | index_access | unpack_op ;
+postfix_op          = call_args arrow_suffix? | member_access | cap_select | index_access | unpack_op ;
 cap_select          = "::" BINDING_NAME ;
 unpack_op           = "..." ;
 member_access       = "." IDENT ;
@@ -304,7 +304,7 @@ functional suffix is valid only after a member call named map, filter, or reduce
 map/filter functional calls take no arguments and reduce takes one positional initial value;
 functional receivers may be arrays, ranges, typed maps, or objects nominally
 implementing the standard collections/iteration.Iterable<T> role; this adds no grammar production;
-the top-level arrow in a for source belongs to the for pattern; group a functional for source;
+the top-level arrow in a for source belongs to the for pattern (a functional suffix is completed only in its nested expressions: parentheses, arguments, indices, blocks); group a functional for source;
 for always requires both an array/range/Iterable source and an explicit binding;
 custom object iteration is nominal through collections/iteration.Iterable<T>
 and its immutable Cursor<T>; it does not add grammar productions;

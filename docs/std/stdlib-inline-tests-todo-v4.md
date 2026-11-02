@@ -138,9 +138,7 @@ prove -l t/interpreter/266-std-v4-inline-tests.t
 | [io/stdout.ok](../../std/io/stdout.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
 | [io/stream.ok](../../std/io/stream.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
 | [io/text.ok](../../std/io/text.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
-| [json/parse.ok](../../std/json/parse.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
-| [json/value.ok](../../std/json/value.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
-| [json/write.ok](../../std/json/write.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
+| [json.ok](../../std/json.ok) | 5 | GREEN: построение, запись, повторные имена, чтения с указателями, optional, круговой путь |
 | [math/aggregate.ok](../../std/math/aggregate.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
 | [math/constants.ok](../../std/math/constants.ok) | 0 | TODO: встроенные тесты и ревью комментариев |
 | [math/decimal.ok](../../std/math/decimal.ok) | 0 | TODO: встроенные тесты и ревью комментариев |

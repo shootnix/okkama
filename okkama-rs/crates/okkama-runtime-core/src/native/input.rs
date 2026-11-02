@@ -50,12 +50,7 @@ fn arguments(context: &Context) -> Vec<Value> {
 }
 
 pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Value, Error> {
-    let operation = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let operation = native.name();
     match operation {
         "process_arguments" => Ok(array(arguments(context))),
         "input_state_create" => Ok(new_handle(RefCell::new(InputState::default()))),

@@ -75,52 +75,143 @@ pub fn execute(
             "native argument count does not match ABI".into(),
         ));
     }
-    // Providers по модулю символа (`runtime/regex@1::…` → `runtime/regex`).
-    let module = native.symbol().split('@').next().unwrap_or("");
-    match module {
-        "runtime/regex" => return regex::execute(native, args),
+    match provider(native) {
+        Provider::Regex => regex::execute(native, args),
+        Provider::Misc => misc::execute(native, args, context),
+        Provider::Idna => idna::execute(native, args),
+        Provider::Json => json::execute(native, args),
+        Provider::Markup => markup::execute(native, args),
+        Provider::Math => math::execute(native, args, context),
+        Provider::Host => host::execute(native, args),
+        Provider::Value => value::execute(native, args),
+        Provider::Unicode => unicode::execute(native, args),
+        Provider::Net => net::execute(native, args),
+        Provider::Network => network::execute(native, args),
+        Provider::X509 => x509::execute(native, args),
+        Provider::Tls => tls::execute(native, args),
+        Provider::Sqlite => sqlite::execute(native, args),
+        Provider::Application => application::execute(native, args),
+        Provider::Collation => collation::execute(native, args),
+        Provider::Fs => fs::execute(native, args),
+        Provider::System => system::execute(native, args),
+        Provider::Input => input::execute(native, args, context),
+        Provider::Process => process::execute(native, args),
+        Provider::Time => time::execute(native, args),
+        Provider::Formats => formats::execute(native, args),
+        Provider::Text => text::execute(native, args),
+        Provider::HostCrypto => host_crypto::execute(native, args, arrays),
+        Provider::Encoding => encoding::execute(native, args, arrays),
+        Provider::Numbers => numbers::execute(native, args),
+        Provider::Buffer => buffer::execute(native, args, arrays),
+        Provider::Streams => context.streams.execute(
+            native,
+            args,
+            arrays,
+            &mut std::io::stdin().lock(),
+            &mut std::io::stdout().lock(),
+            &mut std::io::stderr().lock(),
+        ),
+        Provider::Utf => unicode_text(native, args, arrays),
+    }
+}
+
+/// Provider, исполняющий native.
+#[derive(Clone, Copy, Debug)]
+enum Provider {
+    Regex,
+    Misc,
+    Idna,
+    Json,
+    Markup,
+    Math,
+    Host,
+    Value,
+    Unicode,
+    Net,
+    Network,
+    X509,
+    Tls,
+    Sqlite,
+    Application,
+    Collation,
+    Fs,
+    System,
+    Input,
+    Process,
+    Time,
+    Formats,
+    Text,
+    HostCrypto,
+    Encoding,
+    Numbers,
+    Buffer,
+    Streams,
+    /// UTF-8/16/32 и всё, чего нет у других providers (там — `Unsupported`).
+    Utf,
+}
+
+/// Provider native по таблице, заполненной один раз [`route`]: при вызове —
+/// индекс, а не сравнение строк модуля.
+fn provider(native: Native) -> Provider {
+    static PROVIDERS: std::sync::OnceLock<Vec<Provider>> = std::sync::OnceLock::new();
+    PROVIDERS.get_or_init(|| {
+        let mut providers = Vec::new();
+        for native in Native::ALL {
+            let at = *native as usize;
+            if providers.len() <= at {
+                providers.resize(at + 1, Provider::Utf);
+            }
+            providers[at] = route(*native);
+        }
+        providers
+    })[native as usize]
+}
+
+/// Providers по модулю символа (`runtime/regex@1::…` → `runtime/regex`).
+fn route(native: Native) -> Provider {
+    match native.module() {
+        "runtime/regex" => return Provider::Regex,
         "runtime/crypto" | "runtime/secret" | "runtime/debug" | "runtime/diff"
         | "runtime/math_aggregate" | "runtime/url_text" | "runtime/layout" => {
-            return misc::execute(native, args, context);
+            return Provider::Misc;
         }
-        "runtime/idna" | "runtime/public_suffix" => return idna::execute(native, args),
-        "runtime/json" => return json::execute(native, args),
-        "runtime/toml" | "runtime/html" => return markup::execute(native, args),
+        "runtime/idna" | "runtime/public_suffix" => return Provider::Idna,
+        "runtime/json" => return Provider::Json,
+        "runtime/toml" | "runtime/html" => return Provider::Markup,
         "runtime/format" | "runtime/statistics" | "runtime/random_distribution" => {
-            return math::execute(native, args, context);
+            return Provider::Math;
         }
         "runtime/random" => {
-            let name = native.symbol().split("::").nth(1).unwrap_or("");
-            return if name.starts_with("pcg_") {
-                math::execute(native, args, context)
+            return if native.name().starts_with("pcg_") {
+                Provider::Math
             } else {
-                host::execute(native, args)
+                Provider::Host
             };
         }
-        "runtime/time" | "runtime/system" => return host::execute(native, args),
-        "runtime/uuid" | "runtime/unicode_normalization" => return value::execute(native, args),
-        "runtime/unicode_character" => return unicode::execute(native, args),
-        "runtime/net" => return net::execute(native, args),
-        "runtime/network" => return network::execute(native, args),
-        "runtime/x509" => return x509::execute(native, args),
-        "runtime/tls_transport" => return tls::execute(native, args),
-        "runtime/database" => return sqlite::execute(native, args),
-        "runtime/application" | "runtime/account" => return application::execute(native, args),
-        "runtime/collation" | "runtime/locale" => return collation::execute(native, args),
-        "runtime/fs" => return fs::execute(native, args),
+        "runtime/time" | "runtime/system" => return Provider::Host,
+        "runtime/uuid" | "runtime/unicode_normalization" => return Provider::Value,
+        "runtime/unicode_character" => return Provider::Unicode,
+        "runtime/net" => return Provider::Net,
+        "runtime/network" => return Provider::Network,
+        "runtime/x509" => return Provider::X509,
+        "runtime/tls_transport" => return Provider::Tls,
+        "runtime/database" => return Provider::Sqlite,
+        "runtime/application" | "runtime/account" => return Provider::Application,
+        "runtime/collation" | "runtime/locale" => return Provider::Collation,
+        "runtime/fs" => return Provider::Fs,
         "runtime/fs_root" | "runtime/snapshot" | "runtime/environment" => {
-            return system::execute(native, args);
+            return Provider::System;
         }
-        "runtime/input_state" => return input::execute(native, args, context),
+        "runtime/input_state" => return Provider::Input,
         "runtime/process" if native.symbol().contains("::process_arguments/") => {
-            return input::execute(native, args, context);
+            return Provider::Input;
         }
-        "runtime/process" => return process::execute(native, args),
-        "runtime/time_format" | "runtime/time_zone" => return time::execute(native, args),
+        "runtime/process" => return Provider::Process,
+        "runtime/time_format" | "runtime/time_zone" => return Provider::Time,
         "runtime/io_decorators" | "runtime/testing" | "runtime/csv_state" | "runtime/pem"
-        | "runtime/template" | "runtime/ini" => return formats::execute(native, args),
+        | "runtime/template" | "runtime/ini" => return Provider::Formats,
         "runtime/binary" | "runtime/hpack" | "runtime/collections" | "runtime/number_text" => {
-            return text::execute(native, args);
+            return Provider::Text;
         }
         _ => {}
     }
@@ -128,30 +219,29 @@ pub fn execute(
         native,
         Native::HostCrypto | Native::DigestCreate | Native::DigestUpdate | Native::DigestBytes
     ) {
-        return host_crypto::execute(native, args, arrays);
+        return Provider::HostCrypto;
     }
     if encoding::handles(native) {
-        return encoding::execute(native, args, arrays);
+        return Provider::Encoding;
     }
     if numbers::handles(native) {
-        return numbers::execute(native, args);
+        return Provider::Numbers;
     }
     if buffer::handles(native) {
-        return buffer::execute(native, args, arrays);
+        return Provider::Buffer;
     }
     if matches!(
         native,
         Native::StdoutWrite | Native::StderrWrite | Native::StdinRead | Native::StdinReadLine
     ) {
-        return context.streams.execute(
-            native,
-            args,
-            arrays,
-            &mut std::io::stdin().lock(),
-            &mut std::io::stdout().lock(),
-            &mut std::io::stderr().lock(),
-        );
+        return Provider::Streams;
     }
+    Provider::Utf
+}
+
+/// UTF-8/16/32 encode, decode и valid prefix; прочие natives без provider —
+/// `Unsupported`.
+fn unicode_text(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result<Value, Error> {
     let width = match native {
         Native::Utf8Encode | Native::Utf8Decode | Native::Utf8ValidPrefix => 1,
         Native::Utf16Encode | Native::Utf16Decode | Native::Utf16ValidPrefix => 2,

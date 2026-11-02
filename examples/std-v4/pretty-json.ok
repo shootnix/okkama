@@ -1,10 +1,9 @@
 module app v1.0.0;
-import "json/parse" take ParsedJson;
-import "json/write" take PrettyJson;
+import "json" take ParsedJson;
 object ExampleResult {
     ExampleResult();
     value() is string {
-        PrettyJson(origin: ParsedJson("{\"name\":\"Ada\",\"values\":[1,null]}"), indentation: 2).string();
+        ParsedJson("{\"name\":\"Ada\",\"values\":[1,null]}").value().pretty(2);
     }
 }
 

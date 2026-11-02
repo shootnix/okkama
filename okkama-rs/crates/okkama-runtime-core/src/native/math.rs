@@ -12,12 +12,7 @@ use crate::{IntValue, Value, abi::Native};
 use std::cell::Cell;
 
 fn operation(native: Native) -> &'static str {
-    native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
+    native.name()
 }
 
 // ---- runtime/format::sprintf_values ----

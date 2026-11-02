@@ -10,12 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 fn operation(native: Native) -> &'static str {
-    native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
+    native.name()
 }
 
 fn length(text: &str) -> usize {
@@ -377,7 +372,7 @@ fn normalized(source: &str) -> String {
 
 pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Value, Error> {
     let name = operation(native);
-    let module = native.symbol().split('@').next().unwrap_or("");
+    let module = native.module();
     match (module, name) {
         ("runtime/crypto", "digest") => {
             let algorithm = string(&args[0])?;

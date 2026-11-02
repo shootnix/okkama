@@ -15,10 +15,10 @@ module shop v1.0.0;
 import "web/app" take WebApplication;
 import "web/routing" take WebRoutes,Scope,Get,Post,Put,ExceptionScope;
 import "web/request" take WebRequest,RequestJson;
-import "web/reply" take Json,Created,NoContent;
+import "web/reply" take JsonReply,Created,NoContent;
 import "web/exception" take Exception;
 import "http/handler" take HandlingResult;
-import "json/value" take JsonValue,JsonObject,JsonMember,JsonText;
+import "json" take Json, JsonField;
 import "db/sqlite" take SqliteMemory;
 import "db/sqlite/script" take SqliteScript;
 import "db/prepared" take Prepared,DbPreparing;
@@ -265,11 +265,11 @@ object UserJson {
 
     UserJson(:user);
 
-    value() is JsonValue {
-        JsonObject([
-            JsonMember("id", JsonText(user.id().string())),
-            JsonMember("name", JsonText(user.name().string())),
-            JsonMember("email", JsonText(user.email().string()))
+    value() is Json {
+        Json([
+            JsonField("id", Json(user.id().string())),
+            JsonField("name", Json(user.name().string())),
+            JsonField("email", Json(user.email().string()))
         ]);
     }
 }
@@ -283,7 +283,7 @@ object UsersController {
 
     async show(request is WebRequest) is HandlingResult {
         let user = await users.user(ParsedUserId(origin: request.path("id")).value());
-        Json(200, UserJson(user: user).value());
+        JsonReply(200, UserJson(user: user).value());
     }
 
     async register(request is WebRequest) is HandlingResult {
@@ -298,7 +298,7 @@ object UsersController {
             id: ParsedUserId(origin: request.path("id")).value(),
             name: UserName(origin: body.text("name"))
         );
-        Json(200, UserJson(user: await users.renamed(command)).value());
+        JsonReply(200, UserJson(user: await users.renamed(command)).value());
     }
 }
 

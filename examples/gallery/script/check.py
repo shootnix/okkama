@@ -86,7 +86,7 @@ def oracle(name,output):
     if name=='roman':return '1984 MCMLXXXIV 1984' in lines and '3888 MMMDCCCLXXXVIII 3888' in lines
     if name=='calculator':return [line.rsplit(' = ',1)[-1] for line in lines]==['7','9','5/2','23/2','-11','3/10']
     if name=='rpn':return [line.rsplit(' = ',1)[-1] for line in lines]==['35','9','1/3','17']
-    if name=='json':return lines[-1]=='distance exact: 1639/10' and '  null' in lines and '    true' in lines
+    if name=='json-tree':return lines[-1]=='distance exact: 1639/10' and '  null' in lines and '    true' in lines
     if name=='parallel':return lines==['Primes below 1000: 168',*[str(n*n) for n in range(1,13)]]
     if name=='sleep-sort':return len(lines)==2 and sorted(map(int,lines[0].split(':')[1].split()))==sorted(map(int,lines[1].split(':')[1].split()))==list(range(1,10))
     if name=='echo-server':return lines==['hello -> HELLO','okkama sockets -> OKKAMA SOCKETS','goodbye -> GOODBYE','Server stopped cleanly.']

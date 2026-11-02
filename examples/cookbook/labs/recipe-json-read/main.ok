@@ -8,13 +8,12 @@
 // Условия и входы конкретного рецепта: LABS.md и раздел книги по указанному якорю.
 
 module cookbook/json_read v1.0.0;
-import "json/parse" take ParsedJson;
-import "json/read" take JsonView;
+import "json" take ParsedJson;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let order = JsonView(ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}"));
+    let order = ParsedJson("{\"id\":4711,\"customer\":{\"name\":\"Ада\"}}").value();
     confirm order.int("id") == 4711;
-    Stdout().writeln(order.member("customer").text("name"));
+    Stdout().writeln(order.get("customer").text("name"));
     0;
 }

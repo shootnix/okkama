@@ -2,7 +2,7 @@
 
 ## Contract before implementation
 
-`JsonTemplateStrings(origin is JsonValue)` implements TemplateStrings explicitly;
+`JsonTemplateStrings(origin is Json)` implements TemplateStrings explicitly;
 TextTemplate does not gain implicit arbitrary-object or JSON conversion.
 The optional constructor `(origin, maximum_members is int, maximum_output is int)`
 sets per-traversed-object member count and per-scalar UTF-8 bytes. Defaults are
@@ -10,7 +10,7 @@ sets per-traversed-object member count and per-scalar UTF-8 bytes. Defaults are
 source observation; zero is valid. Construction only binds dependencies.
 
 `string(path is TemplatePath)` follows exact path segments through JSON object
-members using only JsonValue.print(JsonWriting). No kind() inspection or casts.
+members of the `Json` document. No casts.
 At most 64 path segments are accepted, checked before source observation;
 TemplateJsonLimitExceeded reports excess depth/count. Empty/missing or non-object
 intermediate nodes throw MissingTemplateValue retaining the full requested path.
@@ -45,23 +45,13 @@ and diagnostic text(). These are JSON wire categories, not Okkama reflection.
 Scalar output exceeding maximum_output throws TemplateOutputLimitExceeded before
 writing bytes. TextTemplate retains its separate aggregate output budget.
 
-Each visited JsonValue must complete exactly one print event. Missing/multiple
-events throw InvalidTemplateJsonProtocol. Suppressing a duplicate-event or
-downstream error inside a custom source also fails protocol validation; no
-completed string escapes on failure. Original
-print/source failures propagate unchanged. Object member sequences are bounded
-before indexed reads: size once, reject negative size with InvalidTemplateJsonSize,
-then each ascending item once into a snapshot. JsonObject validates duplicates
-before selection; DuplicateJsonMember propagates. Nonselected values are not
-printed. Lookups observe the source afresh; custom JsonValue implementations may
-therefore return different data on separate calls.
-
-Only temporary ByteBuffers are owned and explicitly closed via defer on every
-path. Source objects are borrowed and never closed. Returned strings outlive all
-collaborators. Storage is bounded by 64 traversal levels, the per-object count and
-output-byte limit (source strings themselves are retained references). A member
-snapshot costs O(n) references and JsonObject duplicate checking O(n²).
-No native/provider changes, I/O, environment, file access or implicit HTML trust.
+Lookups read the `Json` document directly: one member lookup per path segment,
+no snapshot of the members. A `Json` is immutable, so repeated lookups see the
+same data. Duplicate member names cannot exist in a `Json`: `ParsedJson` and
+`Json(fields)` reject them with DuplicateJsonMember. The member budget is checked
+against the size of each traversed object. Storage is bounded by 64 traversal
+levels and the output-byte limit. No I/O, environment, file access or implicit
+HTML trust.
 
 - [x] Contract before implementation.
 - [x] RED/GREEN consumer tests and local embedded tests.

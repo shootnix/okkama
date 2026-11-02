@@ -69,3 +69,26 @@ fn self_tail_calls_become_loops() {
     assert_eq!(self_calls(&module, "C.count"), 0, "tail call is a loop");
     assert_eq!(self_calls(&module, "C.fib"), 2, "non-tail calls stay calls");
 }
+
+#[test]
+fn tail_calls_in_both_branches_leave_no_unreachable_join() {
+    // Обе ветви — хвостовые вызовы: блок, где сходились их результаты, удаляется.
+    let module = lower(
+        "object F { has lo is int; has hi is int; F(:lo, :hi); value() is int { if lo >= hi { lo; } else { let middle = lo + ((hi - lo) / 2).int(); if middle < 5 { F(lo: middle + 1, hi: hi).value(); } else { F(lo: lo, hi: middle).value(); } } } }",
+        "F(lo: 0, hi: 100).value();",
+    )
+    .expect("lowers");
+    ir::verify(&module).expect("verifies");
+    assert_eq!(self_calls(&module, "F.value"), 0, "both tail calls are loops");
+}
+
+#[test]
+fn skipped_empty_blocks_keep_builders_linear() {
+    // Пустые блоки ветвления не сливаются в `cond` с одним сборщиком в двух переходах.
+    let module = lower(
+        "object T { T() {} }",
+        "let empty is @int = []; let mapped is @string = empty.map() -> v { v.string(); }; let kept = [1, 2].filter() -> v { v > 5; }; mapped.size() + kept.size();",
+    )
+    .expect("lowers");
+    ir::verify(&module).expect("verifies");
+}

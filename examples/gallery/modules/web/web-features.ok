@@ -10,7 +10,7 @@ module gallery/web/features v1.0.0;
 import "support" take DemoServer,DemoClient,ReplySnapshot;
 import "web/routing" take WebRoutes,Get,Post,Scope;
 import "web/request" take WebRequest;
-import "web/reply" take Text,Html,Json;
+import "web/reply" take Text,Html,JsonReply;
 import "web/exception" take Exception;
 import "http/handler" take Handling,HandlingResult,ResponseHandling;
 import "http/message" take Request,Response;
@@ -31,7 +31,7 @@ import "fs/path" take Path;
 import "fs/file" take File,FileMode;
 import "mime/types" take StandardMediaTypes;
 import "template/html" take HtmlTemplate;
-import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "async/channel" take Channel,Sending,Receiving,ChannelClosed;
 import "async/event" take Event;
@@ -66,7 +66,7 @@ object ChunkInput does AsyncReading,Closing {
 object Features {
     has files is StaticFiles;has template is string;
     Features(files is StaticFiles,template is string){self.files=files;self.template=template;}
-    async version(request is WebRequest) is HandlingResult{Json(200,JsonObject([JsonMember("api",JsonNumber(Decimal("2")))]));}
+    async version(request is WebRequest) is HandlingResult{JsonReply(200,Json([JsonField("api",Json(Decimal("2")))]));}
     async echo(request is WebRequest) is HandlingResult{Text(200,request.path("rest"));}
     async static(request is WebRequest) is HandlingResult{
         let method=request.request().method();
@@ -75,7 +75,7 @@ object Features {
         await files.handling(rewritten,request.context());
     }
     async page(request is WebRequest) is HandlingResult{
-        let data=JsonObject([JsonMember("title",JsonText("Shop")),JsonMember("note",JsonText("fresh <today>"))]);
+        let data=Json([JsonField("title",Json("Shop")),JsonField("note",Json("fresh <today>"))]);
         Html(200,HtmlTemplate(template).string(data));
     }
     async count(request is WebRequest) is HandlingResult {

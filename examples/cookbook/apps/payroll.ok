@@ -24,8 +24,7 @@ import "numbers/bigint" take BigInt,BigProduct,BigQuotient,BigRemainder,BigSum;
 import "compare" take Order;
 import "strings/parse" take ParsedInt;
 import "time/iso" take DateFromIso;
-import "json/value" take JsonObject,JsonMember,JsonArray,JsonText,JsonNumber,JsonValue;
-import "json/write" take PrettyJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "io/stdout" take Stdout;
 object PaidShift {
@@ -51,30 +50,30 @@ object ShiftLedger {
             let minutes=BigInt(row[2]);confirm minutes.sign()>0 && minutes.order(BigInt("1440"))!=Order.greater else throw Usage("minutes must be 1..1440");
             PaidShift(row[0],row[1],ParsedInt(minutes.string()).value(),BigInt(row[3]));};shifts=values;
     }
-    report(employee is string,day is string) is JsonArray {
+    report(employee is string,day is string) is Json {
         let selected is @PaidShift=shifts.filter()->shift{(employee=="" || shift.employee()==employee) && (day=="" || shift.day()==day);};
         let names=OrderedSet(values:selected.map()->shift{shift.employee();});
-        let result is @JsonValue=names.map()->name{
+        let result is @Json=names.map()->name{
             let own=selected.filter()->shift{shift.employee()==name;};
             let amount=own.reduce(BigInt("0"))->sum,shift{BigSum(left:sum,right:shift.amount()).value();};
             let minutes=own.reduce(0)->sum,shift{sum+shift.minutes();};
-            JsonObject([JsonMember("employee",JsonText(name)),JsonMember("minutes",JsonNumber(Decimal(minutes.string()))),JsonMember("hours",JsonNumber(Decimal(BigQuotient(left:BigInt(minutes.string()),right:BigInt("60")).value().string()))),JsonMember("remaining_minutes",JsonNumber(Decimal((minutes%60).string()))),JsonMember("amount_cents",JsonText(amount.string()))]);
-        };JsonArray(result);
+            Json([JsonField("employee",Json(name)),JsonField("minutes",Json(Decimal(minutes.string()))),JsonField("hours",Json(Decimal(BigQuotient(left:BigInt(minutes.string()),right:BigInt("60")).value().string()))),JsonField("remaining_minutes",Json(Decimal((minutes%60).string()))),JsonField("amount_cents",Json(amount.string()))]);
+        };Json(items: result);
     }
     // Дневная сводка строится из того же журнала, с тем же правилом округления смен.
-    daily(employee is string) is JsonArray {
+    daily(employee is string) is Json {
         let days=OrderedSet(values:shifts.map()->shift{shift.day();});
-        let result is @JsonValue=days.map()->day{
-            JsonObject([JsonMember("day",JsonText(day)),JsonMember("employees",self.report(employee,day))]);
+        let result is @Json=days.map()->day{
+            Json([JsonField("day",Json(day)),JsonField("employees",self.report(employee,day))]);
         };
-        JsonArray(result);
+        Json(items: result);
     }
 }
 main() is int {
     let args=Arguments();let command=args.text(0,"help");
     match command{
-        case "demo","report"{let path=args.text(1,"examples/cookbook/data/shifts.csv");let ledger=ShiftLedger(LocalFiles().text(path));Stdout().writeln(PrettyJson(indentation:2,origin:ledger.report(args.text(2,""),args.text(3,""))).string());}
-        case "daily"{let ledger=ShiftLedger(LocalFiles().text(args.text(1)));Stdout().writeln(PrettyJson(indentation:2,origin:ledger.daily(args.text(2,""))).string());}
+        case "demo","report"{let path=args.text(1,"examples/cookbook/data/shifts.csv");let ledger=ShiftLedger(LocalFiles().text(path));Stdout().writeln((ledger.report(args.text(2,""),args.text(3,""))).pretty(2));}
+        case "daily"{let ledger=ShiftLedger(LocalFiles().text(args.text(1)));Stdout().writeln((ledger.daily(args.text(2,""))).pretty(2));}
         case "history"{Stdout().write(LocalFiles().text(args.text(1)));}
         case "init"{confirm !FileEntry(Path(args.text(1))).existence() else throw Usage("journal already exists");LocalFiles().write(args.text(1),"employee,day,minutes,rate_cents\n");}
         case "add"{

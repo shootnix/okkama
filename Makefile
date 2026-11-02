@@ -4,6 +4,8 @@
 #     make install         # сборка и установка в ~/.local (PREFIX=/opt/okkama make install)
 #     make uninstall
 #     make test            # тесты Rust
+#     make pgo             # release-сборка с PGO (нужен `rustup component add llvm-tools`)
+#     make install-pgo     # PGO-сборка и установка
 #     make dist            # пакеты этой платформы в dist/ (tar.gz + .pkg/.deb)
 #     make vscode          # расширение VS Code (.vsix) и его установка в VS Code
 #
@@ -21,7 +23,7 @@ STAMP   := $(RUNTIME)/classes/.built
 JAVA    := $(wildcard $(RUNTIME)/src/okkama/rt/*.java $(RUNTIME)/src22/okkama/rt/*.java)
 VSIX    := vscode-okkama/okkama-vscode.vsix
 
-.PHONY: all build runtime install uninstall test dist vscode clean
+.PHONY: all build runtime pgo install install-pgo uninstall test dist vscode clean
 
 all: build
 
@@ -42,6 +44,13 @@ build: runtime
 	cd $(RS) && $(CARGO) build --release -p okkama-cli -p okkama-native -p sparrow-cli -p blade-cli
 
 install: build
+	./install.sh --prefix "$(PREFIX)" --no-build
+
+# Оптимизация по профилю (tools/pgo/build.sh): на 6–18% быстрее обычной сборки.
+pgo: runtime
+	sh $(RS)/tools/pgo/build.sh
+
+install-pgo: pgo
 	./install.sh --prefix "$(PREFIX)" --no-build
 
 uninstall:

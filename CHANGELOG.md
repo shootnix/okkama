@@ -33,6 +33,206 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `Object(arguments).method()`; stdlib and positive conformance examples are migrated.
   Method signatures state the complete result type, with no implicit unwrapping.
 
+## [0.3.2] — 2026-11-01
+
+### Changed
+
+- **One JSON module.** `import "json"` replaces `json/value`, `json/parse`, `json/read`,
+  `json/write` and `json/codec` (removed). A value is one immutable `Json` over a node of
+  the runtime's tree, parsed (`ParsedJson(text).value()`) or built in code (`Json(42)`,
+  `Json([JsonField("id", 42)])`, `Json(items: [...])`, `Json()` for null, also from
+  `BigInt` and `float`). Reads are one native call each: `text/int/number/boolean(name)`,
+  `get`, `list`, `at`, `items`, `names`, `values`, `fields`, `has`, `optional(name)` with
+  fallbacks; errors keep their RFC 6901 pointer, which the runtime computes only when
+  asked. `string()` and `pretty(n)` write the whole tree in one native call, with the
+  same text as before. A codec is a plain object with `value(Json)` and `json(T)`; the
+  `JsonValue`/`JsonWriting`/`JsonReading` roles, `JsonView`, `JsonOption`, `CompactJson`,
+  `PrettyJson` and `JsonCodec` are gone. See `docs/std/json.md` and the migration table in
+  `docs/std/stdlib-v4-migration.md`.
+- `web/reply.Json` is now `JsonReply(status, value)`; `web/request.RequestJson` wraps a
+  `Json` (`value()` gives it) and gains `RequestJsonOptional`. `logging`, `testing`,
+  `template/json`, `template/sections`, `template/html` and `config/document` take `Json`.
+  `template/json` lost `InvalidTemplateJsonSize` and `InvalidTemplateJsonProtocol`, which
+  only a custom `print()` could trigger.
+- Imports: a std module resolves imports from the std root first, so `"json"` from
+  `std/template/json.ok` is `std/json`; a file never imports itself, so `app/json.ok`
+  importing `"json"` finds `std/json`.
+
+### Added
+
+- Natives `runtime/json.json_text_node`, `json_number_node`, `json_boolean_node`,
+  `json_null_node`, `json_array_node`, `json_object_node`, `json_node_write`,
+  `json_node_pointer`, `json_member_values`, `json_node_items`, `json_member_text`,
+  `json_member_spelling`, `json_member_boolean`, `json_member_int` (Rust and JVM).
+- `benchmarks/json`: parse, walk and write six document shapes (many small records, a
+  few wide objects, deep nesting, long strings, numbers, orders) in Okkama on Sparrow
+  and on the JVM, Python `json` and Perl `JSON::PP`, with a checksum check.
+
+### Fixed
+
+- Internal compiler error "block is unreachable" when both branches of an `if` end in a
+  self tail call (`value Next(...)` in a `#projected` action, a recursive binary search):
+  tail-call elimination now drops the join block it leaves without entries. It broke
+  `collections/ordering` searches (`config/document`, `http/media`, `locale`), so seven
+  cookbook labs failed to compile.
+
+### Performance
+
+- Parsing and writing JSON run in the runtime: on the six shapes Okkama parses at
+  0.7–1.7× Python's time and writes at 0.3–1.3×, and is 7–1000× faster than JSON::PP.
+  Walking a parsed document in Okkama code takes 2–7× Python's time on Sparrow and
+  0.5–3× on the JVM.
+- **Sparrow registers are shared.** Sparrow codegen gives SSA values whose lifetimes
+  never overlap one register of their type, instead of one register per value: a
+  `match` over six cases no longer keeps the registers of all six, and every call
+  clears and releases fewer callee registers (`Sums.plus` of the JSON benchmark: 102
+  registers before). A result never shares a register with its own operands.
+- Sparrow JIT: `enum.case` and `enum.cmp` (enum constants, `match` and `==` on enums)
+  run in machine code, `str.len` calls a direct helper; before, all three went through
+  the generic interpreter step.
+- Sparrow JIT code is smaller: registers of types without references (`bool`, `float`,
+  `byte`, `char`, enums) are written without a release check, and the callee's
+  registers after a call are released by a helper loop instead of inline checks.
+  `Sums.plus` of the JSON benchmark compiles to 3618 Cranelift instructions instead of
+  9333 (5 ms instead of 13).
+- IR: unwind handlers that only pass a failure on (left by elided regions) are skipped,
+  so calls carry no empty handler path, and `undef` values nobody reads (left by
+  elided regions and removed blocks) are dropped instead of being executed on every
+  call.
+- Sparrow JIT: native calls pass their arguments as plain copies of the registers,
+  without reference counting (natives only read them); the callee's registers after a
+  call are released by a bitmask of its registers of reference types.
+- JSON nodes keep text, numbers and member names as shared strings: `text()`, member
+  names and number spellings no longer copy the string on every read, and the parser
+  builds each string once. Duplicate member names of small objects are found without
+  a hash set. Parsing is 10–25% faster (records 110 → 90 ms, orders 21 → 16).
+- Release checks in Sparrow JIT code follow the register type: an `int` register is
+  released only when it holds a long integer, a register of a reference type only when
+  it is not empty.
+- IR: empty jump blocks are skipped (an empty block with arguments only behind a
+  single jump, so a linear array builder is never passed on two branches), and
+  Sparrow codegen prefers one register for a jump argument and the parameter it
+  becomes, so most edge moves disappear.
+- `Json.names()` reads all member names in one native call (new native
+  `runtime/json.json_member_names`, Rust and JVM) instead of one call per name.
+- Walking JSON documents on Sparrow is about twice as fast as in 0.3.1: records 867 →
+  405 ms, deep 301 → 145, numbers 161 → 81, orders 189 → 85, wide 85 → 36, strings
+  35 → 16 (Python 3.9: 299, 94, 69, 56, 28, 5).
+
+## [0.3.1] — 2026-10-31
+
+### Added
+
+- **PGO builds**: `make pgo` (and `make install-pgo`) builds the release binaries with
+  profile-guided optimization (`okkama-rs/tools/pgo/build.sh`): an instrumented build, a
+  training run of `tools/pgo/json.ok`, the benchmarks on Sparrow and IR and std inline
+  tests, then the final build with the merged profile. Needs `rustup component add
+  llvm-tools`. Against the plain release build: JSON 14–18% faster, the benchmarks 6%.
+  `-C target-cpu`, thin LTO and `panic = "abort"` were measured too: no gain from the first
+  two, and abort (5% on JSON) would turn internal errors into aborts while the JIT still
+  catches panics as a fallback, so the profile keeps unwinding.
+- **`\u{H}` escapes** in string and char literals: one to six hexadecimal digits name a
+  Unicode scalar value, `"\u{1b}[1m"`, `"\u{e9}"`, `'\u{0}'`. Surrogates, values above
+  `10FFFF`, missing braces and empty or overlong digit runs are lexer errors (spec §4.2).
+  Until now control characters other than `\n`, `\r`, `\t` could not be written in source.
+- **`json/codec`**: `role JsonCodec<T>` maps a domain type to JSON and back with a
+  hand-written object, both directions side by side. `JsonList(item:)` handles arrays and
+  nests, `JsonDecoded(codec:, source:)` and `JsonEncoded(codec:, origin:)` read and write
+  text, and `JsonTextCodec`, `JsonIntCodec`, `JsonBooleanCodec`, `JsonDecimalCodec` cover
+  arrays of scalars (`docs/std/json-codec.md`, case `L09.json.codec`).
+- **Optional JSON members**: `JsonView.optional(name)` is a `JsonOption`; each reader takes
+  the value for an absent or `null` member — `view.optional("nick").text("anonymous")`,
+  `view.optional("address").optional("city").text("")`, `view.optional("tags").items()`.
+  A present member of another kind is still `WrongJsonKind`. `JsonView.required(name)` is
+  `member(name)`. There is no null-like value: a `JsonOption` holds zero or one view.
+- **Scalar JSON members**: `JsonMember("id", 42)`, `JsonMember("name", "Ada")`,
+  `JsonMember("vip", true)` and `Decimal` values wrap themselves by declared type;
+  `JsonNumber(value is int)`.
+- `json/parse.JsonNode` reads its own kind directly: `text()`, `spelling()`, `number()`,
+  `boolean()`, `size()`, `item(index)`, `name(index)`, `names()`, `members()`,
+  `membership(name)`, `member(name)`, `optional(name)`; `ParsedJson.node()` is the root node.
+- Natives `runtime/json.json_member_position` (a member's index by name, one call),
+  `runtime/json.json_quote` (a JSON string literal), `runtime/json.json_number_text`
+  (the JSON spelling of a decimal), `runtime/json.json_repeated_name` (the first repeated
+  name) and a native JSON output (`json_output`, `json_output_raw`, `json_output_text`,
+  `json_output_number`, `json_output_member`, `json_output_string`; each append answers
+  the UTF-8 size so far), in the Rust and JVM providers.
+- `role json/value.JsonReading`: how `JsonView` reaches a value. `json/read` reads any
+  `JsonValue` through `print()`, `json/parse` reads parsed nodes directly
+  (`ParsedJson.reading()`, `JsonNode.reading()`). Readings report `JsonKindMismatch`,
+  `MissingJsonMember` and `JsonNumberMismatch` without a position; `JsonView` reports
+  them as `WrongJsonKind`, `MissingJsonValue` and `InvalidJsonNumber` at its pointer,
+  with the same texts as before.
+- `JsonObject(members is @JsonMember)`: a builtin array of members is kept as it is,
+  without the defensive copy that `Sequencing<JsonMember>` still gets.
+
+### Changed
+
+- **Functional suffixes are postfix forms.** `-> bindings { … }` belongs to its
+  `map`/`filter`/`reduce` call like a further member call, so it can stand inside any
+  operator, argument or condition: `total + xs.reduce(0) -> s, x { s + x; }`,
+  `ready && xs.filter() -> x { x > 3; }.size() > 0`. Before, it was accepted only as a
+  whole expression. The top level of a `for` source still gives the arrow to the loop.
+- `json/read.JsonView` of a value declared as `ParsedJson` or `JsonNode` reads the parsed
+  tree directly instead of through `print()`, with the same values, pointers and errors
+  (case `L09.json.parsed-reading`). Views of other `JsonValue`s are unchanged.
+
+### Performance
+
+Measured on an Apple M2 Max; all runs and tables are in
+[benchmarks/reports/2026-10-31-v0.3.1](benchmarks/reports/2026-10-31-v0.3.1/README.md).
+Reading 10 000 orders (2.7 MB) into domain objects and writing them back (1.5 MB), Sparrow:
+7.0 s → 0.33 s (0.27 s with PGO); Python 3.9 with its C `json` takes 55 ms. For 50 000
+orders (14 MB) 1.15 s (0.98 s with PGO) against Python's 0.38 s; parsing is faster than
+Python's. The general benchmarks are unchanged except `05-strings` (1.23×); Sparrow with
+the JIT is 2.36× faster than Python 3.9 on average over benchmarks 01–10.
+
+| Stage, 10 000 orders | 0.3.0 | 0.3.1 | 0.3.1 PGO | Python 3.9 |
+|---|---|---|---|---|
+| parse | 21 ms | 21 ms | 17 ms | 19 ms |
+| decode into objects | 1 934 ms | 156 ms | 128 ms | 12 ms |
+| build the `JsonValue` tree and write the text | 5 030 ms | 150 ms | 125 ms | 24 ms |
+
+- **Empty ownership regions are elided.** When a program has any `destroy`, every scope
+  opened a region, and every call created one and walked its result on exit. A new OIR
+  pass drops regions that nothing is ever adopted, tracked or transferred into (they
+  can own nothing); `region.enter` and `region.unwind` become `undef`, and readers of
+  the unwind result read the failure it passed on. All engines run the same OIR. Regions
+  that are opened but stay empty at run time close without walking `keep`.
+- **Native calls** cost about 46 ns instead of 200 ns on Sparrow: the provider of a
+  native is resolved and checked against the ABI once per function, not per call;
+  signatures, module and function names come from tables indexed by the native's
+  number instead of a SipHash map and symbol splitting; providers are routed by a
+  table, `runtime/json` by `match` on the native itself; and JIT code calls a native
+  with arguments copied from its registers into an array on the stack, instead of a
+  generic interpreter step and a vector per call.
+- `JsonView` reads of parsed documents find a member by one native call, check scalar
+  kinds in the native read itself, and spell their RFC 6901 pointer only when a
+  failure or `pointer()` needs it.
+- `CompactJson.string()` writes the whole document into one native JSON output, one
+  native call per scalar or member name, instead of a byte buffer, a regex split per
+  string and several `Decimal` natives per number. The output is byte-for-byte that of
+  0.3.0.
+- `JsonView` reads a parsed node with one object per value read: the node reading holds
+  the native node itself, and a view is its children's link to the pointer.
+- `JsonObject` finds a repeated member name by one native call instead of sorting names.
+- The general benchmarks (`benchmarks/run.py`) are unchanged within noise; `05-strings`
+  is 1.16× faster.
+
+### Known limitations
+
+- An array literal of values of different concrete types that share a role
+  (`[JsonText("a"), JsonNull()]`) gets its element type from a single matching overload;
+  when a constructor is overloaded for both `@T` and `Sequencing<Role>`, it is typed
+  `@any` and matches neither. `JsonArray` therefore keeps its one `Sequencing<JsonValue>`
+  constructor.
+
+### Removed
+
+- `conformance/contracts/stdlib-inventory.json`: the snapshot of the std public surface had
+  fallen far behind `std/` and nothing read it. `tools/inventory_std.py` now writes only
+  the per-module coverage contracts in `contracts/stdlib.json`.
+
 ## [0.3.0] — 2026-10-31
 
 ### Added
@@ -241,6 +441,8 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/shootnix/okkama/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/shootnix/okkama/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/shootnix/okkama/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shootnix/okkama/releases/tag/v0.2.0

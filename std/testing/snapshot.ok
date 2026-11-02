@@ -6,8 +6,7 @@ import "runtime/fs" take path_encode;
 import "runtime/snapshot" as backend;
 import "testing/check" take Checking,CheckContext,BytesEqual;
 import "encoding/utf" take Utf8Encoded;
-import "json/value" take JsonValue;
-import "json/write" take CompactJson;
+import "json" take Json;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches;
 
@@ -26,7 +25,7 @@ object TextSnapshot does ByteSource {
 }
 object JsonSnapshot does ByteSource {
     has content is @byte;
-    JsonSnapshot(origin is JsonValue){content=Utf8Encoded(CompactJson(origin:origin).string()+"\n").bytes();confirm self.content.size()<=1048576 else throw InvalidSnapshot("byte budget");}
+    JsonSnapshot(origin is Json){content=Utf8Encoded(origin.string()+"\n").bytes();confirm self.content.size()<=1048576 else throw InvalidSnapshot("byte budget");}
     bytes() is @byte{content;}
 }
 object RawSnapshot does ByteSource {

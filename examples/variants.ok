@@ -1,9 +1,7 @@
 module variants v1.0.0;
 
 import "io/stdout" take Stdout;
-import "json/parse" take ParsedJson;
-import "json/read" take JsonView;
-import "json/value" take JsonKind;
+import "json" take ParsedJson, JsonKind;
 
 object UserDetails {
     has name is string;
@@ -18,12 +16,12 @@ object UserReader {
     UserReader(:source);
 
     read() is Presence<UserInput> {
-        let root = JsonView(ParsedJson(source));
-        if !root.membership("user") {
+        let root = ParsedJson(source).value();
+        if !root.has("user") {
             Presence.missing;
         } 
         else {
-            let user = root.member("user");
+            let user = root.get("user");
             match user.kind() {
                 case JsonKind.null_value { Presence.none; }
                 case JsonKind.object_value {

@@ -337,6 +337,9 @@ pub fn eliminate_tail_calls(module: &mut Module) -> usize {
             }
             replaced += 1;
         }
+        // Переходы вместо вызовов могут оставить без входов блок, куда
+        // сходились их результаты (`value` в обеих ветвях `if`).
+        super::cfg::remove_unreachable_blocks(function);
     }
     replaced
 }

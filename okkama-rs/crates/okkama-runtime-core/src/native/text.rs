@@ -13,12 +13,7 @@ use crate::{IntValue, Value, abi::Native};
 mod hpack_table;
 
 fn operation(native: Native) -> &'static str {
-    native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("")
+    native.name()
 }
 
 // ---- runtime/binary ----

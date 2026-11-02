@@ -1,9 +1,10 @@
 module runtime/json v1.0.0;
 
-// Private exact JSON parse tree and diagnostics. The public json/parse module
-// projects these opaque states into immutable json/value objects.
+// Private exact JSON parse tree and diagnostics. The public json module wraps
+// these opaque states in immutable Json values.
 native object JsonParseState;
 native object JsonNodeState;
+native object JsonOutputState;
 
 native json_parse_state(origin is string, maximum_depth is int) is JsonParseState;
 native json_parse_valid(origin is JsonParseState) is bool;
@@ -23,7 +24,64 @@ native json_node_size(origin is JsonNodeState) is int;
 native json_node_item(origin is JsonNodeState, index is int) is JsonNodeState;
 native json_member_name(origin is JsonNodeState, index is int) is string;
 native json_member_value(origin is JsonNodeState, index is int) is JsonNodeState;
+native json_member_position(origin is JsonNodeState, name is string) is int;
 
+// JSON string literal of any string: '"' and '\' escaped, \n, \r, \t by name,
+// the other controls U+0000..U+001F as lowercase \u00xx, everything else as is.
+native json_quote(origin is string) is string;
+
+// JSON spelling of a decimal number text: positional for integers up to 21
+// digits and fractions down to 1e-6, the canonical Decimal form beyond them.
+native json_number_text(origin is string) is string;
+
+// JSON text being written, appended at the end. Each append answers the UTF-8
+// size of the whole text so far. json_output_text appends a string literal,
+// json_output_number the json_number_text of a decimal, and
+// json_output_member a member name with its colon, after a comma unless first.
+native json_output() is JsonOutputState;
+native json_output_raw(origin is JsonOutputState, text is string) is int;
+native json_output_text(origin is JsonOutputState, text is string) is int;
+native json_output_number(origin is JsonOutputState, number is string) is int;
+native json_output_member(origin is JsonOutputState, name is string, first is bool) is int;
+native json_output_string(origin is JsonOutputState) is string;
+
+// The first index whose name repeats an earlier one, or the number of names.
+native json_repeated_name(names is @string) is int;
+
+// One member of an object node read in one call: its text, number spelling,
+// boolean, or int when the spelling is a plain integer of up to 18 digits.
+// Any other case (not an object, no such member, another kind, another
+// number) is invalid_input; callers then read the member the long way.
+native json_member_text(origin is JsonNodeState, name is string) is string;
+native json_member_spelling(origin is JsonNodeState, name is string) is string;
+native json_member_boolean(origin is JsonNodeState, name is string) is bool;
+native json_member_int(origin is JsonNodeState, name is string) is int;
+
+// Values built in code: a string, a number from its decimal text, a boolean,
+// null, an array of nodes, and an object of distinct names and their nodes
+// (invalid_input for differing counts or a repeated name).
+native json_text_node(value is string) is JsonNodeState;
+native json_number_node(decimal is string) is JsonNodeState;
+native json_boolean_node(value is bool) is JsonNodeState;
+native json_null_node() is JsonNodeState;
+native json_array_node(values is @JsonNodeState) is JsonNodeState;
+native json_object_node(names is @string, values is @JsonNodeState) is JsonNodeState;
+
+// JSON text of a node: compact for a negative indentation, otherwise one
+// member or element per line, level * indentation spaces, ": " after names,
+// [] and {} for empty containers and no final line break. Numbers are written
+// as json_number_text, strings as json_quote.
+native json_node_write(origin is JsonNodeState, indentation is int) is string;
+
+// The RFC 6901 pointer of target inside root (the same node, found depth
+// first; invalid_input when it is not inside), and the member names and values
+// of an object and the items of an array in order.
+native json_node_pointer(root is JsonNodeState, target is JsonNodeState) is string;
+native json_member_names(origin is JsonNodeState) is @string;
+native json_member_values(origin is JsonNodeState) is @JsonNodeState;
+native json_node_items(origin is JsonNodeState) is @JsonNodeState;
+
+// json_member_position is the index of the member with exactly that name, or -1.
 // Parsing is lazy and memoized. root() is available only after valid(); a
 // malformed source returns native invalid_data, never a partial tree. Scalar
 // accessors require their exact kind, and indices are zero-based; wrong kinds
@@ -67,4 +125,72 @@ test "JSON invalid observations use portable native failure codes" {
         test.is(try {json_member_name(table, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
         test.is(try {json_member_value(table, index); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
     }
+}
+test "JSON member positions and quoted strings" {
+    let table = json_parse_root(json_parse_state("{\"a\":1,\"\":2,\"é\":3}", 8));
+    test.is(json_member_position(table, "a"), 0);
+    test.is(json_member_position(table, ""), 1);
+    test.is(json_member_position(table, "é"), 2);
+    test.is(json_member_position(table, "A"), -1);
+    let array = json_parse_root(json_parse_state("[1]", 8));
+    test.is(try {json_member_position(array, "a"); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+    test.is(json_quote(""), "\"\"");
+    test.is(json_quote("é🙂/\u{7f}"), "\"é🙂/\u{7f}\"");
+    test.is(json_quote("\"\\\n\r\t"), "\"\\\"\\\\\\n\\r\\t\"");
+    test.is(json_quote("\u{0}\u{8}\u{c}\u{1b}\u{1f}"), "\"\\u0000\\u0008\\u000c\\u001b\\u001f\"");
+    for [["404", "404"], ["1e3", "1000"], ["-12000", "-12000"], ["0", "0"], ["-0", "0"], ["1.5", "1.5"],
+        ["-0.005", "-0.005"], ["0.000001", "0.000001"], ["0.0000001", "1e-7"],
+        ["123456789012345678901", "123456789012345678901"], ["1e21", "1e21"], ["1.25e1", "12.5"],
+        ["1e1000000", "1e1000000"], ["12.50", "12.5"]] -> pair {
+        test.is(json_number_text(pair[0]), pair[1]);
+    }
+    test.is(try {json_number_text("x"); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+}
+
+test "JSON output appends literals and answers its UTF-8 size" {
+    let output = json_output();
+    test.is(json_output_raw(output, "{"), 1);
+    test.is(json_output_member(output, "é", true), 6);
+    test.is(json_output_text(output, "a\"\u{1}🙂"), 21);
+    test.is(json_output_member(output, "n", false), 26);
+    test.is(json_output_number(output, "1.25e1"), 30);
+    test.is(json_output_raw(output, "}"), 31);
+    test.is(json_output_string(output), "{\"é\":\"a\\\"\\u0001🙂\",\"n\":12.5}");
+    test.is(try {json_output_number(output, "x"); "";} catch failure is NativeFailure {failure.code();}, "invalid_input");
+}
+
+test "repeated names report the earliest repeated index" {
+    test.is(json_repeated_name([]), 0);
+    test.is(json_repeated_name(["a", "b"]), 2);
+    test.is(json_repeated_name(["b", "a", "a", "b"]), 2);
+    test.is(json_repeated_name(["", "x", ""]), 2);
+}
+
+test "members are read in one call or refused" {
+    let row = json_parse_root(json_parse_state("{\"s\":\"x\",\"n\":-12,\"f\":1.5,\"big\":1234567890123456789,\"t\":true,\"z\":null}", 8));
+    test.is(json_member_text(row, "s"), "x");
+    test.is(json_member_spelling(row, "f"), "1.5");
+    test.is(json_member_boolean(row, "t"), true);
+    test.is(json_member_int(row, "n"), -12);
+    for ["s", "f", "big", "missing"] -> name {
+        test.is(try { json_member_int(row, name); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    }
+    test.is(try { json_member_text(row, "n"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_member_boolean(row, "z"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_member_spelling(row, "s"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    let array = json_parse_root(json_parse_state("[1]", 8));
+    test.is(try { json_member_text(array, "a"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+}
+
+test "JSON nodes built in code are written compact and pretty" {
+    let inner = json_object_node(["é", "n"], [json_text_node("a\"\u{1}"), json_number_node("1.25e1")]);
+    let empty is @JsonNodeState = [];
+    let root = json_array_node([inner, json_boolean_node(true), json_null_node(), json_array_node(empty)]);
+    test.is(json_node_write(root, -1), "[{\"é\":\"a\\\"\\u0001\",\"n\":12.5},true,null,[]]");
+    test.is(json_node_write(root, 2), "[\n  {\n    \"é\": \"a\\\"\\u0001\",\n    \"n\": 12.5\n  },\n  true,\n  null,\n  []\n]");
+    test.is(json_member_text(inner, "é"), "a\"\u{1}");
+    test.is(json_member_names(inner).join(","), "é,n");
+    test.is(try { json_member_names(root); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_object_node(["a", "a"], [json_null_node(), json_null_node()]); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
+    test.is(try { json_number_node("1x"); ""; } catch failure is NativeFailure { failure.code(); }, "invalid_input");
 }

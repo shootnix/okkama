@@ -16,14 +16,14 @@ accepts case-insensitive canonical ASCII names, without whitespace aliases.
 `ChildLogName(name,segment).value()` appends one segment. Bounds reuse SettingKey:
 1..64 segments, each nonempty, at most4096 scalars. Ordering is lexicographic.
 
-`LogFields(Sequencing<JsonMember>)` rejects duplicate/empty names, preserves order
-and freezes custom JsonValue sources through Stage13. It accepts at most256
+`LogFields(Sequencing<JsonField>)` rejects duplicate/empty names, preserves order
+and keeps the fields as one immutable `Json` object. It accepts at most256
 members, names at most4096 scalars, depth32 and rendered snapshot1MiB.
 `membership(name)`, `value(name)` (MissingLogField), `members()` and `values()`
-observe the immutable snapshot; values returns JsonObject. `EmptyLogFields().value()`
+observe the immutable snapshot; values returns the `Json` object. `EmptyLogFields().value()`
 and `CombinedLogFields(base,added).value()` are projections. Overrides keep their
 original position; new names append. Empty immutable layers reuse the snapshot.
-Bytes, domain values and dates require explicit JsonValue representations.
+Bytes, domain values and dates require explicit `Json` representations.
 
 `LogContext(name,fields,process)` requires a nonnegative process ID; zero means
 unavailable. `LogRecord(time,level,message,context[,cause])` observes time, level,
@@ -54,8 +54,8 @@ segment prefix (at most1024 unique overrides) and admits the threshold inclusive
 `EnabledLog(allowing,name,level).value()` permits avoiding expensive record creation.
 
 `RedactedLogs(destination,Sequencing<string>,replacement)` replaces exact,
-case-sensitive top-level fields, keeping their positions. It freezes replacement
-JsonValue and bounds selected names to256. `RedactedCauseLogs(destination,text)`
+case-sensitive top-level fields, keeping their positions. It takes the replacement
+as a `Json` and bounds selected names to256. `RedactedCauseLogs(destination,text)`
 replaces only an existing cause. Place redaction outside queue/broadcast/sinks.
 This policy does not discover secrets in messages or nested objects.
 

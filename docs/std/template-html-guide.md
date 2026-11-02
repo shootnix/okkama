@@ -5,7 +5,7 @@
 HtmlTemplate(source) binds source without parsing. The four-argument constructor
 adds nonnegative maximum_input, maximum_nodes, maximum_output (defaults 65536
 source scalars, 10000 instructions, 1048576 UTF-8 bytes). source() returns the
-original spelling. string(JsonValue) and write(JsonValue,WritingText) validate the
+original spelling. string(Json) and write(Json,WritingText) validate the
 complete program before any data/sink observation. Repeated calls compile anew.
 
 This first slice accepts flat variables, current item '.', template comments and

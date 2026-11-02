@@ -3,6 +3,7 @@ package okkama.rt;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 
 /**
  * Natives {@code runtime/json}: строгий разбор JSON (RFC 8259) в дерево
@@ -511,5 +512,374 @@ public final class JsonNatives {
             throw failure("invalid_input", "json_member_value", 2, "JSON node is not an object");
         }
         return node.values.get(index(node, position, "json_member_value", "JSON member index is outside the node"));
+    }
+
+    public static BigInteger runtime_json__json_member_position(Object handle, String name) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            throw failure("invalid_input", "json_member_position", 2, "JSON node is not an object");
+        }
+        return BigInteger.valueOf(node.names.indexOf(name));
+    }
+
+    // A JSON string literal: '"' and backslash escaped, \n, \r, \t by name, the
+    // other controls U+0000..U+001F as lowercase u00xx escapes, everything else as is.
+    public static String runtime_json__json_quote(String origin) {
+        StringBuilder quoted = new StringBuilder(origin.length() + 2);
+        appendQuoted(quoted, origin);
+        return quoted.toString();
+    }
+
+    private static void appendQuoted(StringBuilder quoted, String origin) {
+        quoted.append('"');
+        for (int at = 0; at < origin.length(); at++) {
+            char character = origin.charAt(at);
+            switch (character) {
+                case '"': quoted.append("\\\""); break;
+                case '\\': quoted.append("\\\\"); break;
+                case '\n': quoted.append("\\n"); break;
+                case '\r': quoted.append("\\r"); break;
+                case '\t': quoted.append("\\t"); break;
+                default:
+                    if (character < 0x20) {
+                        quoted.append(String.format("\\u%04x", (int) character));
+                    } else {
+                        quoted.append(character);
+                    }
+            }
+        }
+        quoted.append('"');
+    }
+
+    // The JSON spelling of an exact decimal, as json.Json writes it:
+    // positional for integers up to 21 digits and fractions down to 1e-6, the
+    // canonical scientific form beyond them.
+    public static String runtime_json__json_number_text(String origin) {
+        ValueNatives.Decimal parts = ValueNatives.components(origin);
+        if (parts == null) {
+            throw failure("invalid_input", "json_number_text", 1, "not a decimal number");
+        }
+        String sign = parts.sign < 0 ? "-" : "";
+        BigInteger length = BigInteger.valueOf(parts.digits.length());
+        if (parts.exponent.signum() >= 0) {
+            if (length.add(parts.exponent).compareTo(BigInteger.valueOf(21)) <= 0) {
+                return sign + parts.digits + zeros(parts.exponent.intValue());
+            }
+            return ValueNatives.runtime_decimal__decimal_canonical(origin);
+        }
+        BigInteger point = length.add(parts.exponent);
+        if (point.signum() > 0) {
+            int at = point.intValue();
+            return sign + parts.digits.substring(0, at) + "." + parts.digits.substring(at);
+        }
+        if (point.negate().compareTo(BigInteger.valueOf(5)) <= 0) {
+            return sign + "0." + zeros(point.negate().intValue()) + parts.digits;
+        }
+        return ValueNatives.runtime_decimal__decimal_canonical(origin);
+    }
+
+    private static String zeros(int count) {
+        StringBuilder zeros = new StringBuilder(count);
+        for (int at = 0; at < count; at++) {
+            zeros.append('0');
+        }
+        return zeros.toString();
+    }
+
+    // JSON text being written: appends go to the end, and every append answers
+    // the UTF-8 size of the whole text so far.
+    static final class Output {
+        final StringBuilder text = new StringBuilder();
+        long bytes;
+
+        BigInteger appended(int from) {
+            for (int at = from; at < text.length(); at++) {
+                char unit = text.charAt(at);
+                if (unit < 0x80) {
+                    bytes += 1;
+                } else if (unit < 0x800) {
+                    bytes += 2;
+                } else if (Character.isHighSurrogate(unit) && at + 1 < text.length()
+                        && Character.isLowSurrogate(text.charAt(at + 1))) {
+                    bytes += 4;
+                    at++;
+                } else {
+                    bytes += 3;
+                }
+            }
+            return BigInteger.valueOf(bytes);
+        }
+    }
+
+    public static Object runtime_json__json_output() {
+        return new Output();
+    }
+
+    public static BigInteger runtime_json__json_output_raw(Object handle, String raw) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        output.text.append(raw);
+        return output.appended(from);
+    }
+
+    public static BigInteger runtime_json__json_output_text(Object handle, String origin) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        appendQuoted(output.text, origin);
+        return output.appended(from);
+    }
+
+    public static BigInteger runtime_json__json_output_number(Object handle, String origin) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        output.text.append(runtime_json__json_number_text(origin));
+        return output.appended(from);
+    }
+
+    public static BigInteger runtime_json__json_output_member(Object handle, String name, boolean first) {
+        Output output = (Output) handle;
+        int from = output.text.length();
+        if (!first) {
+            output.text.append(',');
+        }
+        appendQuoted(output.text, name);
+        output.text.append(':');
+        return output.appended(from);
+    }
+
+    public static String runtime_json__json_output_string(Object handle) {
+        return ((Output) handle).text.toString();
+    }
+
+    // The first index whose name repeats an earlier one, or the count.
+    public static BigInteger runtime_json__json_repeated_name(List<?> names) {
+        HashSet<Object> seen = new HashSet<Object>();
+        for (int index = 0; index < names.size(); index++) {
+            if (!seen.add(names.get(index))) {
+                return BigInteger.valueOf(index);
+            }
+        }
+        return BigInteger.valueOf(names.size());
+    }
+
+    // The member `name` of an object node, or null when the node is not an
+    // object or has no such member.
+    private static Node member(Object handle, String name) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            return null;
+        }
+        int at = node.names.indexOf(name);
+        return at < 0 ? null : node.values.get(at);
+    }
+
+    public static String runtime_json__json_member_text(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member == null || member.kind != 3) {
+            throw failure("invalid_input", "json_member_text", 2, "JSON member is missing or not a string");
+        }
+        return member.value;
+    }
+
+    public static String runtime_json__json_member_spelling(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member == null || member.kind != 2) {
+            throw failure("invalid_input", "json_member_spelling", 2, "JSON member is missing or not a number");
+        }
+        return member.value;
+    }
+
+    public static boolean runtime_json__json_member_boolean(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member == null || member.kind != 1) {
+            throw failure("invalid_input", "json_member_boolean", 2, "JSON member is missing or not boolean");
+        }
+        return member.flag;
+    }
+
+    // Only a plain integer spelling of up to 18 digits: always within int.
+    public static BigInteger runtime_json__json_member_int(Object handle, String name) {
+        Node member = member(handle, name);
+        if (member != null && member.kind == 2) {
+            String digits = member.value.startsWith("-") ? member.value.substring(1) : member.value;
+            boolean plain = !digits.isEmpty() && digits.length() <= 18;
+            for (int at = 0; plain && at < digits.length(); at++) {
+                plain = Character.isDigit(digits.charAt(at)) && digits.charAt(at) < 128;
+            }
+            if (plain) {
+                return BigInteger.valueOf(Long.parseLong(member.value));
+            }
+        }
+        throw failure("invalid_input", "json_member_int", 2, "JSON member is missing or not a short integer");
+    }
+
+    private static Node leaf(int kind) {
+        Node node = new Node();
+        node.kind = kind;
+        return node;
+    }
+
+    public static Object runtime_json__json_text_node(String value) {
+        Node node = leaf(3);
+        node.value = value;
+        return node;
+    }
+
+    public static Object runtime_json__json_number_node(String spelling) {
+        if (ValueNatives.components(spelling) == null) {
+            throw failure("invalid_input", "json_number_node", 1, "not a decimal number");
+        }
+        Node node = leaf(2);
+        node.value = spelling;
+        return node;
+    }
+
+    public static Object runtime_json__json_boolean_node(boolean flag) {
+        Node node = leaf(1);
+        node.flag = flag;
+        return node;
+    }
+
+    public static Object runtime_json__json_null_node() {
+        return leaf(0);
+    }
+
+    public static Object runtime_json__json_array_node(List<?> values) {
+        Node node = leaf(4);
+        node.values = new ArrayList<Node>(values.size());
+        for (Object value : values) {
+            node.values.add((Node) value);
+        }
+        return node;
+    }
+
+    public static Object runtime_json__json_object_node(List<?> names, List<?> values) {
+        if (names.size() != values.size()) {
+            throw failure("invalid_input", "json_object_node", 2, "JSON member names and values differ in number");
+        }
+        Node node = leaf(5);
+        node.names = new ArrayList<String>(names.size());
+        node.values = new ArrayList<Node>(values.size());
+        HashSet<String> seen = new HashSet<String>();
+        for (int index = 0; index < names.size(); index++) {
+            String name = (String) names.get(index);
+            if (!seen.add(name)) {
+                throw failure("invalid_input", "json_object_node", 2, "duplicate JSON member name");
+            }
+            node.names.add(name);
+            node.values.add((Node) values.get(index));
+        }
+        return node;
+    }
+
+    // JSON text of a node: compact for a negative indentation, otherwise one
+    // member or element per line, level * indentation spaces, ": " after
+    // names, empty containers as [] and {} and no final line break.
+    public static String runtime_json__json_node_write(Object handle, BigInteger indentation) {
+        StringBuilder out = new StringBuilder();
+        write(out, (Node) handle, indentation.signum() < 0 ? -1 : indentation.intValue(), 0);
+        return out.toString();
+    }
+
+    private static void line(StringBuilder out, int indentation, int level) {
+        if (indentation >= 0) {
+            out.append('\n');
+            for (int space = 0; space < indentation * level; space++) {
+                out.append(' ');
+            }
+        }
+    }
+
+    private static void write(StringBuilder out, Node node, int indentation, int level) {
+        switch (node.kind) {
+            case 0: out.append("null"); break;
+            case 1: out.append(node.flag ? "true" : "false"); break;
+            case 2: out.append(runtime_json__json_number_text(node.value)); break;
+            case 3: appendQuoted(out, node.value); break;
+            case 4:
+                out.append('[');
+                for (int index = 0; index < node.values.size(); index++) {
+                    if (index > 0) {
+                        out.append(',');
+                    }
+                    line(out, indentation, level + 1);
+                    write(out, node.values.get(index), indentation, level + 1);
+                }
+                if (!node.values.isEmpty()) {
+                    line(out, indentation, level);
+                }
+                out.append(']');
+                break;
+            default:
+                out.append('{');
+                for (int index = 0; index < node.values.size(); index++) {
+                    if (index > 0) {
+                        out.append(',');
+                    }
+                    line(out, indentation, level + 1);
+                    appendQuoted(out, node.names.get(index));
+                    out.append(indentation >= 0 ? ": " : ":");
+                    write(out, node.values.get(index), indentation, level + 1);
+                }
+                if (!node.values.isEmpty()) {
+                    line(out, indentation, level);
+                }
+                out.append('}');
+        }
+    }
+
+    // The member names and item indices from root down to target (the same
+    // node), depth first, as an RFC 6901 pointer.
+    public static String runtime_json__json_node_pointer(Object root, Object target) {
+        ArrayList<String> path = new ArrayList<String>();
+        if (!findPath((Node) root, (Node) target, path)) {
+            throw failure("invalid_input", "json_node_pointer", 2, "JSON node is not inside the document");
+        }
+        StringBuilder pointer = new StringBuilder();
+        for (String token : path) {
+            pointer.append('/').append(token.replace("~", "~0").replace("/", "~1"));
+        }
+        return pointer.toString();
+    }
+
+    private static boolean findPath(Node root, Node target, ArrayList<String> path) {
+        if (root == target) {
+            return true;
+        }
+        if (root.kind != 4 && root.kind != 5) {
+            return false;
+        }
+        for (int index = 0; index < root.values.size(); index++) {
+            path.add(root.kind == 4 ? String.valueOf(index) : root.names.get(index));
+            if (findPath(root.values.get(index), target, path)) {
+                return true;
+            }
+            path.remove(path.size() - 1);
+        }
+        return false;
+    }
+
+    public static List<Object> runtime_json__json_member_values(Object handle) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            throw failure("invalid_input", "json_member_values", 1, "JSON node is not an object");
+        }
+        return new ArrayList<Object>(node.values);
+    }
+
+    public static List<Object> runtime_json__json_member_names(Object handle) {
+        Node node = (Node) handle;
+        if (node.kind != 5) {
+            throw failure("invalid_input", "json_member_names", 1, "JSON node is not an object");
+        }
+        return new ArrayList<Object>(node.names);
+    }
+
+    public static List<Object> runtime_json__json_node_items(Object handle) {
+        Node node = (Node) handle;
+        if (node.kind != 4) {
+            throw failure("invalid_input", "json_node_items", 1, "JSON node is not an array");
+        }
+        return new ArrayList<Object>(node.values);
     }
 }

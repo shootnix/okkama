@@ -161,11 +161,19 @@ String literals support these escape sequences:
 \t    tab
 \"    double quote
 \\    backslash
+\u{H} Unicode scalar value U+H, 1 to 6 hexadecimal digits
 ```
 
 Character literals support the corresponding single-character escapes `\n`,
-`\r`, `\t`, `\'`, and `\\`. Escape sequences are decoded before the char literal's
-exactly-one-character rule is checked.
+`\r`, `\t`, `\'`, and `\\`, and the same `\u{H}` escape. Escape sequences are
+decoded before the char literal's exactly-one-character rule is checked.
+
+`\u{H}` takes one to six hexadecimal digits in either case, leading zeros
+allowed, and names exactly that code point: `"\u{1b}[0m"`, `"\u{e9}"`,
+`'\u{0}'`. The value must be a Unicode scalar value; surrogates
+`D800`..`DFFF` and values above `10FFFF` are lexer errors, as are a missing
+brace, no digits or more than six digits. This is the only way to write
+control characters other than `\n`, `\r` and `\t` in source.
 
 An escaped quote does not terminate its literal. Unknown escape sequences and
 a trailing backslash without an escaped character are lexer errors. A token's
@@ -1725,6 +1733,21 @@ dispatch and visits each item in `available`, `current`, body, `advanced`
 order. A body or result failure stops before `advanced()` for that item. The
 concrete standard role specialization supplies exact `T`; a structurally
 matching local role does not enable functional operations.
+
+The suffix `-> bindings { ... }` is a postfix form of its `map`, `filter` or
+`reduce` call, like a further member call, so it binds tighter than every
+operator and may appear wherever an operand may:
+
+```okkama
+let total = base + values.reduce(0) -> sum, value { sum + value; };
+let found = ready && values.filter() -> value { value > 3; }.size() > 0;
+```
+
+Only the top level of a `for` source is different: there the arrow always
+belongs to the `for`, so a functional source is grouped, as in
+`for (values.map() -> v { v + 1; }) -> item { ... }`. Nested expressions of
+the source (arguments, indices, parentheses, blocks) complete their
+functional calls as usual.
 
 The operation block is a dedicated lexical child expression, not a
 first-class function, lambda or callable object. It captures its surrounding

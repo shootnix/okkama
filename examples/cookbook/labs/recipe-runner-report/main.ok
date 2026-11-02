@@ -10,17 +10,16 @@
 module cookbook/runner_report v1.0.0;
 import "testing/runner" take RecordedTestReport;
 import "testing/report" take JUnitTestReport;
-import "json/value" take JsonObject,JsonMember,JsonText,JsonNumber,JsonArray;
-import "json/write" take CompactJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 import "io/stdout" take Stdout;
 
 main() is int {
-    let wire = CompactJson(origin: JsonObject([
-        JsonMember("start_ns", JsonText("0")),
-        JsonMember("duration_ns", JsonText("0")),
-        JsonMember("seed", JsonNumber(Decimal("42"))),
-        JsonMember("results", JsonArray([]))
+    let wire = (Json([
+        JsonField("start_ns", Json("0")),
+        JsonField("duration_ns", Json("0")),
+        JsonField("seed", Json(Decimal("42"))),
+        JsonField("results", Json(items: []))
     ])).string();
     let report = RecordedTestReport(wire).value();
     Stdout().writeln(JUnitTestReport(report, "cookbook").string());

@@ -313,3 +313,20 @@ fn tail_expression_semicolons_are_optional_without_changing_values() {
         syntax::format::format(&SourceFile::new("tail.ok", formatted.clone()).unwrap()).unwrap();
     assert_eq!(formatted, twice);
 }
+
+#[test]
+fn postfix_functionals_compose_with_optional_and_compact_choices() {
+    check(
+        r#"main() is int {
+            let total = 1 + [20, 21].reduce(0) -> sum, value { sum + value };
+            let fallback = Maybe<int>.none else [20, 22].reduce(0) -> sum, value { sum + value };
+            let selected = total == 42 ?? [20, 22].reduce(0) -> sum, value { sum + value } !! 0;
+            let values = [Maybe.some(42), Maybe<int>.none].map() -> item { item else 42 };
+            for (values.map() -> value { value == 42 ?? value !! 0 }) -> value {
+                if value != 42 { return 0; }
+            }
+            if total == fallback && fallback == selected { total } else { 0 };
+        }"#,
+        "42",
+    );
+}

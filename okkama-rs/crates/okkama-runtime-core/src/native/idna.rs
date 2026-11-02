@@ -530,12 +530,7 @@ pub(crate) fn suffix_parts(source: &str) -> Result<(Vec<String>, usize), ()> {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let name = native
-        .symbol()
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let name = native.name();
     match name {
         "hostname_ascii" | "hostname_unicode" => {
             let invalid = || failure("core.idna", "invalid_input", native, "invalid bounded IDNA hostname");

@@ -10,17 +10,16 @@
 module example v1.0.0;
 
 import "strings/format" take Formatted;
-import "json/value" take JsonObject, JsonMember, JsonText, JsonNumber;
-import "json/write" take CompactJson;
+import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
 
 object ExampleResult {
     ExampleResult();
     value() is string {
         let greeting = Formatted(pattern: "Hello, {}!", values: ["Ada"]);
-        CompactJson(origin: JsonObject(members: [
-            JsonMember(name: "greeting", value: JsonText(greeting.string())),
-            JsonMember(name: "amount", value: JsonNumber(Decimal("12.50"))),
+        (Json(fields: [
+            JsonField(name: "greeting", value: Json(greeting.string())),
+            JsonField(name: "amount", value: Json(Decimal("12.50"))),
         ])).string();
     }
 }

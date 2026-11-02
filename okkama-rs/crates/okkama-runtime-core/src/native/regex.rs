@@ -1108,12 +1108,7 @@ fn names_map(names: &BTreeMap<String, usize>) -> Value {
 }
 
 pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
-    let name = native.symbol();
-    let operation = name
-        .split("::")
-        .nth(1)
-        .and_then(|rest| rest.split('/').next())
-        .unwrap_or("");
+    let operation = native.name();
     match operation {
         "regex_state_create" => {
             let mut flags = [false; 5];
@@ -1248,6 +1243,6 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 Value::Int(amount)
             })
         }
-        _ => Err(Error::InvalidState(format!("{name} is not a regex native"))),
+        _ => Err(Error::InvalidState(format!("{} is not a regex native", native.symbol()))),
     }
 }

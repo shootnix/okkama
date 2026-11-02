@@ -637,7 +637,7 @@ Action directives are no longer supported; use an explicit result type.
 
 ## 15. Связь с текущим кодом и источники
 
-В исходной базе POC Json.get возвращал Json и бросал MissingJsonValue, а optional объединял missing/null. В текущей рабочей ветке см. [JsonView](../../std/json/read.ok) и [JSON reading](../std/json-reading.md): member/name-accessors сохраняют WrongJsonKind/MissingJsonValue и JSON pointer; membership позволяет проверить наличие поля. [DbValue](../../std/db/value.ok) — динамический SQL-value protocol; [Row](../../std/db/row.ok) различает missing column и SQL NULL.
+В исходной базе POC Json.get возвращал Json и бросал MissingJsonValue, а optional объединял missing/null. В текущей рабочей ветке см. [Json](../../std/json.ok) и [JSON API](../std/json.md): get/name-accessors сохраняют WrongJsonKind/MissingJsonValue и JSON pointer; has позволяет проверить наличие поля. [DbValue](../../std/db/value.ok) — динамический SQL-value protocol; [Row](../../std/db/row.ok) различает missing column и SQL NULL.
 
 Основные места будущих изменений:
 

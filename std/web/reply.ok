@@ -2,8 +2,7 @@ module web/reply v1.0.0;
 import "http/handler" take HandlingResult,HandlingKind,WebSocketHandling,WrongHandlingKind;
 import "http/message" take Response;
 import "http/websocket_server" take WebSocketUpgrade;
-import "json/value" take JsonValue;
-import "json/write" take CompactJson;
+import "json" take Json;
 import "encoding/utf" take Utf8Encoded;
 import "web/internal/reply" take ReplyHeaders,ReplyResponse,EmptyReplyResponse,BodyStatus,InvalidReply;
 
@@ -12,7 +11,7 @@ import "web/internal/reply" take ReplyHeaders,ReplyResponse,EmptyReplyResponse,B
 // when it needs full control. header(name, value) is a successor that adds one
 // field; Content-Type, Content-Length and Transfer-Encoding belong to the reply.
 //
-//     Json(200, UserJson(user: user).value()).header("Cache-Control", "no-store");
+//     JsonReply(200, UserJson(user: user).value()).header("Cache-Control", "no-store");
 
 object Text does HandlingResult {
     has code is int;
@@ -54,32 +53,32 @@ object Html does HandlingResult {
     application() is WebSocketHandling { throw WrongHandlingKind(); }
 }
 
-object Json does HandlingResult {
+object JsonReply does HandlingResult {
     has code is int;
-    has content is JsonValue;
+    has content is Json;
     has extra is ReplyHeaders;
 
-    Json(status is int, value is JsonValue) {
+    JsonReply(status is int, value is Json) {
         code = BodyStatus(status).code();
         content = value;
         extra = ReplyHeaders();
     }
 
-    header(name is string, value is string) is ^Json { ^extra = extra.added(name, value); }
+    header(name is string, value is string) is ^JsonReply { ^extra = extra.added(name, value); }
     status() is int { code; }
 
     kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { ReplyResponse(code, "application/json", Utf8Encoded(CompactJson(origin: content).string()).bytes(), extra).response(); }
+    response() is Response { ReplyResponse(code, "application/json", Utf8Encoded(content.string()).bytes(), extra).response(); }
     websocket() is WebSocketUpgrade { throw WrongHandlingKind(); }
     application() is WebSocketHandling { throw WrongHandlingKind(); }
 }
 
 // 201 with a Location field and the created representation.
 object Created does HandlingResult {
-    has content is JsonValue;
+    has content is Json;
     has extra is ReplyHeaders;
 
-    Created(location is string, value is JsonValue) {
+    Created(location is string, value is Json) {
         confirm location != "" else throw InvalidReply("Created requires a location");
         content = value;
         extra = ReplyHeaders().added("Location", location);
@@ -89,7 +88,7 @@ object Created does HandlingResult {
     status() is int { 201; }
 
     kind() is HandlingKind { HandlingKind.response; }
-    response() is Response { ReplyResponse(201, "application/json", Utf8Encoded(CompactJson(origin: content).string()).bytes(), extra).response(); }
+    response() is Response { ReplyResponse(201, "application/json", Utf8Encoded(content.string()).bytes(), extra).response(); }
     websocket() is WebSocketUpgrade { throw WrongHandlingKind(); }
     application() is WebSocketHandling { throw WrongHandlingKind(); }
 }

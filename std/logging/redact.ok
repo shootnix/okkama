@@ -2,19 +2,19 @@ module logging/redact v1.0.0;
 import "logging/write" take LogWriting;
 import "logging/record" take LogRecord,LogContext;
 import "logging/field" take LogFields,InvalidLogField;
-import "json/value" take JsonValue,JsonMember;
+import "json" take Json,JsonField;
 import "collections/sequence" take Sequencing;
 object RedactedLogs does LogWriting{
-    has origin is LogWriting;has names is @string;has replacement is JsonValue;
-    RedactedLogs(origin is LogWriting,names is Sequencing<string>,replacement is JsonValue){
+    has origin is LogWriting;has names is @string;has replacement is Json;
+    RedactedLogs(origin is LogWriting,names is Sequencing<string>,replacement is Json){
         let size=names.size();confirm size>=0 && size<=256 else throw InvalidLogField("redaction name count exceeds 256");
         let snapshot is @string=(0..size).map()->index{let name=names.item(index);confirm name!="" && name.length()<=4096 else throw InvalidLogField("invalid redaction name");name;};
-        self.origin=origin;self.names=snapshot;self.replacement=LogFields([JsonMember("replacement",replacement)]).value("replacement");
+        self.origin=origin;self.names=snapshot;self.replacement=LogFields([JsonField("replacement",replacement)]).value("replacement");
     }
     write(record is LogRecord) is void{
-        let members is @JsonMember=record.context().fields().members().map()->member{
+        let members is @JsonField=record.context().fields().members().map()->member{
             let matches=names.reduce(false)->old,name{old || name==member.name();};
-            if matches{JsonMember(member.name(),replacement);}else{member;}
+            if matches{JsonField(member.name(),replacement);}else{member;}
         };
         let causes is @Error=if record.has_cause(){[record.cause()];}else{[];};
         origin.write(ChangedLogRecord(record,LogFields(members),causes).value());

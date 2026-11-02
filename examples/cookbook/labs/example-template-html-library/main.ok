@@ -10,10 +10,10 @@
 module app v1.0.0;
 import "template/html" take HtmlTemplate;
 import "template/html_library" take HtmlTemplateLibrary, NamedHtmlTemplate;
-import "json/value" take JsonText;
+import "json" take Json;
 import "io/stdout" take Stdout;
 main() is int {
     let library=HtmlTemplateLibrary([NamedHtmlTemplate("item",HtmlTemplate("<b>{{.}}</b>"))]);
-    Stdout().writeln(library.value("item").string(JsonText("Ada & Grace")));
+    Stdout().writeln(library.value("item").string(Json("Ada & Grace")));
     0;
 }

@@ -344,3 +344,15 @@ fn loop_edge_swaps_parameters_simultaneously() {
         "1"
     );
 }
+
+#[test]
+fn values_of_separate_branches_share_registers() {
+    let body = "let x = 3; let a = if x == 1 { 10 + x; } else { if x == 2 { 20 + x; } else { if x == 3 { 30 + x; } else { 40 + x; } } }; let b = a * 2; b + a;";
+    let module = lower(body);
+    let program = codegen::sparrow::generate(&module).unwrap();
+    let main = &program.functions[program.entry.unwrap().0 as usize];
+    let values = module.functions.iter().find(|function| function.symbol == "main").unwrap().values.len();
+    assert!(main.registers.len() < values, "{} registers for {values} values", main.registers.len());
+    assert_eq!(sparrow::execute(&program).unwrap().to_string(), "99");
+    assert_eq!(sparrow::execute(&program).unwrap(), execute(&module).unwrap());
+}

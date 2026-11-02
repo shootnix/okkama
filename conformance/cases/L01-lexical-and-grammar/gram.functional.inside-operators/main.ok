@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Pair {
+    has left is int;
+    has right is int;
+    Pair(:left, :right);
+    sum() is int { left + right; }
+}
+
+main() is int {
+    let out = Stdout();
+    let xs = [1, 2, 3, 4];
+    let total = 100 + xs.reduce(0) -> acc, x { acc + x; };
+    let ready = total > 0 && xs.filter() -> x { x > 3; }.size() == 1;
+    let negated = !xs.map() -> x { x > 0; }.reduce(true) -> all, x { all && x; };
+    let pair = Pair(left: xs.map() -> x { x * 2; }.size(), right: xs.reduce(0) -> acc, x { acc + x * x; });
+    let nested = xs.reduce(0) -> acc, x { acc + [x, x].reduce(0) -> inner, y { inner + y; }; };
+    if xs.filter() -> x { x % 2 == 0; }.size() == 2 {
+        out.writeln("evens");
+    }
+    out.writeln(total.string() + " " + ready.string() + " " + negated.string() + " " + pair.sum().string() + " " + nested.string());
+    0;
+}

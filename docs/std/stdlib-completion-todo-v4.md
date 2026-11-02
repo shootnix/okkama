@@ -193,7 +193,7 @@ InvalidBigPowerLimit, BigPowerLimitExceeded. Нативные коды оста�
   JsonValue: парсер ограничен, произвольный печатаемый объект — ещё нет.
 
 Проверено: 6 файлов / 501 тест; полная регрессия — 372 файла / 3851 тест, PASS.
-[Контракт и ограничение Perl runtime](json-printing-guide.md).
+[Контракт и ограничение Perl runtime](json.md).
 
 ### Структурный текст: CSV частично реализован; конфигурации, шаблоны — DESIGN
 
@@ -572,7 +572,7 @@ resource-policy task, as for BigInt sum/product.
 ### `json/write` — VERIFIED
 
 PrettyJson реализован через JsonWriting; лимиты и ошибки описаны в
-[контракте печати](json-printing-guide.md). Полная регрессия: 372 файла / 3851 тест, PASS.
+[контракте печати](json.md). Полная регрессия: 372 файла / 3851 тест, PASS.
 
 - [x] Числа печатаются позиционно, пока это коротко (пороги JS Number#toString), точно и без float;
   дальше — каноническая форма. Найдено на web/exception (`404` печаталось как `4.04e2`).
@@ -580,7 +580,7 @@ PrettyJson реализован через JsonWriting; лимиты и ошиб
 
 ### `json/read` — VERIFIED
 
-[Контракт](json-reading.md). Тесты: 660 (8 проверок) и inline.
+[Контракт](json.md). Тесты: 660 (8 проверок) и inline.
 
 - [x] JsonView через протокол print(JsonWriting), без приведения типов; один уровень за обращение.
 - [x] JSON Pointer (RFC 6901) в каждой ошибке: WrongJsonKind, MissingJsonValue, InvalidJsonNumber.

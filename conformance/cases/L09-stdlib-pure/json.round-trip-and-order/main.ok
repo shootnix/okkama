@@ -1,16 +1,13 @@
 module app v1.0.0;
 
 import "conformance/check" take Checks;
-import "json/parse" take ParsedJson, InvalidJson;
-import "json/write" take CompactJson;
-import "json/read" take JsonView, InvalidJsonNumber;
-import "json/value" take JsonText, JsonNumber, DuplicateJsonMember;
+import "json" take Json, ParsedJson;
 import "math/decimal" take Decimal;
 
 main() is int {
     let c = Checks();
-    c = c.same_text("compact print", CompactJson(origin: ParsedJson(origin: "{ \"b\": [1, 2.50, true, null], \"a\": \"x\" }")).string(), "{\"b\":[1,2.5,true,null],\"a\":\"x\"}");
-    c = c.same_text("integer spelling", CompactJson(origin: JsonNumber(value: Decimal("1000"))).string(), "1000");
-    c = c.same_text("text round trip", JsonView(origin: ParsedJson(origin: CompactJson(origin: JsonText(value: "q\"\\ é\n")).string())).text(), "q\"\\ é\n");
+    c = c.same_text("compact print", ParsedJson(origin: "{ \"b\": [1, 2.50, true, null], \"a\": \"x\" }").value().string(), "{\"b\":[1,2.5,true,null],\"a\":\"x\"}");
+    c = c.same_text("integer spelling", (Json(value: Decimal("1000"))).string(), "1000");
+    c = c.same_text("text round trip", ParsedJson(origin: Json(value: "q\"\\ é\n").string()).value().text(), "q\"\\ é\n");
     c.done();
 }

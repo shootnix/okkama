@@ -4,8 +4,7 @@ import "io/stdout" take Stdout;
 import "fs/file" take File, FileMode, FileEntry, FileContent;
 import "fs/path" take Path;
 import "encoding/utf" take Utf8Decoded, InvalidUtf8;
-import "json/parse" take ParsedJson, InvalidJson;
-import "json/read" take JsonView;
+import "json" take ParsedJson, InvalidJson;
 import "io/decorators" take ByteSnapshot;
 
 main() is int {
@@ -20,7 +19,7 @@ main() is int {
     let decoded = try { Utf8Decoded(origin: raw).string(); } catch e is InvalidUtf8 { "invalid utf-8 at " + e.offset().string(); };
     out.writeln(decoded);
     let deep = try {
-        JsonView(origin: ParsedJson(origin: "[[[1]]]", maximum_depth: 2)).items().size().string();
+        ParsedJson(origin: "[[[1]]]", maximum_depth: 2).value().items().size().string();
     } catch e is InvalidJson {
         "too deep";
     };

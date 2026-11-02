@@ -2,7 +2,7 @@ module template/html v1.0.0;
 import "template/compile" take TemplateProgram, TemplateInstruction, InvalidTemplateLimits;
 import "template/json" take JsonTemplateStrings;
 import "template/sections" take TemplateSectionOutput;
-import "json/value" take JsonValue;
+import "json" take Json;
 import "html/entities" take EscapedHtml;
 import "io/stream" take WritingText;
 import "io/buffer" take ByteBuffer;
@@ -34,12 +34,12 @@ object HtmlTemplate {
         origin=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;self.maximum_output=maximum_output;
     }
     source() is string {origin;}
-    string(data is JsonValue) is string {
+    string(data is Json) is string {
         let output=ByteBuffer();defer output.closing().close();
         self.write(data,Utf8Output(origin:output.writing()));
         Utf8Decoded(output.content().bytes()).string();
     }
-    write(data is JsonValue, destination is WritingText) is void {
+    write(data is Json, destination is WritingText) is void {
         let instructions=HtmlTemplateProgram(origin,maximum_input,maximum_nodes).instructions();
         let output=TemplateSectionOutput(destination,maximum_output);
         for instructions -> instruction {

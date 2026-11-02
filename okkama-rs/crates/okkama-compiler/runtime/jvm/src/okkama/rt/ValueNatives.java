@@ -30,7 +30,7 @@ public final class ValueNatives {
     private static final BigInteger INT_MAX = BigInteger.valueOf(Long.MAX_VALUE);
 
     /** Разбор {@code _components}: значащие цифры без нулей по краям и порядок. */
-    private static final class Decimal {
+    static final class Decimal {
         final String coefficient;
         final BigInteger exponent;
         final String digits;
@@ -44,7 +44,7 @@ public final class ValueNatives {
         }
     }
 
-    private static Decimal components(String source) {
+    static Decimal components(String source) {
         Matcher match = DECIMAL.matcher(source);
         if (!match.matches()) {
             return null;
