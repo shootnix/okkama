@@ -22,8 +22,9 @@ import "json" take Json, JsonField;
 import "db/sqlite" take SqliteMemory;
 import "db/sqlite/script" take SqliteScript;
 import "db/prepared" take Prepared,DbPreparing;
-import "db/value" take DbInteger,DbText,ObservedDbValue;
-import "db/row" take Row,RowsEnded;
+import "db/param" take Param;
+import "db/row" take Row;
+import "db/query" take Query;
 import "numbers/bigint" take BigInt,InvalidBigInt;
 import "async/atomic" take Atomic;
 import "io/stdout" take Stdout;
@@ -160,32 +161,26 @@ object SqliteUserRepository does UserRepository {
     async user(id is UserId) is User {
         let statement = await Prepared(db, "SELECT id, name, email FROM users WHERE id = ?").statement();
         defer statement.close();
-        let rows = await statement.rows([DbInteger(id.number())]);
-        defer rows.close();
-        let row = try { await rows.row(); } catch failure is RowsEnded { throw UserNotFound(id: id); };
+        let row = (await Query(statement,[Param(id.number())]).maybe()) else throw UserNotFound(id: id);
         UserRow(row: row).user();
     }
 
     async email_taken(email is Email) is bool {
         let statement = await Prepared(db, "SELECT count(*) AS total FROM users WHERE email = ?").statement();
         defer statement.close();
-        let rows = await statement.rows([DbText(email.string())]);
-        defer rows.close();
-        ObservedDbValue((await rows.row()).value("total")).integer().sign() > 0;
+        (await Query(statement,[Param(email.string())]).one()).int("total") > 0;
     }
 
     async added(name is UserName, email is Email) is User {
         let statement = await Prepared(db, "INSERT INTO users(name, email) VALUES(?, ?) RETURNING id, name, email").statement();
         defer statement.close();
-        let rows = await statement.rows([DbText(name.string()), DbText(email.string())]);
-        defer rows.close();
-        UserRow(row: await rows.row()).user();
+        UserRow(row: await Query(statement,[Param(name.string()), Param(email.string())]).one()).user();
     }
 
     async saved(user is User) is void {
         let statement = await Prepared(db, "UPDATE users SET name = ?, email = ? WHERE id = ?").statement();
         defer statement.close();
-        await statement.execution([DbText(user.name().string()), DbText(user.email().string()), DbInteger(user.id().number())]);
+        await statement.execution([Param(user.name().string()), Param(user.email().string()), Param(user.id().number())]);
     }
 }
 
@@ -197,9 +192,9 @@ object UserRow {
 
     user() is User {
         User(
-            id: UserId(number: ObservedDbValue(row.value("id")).integer()),
-            name: UserName(origin: ObservedDbValue(row.value("name")).text()),
-            email: Email(origin: ObservedDbValue(row.value("email")).text())
+            id: UserId(number: row.integer("id")),
+            name: UserName(origin: row.text("name")),
+            email: Email(origin: row.text("email"))
         );
     }
 }

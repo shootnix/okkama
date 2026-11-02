@@ -1,0 +1,19 @@
+module bench/inlineprobe v1.0.0;
+import "runtime/database" as db;
+import "io/stdout" take Stdout;
+import "os/environment" take Environment;
+async main() is int {
+    let state=db.sqlite_create([],false,true,true,5000,"memory",true);
+    defer await db.sqlite_settled(state);
+    defer db.sqlite_close(state);
+    let inline=Environment().variable("OKKAMA_SQLITE_INLINE_BENCH")=="1";
+    let pending=db.sqlite_connect(state);
+    confirm pending.done()==inline else panic "requested SQLite dispatch mode is not active";
+    let opened=await pending;
+    confirm db.sqlite_reply_ok(opened) else panic "SQLite open failed";
+    db.sqlite_reply_close(opened);
+    let rejected=try { await db.sqlite_connect(state);false; } catch e is NativeFailure { e.code()=="invalid_input"; };
+    confirm rejected else panic "duplicate acquisition accepted";
+    Stdout().writeln(if inline { "inline"; } else { "worker"; });
+    0;
+}

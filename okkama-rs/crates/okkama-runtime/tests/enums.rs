@@ -67,7 +67,7 @@ fn check(module: &ir::Module, expected: &str) {
     let decoded = okkama_sparrow::decode(&bytes).unwrap();
     assert_eq!(program, decoded);
     assert_eq!(
-        okkama_runtime::sparrow::execute(&decoded).unwrap().to_string(),
+        sparrow_vm::execute(&decoded).unwrap().to_string(),
         expected
     );
 }

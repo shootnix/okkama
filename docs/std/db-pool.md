@@ -57,9 +57,7 @@ retains these facets without downcasting its DbConnection role.
 let pool=DbPreparedPool(SqliteAcquiring(database),options,clock);
 let lease=await pool.connection();
 let prepared=await Prepared(lease,"SELECT ?").statement();
-let rows=await prepared.rows([DbInteger(BigInt("7"))]);
-let row=await rows.row();
-rows.close();
+let row=await Query(prepared,[Param(7)]).one();
 prepared.close();
 lease.close();
 ```
@@ -76,3 +74,6 @@ Connector implementations must bind the supplied facets to the same owned physic
 connection. This is an explicit connector contract, not runtime reflection or a
 universal object downcast. DbPreparedOpening.prepared_transaction returns a
 DbPreparedTransaction wrapper containing the two explicitly granted capabilities.
+
+Use `Query` from `db/query` and `Param` from `db/param` for the prepared lookup
+above. Query owns its cursor; callers still close preparation and the lease.

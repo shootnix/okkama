@@ -320,7 +320,7 @@ fn assert_sparrow(program: &Module, expected: &str) {
     assert_eq!(&bytes[4..6], &okkama_sparrow::VERSION.to_be_bytes());
     let loaded = okkama_sparrow::decode(&bytes).unwrap();
     assert_eq!(
-        okkama_runtime::sparrow::execute(&loaded).unwrap().to_string(),
+        sparrow_vm::execute(&loaded).unwrap().to_string(),
         expected
     );
 }

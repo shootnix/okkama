@@ -17,6 +17,7 @@ pub mod idna;
 pub mod input;
 pub mod jre;
 pub mod json;
+pub mod db;
 pub mod markup;
 pub mod math;
 pub mod misc;
@@ -80,6 +81,7 @@ pub fn execute(
         Provider::Misc => misc::execute(native, args, context),
         Provider::Idna => idna::execute(native, args),
         Provider::Json => json::execute(native, args),
+        Provider::Db => db::execute(native, args),
         Provider::Markup => markup::execute(native, args),
         Provider::Math => math::execute(native, args, context),
         Provider::Host => host::execute(native, args),
@@ -122,6 +124,7 @@ enum Provider {
     Misc,
     Idna,
     Json,
+    Db,
     Markup,
     Math,
     Host,
@@ -177,6 +180,7 @@ fn route(native: Native) -> Provider {
         }
         "runtime/idna" | "runtime/public_suffix" => return Provider::Idna,
         "runtime/json" => return Provider::Json,
+        "runtime/db" => return Provider::Db,
         "runtime/toml" | "runtime/html" => return Provider::Markup,
         "runtime/format" | "runtime/statistics" | "runtime/random_distribution" => {
             return Provider::Math;

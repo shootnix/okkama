@@ -1,0 +1,102 @@
+module bench/db v1.0.0;
+import "db/sqlite" take SqliteMemory,SqliteConnection;
+import "db/query" take Query;
+import "db/statement" take Statement;
+import "db/param" take Param;
+import "db/row" take Row;
+import "db/transaction" take TransactionOptions;
+import "io/stdout" take Stdout;
+import "os/environment" take Environment;
+import "strings/parse" take ParsedInt;
+import "time/clock" take SystemClock;
+
+object Sum {
+    has total is int;
+    Sum(total is int) { self.total=total; }
+    add(value is int) is ^Sum { ^total=total+value; }
+    value() is int { total; }
+}
+object Checksum {
+    Checksum();
+    row(row is Row) is int {
+        row.int("id") + row.text("name").length() + (row.maybe("nick").text() else "guest").length();
+    }
+}
+object Bench {
+    has connection is SqliteConnection;
+    has count,lookups is int;
+    has sample is Row;
+    Bench(connection is SqliteConnection,count is int,lookups is int,sample is Row) { self.connection=connection;self.count=count;self.lookups=lookups;self.sample=sample; }
+    async run(kind is string) is int {
+        let sum=Sum(0);
+        match kind {
+            case "projection_only" {
+                for 0..count -> i { sum=sum.add(Checksum().row(sample)); }
+            }
+            case "scan_raw" {
+                let rows=await Query(connection,Statement("SELECT id,name,nick FROM entries ORDER BY id")).rows();
+                defer rows.close();
+                for await rows -> row { sum=sum.add(row.size()); }
+            }
+            case "scan_stream" {
+                let rows=await Query(connection,Statement("SELECT id,name,nick FROM entries ORDER BY id")).rows();
+                defer rows.close();
+                for await rows -> row { sum=sum.add(Checksum().row(row)); }
+            }
+            case "scan_all" {
+                let rows=await Query(connection,Statement("SELECT id,name,nick FROM entries ORDER BY id")).all(count);
+                for rows -> row { sum=sum.add(Checksum().row(row)); }
+            }
+            case "lookup_prepared" {
+                let prepared=await connection.prepared("SELECT id,name,nick FROM entries WHERE id=?");
+                defer prepared.close();
+                for 0..lookups -> i {
+                    let row=await Query(prepared,[Param(i % count)]).one();
+                    sum=sum.add(Checksum().row(row));
+                }
+            }
+            case "lookup_statement" {
+                for 0..lookups -> i {
+                    let row=await Query(connection,Statement("SELECT id,name,nick FROM entries WHERE id=?",[Param(i % count)])).one();
+                    sum=sum.add(Checksum().row(row));
+                }
+            }
+            case "insert_transaction" {
+                await connection.execution(Statement("DELETE FROM inserted"));
+                let transaction=await connection.prepared_transaction(TransactionOptions());
+                defer if transaction.active() { await transaction.rollback(); } else { transaction; };
+                let prepared=await transaction.prepared("INSERT INTO inserted VALUES(?,?)");
+                defer prepared.close();
+                for 0..lookups -> i {
+                    await prepared.execution([Param(i),Param("user")]);
+                }
+                prepared.close();await transaction.commit();
+                let row=await Query(connection,Statement("SELECT sum(id) AS total FROM inserted")).one();
+                sum=sum.add(row.int("total"));
+            }
+        }
+        sum.value();
+    }
+}
+async main() is int {
+    let env=Environment();
+    let count=ParsedInt(env.variable("DB_BENCH_ROWS")).value();
+    let lookups=ParsedInt(env.variable("DB_BENCH_LOOKUPS")).value();
+    let warmups=if env.membership("DB_BENCH_WARMUPS"){ParsedInt(env.variable("DB_BENCH_WARMUPS")).value();}else{1;};
+    confirm warmups>0 else panic "positive warmup count required";
+    let connection=await SqliteMemory().connection();
+    defer await connection.settled();defer connection.close();
+    await connection.execution(Statement("CREATE TABLE entries(id INTEGER PRIMARY KEY,name TEXT NOT NULL,nick TEXT)"));
+    await connection.execution(Statement("WITH RECURSIVE seq(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM seq WHERE i+1<?) INSERT INTO entries SELECT i, 'user-' || i, CASE WHEN i%3=0 THEN NULL WHEN i%5=0 THEN '' ELSE 'nick' END FROM seq",[Param(count)]));
+    await connection.execution(Statement("CREATE TABLE inserted(id INTEGER PRIMARY KEY,name TEXT NOT NULL)"));
+    let sample=await Query(connection,Statement("SELECT id,name,nick FROM entries WHERE id=0")).one();
+    let clock=SystemClock();let bench=Bench(connection,count,lookups,sample);
+    for ["projection_only","scan_raw","scan_stream","scan_all","lookup_prepared","lookup_statement","insert_transaction"] -> kind {
+        for 0..warmups -> warmup { await bench.run(kind); }
+        let start=clock.monotonic_instant();
+        let checksum=await bench.run(kind);
+        let nanos=clock.monotonic_instant().minus(start).nanoseconds();
+        Stdout().writeln(kind+" "+nanos.string()+" "+checksum.string());
+    }
+    0;
+}

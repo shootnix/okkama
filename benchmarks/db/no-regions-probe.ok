@@ -1,0 +1,32 @@
+module bench/noregionsprobe v1.0.0;
+import "async/atomic" take Atomic;
+import "os/environment" take Environment;
+import "io/stdout" take Stdout;
+object Child {
+    has counter is Atomic<int>;
+    Child(:counter);
+    value() is int { 1; }
+    destroy { counter.replace(counter.value()+1); }
+}
+object Wrapper {
+    has child is Child;
+    Wrapper(:child);
+    value() is int { child.value(); }
+}
+object Work {
+    Work();
+    run(counter is Atomic<int>) is int {
+        let wrapped=Wrapper(child: Child(counter: counter));
+        defer counter.replace(counter.value()+10);
+        wrapped.value();
+    }
+}
+main() is int {
+    let counter=Atomic(0);
+    confirm Work().run(counter)==1;
+    let disabled=Environment().variable("OKKAMA_NO_REGIONS_BENCH")=="1";
+    confirm counter.value()==(if disabled {10;} else {11;}) else panic "region mode or explicit defer is wrong";
+    counter.close();
+    Stdout().writeln(if disabled {"no-regions";} else {"regions";});
+    0;
+}

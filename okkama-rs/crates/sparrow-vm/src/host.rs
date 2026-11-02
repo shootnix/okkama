@@ -1,11 +1,11 @@
-//! Исполнитель Sparrow для intrinsics рантайма (`okkama_runtime_core::intrinsics`):
+//! Исполнитель Sparrow для intrinsics рантайма (`sparrow_runtime::intrinsics`):
 //! объекты, поля и вызовы программы по именам, как отражение JVM.
 use crate::machine::{Engine, cold_call, run_body};
-use okkama_runtime_core::Value;
-use okkama_runtime_core::failure::{Failure, Kind};
-use okkama_runtime_core::heap::{ObjectHeap, Ref};
-use okkama_runtime_core::intrinsics::Host;
-use okkama_runtime_core::sched::Outcome;
+use sparrow_runtime::Value;
+use sparrow_runtime::failure::{Failure, Kind};
+use sparrow_runtime::heap::{ObjectHeap, Ref};
+use sparrow_runtime::intrinsics::Host;
+use sparrow_runtime::sched::Outcome;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl Host for VmHost {
         };
         Failure::new(Kind::Thrown {
             object: Ref(object),
-            name: okkama_runtime_core::failure::error_type_name(&self.0.program.objects[declaration].name),
+            name: sparrow_runtime::failure::error_type_name(&self.0.program.objects[declaration].name),
             message: None,
         })
     }
@@ -97,10 +97,10 @@ impl Host for VmHost {
     }
 
     fn equal(&self, left: &Value, right: &Value) -> Result<bool, Rc<Failure>> {
-        okkama_runtime_core::ops::equal(left, right).map_err(|fault| match fault {
-            okkama_runtime_core::ops::Fault::Trap(message) => trap(message),
-            okkama_runtime_core::ops::Fault::Invalid(message) => trap(format!("invalid interpreter state: {message}")),
-            okkama_runtime_core::ops::Fault::Unsupported(message) => trap(format!("Sparrow: {message}")),
+        sparrow_runtime::ops::equal(left, right).map_err(|fault| match fault {
+            sparrow_runtime::ops::Fault::Trap(message) => trap(message),
+            sparrow_runtime::ops::Fault::Invalid(message) => trap(format!("invalid interpreter state: {message}")),
+            sparrow_runtime::ops::Fault::Unsupported(message) => trap(format!("Sparrow: {message}")),
         })
     }
 
@@ -109,6 +109,6 @@ impl Host for VmHost {
     }
 
     fn test_failure(&self, message: String) -> Result<(), Rc<Failure>> {
-        okkama_runtime_core::testing::fail(message)
+        sparrow_runtime::testing::fail(message)
     }
 }

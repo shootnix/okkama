@@ -1,0 +1,144 @@
+{
+  "method": "GlobalAlloc requests forwarded to unchanged MiMalloc. Two repetitions with fixed setup and four warmups of 500 queries. Differences remove fixed costs. C allocations, allocator internals and RSS are excluded; realloc bytes are full new requested sizes, not copied bytes.",
+  "compiler_sha256": "925991ce1046943a0c173b072a2bad3e967a0a92641ef200258a6576e74a34d5",
+  "samples": [
+    {
+      "repetition": 0,
+      "lookups": 500,
+      "checksum": 130543,
+      "counters": {
+        "alloc_calls": 3902378,
+        "alloc_requested_bytes": 378415384,
+        "realloc_calls": 412066,
+        "realloc_requested_bytes": 172002975,
+        "dealloc_calls": 3898944
+      }
+    },
+    {
+      "repetition": 0,
+      "lookups": 1000,
+      "checksum": 511192,
+      "counters": {
+        "alloc_calls": 4434367,
+        "alloc_requested_bytes": 411884051,
+        "realloc_calls": 472701,
+        "realloc_requested_bytes": 183770643,
+        "dealloc_calls": 4431317
+      }
+    },
+    {
+      "repetition": 0,
+      "lookups": 1500,
+      "checksum": 1142340,
+      "counters": {
+        "alloc_calls": 4966368,
+        "alloc_requested_bytes": 445360949,
+        "realloc_calls": 533337,
+        "realloc_requested_bytes": 195603847,
+        "dealloc_calls": 4963702
+      }
+    },
+    {
+      "repetition": 1,
+      "lookups": 500,
+      "checksum": 130543,
+      "counters": {
+        "alloc_calls": 3902378,
+        "alloc_requested_bytes": 378415384,
+        "realloc_calls": 412066,
+        "realloc_requested_bytes": 172002975,
+        "dealloc_calls": 3898944
+      }
+    },
+    {
+      "repetition": 1,
+      "lookups": 1000,
+      "checksum": 511192,
+      "counters": {
+        "alloc_calls": 4434367,
+        "alloc_requested_bytes": 411884051,
+        "realloc_calls": 472701,
+        "realloc_requested_bytes": 183770643,
+        "dealloc_calls": 4431317
+      }
+    },
+    {
+      "repetition": 1,
+      "lookups": 1500,
+      "checksum": 1142340,
+      "counters": {
+        "alloc_calls": 4966368,
+        "alloc_requested_bytes": 445360949,
+        "realloc_calls": 533337,
+        "realloc_requested_bytes": 195603847,
+        "dealloc_calls": 4963702
+      }
+    }
+  ],
+  "deltas_per_query": [
+    {
+      "repetition": 0,
+      "start": 500,
+      "end": 1000,
+      "counters": {
+        "alloc_calls": 1063.978,
+        "alloc_requested_bytes": 66937.334,
+        "realloc_calls": 121.27,
+        "realloc_requested_bytes": 23535.336,
+        "dealloc_calls": 1064.746
+      }
+    },
+    {
+      "repetition": 0,
+      "start": 1000,
+      "end": 1500,
+      "counters": {
+        "alloc_calls": 1064.002,
+        "alloc_requested_bytes": 66953.796,
+        "realloc_calls": 121.272,
+        "realloc_requested_bytes": 23666.408,
+        "dealloc_calls": 1064.77
+      }
+    },
+    {
+      "repetition": 1,
+      "start": 500,
+      "end": 1000,
+      "counters": {
+        "alloc_calls": 1063.978,
+        "alloc_requested_bytes": 66937.334,
+        "realloc_calls": 121.27,
+        "realloc_requested_bytes": 23535.336,
+        "dealloc_calls": 1064.746
+      }
+    },
+    {
+      "repetition": 1,
+      "start": 1000,
+      "end": 1500,
+      "counters": {
+        "alloc_calls": 1064.002,
+        "alloc_requested_bytes": 66953.796,
+        "realloc_calls": 121.272,
+        "realloc_requested_bytes": 23666.408,
+        "dealloc_calls": 1064.77
+      }
+    }
+  ],
+  "sources_sha256": {
+    "benchmarks/db/count-allocations.py": "ca7cb541ecf0f979be319f45f2e99e7596155c039b5a00ea39fa62df952f0ef5",
+    "benchmarks/db/prepared-profile.ok": "77bffd9de9a0edf31db10868e54bd878172d9a814dd9216eb7e9bc3573f3e2a1",
+    "benchmarks/db/allocation-counter/src/lib.rs": "d63dd1114d7da1b6c56dd726035a62d7b1dbd8617e1124bcc9b7fadcd6a45951",
+    "okkama-rs/crates/okkama-cli/src/main.rs": "96ff5322df939ee694654f5445f7fb869ba7c380e6c66297d845004cb2970310"
+  },
+  "validation": {
+    "allocator_semantics_test": "passed",
+    "default_cli_cargo_check": "passed",
+    "original_release_restored_sha256": "34735a013ecf6fc2593a1d31af60c2014275d39dd3100ab269b7e81eb43f2977"
+  },
+  "instruments": {
+    "developer_dir": "/Volumes/SamsungSSD/Applications/Xcode.app/Contents/Developer",
+    "version": "16.0 (17F113)",
+    "launch_and_attach": "Failed to attach to target process; no allocation results obtained"
+  }
+}

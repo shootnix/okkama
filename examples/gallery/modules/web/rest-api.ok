@@ -8,11 +8,12 @@
 
 module gallery/web/rest_api v1.0.0;
 import "support" take DemoServer,DemoClient;
-import "../../../cookbook/support/sql" take QueryJson;
+import "../../../cookbook/support/sql" take QueryJson,SqlJson;
+import "db/query" take Query;
 import "db/sqlite" take SqliteMemory;
 import "db/connection" take DbExecuting;
 import "db/statement" take Statement;
-import "db/value" take DbText,DbInteger;
+import "db/param" take Param;
 import "numbers/bigint" take BigInt;
 import "web/routing" take WebRoutes,Get,Post,Delete;
 import "web/request" take WebRequest;
@@ -34,18 +35,18 @@ object BooksApi {
     async search(request is WebRequest) is HandlingResult{Text(200,"q="+request.query("q")+" limit="+request.query("limit","10"));}
     async list(request is WebRequest) is HandlingResult{JsonReply(200,await QueryJson(db,Statement("SELECT id,title,year FROM books ORDER BY id")).value());}
     async one(request is WebRequest) is HandlingResult{
-        let id=ParsedInt(request.path("id")).value();let found=(await QueryJson(db,Statement("SELECT id,title,year FROM books WHERE id=?",[DbInteger(BigInt(id.string()))])).value()).items();
-        confirm found.size()==1 else throw Exception(404,"book not found");JsonReply(200,found[0]);
+        let id=ParsedInt(request.path("id")).value();let found=(await Query(db,Statement("SELECT id,title,year FROM books WHERE id=?",[Param(id)])).maybe()) else throw Exception(404,"book not found");
+        JsonReply(200,SqlJson(found).value());
     }
     async create(request is WebRequest) is HandlingResult{
         let body=await request.json(16384);let title=body.text("title");confirm title.length()>0 && title.length()<=200 else throw Exception(422,"title required");
         let year=body.int("year");confirm year>0 && year<10000 else throw Exception(422,"year required");
-        let created=await QueryJson(db,Statement("INSERT INTO books(title,year) VALUES(?,?) RETURNING id,title,year",[DbText(title),DbInteger(BigInt(year.string()))])).value();
-        let record=created.items()[0];Created("/books/"+record.int("id").string(),record);
+        let created=await Query(db,Statement("INSERT INTO books(title,year) VALUES(?,?) RETURNING id,title,year",[Param(title),Param(year)])).one();
+        let record=SqlJson(created).value();Created("/books/"+record.int("id").string(),record);
     }
     async remove(request is WebRequest) is HandlingResult{
-        let id=ParsedInt(request.path("id")).value();let deleted=(await QueryJson(db,Statement("DELETE FROM books WHERE id=? RETURNING id",[DbInteger(BigInt(id.string()))])).value()).items();
-        confirm deleted.size()==1 else throw Exception(404,"book not found");Text(200,"deleted");
+        let id=ParsedInt(request.path("id")).value();let deleted=(await Query(db,Statement("DELETE FROM books WHERE id=? RETURNING id",[Param(id)])).maybe()) else throw Exception(404,"book not found");
+        confirm deleted.int("id")==id;Text(200,"deleted");
     }
     async headers(request is WebRequest) is HandlingResult{Text(200,"agent="+request.header("X-Agent","none"));}
     async old(request is WebRequest) is HandlingResult{Redirect(301,"/hello/redirected");}

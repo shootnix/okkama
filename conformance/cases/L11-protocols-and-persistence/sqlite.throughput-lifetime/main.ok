@@ -1,0 +1,84 @@
+module app v1.0.0;
+import "conformance/check" take Checks;
+import "db/sqlite" take SqliteMemory;
+import "db/query" take Query;
+import "db/statement" take Statement,DbBoundaryLimit;
+import "db/value" take DbValue,DbValueKind,DbValueWriting,DbNull,DbText,InvalidDbValue;
+import "db/error" take DbFailure;
+import "db/row" take Row,RowReading;
+import "async/atomic" take Atomic;
+
+object CountingText does DbValue {
+    has calls is Atomic<int>;
+    CountingText(){calls=Atomic(0);}
+    calls() is int{calls.value();}
+    kind() is DbValueKind{DbValueKind.text;}
+    print(output is DbValueWriting) is void{
+        calls.replace(calls.value()+1);output.text(calls.value().string());
+    }
+}
+object BrokenText does DbValue {
+    has mode is int;
+    BrokenText(mode is int){self.mode=mode;}
+    kind() is DbValueKind{DbValueKind.text;}
+    print(output is DbValueWriting) is void{
+        if mode==1{output.text("one");output.text("two");}
+        if mode==2{output.null_value();}
+    }
+}
+object ReadTask {
+    has origin is RowReading;
+    ReadTask(origin is RowReading){self.origin=origin;}
+    async read() is Row{await origin.row();}
+}
+
+async main() is int{
+    let c=Checks();let connection=await SqliteMemory().connection();
+    defer await connection.settled();defer connection.close();
+    for [0,1,7,8,9,71,72,73,136,137] -> count{
+        let rows=await Query(connection,Statement("WITH RECURSIVE t(i) AS (SELECT 0 WHERE "+count.string()+">0 UNION ALL SELECT i+1 FROM t WHERE i+1<"+count.string()+") SELECT i AS id FROM t")).all(count);
+        let valid=Atomic(rows.size()==count);
+        for 0..rows.size() -> index{if rows[index].int("id")!=index{valid.replace(false);}}
+        c=c.ok("ordered rows across batch boundaries",valid.value());
+    }
+    // Row-count growth must not override the independent 8 MiB byte budget.
+    let large=await Query(connection,Statement("WITH RECURSIVE t(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM t WHERE i<19) SELECT i AS id, zeroblob(1048576) AS payload FROM t")).all(20);
+    let valid=Atomic(large.size()==20);
+    for 0..large.size() -> index{if large[index].int("id")!=index{valid.replace(false);}}
+    c=c.ok("byte-limited batches keep every row",valid.value());
+    let many=Statement("WITH RECURSIVE t(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM t WHERE i<136) SELECT i AS id FROM t");
+    let early=await Query(connection,many).rows();
+    for 0..9 -> index{await early.next();}
+    early.close();
+    c=c.ok("close discards expanded batch and permits reuse",(await Query(connection,Statement("SELECT 7 AS id")).one()).int("id")==7);
+    let stream=await Query(connection,many).rows();
+    let seen=Atomic(0);
+    for await stream -> row{seen.replace(seen.value()+1);}
+    c=c.ok("expanded stream has stable EOF",seen.value()==137 && ((await stream.next()) ?? .none: true !! _: false));
+    let cursor=await connection.rows(many);
+    let pending=spawn ReadTask(cursor).read();pending.cancel();
+    c=c.ok("fetch cancellation propagates",try{await pending;false;}catch e is Cancelled{true;});
+    cursor.close();await connection.settled();
+    c=c.ok("cancelled fetch cleanup permits reuse",(await Query(connection,Statement("SELECT 9 AS id")).one()).int("id")==9);
+    c=c.ok("failure after first batch propagates",try{
+        await Query(connection,Statement("WITH RECURSIVE t(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM t WHERE i<136) SELECT CASE WHEN i=70 THEN abs(-9223372036854775808) ELSE i END AS id FROM t")).all(137);false;
+    }catch e is DbFailure{true;});
+    c=c.ok("connection reusable after later batch failure",(await Query(connection,Statement("SELECT 11 AS id")).one()).int("id")==11);
+    let prepared=await connection.prepared("SELECT ? AS value");defer prepared.close();
+    let changing=CountingText();let once=await prepared.rows([changing]);
+    let row=await once.row();once.close();
+    c=c.ok("direct prepared printer observed once",changing.calls()==1 && row.text("value")=="1");
+    let snapshot=CountingText();let query=Query(prepared,[snapshot]);
+    let first=await query.one();let second=await query.one();
+    c=c.ok("prepared Query preserves parameter snapshot",snapshot.calls()==1 && first.text("value")=="1" && second.text("value")=="1");
+    for [0,1,2] -> mode{
+        c=c.ok("prepared binding rejects broken printer",try{await prepared.rows([BrokenText(mode)]);false;}catch e is InvalidDbValue{true;});
+    }
+    let excessive is @DbValue=(0..1025).map()->index{DbNull();};
+    c=c.ok("prepared binding preserves count limit",try{await prepared.rows(excessive);false;}catch e is DbBoundaryLimit{e.kind()=="value count";});
+    // Each text is legal individually; their combined representation is not.
+    let text=Atomic("x");for 0..22 -> index{text.replace(text.value()+text.value());}
+    c=c.ok("prepared binding preserves aggregate byte limit",try{await prepared.rows([DbText(text.value()),DbText(text.value()),DbText("x")]);false;}catch e is DbBoundaryLimit{e.kind()=="value bytes";});
+    c=c.ok("prepared reusable after binding failures",(await Query(prepared,[DbText("ok")]).one()).text("value")=="ok");
+    c.done();
+}

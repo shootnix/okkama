@@ -1,0 +1,31 @@
+{
+  "description": "Peak RSS for repeated 1 MiB BLOB SELECTs, row.size checked; fresh processes; unchanged baseline stdlib, closed-reply payload release in runtime; no warmups.",
+  "samples": [
+    {
+      "count": 10,
+      "variant": "baseline",
+      "peak_rss_bytes": 24494080,
+      "stdout": "ok 10\n",
+      "resource": "        2.06 real         0.03 user         0.02 sys\n            24494080  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1694  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                  74  voluntary context switches\n                  77  involuntary context switches\n           455063584  instructions retired\n           152118814  cycles elapsed\n            19333960  peak memory footprint\n"
+    },
+    {
+      "count": 80,
+      "variant": "baseline",
+      "peak_rss_bytes": 24576000,
+      "stdout": "ok 80\n",
+      "resource": "        0.05 real         0.03 user         0.01 sys\n            24576000  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1698  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 415  involuntary context switches\n           530805111  instructions retired\n           160663673  cycles elapsed\n            19415880  peak memory footprint\n"
+    },
+    {
+      "count": 160,
+      "variant": "baseline",
+      "peak_rss_bytes": 25968640,
+      "stdout": "ok 160\n",
+      "resource": "        0.06 real         0.04 user         0.01 sys\n            25968640  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1784  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 821  involuntary context switches\n           651929743  instructions retired\n           206314069  cycles elapsed\n            19448624  peak memory footprint\n"
+    }
+  ],
+  "source": "module bench/retention v1.0.0;\nimport \"db/sqlite\" take SqliteMemory;\nimport \"db/query\" take Query;\nimport \"db/statement\" take Statement;\nimport \"os/environment\" take Environment;\nimport \"strings/parse\" take ParsedInt;\nimport \"io/stdout\" take Stdout;\nasync main() is int {\n let connection=await SqliteMemory().connection();\n defer await connection.settled();defer connection.close();\n let count=ParsedInt(Environment().variable(\"COUNT\")).value();\n for 0..count -> i {\n  let row=await Query(connection,Statement(\"SELECT zeroblob(1048576) AS payload\")).one();\n  confirm row.size()==1 else panic \"wrong row\";\n }\n Stdout().writeln(\"ok \"+count.string());\n 0;\n}\n",
+  "date": "2026-11-03",
+  "compiler_sha256": "09b34a1c73934539044e1b82cfe9a42e2be964882e207c8537a9b076fbe90f61",
+  "reproduction_script": "import pathlib,subprocess,os,json,re\nroot=pathlib.Path('/Volumes/SamsungSSD/stuff/okkama-new');src=root/'benchmarks/db/results/rusqlite-ablation.json';base=pathlib.Path(json.loads(src.read_text())['temp'])\nresult={'description':'Peak RSS for repeated 1 MiB BLOB SELECTs, row.size checked; fresh processes; unchanged baseline stdlib, closed-reply payload release in runtime; no warmups.','samples':[],'source':pathlib.Path('/tmp/db-retention.ok').read_text()}\nfor count in [10,80,160]:\n for variant in ['baseline']:\n  env=dict(os.environ,COUNT=str(count),OKKAMA_STDLIB_DIR=str(base/variant))\n  p=subprocess.run(['/usr/bin/time','-l',str(root/'okkama-rs/target/release/okkama'),'run','--engine','sparrow','/tmp/db-retention.ok'],env=env,text=True,capture_output=True,timeout=90)\n  if p.returncode:raise RuntimeError(p.stdout+p.stderr)\n  m=re.search(r'(\\d+)\\s+maximum resident set size',p.stderr)\n  entry=dict(count=count,variant=variant,peak_rss_bytes=int(m[1]) if m else None,stdout=p.stdout,resource=p.stderr)\n  result['samples'].append(entry);print(count,variant,entry['peak_rss_bytes'],flush=True)\n(root/'benchmarks/db/results/rusqlite-retention-fixed.json').write_text(json.dumps(result,indent=2)+'\\n')\n",
+  "change": "Release closed reply payload in Rust and JVM; scheduler registry unchanged."
+}

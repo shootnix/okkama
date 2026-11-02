@@ -1,10 +1,9 @@
 module db/read v1.0.0;
 
-import "db/value" take DbValue,ObservedDbValue,DbValueKind,InvalidDbValue;
+import "db/value" take DbValue,ObservedDbValue,DbValueKind,InvalidDbValue,DbNativeValue,DbNativeKind,WrongDbValue;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
-import "strings/parse" take ParsedInt;
-import "compare" take Order;
+import "runtime/db" as native_db;
 
 // Narrow input protocol keeps readers independent of the Row implementation.
 role RowValues {
@@ -26,49 +25,64 @@ object RowReader {
 }
 
 // A selected, validated row value. Errors retain the column and their cause.
+enum DbReaderSource = (cell(state is native_db.DbCellState), protocol(origin is DbValue));
 object DbColumnReader {
     has name is string;
-    has origin is DbValue;
-    DbColumnReader(name is string, origin is DbValue) { self.name = name; self.origin = origin; }
-    value() is DbValue { origin; }
+    has source is DbReaderSource;
+    DbColumnReader(name is string, origin is DbValue) { self.name=name;source=DbReaderSource.protocol(origin); }
+    DbColumnReader(name is string, state is native_db.DbCellState) { self.name=name;source=DbReaderSource.cell(state); }
+    value() is DbValue { match source { case DbReaderSource.protocol(origin) { origin; } case DbReaderSource.cell(state) { DbNativeValue(state); } } }
     int() is int {
-        try { let exact = ObservedDbValue(origin).integer();
-            confirm exact.order(BigInt("9223372036854775807")) != Order.greater
-                && exact.order(BigInt("-9223372036854775808")) != Order.less
-                else throw InvalidDbValue("integer outside int range");
-            ParsedInt(exact.string()).value(); }
-        catch failure is Error { throw RowValueFailure(name, "int", origin.kind(), failure); }
+        try {
+            let state=self.cell();
+            self.require(DbValueKind.integer);
+            confirm native_db.db_int_valid(state) else throw InvalidDbValue("integer outside int range");
+            native_db.db_int_value(state);
+        } catch failure is Error { throw RowValueFailure(name,"int",self.kind(),failure); }
     }
     integer() is BigInt {
-        try { ObservedDbValue(origin).integer(); }
-        catch failure is Error { throw RowValueFailure(name, "integer", origin.kind(), failure); }
+        try { let state=self.cell();self.require(DbValueKind.integer);BigInt(native_db.db_integer_value(state)); }
+        catch failure is Error { throw RowValueFailure(name,"integer",self.kind(),failure); }
     }
     decimal() is Decimal {
-        try { ObservedDbValue(origin).decimal(); }
-        catch failure is Error { throw RowValueFailure(name, "decimal", origin.kind(), failure); }
+        try { let state=self.cell();self.require(DbValueKind.decimal);Decimal(native_db.db_decimal_value(state)); }
+        catch failure is Error { throw RowValueFailure(name,"decimal",self.kind(),failure); }
     }
     floating() is float {
-        try { ObservedDbValue(origin).floating(); }
-        catch failure is Error { throw RowValueFailure(name, "floating", origin.kind(), failure); }
+        try { let state=self.cell();self.require(DbValueKind.floating);native_db.db_floating_value(state); }
+        catch failure is Error { throw RowValueFailure(name,"floating",self.kind(),failure); }
     }
     boolean() is bool {
-        try { ObservedDbValue(origin).boolean(); }
-        catch failure is Error { throw RowValueFailure(name, "boolean", origin.kind(), failure); }
+        try { let state=self.cell();self.require(DbValueKind.boolean);native_db.db_boolean_value(state); }
+        catch failure is Error { throw RowValueFailure(name,"boolean",self.kind(),failure); }
     }
     flag() is bool {
-        try { let exact = ObservedDbValue(origin).integer().string();
-            confirm exact == "0" || exact == "1" else throw InvalidDbValue("flag requires integer 0 or 1");
-            exact == "1"; }
-        catch failure is Error { throw RowValueFailure(name, "flag", origin.kind(), failure); }
+        try {
+            let state=self.cell();
+            self.require(DbValueKind.integer);
+            let exact=native_db.db_integer_value(state);
+            confirm exact=="0" || exact=="1" else throw InvalidDbValue("flag requires integer 0 or 1");
+            exact=="1";
+        } catch failure is Error { throw RowValueFailure(name,"flag",self.kind(),failure); }
     }
     text() is string {
-        try { ObservedDbValue(origin).text(); }
-        catch failure is Error { throw RowValueFailure(name, "text", origin.kind(), failure); }
+        try { let state=self.cell();self.require(DbValueKind.text);native_db.db_text_value(state); }
+        catch failure is Error { throw RowValueFailure(name,"text",self.kind(),failure); }
     }
     bytes() is @byte {
-        try { ObservedDbValue(origin).bytes(); }
-        catch failure is Error { throw RowValueFailure(name, "bytes", origin.kind(), failure); }
+        try { let state=self.cell();self.require(DbValueKind.bytes);native_db.db_bytes_value(state); }
+        catch failure is Error { throw RowValueFailure(name,"bytes",self.kind(),failure); }
     }
+    private:
+    cell() is native_db.DbCellState { match source {
+        case DbReaderSource.cell(state) { state; }
+        case DbReaderSource.protocol(origin) { ObservedDbValue(origin).state(); }
+    } }
+    kind() is DbValueKind { match source {
+        case DbReaderSource.cell(state) { DbNativeKind(native_db.db_kind(state)).value(); }
+        case DbReaderSource.protocol(origin) { origin.kind(); }
+    } }
+    require(expected is DbValueKind) is void { confirm self.kind()==expected else throw WrongDbValue(expected,self.kind()); }
 }
 
 object DbPresenceReader {

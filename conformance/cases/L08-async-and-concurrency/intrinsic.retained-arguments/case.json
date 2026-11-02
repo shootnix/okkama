@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.intrinsic.retained-arguments",
+  "title": "Intrinsic results retain values beyond the argument container",
+  "purpose": "Cold channel Futures and Atomic state keep owned arguments across later calls; delayed failure still propagates.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.CHANNEL",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "retained arguments ok\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/channel.ok",
+    "docs/okkama-spec-11072026.md#18.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "NOM argument-container regression",
+    "expected_basis": "Sending.send returns a cold operation retaining its message; Atomic retains its published value; closing the channel makes a later send fail."
+  },
+  "status": "mandatory"
+}

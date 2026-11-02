@@ -466,11 +466,15 @@ public final class SqliteNatives {
                 if (kind.equals("null_value")) {
                     rc = call(Api.bindNull, statement.pointer, index);
                 } else if (kind.equals("integer") || kind.equals("boolean")) {
-                    String text = (String) value;
-                    if (!text.matches("-?(?:0|[1-9][0-9]*)") || text.length() > 20) {
-                        throw raise("data", "SQLITE_INTEGER_RANGE");
+                    BigInteger number;
+                    if (value instanceof BigInteger integer) { number=integer; }
+                    else {
+                        String text = (String) value;
+                        if (!text.matches("-?(?:0|[1-9][0-9]*)") || text.length() > 20) {
+                            throw raise("data", "SQLITE_INTEGER_RANGE");
+                        }
+                        number = new BigInteger(text);
                     }
-                    BigInteger number = new BigInteger(text);
                     if (number.bitLength() > 63) {
                         throw raise("data", "SQLITE_INTEGER_RANGE");
                     }
@@ -478,7 +482,7 @@ public final class SqliteNatives {
                 } else if (kind.equals("floating")) {
                     double number;
                     try {
-                        number = Double.parseDouble(((String) value).trim());
+                        number = value instanceof Double real ? real : Double.parseDouble(((String) value).trim());
                     } catch (NumberFormatException invalid) {
                         number = 0;
                     }
@@ -651,16 +655,16 @@ public final class SqliteNatives {
                             value = "";
                         } else if (type == 1) {
                             kind = "integer";
-                            value = Long.toString((long) invoke(Api.columnInt64, cursor.pointer, column));
-                            rowBytes += ((String) value).length();
+                            value = (long) invoke(Api.columnInt64, cursor.pointer, column);
+                            rowBytes += value.toString().length();
                         } else if (type == 2) {
                             double number = (double) invoke(Api.columnDouble, cursor.pointer, column);
                             if (Double.isNaN(number) || Double.isInfinite(number)) {
                                 throw raise("data", "SQLITE_FLOAT_RANGE");
                             }
                             kind = "floating";
-                            value = formatG17(number);
-                            rowBytes += ((String) value).length();
+                            value = number;
+                            rowBytes += formatG17(number).length();
                         } else if (type == 3 || type == 4) {
                             MemorySegment pointer = (MemorySegment) invoke(type == 3 ? Api.columnText : Api.columnBlob,
                                 cursor.pointer, column);
@@ -1337,6 +1341,44 @@ public final class SqliteNatives {
         }
     }
 
+    private static List<Object[]> cellParams(List<?> cells, String name) {
+        if(cells.size()>1024)throw fail("invalid_input",name,3,"Invalid SQLite bindings");
+        if(DbNatives.runtime_db__db_cells_bytes(cells).compareTo(BigInteger.valueOf(8388608))>0)
+            throw fail("resource_exhausted",name,3,"SQLite binding byte budget");
+        List<Object[]> params=new ArrayList<>(cells.size());
+        for(Object handle:cells){
+            DbNatives.Cell cell=(DbNatives.Cell)handle;
+            Object value=cell.value;
+            if(cell.kind==0)value="";
+            else if(cell.kind==1)value=Boolean.TRUE.equals(value)?BigInteger.ONE:BigInteger.ZERO;
+            else if(cell.kind==6)value=Natives.toBytes((List<?>)value);
+            params.add(new Object[]{KINDS[cell.kind],value});
+        }
+        return params;
+    }
+
+    private static Future typedStatement(Object handle, Object source, List<?> values, boolean rows, boolean prepared, String name) {
+        try {
+            Connection connection=connection(handle,name,3);
+            List<Object[]> params=cellParams(values,name);
+            if(prepared){
+                BigInteger id=(BigInteger)source;
+                if(id.signum()<1)throw fail("invalid_input",name,3,"Invalid SQLite statement");
+                long statementId=id.longValue();
+                return request(connection,rows?"prepared_rows":"prepared_execution",
+                    engine->rows?engine.rows(engine.preparedStatement(statementId),params):engine.execute(engine.preparedStatement(statementId),params),name,3);
+            }
+            String sql=(String)source;
+            if(sql.isEmpty() || sql.indexOf('\0')>=0 || sql.getBytes(StandardCharsets.UTF_8).length>1048576)
+                throw fail("invalid_input",name,3,"Invalid SQLite SQL");
+            return request(connection,rows?"rows":"execution",engine->rows?engine.rows(sql,params):engine.execution(sql,params,false),name,3);
+        }catch(Failure failure){return Scheduler.resolved(null,failure);}
+    }
+    public static Future runtime_database__sqlite_execution_cells(Object handle,String sql,List<?> values){return typedStatement(handle,sql,values,false,false,"sqlite_execution_cells");}
+    public static Future runtime_database__sqlite_rows_cells(Object handle,String sql,List<?> values){return typedStatement(handle,sql,values,true,false,"sqlite_rows_cells");}
+    public static Future runtime_database__sqlite_prepared_execution_cells(Object handle,BigInteger id,List<?> values){return typedStatement(handle,id,values,false,true,"sqlite_prepared_execution_cells");}
+    public static Future runtime_database__sqlite_prepared_rows_cells(Object handle,BigInteger id,List<?> values){return typedStatement(handle,id,values,true,true,"sqlite_prepared_rows_cells");}
+
     public static Future runtime_database__sqlite_execution(Object handle, List<?> sql, List<?> tags, List<?> payloads) {
         return statement(handle, sql, tags, payloads, false, "sqlite_execution");
     }
@@ -1636,6 +1678,13 @@ public final class SqliteNatives {
         return out;
     }
 
+    public static boolean runtime_database__sqlite_reply_ok(Object handle){return reply(handle,"sqlite_reply_ok",1).ok;}
+    public static BigInteger runtime_database__sqlite_reply_id(Object handle){return new BigInteger(text(reply(handle,"sqlite_reply_id",1).data.get("id"),"0"));}
+    public static boolean runtime_database__sqlite_reply_eof(Object handle){return Boolean.TRUE.equals(reply(handle,"sqlite_reply_eof",1).data.get("eof"));}
+    public static BigInteger runtime_database__sqlite_reply_count(Object handle){Object rows=reply(handle,"sqlite_reply_count",1).data.get("rows");return BigInteger.valueOf(rows==null?0:((List<?>)rows).size());}
+    public static boolean runtime_database__sqlite_reply_affected_known(Object handle){return reply(handle,"sqlite_reply_affected_known",1).data.get("affected")!=null;}
+    public static String runtime_database__sqlite_reply_affected(Object handle){return text(reply(handle,"sqlite_reply_affected",1).data.get("affected"),"0");}
+
     private static String text(Object value, String missing) {
         return value == null ? missing : String.valueOf(value);
     }
@@ -1667,6 +1716,24 @@ public final class SqliteNatives {
         return rows.get(row.intValue()).get(column.intValue());
     }
 
+    @SuppressWarnings("unchecked")
+    public static List<Object> runtime_database__sqlite_reply_cells(Object handle, BigInteger row) {
+        Reply reply=reply(handle,"sqlite_reply_cells",2);
+        List<List<Object[]>> rows=reply.ok ? (List<List<Object[]>>)reply.data.get("rows") : null;
+        if(rows==null || row.signum()<0 || row.compareTo(BigInteger.valueOf(rows.size()))>=0)
+            throw fail("invalid_input","sqlite_reply_cells",2,"SQLite row outside bounds");
+        List<Object> result=new ArrayList<>();
+        for(Object[] c:rows.get(row.intValue())) {
+            String kind=(String)c[0]; Object v=c[1];
+            if(kind.equals("null_value"))result.add(DbNatives.runtime_db__db_null());
+            else if(kind.equals("integer"))result.add(new DbNatives.Cell(2,BigInteger.valueOf((Long)v)));
+            else if(kind.equals("floating"))result.add(new DbNatives.Cell(3,v));
+            else if(kind.equals("text"))result.add(new DbNatives.Cell(5,v));
+            else {byte[] b=(byte[])v;result.add(DbNatives.runtime_db__db_bytes(Natives.fromBytes(b,b.length)));}
+        }
+        return result;
+    }
+
     public static BigInteger runtime_database__sqlite_reply_kind(Object handle, BigInteger row, BigInteger column) {
         String kind = (String) cell(handle, row, column, "sqlite_reply_kind")[0];
         int code = kind.equals("null_value") ? 0 : kind.equals("integer") ? 1 : kind.equals("floating") ? 2
@@ -1679,7 +1746,7 @@ public final class SqliteNatives {
         if (value[0].equals("bytes")) {
             throw fail("invalid_input", "sqlite_reply_text", 3, "SQLite cell is binary");
         }
-        return (String) value[1];
+        return value[0].equals("floating") ? formatG17((Double)value[1]) : value[1].toString();
     }
 
     public static List<Object> runtime_database__sqlite_reply_bytes(Object handle, BigInteger row, BigInteger column) {
@@ -1692,7 +1759,9 @@ public final class SqliteNatives {
     }
 
     public static boolean runtime_database__sqlite_reply_close(Object handle) {
-        reply(handle, "sqlite_reply_close", 1).closed = true;
+        Reply reply = reply(handle, "sqlite_reply_close", 1);
+        reply.closed = true;
+        reply.data = Map.of();
         return true;
     }
 }

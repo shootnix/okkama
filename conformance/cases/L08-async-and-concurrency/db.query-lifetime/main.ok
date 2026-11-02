@@ -1,0 +1,73 @@
+module app v1.0.0;
+import "conformance/check" take Checks;
+import "db/query" take QueryRows,QueryCleanupFailure;
+import "db/row" take RowReading,Row,Column;
+import "db/value" take DbInteger;
+import "db/error" take DbBusy,DbClosed;
+import "collections/sequence" take Sequencing;
+import "numbers/bigint" take BigInt;
+import "async/atomic" take Atomic;
+import "async/event" take Event;
+
+object ProbeFailure does Error { ProbeFailure();text() is string { "read failure"; } }
+object CloseFailure does Error { CloseFailure();text() is string { "close failure"; } }
+object WaitingRows does RowReading {
+    has started,released is Event;
+    has closes is Atomic<int>;
+    has fail_read,fail_close is bool;
+    WaitingRows(fail_read is bool,fail_close is bool) {
+        started=Event();released=Event();closes=Atomic(0);
+        self.fail_read=fail_read;self.fail_close=fail_close;
+    }
+    async ready() is void { await started.wait(); }
+    release() is void { released.set(); }
+    count() is int { closes.value(); }
+    columns() is Sequencing<Column> { [Column(0,"id","")]; }
+    closed() is bool { closes.value()>0; }
+    close() is void { closes.replace(closes.value()+1);if fail_close { throw CloseFailure(); } }
+    async row() is Row {
+        started.set();await released.wait();
+        if fail_read { throw ProbeFailure(); }
+        Row([Column(0,"id","")],[DbInteger(BigInt("1"))]);
+    }
+}
+object ReadTask {
+    has cursor is QueryRows;
+    ReadTask(cursor is QueryRows) { self.cursor=cursor; }
+    async read() is Maybe<Row> { await cursor.next(); }
+}
+async main() is int {
+    let c=Checks();
+    let cancelled=WaitingRows(false,false);
+    let cursor=QueryRows(cancelled);
+    let task=spawn ReadTask(cursor).read();
+    await cancelled.ready();task.cancel();
+    c=c.ok("cancel propagates",try { await task;false; } catch e is Cancelled { true; });
+    c=c.same_int("cancel closes once",cancelled.count(),1);
+    c=c.ok("cancel leaves closed cursor",cursor.closed());
+    let competing=WaitingRows(false,false);
+    let serial=QueryRows(competing);
+    let first=spawn ReadTask(serial).read();await competing.ready();
+    c=c.ok("concurrent next rejected",try { await serial.next();false; } catch e is DbBusy { true; });
+    c=c.same_int("busy does not close active reader",competing.count(),0);
+    competing.release();
+    c=c.ok("first read still succeeds",(await first) ?? .some(row): row.int("id")==1 !! _: false);
+    serial.close();
+    let closing=WaitingRows(false,false);
+    let revoked=QueryRows(closing);
+    let pending=spawn ReadTask(revoked).read();await closing.ready();revoked.close();closing.release();
+    c=c.ok("close during read rejects late row",try { await pending;false; } catch e is DbClosed { true; });
+    c=c.same_int("close during read remains idempotent",closing.count(),1);
+    let broken=WaitingRows(true,true);broken.release();
+    let failing=QueryRows(broken);
+    c=c.ok("both failures retained",try { await failing.next();false; } catch e is QueryCleanupFailure { e.cause().text()=="read failure" && e.cleanup().text()=="close failure"; });
+    c=c.same_int("failed close is not retried",broken.count(),1);
+    failing.close();
+    c=c.same_int("explicit close remains idempotent",broken.count(),1);
+    let close_only=WaitingRows(false,true);
+    let explicit=QueryRows(close_only);
+    c=c.ok("explicit close error visible",try { explicit.close();false; } catch e is CloseFailure { true; });
+    explicit.close();
+    c=c.same_int("close failure terminal",close_only.count(),1);
+    c.done();
+}

@@ -1,0 +1,50 @@
+{
+  "description": "Peak RSS for repeated 1 MiB BLOB SELECTs, row.size checked; fresh processes; temporary reply variant removes FutureGroup; no warmups.",
+  "samples": [
+    {
+      "count": 10,
+      "variant": "baseline",
+      "peak_rss_bytes": 35356672,
+      "stdout": "ok 10\n",
+      "resource": "        0.04 real         0.02 user         0.01 sys\n            35356672  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2357  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  64  involuntary context switches\n           435193392  instructions retired\n           129707059  cycles elapsed\n            30212912  peak memory footprint\n"
+    },
+    {
+      "count": 10,
+      "variant": "reply",
+      "peak_rss_bytes": 25198592,
+      "stdout": "ok 10\n",
+      "resource": "        0.03 real         0.02 user         0.01 sys\n            25198592  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1737  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  64  involuntary context switches\n           436849089  instructions retired\n           128443213  cycles elapsed\n            20071240  peak memory footprint\n"
+    },
+    {
+      "count": 80,
+      "variant": "baseline",
+      "peak_rss_bytes": 114294784,
+      "stdout": "ok 80\n",
+      "resource": "        0.05 real         0.03 user         0.02 sys\n           114294784  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                7174  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 414  involuntary context switches\n           578455280  instructions retired\n           184020241  cycles elapsed\n           109183840  peak memory footprint\n"
+    },
+    {
+      "count": 80,
+      "variant": "reply",
+      "peak_rss_bytes": 25280512,
+      "stdout": "ok 80\n",
+      "resource": "        0.04 real         0.03 user         0.01 sys\n            25280512  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1741  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 416  involuntary context switches\n           527537977  instructions retired\n           159244385  cycles elapsed\n            20153160  peak memory footprint\n"
+    },
+    {
+      "count": 160,
+      "variant": "baseline",
+      "peak_rss_bytes": 203276288,
+      "stdout": "ok 160\n",
+      "resource": "        0.07 real         0.05 user         0.02 sys\n           203276288  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n               12606  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 820  involuntary context switches\n           744198407  instructions retired\n           248202686  cycles elapsed\n           196871080  peak memory footprint\n"
+    },
+    {
+      "count": 160,
+      "variant": "reply",
+      "peak_rss_bytes": 26705920,
+      "stdout": "ok 160\n",
+      "resource": "        0.06 real         0.04 user         0.01 sys\n            26705920  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1829  page reclaims\n                   0  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 814  involuntary context switches\n           644842592  instructions retired\n           199316315  cycles elapsed\n            20235080  peak memory footprint\n"
+    }
+  ],
+  "source": "module bench/retention v1.0.0;\nimport \"db/sqlite\" take SqliteMemory;\nimport \"db/query\" take Query;\nimport \"db/statement\" take Statement;\nimport \"os/environment\" take Environment;\nimport \"strings/parse\" take ParsedInt;\nimport \"io/stdout\" take Stdout;\nasync main() is int {\n let connection=await SqliteMemory().connection();\n defer await connection.settled();defer connection.close();\n let count=ParsedInt(Environment().variable(\"COUNT\")).value();\n for 0..count -> i {\n  let row=await Query(connection,Statement(\"SELECT zeroblob(1048576) AS payload\")).one();\n  confirm row.size()==1 else panic \"wrong row\";\n }\n Stdout().writeln(\"ok \"+count.string());\n 0;\n}\n",
+  "reproduction_script": "import pathlib,subprocess,os,json,re\nroot=pathlib.Path('/Volumes/SamsungSSD/stuff/okkama-new');src=root/'benchmarks/db/results/rusqlite-ablation.json';base=pathlib.Path(json.loads(src.read_text())['temp'])\nresult={'description':'Peak RSS for repeated 1 MiB BLOB SELECTs, row.size checked; fresh processes; temporary reply variant removes FutureGroup; no warmups.','samples':[],'source':pathlib.Path('/tmp/db-retention.ok').read_text()}\nfor count in [10,80,160]:\n for variant in ['baseline','reply']:\n  env=dict(os.environ,COUNT=str(count),OKKAMA_STDLIB_DIR=str(base/variant))\n  p=subprocess.run(['/usr/bin/time','-l',str(root/'okkama-rs/target/release/okkama'),'run','--engine','sparrow','/tmp/db-retention.ok'],env=env,text=True,capture_output=True,timeout=90)\n  if p.returncode:raise RuntimeError(p.stdout+p.stderr)\n  m=re.search(r'(\\d+)\\s+maximum resident set size',p.stderr)\n  entry=dict(count=count,variant=variant,peak_rss_bytes=int(m[1]) if m else None,stdout=p.stdout,resource=p.stderr)\n  result['samples'].append(entry);print(count,variant,entry['peak_rss_bytes'],flush=True)\n(root/'benchmarks/db/results/rusqlite-retention.json').write_text(json.dumps(result,indent=2)+'\\n')\n",
+  "compiler_sha256": "33db87c58cec0152195fa9effb17e1eef010ea55b0a8dc6870cde19057d9212f"
+}

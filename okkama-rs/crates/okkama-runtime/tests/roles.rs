@@ -1,6 +1,7 @@
 //! Limited role references retain the object and dispatch through checked witnesses.
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use okkama_runtime::{execute, sparrow};
+use okkama_runtime::execute;
+use sparrow_vm as sparrow;
 
 fn lower(declarations: &str, body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -49,7 +50,7 @@ fn narrowing_checks_nominal_witness_and_keeps_the_failure_lazy() {
     assert!(message.contains("Narrow"));
     let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
     assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: okkama_runtime::RuntimeError::Trap { message: actual, .. }, .. }) if actual == message)
+        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
     );
 }
 

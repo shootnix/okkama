@@ -27,7 +27,7 @@ public final class Scheduler {
     /** Задача, у которой сейчас управление; изначально — поток запуска. */
     static Task current = new Task(null);
     /** Future, запущенные `spawn`: их исход проверяет завершение программы. */
-    static final ArrayList<Future> registered = new ArrayList<Future>();
+    static final java.util.LinkedHashSet<Future> registered = new java.util.LinkedHashSet<Future>();
     /** События внешних операций; их число — {@link #external}. */
     static final LinkedBlockingQueue<Runnable> events = new LinkedBlockingQueue<Runnable>();
     /** Внешние операции, исхода которых ждёт программа. */
@@ -167,10 +167,26 @@ public final class Scheduler {
         return promise;
     }
 
+    private static boolean needsRegistration(Future future) {
+        return !Future.done(future)
+            || (future.state == Future.FAILED && !future.observed && !Future.cancelled(future));
+    }
+
     static void register(Future future) {
-        if (!registered.contains(future)) {
+        if (needsRegistration(future)) {
             registered.add(future);
         }
+    }
+
+    static void releaseRegistration(Future future) {
+        if (!needsRegistration(future)) {
+            registered.remove(future);
+        }
+    }
+
+    static void observe(Future future) {
+        future.observed = true;
+        releaseRegistration(future);
     }
 
     /** Отдать управление {@code target}; вернуться, когда оно его вернёт. */
@@ -235,6 +251,7 @@ public final class Scheduler {
             future.failure = failure;
             future.state = Future.FAILED;
         }
+        releaseRegistration(future);
         while (!future.waiters.isEmpty()) {
             Object next = future.waiters.remove(0);
             if (next instanceof Task) {
@@ -247,7 +264,7 @@ public final class Scheduler {
 
     /** {@code await}: запуск холодного Future, затем ожидание исхода. */
     public static Object await(Future future) {
-        future.observed = true;
+        observe(future);
         Task me = current;
         start(future, me);
         while (future.state == Future.RUNNING) {
@@ -270,6 +287,7 @@ public final class Scheduler {
             future.body = null;
             future.failure = Rt.thrown(new Cancelled());
             future.state = Future.FAILED;
+            releaseRegistration(future);
             return;
         }
         if (future.state != Future.RUNNING || future.cancelRequested) {
@@ -305,7 +323,7 @@ public final class Scheduler {
      * отказ задачи становится отказом программы (§18, D-034).
      */
     public static Object runMain(Future root) {
-        root.observed = true;
+        observe(root);
         start(root, null);
         drive(root);
         Failure unobserved = shutdown();

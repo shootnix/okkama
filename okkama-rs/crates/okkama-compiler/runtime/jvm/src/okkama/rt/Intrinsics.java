@@ -486,7 +486,7 @@ public final class Intrinsics {
             if (state.completion == null) {
                 state.completion = Future.promise();
                 for (Future future : state.entries) {
-                    future.observed = true;
+                    Scheduler.observe(future);
                 }
                 whenAll(state.entries, () -> {
                     Failure primary = null;
@@ -596,7 +596,7 @@ public final class Intrinsics {
 
     private static void startAll(List<Future> futures) {
         for (Future future : futures) {
-            future.observed = true;
+            Scheduler.observe(future);
             Scheduler.start(future, null);
             Scheduler.register(future);
         }
@@ -1332,7 +1332,7 @@ public final class Intrinsics {
     private static Object raceTimeout(Object timedOut, Object self, DurationSource source, Fn seconds, Fn wait) {
         Future origin = (Future) field(self, "origin");
         Object clock = field(self, "clock");
-        origin.observed = true;
+        Scheduler.observe(origin);
         Scheduler.register(origin);
         Scheduler.start(origin, Scheduler.current);
         if (origin.state >= Future.DONE) {
@@ -1345,7 +1345,7 @@ public final class Intrinsics {
             Rat amount = (Rat) seconds.call(new Object[] {duration});
             if (amount.compareTo(Rat.fromInt(BigInteger.ZERO)) > 0) {
                 timer = (Future) wait.call(new Object[] {clock, duration});
-                timer.observed = true;
+                Scheduler.observe(timer);
                 Scheduler.register(timer);
                 Scheduler.start(timer, Scheduler.current);
             }

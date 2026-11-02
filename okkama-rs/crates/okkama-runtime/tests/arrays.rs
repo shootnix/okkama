@@ -6,14 +6,14 @@ fn execute(module: &ir::Module) -> Result<ir::IntValue, RuntimeError> {
     let result = execute_ir(module);
     let program = okkama_compiler::codegen::sparrow::generate(module).unwrap();
     let bytes = okkama_sparrow::encode(&program).unwrap();
-    let actual = okkama_runtime::sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap());
+    let actual = sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap());
     match (&result, actual) {
-        (Ok(expected), Ok(actual)) => assert_eq!(*expected, actual),
+        (Ok(expected), Ok(actual)) => assert_eq!(expected.to_string(), actual.to_string()),
         (
             Err(RuntimeError::Trap { message, .. }),
-            Err(okkama_runtime::sparrow::Error::Operation {
+            Err(sparrow_vm::Error::Operation {
                 error:
-                    RuntimeError::Trap {
+                    sparrow_vm::OperationError::Trap {
                         message: actual, ..
                     },
                 ..

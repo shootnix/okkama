@@ -1,0 +1,30 @@
+module app v1.0.0;
+import "async/channel" take Channel,ChannelClosed;
+import "async/atomic" take Atomic;
+import "io/stdout" take Stdout;
+
+async main() is int {
+    let channel is Channel<string> = Channel(capacity: 1);
+    for 0..40 -> i {
+        await channel.sending().send("warm-"+i.string());
+        confirm await channel.receiving().item()=="warm-"+i.string();
+    }
+    let delayed=channel.sending().send("retained-"+123.string());
+    let cell=Atomic("initial-"+456.string());
+    for 0..40 -> i {
+        let noise=Atomic("noise-"+i.string());
+        noise.replace("replaced-"+i.string());
+        confirm noise.value()=="replaced-"+i.string();
+        noise.close();
+    }
+    confirm cell.value()=="initial-456";
+    await delayed;
+    confirm await channel.receiving().item()=="retained-123";
+    let failed=channel.sending().send("late-"+789.string());
+    channel.sending().close();
+    let caught=try { await failed;false; } catch error is ChannelClosed { true; };
+    confirm caught;
+    cell.close();
+    Stdout().writeln("retained arguments ok");
+    0;
+}

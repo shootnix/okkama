@@ -19,11 +19,9 @@ let database = PostgresDatabase(
     SystemEntropy());
 let connection = await database.connection();
 defer connection.close();
-let rows = await connection.rows(Statement("SELECT name FROM customers WHERE id = $1",
-    [DbInteger(BigInt("7"))]));
-let row = await rows.row();
-rows.close();
-ObservedDbValue(row.value("name")).text();
+let row = await Query(connection, Statement("SELECT name FROM customers WHERE id = $1",
+    [Param(7)])).one();
+row.text("name");
 ```
 
 A complete program (transaction, prepared lookup, streamed report,
@@ -94,7 +92,7 @@ context:
 A parameter without context (`SELECT $1`) is inferred as text, so cast it
 explicitly (`$1::int8`).
 
-`Execution.affected_rows()` is known for INSERT, UPDATE, DELETE, MERGE and
+`Execution.affected()` returns `Maybe.some(count)` for INSERT, UPDATE, DELETE, MERGE and
 COPY command tags. Other commands (DDL, SELECT) leave it unknown.
 
 ## Results
@@ -187,3 +185,12 @@ On the JVM backend against PostgreSQL 18 in Docker on macOS:
 The per-row cost is mostly one async task switch (`RowReading.row()`) plus
 `Row` construction. Messages already in the receive buffer are parsed without
 further awaits.
+
+The high-level `Query`, `Param` and typed `Row` APIs apply to PostgreSQL too.
+Keep PostgreSQL `$1`, `$2` placeholders. `Query(prepared, parameters)` reuses server-side
+preparation; Query owns only its result cursor. See the updated runnable example.
+
+`examples/std-v4/db-postgres-query-check.ok` checks cardinality, prepared reuse,
+NULL parameters, stream EOF and pool rollback/revocation against a live server.
+It uses only session-local TEMP tables and the same `OKKAMA_PG_*` environment
+variables as the inventory example. Run it separately for each engine.

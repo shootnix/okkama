@@ -45,7 +45,8 @@ The wire representation is explicit at the infrastructure boundary.
 
 One physical connection serializes requests and permits one active reader or
 incremental BLOB. Unread rows and incompatible transaction ownership fail with
-DbBusy. Fetches contain at most eight rows and 8 MiB aggregate value representations.
+DbBusy. The first fetch contains at most eight rows; continued reads request up
+to 64 rows per fetch. Every fetch remains capped at 8 MiB aggregate value representations.
 A next valid row which would exceed the batch byte budget is retained for the
 next fetch; at most one extra8 MiB row is buffered in the worker. Each individual
 row remains bounded, and large rows are not truncated or rejected merely because
@@ -53,7 +54,10 @@ two of them cannot share one batch.
 Row and Column are immutable copies with ordered duplicate names. RowsEnded is
 exhaustion; close discards remaining rows. Connection close revokes all dependent
 capabilities, schedules interruption/resource release and rolls back uncommitted
-work. `settled()` joins cleanup; use the shown defer order.
+work. `settled()` joins cleanup; use the shown defer order. A received worker
+reply already acknowledges its operation, so successful internal requests do not
+add a separate worker barrier. Cancellation and incomplete requests still await
+that barrier before their cleanup finishes.
 
 ## SQL and SQLite configuration
 

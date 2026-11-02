@@ -46,6 +46,35 @@ pub const CANCELLED: usize = usize::MAX;
 const FREE: u64 = 0;
 const DEAD: u64 = u64::MAX;
 
+#[cfg(feature = "no-regions-bench")]
+fn regions_disabled() -> bool {
+    thread_local! {
+        static DISABLED: bool = std::env::var("OKKAMA_NO_REGIONS_BENCH").as_deref() == Ok("1");
+    }
+    DISABLED.with(|disabled| *disabled)
+}
+
+#[cfg(feature = "region-walk-stats")]
+mod walk_stats {
+    use std::cell::Cell;
+    struct Stats(Cell<[u64; 9]>);
+    impl Drop for Stats {
+        fn drop(&mut self) {
+            eprintln!("region_walk_stats {:?}", self.0.get());
+        }
+    }
+    thread_local! { static STATS: Stats = const { Stats(Cell::new([0; 9])) }; }
+    // register, transfer, keep roots, collect calls, values popped,
+    // object encounters, owner rejected, duplicate rejected, accepted objects.
+    pub fn add(delta: [u64; 9]) {
+        STATS.with(|stats| {
+            let mut totals = stats.0.get();
+            for (total, increment) in totals.iter_mut().zip(delta) { *total += increment; }
+            stats.0.set(totals);
+        });
+    }
+}
+
 thread_local! {
     static CREATED: Cell<u64> = const { Cell::new(0) };
     static REGIONS: Cell<u64> = const { Cell::new(0) };
@@ -708,19 +737,84 @@ fn plain(value: &Value) -> bool {
     )
 }
 
+// Reuse only empty work buffers, never Values or object identities. Take the
+// slot for the duration of a walk so nested/reentrant walks get independent state.
+#[derive(Default)]
+struct WalkScratch {
+    seen: std::collections::HashSet<*const Object>,
+    pending: Vec<Value>,
+}
+
+thread_local! {
+    static WALK_SCRATCH: RefCell<Option<WalkScratch>> = const { RefCell::new(None) };
+}
+
+struct WalkLease(Option<WalkScratch>);
+
+impl WalkLease {
+    fn new() -> Self {
+        let scratch = WALK_SCRATCH.try_with(|slot| slot.borrow_mut().take()).ok().flatten();
+        Self(Some(scratch.unwrap_or_default()))
+    }
+}
+
+impl Drop for WalkLease {
+    fn drop(&mut self) {
+        let Some(mut scratch) = self.0.take() else { return; };
+        // Clear before borrowing the cache: dropping a Value can reenter runtime.
+        scratch.pending.clear();
+        scratch.seen.clear();
+        // Do not retain an unusually large traversal's high-water mark forever.
+        if scratch.pending.capacity() > 1024 || scratch.seen.capacity() > 4096 {
+            return;
+        }
+        let mut available = Some(scratch);
+        let _ = WALK_SCRATCH.try_with(|slot| {
+            if let Ok(mut slot) = slot.try_borrow_mut() {
+                if slot.is_none() { *slot = available.take(); }
+            }
+        });
+        // Any unused scratch drops outside the cache borrow, including at TLS exit.
+    }
+}
+
 /// Идентичности, достижимые из `value`: свободные, а при `via` ещё и
 /// принадлежащие `via`. Чужие идентичности не обходятся. Без рекурсии.
 fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<u64>) {
-    let mut seen = std::collections::HashSet::new();
-    let mut pending = vec![value.clone()];
+    #[cfg(feature = "allocation-scopes")]
+    let _allocation_scope = okkama_allocation_counter::enter(2);
+    #[cfg(feature = "region-walk-stats")]
+    let mut stats = [0, 0, 0, 1, 0, 0, 0, 0, 0];
+    let mut lease = WalkLease::new();
+    let WalkScratch { seen, pending } = lease.0.as_mut().expect("walk scratch");
+    pending.push(value.clone());
     while let Some(value) = pending.pop() {
+        #[cfg(feature = "region-walk-stats")]
+        { stats[4] += 1; }
         match value {
             Value::Object(object) => {
+                #[cfg(feature = "region-walk-stats")]
+                { stats[5] += 1; }
                 let owner = object.owner.get();
-                if !(owner == FREE || Some(owner) == via) || !seen.insert(Rc::as_ptr(&object)) {
+                if !(owner == FREE || Some(owner) == via) {
+                    #[cfg(feature = "region-walk-stats")]
+                    { stats[6] += 1; }
                     continue;
                 }
-                pending.extend(object.values().into_iter().rev());
+                if !seen.insert(Rc::as_ptr(&object)) {
+                    #[cfg(feature = "region-walk-stats")]
+                    { stats[7] += 1; }
+                    continue;
+                }
+                #[cfg(feature = "region-walk-stats")]
+                { stats[8] += 1; }
+                for index in (0..object.field_count()).rev() {
+                    if let Some(value) = object.field(index) {
+                        if !matches!(value, Value::Undef) {
+                            pending.push(value);
+                        }
+                    }
+                }
                 out.push(object);
             }
             Value::Array(array) => pending.extend(array.0.iter().rev().cloned()),
@@ -731,6 +825,8 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<u64>) {
             _ => {}
         }
     }
+    #[cfg(feature = "region-walk-stats")]
+    walk_stats::add(stats);
 }
 
 /// Состояние закрытия региона: исполнитель вызывает `destroy` по одному
@@ -743,6 +839,8 @@ pub struct Closing {
 
 impl Region {
     pub fn new() -> Self {
+        #[cfg(feature = "allocation-scopes")]
+        let _allocation_scope = okkama_allocation_counter::enter(1);
         let id = REGIONS.with(|regions| {
             regions.set(regions.get() + 1);
             regions.get()
@@ -761,10 +859,16 @@ impl Region {
     }
 
     fn register(&self, value: &Value, own: bool) {
+        #[cfg(feature = "no-regions-bench")]
+        if regions_disabled() { return; }
+        #[cfg(feature = "allocation-scopes")]
+        let _allocation_scope = okkama_allocation_counter::enter(1);
         if plain(value) {
             return;
         }
         let mut fresh = Vec::new();
+        #[cfg(feature = "region-walk-stats")]
+        walk_stats::add([1, 0, 0, 0, 0, 0, 0, 0, 0]);
         collect(value, &mut fresh, None);
         fresh.sort_by_key(|object| object.serial);
         for object in fresh {
@@ -787,10 +891,16 @@ impl Region {
 
     /// Идентичности `value`, принадлежащие этому региону, — во владение `to`.
     pub fn transfer(&self, to: &Region, value: &Value) {
+        #[cfg(feature = "no-regions-bench")]
+        if regions_disabled() { return; }
+        #[cfg(feature = "allocation-scopes")]
+        let _allocation_scope = okkama_allocation_counter::enter(1);
         if self.entries.borrow().is_empty() || plain(value) {
             return;
         }
         let mut reachable = Vec::new();
+        #[cfg(feature = "region-walk-stats")]
+        walk_stats::add([0, 1, 0, 0, 0, 0, 0, 0, 0]);
         collect(value, &mut reachable, Some(self.id));
         reachable.sort_by_key(|object| object.serial);
         for object in reachable {
@@ -810,8 +920,16 @@ impl Region {
 
     /// Начать закрытие; идентичности, достижимые из `keep`, освобождаются.
     pub fn begin_close(&self, keep: &[Value]) -> Closing {
+        #[cfg(feature = "no-regions-bench")]
+        if regions_disabled() {
+            return Closing { kept: std::collections::HashSet::new(), index: 0 };
+        }
+        #[cfg(feature = "allocation-scopes")]
+        let _allocation_scope = okkama_allocation_counter::enter(1);
         let mut kept = std::collections::HashSet::new();
         for value in keep {
+            #[cfg(feature = "region-walk-stats")]
+            walk_stats::add([0, 0, 1, 0, 0, 0, 0, 0, 0]);
             let mut reachable = Vec::new();
             collect(value, &mut reachable, Some(self.id));
             kept.extend(reachable.iter().map(Rc::as_ptr));
@@ -825,6 +943,8 @@ impl Region {
     /// Следующий объект для `destroy` (уже помечен уничтоженным) или None,
     /// когда регион закрыт.
     pub fn next_destroyed(&self, closing: &mut Closing) -> Option<Rc<Object>> {
+        #[cfg(feature = "allocation-scopes")]
+        let _allocation_scope = okkama_allocation_counter::enter(1);
         while closing.index > 0 {
             closing.index -= 1;
             let object = self.entries.borrow()[closing.index].clone();
@@ -981,6 +1101,57 @@ impl ObjectHeap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn walk_cache_clears_values_on_unwind_and_is_reentrant() {
+        WALK_SCRATCH.with(|slot| *slot.borrow_mut() = None);
+        let object = Rc::new(Object::new(0, vec![]));
+        let weak = Rc::downgrade(&object);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut outer = WalkLease::new();
+            outer.0.as_mut().unwrap().pending.push(Value::Object(object));
+            let mut inner = WalkLease::new();
+            assert!(inner.0.as_ref().unwrap().pending.is_empty());
+            inner.0.as_mut().unwrap().seen.insert(weak.as_ptr());
+            drop(inner);
+            panic!("exercise traversal cleanup");
+        }));
+        assert!(weak.upgrade().is_none());
+        let next = WalkLease::new();
+        assert!(next.0.as_ref().unwrap().pending.is_empty());
+        assert!(next.0.as_ref().unwrap().seen.is_empty());
+    }
+
+    #[test]
+    fn walk_cache_does_not_retain_large_capacity() {
+        WALK_SCRATCH.with(|slot| *slot.borrow_mut() = None);
+        let mut walk = WalkLease::new();
+        walk.0.as_mut().unwrap().pending.reserve(2048);
+        drop(walk);
+        WALK_SCRATCH.with(|slot| assert!(slot.borrow().is_none()));
+    }
+
+    #[test]
+    fn reused_walks_preserve_ownership_and_destruction_order() {
+        let a = Rc::new(Object::new(0, vec![]));
+        let b = Rc::new(Object::new(0, vec![Value::Object(a.clone())]));
+        let root = Value::Object(b.clone());
+        let first = Region::new();
+        let second = Region::new();
+        first.adopt(&root);
+        first.transfer(&second, &root);
+        let mut closing = first.begin_close(&[]);
+        assert!(first.next_destroyed(&mut closing).is_none());
+        // A cached seen-set must not suppress the same objects in a later walk.
+        let mut preserved = second.begin_close(&[root.clone()]);
+        assert!(second.next_destroyed(&mut preserved).is_none());
+        let third = Region::new();
+        third.adopt(&root);
+        let mut closing = third.begin_close(&[]);
+        assert!(Rc::ptr_eq(&third.next_destroyed(&mut closing).unwrap(), &b));
+        assert!(Rc::ptr_eq(&third.next_destroyed(&mut closing).unwrap(), &a));
+        assert!(third.next_destroyed(&mut closing).is_none());
+    }
 
     #[test]
     fn builders_collect_in_place_and_finish_into_arrays() {

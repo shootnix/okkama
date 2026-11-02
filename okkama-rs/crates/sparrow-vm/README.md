@@ -2,7 +2,7 @@
 
 Самостоятельный исполнитель `.spb`. Не зависит от компилятора Okkama,
 IR, лексера, парсера, Java или исходников пользовательской программы.
-Зависимости: `okkama-sparrow` (байткод/верификатор), `okkama-runtime-core`
+Зависимости: `okkama-sparrow` (байткод/верификатор), `sparrow-runtime`
 (значения, операции, планировщик, natives) и Cranelift (JIT).
 
 ## Отдельный бинарник
@@ -46,26 +46,26 @@ println!("{value}");
 содержит функцию, индекс инструкции и ошибку операции. Ошибки не содержат типов IR
 или фиктивных source spans. Отображение позиции в исходнике — будущий source map.
 
-Прежний `okkama_runtime::sparrow::execute` остаётся совместимым адаптером:
-он вызывает этот движок и переводит ошибки в прежние типы Okkama runtime.
-`ir::IntValue` теперь реэкспортирует общий `okkama_runtime_core::IntValue`,
-поэтому результат API сохраняет прежние методы и типовую совместимость.
+`okkama_runtime::sparrow` удалён: CLI обращается к `sparrow_vm` напрямую.
+Результат — `sparrow_vm::IntValue` из независимого `sparrow-runtime`.
+Его нельзя передавать как `ir::IntValue`. Ошибки и состояние планировщика
+также независимы. CLI переводит только координаты стека для source-диагностики.
 
 ## Границы модулей
 
 - `okkama-runtime-abi`: стабильные native ID, сигнатуры и NativeFailure.
-- `okkama-runtime-core`: значения, операции `ops`, кучи, регионы, отказы,
-  планировщик, natives, intrinsics, тесты и воркеры — общие для IR и Sparrow.
+- `sparrow-runtime`: значения, операции `ops`, кучи, регионы, отказы,
+  планировщик, natives, intrinsics, тесты и воркеры Sparrow.
   Не зависит от формата программы или исполнителя.
 - `okkama-sparrow`: модель программы, SPB codec, verifier и ассемблер; без движка.
 - `sparrow-vm`: кадры, переходы, вызовы и исполнение инструкций.
 - `sparrow-cli`: файлы, аргументы, вывод диагностики и process exit status.
-- `okkama-runtime`: IR-интерпретатор, source-диагностика, адаптер совместимости.
+- `okkama-runtime`: IR-интерпретатор и source-диагностика; использует своё `okkama-runtime-core`.
 
-Значения — общие `Value` ядра (`Rc` с итеративным освобождением); циклы
-ссылок собирает общий сборщик циклов `okkama_runtime_core::gc`. Строки,
+Значения — собственные `Value` Sparrow (`Rc` с итеративным освобождением); циклы
+ссылок собирает сборщик циклов `sparrow_runtime::gc`. Строки,
 объекты, successor, массивы, словари, Future, регионы, natives и intrinsics
-исполняются через общее ядро. Состояние stdin (буфер и EOF) принадлежит одному
+исполняются через `sparrow-runtime`. Состояние stdin (буфер и EOF) принадлежит одному
 запуску VM.
 
 ## JIT
@@ -96,10 +96,11 @@ println!("{value}");
 
 ```sh
 cargo tree --offline -p sparrow-cli
-cargo test --offline -p sparrow-cli -p sparrow-vm -p okkama-runtime-core
+cargo test --offline -p sparrow-cli -p sparrow-vm -p sparrow-runtime
+python3 tools/check-sparrow-boundary.py
 ```
 
-В дереве нет `okkama-compiler` и `okkama-runtime`. Тесты отдельного бинарника
+В дереве нет `okkama-compiler`, `okkama-runtime` и `okkama-runtime-core`. Тесты отдельного бинарника
 создают байткод напрямую и запускают VM с пустым PATH. Тесты движка проверяют
 SPB 9, глубокую рекурсию (200 000 кадров), цикл SPB → ASM → SPB, обработчики
 отказов, точные целые за пределами 128 бит, ошибки и горячий код (OSR,

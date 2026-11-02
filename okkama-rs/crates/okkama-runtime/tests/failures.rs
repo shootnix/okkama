@@ -1,5 +1,6 @@
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use okkama_runtime::{RuntimeError, execute, sparrow};
+use okkama_runtime::{RuntimeError, execute};
+use sparrow_vm as sparrow;
 
 fn lower(body: &str) -> ir::Module {
     let source = SourceFile::new("failures.ok", format!("module app v1.0.0; object Worker {{ Worker(); fail(message is string) is int {{ panic message; }} }} main() is int {{ {body} }}")).unwrap();
@@ -15,7 +16,7 @@ fn panic_preserves_computed_unicode_message_across_calls() {
     );
     let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
     assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: RuntimeError::Panic { message, .. }, .. }) if message == "ошибка: 42")
+        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Panic { message, .. }, .. }) if message == "ошибка: 42")
     );
 }
 
@@ -48,7 +49,7 @@ fn untaken_panic_is_lazy_and_bytecode_message_must_be_a_string() {
     assert!(invalid.verify().is_ok());
     assert!(matches!(
         sparrow::execute(&invalid),
-        Err(sparrow::Error::Operation { error: RuntimeError::InvalidState { .. }, .. })
+        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::InvalidState { .. }, .. })
     ));
 }
 
@@ -149,7 +150,7 @@ fn sparrow_unwind_preserves_primary_and_cleanup_failures_across_calls() {
     }
 }
 
-fn run_sparrow(module: &ir::Module) -> Result<ir::IntValue, RuntimeError> {
+fn run_sparrow(module: &ir::Module) -> Result<sparrow_vm::IntValue, sparrow_vm::OperationError> {
     let program = codegen::sparrow::generate(module).unwrap();
     let bytes = okkama_sparrow::encode(&program).unwrap();
     match sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()) {
@@ -218,7 +219,7 @@ fn uncaught_failure_reports_place_and_call_stack_on_both_engines() {
     let program = codegen::sparrow::generate(&module).unwrap();
     let (result, sparrow_trace) = sparrow::execute_traced(&program, Vec::new());
     assert!(result.is_err());
-    assert_eq!(sparrow_trace, trace);
+    assert_eq!(sparrow_trace.iter().map(|s| (s.function, s.pc)).collect::<Vec<_>>(), trace.iter().map(|s| (s.function, s.pc)).collect::<Vec<_>>());
     let text = sparrow::render_trace(&program, &sparrow_trace);
     assert!(text.starts_with("Stack trace (Sparrow, most recent call first):\n  at Worker.fail [f"), "{text}");
     assert!(text.contains(": panic r"), "{text}");

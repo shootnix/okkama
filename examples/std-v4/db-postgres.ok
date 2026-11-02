@@ -2,9 +2,8 @@ module app v1.0.0;
 
 import "db/postgres" take PostgresDatabase, PostgresTcp, PostgresCredentials, PostgresOptions;
 import "db/statement" take Statement;
-import "db/row" take RowsEnded;
-import "db/read" take RowReader;
-import "db/value" take DbInteger, DbText, DbDecimal, ObservedDbValue;
+import "db/query" take Query;
+import "db/param" take Param;
 import "db/error" take DbFailure, DbFailureKind;
 import "db/transaction" take TransactionOptions, Isolation;
 import "net/endpoint" take IpEndpoint;
@@ -57,35 +56,30 @@ async main() is int {
     let restock = await connection.transaction(TransactionOptions(Isolation.serializable, false, false));
     for [["A-1", "Lamp", "19.90", "4"], ["B-2", "Desk", "149.00", "1"], ["C-3", "Chair", "59.50", "6"]] -> item {
         await restock.execution(Statement("INSERT INTO stock VALUES ($1, $2, $3, $4)",
-            [DbText(item[0]), DbText(item[1]), DbDecimal(Decimal(item[2])), DbInteger(BigInt(item[3]))]));
+            [Param(item[0]), Param(item[1]), Param(Decimal(item[2])), Param(BigInt(item[3]))]));
     }
     await restock.commit();
 
     let lookup = await connection.prepared("SELECT title, quantity FROM stock WHERE sku = $1");
     for ["A-1", "C-3"] -> sku {
-        let rows = await lookup.rows([DbText(sku)]);
-        let found = RowReader(await rows.row());
+        let found = await Query(lookup, [Param(sku)]).one();
         output.writeln(sku + ": " + found.text("title") + " x" + found.int("quantity").string());
-        rows.close();
     }
     lookup.close();
 
     let oversold = try {
-        await connection.execution(Statement("UPDATE stock SET quantity = quantity - $1 WHERE sku = $2", [DbInteger(BigInt("2")), DbText("B-2")]));
+        await connection.execution(Statement("UPDATE stock SET quantity = quantity - $1 WHERE sku = $2", [Param(2), Param("B-2")]));
         "accepted";
     } catch failure is DbFailure {
         if failure.kind() == DbFailureKind.constraint { "refused by " + failure.code(); } else { throw; }
     };
     output.writeln("selling two desks: " + oversold);
 
-    let report = await connection.rows(Statement("SELECT sku, price * quantity AS worth FROM stock ORDER BY sku"));
-    let streamed = try {
-        loop {
-            let row = await report.row();
-            output.writeln(ObservedDbValue(row.value("sku")).text() + " worth " + ObservedDbValue(row.value("worth")).decimal().string());
-        }
-        false;
-    } catch ended is RowsEnded { true; };
-    output.writeln("report complete: " + streamed.string());
+    let report = await Query(connection, Statement("SELECT sku, price * quantity AS worth FROM stock ORDER BY sku")).rows();
+    defer report.close();
+    for await report -> row {
+        output.writeln(row.text("sku") + " worth " + row.decimal("worth").string());
+    }
+    output.writeln("report complete: true");
     return 0;
 }

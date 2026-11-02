@@ -1,25 +1,29 @@
 module db/query v1.0.0;
 
 import "db/connection" take DbExecuting;
-import "db/statement" take Statement;
+import "db/statement" take Statement,DbValueSnapshot,DbLimits;
 import "db/row" take Row,RowReading,RowsEnded;
 import "db/error" take DbClosed,DbBusy;
 import "async/atomic" take Atomic;
 import "collections/list" take List,EmptyList;
 import "collections/sequence" take Sequencing;
 import "db/row" take Column;
+import "db/prepared" take PreparedStatement;
+import "db/value" take DbValue;
 
 // Each call executes the statement anew. Owns its cursor, not the connection.
 object Query {
-    has origin is DbExecuting;
-    has statement is Statement;
+    has source is QueryOpening;
 
     Query(origin is DbExecuting, statement is Statement) {
-        self.origin = origin;
-        self.statement = statement;
+        source = StatementQueryOpening(origin, statement);
     }
 
-    async rows() is QueryRows { QueryRows(await origin.rows(statement)); }
+    Query(prepared is PreparedStatement, values is Sequencing<DbValue>) {
+        source = PreparedQueryOpening(prepared, values);
+    }
+
+    async rows() is QueryRows { QueryRows(await source.rows()); }
 
     // Read one extra row to distinguish exactly-at-limit from truncation.
     async all(max_rows is int) is @Row {
@@ -80,10 +84,18 @@ object QueryRows {
         if ended.value() { Maybe.none; }
         else {
             confirm !self.closed() else throw DbClosed();
-            try { Maybe.some(await origin.row()); }
+            try {
+                let row = await origin.row();
+                confirm !self.closed() else throw DbClosed();
+                Maybe.some(row);
+            }
             catch eof is RowsEnded { ended.replace(true);self.close();Maybe.none; }
             catch failure is Cancelled { self.close();throw; }
-            catch failure is Error { self.close();throw; }
+            catch failure is Error {
+                try { self.close(); }
+                catch cleanup is Error { throw QueryCleanupFailure(failure,cleanup); }
+                throw;
+            }
         }
     }
     destroy { self.close(); }
@@ -123,4 +135,31 @@ object NoRows does Error {
 object TooManyRows does Error {
     TooManyRows();
     text() is string { "database query expected at most one row, found more than one"; }
+}
+
+// Both query forms share cardinality, limits and cleanup behavior.
+role QueryOpening { async rows() is RowReading; }
+object StatementQueryOpening does QueryOpening {
+    has origin is DbExecuting;
+    has statement is Statement;
+    StatementQueryOpening(origin is DbExecuting, statement is Statement) {
+        self.origin=origin;self.statement=statement;
+    }
+    async rows() is RowReading { await origin.rows(statement); }
+}
+object PreparedQueryOpening does QueryOpening {
+    has origin is PreparedStatement;
+    has values is @DbValue;
+    PreparedQueryOpening(origin is PreparedStatement, values is Sequencing<DbValue>) {
+        self.origin=origin;self.values=DbValueSnapshot(values,DbLimits()).values();
+    }
+    async rows() is RowReading { await origin.rows(values); }
+}
+
+object QueryCleanupFailure does Error {
+    has original,cleanup is Error;
+    QueryCleanupFailure(original is Error,cleanup is Error) { self.original=original;self.cleanup=cleanup; }
+    cause() is Error { original; }
+    cleanup() is Error { cleanup; }
+    text() is string { "database query failed and cursor cleanup also failed"; }
 }

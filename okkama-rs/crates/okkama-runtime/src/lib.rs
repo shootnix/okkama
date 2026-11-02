@@ -9,7 +9,6 @@ mod host;
 mod interpreter;
 mod operations;
 pub mod repl;
-pub mod sparrow;
 mod worker;
 mod state;
 mod tests;

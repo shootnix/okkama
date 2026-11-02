@@ -1,0 +1,21 @@
+module app v1.0.0;
+import "conformance/check" take Checks;
+import "db/sqlite" take SqliteMemory;
+import "db/statement" take Statement;
+
+async main() is int {
+    let check=Checks();
+    let connection=await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    let rows=await connection.rows(Statement("SELECT 7 AS id, 'saved' AS name, x'0001ff' AS payload, NULL AS nick"));
+    let saved=await rows.row();
+    rows.close();
+    connection.close();
+    await connection.settled();
+    check=check.ok("integer survives reply and connection close",saved.int("id")==7);
+    check=check.ok("text survives reply and connection close",saved.text("name")=="saved");
+    check=check.ok("blob survives reply and connection close",saved.bytes("payload").size()==3);
+    check=check.ok("null survives reply and connection close",(saved.maybe("nick").text() else "null")=="null");
+    check.done();
+}

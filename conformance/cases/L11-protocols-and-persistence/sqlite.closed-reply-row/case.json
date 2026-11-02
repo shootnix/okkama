@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.closed-reply-row",
+  "title": "Owned row values survive native reply and connection closure",
+  "purpose": "Protect text, binary, integer and NULL row snapshots when closed replies release their payload.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.QUERY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - integer survives reply and connection close\nok 2 - text survives reply and connection close\nok 3 - blob survives reply and connection close\nok 4 - null survives reply and connection close\nchecks: 4, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/sqlite.ok",
+    "docs/std/db-sqlite.md",
+    "std/db/value.ok"
+  ],
+  "budget": {
+    "timeout_s": 180
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Rows are owned snapshots and remain readable after the cursor, reply and connection close."
+  },
+  "status": "mandatory",
+  "harness": true
+}

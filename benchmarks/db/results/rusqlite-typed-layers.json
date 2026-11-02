@@ -1,0 +1,52 @@
+{
+  "source": "module bench/layers v1.0.0;\nimport \"runtime/database\" as native_db;\nimport \"runtime/db\" as cells;\nimport \"db/sqlite\" take SqliteMemory,SqliteConnection;\nimport \"db/query\" take Query;\nimport \"db/row\" take RowsEnded;\nimport \"db/statement\" take Statement;\nimport \"io/stdout\" take Stdout;\nimport \"encoding/utf\" take Utf8Encoded;\nimport \"strings/parse\" take ParsedInt;\nimport \"time/clock\" take SystemClock;\n\nobject Total {\n    has value is int;\n    Total(value is int) { self.value=value; }\n    value() is int { value; }\n    add(value is int) is ^Total { ^value=self.value+value; }\n}\nobject Layers {\n    has raw_state is native_db.SqliteState;\n    has connection is SqliteConnection;\n    Layers(state is native_db.SqliteState,connection is SqliteConnection) { raw_state=state;self.connection=connection; }\n    plain() is int { 1; }\n    async ready() is int { 1; }\n    async run(mode is string) is int {\n        let sum=Total(0);\n        for 0..500 -> i {\n            match mode {\n                case \"sync\" { sum=sum.add(self.plain()); }\n                case \"async\" { sum=sum.add(await self.ready()); }\n                case \"native_one\" {\n                    let opened=await native_db.sqlite_rows_cells(raw_state,\"SELECT 7 AS n\",[]);\n                    \n                    confirm native_db.sqlite_reply_ok(opened) else panic \"raw_state open failed\";\n                    let id=native_db.sqlite_reply_id(opened);native_db.sqlite_reply_close(opened);\n                    let fetched=await native_db.sqlite_fetch(raw_state,id,8);\n                    \n                    confirm native_db.sqlite_reply_ok(fetched) && native_db.sqlite_reply_count(fetched)==1 && native_db.sqlite_reply_eof(fetched) else panic \"raw_state cardinality\";\n                    sum=sum.add(cells.db_int_value(native_db.sqlite_reply_cells(fetched,0)[0]));\n                    native_db.sqlite_reply_close(fetched);native_db.sqlite_release(raw_state,id);\n                }\n                case \"driver_one\" {\n                    let rows=await connection.rows(Statement(\"SELECT 7 AS n\"));\n                    defer rows.close();\n                    let row=await rows.row();\n                    let ended=try { await rows.row();false; } catch e is RowsEnded { true; };\n                    confirm ended else panic \"driver cardinality\";\n                    sum=sum.add(row.int(\"n\"));\n                }\n                case \"query_one\" {\n                    let row=await Query(connection,Statement(\"SELECT 7 AS n\")).one();\n                    sum=sum.add(row.int(\"n\"));\n                }\n            }\n        }\n        sum.value();\n    }\n}\nasync main() is int {\n    let raw_state=native_db.sqlite_create([],false,true,true,5000,\"memory\",true);\n    defer await native_db.sqlite_settled(raw_state);defer native_db.sqlite_close(raw_state);\n    let connected=await native_db.sqlite_connect(raw_state);\n    confirm native_db.sqlite_reply_info(connected)[\"ok\"]==\"1\" else panic \"connect failed\";\n    native_db.sqlite_reply_close(connected);\n    let connection=await SqliteMemory().connection();\n    defer await connection.settled();defer connection.close();\n    let bench=Layers(raw_state,connection);let clock=SystemClock();\n    for [\"sync\",\"async\",\"native_one\",\"driver_one\",\"query_one\"] -> mode {\n        for 0..4 -> warmup { await bench.run(mode); }\n        let start=clock.monotonic_instant();let result=await bench.run(mode);\n        let nanos=clock.monotonic_instant().minus(start).nanoseconds();\n        confirm result==if mode==\"sync\" || mode==\"async\" { 500; } else { 3500; } else panic \"checksum\";\n        Stdout().writeln(mode+\" \"+nanos.string()+\" \"+result.string());\n    }\n    0;\n}\n",
+  "runs": 5,
+  "warmups": 4,
+  "iterations": 500,
+  "samples": [
+    {
+      "sync": 0.055334,
+      "async": 0.162709,
+      "native_one": 6.055125,
+      "driver_one": 25.326959,
+      "query_one": 33.829084
+    },
+    {
+      "sync": 0.059083,
+      "async": 0.162833,
+      "native_one": 6.023958,
+      "driver_one": 25.390292,
+      "query_one": 33.850166
+    },
+    {
+      "sync": 0.056583,
+      "async": 0.160208,
+      "native_one": 6.064833,
+      "driver_one": 25.173709,
+      "query_one": 34.453125
+    },
+    {
+      "sync": 0.056,
+      "async": 0.161666,
+      "native_one": 6.06375,
+      "driver_one": 25.5065,
+      "query_one": 34.616542
+    },
+    {
+      "sync": 0.05425,
+      "async": 0.162375,
+      "native_one": 6.1995,
+      "driver_one": 25.099167,
+      "query_one": 34.276625
+    }
+  ],
+  "summary": {
+    "sync": 0.056,
+    "async": 0.162375,
+    "native_one": 6.06375,
+    "driver_one": 25.326959,
+    "query_one": 34.276625
+  },
+  "reproduction_script": "import pathlib,subprocess,os,json,statistics\nroot=pathlib.Path('/Volumes/SamsungSSD/stuff/okkama-new');s=(root/'benchmarks/db/layers.ok').read_text()\ns=s.replace('native_db.sqlite_rows(raw_state,Utf8Encoded(\"SELECT 7 AS n\").bytes(),[],[])','native_db.sqlite_rows_cells(raw_state,\"SELECT 7 AS n\",[])')\ns=s.replace('let info=native_db.sqlite_reply_info(opened);','').replace('info[\"ok\"]==\"1\"','native_db.sqlite_reply_ok(opened)').replace('ParsedInt(info[\"id\"]).value()','native_db.sqlite_reply_id(opened)')\ns=s.replace('let fields=native_db.sqlite_reply_info(fetched);','').replace('fields[\"ok\"]==\"1\" && fields[\"rows\"]==\"1\" && fields[\"eof\"]==\"1\"','native_db.sqlite_reply_ok(fetched) && native_db.sqlite_reply_count(fetched)==1 && native_db.sqlite_reply_eof(fetched)')\np=pathlib.Path('/tmp/db-typed-layer.ok');p.write_text(s)\nresult={'source':s,'runs':5,'warmups':4,'iterations':500,'samples':[]}\nenv=dict(os.environ,OKKAMA_STDLIB_DIR=str(root/'std'))\nfor k in ['OKKAMA_JIT','OKKAMA_JIT_THRESHOLD','OKKAMA_ENGINE','OKKAMA_GC']:env.pop(k,None)\nfor i in range(5):\n r=subprocess.run([str(root/'okkama-rs/target/release/okkama'),'run','--engine','sparrow',str(p)],env=env,text=True,capture_output=True,timeout=120)\n if r.returncode:raise RuntimeError(r.stdout+r.stderr)\n phases={}\n for line in r.stdout.splitlines():\n  name,ns,total=line.split();assert int(total)==(500 if name in ['sync','async'] else 3500);phases[name]=int(ns)/1e6\n result['samples'].append(phases);print(i,phases,flush=True)\nresult['summary']={k:statistics.median(x[k] for x in result['samples']) for k in result['samples'][0]}\n(root/'benchmarks/db/results/rusqlite-typed-layers.json').write_text(json.dumps(result,indent=2)+'\\n')\n",
+  "compiler_sha256": "33db87c58cec0152195fa9effb17e1eef010ea55b0a8dc6870cde19057d9212f"
+}

@@ -111,5 +111,20 @@ async main() is int {
         c=c.ok("all propagates fetch failure",try { await Query(ProbeDb(failure_probe),Statement("probe")).all(3);false; } catch e is FetchFailed { true; });
         c=c.same_int("all failure closes once",failure_probe.close_count(),1);
     }
+    let retained=await Query(connection,Statement("WITH RECURSIVE seq(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM seq WHERE i<16) SELECT i, NULL AS n, 'я' || char(0) || '終' AS t, x'00ff' AS b, 1.25 AS f, -9223372036854775808 AS lo FROM seq ORDER BY i")).all(17);
+    connection.close();await connection.settled();
+    c=c.ok("native cells survive batch and connection close",retained[0].int("i")==0 && retained[16].int("i")==16);
+    c=c.ok("native NULL stays none",retained[0].maybe("n").text() ?? .none: true !! _: false);
+    c=c.ok("native UTF8 and embedded NUL survive close",retained[0].text("t").length()==3);
+    c=c.ok("native bytes survive close",retained[0].bytes("b")[1].int()==255);
+    c=c.ok("native floating survives close",retained[0].floating("f")==1.25);
+    c=c.ok("native int64 boundary survives close",retained[0].int("lo")==-9223372036854775808);
+    let cancellation=await SqliteMemory().connection();
+    defer await cancellation.settled();defer cancellation.close();
+    let opening=spawn Query(cancellation,Statement("SELECT 7 AS id")).rows();
+    opening.cancel();
+    c=c.ok("native opening cancellation is observed",try { await opening;false; } catch e is Cancelled { true; });
+    await cancellation.settled();
+    c=c.ok("native late cursor cleanup permits reuse",(await Query(cancellation,Statement("SELECT 9 AS id")).one()).int("id")==9);
     c.done();
 }

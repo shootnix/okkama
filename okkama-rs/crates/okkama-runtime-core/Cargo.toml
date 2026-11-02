@@ -7,7 +7,17 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Diagnostic only: inline SQLite blocks the event loop and cannot cancel active SQL.
+sqlite-inline-bench = []
+# Diagnostic counters only; no code in normal builds.
+region-walk-stats = []
+allocation-scopes = ["dep:okkama-allocation-counter"]
+# Deliberately breaks automatic destroy/ownership semantics; experiments only.
+no-regions-bench = []
+
 [dependencies]
+okkama-allocation-counter = { path = "../../../benchmarks/db/allocation-counter", optional = true }
 okkama-runtime-abi = { path = "../okkama-runtime-abi" }
 # Длинная арифметика `int` (Karatsuba/Toom-3, двоичные разряды).
 num-bigint = "0.4"
@@ -35,6 +45,11 @@ unicode-segmentation = "1"
 # Именованные UUID (v3 — MD5, v5 — SHA-1), как MessageDigest JVM.
 md-5 = "0.10"
 sha1 = "0.10"
+# Owned SQLite statements/rows; bundle SQLite so the Rust provider has one ABI.
+rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
+# A movable worker cursor must not retag its borrowed statement as a unique Box.
+aliasable = "0.1"
+fallible-iterator = "0.3"
 
 # unsafe разрешён только в `sched` (указатель Yielder текущей задачи).
 [lints.rust]

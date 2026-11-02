@@ -1,0 +1,76 @@
+module bench/layers v1.0.0;
+import "runtime/database" as native_db;
+import "runtime/db" as cells;
+import "db/sqlite" take SqliteMemory,SqliteConnection;
+import "db/query" take Query;
+import "db/row" take RowsEnded;
+import "db/statement" take Statement;
+import "io/stdout" take Stdout;
+import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take ParsedInt;
+import "time/clock" take SystemClock;
+
+object Total {
+    has value is int;
+    Total(value is int) { self.value=value; }
+    value() is int { value; }
+    add(value is int) is ^Total { ^value=self.value+value; }
+}
+object Layers {
+    has raw_state is native_db.SqliteState;
+    has connection is SqliteConnection;
+    Layers(state is native_db.SqliteState,connection is SqliteConnection) { raw_state=state;self.connection=connection; }
+    plain() is int { 1; }
+    async ready() is int { 1; }
+    async run(mode is string) is int {
+        let sum=Total(0);
+        for 0..500 -> i {
+            match mode {
+                case "sync" { sum=sum.add(self.plain()); }
+                case "async" { sum=sum.add(await self.ready()); }
+                case "native_one" {
+                    let opened=await native_db.sqlite_rows(raw_state,Utf8Encoded("SELECT 7 AS n").bytes(),[],[]);
+                    let info=native_db.sqlite_reply_info(opened);
+                    confirm info["ok"]=="1" else panic "raw_state open failed";
+                    let id=ParsedInt(info["id"]).value();native_db.sqlite_reply_close(opened);
+                    let fetched=await native_db.sqlite_fetch(raw_state,id,8);
+                    let fields=native_db.sqlite_reply_info(fetched);
+                    confirm fields["ok"]=="1" && fields["rows"]=="1" && fields["eof"]=="1" else panic "raw_state cardinality";
+                    sum=sum.add(cells.db_int_value(native_db.sqlite_reply_cells(fetched,0)[0]));
+                    native_db.sqlite_reply_close(fetched);native_db.sqlite_release(raw_state,id);
+                }
+                case "driver_one" {
+                    let rows=await connection.rows(Statement("SELECT 7 AS n"));
+                    defer rows.close();
+                    let row=await rows.row();
+                    let ended=try { await rows.row();false; } catch e is RowsEnded { true; };
+                    confirm ended else panic "driver cardinality";
+                    sum=sum.add(row.int("n"));
+                }
+                case "query_one" {
+                    let row=await Query(connection,Statement("SELECT 7 AS n")).one();
+                    sum=sum.add(row.int("n"));
+                }
+            }
+        }
+        sum.value();
+    }
+}
+async main() is int {
+    let raw_state=native_db.sqlite_create([],false,true,true,5000,"memory",true);
+    defer await native_db.sqlite_settled(raw_state);defer native_db.sqlite_close(raw_state);
+    let connected=await native_db.sqlite_connect(raw_state);
+    confirm native_db.sqlite_reply_info(connected)["ok"]=="1" else panic "connect failed";
+    native_db.sqlite_reply_close(connected);
+    let connection=await SqliteMemory().connection();
+    defer await connection.settled();defer connection.close();
+    let bench=Layers(raw_state,connection);let clock=SystemClock();
+    for ["sync","async","native_one","driver_one","query_one"] -> mode {
+        for 0..4 -> warmup { await bench.run(mode); }
+        let start=clock.monotonic_instant();let result=await bench.run(mode);
+        let nanos=clock.monotonic_instant().minus(start).nanoseconds();
+        confirm result==if mode=="sync" || mode=="async" { 500; } else { 3500; } else panic "checksum";
+        Stdout().writeln(mode+" "+nanos.string()+" "+result.string());
+    }
+    0;
+}

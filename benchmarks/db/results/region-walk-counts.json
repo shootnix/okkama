@@ -1,0 +1,190 @@
+{
+  "fields": [
+    "register",
+    "transfer",
+    "keep_roots",
+    "collect_calls",
+    "values_popped",
+    "object_encounters",
+    "owner_rejected",
+    "duplicate_rejected",
+    "accepted_objects"
+  ],
+  "method": "Two repetitions; identical setup and four warmups of 500 lookups. Differences across 500/1000/1500 measured lookups remove fixed costs. Counters cover whole main-thread lifetime. Accepted objects are visits, not unique allocations.",
+  "compiler_sha256": "e8ec021a8b3d55042987d4b3d24484e08df45e03d8444b9f1f102d11d6ff71a3",
+  "workload_sha256": "77bffd9de9a0edf31db10868e54bd878172d9a814dd9216eb7e9bc3573f3e2a1",
+  "samples": [
+    {
+      "repetition": 0,
+      "lookups": 500,
+      "checksum": 130543,
+      "counters": {
+        "register": 147682,
+        "transfer": 2501,
+        "keep_roots": 32553,
+        "collect_calls": 182736,
+        "values_popped": 1541359,
+        "object_encounters": 845763,
+        "owner_rejected": 190184,
+        "duplicate_rejected": 112551,
+        "accepted_objects": 543028
+      }
+    },
+    {
+      "repetition": 0,
+      "lookups": 1000,
+      "checksum": 511192,
+      "counters": {
+        "register": 177182,
+        "transfer": 3001,
+        "keep_roots": 39053,
+        "collect_calls": 219236,
+        "values_popped": 1849359,
+        "object_encounters": 1014763,
+        "owner_rejected": 228184,
+        "duplicate_rejected": 135051,
+        "accepted_objects": 651528
+      }
+    },
+    {
+      "repetition": 0,
+      "lookups": 1500,
+      "checksum": 1142340,
+      "counters": {
+        "register": 206682,
+        "transfer": 3501,
+        "keep_roots": 45553,
+        "collect_calls": 255736,
+        "values_popped": 2157359,
+        "object_encounters": 1183763,
+        "owner_rejected": 266184,
+        "duplicate_rejected": 157551,
+        "accepted_objects": 760028
+      }
+    },
+    {
+      "repetition": 1,
+      "lookups": 500,
+      "checksum": 130543,
+      "counters": {
+        "register": 147682,
+        "transfer": 2501,
+        "keep_roots": 32553,
+        "collect_calls": 182736,
+        "values_popped": 1541359,
+        "object_encounters": 845763,
+        "owner_rejected": 190184,
+        "duplicate_rejected": 112551,
+        "accepted_objects": 543028
+      }
+    },
+    {
+      "repetition": 1,
+      "lookups": 1000,
+      "checksum": 511192,
+      "counters": {
+        "register": 177182,
+        "transfer": 3001,
+        "keep_roots": 39053,
+        "collect_calls": 219236,
+        "values_popped": 1849359,
+        "object_encounters": 1014763,
+        "owner_rejected": 228184,
+        "duplicate_rejected": 135051,
+        "accepted_objects": 651528
+      }
+    },
+    {
+      "repetition": 1,
+      "lookups": 1500,
+      "checksum": 1142340,
+      "counters": {
+        "register": 206682,
+        "transfer": 3501,
+        "keep_roots": 45553,
+        "collect_calls": 255736,
+        "values_popped": 2157359,
+        "object_encounters": 1183763,
+        "owner_rejected": 266184,
+        "duplicate_rejected": 157551,
+        "accepted_objects": 760028
+      }
+    }
+  ],
+  "deltas_per_query": [
+    {
+      "repetition": 0,
+      "start": 500,
+      "end": 1000,
+      "counters": {
+        "register": 59.0,
+        "transfer": 1.0,
+        "keep_roots": 13.0,
+        "collect_calls": 73.0,
+        "values_popped": 616.0,
+        "object_encounters": 338.0,
+        "owner_rejected": 76.0,
+        "duplicate_rejected": 45.0,
+        "accepted_objects": 217.0
+      }
+    },
+    {
+      "repetition": 0,
+      "start": 1000,
+      "end": 1500,
+      "counters": {
+        "register": 59.0,
+        "transfer": 1.0,
+        "keep_roots": 13.0,
+        "collect_calls": 73.0,
+        "values_popped": 616.0,
+        "object_encounters": 338.0,
+        "owner_rejected": 76.0,
+        "duplicate_rejected": 45.0,
+        "accepted_objects": 217.0
+      }
+    },
+    {
+      "repetition": 1,
+      "start": 500,
+      "end": 1000,
+      "counters": {
+        "register": 59.0,
+        "transfer": 1.0,
+        "keep_roots": 13.0,
+        "collect_calls": 73.0,
+        "values_popped": 616.0,
+        "object_encounters": 338.0,
+        "owner_rejected": 76.0,
+        "duplicate_rejected": 45.0,
+        "accepted_objects": 217.0
+      }
+    },
+    {
+      "repetition": 1,
+      "start": 1000,
+      "end": 1500,
+      "counters": {
+        "register": 59.0,
+        "transfer": 1.0,
+        "keep_roots": 13.0,
+        "collect_calls": 73.0,
+        "values_popped": 616.0,
+        "object_encounters": 338.0,
+        "owner_rejected": 76.0,
+        "duplicate_rejected": 45.0,
+        "accepted_objects": 217.0
+      }
+    }
+  ],
+  "sources_sha256": {
+    "okkama-rs/crates/okkama-runtime-core/src/heap.rs": "3825c1d494921b7507db935cd7db13faae85f9c0ae01cd0250a81f953009b3a8",
+    "okkama-rs/crates/okkama-runtime-core/Cargo.toml": "ff097434a3a5e2e9ac173e83af7c4006d9a2091d0a70ed77fc7dd1597103a675",
+    "benchmarks/db/count-region-walks.py": "d9f7760c8defb236d04d31abadc2e4bfce4aeacab9aea2323764fa4f9be707f2"
+  },
+  "validation": {
+    "runtime_core_tests_passed": 53,
+    "default_cargo_check": "passed",
+    "original_release_restored_sha256": "34735a013ecf6fc2593a1d31af60c2014275d39dd3100ab269b7e81eb43f2977"
+  }
+}

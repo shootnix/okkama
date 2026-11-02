@@ -1,5 +1,6 @@
 module db/statement v1.0.0;
 import "db/value" take DbValue,ObservedDbValue;
+import "runtime/db" as native_db;
 import "db/error" take AffectedRowsUnknown;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded,Utf8Decoded;
@@ -16,22 +17,24 @@ object DbLimits {
     values() is int{values;}bytes() is int{bytes;}sql_bytes() is int{sql_bytes;}
 }
 object DbValueSnapshot {
-    has origin is @DbValue;
+    has origin is @DbValue;has cells is @native_db.DbCellState;
     DbValueSnapshot(values is Sequencing<DbValue>,limits is DbLimits){
         let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("value count");
-        let used=Atomic(0);let snapshot is @DbValue=(0..count).map()->index{
+        let used=Atomic(0);let snapshot is @ObservedDbValue=(0..count).map()->index{
             let value=ObservedDbValue(values.item(index));let width=value.width();
-            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");used.replace(used.value()+width);value.value();
-        };origin=snapshot;
+            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");used.replace(used.value()+width);value;
+        };origin=snapshot.map()->value{value.value();};cells=snapshot.map()->value{value.state();};
     }
     values() is @DbValue{origin;}
+    cells() is @native_db.DbCellState{cells;}
 }
 object Statement {
-    has text is string;has values is @DbValue;
-    Statement(text is string){self.text=DbSqlText(text,DbLimits()).string();values=[];}
-    Statement(text is string,values is Sequencing<DbValue>){let limits=DbLimits();self.text=DbSqlText(text,limits).string();self.values=DbValueSnapshot(values,limits).values();}
-    Statement(text is string,values is Sequencing<DbValue>,limits is DbLimits){self.text=DbSqlText(text,limits).string();self.values=DbValueSnapshot(values,limits).values();}
+    has text is string;has values is @DbValue;has cells is @native_db.DbCellState;
+    Statement(text is string){self.text=DbSqlText(text,DbLimits()).string();values=[];cells=[];}
+    Statement(text is string,values is Sequencing<DbValue>){let limits=DbLimits();self.text=DbSqlText(text,limits).string();let snapshot=DbValueSnapshot(values,limits);self.values=snapshot.values();cells=snapshot.cells();}
+    Statement(text is string,values is Sequencing<DbValue>,limits is DbLimits){self.text=DbSqlText(text,limits).string();let snapshot=DbValueSnapshot(values,limits);self.values=snapshot.values();cells=snapshot.cells();}
     text() is string{text;}values() is Sequencing<DbValue>{values;}
+    cells() is @native_db.DbCellState{cells;}
 }
 object DbSqlText {
     has origin is string;
@@ -43,12 +46,15 @@ object DbSqlText {
     string() is string{origin;}
 }
 object Execution {
-    has affected is @BigInt;
-    Execution(){affected=[];}
-    Execution(affected is BigInt){confirm affected.sign()>=0 else throw InvalidExecution();self.affected=[affected];}
-    affected_known() is bool{affected.size()==1;}
-    affected_rows() is BigInt{confirm self.affected_known() else throw AffectedRowsUnknown();affected[0];}
+    has count is Maybe<BigInt>;
+    Execution(){count=Maybe.none;}
+    Execution(affected is BigInt){confirm affected.sign()>=0 else throw InvalidExecution();count=Maybe.some(affected);}
+    affected() is Maybe<BigInt>{count;}
+    // Compatibility observations; new callers can use affected() with else/match.
+    affected_known() is bool{count ?? .some(_): true !! .none: false;}
+    affected_rows() is BigInt{count else throw AffectedRowsUnknown();}
 }
+
 object DbBoundaryLimit does Error{has kind is string;DbBoundaryLimit(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"database boundary limit: "+kind;}}
 object InvalidStatement does Error{InvalidStatement();text() is string{"database SQL must be nonempty and contain no NUL";}}
 object InvalidExecution does Error{InvalidExecution();text() is string{"database affected row count must be nonnegative";}}

@@ -1,7 +1,8 @@
 //! Native providers of std modules through IR (and SPB where its types allow):
 //! encodings, bigint, decimal, host crypto, buffer.
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use okkama_runtime::{RuntimeError, execute, sparrow};
+use okkama_runtime::{RuntimeError, execute};
+use sparrow_vm as sparrow;
 
 fn lower(module: &str, natives: &str, body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -136,7 +137,7 @@ fn buffers_are_mutable_handles_with_typed_close_failures() {
     let program = codegen::sparrow::generate(&module).unwrap();
     match sparrow::execute(&okkama_sparrow::decode(&okkama_sparrow::encode(&program).unwrap()).unwrap()) {
         Err(sparrow::Error::Operation {
-            error: RuntimeError::NativeFailure { failure, .. },
+            error: sparrow_vm::OperationError::NativeFailure(failure),
             ..
         }) => assert_eq!(failure.code, "already_closed"),
         other => panic!("{other:?}"),

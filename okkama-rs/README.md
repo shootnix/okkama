@@ -86,8 +86,9 @@ IR-интерпретатор и Sparrow исполняют весь язык и
 stdout, stderr и код выхода (`tools/engines/parity.py`). Sparrow — регистровая
 VM: OIR компилируется в SPB 9 ([формат и инструкции](docs/sparrow-isa.md)),
 файл несёт программу с импортированной std и исполняется без исходников и
-Java. Оба движка делят рантайм `okkama-runtime-core`: значения, планировщик
-задач, регионы, natives `std/runtime/*`, intrinsics и воркеры `spawn`.
+Java. IR использует `okkama-runtime-core`, Sparrow — независимый
+`sparrow-runtime`: свои значения, планировщик задач, регионы, native-адаптеры,
+intrinsics и воркеры `spawn`. Общими остаются описание native ABI и библиотеки.
 Результат main в 0..255 становится кодом выхода, неперехваченный отказ —
 диагностикой в stderr с кодом 1, как у JVM. IR и Sparrow добавляют к ней место
 отказа (строку исходника) и стек вызовов, `sparrow` и `okkama exec` без

@@ -1,6 +1,7 @@
 //! Exact scalar conversions through both engines and the bytecode file format.
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use okkama_runtime::{RuntimeError, execute, sparrow};
+use okkama_runtime::{RuntimeError, execute};
+use sparrow_vm as sparrow;
 
 fn lower(declarations: &str, body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -55,7 +56,7 @@ fn integer_bitwise_operations_use_signed_words_and_exact_shift_counts() {
         let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
         let error = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap_err();
         assert!(
-            matches!(error, sparrow::Error::Operation { error: RuntimeError::Trap { message, .. }, .. } if message == expected),
+            matches!(error, sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message, .. }, .. } if message == expected),
             "{expression}"
         );
     }
@@ -70,7 +71,7 @@ fn integer_bitwise_operations_use_signed_words_and_exact_shift_counts() {
                 okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
             let error = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap_err();
             assert!(
-                matches!(error, sparrow::Error::Operation { error: RuntimeError::Trap { message, .. }, .. } if message == expected)
+                matches!(error, sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message, .. }, .. } if message == expected)
             );
         }
     }
@@ -103,7 +104,7 @@ fn byte_bitwise_operations_are_eight_bit_and_shifts_check_exact_counts() {
             let bytes =
                 okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
             assert!(
-                matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: RuntimeError::Trap { message: actual, .. }, .. }) if actual == message)
+                matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
             );
         }
     }
@@ -141,7 +142,7 @@ fn ranges_in_arrays_preserve_exact_endpoints_and_order() {
     );
     let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
     assert!(
-        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: RuntimeError::Trap { message: actual, .. }, .. }) if actual == message)
+        matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
     );
     check(
         &lower("", "if false { let xs = [3..2]; xs.size(); } else { 42; }"),
@@ -228,7 +229,7 @@ fn byte_casts_trap_without_truncation_and_keep_argument_context() {
         }
         let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
         assert!(
-            matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: RuntimeError::Trap { message: actual, .. }, .. }) if actual == message)
+            matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()), Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
         );
     }
     check(

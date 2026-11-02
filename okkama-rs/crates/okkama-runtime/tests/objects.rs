@@ -7,8 +7,8 @@ fn result(module: &ir::Module) -> ir::IntValue {
     let program = okkama_compiler::codegen::sparrow::generate(module).unwrap();
     let bytes = okkama_sparrow::encode(&program).unwrap();
     assert_eq!(
-        okkama_runtime::sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap(),
-        result
+        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
+        result.to_string()
     );
     result
 }

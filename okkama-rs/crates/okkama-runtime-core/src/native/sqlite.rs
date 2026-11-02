@@ -1,5 +1,5 @@
 //! `runtime/database` (provider `optional.sqlite`) — перенос `SqliteNatives`
-//! JVM: системная libsqlite3 через dlopen (как FFM JVM). Каждое соединение
+//! JVM contract, backed by rusqlite and its bundled SQLite. Each connection
 //! обслуживает свой рабочий поток; операции идут по очереди, их исход
 //! приходит событием цикла. Ответ — `ok` и данные либо отказ `kind`/`code`.
 #![allow(unsafe_code)]
@@ -10,11 +10,72 @@ use crate::failure::{Failure, Kind};
 use crate::sched;
 use crate::{IntValue, Value, abi::Native};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock};
+
+/// A statement and its streaming rows are confined to the connection worker.
+/// Rows must be dropped before the boxed statement, and the statement before
+/// its connection. The field order below is also their destruction order.
+struct LibraryStatement {
+    rows: Option<rusqlite::Rows<'static>>,
+    statement: aliasable::boxed::AliasableBox<LibraryPrepared<'static>>,
+    _connection: Rc<rusqlite::Connection>,
+}
+
+enum LibraryPrepared<'a> {
+    Plain(rusqlite::Statement<'a>),
+    Cached(rusqlite::CachedStatement<'a>),
+}
+impl std::ops::Deref for LibraryPrepared<'static> {
+    type Target = rusqlite::Statement<'static>;
+    fn deref(&self) -> &Self::Target {
+        match self { Self::Plain(v) => v, Self::Cached(v) => v }
+    }
+}
+impl std::ops::DerefMut for LibraryPrepared<'static> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self { Self::Plain(v) => v, Self::Cached(v) => v }
+    }
+}
+impl LibraryStatement {
+    fn new(connection: Rc<rusqlite::Connection>, sql: &str, cached: bool) -> rusqlite::Result<Self> {
+        let statement = if cached {
+            LibraryPrepared::Cached(connection.prepare_cached(sql)?)
+        } else {
+            LibraryPrepared::Plain(connection.prepare(sql)?)
+        };
+        // SAFETY: the connection is heap allocated and retained below. The
+        // private wrapper never lets a statement escape that owner.
+        let statement = unsafe { std::mem::transmute::<LibraryPrepared<'_>, LibraryPrepared<'static>>(statement) };
+        Ok(Self { rows: None, statement: aliasable::boxed::AliasableBox::from_unique(Box::new(statement)), _connection: connection })
+    }
+    /// The statement must have been prepared on this exact connection.
+    unsafe fn from_statement(connection: Rc<rusqlite::Connection>, statement: rusqlite::Statement<'_>) -> Self {
+        // SAFETY: caller guarantees the retained owner is the statement's
+        // connection; the same drop/address invariants as new apply.
+        let statement = unsafe { std::mem::transmute::<rusqlite::Statement<'_>, rusqlite::Statement<'static>>(statement) };
+        Self { rows: None, statement: aliasable::boxed::AliasableBox::from_unique(Box::new(LibraryPrepared::Plain(statement))), _connection: connection }
+    }
+    fn metadata(&self) -> &rusqlite::Statement<'_> {
+        self.rows.as_ref().and_then(rusqlite::Rows::as_ref).unwrap_or(&self.statement)
+    }
+    fn reset(&mut self) {
+        self.rows.take();
+        self.statement.clear_bindings();
+    }
+    fn start_rows(&mut self) {
+        debug_assert!(self.rows.is_none());
+        let rows = self.statement.raw_query();
+        // SAFETY: the aliasable allocation has a stable address and moving the
+        // cursor cannot retag it as unique. It is retained until after rows are
+        // dropped, and is not mutably accessed meanwhile.
+        self.rows = Some(unsafe { std::mem::transmute::<rusqlite::Rows<'_>, rusqlite::Rows<'static>>(rows) });
+    }
+}
 
 const DOMAIN: &str = "optional.sqlite";
 
@@ -41,7 +102,6 @@ fn resolved(outcome: sched::Outcome) -> Value {
 // ---- libsqlite3 ----
 
 type Db = *mut c_void;
-type Stmt = *mut c_void;
 type Authorizer = extern "C" fn(*mut c_void, c_int, *const c_char, *const c_char, *const c_char, *const c_char) -> c_int;
 
 #[allow(clippy::type_complexity)]
@@ -52,29 +112,8 @@ struct Api {
     extended_codes: unsafe extern "C" fn(Db, c_int) -> c_int,
     extended_errcode: unsafe extern "C" fn(Db) -> c_int,
     autocommit: unsafe extern "C" fn(Db) -> c_int,
-    prepare: unsafe extern "C" fn(Db, *const c_char, c_int, u32, *mut Stmt, *mut *const c_char) -> c_int,
-    step: unsafe extern "C" fn(Stmt) -> c_int,
-    finalize: unsafe extern "C" fn(Stmt) -> c_int,
-    reset: unsafe extern "C" fn(Stmt) -> c_int,
-    clear_bindings: unsafe extern "C" fn(Stmt) -> c_int,
-    parameter_count: unsafe extern "C" fn(Stmt) -> c_int,
-    bind_null: unsafe extern "C" fn(Stmt, c_int) -> c_int,
-    bind_int64: unsafe extern "C" fn(Stmt, c_int, i64) -> c_int,
-    bind_double: unsafe extern "C" fn(Stmt, c_int, f64) -> c_int,
-    bind_text: unsafe extern "C" fn(Stmt, c_int, *const c_char, c_int, isize) -> c_int,
-    bind_blob: unsafe extern "C" fn(Stmt, c_int, *const c_void, c_int, isize) -> c_int,
-    column_count: unsafe extern "C" fn(Stmt) -> c_int,
-    column_name: unsafe extern "C" fn(Stmt, c_int) -> *const c_char,
-    column_decltype: unsafe extern "C" fn(Stmt, c_int) -> *const c_char,
-    column_type: unsafe extern "C" fn(Stmt, c_int) -> c_int,
-    column_int64: unsafe extern "C" fn(Stmt, c_int) -> i64,
-    column_double: unsafe extern "C" fn(Stmt, c_int) -> f64,
-    column_text: unsafe extern "C" fn(Stmt, c_int) -> *const u8,
-    column_blob: unsafe extern "C" fn(Stmt, c_int) -> *const c_void,
-    column_bytes: unsafe extern "C" fn(Stmt, c_int) -> c_int,
     changes: unsafe extern "C" fn(Db) -> i64,
     authorizer: unsafe extern "C" fn(Db, Option<Authorizer>, *mut c_void) -> c_int,
-    interrupt: unsafe extern "C" fn(Db),
     compile_option: unsafe extern "C" fn(*const c_char) -> c_int,
     limit: unsafe extern "C" fn(Db, c_int, c_int) -> c_int,
     busy_timeout: unsafe extern "C" fn(Db, c_int) -> c_int,
@@ -91,98 +130,45 @@ struct Api {
     backup_pagecount: unsafe extern "C" fn(*mut c_void) -> c_int,
 }
 
-/// Библиотека: найдена ли она и все ли нужные функции экспортирует.
-enum Loaded {
-    Missing,
-    Incomplete,
-    Ready(Api),
-}
-
-fn api() -> &'static Loaded {
-    static API: OnceLock<Loaded> = OnceLock::new();
+fn api() -> &'static Api {
+    static API: OnceLock<Api> = OnceLock::new();
     API.get_or_init(|| {
-        let candidates = ["/usr/lib/libsqlite3.dylib", "libsqlite3.so.0", "libsqlite3.so", "libsqlite3.dylib"];
-        let library = candidates.iter().find_map(|candidate| {
-            let name = CString::new(*candidate).ok()?;
-            // SAFETY: имя с завершающим нулём.
-            let handle = unsafe { libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
-            (!handle.is_null()).then_some(handle)
-        });
-        let Some(library) = library else {
-            return Loaded::Missing;
-        };
-        let find = |name: &str| -> Option<*mut c_void> {
-            let name = CString::new(name).ok()?;
-            // SAFETY: дескриптор действителен до конца процесса.
-            let address = unsafe { libc::dlsym(library, name.as_ptr()) };
-            (!address.is_null()).then_some(address)
-        };
         macro_rules! function {
-            ($name:literal) => {
-                match find($name) {
-                    // SAFETY: прототип — из sqlite3.h.
-                    Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
-                    None => return Loaded::Incomplete,
-                }
+            ($symbol:path) => {
+                // SAFETY: these C ABI signatures differ only in opaque pointer
+                // types (and SQLite's transient-destructor sentinel). All calls
+                // use the same SQLite library as rusqlite, including extensions.
+                unsafe { std::mem::transmute::<*const (), _>($symbol as *const ()) }
             };
         }
-        let load_extension = find("sqlite3_enable_load_extension")
-            // SAFETY: прототип — из sqlite3.h.
-            .map(|address| unsafe { std::mem::transmute::<*mut c_void, unsafe extern "C" fn(Db, c_int) -> c_int>(address) });
-        Loaded::Ready(Api {
-            libversion: function!("sqlite3_libversion_number"),
-            open: function!("sqlite3_open_v2"),
-            close: function!("sqlite3_close"),
-            extended_codes: function!("sqlite3_extended_result_codes"),
-            extended_errcode: function!("sqlite3_extended_errcode"),
-            autocommit: function!("sqlite3_get_autocommit"),
-            prepare: function!("sqlite3_prepare_v3"),
-            step: function!("sqlite3_step"),
-            finalize: function!("sqlite3_finalize"),
-            reset: function!("sqlite3_reset"),
-            clear_bindings: function!("sqlite3_clear_bindings"),
-            parameter_count: function!("sqlite3_bind_parameter_count"),
-            bind_null: function!("sqlite3_bind_null"),
-            bind_int64: function!("sqlite3_bind_int64"),
-            bind_double: function!("sqlite3_bind_double"),
-            bind_text: function!("sqlite3_bind_text"),
-            bind_blob: function!("sqlite3_bind_blob"),
-            column_count: function!("sqlite3_column_count"),
-            column_name: function!("sqlite3_column_name"),
-            column_decltype: function!("sqlite3_column_decltype"),
-            column_type: function!("sqlite3_column_type"),
-            column_int64: function!("sqlite3_column_int64"),
-            column_double: function!("sqlite3_column_double"),
-            column_text: function!("sqlite3_column_text"),
-            column_blob: function!("sqlite3_column_blob"),
-            column_bytes: function!("sqlite3_column_bytes"),
-            changes: function!("sqlite3_changes64"),
-            authorizer: function!("sqlite3_set_authorizer"),
-            interrupt: function!("sqlite3_interrupt"),
-            compile_option: function!("sqlite3_compileoption_used"),
-            limit: function!("sqlite3_limit"),
-            busy_timeout: function!("sqlite3_busy_timeout"),
-            load_extension,
-            blob_open: function!("sqlite3_blob_open"),
-            blob_bytes: function!("sqlite3_blob_bytes"),
-            blob_close: function!("sqlite3_blob_close"),
-            blob_read: function!("sqlite3_blob_read"),
-            blob_write: function!("sqlite3_blob_write"),
-            backup_init: function!("sqlite3_backup_init"),
-            backup_step: function!("sqlite3_backup_step"),
-            backup_finish: function!("sqlite3_backup_finish"),
-            backup_remaining: function!("sqlite3_backup_remaining"),
-            backup_pagecount: function!("sqlite3_backup_pagecount"),
-        })
+        Api {
+            libversion: function!(rusqlite::ffi::sqlite3_libversion_number),
+            open: function!(rusqlite::ffi::sqlite3_open_v2),
+            close: function!(rusqlite::ffi::sqlite3_close),
+            extended_codes: function!(rusqlite::ffi::sqlite3_extended_result_codes),
+            extended_errcode: function!(rusqlite::ffi::sqlite3_extended_errcode),
+            autocommit: function!(rusqlite::ffi::sqlite3_get_autocommit),
+            changes: function!(rusqlite::ffi::sqlite3_changes64),
+            authorizer: function!(rusqlite::ffi::sqlite3_set_authorizer),
+            compile_option: function!(rusqlite::ffi::sqlite3_compileoption_used),
+            limit: function!(rusqlite::ffi::sqlite3_limit),
+            busy_timeout: function!(rusqlite::ffi::sqlite3_busy_timeout),
+            load_extension: Some(function!(rusqlite::ffi::sqlite3_enable_load_extension)),
+            blob_open: function!(rusqlite::ffi::sqlite3_blob_open),
+            blob_bytes: function!(rusqlite::ffi::sqlite3_blob_bytes),
+            blob_close: function!(rusqlite::ffi::sqlite3_blob_close),
+            blob_read: function!(rusqlite::ffi::sqlite3_blob_read),
+            blob_write: function!(rusqlite::ffi::sqlite3_blob_write),
+            backup_init: function!(rusqlite::ffi::sqlite3_backup_init),
+            backup_step: function!(rusqlite::ffi::sqlite3_backup_step),
+            backup_finish: function!(rusqlite::ffi::sqlite3_backup_finish),
+            backup_remaining: function!(rusqlite::ffi::sqlite3_backup_remaining),
+            backup_pagecount: function!(rusqlite::ffi::sqlite3_backup_pagecount),
+        }
     })
 }
 
-fn ready_api() -> &'static Api {
-    match api() {
-        Loaded::Ready(api) => api,
-        _ => unreachable!("checked at open"),
-    }
-}
+fn ready_api() -> &'static Api { api() }
 
 fn c_bytes(pointer: *const c_char) -> Option<Vec<u8>> {
     // SAFETY: SQLite возвращает строку с завершающим нулём или NULL.
@@ -202,8 +188,8 @@ fn latin1(bytes: &[u8]) -> String {
 #[derive(Debug, Clone)]
 enum Cell {
     Null,
-    Integer(String),
-    Floating(String),
+    Integer(i64),
+    Floating(f64),
     Text(String),
     Bytes(Vec<u8>),
 }
@@ -232,7 +218,7 @@ struct Data {
 #[derive(Debug)]
 struct Reply {
     ok: bool,
-    data: Data,
+    data: RefCell<Data>,
     closed: RefCell<bool>,
 }
 
@@ -250,7 +236,7 @@ type Done<T> = Result<T, Stop>;
 const SCHEMA_ACTION: [c_int; 21] = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 26, 27, 28, 29, 30];
 
 struct Statement {
-    pointer: Stmt,
+    library: Option<LibraryStatement>,
     dml: bool,
     columns: c_int,
     prepared: i64,
@@ -273,7 +259,9 @@ struct Options {
 
 struct Engine {
     db: Db,
-    shared_db: Arc<AtomicPtr<c_void>>,
+    library: Option<Rc<rusqlite::Connection>>,
+    classes: HashMap<String, bool>,
+    interrupt: Arc<std::sync::Mutex<Option<Arc<rusqlite::InterruptHandle>>>>,
     cancelled: Arc<AtomicBool>,
     options: Options,
     serial: i64,
@@ -281,11 +269,16 @@ struct Engine {
     prepared: Vec<(i64, Statement)>,
     blobs: Vec<(i64, *mut c_void, c_int, bool)>,
     backup: Option<(*mut c_void, Db, i64)>,
-    tail_guard: bool,
-    control: bool,
-    configuration: bool,
-    dml_seen: bool,
-    ddl_seen: bool,
+    authorizer: Box<Authorization>,
+}
+
+#[derive(Default)]
+struct Authorization {
+    tail_guard: std::cell::Cell<bool>,
+    control: std::cell::Cell<bool>,
+    configuration: std::cell::Cell<bool>,
+    dml_seen: std::cell::Cell<bool>,
+    ddl_seen: std::cell::Cell<bool>,
 }
 
 extern "C" fn authorize(
@@ -296,24 +289,25 @@ extern "C" fn authorize(
     _database: *const c_char,
     trigger: *const c_char,
 ) -> c_int {
-    // SAFETY: user — адрес Engine в куче потока соединения.
-    let engine = unsafe { &mut *(user as *mut Engine) };
-    if engine.tail_guard {
+    // SAFETY: this separately allocated policy lives until the connection
+    // closes. Reentrant authorization never aliases a mutable Engine borrow.
+    let policy = unsafe { &*(user as *const Authorization) };
+    if policy.tail_guard.get() {
         return 1;
     }
-    if (action == 22 || action == 32) && !engine.control {
+    if (action == 22 || action == 32) && !policy.control.get() {
         return 1;
     }
-    if (action == 19 || action == 24 || action == 25) && !engine.configuration {
+    if (action == 19 || action == 24 || action == 25) && !policy.configuration.get() {
         return 1;
     }
     if SCHEMA_ACTION.contains(&action) {
-        engine.ddl_seen = true;
+        policy.ddl_seen.set(true);
     }
     if action == 9 || action == 18 || action == 23 {
         if let Some(table) = c_bytes(a) {
             if table != b"sqlite_master" && table != b"sqlite_schema" && trigger.is_null() {
-                engine.dml_seen = true;
+                policy.dml_seen.set(true);
             }
         }
     }
@@ -356,31 +350,35 @@ impl Engine {
         if rc != 0 { Err(self.error(rc)) } else { Ok(()) }
     }
 
+    fn library_error(&self, error: rusqlite::Error) -> Stop {
+        match error {
+            rusqlite::Error::SqliteFailure(error, _) => self.error(error.extended_code),
+            rusqlite::Error::MultipleStatement => self.raise("syntax", "SQLITE_MULTIPLE_STATEMENTS"),
+            rusqlite::Error::Utf8Error(_) => self.raise("data", "SQLITE_UTF8"),
+            _ => Stop::Unexpected,
+        }
+    }
+
     fn open(&mut self) -> Done<()> {
-        let api = match api() {
-            Loaded::Ready(api) => api,
-            Loaded::Missing => {
-                return Err(Stop::Sqlite { kind: "unsupported", code: "SQLITE_UNAVAILABLE".into(), autocommit: true });
-            }
-            Loaded::Incomplete => {
-                return Err(Stop::Sqlite { kind: "unsupported", code: "SQLITE_CAPABILITY".into(), autocommit: true });
-            }
-        };
+        let api = ready_api();
         // SAFETY: вызовы C API SQLite с действительными аргументами.
         unsafe {
             if (api.libversion)() < 3_041_000 {
                 return Err(Stop::Sqlite { kind: "unsupported", code: "SQLITE_VERSION".into(), autocommit: true });
             }
             let flags = if self.options.read_only { 1 } else { 2 | if self.options.create { 4 } else { 0 } };
-            let path = CString::new(self.options.path.as_bytes()).map_err(|_| Stop::Unexpected)?;
-            let mut db: Db = std::ptr::null_mut();
-            let rc = (api.open)(path.as_ptr(), &mut db, flags, std::ptr::null());
-            self.db = db;
-            self.shared_db.store(db, Ordering::SeqCst);
-            if rc != 0 {
-                let _ = self.close();
-                return Err(Stop::Sqlite { kind: "connection", code: format!("SQLITE_{rc}"), autocommit: true });
-            }
+            let flags = rusqlite::OpenFlags::from_bits_truncate(flags);
+            let library = rusqlite::Connection::open_with_flags(&self.options.path, flags)
+                .map_err(|error| match error {
+                    rusqlite::Error::SqliteFailure(error, _) => Stop::Sqlite {
+                        kind: "connection", code: format!("SQLITE_{}", error.extended_code), autocommit: true,
+                    },
+                    _ => Stop::Unexpected,
+                })?;
+            library.set_prepared_statement_cache_capacity(64);
+            self.db = library.handle().cast();
+            *self.interrupt.lock().expect("SQLite interrupt lock") = Some(Arc::new(library.get_interrupt_handle()));
+            self.library = Some(Rc::new(library));
             (api.extended_codes)(self.db, 1);
             if let Some(load_extension) = api.load_extension {
                 let rc = load_extension(self.db, 0);
@@ -396,9 +394,9 @@ impl Engine {
                 (api.limit)(self.db, limit, value);
             }
             (api.busy_timeout)(self.db, self.options.busy_ms);
-            (api.authorizer)(self.db, Some(authorize), self as *mut Engine as *mut c_void);
+            (api.authorizer)(self.db, Some(authorize), (&*self.authorizer as *const Authorization).cast_mut().cast());
         }
-        self.configuration = true;
+        self.authorizer.configuration.set(true);
         let configured = (|| -> Done<()> {
             let foreign = if self.options.foreign_keys { 1 } else { 0 };
             self.execution(&format!("PRAGMA foreign_keys={foreign}"), &[], false)?;
@@ -417,7 +415,7 @@ impl Engine {
             }
             Ok(())
         })();
-        self.configuration = false;
+        self.authorizer.configuration.set(false);
         if let Err(error) = configured {
             let _ = self.close();
             return Err(error);
@@ -437,122 +435,73 @@ impl Engine {
 
     fn prepare(&mut self, sql: &str) -> Done<Statement> {
         self.ready()?;
-        let api = ready_api();
-        let bytes = sql.as_bytes();
-        if bytes.len() > 1_048_576 || sql.contains('\0') {
+        if sql.len() > 1_048_576 || sql.contains('\0') {
             return Err(self.raise("data", "SQLITE_SQL_LIMIT"));
         }
-        let mut text = bytes.to_vec();
-        text.push(0);
-        let base = text.as_ptr() as *const c_char;
-        let mut statement: Stmt = std::ptr::null_mut();
-        let mut tail: *const c_char = std::ptr::null();
-        self.dml_seen = false;
-        self.ddl_seen = false;
-        // SAFETY: текст живёт до конца функции.
-        let rc = unsafe { (api.prepare)(self.db, base, bytes.len() as c_int, 0, &mut statement, &mut tail) };
-        if rc != 0 {
-            if !statement.is_null() {
-                unsafe { (api.finalize)(statement) };
-            }
-            return Err(self.error(rc));
+        let cached = !self.authorizer.control.get() && !self.authorizer.configuration.get();
+        let connection = self.library.as_ref().ok_or(Stop::Unexpected)?.clone();
+        if cached && self.classes.len() >= 64 && !self.classes.contains_key(sql) {
+            self.classes.clear();
+            connection.flush_prepared_statement_cache();
         }
-        if statement.is_null() {
+        self.authorizer.dml_seen.set(false);
+        self.authorizer.ddl_seen.set(false);
+        let library = LibraryStatement::new(connection, sql, cached).map_err(|error| self.library_error(error))?;
+        if library.metadata().column_count() == 0 && library.metadata().expanded_sql().is_none() {
             return Err(self.raise("syntax", "SQLITE_EMPTY_STATEMENT"));
         }
-        let dml = self.dml_seen && !self.ddl_seen;
-        let offset = (tail as isize) - (base as isize);
-        let checked = (|| -> Done<()> {
-            if offset < 0 || offset as usize > bytes.len() {
-                return Err(self.raise("unexpected", "SQLITE_PREPARE_TAIL"));
-            }
-            let offset = offset as usize;
-            if offset < bytes.len() {
-                self.tail_guard = true;
-                let mut other: Stmt = std::ptr::null_mut();
-                let mut rest: *const c_char = std::ptr::null();
-                // SAFETY: хвост внутри того же текста.
-                let extra = unsafe {
-                    (api.prepare)(self.db, base.add(offset), (bytes.len() - offset) as c_int, 0, &mut other, &mut rest)
-                };
-                if !other.is_null() {
-                    unsafe { (api.finalize)(other) };
-                }
-                self.tail_guard = false;
-                if extra != 0 || !other.is_null() {
-                    return Err(self.raise("syntax", "SQLITE_MULTIPLE_STATEMENTS"));
-                }
-            }
-            Ok(())
-        })();
-        if let Err(error) = checked {
-            unsafe { (api.finalize)(statement) };
-            return Err(error);
-        }
+        let dml = if cached {
+            *self.classes.entry(sql.to_string()).or_insert_with(|| self.authorizer.dml_seen.get() && !self.authorizer.ddl_seen.get())
+        } else {
+            self.authorizer.dml_seen.get() && !self.authorizer.ddl_seen.get()
+        };
+        let columns = library.metadata().column_count() as c_int;
         Ok(Statement {
-            pointer: statement,
-            dml,
-            columns: unsafe { (api.column_count)(statement) },
-            prepared: 0,
-            id: 0,
-            verified: false,
-            raw_names: Vec::new(),
-            raw_declarations: Vec::new(),
-            pending_row: None,
+            library: Some(library), dml, columns,
+            prepared: 0, id: 0, verified: false,
+            raw_names: Vec::new(), raw_declarations: Vec::new(), pending_row: None,
         })
     }
 
-    fn bind(&self, statement: &Statement, params: &[(&'static str, Param)]) -> Done<()> {
-        let api = ready_api();
-        // SAFETY: подготовленный оператор этого соединения.
-        if params.len() as c_int != unsafe { (api.parameter_count)(statement.pointer) } {
-            return Err(self.raise("data", "SQLITE_BIND_COUNT"));
+    fn bind(&self, statement: &mut Statement, params: &[(&'static str, Param)]) -> Done<()> {
+        if let Some(library) = &mut statement.library {
+            use rusqlite::types::ValueRef;
+            library.reset();
+            if params.len() != library.statement.parameter_count() {
+                return Err(self.raise("data", "SQLITE_BIND_COUNT"));
+            }
+            for (at, (kind, value)) in params.iter().enumerate() {
+                let bound = match (*kind, value) {
+                    ("null_value", _) => ValueRef::Null,
+                    ("integer" | "boolean", Param::Integer(value)) => ValueRef::Integer(value.ok_or_else(|| self.raise("data", "SQLITE_INTEGER_RANGE"))?),
+                    ("integer" | "boolean", Param::Text(value)) => ValueRef::Integer(self.int64(value)?),
+                    ("floating", value) => {
+                        let value = match value { Param::Floating(v) => *v, Param::Text(v) => super::jre::parse_double(v.trim()).unwrap_or(0.0), _ => return Err(Stop::Unexpected) };
+                        if !value.is_finite() { return Err(self.raise("data", "SQLITE_FLOAT_RANGE")); }
+                        ValueRef::Real(value)
+                    }
+                    ("text" | "decimal", Param::Text(value)) => {
+                        if value.len() > 8_388_608 { return Err(self.raise("resource", "SQLITE_VALUE_LIMIT")); }
+                        ValueRef::Text(value.as_bytes())
+                    }
+                    ("bytes", Param::Bytes(value)) => {
+                        if value.len() > 8_388_608 { return Err(self.raise("resource", "SQLITE_VALUE_LIMIT")); }
+                        ValueRef::Blob(value)
+                    }
+                    _ => return Err(self.raise("data", "SQLITE_VALUE_KIND")),
+                };
+                library.statement.raw_bind_parameter(at + 1, rusqlite::types::ToSqlOutput::Borrowed(bound)).map_err(|error| self.library_error(error))?;
+            }
+            return Ok(());
         }
-        for (at, (kind, value)) in params.iter().enumerate() {
-            let index = at as c_int + 1;
-            let rc = match *kind {
-                "null_value" => unsafe { (api.bind_null)(statement.pointer, index) },
-                "integer" | "boolean" => {
-                    let Param::Text(text) = value else { return Err(Stop::Unexpected) };
-                    let number = self.int64(text)?;
-                    unsafe { (api.bind_int64)(statement.pointer, index, number) }
-                }
-                "floating" => {
-                    let Param::Text(text) = value else { return Err(Stop::Unexpected) };
-                    let number = super::jre::parse_double(text.trim()).unwrap_or(0.0);
-                    if number.is_nan() || number.is_infinite() {
-                        return Err(self.raise("data", "SQLITE_FLOAT_RANGE"));
-                    }
-                    unsafe { (api.bind_double)(statement.pointer, index, number) }
-                }
-                "text" | "decimal" | "bytes" => {
-                    let data: &[u8] = match value {
-                        Param::Text(text) => text.as_bytes(),
-                        Param::Bytes(bytes) => bytes,
-                    };
-                    if data.len() > 8_388_608 {
-                        return Err(self.raise("resource", "SQLITE_VALUE_LIMIT"));
-                    }
-                    let buffer = if data.is_empty() { vec![0u8] } else { data.to_vec() };
-                    // SQLITE_TRANSIENT (-1): SQLite копирует значение.
-                    if *kind == "bytes" {
-                        unsafe { (api.bind_blob)(statement.pointer, index, buffer.as_ptr() as *const c_void, data.len() as c_int, -1) }
-                    } else {
-                        unsafe { (api.bind_text)(statement.pointer, index, buffer.as_ptr() as *const c_char, data.len() as c_int, -1) }
-                    }
-                }
-                _ => return Err(self.raise("data", "SQLITE_VALUE_KIND")),
-            };
-            self.check(rc)?;
-        }
-        Ok(())
+        Err(Stop::Unexpected)
     }
 
     fn execution(&mut self, sql: &str, params: &[(&'static str, Param)], control: bool) -> Done<Data> {
-        let previous = self.control;
-        self.control = control;
+        let previous = self.authorizer.control.get();
+        self.authorizer.control.set(control);
         let result = self.prepare(sql).and_then(|statement| self.execute(statement, params));
-        self.control = previous;
+        self.authorizer.control.set(previous);
         result
     }
 
@@ -562,12 +511,10 @@ impl Engine {
             if statement.columns != 0 {
                 return Err(self.raise("data", "SQLITE_ROWS_REQUIRED"));
             }
-            self.bind(&statement, params)?;
-            // SAFETY: подготовленный оператор этого соединения.
-            let rc = unsafe { (api.step)(statement.pointer) };
-            if rc != 101 {
-                return Err(self.error(rc));
-            }
+            self.bind(&mut statement, params)?;
+            if let Some(library) = &mut statement.library {
+                library.statement.raw_execute().map_err(|error| self.library_error(error))?;
+            } else { return Err(Stop::Unexpected); }
             Ok(Data {
                 affected: Some(statement.dml.then(|| unsafe { (api.changes)(self.db) }.to_string())),
                 autocommit: Some(self.autocommit()),
@@ -575,11 +522,11 @@ impl Engine {
             })
         })();
         let finished = self.finish(&mut statement);
-        let data = outcome?;
-        finished?;
         if statement.prepared != 0 {
             self.restore(statement);
         }
+        let data = outcome?;
+        finished?;
         Ok(data)
     }
 
@@ -596,32 +543,30 @@ impl Engine {
     }
 
     fn rows(&mut self, mut statement: Statement, params: &[(&'static str, Param)]) -> Done<Data> {
-        let api = ready_api();
         let outcome = (|| -> Done<(Vec<String>, Vec<String>, Vec<String>, Vec<String>)> {
             // SAFETY: подготовленный оператор этого соединения.
-            statement.columns = unsafe { (api.column_count)(statement.pointer) };
+            statement.columns = statement.library.as_ref().ok_or(Stop::Unexpected)?.metadata().column_count() as c_int;
             if statement.columns == 0 {
                 return Err(self.raise("data", "SQLITE_EXECUTION_REQUIRED"));
             }
-            self.bind(&statement, params)?;
-            let (mut names, mut declarations, mut raw_names, mut raw_declarations) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-            let mut used = 0usize;
-            for column in 0..statement.columns {
-                let name = c_bytes(unsafe { (api.column_name)(statement.pointer, column) }).unwrap_or_default();
-                let declaration = c_bytes(unsafe { (api.column_decltype)(statement.pointer, column) }).unwrap_or_default();
-                used += name.len() + declaration.len();
-                if name.len() > 4096 || declaration.len() > 4096 || used > 1_048_576 {
-                    return Err(self.raise("resource", "SQLITE_COLUMN_LIMIT"));
+            self.bind(&mut statement, params)?;
+            if let Some(library) = &mut statement.library {
+                let mut names = Vec::new();
+                let mut declarations = Vec::new();
+                let mut used = 0usize;
+                for column in library.metadata().columns() {
+                    let name = column.name();
+                    let declaration = column.decl_type().unwrap_or("");
+                    used += name.len() + declaration.len();
+                    if name.len() > 4096 || declaration.len() > 4096 || used > 1_048_576 {
+                        return Err(self.raise("resource", "SQLITE_COLUMN_LIMIT"));
+                    }
+                    names.push(name.to_owned());declarations.push(declaration.to_owned());
                 }
-                let (Some(name_text), Some(declaration_text)) = (strict(&name), strict(&declaration)) else {
-                    return Err(self.raise("data", "SQLITE_UTF8"));
-                };
-                raw_names.push(latin1(&name));
-                raw_declarations.push(latin1(&declaration));
-                names.push(name_text);
-                declarations.push(declaration_text);
+                library.start_rows();
+                return Ok((names.clone(), declarations.clone(), names, declarations));
             }
-            Ok((names, declarations, raw_names, raw_declarations))
+            Err(Stop::Unexpected)
         })();
         match outcome {
             Err(error) => {
@@ -653,20 +598,53 @@ impl Engine {
         if cursor.verified {
             return Ok(());
         }
-        let api = ready_api();
-        // SAFETY: открытый курсор этого соединения.
-        if unsafe { (api.column_count)(cursor.pointer) } != cursor.columns {
-            return Err(self.raise("data", "SQLITE_SCHEMA_CHANGED"));
-        }
-        for column in 0..cursor.columns {
-            let name = latin1(&c_bytes(unsafe { (api.column_name)(cursor.pointer, column) }).unwrap_or_default());
-            let declaration = latin1(&c_bytes(unsafe { (api.column_decltype)(cursor.pointer, column) }).unwrap_or_default());
-            if name != cursor.raw_names[column as usize] || declaration != cursor.raw_declarations[column as usize] {
+        if let Some(library) = &cursor.library {
+            let columns = library.metadata().columns();
+            if columns.len() != cursor.columns as usize || columns.iter().enumerate().any(|(index, column)| {
+                column.name() != cursor.raw_names[index] || column.decl_type().unwrap_or("") != cursor.raw_declarations[index]
+            }) {
                 return Err(self.raise("data", "SQLITE_SCHEMA_CHANGED"));
             }
+            cursor.verified = true;
+            return Ok(());
         }
-        cursor.verified = true;
-        Ok(())
+        Err(Stop::Unexpected)
+    }
+
+    fn library_row(&self, row: &rusqlite::Row<'_>, cursor: &Statement) -> Done<(Vec<Cell>, usize)> {
+        use rusqlite::types::ValueRef;
+        if !cursor.verified {
+            let columns = row.as_ref().columns();
+            if columns.len() != cursor.columns as usize || columns.iter().enumerate().any(|(index, column)| {
+                column.name() != cursor.raw_names[index] || column.decl_type().unwrap_or("") != cursor.raw_declarations[index]
+            }) { return Err(self.raise("data", "SQLITE_SCHEMA_CHANGED")); }
+        }
+        let mut values = Vec::with_capacity(cursor.columns as usize);
+        let mut used = 0usize;
+        for index in 0..cursor.columns as usize {
+            let value = row.get_ref(index).map_err(|error| self.library_error(error))?;
+            let (width, cell) = match value {
+                ValueRef::Null => (0, Cell::Null),
+                ValueRef::Integer(value) => (value.to_string().len(), Cell::Integer(value)),
+                ValueRef::Real(value) => {
+                    if !value.is_finite() { return Err(self.raise("data", "SQLITE_FLOAT_RANGE")); }
+                    (crate::float::format_g(value, 17).len(), Cell::Floating(value))
+                }
+                ValueRef::Text(value) | ValueRef::Blob(value) => {
+                    if value.len() > 8_388_608 - used.min(8_388_608) {
+                        return Err(self.raise("resource", "SQLITE_ROW_LIMIT"));
+                    }
+                    let cell = if matches!(row.get_ref(index), Ok(ValueRef::Text(_))) {
+                        Cell::Text(std::str::from_utf8(value).map_err(|_| self.raise("data", "SQLITE_UTF8"))?.to_owned())
+                    } else { Cell::Bytes(value.to_vec()) };
+                    (value.len(), cell)
+                }
+            };
+            used += width;
+            if used > 8_388_608 { return Err(self.raise("resource", "SQLITE_ROW_LIMIT")); }
+            values.push(cell);
+        }
+        Ok((values, used))
     }
 
     fn fetch(&mut self, id: i64, maximum: i64) -> Done<Data> {
@@ -676,104 +654,31 @@ impl Engine {
         if !(1..=64).contains(&maximum) {
             return Err(self.raise("data", "SQLITE_BATCH_LIMIT"));
         }
-        let api = ready_api();
         let mut cursor = self.cursor.take().expect("cursor");
-        let mut rows: Vec<Vec<Cell>> = Vec::new();
-        let mut eof = false;
+        let mut rows = Vec::with_capacity(maximum as usize);
         let mut used = 0usize;
-        if let Some((values, bytes)) = cursor.pending_row.take() {
-            rows.push(values);
-            used = bytes;
-        }
+        let mut eof = false;
+        if let Some((values, bytes)) = cursor.pending_row.take() { rows.push(values);used = bytes; }
+        // Take the library handle separately so a Row borrow cannot alias the
+        // cursor metadata while its lifetime is checked and values are copied.
+        let mut library = cursor.library.take().ok_or(Stop::Unexpected)?;
         let outcome = (|| -> Done<()> {
-            while (rows.len() as i64) < maximum {
-                // SAFETY: открытый курсор этого соединения.
-                let rc = unsafe { (api.step)(cursor.pointer) };
-                if rc == 101 {
-                    self.verify(&mut cursor)?;
-                    eof = true;
-                    break;
-                }
-                if rc != 100 {
-                    return Err(self.error(rc));
-                }
-                self.verify(&mut cursor)?;
-                let mut values = Vec::new();
-                let mut row_bytes = 0usize;
-                for column in 0..cursor.columns {
-                    let kind = unsafe { (api.column_type)(cursor.pointer, column) };
-                    let cell = match kind {
-                        5 => Cell::Null,
-                        1 => {
-                            let value = unsafe { (api.column_int64)(cursor.pointer, column) }.to_string();
-                            row_bytes += value.len();
-                            Cell::Integer(value)
-                        }
-                        2 => {
-                            let number = unsafe { (api.column_double)(cursor.pointer, column) };
-                            if number.is_nan() || number.is_infinite() {
-                                return Err(self.raise("data", "SQLITE_FLOAT_RANGE"));
-                            }
-                            let value = crate::float::format_g(number, 17);
-                            row_bytes += value.len();
-                            Cell::Floating(value)
-                        }
-                        3 | 4 => {
-                            let pointer = if kind == 3 {
-                                unsafe { (api.column_text)(cursor.pointer, column) as *const u8 }
-                            } else {
-                                unsafe { (api.column_blob)(cursor.pointer, column) as *const u8 }
-                            };
-                            let size = unsafe { (api.column_bytes)(cursor.pointer, column) };
-                            if size < 0 || size as usize > 8_388_608 - row_bytes.min(8_388_608) {
-                                return Err(self.raise("resource", "SQLITE_ROW_LIMIT"));
-                            }
-                            let data = if size == 0 || pointer.is_null() {
-                                Vec::new()
-                            } else {
-                                // SAFETY: SQLite отдал `size` байтов по указателю.
-                                unsafe { std::slice::from_raw_parts(pointer, size as usize) }.to_vec()
-                            };
-                            row_bytes += size as usize;
-                            if kind == 3 {
-                                let Some(text) = strict(&data) else {
-                                    return Err(self.raise("data", "SQLITE_UTF8"));
-                                };
-                                Cell::Text(text)
-                            } else {
-                                Cell::Bytes(data)
-                            }
-                        }
-                        _ => return Err(self.raise("unexpected", "SQLITE_STORAGE_KIND")),
-                    };
-                    if row_bytes > 8_388_608 {
-                        return Err(self.raise("resource", "SQLITE_ROW_LIMIT"));
-                    }
-                    values.push(cell);
-                }
-                if used + row_bytes > 8_388_608 {
-                    cursor.pending_row = Some((values, row_bytes));
-                    break;
-                }
-                rows.push(values);
-                used += row_bytes;
+            while rows.len() < maximum as usize {
+                let found = library.rows.as_mut().ok_or(Stop::Unexpected)?.next().map_err(|error| self.library_error(error))?;
+                let Some(row) = found else { eof = true;break; };
+                let (values, width) = self.library_row(row, &cursor)?;
+                cursor.verified = true;
+                if used + width > 8_388_608 { cursor.pending_row = Some((values, width));break; }
+                used += width;rows.push(values);
             }
             Ok(())
         })();
+        cursor.library = Some(library);
+        let outcome = outcome.and_then(|()| if eof { self.verify(&mut cursor) } else { Ok(()) });
         self.cursor = Some(cursor);
-        if let Err(error) = outcome {
-            self.release(id)?;
-            return Err(error);
-        }
-        if eof {
-            self.release(id)?;
-        }
-        Ok(Data {
-            rows: Some(rows),
-            eof,
-            autocommit: Some(self.autocommit()),
-            ..Data::default()
-        })
+        if let Err(error) = outcome { self.release(id)?;return Err(error); }
+        if eof { self.release(id)?; }
+        Ok(Data { rows: Some(rows), eof, autocommit: Some(self.autocommit()), ..Data::default() })
     }
 
     fn release(&mut self, id: i64) -> Done<()> {
@@ -789,17 +694,13 @@ impl Engine {
     }
 
     fn finish(&self, statement: &mut Statement) -> Done<()> {
-        let api = ready_api();
         statement.pending_row = None;
-        // SAFETY: оператор этого соединения.
-        unsafe {
-            if statement.prepared != 0 {
-                (api.reset)(statement.pointer);
-                self.check((api.clear_bindings)(statement.pointer))
-            } else {
-                self.check((api.finalize)(statement.pointer))
-            }
+        if let Some(library) = &mut statement.library {
+            library.reset();
+            if statement.prepared == 0 { statement.library.take(); }
+            return Ok(());
         }
+        Ok(())
     }
 
     fn prepare_statement(&mut self, sql: &str) -> Done<Data> {
@@ -821,7 +722,7 @@ impl Engine {
             return Err(self.raise("data", "SQLITE_PREPARED_STALE"));
         };
         Ok(Statement {
-            pointer: slot.1.pointer,
+            library: slot.1.library.take(),
             dml: slot.1.dml,
             columns: slot.1.columns,
             prepared: slot.1.prepared,
@@ -837,14 +738,13 @@ impl Engine {
         let Some(position) = self.prepared.iter().position(|(known, _)| *known == id) else {
             return Ok(Data::default());
         };
-        let (_, statement) = self.prepared.remove(position);
-        if let Some(cursor_id) = self.cursor.as_ref().filter(|cursor| cursor.pointer == statement.pointer).map(|cursor| cursor.id) {
+        let (_, mut statement) = self.prepared.remove(position);
+        if let Some(cursor_id) = self.cursor.as_ref().filter(|cursor| cursor.prepared == id).map(|cursor| cursor.id) {
             self.release(cursor_id)?;
             // release вернул бы его в таблицу: он уже удалён.
             self.prepared.retain(|(known, _)| *known != id);
         }
-        // SAFETY: оператор этого соединения, финализируется один раз.
-        self.check(unsafe { (ready_api().finalize)(statement.pointer) })?;
+        statement.library.take();
         Ok(Data::default())
     }
 
@@ -1020,67 +920,31 @@ impl Engine {
     }
 
     fn script(&mut self, sql: &str) -> Done<Data> {
+        use fallible_iterator::FallibleIterator;
         self.ready()?;
-        let bytes = sql.as_bytes();
-        if bytes.len() > 1_048_576 || sql.contains('\0') {
-            return Err(self.raise("data", "SQLITE_SCRIPT_LIMIT"));
+        if sql.len() > 1_048_576 || sql.contains('\0') {
+            return Err(self.raise("data", "SQLITE_SQL_LIMIT"));
         }
-        let api = ready_api();
-        let mut text = bytes.to_vec();
-        text.push(0);
-        let base = text.as_ptr() as *const c_char;
+        let connection = self.library.as_ref().ok_or(Stop::Unexpected)?.clone();
+        let mut batch = rusqlite::Batch::new(&connection, sql);
         let mut results = Vec::new();
-        let mut offset = 0usize;
-        while offset < bytes.len() {
-            if self.cancelled.load(Ordering::SeqCst) {
-                return Err(self.raise("cancelled", "SQLITE_9"));
-            }
-            self.dml_seen = false;
-            self.ddl_seen = false;
-            let mut statement: Stmt = std::ptr::null_mut();
-            let mut tail: *const c_char = std::ptr::null();
-            // SAFETY: хвост внутри текста.
-            let rc = unsafe { (api.prepare)(self.db, base.add(offset), (bytes.len() - offset) as c_int, 0, &mut statement, &mut tail) };
-            if rc != 0 {
-                if !statement.is_null() {
-                    unsafe { (api.finalize)(statement) };
-                }
-                return Err(self.error(rc));
-            }
-            let next = (tail as isize) - (base as isize);
-            if next <= offset as isize || next as usize > bytes.len() {
-                if !statement.is_null() {
-                    unsafe { (api.finalize)(statement) };
-                }
-                return Err(self.raise("unexpected", "SQLITE_PREPARE_TAIL"));
-            }
-            offset = next as usize;
-            if statement.is_null() {
-                continue;
-            }
-            if results.len() >= 256 {
-                unsafe { (api.finalize)(statement) };
-                return Err(self.raise("resource", "SQLITE_SCRIPT_COUNT"));
-            }
-            let prepared = Statement {
-                pointer: statement,
-                dml: self.dml_seen && !self.ddl_seen,
-                columns: unsafe { (api.column_count)(statement) },
-                prepared: 0,
-                id: 0,
-                verified: false,
-                raw_names: Vec::new(),
-                raw_declarations: Vec::new(),
-                pending_row: None,
+        loop {
+            self.authorizer.dml_seen.set(false);
+            self.authorizer.ddl_seen.set(false);
+            let Some(statement) = batch.next().map_err(|error| self.library_error(error))? else { break; };
+            if results.len() >= 256 { return Err(self.raise("resource", "SQLITE_SCRIPT_COUNT")); }
+            let columns = statement.column_count() as c_int;
+            // SAFETY: Batch was constructed on this same retained connection.
+            let library = unsafe { LibraryStatement::from_statement(connection.clone(), statement) };
+            let statement = Statement {
+                library: Some(library),
+                dml: self.authorizer.dml_seen.get() && !self.authorizer.ddl_seen.get(),
+                columns, prepared: 0, id: 0, verified: false,
+                raw_names: Vec::new(), raw_declarations: Vec::new(), pending_row: None,
             };
-            let data = self.execute(prepared, &[])?;
-            results.push(data.affected.flatten());
+            results.push(self.execute(statement, &[])?.affected.flatten());
         }
-        Ok(Data {
-            executions: Some(results),
-            autocommit: Some(self.autocommit()),
-            ..Data::default()
-        })
+        Ok(Data { executions: Some(results), autocommit: Some(self.autocommit()), ..Data::default() })
     }
 
     fn rollback(&mut self) -> Done<Data> {
@@ -1115,17 +979,29 @@ impl Engine {
         for id in ids {
             self.unprepare(id)?;
         }
-        let current = self.db;
         self.db = std::ptr::null_mut();
-        self.shared_db.store(std::ptr::null_mut(), Ordering::SeqCst);
-        // SAFETY: соединение закрывается один раз.
-        self.check(unsafe { (ready_api().close)(current) })
+        self.interrupt.lock().expect("SQLite interrupt lock").take();
+        self.classes.clear();
+        if let Some(library) = self.library.take() {
+            let library = Rc::try_unwrap(library).map_err(|_| Stop::Unexpected)?;
+            library.close().map_err(|(_, error)| self.library_error(error))?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        // Queue loss and unwinding must release cursors/BLOBs/backups too.
+        let _ = self.close();
     }
 }
 
 fn first_cell(reply: &Data) -> String {
     match reply.rows.as_ref().and_then(|rows| rows.first()).and_then(|row| row.first()) {
-        Some(Cell::Integer(value) | Cell::Floating(value) | Cell::Text(value)) => value.clone(),
+        Some(Cell::Integer(value)) => value.to_string(),
+        Some(Cell::Floating(value)) => crate::float::format_g(*value, 17),
+        Some(Cell::Text(value)) => value.clone(),
         Some(Cell::Null) | None => String::new(),
         Some(Cell::Bytes(bytes)) => format!("{bytes:?}"),
     }
@@ -1133,6 +1009,8 @@ fn first_cell(reply: &Data) -> String {
 
 #[derive(Debug, Clone)]
 enum Param {
+    Integer(Option<i64>),
+    Floating(f64),
     Text(String),
     Bytes(Vec<u8>),
 }
@@ -1153,7 +1031,9 @@ struct Connection {
     autocommit: bool,
     handle_closed: bool,
     worker: Option<Worker>,
-    db: Arc<AtomicPtr<c_void>>,
+    #[cfg(feature = "sqlite-inline-bench")]
+    inline_engine: Option<Rc<RefCell<Box<Engine>>>>,
+    interrupt: Arc<std::sync::Mutex<Option<Arc<rusqlite::InterruptHandle>>>>,
     cancelled: Arc<AtomicBool>,
 }
 
@@ -1168,7 +1048,9 @@ fn spawn_worker(connection: &mut Connection) {
     let exited = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
     let engine = SendEngine(Box::new(Engine {
         db: std::ptr::null_mut(),
-        shared_db: connection.db.clone(),
+        library: None,
+        classes: HashMap::new(),
+        interrupt: connection.interrupt.clone(),
         cancelled: connection.cancelled.clone(),
         options: connection.options.clone(),
         serial: 0,
@@ -1176,12 +1058,14 @@ fn spawn_worker(connection: &mut Connection) {
         prepared: Vec::new(),
         blobs: Vec::new(),
         backup: None,
-        tail_guard: false,
-        control: false,
-        configuration: false,
-        dml_seen: false,
-        ddl_seen: false,
+        authorizer: Box::default(),
     }));
+    #[cfg(feature = "sqlite-inline-bench")]
+    if std::env::var("OKKAMA_SQLITE_INLINE_BENCH").as_deref() == Ok("1") {
+        // Same engine and representations, but no worker or external completion.
+        connection.inline_engine = Some(Rc::new(RefCell::new(engine.0)));
+        return;
+    }
     let signal = exited.clone();
     std::thread::Builder::new()
         .name("okkama-sqlite".into())
@@ -1224,7 +1108,7 @@ fn perform(engine: &mut Engine, operation: Operation) -> Reply {
             },
         ),
     };
-    Reply { ok, data, closed: RefCell::new(false) }
+    Reply { ok, data: RefCell::new(data), closed: RefCell::new(false) }
 }
 
 /// Reply пересекает границу потока до того, как его увидит программа.
@@ -1232,7 +1116,7 @@ struct SendReply(Reply);
 unsafe impl Send for SendReply {}
 
 fn facts(connection: &ConnectionRef, reply: &Reply) {
-    if let Some(autocommit) = reply.data.autocommit {
+    if let Some(autocommit) = reply.data.borrow().autocommit {
         connection.borrow_mut().autocommit = autocommit;
     }
 }
@@ -1244,23 +1128,22 @@ fn request(state: &ConnectionRef, op: &'static str, operation: Operation, name: 
         if connection.stopped || connection.broken {
             return resolved(Err(fail("already_closed", name, arity, "SQLite connection is closed")));
         }
+        #[cfg(feature = "sqlite-inline-bench")]
+        if let Some(engine) = connection.inline_engine.clone() {
+            drop(connection);
+            let reply = perform(&mut engine.borrow_mut(), operation);
+            facts(state, &reply);
+            return resolved(Ok(new_handle(Rc::new(reply))));
+        }
         let Some(worker) = &connection.worker else {
             return resolved(Err(fail("invalid_input", name, arity, "SQLite connection is not acquired")));
         };
         worker.jobs.clone()
     };
-    let (reply_sender, reply_receiver) = mpsc::channel::<SendReply>();
-    let job: Job = Box::new(move |engine| {
-        let _ = reply_sender.send(SendReply(perform(engine, operation)));
-    });
-    if jobs.send(job).is_err() {
-        return resolved(Err(fail("already_closed", name, arity, "SQLite connection is closed")));
-    }
     let promise = sched::promise();
     let target = promise.clone();
     let delivered = state.clone();
-    let pending = sched::offload(
-        move || reply_receiver.recv().ok(),
+    let (pending, completion) = sched::external(
         move |reply: Option<SendReply>| {
             let Some(SendReply(reply)) = reply else {
                 delivered.borrow_mut().broken = true;
@@ -1276,27 +1159,31 @@ fn request(state: &ConnectionRef, op: &'static str, operation: Operation, name: 
         },
     );
     let watched = promise.clone();
-    let (db, cancelled) = {
+    let (interrupt, cancelled) = {
         let connection = state.borrow();
-        (connection.db.clone(), connection.cancelled.clone())
+        (connection.interrupt.clone(), connection.cancelled.clone())
     };
     promise.listen(move || {
         pending.detach();
-        let current = db.load(Ordering::SeqCst);
-        if watched.cancelled() && !current.is_null() {
+        if watched.cancelled() {
             cancelled.store(true, Ordering::SeqCst);
-            if let Loaded::Ready(api) = api() {
-                // SAFETY: sqlite3_interrupt потокобезопасен.
-                unsafe { (api.interrupt)(current) };
+            let handle = interrupt.lock().expect("SQLite interrupt lock").clone();
+            if let Some(handle) = handle {
+                // rusqlite synchronizes interruption with connection closure.
+                handle.interrupt();
             }
         }
     });
+    let job: Job = Box::new(move |engine| completion.deliver(SendReply(perform(engine, operation))));
+    if jobs.send(job).is_err() {
+        sched::settle(&promise, Err(fail("already_closed", name, arity, "SQLite connection is closed")));
+    }
     Value::Future(promise)
 }
 
 /// Отменённая операция всё же удалась: освободить её ресурс (как Perl).
 fn cleanup_cancelled(state: &ConnectionRef, op: &str, reply: &Reply) {
-    let Some(id) = reply.data.id else {
+    let Some(id) = reply.data.borrow().id else {
         return;
     };
     match op {
@@ -1323,22 +1210,21 @@ fn maintenance(state: &ConnectionRef, operation: Operation) -> bool {
         if connection.stopped {
             return true;
         }
+        #[cfg(feature = "sqlite-inline-bench")]
+        if let Some(engine) = connection.inline_engine.clone() {
+            drop(connection);
+            let reply = perform(&mut engine.borrow_mut(), operation);
+            if reply.ok { facts(state, &reply); }
+            else { state.borrow_mut().broken = true; }
+            return true;
+        }
         let Some(worker) = &connection.worker else {
             return true;
         };
         worker.jobs.clone()
     };
-    let (reply_sender, reply_receiver) = mpsc::channel::<SendReply>();
-    let job: Job = Box::new(move |engine| {
-        let _ = reply_sender.send(SendReply(perform(engine, operation)));
-    });
-    if jobs.send(job).is_err() {
-        state.borrow_mut().broken = true;
-        return true;
-    }
     let delivered = state.clone();
-    let op = sched::offload(
-        move || reply_receiver.recv().ok(),
+    let (op, completion) = sched::external(
         move |reply: Option<SendReply>| match reply {
             Some(SendReply(reply)) if reply.ok => facts(&delivered, &reply),
             _ => delivered.borrow_mut().broken = true,
@@ -1346,6 +1232,8 @@ fn maintenance(state: &ConnectionRef, operation: Operation) -> bool {
     );
     // Служебная операция не держит программу.
     op.detach();
+    let job: Job = Box::new(move |engine| completion.deliver(SendReply(perform(engine, operation))));
+    if jobs.send(job).is_err() { state.borrow_mut().broken = true; }
     true
 }
 
@@ -1401,6 +1289,67 @@ fn sql_text(value: &Value, name: &str, arity: usize) -> Result<String, Rc<Failur
     strict(&data).ok_or_else(|| fail("invalid_input", name, arity, "Invalid SQLite SQL"))
 }
 
+/// Copy only owned typed payloads into the worker; no program Rc crosses threads.
+fn cell_params(value: &Value, name: &str) -> Result<Vec<(&'static str, Param)>, Rc<Failure>> {
+    use super::db::Cell as DbCell;
+    let invalid = || fail("invalid_input", name, 3, "Invalid SQLite bindings");
+    let cells = items(value).map_err(|_| invalid())?;
+    if cells.len() > 1024 {
+        return Err(invalid());
+    }
+    let mut used = 0usize;
+    let mut params = Vec::with_capacity(cells.len());
+    for value in cells {
+        let cell = handle::<DbCell>(value).map_err(|_| invalid())?;
+        let (width, payload) = match cell {
+            DbCell::Null => (0, Param::Text(String::new())),
+            DbCell::Boolean(value) => (1, Param::Integer(Some(i64::from(*value)))),
+            DbCell::Integer(value) => (value.to_string().len(), Param::Integer(value.to_i64())),
+            DbCell::Floating(value) => (crate::float::text(*value).len(), Param::Floating(*value)),
+            DbCell::Decimal(value) | DbCell::Text(value) => (value.len(), Param::Text(value.to_string())),
+            DbCell::Bytes(value) => (value.len(), Param::Bytes(value.to_vec())),
+        };
+        used += width;
+        if used > 8_388_608 {
+            return Err(fail("resource_exhausted", name, 3, "SQLite binding byte budget"));
+        }
+        params.push((KINDS[cell.kind() as usize], payload));
+    }
+    Ok(params)
+}
+
+fn typed_statement(args: &[Value], rows: bool, prepared: bool, name: &'static str) -> Value {
+    let attempt = || -> Result<Value, Rc<Failure>> {
+        let state = connection(&args[0], name, 3)?;
+        let params = cell_params(&args[2], name)?;
+        let operation: Operation = if prepared {
+            let id = int(&args[1]).map_err(|_| fail("invalid_input", name, 3, "Invalid SQLite statement"))?;
+            if id.signum() < 1 {
+                return Err(fail("invalid_input", name, 3, "Invalid SQLite statement"));
+            }
+            let id = java_long(id);
+            Box::new(move |engine| {
+                let statement = engine.take_prepared(id)?;
+                if rows { engine.rows(statement, &params) } else { engine.execute(statement, &params) }
+            })
+        } else {
+            let sql = string(&args[1]).map_err(|_| fail("invalid_input", name, 3, "Invalid SQLite SQL"))?.to_string();
+            if sql.is_empty() || sql.contains('\0') || sql.len() > 1_048_576 {
+                return Err(fail("invalid_input", name, 3, "Invalid SQLite SQL"));
+            }
+            Box::new(move |engine| {
+                if rows { engine.rows_sql(&sql, &params) } else { engine.execution(&sql, &params, false) }
+            })
+        };
+        let op = match (prepared, rows) {
+            (false, false) => "execution", (false, true) => "rows",
+            (true, false) => "prepared_execution", (true, true) => "prepared_rows",
+        };
+        Ok(request(&state, op, operation, name, 3))
+    };
+    attempt().unwrap_or_else(|failure| resolved(Err(failure)))
+}
+
 fn statement(args: &[Value], rows: bool, name: &'static str) -> Value {
     let attempt = || -> Result<Value, Rc<Failure>> {
         let state = connection(&args[0], name, 4)?;
@@ -1454,12 +1403,13 @@ fn path_or_sql(value: &Value, path: bool, name: &str, arity: usize) -> Result<St
     Ok(if path { crate::host::path(&text).to_string_lossy().into_owned() } else { text })
 }
 
-fn cell<'a>(reply: &'a Reply, row: &IntValue, column: &IntValue, name: &str) -> Result<&'a Cell, Error> {
-    let rows: &[Vec<Cell>] = if reply.ok { reply.data.rows.as_deref().unwrap_or(&[]) } else { &[] };
+fn cell<'a>(reply: &'a Reply, row: &IntValue, column: &IntValue, name: &str) -> Result<std::cell::Ref<'a, Cell>, Error> {
+    let data = reply.data.borrow();
+    let rows: &[Vec<Cell>] = if reply.ok { data.rows.as_deref().unwrap_or(&[]) } else { &[] };
     let outside = || as_error(fail("invalid_input", name, 3, "SQLite reply cell outside bounds"));
     let row = row.to_i64().filter(|row| *row >= 0 && (*row as usize) < rows.len()).ok_or_else(outside)? as usize;
     let column = column.to_i64().filter(|column| *column >= 0 && (*column as usize) < rows[row].len()).ok_or_else(outside)? as usize;
-    Ok(&rows[row][column])
+    Ok(std::cell::Ref::map(data, |data| &data.rows.as_ref().unwrap()[row][column]))
 }
 
 fn settled(state: &ConnectionRef) -> Value {
@@ -1482,22 +1432,25 @@ fn settled(state: &ConnectionRef) -> Value {
     let promise = sched::promise();
     let target = promise.clone();
     let delivered = state.clone();
-    let (done_sender, done_receiver) = mpsc::channel::<()>();
     if !stopped {
-        let _ = jobs.send(Box::new(move |_engine| {
-            let _ = done_sender.send(());
-        }));
+        // A FIFO barrier on an existing worker needs no blocking relay thread.
+        // Keep this delivery attached even if the caller cancels its await:
+        // settled is the cleanup boundary for previously queued operations.
+        let (_pending, completion) = sched::external(move |_: Option<()>| {
+            if delivered.borrow().stopped {
+                delivered.borrow_mut().handle_closed = true;
+            }
+            sched::settle(&target, Ok(Value::Bool(true)));
+        });
+        let _ = jobs.send(Box::new(move |_engine| completion.deliver(())));
+        return Value::Future(promise);
     }
     drop(jobs);
     sched::offload(
         move || {
-            if stopped {
-                let (lock, changed) = &*exited;
-                if let Ok(done) = lock.lock() {
-                    let _ = changed.wait_timeout_while(done, std::time::Duration::from_secs(2), |done| !*done);
-                }
-            } else {
-                let _ = done_receiver.recv();
+            let (lock, changed) = &*exited;
+            if let Ok(done) = lock.lock() {
+                let _ = changed.wait_timeout_while(done, std::time::Duration::from_secs(2), |done| !*done);
             }
         },
         move |()| {
@@ -1540,7 +1493,9 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 autocommit: true,
                 handle_closed: false,
                 worker: None,
-                db: Arc::new(AtomicPtr::new(std::ptr::null_mut())),
+                #[cfg(feature = "sqlite-inline-bench")]
+                inline_engine: None,
+                interrupt: Arc::new(std::sync::Mutex::new(None)),
                 cancelled: Arc::new(AtomicBool::new(false)),
             }))))
         }
@@ -1549,6 +1504,10 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 Ok(state) => state,
                 Err(failure) => return Ok(resolved(Err(failure))),
             };
+            #[cfg(feature = "sqlite-inline-bench")]
+            if state.borrow().inline_engine.is_some() {
+                return Ok(resolved(Err(fail("invalid_input", "sqlite_connect", 1, "SQLite connection already acquired"))));
+            }
             if state.borrow().worker.is_some() {
                 return Ok(resolved(Err(fail("invalid_input", "sqlite_connect", 1, "SQLite connection already acquired"))));
             }
@@ -1566,6 +1525,10 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         "sqlite_execution" => Ok(statement(args, false, "sqlite_execution")),
         "sqlite_rows" => Ok(statement(args, true, "sqlite_rows")),
+        "sqlite_execution_cells" => Ok(typed_statement(args, false, false, "sqlite_execution_cells")),
+        "sqlite_rows_cells" => Ok(typed_statement(args, true, false, "sqlite_rows_cells")),
+        "sqlite_prepared_execution_cells" => Ok(typed_statement(args, false, true, "sqlite_prepared_execution_cells")),
+        "sqlite_prepared_rows_cells" => Ok(typed_statement(args, true, true, "sqlite_prepared_rows_cells")),
         "sqlite_prepare" => {
             let attempt = || -> Result<Value, Rc<Failure>> {
                 let state = connection(&args[0], "sqlite_prepare", 2)?;
@@ -1704,6 +1667,10 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 return Ok(Value::Bool(true));
             }
             connection.stopped = true;
+            #[cfg(feature = "sqlite-inline-bench")]
+            if let Some(engine) = connection.inline_engine.take() {
+                let _ = engine.borrow_mut().close();
+            }
             if let Some(worker) = &connection.worker {
                 let _ = worker.jobs.send(Box::new(|engine| {
                     // Закрытие при завершении: отказ уже не наблюдаем.
@@ -1722,9 +1689,15 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         "sqlite_settled" => Ok(settled(handle::<ConnectionRef>(&args[0])?)),
         "sqlite_autocommit" => Ok(Value::Bool(connection(&args[0], "sqlite_autocommit", 1).map_err(as_error)?.borrow().autocommit)),
+        "sqlite_reply_ok" => Ok(Value::Bool(reply(&args[0], name, 1)?.ok)),
+        "sqlite_reply_id" => Ok(Value::Int(IntValue::from_i64(reply(&args[0], name, 1)?.data.borrow().id.unwrap_or(0)))),
+        "sqlite_reply_eof" => Ok(Value::Bool(reply(&args[0], name, 1)?.data.borrow().eof)),
+        "sqlite_reply_count" => Ok(Value::Int(IntValue::from_u128(reply(&args[0], name, 1)?.data.borrow().rows.as_ref().map_or(0, Vec::len) as u128))),
+        "sqlite_reply_affected_known" => Ok(Value::Bool(matches!(reply(&args[0], name, 1)?.data.borrow().affected, Some(Some(_))))),
+        "sqlite_reply_affected" => Ok(text(reply(&args[0], name, 1)?.data.borrow().affected.clone().flatten().unwrap_or_else(|| "0".into()))),
         "sqlite_reply_info" => {
             let reply = reply(&args[0], "sqlite_reply_info", 1)?;
-            let data = &reply.data;
+            let data = reply.data.borrow();
             let flag = |value: bool| if value { "1" } else { "0" }.to_string();
             Ok(map([
                 ("ok".to_string(), text(flag(reply.ok))),
@@ -1748,15 +1721,32 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             let values = if !reply.ok {
                 None
             } else if name == "sqlite_reply_names" {
-                reply.data.names.clone()
+                reply.data.borrow().names.clone()
             } else {
-                reply.data.declarations.clone()
+                reply.data.borrow().declarations.clone()
             };
             Ok(string_array(values.unwrap_or_default()))
         }
+        "sqlite_reply_cells" => {
+            let reply = reply(&args[0], name, 2)?;
+            let data = reply.data.borrow();
+            let rows = data.rows.as_ref().filter(|_| reply.ok)
+                .ok_or_else(|| as_error(fail("invalid_input", name, 2, "missing SQLite rows")))?;
+            let at = int(&args[1])?.to_i64().and_then(|i| usize::try_from(i).ok())
+                .filter(|i| *i < rows.len())
+                .ok_or_else(|| as_error(fail("invalid_input", name, 2, "SQLite row outside bounds")))?;
+            use super::db::{Cell as DbCell, cell_value};
+            Ok(super::support::array(rows[at].iter().map(|c| cell_value(match c {
+                Cell::Null => DbCell::Null,
+                Cell::Integer(v) => DbCell::Integer(IntValue::from_i64(*v)),
+                Cell::Floating(v) => DbCell::Floating(*v),
+                Cell::Text(v) => DbCell::Text(Rc::from(v.as_str())),
+                Cell::Bytes(v) => DbCell::Bytes(Rc::from(v.as_slice())),
+            })).collect()))
+        }
         "sqlite_reply_kind" => {
             let reply = reply(&args[0], "sqlite_reply_kind", 3)?;
-            let code = match cell(reply, int(&args[1])?, int(&args[2])?, "sqlite_reply_kind")? {
+            let code = match &*cell(reply, int(&args[1])?, int(&args[2])?, "sqlite_reply_kind")? {
                 Cell::Null => 0,
                 Cell::Integer(_) => 1,
                 Cell::Floating(_) => 2,
@@ -1767,27 +1757,29 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         "sqlite_reply_text" => {
             let reply = reply(&args[0], "sqlite_reply_text", 3)?;
-            match cell(reply, int(&args[1])?, int(&args[2])?, "sqlite_reply_text")? {
+            match &*cell(reply, int(&args[1])?, int(&args[2])?, "sqlite_reply_text")? {
                 Cell::Bytes(_) => Err(as_error(fail("invalid_input", "sqlite_reply_text", 3, "SQLite cell is binary"))),
                 Cell::Null => Ok(text("")),
-                Cell::Integer(value) | Cell::Floating(value) | Cell::Text(value) => Ok(text(value.clone())),
+                Cell::Integer(value) => Ok(text(value.to_string())),
+                Cell::Floating(value) => Ok(text(crate::float::format_g(*value, 17))),
+                Cell::Text(value) => Ok(text(value.clone())),
             }
         }
         "sqlite_reply_bytes" => {
             let reply = reply(&args[0], "sqlite_reply_bytes", 3)?;
-            match cell(reply, int(&args[1])?, int(&args[2])?, "sqlite_reply_bytes")? {
+            match &*cell(reply, int(&args[1])?, int(&args[2])?, "sqlite_reply_bytes")? {
                 Cell::Bytes(data) => Ok(byte_array(data.clone())),
                 _ => Err(as_error(fail("invalid_input", "sqlite_reply_bytes", 3, "SQLite cell is not binary"))),
             }
         }
         "sqlite_reply_blob_bytes" => {
             let reply = reply(&args[0], "sqlite_reply_blob_bytes", 1)?;
-            let data = if reply.ok { reply.data.bytes.clone().unwrap_or_default() } else { Vec::new() };
+            let data = if reply.ok { reply.data.borrow().bytes.clone().unwrap_or_default() } else { Vec::new() };
             Ok(byte_array(data))
         }
         "sqlite_reply_executions" => {
             let reply = reply(&args[0], "sqlite_reply_executions", 1)?;
-            let entries = if reply.ok { reply.data.executions.clone().unwrap_or_default() } else { Vec::new() };
+            let entries = if reply.ok { reply.data.borrow().executions.clone().unwrap_or_default() } else { Vec::new() };
             if entries.len() > 256 {
                 return Err(as_error(fail("invalid_data", "sqlite_reply_executions", 1, "SQLite script reply limit")));
             }
@@ -1796,9 +1788,54 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         "sqlite_reply_close" => {
             let reply = reply(&args[0], "sqlite_reply_close", 1)?;
             *reply.closed.borrow_mut() = true;
+            // Future outcomes can outlive the handle; closing releases their payload.
+            *reply.data.borrow_mut() = Data::default();
             Ok(Value::Bool(true))
         }
         _ => Err(Error::Unsupported(format!("native provider is not implemented: {}", native.symbol()))),
     }
 }
 
+
+#[cfg(test)]
+mod reply_lifetime_tests {
+    use super::*;
+
+    #[test]
+    fn close_releases_payload_even_when_future_retains_reply() {
+        sched::reset();
+        let reply = Rc::new(Reply {
+            ok: true,
+            data: RefCell::new(Data {
+                rows: Some(vec![vec![Cell::Text("saved".into()), Cell::Bytes(vec![7; 1024])]]),
+                names: Some(vec!["text".into(), "blob".into()]),
+                declarations: Some(vec!["TEXT".into(), "BLOB".into()]),
+                bytes: Some(vec![9; 1024]),
+                executions: Some(vec![Some("1".into())]),
+                ..Data::default()
+            }),
+            closed: RefCell::new(false),
+        });
+        let value = new_handle(reply.clone());
+        let future = sched::resolved(Ok(value.clone()));
+        sched::register(&future);
+        let cells = execute(Native::DatabaseSqliteReplyCells, &[value.clone(), Value::Int(IntValue::from_i64(0))]).unwrap();
+        execute(Native::DatabaseSqliteReplyClose, &[value.clone()]).unwrap();
+        // The outcome is still cached, but its closed native resource owns no payload.
+        let again = sched::await_future(&future).unwrap();
+        assert!(Rc::ptr_eq(handle::<Rc<Reply>>(&again).unwrap(), &reply));
+        let data = reply.data.borrow();
+        assert!(data.rows.is_none() && data.bytes.is_none() && data.names.is_none());
+        assert!(data.declarations.is_none() && data.executions.is_none());
+        drop(data);
+        assert!(execute(Native::DatabaseSqliteReplyCount, &[again.clone()]).is_err());
+        assert!(execute(Native::DatabaseSqliteReplyClose, &[again]).is_err());
+        // Public row cells are owned snapshots, independent of the closed reply.
+        let saved = items(&cells).unwrap();
+        let text = super::super::db::execute(Native::DbTextValue, &[saved[0].clone()]).unwrap();
+        assert_eq!(text.as_string().unwrap(), "saved");
+        let blob = super::super::db::execute(Native::DbBytesValue, &[saved[1].clone()]).unwrap();
+        assert_eq!(bytes(&blob).unwrap(), vec![7; 1024]);
+        sched::reset();
+    }
+}

@@ -1,0 +1,63 @@
+module app v1.0.0;
+import "conformance/check" take Checks;
+import "db/sqlite" take SqliteDatabase,SqliteOptions,SqliteAcquiring;
+import "db/pool" take DbPreparedPool,PoolOptions,PooledTransactions;
+import "db/prepared" take Prepared;
+import "db/query" take Query,TooManyRows,QueryLimitExceeded;
+import "db/statement" take Statement,Execution,InvalidExecution;
+import "db/transaction" take TransactionOptions;
+import "db/error" take DbClosed;
+import "db/param" take Param;
+import "numbers/bigint" take BigInt;
+import "fs/temp" take TemporaryDirectory;
+import "fs/directory" take Directory;
+import "fs/path" take Path;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+
+async main() is int {
+    let c=Checks();
+    let scratch=TemporaryDirectory(Directory(Path(".")),"db-api-");defer scratch.close();
+    let database=SqliteDatabase(Path(scratch.path().string()+"/test.sqlite"),SqliteOptions());
+    let options=PoolOptions(0,1,Duration(30.rat(),DurationUnit.second),Duration(60.rat(),DurationUnit.second),Duration(5.rat(),DurationUnit.second));
+    let pool=DbPreparedPool(SqliteAcquiring(database),options,SystemClock());
+    defer await pool.settled();defer pool.close();
+    let lease=await pool.connection();
+    await lease.execution(Statement("CREATE TABLE users(id INTEGER PRIMARY KEY,name TEXT,nick TEXT)"));
+    let inserted=await lease.execution(Statement("INSERT INTO users VALUES(?,?,?)",[Param(1),Param("Ada"),Param()]));
+    c=c.same_text("affected insert",(inserted.affected() else panic "missing count").string(),"1");
+    c=c.ok("unknown affected",Execution().affected() ?? .none: true !! _: false);
+    c=c.same_text("zero affected remains known",(Execution(BigInt("0")).affected() else panic "zero lost").string(),"0");
+    c=c.ok("negative affected rejected",try { Execution(BigInt("-1"));false; } catch e is InvalidExecution { true; });
+    let lookup=await Prepared(lease,"SELECT id,name,nick FROM users WHERE id=?").statement();
+    let query=Query(lookup,[Param(1)]);
+    c=c.same_text("prepared one",(await query.one()).text("name"),"Ada");
+    c=c.ok("prepared maybe missing",(await Query(lookup,[Param(2)]).maybe()) ?? .none: true !! _: false);
+    c=c.same_int("prepared all",(await query.all(1)).size(),1);
+    let rows=await query.rows();
+    for await rows -> row { c=c.same_int("prepared stream",row.int("id"),1); }
+    c=c.ok("prepared stream EOF closed",rows.closed());
+    c=c.ok("prepared still owned by caller",!lookup.closed());
+    c=c.same_text("prepared repeat",(await query.one()).text("name"),"Ada");
+    let duplicate=await Prepared(lease,"SELECT 1 AS id UNION ALL SELECT 2").statement();
+    c=c.ok("prepared cardinality",try { await Query(duplicate,[]).maybe();false; } catch e is TooManyRows { true; });
+    c=c.ok("prepared limit",try { await Query(duplicate,[]).all(1);false; } catch e is QueryLimitExceeded { true; });
+    c=c.same_int("prepared reused after errors",(await Query(duplicate,[]).all(2)).size(),2);
+    duplicate.close();lookup.close();
+    let transaction=await PooledTransactions(lease).transaction(TransactionOptions());
+    await transaction.execution(Statement("INSERT INTO users VALUES(2,'Grace',NULL)"));
+    let tx_prepared=await Prepared(transaction,"SELECT count(*) AS total FROM users").statement();
+    c=c.same_int("transaction sees own write",(await Query(tx_prepared,[]).one()).int("total"),2);
+    // Return a lease with an unfinished transaction and an open prepared statement.
+    lease.close();await pool.settled();
+    c=c.ok("transaction preparation revoked",tx_prepared.closed());
+    let reused=await pool.connection();
+    c=c.same_int("pool rolled back unfinished transaction",(await Query(reused,Statement("SELECT count(*) AS total FROM users")).one()).int("total"),1);
+    let open=await Query(reused,Statement("SELECT * FROM users")).rows();
+    reused.close();await pool.settled();
+    c=c.ok("lease revokes active cursor",try { await open.next();false; } catch e is DbClosed { true; });
+    let final_lease=await pool.connection();
+    c=c.same_text("pool reusable after revoked cursor",(await Query(final_lease,Statement("SELECT name FROM users")).one()).text("name"),"Ada");
+    final_lease.close();await pool.settled();
+    c.done();
+}

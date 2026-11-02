@@ -2,8 +2,8 @@
 //! корня по порядку; провал утверждения не прерывает тест, отказ — только его.
 use crate::machine::{Engine, Located, cold_call, describe_failure, execute_function, into_failure, new_engine, public_error};
 use crate::{Error, OperationError};
-use okkama_runtime_core::failure::{Failure, Kind};
-use okkama_runtime_core::{Value, sched};
+use sparrow_runtime::failure::{Failure, Kind};
+use sparrow_runtime::{Value, sched};
 use okkama_sparrow::Program;
 use std::io::Write;
 use std::rc::Rc;
@@ -12,14 +12,14 @@ use std::rc::Rc;
 pub(crate) fn show(engine: &Engine, value: &Value) -> String {
     let case = |declaration: usize, case: usize| engine.case_name(declaration, case);
     let object = |declaration: usize| engine.program.objects.get(declaration).map(|object| object.name.clone());
-    okkama_runtime_core::testing::show(&okkama_runtime_core::testing::Names { case: &case, object: &object }, value)
+    sparrow_runtime::testing::show(&sparrow_runtime::testing::Names { case: &case, object: &object }, value)
 }
 
 /// `Rt.describe`: текст отказа теста.
 fn describe(engine: &Rc<Engine>, failure: &Rc<Failure>) -> Result<String, Located> {
     Ok(match &failure.kind {
-        Kind::Thrown { .. } => okkama_runtime_core::failure::describe(&*describe_failure(engine, failure)?),
-        _ => okkama_runtime_core::failure::describe(failure),
+        Kind::Thrown { .. } => sparrow_runtime::failure::describe(&*describe_failure(engine, failure)?),
+        _ => sparrow_runtime::failure::describe(failure),
     })
 }
 
@@ -50,7 +50,7 @@ fn run_tests_here(program: &Program, out: &mut dyn Write) -> Result<bool, Error>
         });
     };
     let engine = new_engine(program);
-    if okkama_runtime_core::worker::active() {
+    if sparrow_runtime::worker::active() {
         crate::machine::serve(&engine);
     }
     if tests.is_empty() {
@@ -68,7 +68,7 @@ fn run_tests_here(program: &Program, out: &mut dyn Write) -> Result<bool, Error>
         let function = function.0 as usize;
         writeln!(out, "=== RUN   {name}").map_err(io)?;
         out.flush().map_err(io)?;
-        okkama_runtime_core::testing::begin();
+        sparrow_runtime::testing::begin();
         let outcome = if engine.program.functions[function].is_async {
             let body = cold_call(&engine, function, Vec::new());
             sched::run_test(Some(&body))
@@ -97,7 +97,7 @@ fn run_tests_here(program: &Program, out: &mut dyn Write) -> Result<bool, Error>
         if let Err(fatal) = engine.take_fatal() {
             return Err(public_error(&engine, fatal));
         }
-        let mut failures = okkama_runtime_core::testing::finish();
+        let mut failures = sparrow_runtime::testing::finish();
         failures.extend(failure);
         if failures.is_empty() {
             writeln!(out, "--- PASS: {name}").map_err(io)?;

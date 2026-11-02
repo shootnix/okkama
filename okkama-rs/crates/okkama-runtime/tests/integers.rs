@@ -15,8 +15,8 @@ fn evaluate(body: &str) -> String {
         okkama_sparrow::encode(&okkama_compiler::codegen::sparrow::generate(&module).unwrap())
             .unwrap();
     assert_eq!(
-        okkama_runtime::sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap(),
-        actual
+        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
+        actual.to_string()
     );
     actual.to_string().to_owned()
 }

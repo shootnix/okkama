@@ -32,8 +32,8 @@ use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
-use okkama_runtime_core::failure::Failure;
-use okkama_runtime_core::{IntValue, Value, sched};
+use sparrow_runtime::failure::Failure;
+use sparrow_runtime::{IntValue, Value, sched};
 use okkama_sparrow::{Cmp, Function, Instruction as I, Program, Register, Target};
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -108,13 +108,13 @@ fn probe_array() -> Option<ObjectLayout> {
     let mut elements = Vec::with_capacity(13);
     elements.resize(7, Value::Undef);
     let data = elements.as_ptr() as usize;
-    let value = okkama_runtime_core::heap::ArrayHeap.allocate(elements);
+    let value = sparrow_runtime::heap::ArrayHeap.allocate(elements);
     let Value::Array(array) = &value else { return None };
     // SAFETY: payload `Value::Array` — указатель `Rc` по смещению 8.
     let pointer = unsafe { *(&value as *const Value).cast::<u8>().add(8).cast::<usize>() };
     let address = Rc::as_ptr(array) as usize;
     let inner = address.checked_sub(pointer).filter(|inner| *inner <= 64)? as i32;
-    let words = std::mem::size_of::<okkama_runtime_core::heap::Array>() / 8;
+    let words = std::mem::size_of::<sparrow_runtime::heap::Array>() / 8;
     // SAFETY: чтение слов внутри живого массива.
     let word = |index: usize| unsafe { *(address as *const usize).add(index) };
     let find = |wanted: usize| {
@@ -142,13 +142,13 @@ fn probe_object() -> Option<ObjectLayout> {
     let mut fields = Vec::with_capacity(13);
     fields.resize(7, Value::Undef);
     let data = fields.as_ptr() as usize;
-    let value = okkama_runtime_core::heap::ObjectHeap.allocate(0x5a5a, fields);
+    let value = sparrow_runtime::heap::ObjectHeap.allocate(0x5a5a, fields);
     let Value::Object(object) = &value else { return None };
     // SAFETY: payload `Value::Object` — указатель `Rc` по смещению 8.
     let pointer = unsafe { *(&value as *const Value).cast::<u8>().add(8).cast::<usize>() };
     let address = Rc::as_ptr(object) as usize;
     let inner = address.checked_sub(pointer).filter(|inner| *inner <= 64)? as i32;
-    let words = std::mem::size_of::<okkama_runtime_core::heap::Object>() / 8;
+    let words = std::mem::size_of::<sparrow_runtime::heap::Object>() / 8;
     // SAFETY: чтение слов внутри живого объекта.
     let word = |index: usize| unsafe { *(address as *const usize).add(index) };
     let find = |wanted: usize| {
@@ -524,7 +524,7 @@ impl Jit {
             .failure
             .borrow_mut()
             .take()
-            .unwrap_or_else(|| Failure::new(okkama_runtime_core::failure::Kind::Program("machine code raised without a failure".into())))
+            .unwrap_or_else(|| Failure::new(sparrow_runtime::failure::Kind::Program("machine code raised without a failure".into())))
     }
 }
 
@@ -694,7 +694,7 @@ extern "C" fn h_handler(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -
 extern "C" fn h_trace(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) -> u32 {
     guarded(ctx, (func as usize, pc as usize), |ctx| {
         if let Some(failure) = ctx.failure.borrow().as_ref() {
-            failure.trace.record(regs as usize, okkama_runtime_core::failure::Site { function: func, pc });
+            failure.trace.record(regs as usize, sparrow_runtime::failure::Site { function: func, pc });
         }
         OK
     })
@@ -865,7 +865,7 @@ extern "C" fn h_call_dyn(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32) 
         let registers = unsafe { registers(regs, function) };
         // Цель и префикс аргументов: `Rc` замыкания (его захваты) или receiver.
         enum Prefix {
-            Captures(Rc<okkama_runtime_core::heap::Closure>),
+            Captures(Rc<sparrow_runtime::heap::Closure>),
             Receiver(Value),
         }
         let (target, dst, args, prefix): (usize, _, &[Register], Prefix) = match &function.code[at.1] {
@@ -950,6 +950,30 @@ fn call_generic(ctx: &Ctx, regs: *mut Value, at: (usize, usize)) -> u32 {
         let engine = unsafe { engine(ctx) };
         let function = &engine.program.functions[at.0];
         let registers = unsafe { registers(regs, function) };
+        if let I::Call { dst, function: callee, args } = &function.code[at.1]
+            && engine.program.functions[callee.0 as usize].intrinsic.is_some()
+            && args.len() <= NATIVE_ARGS
+        {
+            // Owned stack values remain alive even if the intrinsic suspends.
+            // Values retained by the intrinsic are cloned at its argument boundary.
+            let mut values: [Value; NATIVE_ARGS] = std::array::from_fn(|_| Value::Undef);
+            for (value, register) in values.iter_mut().zip(args) {
+                match machine::read(registers, *register) {
+                    Ok(read) => *value = read.clone(),
+                    Err(stop) => return stopped(ctx, stop, at),
+                }
+            }
+            let result = machine::intrinsic_now(&engine, callee.0 as usize, &values[..args.len()], at);
+            // Match the owned-Vec path: release argument copies before replacing dst.
+            drop(values);
+            return match result {
+                Ok(value) => {
+                    if let Some(dst) = dst { registers[dst.0.0 as usize] = value; }
+                    OK
+                }
+                Err(exit) => settle(ctx, exit),
+            };
+        }
         let prepared = match engine.prepared(at.0) {
             Ok(prepared) => prepared,
             Err(stop) => return stopped(ctx, stop, at),
@@ -1048,7 +1072,7 @@ extern "C" fn h_obj_next(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32, 
                 _ => 0,
             };
             if updates.iter().all(|(field, _)| (*field as usize) < count)
-                && let Some(fields) = okkama_runtime_core::heap::ObjectHeap.unique_fields(&mut source)
+                && let Some(fields) = sparrow_runtime::heap::ObjectHeap.unique_fields(&mut source)
             {
                 for (index, (field, value)) in updates.iter().enumerate() {
                     fields[*field as usize] = take(registers, *value, moved(index));
@@ -1071,7 +1095,7 @@ extern "C" fn h_obj_next(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32, 
             Value::Object(object) => Rc::as_ptr(object) as usize,
             _ => 0,
         };
-        match okkama_runtime_core::heap::ObjectHeap.successor_owned(source, updates) {
+        match sparrow_runtime::heap::ObjectHeap.successor_owned(source, updates) {
             Ok(value) => {
                 if ctx.stats.is_some() {
                     let reused = matches!(&value, Value::Object(object) if Rc::as_ptr(object) as usize == before);
@@ -1112,7 +1136,7 @@ extern "C" fn h_obj_new(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u32, m
             .enumerate()
             .map(|(index, field)| owned(registers, *field, index < 64 && mask & (1 << index) != 0))
             .collect();
-        registers[dst.0.0 as usize] = okkama_runtime_core::heap::ObjectHeap.allocate(object.0 as usize, values);
+        registers[dst.0.0 as usize] = sparrow_runtime::heap::ObjectHeap.allocate(object.0 as usize, values);
         OK
     })
 }
@@ -1130,7 +1154,7 @@ extern "C" fn h_builder_push(ctx: *const Ctx, regs: *mut Value, func: u32, pc: u
         };
         let item = owned(registers, *value, mask & 2 != 0);
         let target = owned(registers, *builder, mask & 1 != 0);
-        match okkama_runtime_core::heap::ArrayHeap.builder_push_into(&target, item) {
+        match sparrow_runtime::heap::ArrayHeap.builder_push_into(&target, item) {
             Ok(()) => {
                 registers[dst.0.0 as usize] = target;
                 OK

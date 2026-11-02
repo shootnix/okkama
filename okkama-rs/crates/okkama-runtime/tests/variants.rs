@@ -16,7 +16,7 @@ fn check(source: &str, expected: &str) {
     let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
     let program = okkama_sparrow::decode(&okkama_sparrow::encode(&program).unwrap()).unwrap();
     assert_eq!(
-        okkama_runtime::sparrow::execute(&program)
+        sparrow_vm::execute(&program)
             .unwrap()
             .to_string(),
         expected

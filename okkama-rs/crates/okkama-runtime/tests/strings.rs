@@ -15,8 +15,8 @@ fn run(declarations: &str, body: &str) -> String {
         let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
         let bytes = okkama_sparrow::encode(&program).unwrap();
         assert_eq!(
-            okkama_runtime::sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap(),
-            result
+            sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()).unwrap().to_string(),
+            result.to_string()
         );
     }
     result.to_string().to_owned()
@@ -211,8 +211,8 @@ fn invalid_slice_bounds_return_program_errors_with_source_spans() {
         let program = okkama_compiler::codegen::sparrow::generate(&module).unwrap();
         let bytes = okkama_sparrow::encode(&program).unwrap();
         assert!(
-            matches!(okkama_runtime::sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()),
-            Err(okkama_runtime::sparrow::Error::Operation { error: RuntimeError::Trap { message: actual, .. }, .. }) if actual == message)
+            matches!(sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap()),
+            Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Trap { message: actual, .. }, .. }) if actual == message)
         );
         let error = execute(&module).unwrap_err();
         assert_eq!(

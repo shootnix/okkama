@@ -19,7 +19,7 @@ import "db/sqlite" take SqliteDatabase, SqliteOptions;
 import "db/sqlite/script" take SqliteScript;
 import "db/connection" take DbExecuting;
 import "db/statement" take Statement;
-import "db/value" take DbText, DbInteger;
+import "db/param" take Param;
 import "numbers/bigint" take BigInt;
 import "time/iso" take DateFromIso;
 import "io/stdout" take Stdout;
@@ -48,7 +48,7 @@ object TaxiCommands {
     async driver(name is string) is void {
         confirm name.length() > 0 && name.length() <= 100
             else throw Usage("driver name: 1..100 characters");
-        await target.execution(Statement("INSERT INTO drivers(name) VALUES(?)", [DbText(name)]));
+        await target.execution(Statement("INSERT INTO drivers(name) VALUES(?)", [Param(name)]));
     }
 
     async trip(driver is int, day is string, minutes is int, fare is int) is void {
@@ -59,10 +59,10 @@ object TaxiCommands {
             Statement(
                 "INSERT INTO trips(driver_id,day,minutes,fare_cents) VALUES(?,?,?,?)",
                 [
-                    DbInteger(BigInt(driver.string())),
-                    DbText(day),
-                    DbInteger(BigInt(minutes.string())),
-                    DbInteger(BigInt(fare.string()))
+                    Param(driver),
+                    Param(day),
+                    Param(minutes),
+                    Param(fare)
                 ]
             )
         );
@@ -78,7 +78,7 @@ object TaxiCommands {
             DateFromIso(day).value();
             Statement(
                 "SELECT d.id,d.name,count(t.id) AS trips,coalesce(sum(t.minutes),0) AS minutes,coalesce(sum(t.fare_cents),0) AS fare_cents FROM drivers d LEFT JOIN trips t ON t.driver_id=d.id AND t.day=? GROUP BY d.id ORDER BY d.id",
-                [DbText(day)]
+                [Param(day)]
             );
         };
         Stdout().writeln(

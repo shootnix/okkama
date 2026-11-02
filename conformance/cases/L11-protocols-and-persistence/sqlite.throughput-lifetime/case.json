@@ -1,0 +1,49 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.throughput-lifetime",
+  "title": "SQLite adaptive batches and acknowledged replies preserve lifecycle and binding limits",
+  "purpose": "Exercise batch boundaries, byte caps, cancellation, delayed errors and direct prepared binding validation.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.QUERY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - ordered rows across batch boundaries\nok 2 - ordered rows across batch boundaries\nok 3 - ordered rows across batch boundaries\nok 4 - ordered rows across batch boundaries\nok 5 - ordered rows across batch boundaries\nok 6 - ordered rows across batch boundaries\nok 7 - ordered rows across batch boundaries\nok 8 - ordered rows across batch boundaries\nok 9 - ordered rows across batch boundaries\nok 10 - ordered rows across batch boundaries\nok 11 - byte-limited batches keep every row\nok 12 - close discards expanded batch and permits reuse\nok 13 - expanded stream has stable EOF\nok 14 - fetch cancellation propagates\nok 15 - cancelled fetch cleanup permits reuse\nok 16 - failure after first batch propagates\nok 17 - connection reusable after later batch failure\nok 18 - direct prepared printer observed once\nok 19 - prepared Query preserves parameter snapshot\nok 20 - prepared binding rejects broken printer\nok 21 - prepared binding rejects broken printer\nok 22 - prepared binding rejects broken printer\nok 23 - prepared binding preserves count limit\nok 24 - prepared binding preserves aggregate byte limit\nok 25 - prepared reusable after binding failures\nchecks: 25, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/sqlite.ok",
+    "docs/std/db-sqlite.md",
+    "std/db/value.ok"
+  ],
+  "budget": {
+    "timeout_s": 180
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Batched reads preserve row order and independent byte limits. Acknowledged replies permit reuse; cancellation and failures retain cleanup. Prepared bindings preserve printer validation, snapshot semantics and count/byte limits."
+  },
+  "status": "mandatory",
+  "harness": true
+}

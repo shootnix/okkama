@@ -6428,9 +6428,18 @@ Connector передаётся на прикладной границе. Stateme
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
 await transaction.execution(Statement("INSERT INTO customers VALUES(?,?)",
-    [DbInteger(BigInt("7")),DbText("Ada")]));
+    [Param(7),Param("Ada")]));
 await transaction.commit();
 ```
+
+`Param` из `db/param` принимает скаляры и параметры `Maybe<T>`. `Query` из
+`db/query` принимает `(connection, Statement(...))` или `(prepared, parameters)`;
+методы `one()`, `maybe()`, `all(limit)` и `rows()` используют один контракт результата.
+Колонки читаются прямо: `row.text(name)` или `row.maybe(name).text() else fallback`.
+`Execution.affected()` возвращает `Maybe<BigInt>`: неизвестное число отличается от нуля.
+Query закрывает курсор; prepared statement и соединение остаются у вызывающего кода.
+
+
 
 Подтверждённые commit/rollback завершают транзакцию. Отмена или потеря подтверждения
 COMMIT сохраняет неопределённый исход и закрывает соединение; повтор тела

@@ -7,7 +7,8 @@
 module cookbook/sql v1.0.0;
 import "db/connection" take DbExecuting;
 import "db/statement" take Statement;
-import "db/row" take Row,RowsEnded;
+import "db/row" take Row;
+import "db/query" take Query;
 import "db/value" take ObservedDbValue,DbValueKind;
 import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
@@ -34,11 +35,10 @@ object QueryJson {
     has target is DbExecuting;has statement is Statement;
     QueryJson(target is DbExecuting,statement is Statement){self.target=target;self.statement=statement;}
     async value() is Json {
-        let rows=await target.rows(statement);defer rows.close();
+        let rows=await Query(target,statement).rows();defer rows.close();
         let collected is Collected<Json>=Collected();
-        loop {
-            try{let row=await rows.row();let value is Json=SqlJson(row).value();collected=collected.addition(value);}
-            catch ended is RowsEnded{last;}
+        for await rows -> row {
+            let value is Json=SqlJson(row).value();collected=collected.addition(value);
         }
         Json(items: collected.values());
     }

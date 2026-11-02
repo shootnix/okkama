@@ -16,7 +16,7 @@ use crate::failure::{Failure, Kind};
 use corosensei::stack::{DefaultStack, Stack};
 use corosensei::{Coroutine, CoroutineResult, Yielder};
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
 use std::rc::Rc;
 
@@ -110,7 +110,9 @@ type Delivery = Box<dyn std::any::Any + Send>;
 struct Scheduler {
     current: RefCell<Rc<Task>>,
     /// Future, запущенные `spawn`: их исход проверяет завершение программы.
-    registered: RefCell<Vec<Future>>,
+    registered: RefCell<BTreeMap<u64, Future>>,
+    registered_ids: RefCell<HashMap<*const FutureCell, u64>>,
+    next_registration: Cell<u64>,
     /// Внешние операции, исхода которых ждёт программа.
     external: Cell<usize>,
     /// Незавершённые задачи: их корутины освобождаются при завершении запуска.
@@ -129,7 +131,9 @@ impl Scheduler {
         let (sender, receiver) = std::sync::mpsc::channel();
         Self {
             current: RefCell::new(Task::root()),
-            registered: RefCell::new(Vec::new()),
+            registered: RefCell::new(BTreeMap::new()),
+            registered_ids: RefCell::new(HashMap::new()),
+            next_registration: Cell::new(0),
             external: Cell::new(0),
             live: RefCell::new(HashMap::new()),
             stacks: RefCell::new(Vec::new()),
@@ -209,6 +213,7 @@ pub fn reset() {
     let live: Vec<Rc<Task>> = with(|s| {
         *s.current.borrow_mut() = Task::root();
         s.registered.borrow_mut().clear();
+        s.registered_ids.borrow_mut().clear();
         s.external.set(0);
         s.pending.borrow_mut().clear();
         while s.receiver.try_recv().is_ok() {}
@@ -255,6 +260,24 @@ impl FutureCell {
 
     pub fn observe(&self) {
         self.observed.set(true);
+        self.release_registration();
+    }
+
+    // Keep active tasks and unobserved failures, never completed successful results.
+    fn needs_registration(&self) -> bool {
+        !self.done() || (self.state.get() == State::Failed && !self.observed.get() && !self.cancelled())
+    }
+
+    fn release_registration(&self) {
+        if self.needs_registration() {
+            return;
+        }
+        let removed = with(|s| {
+            let id = s.registered_ids.borrow_mut().remove(&(self as *const FutureCell));
+            id.and_then(|id| s.registered.borrow_mut().remove(&id))
+        });
+        // Drop outside registry borrows: payload destruction may release other futures.
+        drop(removed);
     }
 
     /// Значения, через которые регион видит объекты Future.
@@ -366,10 +389,16 @@ pub fn is_cancelled(failure: &Failure) -> bool {
 }
 
 pub fn register(future: &Future) {
+    if !future.needs_registration() {
+        return;
+    }
     with(|s| {
-        let mut registered = s.registered.borrow_mut();
-        if !registered.iter().any(|known| Rc::ptr_eq(known, future)) {
-            registered.push(future.clone());
+        let mut ids = s.registered_ids.borrow_mut();
+        if let std::collections::hash_map::Entry::Vacant(entry) = ids.entry(Rc::as_ptr(future)) {
+            let id = s.next_registration.get();
+            s.next_registration.set(id.checked_add(1).expect("future registration counter"));
+            entry.insert(id);
+            s.registered.borrow_mut().insert(id, future.clone());
         }
     });
 }
@@ -474,6 +503,7 @@ pub fn complete(future: &Future, outcome: Outcome) {
     }
     future.task.borrow_mut().take();
     future.starter.borrow_mut().take();
+    future.release_registration();
     loop {
         let next = future.waiters.borrow_mut().pop_front();
         match next {
@@ -493,7 +523,7 @@ pub fn settle(promise: &Future, outcome: Outcome) {
 
 /// `await`: запуск холодного Future, затем ожидание исхода.
 pub fn await_future(future: &Future) -> Outcome {
-    future.observed.set(true);
+    future.observe();
     let me = current();
     start(future, Some(me.clone()));
     while future.state.get() == State::Running {
@@ -528,6 +558,7 @@ pub fn cancel(future: &Future) {
         future.body.borrow_mut().take();
         *future.failure.borrow_mut() = Some(cancelled_failure());
         future.state.set(State::Failed);
+        future.release_registration();
         return;
     }
     if future.state.get() != State::Running || future.cancel_requested.get() {
@@ -590,19 +621,19 @@ fn drive(until: &Future) -> Result<(), Rc<Failure>> {
 }
 
 fn shutdown() -> Result<Option<Rc<Failure>>, Rc<Failure>> {
-    let registered = with(|s| s.registered.borrow().clone());
+    let registered: Vec<_> = with(|s| s.registered.borrow().values().cloned().collect());
     for future in &registered {
         if future.state.get() < State::Done {
             cancel(future);
         }
     }
-    let registered = with(|s| s.registered.borrow().clone());
+    let registered: Vec<_> = with(|s| s.registered.borrow().values().cloned().collect());
     for future in &registered {
         while future.state.get() == State::Running && with(|s| s.external.get()) > 0 {
             drive(future)?;
         }
     }
-    let registered = with(|s| s.registered.borrow().clone());
+    let registered: Vec<_> = with(|s| s.registered.borrow().values().cloned().collect());
     Ok(registered
         .iter()
         .find(|future| {
@@ -615,11 +646,14 @@ fn shutdown() -> Result<Option<Rc<Failure>>, Rc<Failure>> {
 /// завершение: незавершённые задачи `spawn` отменяются, ненаблюдённый отказ
 /// задачи становится отказом программы (§18, D-034).
 pub fn run_main(root: &Future) -> Outcome {
-    root.observed.set(true);
+    root.observe();
     start(root, None);
     drive(root)?;
     let unobserved = shutdown()?;
-    with(|s| s.registered.borrow_mut().clear());
+    with(|s| {
+        s.registered.borrow_mut().clear();
+        s.registered_ids.borrow_mut().clear();
+    });
     if root.state.get() == State::Failed {
         return Err(root.failure().expect("failed root has a failure"));
     }
@@ -632,12 +666,18 @@ pub fn run_main(root: &Future) -> Outcome {
 /// Тест (§14): async-тело — как корень, затем завершение задач `spawn`
 /// теста; синхронное — только завершение.
 pub fn run_test(body: Option<&Future>) -> Result<(), Rc<Failure>> {
-    with(|s| s.registered.borrow_mut().clear());
+    with(|s| {
+        s.registered.borrow_mut().clear();
+        s.registered_ids.borrow_mut().clear();
+    });
     if let Some(body) = body {
         return run_main(body).map(|_| ());
     }
     let unobserved = shutdown()?;
-    with(|s| s.registered.borrow_mut().clear());
+    with(|s| {
+        s.registered.borrow_mut().clear();
+        s.registered_ids.borrow_mut().clear();
+    });
     match unobserved {
         Some(failure) => Err(failure),
         None => Ok(()),
@@ -663,6 +703,65 @@ impl Op {
             with(|s| s.external.set(s.external.get() - 1));
         }
     }
+}
+
+/// A one-shot delivery from an existing I/O worker to the program event loop.
+/// Dropping the token reports a lost worker instead of leaving an await pending.
+/// The token contains no program-thread Rc values and never runs `done` itself.
+#[derive(Debug)]
+pub struct Completion<R: Send + 'static> {
+    sender: Option<std::sync::mpsc::Sender<(u64, Delivery)>>,
+    id: u64,
+    marker: std::marker::PhantomData<R>,
+}
+
+impl<R: Send + 'static> Completion<R> {
+    pub fn deliver(mut self, result: R) {
+        if let Some(sender) = self.sender.take() {
+            let _ = sender.send((self.id, Box::new(Some(result))));
+        }
+    }
+}
+
+impl<R: Send + 'static> Drop for Completion<R> {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sender.take() {
+            let _ = sender.send((self.id, Box::new(None::<R>)));
+        }
+    }
+}
+
+/// Register completion without creating a thread. The provider moves the token
+/// into its existing worker job. Cancellation may detach the Op, but delivery
+/// still runs on the event loop, allowing late-result resource cleanup.
+pub fn external<R: Send + 'static>(done: impl FnOnce(Option<R>) + 'static) -> (Op, Completion<R>) {
+    let op = Op(Rc::new(Cell::new(true)));
+    let attached = op.clone();
+    let (id, sender) = with(|s| {
+        let id = s.next_op.get();
+        s.next_op.set(id + 1);
+        s.external.set(s.external.get() + 1);
+        s.pending.borrow_mut().insert(
+            id,
+            Box::new(move |delivery: Delivery| {
+                attached.detach();
+                done(
+                    *delivery
+                        .downcast::<Option<R>>()
+                        .expect("external result type"),
+                );
+            }),
+        );
+        (id, s.sender.clone())
+    });
+    (
+        op,
+        Completion {
+            sender: Some(sender),
+            id,
+            marker: std::marker::PhantomData,
+        },
+    )
 }
 
 /// `work` исполняется в рабочем потоке, `done` получает его результат в
@@ -781,4 +880,163 @@ mod tests {
         assert!(matches!(run_main(&root), Ok(Value::Int(v)) if v == crate::IntValue::from_i64(42)));
         reset();
     }
+    #[test]
+    fn existing_worker_delivers_on_program_thread() {
+        reset();
+        let program_thread = std::thread::current().id();
+        let root = cold(
+            Box::new(move || {
+                let p = promise();
+                let target = p.clone();
+                let (_op, completion) = external(move |v: Option<i64>| {
+                    assert_eq!(std::thread::current().id(), program_thread);
+                    settle(&target, Ok(int(v.unwrap())));
+                });
+                std::thread::spawn(move || completion.deliver(42));
+                await_future(&p)
+            }),
+            Vec::new(),
+        );
+        assert!(matches!(run_main(&root),Ok(Value::Int(v)) if v.to_i64()==Some(42)));
+        reset();
+    }
+
+    #[test]
+    fn dropped_worker_token_delivers_failure_signal() {
+        reset();
+        let root = cold(
+            Box::new(|| {
+                let p = promise();
+                let target = p.clone();
+                let (_op, completion) = external(move |v: Option<i64>| {
+                    assert!(v.is_none());
+                    settle(&target, Ok(int(7)));
+                });
+                drop(completion);
+                await_future(&p)
+            }),
+            Vec::new(),
+        );
+        assert!(matches!(run_main(&root),Ok(Value::Int(v)) if v.to_i64()==Some(7)));
+        reset();
+    }
+
+    #[test]
+    fn detached_delivery_still_cleans_up_and_cannot_replace_cancellation() {
+        reset();
+        let root = cold(
+            Box::new(|| {
+                let p = promise();
+                let target = p.clone();
+                let finished = promise();
+                let done = finished.clone();
+                let (op, completion) = external(move |v: Option<i64>| {
+                    assert_eq!(v, Some(42));
+                    settle(&target, Ok(int(42)));
+                    assert!(target.cancelled());
+                    settle(&done, Ok(int(1)));
+                });
+                cancel(&p);
+                op.detach();
+                op.attach();
+                op.detach();
+                // A second attached delivery keeps the loop alive while it drains
+                // the detached late result, just as connection.settled does.
+                let (_guard, tick) = external(|_: Option<()>| {});
+                completion.deliver(42);
+                tick.deliver(());
+                await_future(&finished)
+            }),
+            Vec::new(),
+        );
+        assert!(matches!(run_main(&root),Ok(Value::Int(v)) if v.to_i64()==Some(1)));
+        reset();
+    }
+    #[test]
+    fn registration_preserves_identity_order_and_resets_between_runs() {
+        reset();
+        let a=promise();let b=promise();
+        register(&a);register(&b);register(&a);
+        with(|s| { let all:Vec<_>=s.registered.borrow().values().cloned().collect();assert_eq!(all.len(),2);assert!(Rc::ptr_eq(&all[0],&a));assert!(Rc::ptr_eq(&all[1],&b)); });
+        reset();
+        register(&b);register(&a);
+        with(|s| { let all:Vec<_>=s.registered.borrow().values().cloned().collect();assert_eq!(all.len(),2);assert!(Rc::ptr_eq(&all[0],&b)); });
+        reset();register(&a);
+        with(|s| assert_eq!(s.registered.borrow().len(),1));
+        reset();
+    }
+
+    #[test]
+    fn completed_registrations_release_futures_without_clearing_cached_outcomes() {
+        reset();
+        for _ in 0..20_000 {
+            let future = promise();
+            let weak = Rc::downgrade(&future);
+            register(&future);
+            complete(&future, Ok(int(7)));
+            with(|s| {
+                assert!(s.registered.borrow().is_empty());
+                assert!(s.registered_ids.borrow().is_empty());
+            });
+            assert!(matches!(await_future(&future), Ok(Value::Int(v)) if v.to_i64() == Some(7)));
+            register(&future); // Re-registering a completed success must not retain it.
+            drop(future);
+            assert!(weak.upgrade().is_none());
+        }
+        reset();
+    }
+
+    #[test]
+    fn unobserved_failures_keep_registration_order_and_release_after_observation() {
+        reset();
+        let first = promise();
+        let second = promise();
+        register(&first);
+        register(&second);
+        let a = trap("first registered");
+        let b = trap("second registered");
+        complete(&second, Err(b.clone()));
+        complete(&first, Err(a.clone()));
+        assert!(Rc::ptr_eq(&shutdown().unwrap().unwrap(), &a));
+        first.observe();
+        assert!(Rc::ptr_eq(&shutdown().unwrap().unwrap(), &b));
+        assert!(Rc::ptr_eq(&await_future(&second).unwrap_err(), &b));
+        with(|s| assert!(s.registered.borrow().is_empty()));
+        assert!(shutdown().unwrap().is_none());
+        reset();
+    }
+
+    #[test]
+    fn observed_active_tasks_stay_registered_until_completion_and_cancel_releases() {
+        reset();
+        let active = promise();
+        active.observe();
+        register(&active);
+        with(|s| assert_eq!(s.registered.borrow().len(), 1));
+        assert!(shutdown().unwrap().is_none());
+        assert!(active.cancelled());
+        with(|s| assert!(s.registered.borrow().is_empty()));
+        let cold = cold(Box::new(|| Ok(int(1))), Vec::new());
+        register(&cold);
+        cancel(&cold);
+        register(&cold);
+        with(|s| assert!(s.registered.borrow().is_empty()));
+        reset();
+    }
+
+    #[test]
+    fn completion_listener_can_register_and_complete_another_future() {
+        reset();
+        let first = promise();
+        register(&first);
+        first.listen(|| {
+            let second = promise();
+            register(&second);
+            complete(&second, Ok(int(2)));
+        });
+        complete(&first, Ok(int(1)));
+        with(|s| assert!(s.registered.borrow().is_empty()));
+        reset();
+    }
+
 }

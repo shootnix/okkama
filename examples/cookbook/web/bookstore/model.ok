@@ -9,9 +9,8 @@ import "db/sqlite" take SqliteDatabase,SqliteOptions,SqliteTransactions,SqliteTr
 import "db/sqlite/script" take SqliteScript;
 import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
-import "db/value" take DbInteger;
-import "db/read" take RowReader;
-import "db/row" take RowsEnded;
+import "db/param" take Param;
+import "db/query" take Query;
 import "numbers/bigint" take BigInt;
 import "json" take Json, JsonField;
 import "math/decimal" take Decimal;
@@ -37,12 +36,11 @@ object BookShelf {
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
         let tx=await SqliteTransactions(c,SqliteTransactionMode.immediate).transaction(TransactionOptions());
         defer if tx.active(){await tx.rollback();}else{tx;};
-        let rows=await tx.rows(Statement("SELECT price_cents,stock FROM books WHERE id=?",[DbInteger(BigInt(book.string()))]));
-        let row=try{await rows.row();}catch end is RowsEnded{throw Exception(404,"Книга не найдена");};rows.close();
-        let fields=RowReader(row);confirm fields.int("stock")>=quantity else throw Exception(409,"Недостаточно книг на складе");
+        let row=(await Query(tx,Statement("SELECT price_cents,stock FROM books WHERE id=?",[Param(book)])).maybe()) else throw Exception(404,"Книга не найдена");
+        let fields=row;confirm fields.int("stock")>=quantity else throw Exception(409,"Недостаточно книг на складе");
         let total=fields.int("price_cents")*quantity;
-        await tx.execution(Statement("UPDATE books SET stock=stock-? WHERE id=?",[DbInteger(BigInt(quantity.string())),DbInteger(BigInt(book.string()))]));
-        await tx.execution(Statement("INSERT INTO orders(book_id,quantity,total_cents) VALUES(?,?,?)",[DbInteger(BigInt(book.string())),DbInteger(BigInt(quantity.string())),DbInteger(BigInt(total.string()))]));
+        await tx.execution(Statement("UPDATE books SET stock=stock-? WHERE id=?",[Param(quantity),Param(book)]));
+        await tx.execution(Statement("INSERT INTO orders(book_id,quantity,total_cents) VALUES(?,?,?)",[Param(book),Param(quantity),Param(total)]));
         await tx.commit();Json([JsonField("book",Json(Decimal(book.string()))),JsonField("quantity",Json(Decimal(quantity.string()))),JsonField("total_cents",Json(Decimal(total.string())))]);
     }
 }

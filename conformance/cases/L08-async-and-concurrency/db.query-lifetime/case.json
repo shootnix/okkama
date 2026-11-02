@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.db.query-lifetime",
+  "title": "Query cursors handle cancellation, competing reads and cleanup failures",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.DB.QUERY",
+      "aspects": [
+        "invalid",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - cancel propagates\nok 2 - cancel closes once\nok 3 - cancel leaves closed cursor\nok 4 - concurrent next rejected\nok 5 - busy does not close active reader\nok 6 - first read still succeeds\nok 7 - close during read rejects late row\nok 8 - close during read remains idempotent\nok 9 - both failures retained\nok 10 - failed close is not retried\nok 11 - explicit close remains idempotent\nok 12 - explicit close error visible\nok 13 - close failure terminal\nchecks: 13, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/query.ok",
+    "docs/std/db-values.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Cancelled fetch closes once; concurrent fetch is DbBusy; a closed cursor cannot publish a late row; simultaneous read and close errors retain both causes."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,75 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.prepared-pool-query",
+  "title": "Prepared queries preserve pool, transaction and result ownership",
+  "purpose": "Exercise the SQLite persistence boundary with an owned in-memory database.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.QUERY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.DB.PREPARED",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.DB.POOL",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.DB.STATEMENT",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite",
+      "filesystem",
+      "real-clock"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ok 1 - affected insert\nok 2 - unknown affected\nok 3 - zero affected remains known\nok 4 - negative affected rejected\nok 5 - prepared one\nok 6 - prepared maybe missing\nok 7 - prepared all\nok 8 - prepared stream\nok 9 - prepared stream EOF closed\nok 10 - prepared still owned by caller\nok 11 - prepared repeat\nok 12 - prepared cardinality\nok 13 - prepared limit\nok 14 - prepared reused after errors\nok 15 - transaction sees own write\nok 16 - transaction preparation revoked\nok 17 - pool rolled back unfinished transaction\nok 18 - lease revokes active cursor\nok 19 - pool reusable after revoked cursor\nchecks: 19, failed: 0\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/query.ok",
+    "std/db/pool.ok",
+    "std/db/statement.ok"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 from the cited contract text",
+    "expected_basis": "Prepared Query methods share cardinality and cleanup; callers own preparation; lease return revokes readers and rolls back unfinished transactions before reuse; Execution.affected distinguishes unknown from zero."
+  },
+  "status": "mandatory",
+  "harness": true
+}

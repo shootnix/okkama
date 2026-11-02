@@ -1,0 +1,76 @@
+module postgres_query_check v1.0.0;
+import "db/postgres" take PostgresDatabase, PostgresAcquiring, PostgresTcp, PostgresCredentials, PostgresOptions;
+import "db/statement" take Statement;
+import "db/query" take Query;
+import "db/param" take Param;
+import "db/error" take DbFailure, DbFailureKind;
+import "db/transaction" take TransactionOptions, Isolation;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "os/environment" take Environment;
+import "crypto/secret" take SecretBytes;
+import "crypto/nonce" take SystemEntropy;
+import "encoding/utf" take Utf8Encoded;
+import "strings/parse" take ParsedInt;
+import "numbers/bigint" take BigInt;
+import "math/decimal" take Decimal;
+import "io/stdout" take Stdout;
+
+import "db/pool" take DbPreparedPool,PoolOptions,PooledTransactions;
+import "db/prepared" take Prepared;
+import "db/query" take NoRows,TooManyRows,QueryLimitExceeded;
+import "time/clock" take SystemClock;
+import "time/duration" take Duration,DurationUnit;
+
+// Only session-local TEMP tables; no persistent schema/data mutations.
+object Settings {
+    has environment is Environment;
+    Settings(environment is Environment) { self.environment = environment; }
+    value(name is string, fallback is string) is string {
+        if environment.membership(name) { environment.variable(name); } else { fallback; }
+    }
+    database() is PostgresDatabase {
+        let endpoint = IpEndpoint(IpAddress(self.value("OKKAMA_PG_ADDRESS", "127.0.0.1")), ParsedInt(self.value("OKKAMA_PG_PORT", "5432")).value());
+        let user = self.value("OKKAMA_PG_USER", "postgres");
+        let password = self.value("OKKAMA_PG_PASSWORD", "");
+        let credentials = if password == "" { PostgresCredentials(user); } else { PostgresCredentials(user, SecretBytes(Utf8Encoded(password).bytes())); };
+        PostgresDatabase(PostgresTcp(endpoint), credentials, PostgresOptions(self.value("OKKAMA_PG_DATABASE", "postgres")), SystemEntropy());
+    }
+}
+
+async main() is int {
+    let database=Settings(Environment()).database();
+    let options=PoolOptions(0,1,Duration(30.rat(),DurationUnit.second),Duration(60.rat(),DurationUnit.second),Duration(5.rat(),DurationUnit.second));
+    let pool=DbPreparedPool(PostgresAcquiring(database),options,SystemClock());
+    defer await pool.settled();defer pool.close();
+    let lease=await pool.connection();
+    await lease.execution(Statement("CREATE TEMP TABLE okkama_api_query_probe(id bigint PRIMARY KEY, name text, nick text)"));
+    let execution=await lease.execution(Statement("INSERT INTO okkama_api_query_probe VALUES($1,$2,$3)",[Param(7),Param("Anton"),Param(Maybe<string>.none)]));
+    confirm (execution.affected() else panic "missing count").string()=="1";
+    let prepared=await Prepared(lease,"SELECT id,name,nick FROM okkama_api_query_probe WHERE id=$1").statement();
+    let query=Query(prepared,[Param(7)]);
+    confirm (await query.one()).text("name")=="Anton";
+    confirm (await query.one()).maybe("nick").text() ?? .none: true !! _: false;
+    confirm (await Query(prepared,[Param(8)]).maybe()) ?? .none: true !! _: false;
+    confirm try { await Query(prepared,[Param(8)]).one();false; } catch e is NoRows { true; };
+    let multiple=await Prepared(lease,"SELECT 1 AS id UNION ALL SELECT 2").statement();
+    confirm try { await Query(multiple,[]).maybe();false; } catch e is TooManyRows { true; };
+    confirm try { await Query(multiple,[]).all(1);false; } catch e is QueryLimitExceeded { true; };
+    confirm (await Query(multiple,[]).all(2)).size()==2;
+    let rows=await query.rows();
+    for await rows -> row { confirm row.int("id")==7; }
+    confirm rows.closed();
+    confirm (await query.one()).text("name")=="Anton";
+    prepared.close();multiple.close();
+    let tx=await PooledTransactions(lease).transaction(TransactionOptions());
+    await tx.execution(Statement("INSERT INTO okkama_api_query_probe VALUES(8,'Grace',NULL)"));
+    let tx_prepared=await Prepared(tx,"SELECT count(*) AS total FROM okkama_api_query_probe").statement();
+    confirm (await Query(tx_prepared,[]).one()).int("total")==2;
+    lease.close();await pool.settled();
+    confirm tx_prepared.closed();
+    let reused=await pool.connection();
+    confirm (await Query(reused,Statement("SELECT count(*) AS total FROM okkama_api_query_probe")).one()).int("total")==1;
+    reused.close();await pool.settled();
+    Stdout().writeln("PostgreSQL query/prepared/pool checks passed");
+    0;
+}

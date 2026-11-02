@@ -1,0 +1,484 @@
+{
+  "config": {
+    "runs": 3,
+    "rows": 10000,
+    "lookups": 1000,
+    "engines": [
+      "python",
+      "sparrow",
+      "jvm"
+    ]
+  },
+  "environment": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.9.6 (default, Apr 17 2026, 18:15:52) \n[Clang 21.0.0 (clang-2100.1.1.101)]",
+    "compiler_version": "okkama 0.3.4",
+    "compiler_sha256": "3be081c273f38b55ae8e9b2f58c5f8aac2d12867763582868dd61c1e2a3aae00",
+    "git_head": "a24ec302192496311a3ea68bc5f5b6938226762b",
+    "stdlib_hashes": {
+      "std/db/acquisition.ok": "14241eb85e988df5da89bf52ff8e6f14c44032275202d144185524175da04bd1",
+      "std/db/connection.ok": "1c2dc6da17f318bf846ae0877ff78738109d359ebda8b53e98ccfc13e1cde0c4",
+      "std/db/error.ok": "64f6cdb320ed6682d9fcef390b4a485b4783ece89dc0aab29a719a6044a19573",
+      "std/db/param.ok": "b2e1c4246303a067844d4cad2d5b35e6cb4e629677344064e925f402954e1c0e",
+      "std/db/pool.ok": "cfb5fa7ad48f3c91fec79262d2ccd29dc6e989f4a4d2262a380a49c9cd3f0f09",
+      "std/db/postgres/auth.ok": "77608ebd5721dd32d0bd9d0294cce5a50f9c0156b8ffc932c0137ba417794bc6",
+      "std/db/postgres/wire.ok": "f31bdc4cf2fbf105ce2ff737f352bbcb93a95bd57113cb05bf3b36ab1027a061",
+      "std/db/postgres.ok": "4e7dae7e6e605590f8b92aeecad08873f660a9dc907e3fc0e9800ef339bedf79",
+      "std/db/prepared.ok": "80963faaab7de1db0ffca2a39ef522da80cfce8f6d2af8dcdf8f1eed521f425f",
+      "std/db/query.ok": "f00c5aa76963eca21f382e78971431a9c0a1a1536effb0d4c4ddae420689a8c4",
+      "std/db/read.ok": "2bf66ae46d4c7db46b5ff19937f2933d45aaae12726ac17f1d60095ef6ce4c2f",
+      "std/db/row.ok": "7c9649d6bee7d4907072f5a18138ca601013072257bde1cb28fa8f927be0ee18",
+      "std/db/sqlite/backup.ok": "06a38d501b37275167a1e43cc4fcb4daf70710712c37643dcbba3998a204f01b",
+      "std/db/sqlite/blob.ok": "f47608b806cf41a48b044489e8155da44b64a9faa748ce01903d768d38c98a27",
+      "std/db/sqlite/script.ok": "4d828900969da04fc0c064bef4ff242a1cf2f7689d030d6bdcaed6d28243f42c",
+      "std/db/sqlite.ok": "8ba5bdb431ddc54ed8ef346868e0e61315cd9bf234433e03fda948b9ab7c8a06",
+      "std/db/statement.ok": "a310d623a312a6e63636be52d8b0bfb1405d43ed1172c7fba122511da93edef5",
+      "std/db/transaction.ok": "b167fd9da1e124762b95e108c5b78e5fb5b691ac0190bc0f35db74b586bec463",
+      "std/db/value.ok": "5ec01ab4c5df531780d1d48e177d12b22adf086f9b49593f9c5441078ac581df"
+    },
+    "sources": {
+      "main.ok": "ab3c96ae3e39dbcecf8f789a76d74b0c151d9721d03d38b8b3b6cc91e3faf2cb",
+      "main.py": "c423aab2001d64610388960cdef51b9d381acefa7728aaab0efd67fcc1b3831c",
+      "run.py": "77b46b55b929be068993ee9d436a37dd9a6c8914e863ac1e2c2b0eb61481b2e4"
+    }
+  },
+  "expected": {
+    "projection_only": 110000,
+    "scan_raw": 30000,
+    "scan_stream": 50121892,
+    "scan_all": 50121892,
+    "lookup_prepared": 511192,
+    "lookup_statement": 511192,
+    "insert_transaction": 499500
+  },
+  "samples": [
+    {
+      "engine": "python",
+      "iteration": 0,
+      "process_seconds": 0.06770308300000001,
+      "phases": {
+        "projection_only": {
+          "ms": 1.9885,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 3.973208,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 5.848125,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 6.399416,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 1.587833,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 1.727875,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 0.794875,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "sparrow",
+      "iteration": 0,
+      "process_seconds": 3.556047916,
+      "phases": {
+        "projection_only": {
+          "ms": 89.158542,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 236.330875,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 363.191417,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 455.892792,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 196.343375,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 220.90325,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 68.738,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "jvm",
+      "iteration": 0,
+      "process_seconds": 3.593780125,
+      "phases": {
+        "projection_only": {
+          "ms": 35.956833,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 274.781583,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 291.84925,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 286.012166,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 259.514875,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 270.634291,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 101.521125,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "sparrow",
+      "iteration": 1,
+      "process_seconds": 3.5995071669999996,
+      "phases": {
+        "projection_only": {
+          "ms": 89.347667,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 239.098625,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 427.123042,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 454.16475,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 195.842292,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 203.382458,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 70.941209,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "jvm",
+      "iteration": 1,
+      "process_seconds": 3.7172155829999998,
+      "phases": {
+        "projection_only": {
+          "ms": 36.368,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 284.403708,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 294.107958,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 288.974959,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 276.735042,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 327.763167,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 103.626958,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "python",
+      "iteration": 1,
+      "process_seconds": 0.0693212919999997,
+      "phases": {
+        "projection_only": {
+          "ms": 1.941625,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 3.954125,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 5.809417,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 6.234125,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 1.558292,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 1.758291,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 0.664417,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "jvm",
+      "iteration": 2,
+      "process_seconds": 3.5830943750000017,
+      "phases": {
+        "projection_only": {
+          "ms": 34.509166,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 275.96925,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 296.849584,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 286.571125,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 266.268834,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 288.240375,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 97.882583,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "python",
+      "iteration": 2,
+      "process_seconds": 0.06812104200000135,
+      "phases": {
+        "projection_only": {
+          "ms": 1.925166,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 4.016125,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 5.919875,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 6.194209,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 1.546541,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 1.711709,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 0.66175,
+          "checksum": 499500
+        }
+      }
+    },
+    {
+      "engine": "sparrow",
+      "iteration": 2,
+      "process_seconds": 3.6903671670000016,
+      "phases": {
+        "projection_only": {
+          "ms": 92.216625,
+          "checksum": 110000
+        },
+        "scan_raw": {
+          "ms": 254.179333,
+          "checksum": 30000
+        },
+        "scan_stream": {
+          "ms": 377.688625,
+          "checksum": 50121892
+        },
+        "scan_all": {
+          "ms": 460.692625,
+          "checksum": 50121892
+        },
+        "lookup_prepared": {
+          "ms": 198.59475,
+          "checksum": 511192
+        },
+        "lookup_statement": {
+          "ms": 216.284542,
+          "checksum": 511192
+        },
+        "insert_transaction": {
+          "ms": 72.848667,
+          "checksum": 499500
+        }
+      }
+    }
+  ],
+  "summary": {
+    "python": {
+      "projection_only": {
+        "median_ms": 1.941625,
+        "min_ms": 1.925166,
+        "max_ms": 1.9885
+      },
+      "scan_raw": {
+        "median_ms": 3.973208,
+        "min_ms": 3.954125,
+        "max_ms": 4.016125
+      },
+      "scan_stream": {
+        "median_ms": 5.848125,
+        "min_ms": 5.809417,
+        "max_ms": 5.919875
+      },
+      "scan_all": {
+        "median_ms": 6.234125,
+        "min_ms": 6.194209,
+        "max_ms": 6.399416
+      },
+      "lookup_prepared": {
+        "median_ms": 1.558292,
+        "min_ms": 1.546541,
+        "max_ms": 1.587833
+      },
+      "lookup_statement": {
+        "median_ms": 1.727875,
+        "min_ms": 1.711709,
+        "max_ms": 1.758291
+      },
+      "insert_transaction": {
+        "median_ms": 0.664417,
+        "min_ms": 0.66175,
+        "max_ms": 0.794875
+      }
+    },
+    "sparrow": {
+      "projection_only": {
+        "median_ms": 89.347667,
+        "min_ms": 89.158542,
+        "max_ms": 92.216625
+      },
+      "scan_raw": {
+        "median_ms": 239.098625,
+        "min_ms": 236.330875,
+        "max_ms": 254.179333
+      },
+      "scan_stream": {
+        "median_ms": 377.688625,
+        "min_ms": 363.191417,
+        "max_ms": 427.123042
+      },
+      "scan_all": {
+        "median_ms": 455.892792,
+        "min_ms": 454.16475,
+        "max_ms": 460.692625
+      },
+      "lookup_prepared": {
+        "median_ms": 196.343375,
+        "min_ms": 195.842292,
+        "max_ms": 198.59475
+      },
+      "lookup_statement": {
+        "median_ms": 216.284542,
+        "min_ms": 203.382458,
+        "max_ms": 220.90325
+      },
+      "insert_transaction": {
+        "median_ms": 70.941209,
+        "min_ms": 68.738,
+        "max_ms": 72.848667
+      }
+    },
+    "jvm": {
+      "projection_only": {
+        "median_ms": 35.956833,
+        "min_ms": 34.509166,
+        "max_ms": 36.368
+      },
+      "scan_raw": {
+        "median_ms": 275.96925,
+        "min_ms": 274.781583,
+        "max_ms": 284.403708
+      },
+      "scan_stream": {
+        "median_ms": 294.107958,
+        "min_ms": 291.84925,
+        "max_ms": 296.849584
+      },
+      "scan_all": {
+        "median_ms": 286.571125,
+        "min_ms": 286.012166,
+        "max_ms": 288.974959
+      },
+      "lookup_prepared": {
+        "median_ms": 266.268834,
+        "min_ms": 259.514875,
+        "max_ms": 276.735042
+      },
+      "lookup_statement": {
+        "median_ms": 288.240375,
+        "min_ms": 270.634291,
+        "max_ms": 327.763167
+      },
+      "insert_transaction": {
+        "median_ms": 101.521125,
+        "min_ms": 97.882583,
+        "max_ms": 103.626958
+      }
+    }
+  }
+}

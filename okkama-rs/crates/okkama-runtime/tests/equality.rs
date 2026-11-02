@@ -1,5 +1,6 @@
 use okkama_compiler::{SourceFile, codegen, lowering, syntax};
-use okkama_runtime::{execute, sparrow};
+use okkama_runtime::execute;
+use sparrow_vm as sparrow;
 
 fn check(declarations: &str, body: &str) {
     let source = SourceFile::new("equality.ok", format!("module app v1.0.0; {declarations} main() is int {{ if {body} {{ 42; }} else {{ 1; }} }}")).unwrap();

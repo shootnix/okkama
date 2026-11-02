@@ -1,12 +1,12 @@
 //! Исполнитель кадров Sparrow: регистры, переходы, вызовы, отказы и регионы.
 //! Семантика каждой инструкции — та же, что у соответствующей операции OIR
-//! в исполнителе IR: значения и операции — общие (`okkama_runtime_core`).
+//! значения и операции предоставляет независимый `sparrow_runtime`.
 use crate::{Error, OperationError};
-use okkama_runtime_core::abi::{Native, NativeFailure};
-use okkama_runtime_core::failure::{Failure, Kind, Site};
-use okkama_runtime_core::heap::{ArrayHeap, Closing, ObjectHeap, Ref, Region};
-use okkama_runtime_core::ops::{self, Fault};
-use okkama_runtime_core::{IntValue, Value, sched};
+use sparrow_runtime::abi::{Native, NativeFailure};
+use sparrow_runtime::failure::{Failure, Kind, Site};
+use sparrow_runtime::heap::{ArrayHeap, Closing, ObjectHeap, Ref, Region};
+use sparrow_runtime::ops::{self, Fault};
+use sparrow_runtime::{IntValue, Value, sched};
 use okkama_sparrow::{
     CatchKind, Cmp, Constant, Dst, Function, Instruction as I, Program, Register, RoleRef, Target, Type, TypeRef,
 };
@@ -37,8 +37,8 @@ impl From<Fault> for Stop {
     }
 }
 
-impl From<okkama_runtime_core::ValueError> for Stop {
-    fn from(error: okkama_runtime_core::ValueError) -> Self {
+impl From<sparrow_runtime::ValueError> for Stop {
+    fn from(error: sparrow_runtime::ValueError) -> Self {
         Stop::Invalid(error.message)
     }
 }
@@ -59,7 +59,7 @@ pub(crate) fn invalid(message: impl Into<String>) -> Stop {
 #[derive(Debug)]
 pub(crate) struct Engine {
     pub(crate) program: Program,
-    native: RefCell<okkama_runtime_core::native::Context>,
+    native: RefCell<sparrow_runtime::native::Context>,
     /// Ошибка исполнителя внутри задачи: завершает запуск после планировщика.
     fatal: RefCell<Option<Located>>,
     /// Подготовленные функции: создаются при первом вызове.
@@ -67,6 +67,8 @@ pub(crate) struct Engine {
     /// Provider native-функции по её номеру: символ разрешается и сигнатура
     /// сверяется с ABI при первом вызове, а не при каждом.
     natives: Vec<std::cell::OnceCell<Option<Native>>>,
+    /// Immutable intrinsic bindings, resolved once per function and engine.
+    intrinsic_bindings: Vec<std::cell::OnceCell<IntrinsicBindings>>,
     /// Компилятор горячих функций в машинный код; `None` — выключен.
     pub(crate) jit: Option<Box<crate::jit::Jit>>,
     /// Отказ, дошедший до корня запуска (его стек вызовов — для диагностики).
@@ -78,6 +80,12 @@ pub(crate) struct Engine {
 #[derive(Debug)]
 pub(crate) struct Prepared {
     pub(crate) constants: Box<[Value]>,
+}
+
+#[derive(Debug)]
+struct IntrinsicBindings {
+    objects: Box<[usize]>,
+    helpers: Box<[usize]>,
 }
 
 impl Prepared {
@@ -95,7 +103,7 @@ impl Prepared {
 }
 
 pub(crate) fn new_engine(program: &Program) -> Rc<Engine> {
-    let mut context = okkama_runtime_core::native::Context::default();
+    let mut context = sparrow_runtime::native::Context::default();
     context.objects = program
         .objects
         .iter()
@@ -115,12 +123,23 @@ pub(crate) fn new_engine(program: &Program) -> Rc<Engine> {
         fatal: RefCell::new(None),
         prepared: program.functions.iter().map(|_| std::cell::OnceCell::new()).collect(),
         natives: program.functions.iter().map(|_| std::cell::OnceCell::new()).collect(),
+        intrinsic_bindings: program.functions.iter().map(|_| std::cell::OnceCell::new()).collect(),
         jit: crate::jit::Jit::new(program, me.as_ptr()),
         uncaught: RefCell::new(None),
     })
 }
 
 impl Engine {
+    fn intrinsic_bindings(&self, index: usize) -> &IntrinsicBindings {
+        self.intrinsic_bindings[index].get_or_init(|| {
+            let intrinsic = self.program.functions[index].intrinsic.as_ref().expect("intrinsic call");
+            IntrinsicBindings {
+                objects: intrinsic.objects.iter().map(|object| object.0 as usize).collect(),
+                helpers: intrinsic.helpers.iter().map(|helper| helper.0 as usize).collect(),
+            }
+        })
+    }
+
     pub(crate) fn set_arguments(&self, arguments: Vec<String>) {
         self.native.borrow_mut().arguments = arguments;
     }
@@ -150,7 +169,7 @@ impl Engine {
     /// `Cancelled` программы, если она его называет.
     pub(crate) fn object_declaration(&self, value: &Value) -> Result<usize, Stop> {
         let declaration = ObjectHeap.declaration(value)?;
-        if declaration != okkama_runtime_core::heap::CANCELLED {
+        if declaration != sparrow_runtime::heap::CANCELLED {
             return Ok(declaration);
         }
         Ok(self
@@ -163,7 +182,7 @@ impl Engine {
 
     pub(crate) fn role_witness(&self, value: &Value, role: RoleRef) -> Result<Option<&okkama_sparrow::Witness>, Stop> {
         let declaration = self.object_declaration(value)?;
-        if declaration == okkama_runtime_core::heap::CANCELLED {
+        if declaration == sparrow_runtime::heap::CANCELLED {
             return Ok(None);
         }
         let object = self
@@ -196,18 +215,18 @@ impl Engine {
             }
             return Err(Stop::Unsupported(format!("native provider is not implemented: {symbol}")));
         };
-        okkama_runtime_core::native::execute(native, args, &mut ArrayHeap, &mut self.native.borrow_mut()).map_err(|error| match error {
-            okkama_runtime_core::native::Error::InvalidState(message) => Stop::Invalid(message),
-            okkama_runtime_core::native::Error::Unsupported(message) => Stop::Unsupported(message),
-            okkama_runtime_core::native::Error::Trap(message) => Stop::Trap(message),
-            okkama_runtime_core::native::Error::Failure(failure) => Stop::Native(failure),
+        sparrow_runtime::native::execute(native, args, &mut ArrayHeap, &mut self.native.borrow_mut()).map_err(|error| match error {
+            sparrow_runtime::native::Error::InvalidState(message) => Stop::Invalid(message),
+            sparrow_runtime::native::Error::Unsupported(message) => Stop::Unsupported(message),
+            sparrow_runtime::native::Error::Trap(message) => Stop::Trap(message),
+            sparrow_runtime::native::Error::Failure(failure) => Stop::Native(failure),
         })
     }
 }
 
 /// Тип регистра соответствует типу ABI; дескриптор — любой `native object`.
-fn fits(engine: &Engine, actual: TypeRef, expected: &okkama_runtime_core::abi::Type) -> bool {
-    use okkama_runtime_core::abi::Type as A;
+fn fits(engine: &Engine, actual: TypeRef, expected: &sparrow_runtime::abi::Type) -> bool {
+    use sparrow_runtime::abi::Type as A;
     match (expected, engine.ty(actual)) {
         (A::Int, Type::Int)
         | (A::Float, Type::Float)
@@ -230,7 +249,7 @@ fn validate_native_signature(engine: &Engine, function: &Function, symbol: &str)
     };
     let result_fits = match function.result {
         Some(actual) => fits(engine, actual, native.result()),
-        None => *native.result() == okkama_runtime_core::abi::Type::Void,
+        None => *native.result() == sparrow_runtime::abi::Type::Void,
     };
     if function.params.len() != native.parameters().len()
         || function
@@ -308,7 +327,7 @@ pub(crate) fn failure(value: &Value) -> Result<&Rc<Failure>, Stop> {
 }
 
 fn is_runtime_cancelled(value: &Value) -> bool {
-    matches!(value, Value::Object(object) if object.declaration == okkama_runtime_core::heap::CANCELLED)
+    matches!(value, Value::Object(object) if object.declaration == sparrow_runtime::heap::CANCELLED)
 }
 
 /// Error-объекты отказа, его причин и вторичных отказов.
@@ -432,17 +451,20 @@ pub(crate) fn invoke(engine: &Rc<Engine>, index: usize, args: Vec<Value>) -> Res
 
 /// Вызов из машинного кода: intrinsic, холодный Future, native или функция.
 /// `at` — место вызывающей инструкции (функция, номер) для ошибок исполнителя.
+pub(crate) fn intrinsic_now(engine: &Rc<Engine>, index: usize, args: &[Value], at: (usize, usize)) -> Result<Value, Exit> {
+    let intrinsic = engine.program.functions[index].intrinsic.as_ref().expect("intrinsic call");
+    let host: sparrow_runtime::intrinsics::HostRef = Rc::new(crate::host::VmHost(engine.clone()));
+    let bindings = engine.intrinsic_bindings(index);
+    sparrow_runtime::intrinsics::call_borrowed(&host, &intrinsic.name, &bindings.objects, &bindings.helpers, args)
+        .map_err(|failure| Exit::Raise(failure, at))
+}
+
 pub(crate) fn call_now(engine: &Rc<Engine>, index: usize, args: Vec<Value>, at: (usize, usize)) -> Result<Option<Value>, Exit> {
     let program = &engine.program;
     let function = &program.functions[index];
     let fatal = |stop: Stop| stop_exit(stop, at);
-    if let Some(intrinsic) = &function.intrinsic {
-        let host: okkama_runtime_core::intrinsics::HostRef = Rc::new(crate::host::VmHost(engine.clone()));
-        let objects: Vec<usize> = intrinsic.objects.iter().map(|object| object.0 as usize).collect();
-        let helpers: Vec<usize> = intrinsic.helpers.iter().map(|helper| helper.0 as usize).collect();
-        return okkama_runtime_core::intrinsics::call(&host, &intrinsic.name, &objects, &helpers, args)
-            .map(Some)
-            .map_err(|failure| Exit::Raise(failure, at));
+    if function.intrinsic.is_some() {
+        return intrinsic_now(engine, index, &args, at).map(Some);
     }
     if function.is_async && function.native.is_none() {
         return Ok(Some(Value::Future(cold_call(engine, index, args))));
@@ -754,10 +776,9 @@ fn call(engine: &Rc<Engine>, frames: &mut Vec<Frame>, index: usize, args: Vec<Va
         }
     };
     if let Some(intrinsic) = &function.intrinsic {
-        let host: okkama_runtime_core::intrinsics::HostRef = Rc::new(crate::host::VmHost(engine.clone()));
-        let objects: Vec<usize> = intrinsic.objects.iter().map(|object| object.0 as usize).collect();
-        let helpers: Vec<usize> = intrinsic.helpers.iter().map(|helper| helper.0 as usize).collect();
-        match okkama_runtime_core::intrinsics::call(&host, &intrinsic.name, &objects, &helpers, args) {
+        let host: sparrow_runtime::intrinsics::HostRef = Rc::new(crate::host::VmHost(engine.clone()));
+        let bindings = engine.intrinsic_bindings(index);
+        match sparrow_runtime::intrinsics::call(&host, &intrinsic.name, &bindings.objects, &bindings.helpers, args) {
             Ok(value) => write(frames, value),
             Err(raised) => propagate(program, frames, raised)?,
         }
@@ -886,7 +907,7 @@ pub(crate) fn evaluate<'a>(
             }
         }
         I::Bits { op, byte, dst, value, count } => {
-            let code = okkama_runtime_core::integer::BitOp::from_code(op.code()).ok_or_else(|| invalid("unknown bit operation"))?;
+            let code = sparrow_runtime::integer::BitOp::from_code(op.code()).ok_or_else(|| invalid("unknown bit operation"))?;
             let count = count.map(|count| r(count)).transpose()?;
             write(*dst, ops::bits(code, op.counts(), *byte, r(*value)?, count)?)
         }
@@ -1010,7 +1031,7 @@ pub(crate) fn evaluate<'a>(
         I::MapGet { dst, map, key } => write(*dst, ops::map_get(r(*map)?, r(*key)?, &|declaration, case| engine.case_name(declaration, case))?),
         I::MapKeys { dst, map } => write(*dst, ops::map_keys(r(*map)?)?),
         I::MapValues { dst, map } => write(*dst, ops::map_values(r(*map)?)?),
-        I::MapBuilderNew { dst } => write(*dst, okkama_runtime_core::heap::maps::new_builder()),
+        I::MapBuilderNew { dst } => write(*dst, sparrow_runtime::heap::maps::new_builder()),
         I::MapBuilderPut { dst, builder, key, value } => write(*dst, ops::map_builder_put(r(*builder)?, r(*key)?, r(*value)?.clone())?),
         I::MapBuilderFinish { dst, builder } => write(*dst, ops::map_builder_finish(r(*builder)?)?),
         I::Call { dst, function, args } => Ok(Step::Call {
@@ -1020,7 +1041,7 @@ pub(crate) fn evaluate<'a>(
         }),
         I::Closure { dst, function, captures } => write(
             *dst,
-            Value::Fn(Rc::new(okkama_runtime_core::heap::Closure {
+            Value::Fn(Rc::new(sparrow_runtime::heap::Closure {
                 function: function.0 as usize,
                 captures: values(captures)?,
                 worker: None,
@@ -1108,15 +1129,15 @@ pub(crate) fn evaluate<'a>(
         I::WorkerSpawn { dst, entry, args, direct } => {
             let entry = r(*entry)?.clone();
             let symbol = |function: usize| program.functions.get(function).map(|function| function.symbol.clone());
-            let spawned = okkama_runtime_core::worker::target(&entry, values(args)?, *direct, &symbol)
-                .and_then(|(target, all)| okkama_runtime_core::worker::spawn(target, all, &|value| type_name(program, value)));
+            let spawned = sparrow_runtime::worker::target(&entry, values(args)?, *direct, &symbol)
+                .and_then(|(target, all)| sparrow_runtime::worker::spawn(target, all, &|value| type_name(program, value)));
             match spawned {
                 Ok(value) => write(*dst, value),
                 Err(failure) => Err(Stop::Unwind(failure)),
             }
         }
         I::WorkerBind { dst, action, entry, fields } => {
-            write(*dst, okkama_runtime_core::worker::bind(r(*action)?, r(*entry)?.clone(), values(fields)?).map_err(invalid)?)
+            write(*dst, sparrow_runtime::worker::bind(r(*action)?, r(*entry)?.clone(), values(fields)?).map_err(invalid)?)
         }
         I::RegionEnter { dst } => write(*dst, Value::Region(Rc::new(Region::new()))),
         I::RegionAdopt { region, value } | I::RegionTrack { region, value } => {
@@ -1159,7 +1180,7 @@ pub(crate) fn evaluate<'a>(
             }
             let declaration = engine.object_declaration(value)?;
             let object = value.as_object()?;
-            let raised = if object.declaration == okkama_runtime_core::heap::CANCELLED {
+            let raised = if object.declaration == sparrow_runtime::heap::CANCELLED {
                 Failure::new(Kind::Thrown {
                     object: Ref(object.clone()),
                     name: "Cancelled".into(),
@@ -1168,7 +1189,7 @@ pub(crate) fn evaluate<'a>(
             } else {
                 Failure::new(Kind::Thrown {
                     object: Ref(object.clone()),
-                    name: okkama_runtime_core::failure::error_type_name(&program.objects[declaration].name),
+                    name: sparrow_runtime::failure::error_type_name(&program.objects[declaration].name),
                     message: None,
                 })
             };
@@ -1652,7 +1673,7 @@ fn execute_inner(program: &Program, arguments: Vec<String>, trace: &mut Vec<Site
     }
     let entry = program.entry.ok_or(Error::MissingEntry)?.0 as usize;
     let engine = new_engine(program);
-    if okkama_runtime_core::worker::active() {
+    if sparrow_runtime::worker::active() {
         serve(&engine);
     }
     engine.set_arguments(arguments);
@@ -1677,7 +1698,7 @@ fn execute_inner(program: &Program, arguments: Vec<String>, trace: &mut Vec<Site
 /// Обслужить запрос воркера и завершить процесс.
 pub(crate) fn serve(engine: &Rc<Engine>) -> ! {
     let program = &engine.program;
-    okkama_runtime_core::worker::serve(
+    sparrow_runtime::worker::serve(
         |target, args| {
             let function = program
                 .functions
@@ -1688,7 +1709,7 @@ pub(crate) fn serve(engine: &Rc<Engine>) -> ! {
                 Ok(value) => Ok(value.unwrap_or(Value::Undef)),
                 Err(located) => Err(match into_failure(located.stop) {
                     Ok(failure) => match describe_failure(engine, &failure) {
-                        Ok(described) => format!("runtime: {}", okkama_runtime_core::failure::describe(&described)),
+                        Ok(described) => format!("runtime: {}", sparrow_runtime::failure::describe(&described)),
                         Err(error) => format!("runtime: {}", stop_error(&error.stop)),
                     },
                     Err(fatal) => format!("runtime: {}", stop_error(&fatal)),
@@ -1697,4 +1718,36 @@ pub(crate) fn serve(engine: &Rc<Engine>) -> ! {
         },
         &|value| type_name(program, value),
     )
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    use okkama_sparrow::{FuncRef, Intrinsic, ObjectRef};
+
+    fn engine_with_bindings(object: u32) -> Rc<Engine> {
+        let mut program = Program::default();
+        for offset in 0..2 {
+            program.functions.push(Function {
+                symbol: format!("binding-{offset}"), is_async: false, native: None,
+                intrinsic: Some(Intrinsic { name: "test".into(),
+                    objects: vec![ObjectRef(object + offset)], helpers: vec![FuncRef(offset)] }),
+                registers: vec![], params: vec![], result: None, code: vec![], handlers: vec![],
+            });
+        }
+        new_engine(&program)
+    }
+
+    #[test]
+    fn intrinsic_bindings_are_reused_without_crossing_functions_or_engines() {
+        let first = engine_with_bindings(10);
+        let second = engine_with_bindings(20);
+        let binding = first.intrinsic_bindings(0);
+        assert!(std::ptr::eq(binding, first.intrinsic_bindings(0)));
+        assert_eq!(&*binding.objects, &[10]);
+        assert_eq!(&*binding.helpers, &[0]);
+        assert_eq!(&*first.intrinsic_bindings(1).objects, &[11]);
+        assert_eq!(&*first.intrinsic_bindings(1).helpers, &[1]);
+        assert_eq!(&*second.intrinsic_bindings(0).objects, &[20]);
+    }
 }

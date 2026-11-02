@@ -7,11 +7,15 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+allocation-stats = ["dep:okkama-allocation-counter"]
+
 [[bin]]
 name = "okkama"
 path = "src/main.rs"
 
 [dependencies]
+okkama-allocation-counter = { path = "../../../benchmarks/db/allocation-counter", optional = true }
 mimalloc = { version = "0.1.52", default-features = false }
 okkama-compiler = { path = "../okkama-compiler" }
 # blade.toml: корни пакетов и зависимости для поиска импортов.
@@ -22,6 +26,8 @@ lsp-types = "0.97.0"
 serde_json = "1.0.154"
 okkama-runtime = { path = "../okkama-runtime" }
 okkama-sparrow = { path = "../okkama-sparrow" }
+sparrow-vm = { path = "../sparrow-vm" }
+sparrow-runtime = { path = "../sparrow-runtime" }
 
 [lints]
 workspace = true

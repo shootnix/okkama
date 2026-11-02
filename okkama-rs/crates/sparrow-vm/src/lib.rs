@@ -1,7 +1,4 @@
-//! VM Sparrow: исполняет проверенную программу SPB 9 в этом процессе над
-//! общим рантаймом `okkama-runtime-core` — значения, операции, планировщик
-//! задач, регионы, natives и intrinsics те же, что у исполнителя IR (как
-//! JVM-байткод над `okkama.rt`). Компилятор и исходники не нужны.
+//! VM Sparrow over its independent `sparrow-runtime`; no compiler or IR dependency.
 //!
 //! Кадр — регистры функции и номер инструкции; вызовы — собственный стек
 //! кадров, без рекурсии Rust; задачи `async` — сопрограммы планировщика.
@@ -12,18 +9,19 @@ mod liveness;
 mod machine;
 mod tests;
 
+pub use sparrow_runtime::IntValue;
 pub use machine::{execute, execute_traced, execute_with_arguments};
-pub use okkama_runtime_core::failure::Site;
+pub use sparrow_runtime::failure::Site;
 pub use tests::run_tests;
 
-use okkama_runtime_core::failure::Failure;
+use sparrow_runtime::failure::Failure;
 use okkama_sparrow::VerifyError;
 use std::fmt;
 use std::rc::Rc;
 
 /// Команда запуска той же программы для процесса-воркера `spawn`.
 pub fn set_worker_command(command: Vec<String>) {
-    okkama_runtime_core::worker::set_command(command);
+    sparrow_runtime::worker::set_command(command);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,7 +53,7 @@ pub enum OperationError {
     /// Неперехваченный отказ (описанный: тексты Error вычислены).
     Unwind(Rc<Failure>),
     Panic { message: String },
-    NativeFailure(okkama_runtime_core::abi::NativeFailure),
+    NativeFailure(sparrow_runtime::abi::NativeFailure),
     InvalidState { message: String },
     Trap { message: String },
 }
@@ -83,17 +81,17 @@ pub fn report(error: &Error) -> Option<String> {
     };
     let mut text = match error {
         OperationError::Unwind(failure) => {
-            let mut text = okkama_runtime_core::failure::describe(failure);
+            let mut text = sparrow_runtime::failure::describe(failure);
             for secondary in failure.secondaries() {
                 text.push_str("\nSecondary cleanup failure:\n  ");
-                text.push_str(&okkama_runtime_core::failure::describe(&secondary));
+                text.push_str(&sparrow_runtime::failure::describe(&secondary));
             }
             text
         }
         OperationError::Panic { message } => format!("Panic: {message}"),
         OperationError::Trap { message } => format!("RuntimeError: {message}"),
         OperationError::NativeFailure(failure) => {
-            okkama_runtime_core::failure::describe(&Failure::new(okkama_runtime_core::failure::Kind::Native(Rc::new(failure.clone()))))
+            sparrow_runtime::failure::describe(&Failure::new(sparrow_runtime::failure::Kind::Native(Rc::new(failure.clone()))))
         }
         _ => return None,
     };
@@ -111,7 +109,7 @@ pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String
         .iter()
         .map(|site| match program.functions.get(site.function as usize) {
             Some(function) => {
-                let name = okkama_runtime_core::failure::frame_name(&function.symbol);
+                let name = sparrow_runtime::failure::frame_name(&function.symbol);
                 match function.code.get(site.pc as usize) {
                     Some(instruction) => format!("{name} [f{} @{}: {}]", site.function, site.pc, instruction.text()),
                     None => format!("{name} [f{} @{}]", site.function, site.pc),
@@ -120,5 +118,5 @@ pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String
             None => format!("? [f{} @{}]", site.function, site.pc),
         })
         .collect();
-    okkama_runtime_core::failure::stack_text("Stack trace (Sparrow, most recent call first):", &frames)
+    sparrow_runtime::failure::stack_text("Stack trace (Sparrow, most recent call first):", &frames)
 }

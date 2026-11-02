@@ -120,7 +120,10 @@ prove -l t/interpreter/618_std_db_read.t t/interpreter/619_std_db_read_sqlite.t
 ```
 
 `Execution(affected)` supplies an exact nonnegative `BigInt`; `Execution()` means
-unknown and its `affected_rows()` throws `AffectedRowsUnknown`. Row-producing SQL,
+unknown. `affected() is Maybe<BigInt>` returns `.some(count)` (including zero)
+or `.none`. Use `execution.affected() else fallback` or match explicitly. The
+legacy `affected_known()` and strict `affected_rows()` remain compatible; the
+latter throws `AffectedRowsUnknown` when the count is unknown. Row-producing SQL,
 including RETURNING, belongs to rows rather than an invented generic insert id.
 
 Portable implementation evidence: two focused files /12 assertions PASS, including retained/malformed printer and NUL tests. Inline/example checks accompany this slice. [Owned SQLite connections/transactions/workers](db-sqlite.md) implement the I/O layer; this portable slice does not implement SQL parsing or I/O.
@@ -155,7 +158,12 @@ most two rows, though drivers may internally fetch batches.
 The query owns and closes its acquired cursor using `defer`, including on
 cardinality and fetch errors. It does not close the caller's connection, commit,
 or roll back a transaction. Connection cleanup remains the caller's responsibility.
-Close failures follow the language's ordinary `defer` error semantics.
+A fetch error followed by a close error becomes `QueryCleanupFailure` with
+`cause()` and `cleanup()` preserving both errors. Explicit close failures remain
+visible. `close()` is terminal/idempotent even if the underlying close fails;
+release of a broken underlying resource cannot be guaranteed by this wrapper.
+Cancellation closes the cursor and propagates; a simultaneous cancellation and
+close failure follows the language's ordinary cleanup error semantics.
 
 ## Collections and streaming
 
@@ -191,3 +199,49 @@ Keep `defer rows.close()` even though EOF closes automatically: early loop exit
 and failures in the consumer must release the cursor too. The connection stays
 owned by the caller. Existing `connection.rows(statement)` remains available
 for the low-level `RowReading` protocol. See [example](../../examples/db-query.ok).
+
+## Prepared queries
+
+The same `Query` interface accepts a prepared statement and a parameter sequence:
+
+```okkama
+let prepared = await Prepared(connection, "SELECT name FROM users WHERE id=?").statement();
+defer prepared.close();
+let query = Query(prepared, [Param(id)]);
+let user = await query.maybe();
+// query.one(), query.all(limit), query.rows() have identical contracts.
+```
+
+Parameters are validated and snapshotted when the Query is constructed. Each
+method call executes the prepared statement again. Query closes its result
+cursor, not the prepared statement. The caller owns preparation and its connection
+or transaction. Pool lease/transaction revocation is still enforced by the driver.
+
+The lifetime conformance tests cover cancellation while awaiting a row, overlapping
+`next()` calls, explicit close during a pending read, and failures in cleanup.
+A row completing after close is rejected as `DbClosed`. SQLite pool tests cover
+returning an unfinished transaction, revocation of prepared statements/readers,
+rollback before reuse, and reuse after query cardinality/limit errors.
+
+
+## Нативное хранение значений и строк
+
+`Row` хранит проверенные неизменяемые ячейки в `runtime/db`. Схема колонок
+и поиск имён разделяются между строками одного результата. Строгое чтение,
+`maybe` и `presence` используют эти ячейки без повторного вызова `DbValue.print`.
+Публичные вызовы и ошибки MissingColumn/AmbiguousColumn/RowValueFailure сохранены.
+
+Пользовательский `DbValue` по-прежнему проходит проверку: ровно одно событие
+объявленного вида, ограничения размера, затем закрытие приёмника для записи.
+Полученный снимок не зависит от дальнейшего поведения пользовательского объекта.
+`value()` и `item()` предоставляют совместимый `DbValue` для существующего кода.
+`int()` по-прежнему требует диапазон signed 64-bit, `integer()` хранит точное
+целое произвольной точности в пределах DB-лимитов.
+
+SQLite передаёт числа в нативные ячейки без преобразования в текст; возвращённые
+строки сохраняют данные после закрытия пакета, курсора и соединения. PostgreSQL
+использует общие нативные ячейки и схему; его сетевой протокол и декодирование
+текстового ответа пока остаются в `std/db/postgres`.
+
+IR и Sparrow исполняют общий Rust-provider. JVM использует эквивалентный
+provider JVM, как и JSON. Это не подключение Rust-provider через JNI.

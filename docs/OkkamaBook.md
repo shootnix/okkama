@@ -5891,9 +5891,18 @@ are separate capabilities available on concrete acquisitions.
 ```okkama
 let transaction=await connection.transaction(TransactionOptions());
 await transaction.execution(Statement("INSERT INTO customers VALUES(?,?)",
-    [DbInteger(BigInt("7")),DbText("Ada")]));
+    [Param(7),Param("Ada")]));
 await transaction.commit();
 ```
+
+Use `Param` from `db/param` for scalars and `Maybe<T>` parameters. `Query` from
+`db/query` accepts either `(connection, Statement(...))` or `(prepared, parameters)`;
+`one()`, `maybe()`, `all(limit)` and `rows()` share the same result contract.
+Read columns directly with `row.text(name)` or `row.maybe(name).text() else fallback`.
+`Execution.affected()` returns `Maybe<BigInt>`: unknown is distinct from zero.
+The query closes its cursor, while the caller owns preparation and the connection.
+
+
 
 Confirmed commit/rollback is terminal. A lost or cancelled COMMIT acknowledgment
 is indeterminate, so the connection closes and the body is not retried. Readers

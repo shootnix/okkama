@@ -12,7 +12,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[global_allocator]
+#[cfg(not(feature = "allocation-stats"))]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[cfg(feature = "allocation-stats")]
+use okkama_allocation_counter as allocation_stats;
+#[cfg(feature = "allocation-stats")]
+#[global_allocator]
+static ALLOCATOR: allocation_stats::Counting = allocation_stats::Counting;
 
 mod import_paths;
 mod lsp;
@@ -252,10 +259,10 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
         .map_or_else(|_| "okkama".to_string(), |exe| exe.display().to_string());
     let file = std::fs::canonicalize(path)
         .map_or_else(|_| path.clone(), |file| file.display().to_string());
-    okkama_runtime::set_worker_command(vec![exe, "exec".into(), file]);
+    sparrow_vm::set_worker_command(vec![exe, "exec".into(), file]);
     if program.tests.is_some() {
         let mut stdout = io::stdout();
-        return match okkama_runtime::sparrow::run_tests(&program, &mut stdout) {
+        return match sparrow_vm::run_tests(&program, &mut stdout) {
             Ok(passed) => Outcome {
                 stdout: String::new(),
                 stderr: String::new(),
@@ -265,10 +272,10 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
         };
     }
     // Исходников у файла байткода нет: стек — в терминах Sparrow.
-    let (result, trace) = okkama_runtime::sparrow::execute_traced(&program, arguments.to_vec());
+    let (result, trace) = sparrow_vm::execute_traced(&program, arguments.to_vec());
     with_trace(
         sparrow_outcome(result),
-        okkama_runtime::sparrow::render_trace(&program, &trace),
+        sparrow_vm::render_trace(&program, &trace),
     )
 }
 
@@ -281,11 +288,16 @@ fn with_trace(mut outcome: Outcome, trace: String) -> Outcome {
     outcome
 }
 
-fn sparrow_outcome(result: Result<ir::IntValue, okkama_runtime::sparrow::Error>) -> Outcome {
+fn sparrow_outcome(result: Result<sparrow_vm::IntValue, sparrow_vm::Error>) -> Outcome {
     match result {
-        Ok(value) => native_outcome(Ok(value)),
-        Err(okkama_runtime::sparrow::Error::Operation { error, .. }) => native_outcome(Err(error)),
-        Err(error) => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
+        Ok(value) => match value.to_i64().and_then(|code| u8::try_from(code).ok()) {
+            Some(code) => Outcome { stdout: String::new(), stderr: String::new(), code },
+            None => Outcome::failure(format!("RuntimeError: main() must return an int in 0..255, got {value}\n"), 1),
+        },
+        Err(error) => match sparrow_vm::report(&error) {
+            Some(text) => Outcome::failure(text, 1),
+            None => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
+        },
     }
 }
 
@@ -345,6 +357,8 @@ impl Outcome {
 }
 
 fn main() -> ExitCode {
+    #[cfg(feature = "allocation-stats")]
+    let _allocation_report = allocation_stats::Report;
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Сервер языка владеет stdin/stdout сам.
     if args.first().map(String::as_str) == Some("lsp") {
@@ -1347,7 +1361,11 @@ fn run_command(args: &[String]) -> Outcome {
     if engine != "jvm" && std::env::var_os("OKKAMA_ICU_LIBDIR").is_none() {
         // Как у JVM-запуска: программа видит закреплённую ICU в окружении.
         if let Some(icu) = pinned_icu() {
-            okkama_runtime::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
+            if engine == "sparrow" {
+                sparrow_runtime::host::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
+            } else {
+                okkama_runtime::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
+            }
         }
     }
     if engine == "ir" {
@@ -1375,10 +1393,10 @@ fn run_command(args: &[String]) -> Outcome {
             Ok(program) => program,
             Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
         };
-        okkama_runtime::set_worker_command(worker_command("sparrow", tests, &line));
+        sparrow_vm::set_worker_command(worker_command("sparrow", tests, &line));
         if tests {
             let mut stdout = io::stdout();
-            return match okkama_runtime::sparrow::run_tests(&program, &mut stdout) {
+            return match sparrow_vm::run_tests(&program, &mut stdout) {
                 Ok(passed) => Outcome {
                     stdout: String::new(),
                     stderr: String::new(),
@@ -1389,10 +1407,12 @@ fn run_command(args: &[String]) -> Outcome {
         }
         // Номера функций и инструкций Sparrow совпадают с OIR: место — по исходнику.
         let (result, trace) =
-            okkama_runtime::sparrow::execute_traced(&program, program_args.to_vec());
+            sparrow_vm::execute_traced(&program, program_args.to_vec());
         return with_trace(
             sparrow_outcome(result),
-            okkama_runtime::render_trace(&module, &trace),
+            okkama_runtime::render_trace(&module, &trace.iter().map(|site| okkama_runtime::Site {
+                function: site.function, pc: site.pc,
+            }).collect::<Vec<_>>()),
         );
     }
     let options = CodegenOptions {

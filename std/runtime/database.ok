@@ -1,4 +1,5 @@
 module runtime/database v1.0.0;
+import "runtime/db" take DbCellState;
 native object SqliteState;
 native object SqliteReplyState;
 native sqlite_create(path is @byte,read_only is bool,create is bool,foreign_keys is bool,busy_ms is int,journal is string,memory is bool) is SqliteState;
@@ -34,3 +35,17 @@ native sqlite_backup_close(state is SqliteState,id is int) is bool;
 native async sqlite_script(state is SqliteState,source is @byte) is SqliteReplyState;
 native sqlite_reply_executions(reply is SqliteReplyState) is @string;
 native async sqlite_control(state is SqliteState,sql is @byte) is SqliteReplyState;
+
+native sqlite_reply_cells(reply is SqliteReplyState,row is int) is @DbCellState;
+
+// Typed request/reply boundary: no text encoding of numeric parameters or metadata.
+native async sqlite_execution_cells(state is SqliteState,sql is string,values is @DbCellState) is SqliteReplyState;
+native async sqlite_rows_cells(state is SqliteState,sql is string,values is @DbCellState) is SqliteReplyState;
+native async sqlite_prepared_execution_cells(state is SqliteState,id is int,values is @DbCellState) is SqliteReplyState;
+native async sqlite_prepared_rows_cells(state is SqliteState,id is int,values is @DbCellState) is SqliteReplyState;
+native sqlite_reply_ok(reply is SqliteReplyState) is bool;
+native sqlite_reply_id(reply is SqliteReplyState) is int;
+native sqlite_reply_eof(reply is SqliteReplyState) is bool;
+native sqlite_reply_count(reply is SqliteReplyState) is int;
+native sqlite_reply_affected_known(reply is SqliteReplyState) is bool;
+native sqlite_reply_affected(reply is SqliteReplyState) is string;

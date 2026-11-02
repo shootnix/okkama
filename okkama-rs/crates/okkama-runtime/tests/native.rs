@@ -1,6 +1,7 @@
 //! Native ABI calls use the same provider through IR and serialized SPB.
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use okkama_runtime::{RuntimeError, execute, sparrow};
+use okkama_runtime::{RuntimeError, execute};
+use sparrow_vm as sparrow;
 
 fn lower(body: &str) -> ir::Module {
     let source = SourceFile::new(
@@ -58,7 +59,7 @@ fn native_identity_and_signature_are_checked_before_execution() {
     // Как IR: неизвестный provider — ошибка вызова, а не генерации.
     assert!(matches!(
         sparrow::execute(&codegen::sparrow::generate(&module).unwrap()),
-        Err(sparrow::Error::Operation { error: RuntimeError::Unsupported { .. }, .. })
+        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Unsupported { .. }, .. })
     ));
 
     let source = SourceFile::new("bad-native.ok", "module runtime/utf v1.0.0; native utf8_encode(text is int) is int; main() is int { utf8_encode(1); }").unwrap();
@@ -70,7 +71,7 @@ fn native_identity_and_signature_are_checked_before_execution() {
     );
     assert!(matches!(
         sparrow::execute(&codegen::sparrow::generate(&module).unwrap()),
-        Err(sparrow::Error::Operation { error: RuntimeError::InvalidState { message, .. }, .. }) if message.contains("signature")
+        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::InvalidState { message, .. }, .. }) if message.contains("signature")
     ));
     let module = lower(r#"utf16_encode("x", "middle").size();"#);
     assert!(
@@ -141,9 +142,7 @@ fn malformed_native_data_keeps_structured_failure_fields() {
         assert_eq!(failure.message, format!("Bytes are not valid {encoding}"));
         let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
         let Err(sparrow::Error::Operation {
-            error: RuntimeError::NativeFailure {
-                failure: actual, ..
-            },
+            error: sparrow_vm::OperationError::NativeFailure(actual),
             ..
         }) = sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
         else {

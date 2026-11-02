@@ -485,7 +485,8 @@ fn run_native(
             let absolute = std::fs::canonicalize(source).unwrap_or_else(|_| source.into());
             command.push(absolute.display().to_string());
         }
-        okkama_runtime::set_worker_command(command);
+        if engine == "sparrow" { sparrow_vm::set_worker_command(command); }
+        else { okkama_runtime::set_worker_command(command); }
     }
     if let Some(cwd) = request.get("cwd").and_then(Json::as_str) {
         if let Err(error) = std::env::set_current_dir(cwd) {
@@ -513,16 +514,12 @@ fn run_native(
         };
         let outcome = if mode == "test" {
             let mut stdout = std::io::stdout();
-            okkama_runtime::sparrow::run_tests(&loaded, &mut stdout)
-                .map(|passed| okkama_compiler::ir::IntValue::from_i64(i64::from(!passed)))
+            sparrow_vm::run_tests(&loaded, &mut stdout)
+                .map(|passed| sparrow_vm::IntValue::from_i64(i64::from(!passed)))
         } else {
-            okkama_runtime::sparrow::execute_with_arguments(&loaded, args)
+            sparrow_vm::execute_with_arguments(&loaded, args)
         };
-        match outcome {
-            Ok(value) => Ok(value),
-            Err(okkama_runtime::sparrow::Error::Operation { error, .. }) => Err(error),
-            Err(error) => return Reply::internal(mode, error.to_string()),
-        }
+        return sparrow_reply(mode, outcome);
     };
     let message = match result {
         Ok(value) => match value.to_i64().and_then(|value| u8::try_from(value).ok()) {
@@ -567,6 +564,76 @@ fn run_native(
         }
         Err(RuntimeError::Trap { message, .. }) => message,
         Err(RuntimeError::NativeFailure { failure, .. }) => {
+            let mut reply = Reply::new(mode, "failed", "runtime");
+            reply.stderr = format!("{failure}\n");
+            reply.failure = Some(Failure {
+                stage: "runtime",
+                category: "runtime",
+                error_type: Some("NativeFailure".into()),
+                message: failure.message,
+            });
+            reply.process_exit = 1;
+            return reply;
+        }
+        Err(error) => return Reply::internal(mode, error.to_string()),
+    };
+    let mut reply = Reply::new(mode, "failed", "runtime");
+    reply.stderr = format!("RuntimeError: {message}\n");
+    reply.failure = Some(Failure {
+        stage: "runtime",
+        category: "runtime",
+        error_type: None,
+        message,
+    });
+    reply.process_exit = 1;
+    reply
+}
+
+// Convert only at the external OCS protocol boundary, never into IR runtime objects.
+fn sparrow_reply(mode: &str, result: Result<sparrow_vm::IntValue, sparrow_vm::Error>) -> Reply {
+    let message = match result {
+        Ok(value) => match value.to_i64().and_then(|value| u8::try_from(value).ok()) {
+            Some(code) => {
+                let mut reply = Reply::new(mode, "completed", "runtime");
+                reply.exit_status = Some(code);
+                reply.process_exit = code;
+                return reply;
+            }
+            None => "main result must be in 0..255".to_string(),
+        },
+        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Unsupported { message }, .. }) => {
+            return Reply::unsupported(mode, "runtime", message);
+        }
+        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Unwind(failure), .. }) => {
+            let mut reply = Reply::new(mode, "failed", "runtime");
+            reply.stderr = format!("{failure}\n");
+            reply.failure = Some(Failure {
+                stage: "runtime",
+                category: failure.category(),
+                error_type: match &failure.kind {
+                    sparrow_runtime::failure::Kind::Thrown { name, .. } => Some(name.clone()),
+                    sparrow_runtime::failure::Kind::Native(_) => Some("NativeFailure".into()),
+                    _ => None,
+                },
+                message: failure.message().into(),
+            });
+            reply.process_exit = 1;
+            return reply;
+        }
+        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Panic { message }, .. }) => {
+            let mut reply = Reply::new(mode, "failed", "runtime");
+            reply.stderr = format!("Panic: {message}\n");
+            reply.failure = Some(Failure {
+                stage: "runtime",
+                category: "panic",
+                error_type: None,
+                message,
+            });
+            reply.process_exit = 1;
+            return reply;
+        }
+        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::Trap { message }, .. }) => message,
+        Err(sparrow_vm::Error::Operation { error: sparrow_vm::OperationError::NativeFailure(failure), .. }) => {
             let mut reply = Reply::new(mode, "failed", "runtime");
             reply.stderr = format!("{failure}\n");
             reply.failure = Some(Failure {

@@ -13,7 +13,7 @@ fn check(declarations: &str, body: &str, expected: &str) {
     let program = codegen::sparrow::generate(&module).unwrap();
     let bytes = okkama_sparrow::encode(&program).unwrap();
     assert_eq!(
-        okkama_runtime::sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap())
+        sparrow_vm::execute(&okkama_sparrow::decode(&bytes).unwrap())
             .unwrap()
             .to_string(),
         expected

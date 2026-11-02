@@ -1106,6 +1106,18 @@ pub fn call(
     helpers: &[usize],
     args: Vec<Value>,
 ) -> Result<Value> {
+    call_borrowed(host, name, objects, helpers, &args)
+}
+
+/// Borrow the argument container only for this call. Every argument used by
+/// an intrinsic is cloned by `arg`, including values retained by cold Futures.
+pub fn call_borrowed(
+    host: &HostRef,
+    name: &str,
+    objects: &[usize],
+    helpers: &[usize],
+    args: &[Value],
+) -> Result<Value> {
     let name = name.strip_prefix("okkama.").unwrap_or(name);
     let arg = |index: usize| -> Result<Value> {
         args.get(index)

@@ -2619,18 +2619,17 @@ Statement связывает SQL с отдельными DbValue-парамет�
 
 ```okkama
 module cookbook/db_row_read v1.0.0;
-import "db/read" take RowReader;
 import "db/row" take Row,Column;
-import "db/value" take DbInteger,DbText;
+import "db/param" take Param;
 import "numbers/bigint" take BigInt;
 import "io/stdout" take Stdout;
 
 main() is int {
     let row = Row(
         [Column(0,"id","INTEGER"),Column(1,"name","TEXT"),Column(2,"verified","INTEGER")],
-        [DbInteger(BigInt("7")),DbText("Ада"),DbInteger(BigInt("1"))]
+        [Param(7),Param("Ада"),Param(1)]
     );
-    let fields = RowReader(row);
+    let fields = row;
     confirm fields.int("id") == 7 && fields.flag("verified");
     Stdout().writeln(fields.text("name"));
     0;
@@ -2652,8 +2651,9 @@ module example v1.0.0;
 import "db/sqlite" take SqliteMemory,SqliteDatabase,SqliteAcquiring,SqliteOptions,SqliteTransactions,SqliteTransactionMode;
 import "db/transaction" take TransactionOptions;
 import "db/statement" take Statement;
-import "db/value" take DbInteger,DbText,ObservedDbValue;
+import "db/param" take Param;
 import "db/prepared" take Prepared;
+import "db/query" take Query;
 import "db/pool" take DbPreparedPool,PooledTransactions,PoolOptions;
 import "db/sqlite/blob" take OpenedSqliteBlob;
 import "db/sqlite/backup" take SqliteBackup;
@@ -2674,17 +2674,15 @@ async main() is int{
     defer connection.close();
     await SqliteScript(connection,"CREATE TABLE customers(id INTEGER PRIMARY KEY,name TEXT,payload BLOB);").executions();
     let transaction=await SqliteTransactions(connection,SqliteTransactionMode.immediate).transaction(TransactionOptions());
-    await transaction.execution(Statement("INSERT INTO customers VALUES(?,?,zeroblob(4))",[DbInteger(BigInt("7")),DbText("Ada")]));
+    await transaction.execution(Statement("INSERT INTO customers VALUES(?,?,zeroblob(4))",[Param(7),Param("Ada")]));
     let blob=await OpenedSqliteBlob(transaction,"main","customers","payload",BigInt("7"),true).blob();
     await blob.write(BigInt("0"),[65.byte(),0.byte(),66.byte()]);
     blob.close();
     await transaction.commit();
     let prepared=await Prepared(connection,"SELECT name FROM customers WHERE id=?").statement();
     defer prepared.close();
-    let rows=await prepared.rows([DbInteger(BigInt("7"))]);
-    let row=await rows.row();
-    rows.close();
-    Stdout().writeln("customer: "+ObservedDbValue(row.value("name")).text());
+    let row=await Query(prepared,[Param(7)]).one();
+    Stdout().writeln("customer: "+row.text("name"));
     let copy=Path(scratch.path().string()+"/copy.sqlite");
     let report=await SqliteBackup(connection,copy,1,SystemClock(),Duration(2.rat(),DurationUnit.second)).result();
     Stdout().writeln("backup pages: "+report.copies().string()+"/"+report.total().string());
@@ -2695,14 +2693,12 @@ async main() is int{
     let lease=await pool.connection();
     let pooled_transaction=await PooledTransactions(lease).transaction(TransactionOptions());
     let pooled_prepared=await Prepared(pooled_transaction,"SELECT count(*) AS total FROM customers").statement();
-    let selected=await pooled_prepared.rows([]);
-    let count=await selected.row();
-    selected.close();
+    let count=await Query(pooled_prepared,[]).one();
     pooled_prepared.close();
     await pooled_transaction.commit();
     lease.close();
     await pool.settled();
-    Stdout().writeln("pooled customers: "+ObservedDbValue(count.value("total")).integer().string());
+    Stdout().writeln("pooled customers: "+count.int("total").string());
     0;
 }
 ```
@@ -2717,20 +2713,19 @@ async main() is int{
 
 **Какие библиотеки использовать.** [`db/value`](../std/db/value.ok), [`db/read`](../std/db/read.ok), [`db/statement`](../std/db/statement.ok), [`db/row`](../std/db/row.ok), [`numbers/bigint`](../std/numbers/bigint.ok), [`io/stdout`](../std/io/stdout.ok).
 
-**Как использовать.** Statement хранит текст и DbValue отдельно. RowReader читает по имени столбца, сохраняя строгую проекцию text.
+**Как использовать.** Statement хранит текст и DbValue отдельно. Row читает по имени столбца, сохраняя строгую проекцию text.
 
 ```okkama
 module example v1.0.0;
-import "db/value" take DbInteger,DbText;
-import "db/read" take RowReader;
+import "db/param" take Param;
 import "db/statement" take Statement;
 import "db/row" take Row,Column;
 import "numbers/bigint" take BigInt;
 import "io/stdout" take Stdout;
 main() is int{
-    let statement=Statement("SELECT id, name FROM customers WHERE id = ?",[DbInteger(BigInt("7"))]);
-    let row=Row([Column(0,"id","INTEGER"),Column(1,"name","TEXT")],[DbInteger(BigInt("7")),DbText("Ada")]);
-    Stdout().writeln(statement.values().size().string()+" binding: "+RowReader(row).text("name"));0;
+    let statement=Statement("SELECT id, name FROM customers WHERE id = ?",[Param(7)]);
+    let row=Row([Column(0,"id","INTEGER"),Column(1,"name","TEXT")],[Param(7),Param("Ada")]);
+    Stdout().writeln(statement.values().size().string()+" binding: "+row.text("name"));0;
 }
 ```
 

@@ -1,5 +1,6 @@
 use okkama_compiler::{SourceFile, codegen, ir, lowering, syntax};
-use okkama_runtime::{execute, sparrow};
+use okkama_runtime::execute;
+use sparrow_vm as sparrow;
 use okkama_sparrow::{Constant, Dst, FuncRef, Function, Instruction::*, Program, Register as R, Type, TypeRef};
 
 /// Программа SPB 9 из одного `main` над `registers` регистрами `int`.
@@ -92,8 +93,8 @@ fn source_ir_sparrow_and_vm_agree_on_exact_arithmetic() {
             "{body}"
         );
         assert_eq!(
-            sparrow::execute(&program).unwrap(),
-            execute(&module).unwrap()
+            sparrow::execute(&program).unwrap().to_string(),
+            execute(&module).unwrap().to_string()
         );
         assert_eq!(program, codegen::sparrow::generate(&module).unwrap());
     }
@@ -108,7 +109,7 @@ fn modulo_by_zero_fails_only_on_the_executed_path() {
     let bytes = okkama_sparrow::encode(&codegen::sparrow::generate(&module).unwrap()).unwrap();
     assert!(
         matches!(sparrow::execute(&okkama_sparrow::decode(&bytes).unwrap()),
-        Err(sparrow::Error::Operation { error: okkama_runtime::RuntimeError::Trap { message, .. }, .. }) if message == "Modulo by zero")
+        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::Trap { message, .. }, .. }) if message == "Modulo by zero")
     );
     let module = lower("if false { 7 % 0; } else { 42; }");
     assert_eq!(execute(&module).unwrap().to_string(), "42");
@@ -189,7 +190,7 @@ fn generation_covers_floats_and_rationals_and_rejects_invalid_ir() {
     for body in ["let text = 1.5; 2;", "let x = 1 / 2; 0;", "(1.5 * 4.0).int();", "(7 / 2 + 1 / 2).int();"] {
         let module = lower(body);
         let program = codegen::sparrow::generate(&module).unwrap_or_else(|error| panic!("{body}: {error}"));
-        assert_eq!(sparrow::execute(&program).unwrap(), execute(&module).unwrap(), "{body}");
+        assert_eq!(sparrow::execute(&program).unwrap().to_string(), execute(&module).unwrap().to_string(), "{body}");
     }
     let mut module = lower("1;");
     module.functions[0].blocks[0].term.kind = ir::TermKind::Ret(Some(ir::ValueId(999)));
@@ -240,24 +241,24 @@ fn control_flow_matches_ir_before_and_after_serialization() {
             "{body}"
         );
         assert_eq!(
-            sparrow::execute(&loaded).unwrap(),
-            execute(&module).unwrap()
+            sparrow::execute(&loaded).unwrap().to_string(),
+            execute(&module).unwrap().to_string()
         );
     }
     for op in ["==", "!=", "<", "<=", ">", ">="] {
         let module = lower(&format!("if 2 {op} 3 {{ 1; }} else {{ 0; }}"));
         let program = codegen::sparrow::generate(&module).unwrap();
         assert_eq!(
-            sparrow::execute(&program).unwrap(),
-            execute(&module).unwrap()
+            sparrow::execute(&program).unwrap().to_string(),
+            execute(&module).unwrap().to_string()
         );
     }
     for op in ["==", "!="] {
         let module = lower(&format!("if true {op} false {{ 1; }} else {{ 0; }}"));
         let program = codegen::sparrow::generate(&module).unwrap();
         assert_eq!(
-            sparrow::execute(&program).unwrap(),
-            execute(&module).unwrap()
+            sparrow::execute(&program).unwrap().to_string(),
+            execute(&module).unwrap().to_string()
         );
     }
 }
@@ -354,5 +355,5 @@ fn values_of_separate_branches_share_registers() {
     let values = module.functions.iter().find(|function| function.symbol == "main").unwrap().values.len();
     assert!(main.registers.len() < values, "{} registers for {values} values", main.registers.len());
     assert_eq!(sparrow::execute(&program).unwrap().to_string(), "99");
-    assert_eq!(sparrow::execute(&program).unwrap(), execute(&module).unwrap());
+    assert_eq!(sparrow::execute(&program).unwrap().to_string(), execute(&module).unwrap().to_string());
 }

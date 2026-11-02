@@ -1,5 +1,6 @@
 module db/sqlite v1.0.0;
 import "runtime/database" as sqlite;
+import "runtime/db" as native_db;
 import "runtime/fs" take path_encode;
 import "fs/path" take Path;
 import "db/connection" take DbConnection,DbExecuting,DbConnecting;
@@ -12,9 +13,9 @@ import "time/clock" take Timing;
 import "async/timeout" take Before,TimedOut;
 import "compare" take Order;
 import "db/transaction" take Transaction,TransactionOptions,Isolation;
-import "db/statement" take Statement,Execution;
-import "db/row" take Row,Column,RowReading,RowsEnded;
-import "db/value" take DbValue,DbValueKind,ObservedDbValue,DbNull,DbInteger,DbFloating,DbText,DbBytes;
+import "db/statement" take Statement,Execution,DbLimits,DbBoundaryLimit;
+import "db/row" take Row,Column,RowReading,RowsEnded,DbRowSchema,DbRowData;
+import "db/value" take DbValue,DbValueKind,ObservedDbValue,DbNativeValue,DbNull,DbInteger,DbFloating,DbText,DbBytes;
 import "db/error" take DbFailure,DbFailureKind,DbOperation,DbClosed,DbBusy,TransactionEnded,IndeterminateCommit;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded;
@@ -69,7 +70,17 @@ object SqliteOpening {
     }
 }
 object SqliteUnpublished{has state is sqlite.SqliteState;has published is Event;SqliteUnpublished(state is sqlite.SqliteState,published is Event){self.state=state;self.published=published;}async close() is void{if !published.ready(){sqlite.sqlite_close(state);await sqlite.sqlite_settled(state);}}}
-object SqliteTaskCleanup<T>{has group is FutureGroup<T>;has state is sqlite.SqliteState;SqliteTaskCleanup(group is FutureGroup<T>,state is sqlite.SqliteState){self.group=group;self.state=state;}async close() is void{if group.active()>0{group.cancel();await group.wait();}try{await sqlite.sqlite_settled(state);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.closing).value();}}}
+object SqliteTaskCleanup<T>{
+    has group is FutureGroup<T>;has state is sqlite.SqliteState;has completed is Event;
+    SqliteTaskCleanup(group is FutureGroup<T>,state is sqlite.SqliteState){self.group=group;self.state=state;completed=Event();}
+    SqliteTaskCleanup(group is FutureGroup<T>,state is sqlite.SqliteState,completed is Event){self.group=group;self.state=state;self.completed=completed;}
+    async close() is void{
+        if group.active()>0{group.cancel();await group.wait();}
+        // A delivered reply acknowledges the worker operation. Cancellation can
+        // settle its Future earlier, so that path still needs the worker barrier.
+        if !completed.ready(){try{await sqlite.sqlite_settled(state);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.closing).value();}}
+    }
+}
 object SqliteConnection does DbConnection,DbExecuting,DbPreparing,DbPreparedOpening,SqliteBlobOpening,SqliteScripting,SqliteBackupMaking,Closing {
     has origin is SqliteSession;
     SqliteConnection(origin is SqliteSession){self.origin=origin;}
@@ -94,14 +105,12 @@ object SqliteSession does Closing {
     async execution(statement is Statement) is Execution{await self.execution_for(statement,0);}
     async execution_for(statement is Statement,token is int) is Execution{
         confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
-        let bindings=SqliteBindings(statement.values());
-        let frame=await self.reply(sqlite.sqlite_execution(state,Utf8Encoded(statement.text()).bytes(),bindings.kinds(),bindings.values()),DbOperation.executing);defer frame.close();frame.execution();
+        let frame=await self.reply(sqlite.sqlite_execution_cells(state,statement.text(),statement.cells()),DbOperation.executing);defer frame.close();frame.execution();
     }
     async rows(statement is Statement) is RowReading{await self.rows_for(statement,0);}
     async rows_for(statement is Statement,token is int) is RowReading{
         confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
-        let bindings=SqliteBindings(statement.values());
-        let frame=await self.reply(sqlite.sqlite_rows(state,Utf8Encoded(statement.text()).bytes(),bindings.kinds(),bindings.values()),DbOperation.preparing);defer frame.close();let id=frame.identifier();let columns=frame.columns();reader.replace(id);SqliteRows(self,id,columns,token);
+        let frame=await self.reply(sqlite.sqlite_rows_cells(state,statement.text(),statement.cells()),DbOperation.preparing);defer frame.close();let id=frame.identifier();let columns=frame.columns();reader.replace(id);SqliteRows(self,id,columns,token);
     }
     async prepare(text is string) is PreparedStatement{await self.prepare_for(text,0);}
     async prepare_for(text is string,token is int) is PreparedStatement{
@@ -109,18 +118,18 @@ object SqliteSession does Closing {
         let frame=await self.reply(sqlite.sqlite_prepare(state,Utf8Encoded(Statement(text).text()).bytes()),DbOperation.preparing);defer frame.close();let id=frame.identifier();if token>0{let old=transaction_prepared.value();let all is @int=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{id;}};transaction_prepared.replace(all);}SqlitePrepared(self,id,token);
     }
     async prepared_execution(id is int,values is Sequencing<DbValue>,token is int) is Execution{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(Statement("SELECT 1",values).values());
-        let frame=await self.reply(sqlite.sqlite_prepared_execution(state,id,bindings.kinds(),bindings.values()),DbOperation.executing);defer frame.close();frame.execution();
+        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(values);
+        let frame=await self.reply(sqlite.sqlite_prepared_execution_cells(state,id,bindings.cells()),DbOperation.executing);defer frame.close();frame.execution();
     }
     async prepared_rows(id is int,values is Sequencing<DbValue>,source_closed is Event,token is int) is RowReading{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(Statement("SELECT 1",values).values());
-        let frame=await self.reply(sqlite.sqlite_prepared_rows(state,id,bindings.kinds(),bindings.values()),DbOperation.preparing);defer frame.close();let cursor=frame.identifier();reader.replace(cursor);reader_prepared.replace(id);SqliteRows(self,cursor,frame.columns(),source_closed,token);
+        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(values);
+        let frame=await self.reply(sqlite.sqlite_prepared_rows_cells(state,id,bindings.cells()),DbOperation.preparing);defer frame.close();let cursor=frame.identifier();reader.replace(cursor);reader_prepared.replace(id);SqliteRows(self,cursor,frame.columns(),source_closed,token);
     }
     unprepare(id is int) is void{let kept is @int=transaction_prepared.value().filter()->entry{entry!=id;};transaction_prepared.replace(kept);if reader_prepared.value()==id && reader.value()>0{self.release(reader.value());}if !self.closed(){sqlite.sqlite_unprepare(state,id);}}
     end_prepared() is void{let ids=transaction_prepared.value();transaction_prepared.replace([]);for ids -> id{self.unprepare(id);}}
     prepared_closed(token is int) is bool{self.closed() || (token>0 && !self.active(token));}
     async reply(waiting is Future<sqlite.SqliteReplyState>,operation is DbOperation) is SqliteFrame{
-        let group is FutureGroup<sqlite.SqliteReplyState>=FutureGroup();let cleanup=SqliteTaskCleanup(group,state);defer await cleanup.close();group.start(waiting);let reply=try{await waiting;}catch e is NativeFailure{throw SqliteNativeError(e,operation).value();};SqliteFrame(reply,operation);
+        let completed=Event();let group is FutureGroup<sqlite.SqliteReplyState>=FutureGroup();let cleanup=SqliteTaskCleanup(group,state,completed);defer await cleanup.close();group.start(waiting);let reply=try{await waiting;}catch e is NativeFailure{throw SqliteNativeError(e,operation).value();};completed.set();SqliteFrame(reply,operation);
     }
     async open_blob(database is string,table is string,column is string,row is BigInt,writable is bool,token is int) is SqliteBlob{
         confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
@@ -183,32 +192,43 @@ object SqliteSession does Closing {
     }
     release(id is int) is void{if reader.value()==id{reader.replace(0);reader_prepared.replace(0);if fetch_id.value()==id{for fetches.value() -> pending{pending.cancel();}}if !self.closed(){sqlite.sqlite_release(state,id);}}}
     clear_fetch(id is int) is void{if fetch_id.value()==id{fetches.replace([]);fetch_id.replace(0);}}
-    async batch(id is int) is SqliteFrame{
+    async batch(id is int,maximum is int) is SqliteFrame{
         confirm !self.closed() && reader.value()==id else throw DbClosed();
-        let waiting=sqlite.sqlite_fetch(state,id,8);fetch_id.replace(id);fetches.replace([waiting]);defer self.clear_fetch(id);
+        let waiting=sqlite.sqlite_fetch(state,id,maximum);fetch_id.replace(id);fetches.replace([waiting]);defer self.clear_fetch(id);
         await self.reply(waiting,DbOperation.fetching);
     }
 }
 object SqliteRows does RowReading,Closing {
+    has schema is DbRowSchema;
     has owner is SqliteSession;has id,token is int;has columns is @Column;has batch is Atomic<@Row>;has position is Atomic<int>;has eof,stopped,source_closed is Event;has busy is Atomic<bool>;
-    SqliteRows(owner is SqliteSession,id is int,columns is @Column){self.owner=owner;self.id=id;token=0;self.columns=columns;let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();source_closed=Event();busy=Atomic(false);}
-    SqliteRows(owner is SqliteSession,id is int,columns is @Column,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=columns;source_closed=Event();let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);}
-    SqliteRows(owner is SqliteSession,id is int,columns is @Column,source_closed is Event,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=columns;self.source_closed=source_closed;let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);}
+    SqliteRows(owner is SqliteSession,id is int,columns is @Column){self.owner=owner;self.id=id;token=0;self.columns=columns;schema=DbRowSchema(columns,DbLimits());let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();source_closed=Event();busy=Atomic(false);}
+    SqliteRows(owner is SqliteSession,id is int,columns is @Column,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=columns;schema=DbRowSchema(columns,DbLimits());source_closed=Event();let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);}
+    SqliteRows(owner is SqliteSession,id is int,columns is @Column,source_closed is Event,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=columns;schema=DbRowSchema(columns,DbLimits());self.source_closed=source_closed;let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);}
     columns() is Sequencing<Column>{columns;}closed() is bool{stopped.ready() || source_closed.ready() || owner.prepared_closed(token);}
     close() is void{if !stopped.ready(){stopped.set();batch.replace([]);owner.release(id);}}
     async row() is Row{
         confirm !self.closed() else throw DbClosed();confirm busy.compare_and_replace(false,true) else throw DbBusy();defer busy.replace(false);
-        if position.value()==batch.value().size(){if eof.ready(){throw RowsEnded();}let complete=Event();let cleanup=SqliteRowsCleanup(self,complete);defer cleanup.close();let frame=await owner.batch(id);defer frame.close();confirm !self.closed() else throw DbClosed();let rows=frame.rows(columns);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}complete.set();if rows.size()==0{throw RowsEnded();}}
+        if position.value()==batch.value().size(){if eof.ready(){throw RowsEnded();}let complete=Event();let cleanup=SqliteRowsCleanup(self,complete);defer cleanup.close();let frame=await owner.batch(id,if position.value()==0{8;}else{64;});defer frame.close();confirm !self.closed() else throw DbClosed();let rows=frame.rows(schema);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}complete.set();if rows.size()==0{throw RowsEnded();}}
         let row=batch.value()[position.value()];position.replace(position.value()+1);if eof.ready() && position.value()==batch.value().size(){owner.release(id);}row;
     }
     destroy{self.close();}
 }
 object SqliteRowsCleanup{has owner is SqliteRows;has complete is Event;SqliteRowsCleanup(owner is SqliteRows,complete is Event){self.owner=owner;self.complete=complete;}close() is void{if !complete.ready(){owner.close();}}}
 object SqliteBindings {
-    has entries is @SqliteBoundValue;
-    SqliteBindings(values is Sequencing<DbValue>){let entries is @SqliteBoundValue=(0..values.size()).map()->index{SqliteBoundValue(ObservedDbValue(values.item(index)));};self.entries=entries;}
-    kinds() is @int{let values is @int=entries.map()->entry{entry.kind();};values;}
-    values() is @@byte{let values is @@byte=entries.map()->entry{entry.bytes();};values;}
+    has cells is @native_db.DbCellState;
+    SqliteBindings(values is Sequencing<DbValue>){
+        let limits=DbLimits();let count=values.size();
+        confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("value count");
+        let used=Atomic(0);
+        let cells is @native_db.DbCellState=(0..count).map()->index{
+            let value=ObservedDbValue(values.item(index));let width=value.width();
+            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");
+            used.replace(used.value()+width);value.state();
+        };self.cells=cells;
+    }
+    cells() is @native_db.DbCellState{cells;}
+    kinds() is @int{let values is @int=cells.map()->cell{native_db.db_kind(cell);};values;}
+    values() is @@byte{let values is @@byte=cells.map()->cell{SqliteBoundValue(ObservedDbValue(DbNativeValue(cell))).bytes();};values;}
 }
 object SqliteBoundValue {
     has kind is int;has bytes is @byte;
@@ -218,16 +238,20 @@ object SqliteBoundValue {
     }kind() is int{kind;}bytes() is @byte{bytes;}
 }
 object SqliteFrame {
-    has state is sqlite.SqliteReplyState;has info is %string:string;has stopped is Event;
-    SqliteFrame(state is sqlite.SqliteReplyState,operation is DbOperation){self.state=state;stopped=Event();let fields=sqlite.sqlite_reply_info(state);info=fields;if fields["ok"]!="1"{sqlite.sqlite_reply_close(state);self.stopped.set();throw DbFailure(SqliteFailureKind(fields["kind"]).value(),operation,fields["code"],"SQLite operation rejected");}}
+    has state is sqlite.SqliteReplyState;has stopped is Event;
+    SqliteFrame(state is sqlite.SqliteReplyState,operation is DbOperation){self.state=state;stopped=Event();if !sqlite.sqlite_reply_ok(state){let fields=sqlite.sqlite_reply_info(state);sqlite.sqlite_reply_close(state);self.stopped.set();throw DbFailure(SqliteFailureKind(fields["kind"]).value(),operation,fields["code"],"SQLite operation rejected");}}
     close() is void{if !stopped.ready(){stopped.set();sqlite.sqlite_reply_close(state);}}destroy{self.close();}
-    size() is int{ParsedInt(info["size"]).value();}bytes() is @byte{sqlite.sqlite_reply_blob_bytes(state);}
-    done() is bool{info["done"]=="1";}busy() is bool{info["busy"]=="1";}copies() is BigInt{BigInt(info["copies"]);}total() is BigInt{BigInt(info["total"]);}
+    size() is int{ParsedInt(sqlite.sqlite_reply_info(state)["size"]).value();}bytes() is @byte{sqlite.sqlite_reply_blob_bytes(state);}
+    done() is bool{sqlite.sqlite_reply_info(state)["done"]=="1";}busy() is bool{sqlite.sqlite_reply_info(state)["busy"]=="1";}copies() is BigInt{BigInt(sqlite.sqlite_reply_info(state)["copies"]);}total() is BigInt{BigInt(sqlite.sqlite_reply_info(state)["total"]);}
     executions() is @Execution{let values is @Execution=sqlite.sqlite_reply_executions(state).map()->value{if value=="unknown"{Execution();}else{Execution(BigInt(value));}};values;}
-    identifier() is int{ParsedInt(info["id"]).value();}ended() is bool{info["eof"]=="1";}
-    execution() is Execution{if info["affected_known"]=="1"{Execution(BigInt(info["affected"]));}else{Execution();}}
+    identifier() is int{sqlite.sqlite_reply_id(state);}ended() is bool{sqlite.sqlite_reply_eof(state);}
+    execution() is Execution{if sqlite.sqlite_reply_affected_known(state){Execution(BigInt(sqlite.sqlite_reply_affected(state)));}else{Execution();}}
     columns() is @Column{let names=sqlite.sqlite_reply_names(state);let declarations=sqlite.sqlite_reply_declarations(state);let columns is @Column=(0..names.size()).map()->index{Column(index,names[index],declarations[index]);};columns;}
-    rows(columns is @Column) is @Row{let count=ParsedInt(info["rows"]).value();let rows is @Row=(0..count).map()->index{let values is @DbValue=(0..columns.size()).map()->column{let kind=sqlite.sqlite_reply_kind(state,index,column);if kind==0{DbNull();}else{if kind==1{DbInteger(BigInt(sqlite.sqlite_reply_text(state,index,column)));}else{if kind==2{DbFloating(ParsedFloat(sqlite.sqlite_reply_text(state,index,column)).value());}else{if kind==3{DbText(sqlite.sqlite_reply_text(state,index,column));}else{DbBytes(sqlite.sqlite_reply_bytes(state,index,column));}}}}};Row(columns,values);};rows;}
+    rows(schema is DbRowSchema) is @Row {
+        let count=sqlite.sqlite_reply_count(state);
+        let rows is @Row=(0..count).map()->index { Row(DbRowData(schema,sqlite.sqlite_reply_cells(state,index))); };
+        rows;
+    }
 }
 object SqliteFailureKind{has origin is string;SqliteFailureKind(origin is string){self.origin=origin;}value() is DbFailureKind{match origin{case "connection"{DbFailureKind.connection;}case "constraint"{DbFailureKind.constraint;}case "syntax"{DbFailureKind.syntax;}case "data"{DbFailureKind.data;}case "permission"{DbFailureKind.permission;}case "busy"{DbFailureKind.busy;}case "cancelled"{DbFailureKind.cancelled;}case "resource"{DbFailureKind.resource;}case "unsupported"{DbFailureKind.unsupported;}else{DbFailureKind.unexpected;}}}}
 object SqliteNativeError{has origin is NativeFailure;has operation is DbOperation;SqliteNativeError(origin is NativeFailure,operation is DbOperation){self.origin=origin;self.operation=operation;}value() is DbFailure{let kind=match origin.code(){case "unsupported"{DbFailureKind.unsupported;}case "invalid_input"{DbFailureKind.data;}case "resource_exhausted"{DbFailureKind.resource;}case "timed_out"{DbFailureKind.timeout;}else{DbFailureKind.connection;}};DbFailure(kind,operation,origin.code(),"SQLite worker failed");}}

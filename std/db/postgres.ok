@@ -1,4 +1,5 @@
 module db/postgres v1.0.0;
+import "db/statement" take DbLimits;
 
 import "db/postgres/wire" take PgInt32, PgInt16, PgCString, PgFrame, PgUntypedFrame, PgMessage, PgFields, PgInput, PgOutput, PgJoined, PgWireFailure;
 import "db/postgres/auth" take ScramExchange, Md5Password, ScramFailure;
@@ -7,7 +8,7 @@ import "db/prepared" take DbPreparing, PreparedStatement, DbPreparedOpening, DbP
 import "db/acquisition" take DbAcquiring, DbAcquisition;
 import "db/transaction" take Transaction, TransactionOptions, Isolation;
 import "db/statement" take Statement, Execution;
-import "db/row" take Row, Column, RowReading, RowsEnded;
+import "db/row" take DbRowSchema,DbRowData,DbRowCells,Row, Column, RowReading, RowsEnded;
 import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNull, DbBoolean, DbInteger, DbFloating, DbDecimal, DbText, DbBytes;
 import "db/error" take DbFailure, DbFailureKind, DbOperation, DbClosed, DbBusy, TransactionEnded, IndeterminateCommit;
 import "net/tcp" take TcpConnecting, TcpOptions;
@@ -884,11 +885,13 @@ object PgCommandTag {
 
 // Columns of a RowDescription with their type OIDs.
 object PgDescription {
+    has schema is DbRowSchema;
     has columns is @Column;
     has types is @int;
 
     PgDescription() {
         columns = [];
+        schema=DbRowSchema(self.columns,DbLimits());
         types = [];
     }
 
@@ -909,6 +912,7 @@ object PgDescription {
         let found = oids.value();
         let described is @Column = (0..count).map() -> index { Column(index, all[index], PgTypeName(found[index]).string()); };
         columns = described;
+        schema=DbRowSchema(self.columns,DbLimits());
         types = found;
     }
 
@@ -923,7 +927,7 @@ object PgDescription {
             let length = fields.int32();
             if length < 0 { DbNull(); } else { PgTextValue(fields.take(length), types[index]).value(); }
         };
-        Row(columns, values);
+        Row(DbRowData(schema,DbRowCells(values,DbLimits()).values()));
     }
 }
 
