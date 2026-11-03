@@ -438,14 +438,18 @@ role Declined   { id() is string; reason() is string; }
 // 2. Alternative outcomes are an enum whose payloads are different views.
 enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
 
-// 3. One immutable class implements every view.
+// 3. The real state: a private field of this enum, checked by every transition.
+enum Stage = (created, authorized, captured, refunded, declined(reason is string));
+enum PaymentError is Error = (invalid_transition(action is string));
+
+// 4. One immutable class implements every view.
 object Payment does Created, Authorized, Captured, Refunded, Declined {
     has key is string;
     has stage is Stage = Stage.created;      // not in the constructor: unforgeable
     Payment(:key);
 
     capture() is ^Payment {                  // implements `capture() is ^Captured`
-        confirm stage == Stage.authorized else throw InvalidTransition(action: "capture");
+        confirm stage == Stage.authorized else throw PaymentError.invalid_transition("capture");
         ^stage = Stage.captured;
     }
     // ... authorize(), refund(), reason(), id()
@@ -455,7 +459,7 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
 }
 
-// 4. Callers only ever hold views.
+// 5. Callers only ever hold views.
 match Payments().open("p-1").authorize(true) {
     case Authorization.approved(payment) { payment.capture().refund().id(); }
     case Authorization.declined(payment) { payment.reason(); }

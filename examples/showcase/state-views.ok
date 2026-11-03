@@ -16,13 +16,10 @@ role Declined   { id() is string; reason() is string; }
 // Alternative outcomes: each case carries a different view.
 enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
 
+// The real state: a private field of this enum, checked by every transition.
 enum Stage = (created, authorized, captured, refunded, declined(reason is string));
 
-object InvalidTransition does Error {
-    has action is string;
-    InvalidTransition(:action);
-    text() is string { "invalid transition: " + action; }
-}
+enum PaymentError is Error = (invalid_transition(action is string));
 
 // One immutable class implements every view.
 object Payment does Created, Authorized, Captured, Refunded, Declined {
@@ -41,17 +38,17 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     reason() is string {
         match stage {
             case Stage.declined(reason) { reason; }
-            else { throw InvalidTransition(action: "reason"); }
+            else { throw PaymentError.invalid_transition("reason"); }
         }
     }
 
     capture() is ^Payment {                  // satisfies `capture() is ^Captured`
-        confirm stage == Stage.authorized else throw InvalidTransition(action: "capture");
+        confirm stage == Stage.authorized else throw PaymentError.invalid_transition("capture");
         ^stage = Stage.captured;
     }
 
     refund() is ^Payment {
-        confirm stage == Stage.captured else throw InvalidTransition(action: "refund");
+        confirm stage == Stage.captured else throw PaymentError.invalid_transition("refund");
         ^stage = Stage.refunded;
     }
 
