@@ -1,0 +1,14 @@
+// Experiment D / Pattern D. In the approved branch the payload is Authorized: refund() is rejected.
+// EXPECT: check-error: Role "Authorized" has no action "refund"
+module app;
+import "../models/payment_hybrid" take Payments, Authorization, ApprovingGateway;
+
+main() is int {
+    let outcome = Payments().open("p", 1).authorize(ApprovingGateway());
+    let s = match outcome {
+        case Authorization.approved(payment) { payment.refund().id(); }
+        case Authorization.declined(payment) { payment.reason(); }
+        case Authorization.failed(error) { error.text(); }
+    };
+    0;
+}

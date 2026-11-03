@@ -1,0 +1,13 @@
+// Experiment F / Pattern C. Variants are public constructors: any caller can
+// build a "captured" state directly and refund it. Violation remains possible.
+// EXPECT: run-ok
+// STDOUT: refunded p
+module app;
+import "io/stdout" take Stdout;
+import "../models/payment_adt" take Processor, PaymentState;
+
+main() is int {
+    let pr = Processor();
+    Stdout().writeln(pr.describe(pr.refund(PaymentState.captured("p", "forged"))));
+    0;
+}

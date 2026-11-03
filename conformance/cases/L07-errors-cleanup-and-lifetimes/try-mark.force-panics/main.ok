@@ -1,0 +1,22 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum DbError is Error = (closed);
+
+object Db {
+    Db();
+    query() is int { throw DbError.closed; }
+}
+
+main() is int {
+    let out = Stdout();
+    defer out.writeln("cleanup");
+    let x = try {
+        try! Db().query();
+    } catch e is Error {
+        out.writeln("caught");
+        0;
+    };
+    x;
+}

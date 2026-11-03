@@ -80,6 +80,15 @@ pub(super) enum Task {
         object: ObjectId,
         field: usize,
     },
+    /// Текст значения варианта `Enum.case(payload, ...)`; у error enum — слот
+    /// `text()` роли Error.
+    VariantText {
+        object: ObjectId,
+    },
+    /// Текст `bool` или case enum без payload внутри текста варианта.
+    Describe {
+        ty: Ty,
+    },
     /// Тело анонимного action: `Ctx::closures[index]`.
     Closure {
         index: usize,
@@ -453,13 +462,14 @@ impl<'r, 'a> Ctx<'r, 'a> {
             | Task::Destroy { object }
             | Task::AdapterNew { object }
             | Task::VariantGet { object, .. }
+            | Task::VariantText { object }
             | Task::Witness { object, .. }
             | Task::WorkerEntry { object, .. }
             | Task::WorkerBind { object, .. }
             | Task::CapField { object, .. } => self.objects[object.0].module,
             Task::Closure { index } => self.closures[*index].body.module,
             Task::Test { index } => self.reg.tests[*index].module,
-            Task::Runtime { .. } | Task::Member { .. } => self.reg.root(),
+            Task::Runtime { .. } | Task::Member { .. } | Task::Describe { .. } => self.reg.root(),
             Task::Native { native } => self.reg.natives[*native].module,
         }
     }
@@ -686,6 +696,35 @@ impl<'r, 'a> Ctx<'r, 'a> {
         self.allocate(task, self.symbol(object, &format!(".$field{field}")))
     }
 
+    pub fn variant_text(&mut self, object: ObjectId) -> FuncId {
+        let task = Task::VariantText { object };
+        if let Some(func) = self.task_map.get(&task) {
+            return *func;
+        }
+        self.allocate(task, self.symbol(object, ".text"))
+    }
+
+    /// Функция текста `bool` (`true`/`false`) или case enum без payload.
+    pub fn describe(&mut self, ty: &Ty) -> FuncId {
+        let task = Task::Describe { ty: ty.clone() };
+        if let Some(func) = self.task_map.get(&task) {
+            return *func;
+        }
+        let symbol = match ty {
+            Ty::Enum(id) => format!("$describe.enum{}", id.0),
+            _ => "$describe.bool".to_string(),
+        };
+        self.allocate(task, symbol)
+    }
+
+    /// Тип анализа объекта варианта.
+    pub fn variant_ty(&self, object: ObjectId) -> Option<Ty> {
+        self.variant_map
+            .iter()
+            .find(|(_, value)| **value == object)
+            .map(|(ty, _)| ty.clone())
+    }
+
     fn variant_instance(&mut self, ty: &Ty, span: Span) -> Result<ObjectId> {
         if let Some(id) = self.variant_map.get(ty) {
             return Ok(*id);
@@ -693,16 +732,24 @@ impl<'r, 'a> Ctx<'r, 'a> {
         let Ty::Variant(decl_id, args) = ty else {
             unreachable!()
         };
-        let decl = &self.reg.enums[decl_id.0];
+        let reg = self.reg;
+        let decl = &reg.enums[decl_id.0];
         let env: Vec<_> = decl.params.iter().copied().zip(args.clone()).collect();
         let module = decl.module;
         let payloads = decl.payloads.clone();
+        let error = decl.error;
         let id = ObjectId(self.objects.len());
         self.variant_map.insert(ty.clone(), id);
         self.objects.push(Instance {
             decl: DeclObject(usize::MAX),
             env: env.clone(),
-            name: format!("$variant_{}_{}", self.reg.enums[decl_id.0].name, id.0),
+            // Error enum не generic: одно объявление — одна специализация, и имя
+            // объекта — имя типа ошибки в сообщениях о неперехваченном отказе.
+            name: if error {
+                decl.name.clone()
+            } else {
+                format!("$variant_{}_{}", decl.name, id.0)
+            },
             module,
             fields: Vec::new(),
             methods: Vec::new(),
@@ -721,6 +768,11 @@ impl<'r, 'a> Ctx<'r, 'a> {
             }
         }
         self.objects[id.0].fields = fields;
+        if error {
+            let text = self.variant_text(id);
+            let role = self.role_instance(self.reg.system.error, Vec::new(), span)?;
+            self.objects[id.0].does = vec![(role, vec![text])];
+        }
         // A payload may own resources. Publish its plainness before callers emit
         // region keep/track operations for the returned variant value.
         self.compute_plain();

@@ -1,0 +1,11 @@
+// Experiment G / Pattern D. Skipping authorization through the concrete class
+// type-checks; the private ADT stage rejects it at runtime.
+// EXPECT: runtime-error: invalid transition: capture
+module app;
+import "../models/payment_hybrid";
+
+main() is int {
+    let captured = payment_hybrid.Payment(key: "p", amount: 1).capture();
+    captured.id();
+    0;
+}

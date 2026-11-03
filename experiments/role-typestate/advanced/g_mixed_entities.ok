@@ -1,0 +1,31 @@
+// Experiment G / Pattern D. Types track states, not identities: a refund of
+// one payment can be paired with the capture of another.
+// Violation remains possible (needs a runtime identity check).
+// EXPECT: run-ok
+// STDOUT: a/b
+module app;
+import "io/stdout" take Stdout;
+import "../models/payment_hybrid" take Payments, Authorization, Captured, Refunded, ApprovingGateway, InvalidTransition;
+
+object Ledger {
+    Ledger();
+    pair(capture is Captured, refund is Refunded) is string { capture.id() + "/" + refund.id(); }
+}
+
+object Flow {
+    Flow();
+    captured(id is string) is Captured {
+        let outcome = Payments().open(id, 1).authorize(ApprovingGateway());
+        match outcome {
+            case Authorization.approved(p) { p.capture(); }
+            else { throw InvalidTransition(action: "flow"); }
+        }
+    }
+}
+
+main() is int {
+    let a = Flow().captured("a");
+    let b = Flow().captured("b").refund();
+    Stdout().writeln(Ledger().pair(a, b));
+    0;
+}

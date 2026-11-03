@@ -50,7 +50,7 @@ code:
    `has`; fields bind during construction and never change.
 4. **State change = successor.** An action that "changes" state is declared
    `is ^Type`, stages updates with `^field = expr;`, and returns a **new**
-   object. Discarding a successor result is a runtime error.
+   object. Discarding a successor result is a compile-time error.
 5. **Fields are private through ordinary references.** There are no setters.
    External field access is a runtime error. Objects expose *behavior*.
 6. **No truthiness.** Every condition (`if`, `confirm`, `!`, `&&`, `||`,
@@ -644,12 +644,13 @@ catch error is Error {
 
 - `try` is dual-purpose like `if`: it may stand at block level or yield the
   selected try/catch body value in expression position. Both forms need ≥1
-  typed catch. No `finally`, catch-all, or guards.
+  typed catch. No `finally`, catch-all, or guards (case patterns and type
+  lists are allowed, see Error enums below).
 - `Error` is a system nominal role requiring `text() is string`; throwable
   source objects must explicitly `does Error`.
-- Catch types are preflight-validated and must guarantee Error: `Error`, a
-  concrete/applied Error object, or `NativeFailure`. Arbitrary roles, scalars,
-  collections, enums and `any` are rejected.
+- Catch types are preflight-validated and must guarantee Error: `Error`, an
+  error enum, a concrete/applied Error object, or `NativeFailure`. Arbitrary
+  roles, scalars, collections, other enums and `any` are rejected.
 - First compatible valid clause in source order wins. Panic and programming
   errors bypass catch.
 - Try body and catch bodies are separate lexical scopes; try locals invisible
@@ -660,6 +661,48 @@ catch error is Error {
 
 Idiom: throw dedicated Error objects carrying context, catch concretely or by
 `Error`, and use bare `throw;` when you cannot fully handle the failure.
+
+### Error enums (preferred for new errors)
+
+```okkama
+enum DatabaseError is Error = (
+    connection(message is string),
+    request(sql is string, code is int),
+    closed
+);
+
+throw DatabaseError.request("select 1", 42);
+
+try { db.query(sql); }
+catch error is DatabaseError {
+    match error {
+        case DatabaseError.connection(message) { retry(); }
+        case DatabaseError.request(sql, code) { report(code); }
+        case DatabaseError.closed { reopen(); }
+    }
+}
+```
+
+- `enum Name is Error = (...)`: no type parameters; matches are exhaustive.
+- Payloads: string, int, byte, float, rat, bool, enums with such payloads
+  (another error enum works as a cause). No objects, collections, char, any.
+- `text()` is generated: `DatabaseError.request("select 1", 42)`.
+- The value converts to `Error`; `catch e is Error { throw e; }` keeps the
+  enum type for outer catches. Uncaught: `DatabaseError: DatabaseError.closed`.
+
+```okkama
+try { work(); }
+catch DatabaseError.request(sql, code) { report(code); }   // one case, payload bindings
+catch DatabaseError.closed, NetError.reset { reconnect(); } // several cases/enums, no bindings
+catch e is NetError, Denied { log(e.text()); }               // several types: e is Error
+
+let rows = try? db.query(sql) else 0;   // Maybe<T>; none on any thrown error
+let cfg = try! Config.parse(text);      // thrown error -> panic "Unexpected error: ..."
+```
+
+- A missed case continues with the next clause of the same try.
+- `try?`/`try!` have no space after `try` and cover the expression to the right
+  up to `else`/`??`. `try?` rejects void calls and successor results.
 
 
 ## 13. `defer`
@@ -964,7 +1007,7 @@ object Bottle {
 }
 
 let bottle = Bottle();
-bottle.open();                 // RUNTIME ERROR: successor result must be used
+bottle.open();                 // ERROR (check): successor result must be used
 let opened = bottle.open();    // correct — `bottle` itself is unchanged
 let done = Bottle().open().close();   // successors chain
 throw Denied(401).challenged("Bearer"); // throw consumes a successor like return does
@@ -976,7 +1019,12 @@ throw Denied(401).challenged("Bearer"); // throw consumes a successor like retur
   original is untouched; the successor is a fresh identity with an
   independent lifetime. A mid-action failure produces no partial successor.
 - `^Bottle` satisfies `^Package` when `Bottle does Package`.
-- Private successor actions are not supported.
+- On an object a successor returns its own type (`is ^Bottle`); `is ^Package`
+  on an object action is an error. Declare `^Role` in the role signature.
+- The final expression of a successor body is discarded; ending it with a
+  value of the object's own type (`self`, `Bottle()`) is an error.
+- Private successor actions are allowed (`self.name()` only); use them for
+  internal transitions that no role should expose.
 - Successors name real domain transitions/results (`opened`, `advanced`,
   `enqueued`), never copied fields. `with` and `with_*` action names are parse
   errors; renamed fluent configuration remains architecturally invalid.

@@ -1,0 +1,17 @@
+// Experiment B. A generic container infers T from the role reference, so the
+// value coming out is still `Created`; hidden capture() stays hidden.
+// EXPECT: check-error: Role "Created" has no action "capture"
+module app;
+import "../models/payment_views" take Payments;
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+main() is int {
+    let boxed = Box(value: Payments().open("p"));
+    let x = boxed.get().capture();
+    0;
+}

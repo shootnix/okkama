@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum DbError is Error = (closed, busy);
+
+main() is int {
+    Stdout().writeln("start");
+    let x = try {
+        throw DbError.busy;
+    } catch DbError.closed {
+        0;
+    };
+    x;
+}

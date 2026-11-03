@@ -1,0 +1,13 @@
+// Experiment G / generics. Inside the generic body only the bound's actions
+// are available, whatever state T is instantiated with.
+// EXPECT: check-error: Role "Identified" has no action "capture"
+module app;
+import "../models/payment_ident" take Identified;
+
+object Sneak<T: Identified> {
+    has value is T;
+    Sneak(:value);
+    steal() is string { value.capture().id(); }
+}
+
+main() is int { 0; }

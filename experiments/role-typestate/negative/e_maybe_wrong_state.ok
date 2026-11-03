@@ -1,0 +1,9 @@
+// Experiment E. Maybe<Authorized> cannot hold a Created view.
+// EXPECT: check-error: Generic parameter "T" for object "Maybe" cannot be both Authorized and Created
+module app;
+import "../models/payment_views" take Payments, Authorized;
+
+main() is int {
+    let maybe is Maybe<Authorized> = Maybe.some(Payments().open("p"));
+    0;
+}

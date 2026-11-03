@@ -598,7 +598,15 @@ fn enums() {
         panic!()
     };
     assert_eq!(state.cases.len(), 2);
+    assert!(state.role.is_none());
+    let program =
+        parse_ok("module app v1.0.0; enum DatabaseError is Error = (closed(reason is string));");
+    let Item::Enum(error) = &program.items[0] else {
+        panic!()
+    };
+    assert_eq!(error.role.as_ref().map(|role| role.text.as_str()), Some("Error"));
     for (source, expected) in [
+        ("enum State is = (a);", "Expect role name after \"is\" in an enum declaration."),
         ("enum state = (a);", "Expect enum name after \"enum\"."),
         ("enum State (a);", "Expect \"=\" after enum name."),
         ("enum State = (a,);", "Expect enum case name."),

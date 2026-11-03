@@ -355,8 +355,15 @@ impl Rewrite {
     fn try_body(&mut self, body: &mut ast::TryBody) {
         self.block(&mut body.body);
         for catch in &mut body.catches {
-            self.binding(&catch.name);
-            self.ty(&mut catch.ty);
+            if let Some(name) = &catch.name {
+                self.binding(name);
+            }
+            for ty in &mut catch.types {
+                self.ty(ty);
+            }
+            for pattern in &mut catch.patterns {
+                self.expr(pattern, false);
+            }
             self.block(&mut catch.body);
         }
     }
@@ -393,6 +400,7 @@ impl Rewrite {
             | ExprKind::Unary { operand: inner, .. }
             | ExprKind::Unpack { operand: inner, .. }
             | ExprKind::Panic { value: inner }
+            | ExprKind::TryMark { value: inner, .. }
             | ExprKind::Await { value: inner } => self.expr(inner, false),
             ExprKind::Spawn { call } => self.expr(call, false),
             ExprKind::Binary { left, right, .. }

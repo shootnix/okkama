@@ -2163,8 +2163,8 @@ builders still model public setters; use complete constructor state, composed
 value objects, or decorators instead.
 
 Successor types compose with roles: `^Bottle` satisfies `^Package` when
-`Bottle does Package` (Chapter 22). Private successor actions are not
-supported.
+`Bottle does Package` (Chapter 22). A successor may be private: an internal
+transition that only the object's own actions call through `self`.
 
 This is the EO immutability discipline with runtime teeth: state transitions
 are explicit in signatures (`is ^Type`), visible at call sites (`let opened =

@@ -1,0 +1,10 @@
+// Experiment A / Pattern B1 (role + class per state). Refunded view has no capture().
+// EXPECT: check-error: Role "Refunded" has no action "capture"
+module app;
+import "../models/payment_roles" take Payments;
+
+main() is int {
+    let refunded = Payments().open("p").authorize().capture().refund();
+    let bad = refunded.capture();
+    0;
+}

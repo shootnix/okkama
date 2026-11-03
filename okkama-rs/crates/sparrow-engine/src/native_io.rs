@@ -485,6 +485,9 @@ mod tests {
             let State::Ready(Err(failure)) = heap.future(future).unwrap().state else {
                 panic!("missing failure");
             };
+            // Only the cached Future remains a root: its failure and native
+            // domain/code/operation strings must survive through that edge.
+            heap.collect(std::iter::once(future)).unwrap();
             let FailureKind::Native(payload) = heap.failure(failure).unwrap().kind else {
                 panic!("wrong failure");
             };
@@ -497,6 +500,9 @@ mod tests {
                 ),
                 ("core.net", "not_found", "lookup")
             );
+            heap.collect(std::iter::empty()).unwrap();
+            assert!(heap.failure(failure).is_err());
+            assert!(heap.native_failure(payload).is_err());
         })
         .unwrap();
     }

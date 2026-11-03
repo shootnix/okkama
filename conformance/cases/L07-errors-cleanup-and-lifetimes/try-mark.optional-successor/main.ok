@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+object Counter {
+    has n is int = 0;
+    Counter();
+    bumped() is ^Counter { ^n = n + 1; }
+    value() is int { n; }
+}
+
+main() is int {
+    let c = try? Counter().bumped();
+    0;
+}

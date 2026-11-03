@@ -43,8 +43,54 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   and hotness thresholds 2 and 10 (mixed execution and OSR), checks that machine code
   and OSR actually ran, and runs the inline tests of every std module on IR and Sparrow
   against a list of known failures (`tools/gate/known-failures.txt`).
+- **Error enums** (error handling phase 1, [proposal](docs/POC/error-handling.md)):
+  `enum DatabaseError is Error = (connection(message is string), closed);`. Values are
+  thrown with `throw DatabaseError.connection("refused")`, caught with
+  `catch e is DatabaseError` (then inspected with an exhaustive `match`) or with
+  `catch e is Error`, and rethrown with their type intact. `text()` is generated from
+  the case and payload: `DatabaseError.connection("refused")`. Payloads are limited to
+  strings, numbers, `bool` and enums with such payloads (an error enum can be the
+  cause of another); error enums are not generic. Error objects keep working
+  alongside. Implemented in the front end and lowering only: an error enum value is
+  the variant object, which now does `Error` with a generated `text()`, so the IR
+  interpreter, Sparrow and JVM needed no changes (spec §9.5.1).
+- **`try?` and `try!`** (error handling phase 4): `let rows = try? db.query(sql) else 0;`
+  yields `Maybe<T>` (`none` when an error is thrown, nested `Maybe` is kept);
+  `try! value` turns a thrown error into the panic `Unexpected error: <text>`. They
+  cover the expression to their right up to `else`/`??`; `try?` rejects void calls and
+  successor results. Desugared to `try`/`catch Error` in the checker (spec §9.6.1).
+- **Catch patterns and type lists**: `catch DbError.failed(code, _) { }`,
+  `catch DbError.closed, NetError.reset, Denied { }` and `catch e is DbError, NetError { }`
+  (`e` is `Error`). A thrown value of a matching type but another case continues with
+  the next clause of the same `try` instead of leaving it (spec §9.6).
+- **Private successor actions.** A successor declared after `private:` is an internal
+  transition: callable only as `self.name(...)` inside its object, with the usual
+  must-use obligation; it cannot implement a role action. Previously both the checker
+  and the IR verifier rejected it without a stated reason (spec §11.7).
+- `okkama lint` rule `non-exhaustive-match`: a `match` over a payload-free enum without
+  `else` that misses cases is reported as a warning (payload enums already make it an
+  error). It reports nothing in `std`, `examples` or the conformance cases.
+- Research report [Role-oriented typestate](docs/research/role-oriented-typestate.md)
+  ("state views": roles per state, successors as transitions, payload ADTs for
+  outcomes) and its experiments in `experiments/role-typestate/`, run by
+  `make experiments` (`EXPERIMENT_ENGINES="ir jvm sparrow"` for every engine).
 
 ### Fixed
+
+- **An object successor declared `is ^Role` is rejected with a clear error** instead of
+  passing the checker and crashing in IR verification with an internal compiler error;
+  the checker also accepted a role the object does not do. An object successor returns
+  `^Self`; `^Role` results belong to role signatures (spec §11.9).
+- **A successor body can no longer end with a replacement value.** A final expression of
+  the successor's own type (`self`, `Box()`) was silently discarded, unlike
+  `return value;`, which was already an error. Final values of other types are still
+  evaluated and discarded, as in void actions (spec §11.9).
+- **Role-bounded generics accept role arguments at runtime.** `object Tagged<T: Named>`
+  with `T` inferred as another role (`Counted`) type-checked, but lowering a bound call
+  failed with "builtin role adapters … not implemented yet"; the value now narrows to
+  the bound like an ordinary role-to-role assignment, on IR, JVM and Sparrow.
+- Rebinding a role-typed variable now says that role-typed locals cannot be rebound,
+  instead of claiming the role has no successor actions.
 
 - **Long expression chains no longer crash the compiler** (H-03). The parser bounds
   its own recursion, but builds left-associative chains (`a + a + … + a`, `x.a.b.c…`,

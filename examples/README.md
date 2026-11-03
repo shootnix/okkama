@@ -4,6 +4,7 @@
 
 | Каталог | Что внутри | С чего начать |
 |---|---|---|
+| [Витрина](showcase/) | Пять коротких программ с новыми возможностями языка: enum с payload, `Maybe`/`Presence`, тернарный `?? !!`, error enum, `try?`/`try!`, образцы в `catch`, роли как состояния | `okkama examples/showcase/checkout.ok` |
 | [Галерея](gallery/README.md) | 24 самостоятельных программы по задачам Rakupp: фракталы, парсеры, числа, алгоритмы, текст, параллельность и TCP. Рядом `dirstat`, пять веб-сценариев и статические диагностики | `./examples/gallery/run quicksort` |
 | [Кукбук и приложения](cookbook/README.md) | Почтовый клиент, таксопарк, зарплата, конвертеры форматов, документация, чат, тесты и 158 лабораторий stdlib | `./examples/cookbook/run payroll demo` |
 | [Блог](cookbook/web/blog/README.md) | Отдельное веб-приложение с лентой, формой, JSON API и SQLite | `./examples/cookbook/web/blog/run /tmp/blog.sqlite 8082` |

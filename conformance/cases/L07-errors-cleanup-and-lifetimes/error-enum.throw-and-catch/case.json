@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.error-enum.throw-and-catch",
+  "title": "error enum values are thrown, matched exhaustively and caught through Error",
+  "purpose": "Normal and interaction behaviour of error enums: typed catch, catch-all Error, rethrow, nested cause, else throw.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.ENUM",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "request boom 42\nDatabaseError.auth(\"bob\", false)\nRepoError.db(DatabaseError.closed)\nDatabaseError.request(\"boom\", 42)\nRepoError.missing(7, Stage.authorized)\nDatabaseError.connection(\"none\")\nDatabaseError.closed\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "error handling phase 1 (docs/POC/error-handling.md)",
+    "expected_basis": "spec 9.5.1: error enums are thrown and caught by enum type or Error; text() is Type.case(payload, ...) with quoted strings, string() numbers, true/false and Enum.case."
+  },
+  "status": "mandatory"
+}

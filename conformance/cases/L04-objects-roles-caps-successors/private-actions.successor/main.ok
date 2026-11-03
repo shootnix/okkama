@@ -1,0 +1,21 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Door {
+    has open is bool = false;
+    Door();
+    toggled() is Door { if open { self.shut(); } else { self.opened(); } }
+    state() is string { open ?? "open" !! "closed"; }
+    private:
+    opened() is ^Door { ^open = true; }
+    shut() is ^Door { ^open = false; }
+}
+
+main() is int {
+    let out = Stdout();
+    let door = Door().toggled();
+    out.writeln(door.state());
+    out.writeln(door.toggled().state());
+    0;
+}

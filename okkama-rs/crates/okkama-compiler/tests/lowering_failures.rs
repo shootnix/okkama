@@ -142,11 +142,11 @@ fn failure_rules_use_okkama_messages() {
     for (main, expected) in [
         (
             "throw C(); 0;",
-            "Type \"C\" cannot be thrown; only objects that do Error are catchable",
+            "Type \"C\" cannot be thrown; only error enums and objects that do Error are catchable",
         ),
         (
             "throw 5; 0;",
-            "Type \"int\" cannot be thrown; only objects that do Error are catchable",
+            "Type \"int\" cannot be thrown; only error enums and objects that do Error are catchable",
         ),
         (
             "try { 1; } catch e is C { 2; }",

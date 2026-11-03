@@ -1,0 +1,12 @@
+// Experiment B / Pattern B2. Payment does both Created and Authorized, but a
+// Created reference cannot cross into Authorized: the target needs capture(),
+// which the current role does not expose.
+// EXPECT: check-error: Cannot initialize variable "widened" of type Authorized with Created
+module app;
+import "../models/payment_views" take Payments, Authorized;
+
+main() is int {
+    let created = Payments().open("p");
+    let widened is Authorized = created;
+    0;
+}

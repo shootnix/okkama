@@ -1,0 +1,25 @@
+// Experiment B. Narrowing to a role whose actions are a subset of the current
+// role is permitted (capability narrowing, not widening).
+// EXPECT: run-ok
+// STDOUT: p
+module app;
+import "io/stdout" take Stdout;
+
+role Identified { id() is string; }
+role Created {
+    id() is string;
+    open() is string;
+}
+object Payment does Created, Identified {
+    has key is string;
+    Payment(:key);
+    id() is string { key; }
+    open() is string { "open"; }
+}
+
+main() is int {
+    let created is Created = Payment(key: "p");
+    let ident is Identified = created;
+    Stdout().writeln(ident.id());
+    0;
+}

@@ -1,0 +1,35 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum DbError is Error = (closed);
+
+object Db {
+    Db();
+    query(n is int) is int {
+        if n == 0 { throw DbError.closed; }
+        n * 10;
+    }
+    lookup(n is int) is Maybe<int> {
+        if n > 0 { Maybe.some(n); } else { Maybe<int>.none; }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let db = Db();
+    let a = try? db.query(2) else 0;
+    let b = try? db.query(0) else -1;
+    out.writeln(a.string() + " " + b.string());
+    let c = try? db.query(0) + 1 else 99;
+    out.writeln(c.string());
+    let d = try? db.query(3)
+        ?? .some(v): "some " + v.string()
+        !! .none: "none";
+    out.writeln(d);
+    let nested is Maybe<Maybe<int>> = try? db.lookup(0);
+    out.writeln(nested == Maybe.some(Maybe<int>.none) ?? "kept" !! "flattened");
+    let f = try! db.query(4);
+    out.writeln(f.string());
+    0;
+}

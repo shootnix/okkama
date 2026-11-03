@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.tail-replacement",
+  "title": "a successor body cannot end with a replacement value",
+  "purpose": "A final expression of the successor's own type would be silently discarded; it is rejected like `return value;`.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.DECL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "role-oriented typestate research (docs/research/role-oriented-typestate.md)",
+    "expected_basis": "spec 11.9: a final expression whose type is the successor's own type is rejected as a replacement value, like `return value;`."
+  },
+  "status": "mandatory"
+}

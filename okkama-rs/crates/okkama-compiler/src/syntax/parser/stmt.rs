@@ -42,7 +42,7 @@ impl Parser<'_> {
         let kind = match self.peek_kind() {
             TokenKind::Let => self.let_statement()?,
             TokenKind::Defer => self.defer_statement()?,
-            TokenKind::Try => {
+            TokenKind::Try if !self.try_mark_follows() => {
                 self.advance();
                 StmtKind::Try(self.finish_try(start)?)
             }
@@ -245,18 +245,50 @@ impl Parser<'_> {
         })
     }
 
-    /// After `catch`: `name "is" type block`.
+    /// After `catch`: `name "is" type ("," type)* block` or
+    /// `pattern ("," pattern)* block`, where a pattern is an error enum case
+    /// (`Enum.case`, `Enum.case(x, _)`) or an error type.
     fn catch_clause(&mut self) -> PResult<CatchClause> {
         let keyword = self.previous().span;
         if self.check(TokenKind::Is) {
             return Err(self.error_here("Expect error name after \"catch\"."));
         }
-        let name = self.consume_binding_name("Expect error name after \"catch\".")?;
-        self.consume(TokenKind::Is, "Expect \"is\" after catch error name.")?;
-        if !self.check(TokenKind::At) && !self.check(TokenKind::Percent) && !self.check_name() {
-            return Err(self.error_here("Expect error type after \"is\"."));
-        }
-        let ty = self.type_expr()?;
+        let (name, types, patterns) = if self.check_name() && self.nth(1).kind == TokenKind::Is {
+            let name = self.consume_binding_name("Expect error name after \"catch\".")?;
+            self.consume(TokenKind::Is, "Expect \"is\" after catch error name.")?;
+            let mut types = Vec::new();
+            loop {
+                if !self.check(TokenKind::At) && !self.check(TokenKind::Percent) && !self.check_name()
+                {
+                    return Err(self.error_here("Expect error type after \"is\"."));
+                }
+                types.push(self.type_expr()?);
+                if !self.eat(TokenKind::Comma) {
+                    break;
+                }
+            }
+            (Some(name), types, Vec::new())
+        } else {
+            if !self.check_name() {
+                return Err(self.error_here(
+                    "Expect an error name or an error pattern after \"catch\".",
+                ));
+            }
+            // A lone lowercase name is a binding without `is` (catch-all is not
+            // supported); patterns name types (`Type`, `space.Type.case`).
+            let lowercase = self
+                .lexeme(self.peek())
+                .starts_with(|c: char| c.is_ascii_lowercase());
+            if lowercase && self.nth(1).kind != TokenKind::Dot {
+                self.advance();
+                return Err(self.error_here("Expect \"is\" after catch error name."));
+            }
+            let mut patterns = vec![self.expression()?];
+            while self.eat(TokenKind::Comma) {
+                patterns.push(self.expression()?);
+            }
+            (None, Vec::new(), patterns)
+        };
         if !self.check(TokenKind::LeftBrace) {
             return Err(self.error_here("Expect \"{\" before catch body."));
         }
@@ -264,7 +296,8 @@ impl Parser<'_> {
         Ok(CatchClause {
             span: keyword.to(body.span),
             name,
-            ty,
+            types,
+            patterns,
             body,
         })
     }

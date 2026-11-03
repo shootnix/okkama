@@ -2439,15 +2439,48 @@ throw;                         // rethrow inside a selected catch body
 panic "Unreachable state";    // exact string only
 ```
 
-`throw value` accepts only an ordinary object that nominally `does Error`, or
-the system `NativeFailure`. The system role is available without import and
-requires a public synchronous `text() is string`. Throwing scalars,
-collections, enums, `any`, handles, or structurally similar objects is a
-runtime error.
+`throw value` accepts a value of an error enum (9.5.1), an ordinary object
+that nominally `does Error`, or the system `NativeFailure`. The system role is
+available without import and requires a public synchronous `text() is string`.
+Throwing scalars, collections, other enums, `any`, handles, or structurally
+similar objects is an error.
 
 `throw;` rethrows the currently handled thrown error without replacing its
 identity or origin. It is valid only while executing a selected catch body. A
 new valued throw inside a catch replaces the active failure.
+
+#### 9.5.1 Error Enums
+
+```okkama
+enum DatabaseError is Error = (
+    connection(message is string),
+    request(sql is string, code is int),
+    closed
+);
+
+throw DatabaseError.request("select 1", 42);
+```
+
+An enum declared `is Error` is an error enum. Its values are thrown and caught
+like error objects and satisfy the `Error` role:
+
+- `is Error` is the only role an enum may declare. An error enum has no type
+  parameters.
+- It is always a variant enum (5): matches over it are exhaustive, also when
+  no case has a payload.
+- Payload fields are limited to `string`, `int`, `byte`, `float`, `rat`,
+  `bool` and enums whose payloads satisfy the same rule, including other
+  error enums (for example a cause). Objects, roles, collections, `char`,
+  actions and `any` are rejected.
+- `text()` is generated: `Type.case` without a payload, otherwise
+  `Type.case(v1, v2, ...)` where strings are double-quoted, numbers use their
+  `string()` form, `bool` is `true`/`false`, enum cases are `Enum.case` and a
+  nested variant uses its own text: `RepoError.db(DatabaseError.closed)`.
+  It is callable on the enum value and through `Error`.
+- An error enum value converts to `Error`; `catch e is Error` catches it, and
+  rethrowing that reference (`throw e;`) keeps its enum type for outer catch
+  clauses.
+- An uncaught error enum reports `Type: text`.
 
 `panic` accepts only an exact string and is never catchable. Bare `panic;` is
 invalid. Panic, internal interpreter failures, invalid operations and other
@@ -2474,11 +2507,23 @@ Rules:
 - Only failures raised by `throw` (including implicit native throws)
   participate in matching. Panic and programming errors pass through.
 - Every catch type is validated before the try body executes and must itself
-  guarantee `Error`: `Error`, a concrete/applied object explicitly doing
-  `Error`, or `NativeFailure`.
+  guarantee `Error`: `Error`, an error enum (9.5.1), a concrete/applied object
+  explicitly doing `Error`, or `NativeFailure`.
 - Clauses are examined in source order; the first compatible declared type
-  wins. Arbitrary roles, scalars, enums, collections and `any` are invalid
-  catch boundaries.
+  wins. An error enum clause catches every case of that enum; the binding has
+  the enum type and is inspected with `match`. Arbitrary roles, scalars,
+  other enums, collections and `any` are invalid catch boundaries.
+- A clause may list several types: `catch e is DbError, NetError, Denied`.
+  The binding then has type `Error`.
+- Instead of a binding, a clause may list patterns: an error enum case
+  (`DbError.closed`, `DbError.failed(code, _)`) or an error type
+  (`Denied`, `net.NetError`). Payload bindings are positional, `_` ignores a
+  field, and named bindings require a single pattern in the clause. A pattern
+  of an enum that is not `is Error` is rejected.
+- Alternatives of a clause are tried in order. A failure of a matching type
+  but another case continues with the next alternative and then with the next
+  clause of the same `try`; it does not leave the `try`. A failure no clause
+  selects propagates unchanged.
 - A non-matching failure propagates unchanged.
 - The try body and every catch body are separate lexical child scopes. The
   selected binding exists only in its catch body; try locals and sibling catch
@@ -2491,6 +2536,27 @@ Rules:
 - A body failure has precedence over a cleanup failure. If a normally completed
   scope fails during cleanup, that failure propagates through its own channel.
 - `finally`, guards and catch-all clauses are not supported.
+
+#### 9.6.1 `try?` and `try!`
+
+```okkama
+let rows = try? db.query(sql) else 0;     // Maybe<int>, then fallback
+let config = try! Config.parse(text);     // a thrown error becomes a panic
+```
+
+`try?` and `try!` are written without a space after `try` and apply to the
+whole expression to their right up to an optional fallback `else` or a
+compact choice `??`.
+
+- `try? value` has type `Maybe<T>` for a value of type `T`:
+  `Maybe.some(value)`, or `Maybe<T>.none` when evaluating it throws an error
+  (any `Error`). Nested `Maybe` is not flattened. A void call or a successor
+  result is rejected (the successor's must-use obligation would be lost).
+- `try! value` has the type of the value, including void and successor
+  results. A thrown error becomes the panic
+  `Unexpected error: <text()>` at the `try!`.
+- Both are `try` forms with a catch of `Error`: panics and programming errors
+  pass through, cleanup runs as for `try`.
 
 ### 9.7 If Statement
 
@@ -3424,7 +3490,10 @@ Rules:
 - Private actions participate in overload dispatch like public actions.
 - Private actions can have parameters.
 - Private actions can have return types.
-- Private successor actions are explicitly not supported.
+- Private successor actions are supported. Like other private actions they are
+  callable only as `self.name(...)` inside the same object; their result keeps
+  the must-use obligation (11.1), and they cannot implement a role action.
+  They let an object keep internal state transitions out of its public API.
 
 External call error:
 
@@ -3598,6 +3667,14 @@ object Bottle {
 Rules:
 
 - Successor actions MUST declare `is ^Type`.
+- On an object, `Type` MUST be the object's own type (`^Self`, with its type
+  parameters). A `^Role` result is declared in a role signature and
+  implemented as `^Self` by an object that does that role (12.1); declaring
+  `is ^Role` directly on an object action is a semantic error.
+- The final expression of a successor body is evaluated and discarded, as in
+  a void action. A final expression whose type is the successor's own type
+  (for example `self` or a constructor call) is a semantic error: like
+  `return value;`, it would read as a replacement result.
 - `^field = expr` is allowed only inside successor actions.
 - The field must exist.
 - The assigned value must match the field type.

@@ -26,12 +26,19 @@ fn session_keeps_machine_code_alive_after_the_executable_handle_is_dropped() {
     let code = Executable::new(&p, Mode::Jit).unwrap();
     let mut session = code.start();
     drop(code);
-    loop {
-        if let Outcome::Returned(n) = session.resume(1).unwrap() {
-            assert_eq!(n, 42);
-            break;
+    for _ in 0..128 {
+        match session.resume(1).unwrap() {
+            Outcome::Returned(n) => {
+                assert_eq!(n, 42);
+                return;
+            }
+            Outcome::Yielded => {}
+            Outcome::Waiting => {
+                panic!("cached in-process fixture unexpectedly requires external work")
+            }
         }
     }
+    panic!("cached fixture exceeded 128 instruction slices");
 }
 
 #[test]

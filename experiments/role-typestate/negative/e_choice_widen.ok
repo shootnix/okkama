@@ -1,0 +1,12 @@
+// Experiment E. A compact boolean choice cannot merge two different state
+// views into a common type (no invented union or common role).
+// EXPECT: check-error: Branches produce different types: Created and ^Authorized
+module app;
+import "../models/payment_views" take Payments;
+
+main() is int {
+    let created = Payments().open("p");
+    let authorized = Payments().open("q").authorize();
+    let either = 1 > 2 ?? created !! authorized;
+    0;
+}

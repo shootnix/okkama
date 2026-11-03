@@ -1,0 +1,31 @@
+// Experiment B (adversarial). Created exposes text(), so it may legally narrow
+// to the standard Error role (subset of actions, Payment does both). Throwing
+// that Error reference and catching the concrete class binds the FULL object:
+// a hidden action becomes callable again. Requires the state class to do
+// Error and a role that exposes text().
+// EXPECT: run-ok
+// STDOUT: captured via catch
+module app;
+import "io/stdout" take Stdout;
+
+role Created {
+    text() is string;
+    authorize() is string;
+}
+object Payment does Created, Error {
+    Payment();
+    text() is string { "payment"; }
+    authorize() is string { "authorized"; }
+    capture() is string { "captured via catch"; }
+}
+
+main() is int {
+    let created is Created = Payment();
+    let error is Error = created;
+    try {
+        throw error;
+    } catch e is Payment {
+        Stdout().writeln(e.capture());
+    }
+    0;
+}

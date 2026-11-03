@@ -753,7 +753,27 @@ impl Parser<'_> {
         })
     }
 
+    /// `try?` / `try!`: the mark is written without a space after `try`.
+    pub(super) fn try_mark_follows(&self) -> bool {
+        self.check(TokenKind::Try)
+            && matches!(self.nth(1).kind, TokenKind::Question | TokenKind::Bang)
+            && self.peek().span.end == self.nth(1).span.start
+    }
+
     fn try_expression(&mut self, start: Span) -> PResult<Expr> {
+        if self.try_mark_follows() {
+            self.advance();
+            let force = self.advance().kind == TokenKind::Bang;
+            // The mark covers the whole operand to its right, up to `else`/`??`.
+            let value = self.logic_or()?;
+            return Ok(Expr {
+                span: start.to(value.span),
+                kind: ExprKind::TryMark {
+                    force,
+                    value: Box::new(value),
+                },
+            });
+        }
         self.advance();
         let body = self.finish_try(start)?;
         Ok(Expr {

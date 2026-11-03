@@ -1,0 +1,13 @@
+// Experiment D / Pattern D. Exhaustiveness also applies to statement-level matches.
+// EXPECT: check-error: Non-exhaustive match: missing declined
+module app;
+import "../models/payment_hybrid" take Payments, Authorization, ApprovingGateway;
+
+main() is int {
+    let outcome = Payments().open("p", 1).authorize(ApprovingGateway());
+    match outcome {
+        case Authorization.approved(payment) { let i = payment.id(); }
+        case Authorization.failed(error) { let t = error.text(); }
+    }
+    0;
+}

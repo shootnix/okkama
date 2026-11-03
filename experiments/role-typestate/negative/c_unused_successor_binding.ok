@@ -1,0 +1,10 @@
+// Experiment C9 / Pattern B2. Binding a transition result and never using it
+// is a static error (flow analysis: obligation leaves scope unconsumed).
+// EXPECT: check-error: Successor action result must be used; binding "authorized" can leave scope without consumption
+module app;
+import "../models/payment_views" take Payments;
+
+main() is int {
+    let authorized = Payments().open("p").authorize();
+    0;
+}

@@ -351,6 +351,30 @@ async на Tokio. Библиотеку CPU-пула выбрать при реа
 
 ## Журнал
 
+### 2026-11-03 — матрица ABI и ограниченные проверки lifetime/errors
+
+Добавлена [матрица ABI](new-runtime/abi-evidence.md) с конкретными тестами,
+текущими результатами и непроверенными platform/OS failure modes.
+Для тестовой сборки добавлена thread-local инъекция отказа JIT-региона со scoped
+reset; рабочая сборка её не содержит. Точечная проверка подтверждает terminal
+ошибку без fallback, освобождение мёртвых значений GC и успешную новую сессию.
+
+Тест lifetime CodeMemory ограничен 128 шагами, helper выбранных synchronous
+failure-тестов — 4096 VM-инструкциями с отказом при неожиданном Waiting.
+Дополнительная серия из 13 выбранных проверок прошла последовательно; в неё
+входят все восемь потребителей изменённого helper, live-call/tail-arguments,
+suspension spills, CodeMemory ownership и parked roots. Производственный runtime
+в этой серии не изменён. Clippy для sparrow-engine с --no-deps прошёл; вариант
+с зависимостями блокируется существующим type_complexity в okkama-sparrow/verify.rs.
+Полные фазы не закрыты, изолированные workers/stress не запускались.
+
+Следующая серия retained roots: 7 PASS (closure captures, три resource cleanup
+сценария, cached native failure, thrown payload и cause/secondary cycles).
+Native failure тест теперь проверяет GC через единственный Future root и
+освобождение после удаления корня. Closure/resource тестовые циклы ограничены
+4096 VM-инструкциями; все затронутые проверки прошли. Команды/имена и ограничения
+сохранены в матрице ABI. Полная проверка native-handle/async roots остаётся открытой.
+
 ### 2026-11-03 — статусы контрактов, исторические результаты и сверка ABI
 
 Генератор inventory сохраняет status/aspects/discrepancies и происхождение

@@ -1,0 +1,10 @@
+// Experiment A / Pattern B1 (role + class per state). Created view has no refund().
+// EXPECT: check-error: Role "Created" has no action "refund"
+module app;
+import "../models/payment_roles" take Payments;
+
+main() is int {
+    let created = Payments().open("p");
+    let bad = created.refund();
+    0;
+}

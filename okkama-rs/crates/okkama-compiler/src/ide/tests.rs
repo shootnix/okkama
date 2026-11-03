@@ -382,6 +382,33 @@ main() is int {
     assert_eq!(lints(text), [("snake-case".to_string(), 16)]);
 }
 
+#[test]
+fn lint_reports_non_exhaustive_matches_over_plain_enums() {
+    let text = r#"module app v1.0.0;
+enum Stage = (created, authorized, captured);
+
+main() is int {
+    let stage = Stage.created;
+    match stage {
+        case Stage.created { stage; }
+        case Stage.authorized { stage; }
+    }
+    match stage {
+        case Stage.created { stage; }
+        else { stage; }
+    }
+    match stage {
+        case Stage.created, Stage.authorized { stage; }
+        case Stage.captured { stage; }
+    }
+    0;
+}
+"#;
+    assert_eq!(lints(text), [("non-exhaustive-match".to_string(), 5)]);
+    let diagnostics = inspect(text).diagnostics;
+    assert!(diagnostics[0].message.contains("does not handle captured"));
+}
+
 /// Дополнения в позиции после `marker` в `edited` по проверке `MAIN`.
 fn complete_after(edited: &str, marker: &str) -> Vec<String> {
     let inspection = inspect(MAIN);

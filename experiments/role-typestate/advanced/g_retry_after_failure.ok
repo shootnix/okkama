@@ -1,0 +1,23 @@
+// Experiment G / Pattern D. After a failed external call the caller still
+// holds the Created view and may retry: the model permits (and needs)
+// retries, so "transition after a failed operation" is a domain decision,
+// not something the compiler can decide.
+// EXPECT: run-ok
+// STDOUT: retried: auth-p
+module app;
+import "io/stdout" take Stdout;
+import "../models/payment_hybrid" take Payments, Authorization, ApprovingGateway, DownGateway;
+
+main() is int {
+    let created = Payments().open("p", 1);
+    let first = created.authorize(DownGateway());
+    let text = match first {
+        case Authorization.failed(error) {
+            let second = created.authorize(ApprovingGateway());
+            second ?? .approved(p): "retried: " + p.code() !! _: "still failing";
+        }
+        else { "no retry needed"; }
+    };
+    Stdout().writeln(text);
+    0;
+}

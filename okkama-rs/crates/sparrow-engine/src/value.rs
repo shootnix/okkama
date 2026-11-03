@@ -1080,8 +1080,7 @@ impl Heap {
         self.spawned.retain(|handle| {
             let future = futures.get(handle.bits).expect("validated spawned Future");
             !matches!(future.state, crate::future::State::Ready(Ok(_)))
-                && !(future.observed
-                    && matches!(future.state, crate::future::State::Ready(Err(_))))
+                && !(future.observed && matches!(future.state, crate::future::State::Ready(Err(_))))
         });
         self.integers.begin_collection();
         self.rationals.begin_collection();
@@ -1163,9 +1162,7 @@ impl Heap {
                 }
                 HANDLE => {
                     if self.handles.mark(root.bits)? {
-                        if let crate::handle::Handle::Json(json) = self.handles.get(root.bits)? {
-                            json.roots(&mut self.trace);
-                        }
+                        self.handles.get(root.bits)?.roots(&mut self.trace);
                     }
                 }
                 JSON_NODE => {

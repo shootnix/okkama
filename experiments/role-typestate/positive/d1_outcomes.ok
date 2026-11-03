@@ -1,0 +1,33 @@
+// Experiment D / Pattern D. Alternative transition outcomes as an ADT whose
+// payloads are role-typed state views. Each branch gets a different state
+// type and can call only that state's operations; the match is exhaustive.
+// EXPECT: run-ok
+// STDOUT: p1: refunded p1 (auth-p1)|p2: declined: insufficient funds|p3: failed: gateway timeout
+module app;
+import "io/stdout" take Stdout;
+import "../models/payment_hybrid" take Payments, Gateway, Authorization, ApprovingGateway, DecliningGateway, DownGateway;
+
+object Checkout {
+    Checkout();
+    run(id is string, gateway is Gateway) is string {
+        let outcome = Payments().open(id, 1000).authorize(gateway);
+        let text = match outcome {
+            case Authorization.approved(payment) {
+                let code = payment.code();
+                let refunded = payment.capture().refund();
+                "refunded " + refunded.id() + " (" + code + ")";
+            }
+            case Authorization.declined(payment) { "declined: " + payment.reason(); }
+            case Authorization.failed(error) { "failed: " + error.text(); }
+        };
+        id + ": " + text;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Checkout().run("p1", ApprovingGateway()));
+    out.writeln(Checkout().run("p2", DecliningGateway()));
+    out.writeln(Checkout().run("p3", DownGateway()));
+    0;
+}

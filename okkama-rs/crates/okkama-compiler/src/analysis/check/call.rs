@@ -1267,7 +1267,7 @@ impl Checker<'_, '_> {
     }
 
     /// Вызов слота роли на ограниченной ссылке: доступны только действия роли.
-    fn role_method(
+    pub(super) fn role_method(
         &mut self,
         target: Expr,
         role: RoleId,

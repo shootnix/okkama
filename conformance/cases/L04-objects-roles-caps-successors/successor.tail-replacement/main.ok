@@ -1,0 +1,15 @@
+module app v1.0.0;
+
+object Box {
+    has v is int = 0;
+    Box();
+    bumped() is ^Box {
+        ^v = v + 1;
+        Box();
+    }
+    value() is int { v; }
+}
+
+main() is int {
+    Box().bumped().value() - 1;
+}

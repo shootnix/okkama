@@ -361,6 +361,8 @@ pub enum FakeBody {
 pub struct EnumDecl {
     pub name: Name,
     pub generics: Vec<GenericParam>,
+    /// `enum Name is Error = (...)`: роль, которую делают значения enum.
+    pub role: Option<Name>,
     pub payloads: Vec<Vec<Param>>,
     pub cases: Vec<Name>,
     pub span: Span,

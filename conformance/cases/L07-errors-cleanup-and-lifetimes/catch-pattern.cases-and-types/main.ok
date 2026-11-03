@@ -1,0 +1,58 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum DbError is Error = (closed, failed(code is int, reason is string));
+enum NetError is Error = (timeout(ms is int), reset);
+
+object Denied does Error {
+    Denied();
+    text() is string { "denied"; }
+}
+
+object Source {
+    Source();
+    run(kind is int) is int {
+        if kind == 0 { throw DbError.closed; }
+        if kind == 1 { throw DbError.failed(5, "disk"); }
+        if kind == 2 { throw NetError.timeout(30); }
+        if kind == 3 { throw NetError.reset; }
+        if kind == 4 { throw Denied(); }
+        100;
+    }
+}
+
+object Handler {
+    Handler();
+    handle(kind is int) is string {
+        try {
+            Source().run(kind).string();
+        }
+        catch DbError.failed(code, reason) {
+            "failed " + code.string() + " " + reason;
+        }
+        catch DbError.closed, NetError.timeout(_) {
+            "closed-or-timeout";
+        }
+        catch e is NetError, Denied {
+            "net-or-denied: " + e.text();
+        }
+    }
+    rethrown(kind is int) is string {
+        try {
+            try { Source().run(kind).string(); }
+            catch NetError.reset { throw; }
+        }
+        catch e is NetError { "outer " + e.text(); }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let handler = Handler();
+    for [0, 1, 2, 3, 4, 9] -> kind {
+        out.writeln(handler.handle(kind));
+    }
+    out.writeln(handler.rethrown(3));
+    0;
+}

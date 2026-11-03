@@ -8,6 +8,7 @@
 //! | `unused-private` | приватное действие объекта нигде не вызывается |
 //! | `unreachable` | оператор после `return`, `throw`, `next`, `last` или другого ухода управления |
 //! | `snake-case` | локальная, параметр, поле или действие не в `snake_case` |
+//! | `non-exhaustive-match` | `match` по enum без payload без `else` пропускает варианты (для payload-enum это ошибка анализа) |
 //!
 //! Правила намеренно консервативны: ложное предупреждение хуже пропущенного.
 
@@ -140,6 +141,7 @@ impl Linter<'_, '_> {
             );
         }
         self.unreachable(&body.block);
+        self.enum_matches(&body.block);
         for inner in closures(&body.block) {
             self.body(inner);
         }
@@ -179,6 +181,51 @@ impl Linter<'_, '_> {
         }
         for stmt in &block.stmts {
             for_nested_blocks(stmt, &mut |inner| self.unreachable(inner));
+        }
+    }
+
+    /// `match` по enum без payload: полнота не проверяется анализом (старое
+    /// правило), поэтому пропущенные варианты — предупреждение. Только когда
+    /// все образцы — варианты самого enum: иначе покрытие неизвестно.
+    fn enum_matches(&mut self, block: &thir::Block) {
+        let mut found = Vec::new();
+        walk_block(block, &mut |expr| {
+            let ExprKind::Match(matched) = &expr.kind else {
+                return;
+            };
+            let Some(Ty::Enum(id)) = &matched.subject.ty else {
+                return;
+            };
+            if matched.exhaustive || matched.else_block.is_some() {
+                return;
+            }
+            let cases = &self.registry.enums[id.0].cases;
+            let mut seen = vec![false; cases.len()];
+            for pattern in matched.cases.iter().flat_map(|(patterns, _)| patterns) {
+                match &pattern.kind {
+                    ExprKind::EnumCase { ty, case } if ty == id => seen[*case] = true,
+                    _ => return,
+                }
+            }
+            let missing: Vec<&str> = cases
+                .iter()
+                .zip(&seen)
+                .filter(|(_, seen)| !**seen)
+                .map(|(name, _)| name.as_str())
+                .collect();
+            if !missing.is_empty() {
+                found.push((
+                    expr.span,
+                    format!(
+                        "match over enum `{}` does not handle {}; add the cases or an `else` branch",
+                        self.registry.enums[id.0].name,
+                        missing.join(", ")
+                    ),
+                ));
+            }
+        });
+        for (span, message) in found {
+            self.warn(span, "non-exhaustive-match", message, false);
         }
     }
 

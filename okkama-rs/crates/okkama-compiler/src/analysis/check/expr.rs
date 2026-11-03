@@ -3,10 +3,10 @@
 use super::stmt::{ElsePart, literal_condition, strip_grouping};
 use super::{Checker, Kind, LoopCtx};
 use crate::analysis::thir::{
-    ArithOp, ArrayPart, BinaryOp, BitOp, Catch, CatchType, CompareKind, CompareOp, Constant, Expr,
-    ExprKind, Match, NumericKind, Try, UnaryOp,
+    ArithOp, ArrayPart, BinaryOp, BitOp, Catch, CatchAlt, CatchType, CompareKind, CompareOp,
+    Constant, Expr, ExprKind, Match, NumericKind, Stmt, StmtKind, Try, UnaryOp,
 };
-use crate::analysis::ty::Ty;
+use crate::analysis::ty::{EnumId, Ty};
 use crate::ir::IntValue;
 use crate::source::Span;
 use crate::syntax::ast;
@@ -154,6 +154,9 @@ impl Checker<'_, '_> {
             ast::ExprKind::Call { callee, args } => self.call(callee, args, span, expected),
             ast::ExprKind::Get { object, name } => self.get(object, name, span, expected),
             ast::ExprKind::Try(body) => self.try_body(body, want, expected, span),
+            ast::ExprKind::TryMark { force, value } => {
+                self.try_mark(*force, value, want, expected, span)
+            }
             ast::ExprKind::Match(body) => self.match_body(body, want, expected, span),
             ast::ExprKind::Array { elements } => self.array_literal(elements, expected, span),
             ast::ExprKind::Map { entries } => self.map_literal(entries, expected, span),
@@ -825,30 +828,246 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Тип `catch`: объект, делающий `Error`, или роль `Error`.
-    fn catch_type(&mut self, clause: &ast::CatchClause) -> Option<CatchType> {
+    /// Тип `catch`: объект, делающий `Error`, error enum или роль `Error`.
+    fn catch_type(&mut self, ty: &ast::TypeExpr) -> Option<CatchType> {
         let generics = self.generics.clone();
-        let ty = self.reg.resolve(&clause.ty, &generics);
-        if ty.is_error() {
+        let resolved = self.reg.resolve(ty, &generics);
+        if resolved.is_error() {
             return None;
         }
-        let catch = match &ty {
-            Ty::Object(object, args) if self.throwable(&ty) => {
+        let catch = match &resolved {
+            Ty::Object(object, args) if self.throwable(&resolved) => {
                 Some(CatchType::Object(*object, args.clone()))
             }
-            Ty::Role(role, args) if self.throwable(&ty) => {
+            Ty::Role(role, args) if self.throwable(&resolved) => {
                 Some(CatchType::Role(*role, args.clone()))
             }
+            Ty::Variant(id, _) if self.throwable(&resolved) => Some(CatchType::Variant(*id)),
             _ => None,
         };
         if catch.is_none() {
             let message = format!(
                 "Catch type \"{}\" does not satisfy Error",
-                self.type_name(&ty)
+                self.type_name(&resolved)
             );
-            self.error(clause.ty.span, message);
+            self.error(ty.span, message);
         }
         catch
+    }
+
+    /// Образец catch: вариант error enum (`Enum.case`, `Enum.case(x, _)`) или
+    /// тип ошибки; привязки payload — для тела.
+    fn catch_pattern(
+        &mut self,
+        pattern: &ast::Expr,
+    ) -> Option<(CatchAlt, Option<(EnumId, usize, Vec<ast::Argument>)>)> {
+        let (callee, args) = match &strip_grouping(pattern).kind {
+            ast::ExprKind::Call { callee, args } => (&**callee, Some(args)),
+            _ => (pattern, None),
+        };
+        if let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind {
+            if let Some((id, _)) = self.variant_receiver(object) {
+                let decl = self.reg.enums[id.0].clone();
+                if !decl.error {
+                    self.error(
+                        pattern.span,
+                        format!("Catch pattern belongs to \"{}\", which is not an error enum", decl.name),
+                    );
+                    return None;
+                }
+                let Some(case) = decl.cases.iter().position(|c| *c == name.text) else {
+                    self.error(name.span, "Unknown enum variant");
+                    return None;
+                };
+                let given = args.map_or(0, Vec::len);
+                if given != decl.payloads[case].len() {
+                    self.error(pattern.span, "Wrong number of variant pattern bindings");
+                    return None;
+                }
+                let alt = CatchAlt {
+                    ty: CatchType::Variant(id),
+                    cases: Some(vec![case]),
+                };
+                return Some((alt, Some((id, case, args.cloned().unwrap_or_default()))));
+            }
+        }
+        let path = args.is_none().then(|| expr_path(callee)).flatten();
+        let Some(path) = path else {
+            self.error(
+                pattern.span,
+                "Expected an error enum case or an error type in a catch pattern",
+            );
+            return None;
+        };
+        let ty = ast::TypeExpr {
+            kind: ast::TypeKind::Named {
+                path,
+                args: Vec::new(),
+            },
+            span: pattern.span,
+        };
+        let ty = self.catch_type(&ty)?;
+        Some((CatchAlt { ty, cases: None }, None))
+    }
+
+    /// Тип привязки catch как тип анализа.
+    fn catch_binding_ty(ty: &CatchType) -> Ty {
+        match ty {
+            CatchType::Object(object, args) => Ty::Object(*object, args.clone()),
+            CatchType::Role(role, args) => Ty::Role(*role, args.clone()),
+            CatchType::Variant(id) => Ty::Variant(*id, Vec::new()),
+        }
+    }
+
+    /// `try? value` — `Maybe<T>`: `some(value)` или `none`, если брошена ошибка;
+    /// `try! value` — значение, брошенная ошибка становится panic. Это обычный
+    /// `try` с `catch` по `Error`: panic и программные ошибки проходят насквозь.
+    fn try_mark(
+        &mut self,
+        force: bool,
+        value: &ast::Expr,
+        want: bool,
+        expected: Option<&Ty>,
+        span: Span,
+    ) -> Expr {
+        let maybe = crate::analysis::ty::EnumId(0);
+        let inner = match expected {
+            Some(ty) if force => Some(ty.clone()),
+            Some(Ty::Variant(id, args)) if *id == maybe => args.first().cloned(),
+            _ => None,
+        };
+        self.push_scope();
+        let checked = self.expr(value, want || !force, inner.as_ref());
+        self.pop_scope();
+        let operand = checked.ty.clone();
+        let diverges = checked.diverges;
+        let result = if force {
+            operand.clone()
+        } else {
+            match &operand {
+                None if !diverges => {
+                    self.error(
+                        value.span,
+                        "try? needs a value; a void call is handled with try/catch",
+                    );
+                    return Self::poisoned(span);
+                }
+                Some(ty) if ty.is_successor() => {
+                    self.error(
+                        value.span,
+                        "try? cannot wrap a successor result: its must-use obligation would be lost",
+                    );
+                    return Self::poisoned(span);
+                }
+                Some(ty) if ty.is_error() => return Self::poisoned(span),
+                Some(Ty::Never) | None => Some(Ty::Error),
+                Some(ty) => Some(Ty::Variant(maybe, vec![ty.clone()])),
+            }
+        };
+        if result.as_ref().is_some_and(Ty::is_error) {
+            return Self::poisoned(span);
+        }
+        let body_value = match &result {
+            Some(maybe_ty) if !force => Self::typed(
+                ExprKind::VariantNew {
+                    case: 0,
+                    values: vec![checked],
+                },
+                maybe_ty.clone(),
+                span,
+            ),
+            _ => checked,
+        };
+        let body = crate::analysis::thir::Block {
+            stmts: vec![crate::analysis::thir::Stmt {
+                kind: crate::analysis::thir::StmtKind::Expr(body_value),
+                span,
+            }],
+            span,
+        };
+        let error = self.reg.system.error;
+        self.push_scope();
+        let name = ast::Name {
+            text: "$try".into(),
+            span,
+        };
+        let local = self.declare(&name, Ty::role(error), false);
+        let handled = if force {
+            // panic "Unexpected error: " + $try.text()
+            let text = ast::Expr {
+                kind: ast::ExprKind::Call {
+                    callee: Box::new(ast::Expr {
+                        kind: ast::ExprKind::Get {
+                            object: Box::new(ast::Expr {
+                                kind: ast::ExprKind::Name(name.clone()),
+                                span,
+                            }),
+                            name: ast::Name {
+                                text: "text".into(),
+                                span,
+                            },
+                        },
+                        span,
+                    }),
+                    args: Vec::new(),
+                },
+                span,
+            };
+            let message = ast::Expr {
+                kind: ast::ExprKind::Binary {
+                    op: ast::BinaryOp::Add,
+                    op_span: span,
+                    left: Box::new(ast::Expr {
+                        kind: ast::ExprKind::Literal(ast::Literal::String(
+                            crate::syntax::token::StrLiteral {
+                                value: "Unexpected error: ".into(),
+                                form: crate::syntax::token::StringForm::Quoted,
+                            },
+                        )),
+                        span,
+                    }),
+                    right: Box::new(text),
+                },
+                span,
+            };
+            let message = self.panic_message(&message);
+            Self::diverged(ExprKind::Panic(Box::new(message)), span)
+        } else {
+            Self::typed(
+                ExprKind::VariantNew {
+                    case: 1,
+                    values: Vec::new(),
+                },
+                result.clone().expect("try? has a Maybe result"),
+                span,
+            )
+        };
+        self.pop_scope();
+        let catch = Catch {
+            local,
+            ty: CatchType::Role(error, Vec::new()),
+            alternatives: vec![CatchAlt {
+                ty: CatchType::Role(error, Vec::new()),
+                cases: None,
+            }],
+            body: crate::analysis::thir::Block {
+                stmts: vec![crate::analysis::thir::Stmt {
+                    kind: crate::analysis::thir::StmtKind::Expr(handled),
+                    span,
+                }],
+                span,
+            },
+            span,
+        };
+        Expr {
+            kind: ExprKind::Try(Box::new(Try {
+                body,
+                catches: vec![catch],
+            })),
+            ty: result,
+            diverges,
+            span,
+        }
     }
 
     pub(super) fn try_body(
@@ -858,33 +1077,117 @@ impl Checker<'_, '_> {
         expected: Option<&Ty>,
         span: Span,
     ) -> Expr {
-        // Типы catch проверяются до тела.
-        let types: Vec<Option<CatchType>> = body
-            .catches
-            .iter()
-            .map(|clause| self.catch_type(clause))
-            .collect();
+        // Типы и образцы catch проверяются до тела.
+        type Payload = Option<(EnumId, usize, Vec<ast::Argument>)>;
+        let mut plans: Vec<Option<(Vec<CatchAlt>, Payload)>> = Vec::new();
+        for clause in &body.catches {
+            let mut alternatives = Vec::new();
+            let mut payload = None;
+            let mut valid = true;
+            if clause.name.is_some() {
+                for ty in &clause.types {
+                    match self.catch_type(ty) {
+                        Some(ty) => alternatives.push(CatchAlt { ty, cases: None }),
+                        None => valid = false,
+                    }
+                }
+            } else {
+                for pattern in &clause.patterns {
+                    match self.catch_pattern(pattern) {
+                        Some((alt, found)) => {
+                            let named = found.as_ref().is_some_and(|(_, _, args)| {
+                                args.iter().any(|arg| {
+                                    !matches!(&arg.value.kind, ast::ExprKind::Name(n) if n.text == "_")
+                                })
+                            });
+                            if named && clause.patterns.len() > 1 {
+                                self.error(
+                                    pattern.span,
+                                    "Payload bindings in a catch need a single pattern",
+                                );
+                                valid = false;
+                            }
+                            if clause.patterns.len() == 1 {
+                                payload = found;
+                            }
+                            alternatives.push(alt);
+                        }
+                        None => valid = false,
+                    }
+                }
+            }
+            plans.push(valid.then_some((alternatives, payload)));
+        }
         let main = self.block(&body.body, want, expected);
         let mut arms = vec![main.clone()];
         let mut catches = Vec::new();
-        for (clause, catch_type) in body.catches.iter().zip(types) {
+        let error = self.reg.system.error;
+        for (clause, plan) in body.catches.iter().zip(plans) {
             self.push_scope();
-            let ty = match &catch_type {
-                Some(CatchType::Object(object, args)) => Ty::Object(*object, args.clone()),
-                Some(CatchType::Role(role, args)) => Ty::Role(*role, args.clone()),
-                None => Ty::Error,
+            let binding = match &plan {
+                Some((alternatives, _)) if alternatives.len() == 1 => alternatives[0].ty.clone(),
+                Some(_) => CatchType::Role(error, Vec::new()),
+                None => CatchType::Role(error, Vec::new()),
             };
-            let local = self.declare(&clause.name, ty, false);
+            let ty = if plan.is_some() {
+                Self::catch_binding_ty(&binding)
+            } else {
+                Ty::Error
+            };
+            let name = clause.name.clone().unwrap_or_else(|| ast::Name {
+                text: "$caught".into(),
+                span: clause.span,
+            });
+            let local = self.declare(&name, ty.clone(), false);
+            // Привязки payload образца `Enum.case(x, _)`.
+            let mut bindings = Vec::new();
+            if let Some((_, Some((id, case, args)))) = &plan {
+                let decl = self.reg.enums[id.0].clone();
+                let offset = 1 + decl.payloads[..*case].iter().map(Vec::len).sum::<usize>();
+                let subject = Self::typed(ExprKind::Local(local), ty.clone(), clause.span);
+                for (index, (arg, (_, field_ty))) in args.iter().zip(&decl.payloads[*case]).enumerate() {
+                    let ast::ExprKind::Name(binding_name) = &arg.value.kind else {
+                        self.error(arg.span, "Expected a binding or _ in variant pattern");
+                        continue;
+                    };
+                    if arg.name.is_some() {
+                        self.error(arg.span, "Pattern bindings are positional");
+                    }
+                    if binding_name.text == "_" {
+                        continue;
+                    }
+                    let binding_local = self.declare(binding_name, field_ty.clone(), false);
+                    let value = Self::typed(
+                        ExprKind::VariantGet {
+                            value: Box::new(subject.clone()),
+                            field: offset + index,
+                        },
+                        field_ty.clone(),
+                        arg.span,
+                    );
+                    bindings.push(Stmt {
+                        kind: StmtKind::Let {
+                            local: binding_local,
+                            value,
+                        },
+                        span: arg.span,
+                    });
+                }
+            }
             self.catch_depth += 1;
             let out = self.block(&clause.body, want, expected);
             self.catch_depth -= 1;
             self.pop_scope();
             arms.push(out.clone());
-            if let Some(ty) = catch_type {
+            if let Some((alternatives, _)) = plan {
+                let mut block = self.block_of(out);
+                bindings.append(&mut block.stmts);
+                block.stmts = bindings;
                 catches.push(Catch {
                     local,
-                    ty,
-                    body: self.block_of(out),
+                    ty: binding,
+                    alternatives,
+                    body: block,
                     span: clause.span,
                 });
             }
@@ -1510,5 +1813,18 @@ fn untransferable(ty: &Ty) -> Option<Ty> {
         Ty::Map(key, value) => untransferable(key).or_else(|| untransferable(value)),
         Ty::Varargs(element) => untransferable(element),
         other => Some(other.clone()),
+    }
+}
+
+/// `a.b.C` как путь имени типа.
+fn expr_path(expr: &ast::Expr) -> Option<Vec<ast::Name>> {
+    match &strip_grouping(expr).kind {
+        ast::ExprKind::Name(name) => Some(vec![name.clone()]),
+        ast::ExprKind::Get { object, name } => {
+            let mut path = expr_path(object)?;
+            path.push(name.clone());
+            Some(path)
+        }
+        _ => None,
     }
 }

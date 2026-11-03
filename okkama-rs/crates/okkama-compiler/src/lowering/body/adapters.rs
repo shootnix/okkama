@@ -10,6 +10,7 @@ use super::super::ctx::Ctx;
 use super::super::{LoweringError, Result};
 use super::matching::compare_inst;
 use crate::analysis::thir::CompareKind;
+use crate::analysis::ty::Ty;
 use crate::ir::{
     self, Attr, CompareOp, Constant, InstKind, IntBinaryOp, IntValue, ObjectId, ResultType, StrOp,
     Target, TermKind, TrapCode, Type, ValueId,
@@ -493,4 +494,261 @@ impl Adapter {
 
 fn internal(span: Span, message: &str) -> LoweringError {
     LoweringError::invalid(span, format!("internal compiler error: {message}"))
+}
+
+/// `text()` значения варианта: `Enum.case` или `Enum.case(payload, ...)`;
+/// строки в кавычках, числа — `string()`, `bool` и enum — их имена,
+/// вложенный вариант — его собственный текст.
+pub(super) fn lower_variant_text(
+    ctx: &mut Ctx<'_, '_>,
+    symbol: String,
+    object: ObjectId,
+) -> Result<ir::Function> {
+    let span = ctx.objects[object.0].span;
+    let Some(Ty::Variant(id, args)) = ctx.variant_ty(object) else {
+        return Err(internal(span, "variant text of a non-variant object"));
+    };
+    let reg = ctx.reg;
+    let decl = &reg.enums[id.0];
+    let env: Vec<_> = decl.params.iter().copied().zip(args).collect();
+    let mut b = FnBuilder::new();
+    let receiver = b.new_value(Type::Object(object));
+    let tag = b.emit(
+        InstKind::ObjGet {
+            object: receiver,
+            field: 0,
+        },
+        Type::Int,
+        span,
+    );
+    let mut offset = 1;
+    for (case, payload) in decl.payloads.iter().enumerate() {
+        let expected = b.emit(
+            InstKind::Const(Constant::Int(IntValue::from_i64(case as i64))),
+            Type::Int,
+            span,
+        );
+        let matches = b.emit(
+            InstKind::IntCompare {
+                op: CompareOp::Eq,
+                left: tag,
+                right: expected,
+            },
+            Type::Bool,
+            span,
+        );
+        let found = b.new_block();
+        let next = b.new_block();
+        b.terminate(
+            TermKind::Cond {
+                condition: matches,
+                then_target: Target::new(found),
+                else_target: Target::new(next),
+            },
+            span,
+        );
+        b.switch_to(found);
+        let mut text = text_const(&mut b, &format!("{}.{}", decl.name, decl.cases[case]), span);
+        if !payload.is_empty() {
+            text = append(&mut b, text, "(", span);
+            for (index, (_, field_ty)) in payload.iter().enumerate() {
+                if index > 0 {
+                    text = append(&mut b, text, ", ", span);
+                }
+                let field = offset + index;
+                let Type::Array(inner) = ctx.objects[object.0].fields[field].1.clone() else {
+                    return Err(internal(span, "variant payload slot must be an array"));
+                };
+                let slot = b.emit(
+                    InstKind::ObjGet {
+                        object: receiver,
+                        field,
+                    },
+                    Type::Array(inner.clone()),
+                    span,
+                );
+                let zero = b.emit(
+                    InstKind::Const(Constant::Int(IntValue::from_i64(0))),
+                    Type::Int,
+                    span,
+                );
+                let value = b.emit(
+                    InstKind::ArrayGet {
+                        array: slot,
+                        index: zero,
+                    },
+                    (*inner).clone(),
+                    span,
+                );
+                let shown = show(ctx, &mut b, value, &field_ty.subst(&env), span)?;
+                text = concat(&mut b, text, shown, span);
+            }
+            text = append(&mut b, text, ")", span);
+        }
+        b.terminate(TermKind::Ret(Some(text)), span);
+        b.switch_to(next);
+        offset += payload.len();
+    }
+    b.terminate(
+        TermKind::Trap {
+            code: TrapCode::Empty,
+            message: "Enum variant tag is out of range".into(),
+        },
+        span,
+    );
+    let (values, blocks, params) = b
+        .finish(&[receiver])
+        .map_err(|message| internal(span, &message))?;
+    Ok(ir::Function {
+        symbol,
+        params,
+        result: ResultType::Value(Type::Str),
+        attrs: vec![Attr::Method(object)],
+        values,
+        blocks,
+        span,
+    })
+}
+
+/// Текст `bool` (`true`/`false`) или case enum без payload (`Enum.case`).
+pub(super) fn lower_describe(
+    ctx: &mut Ctx<'_, '_>,
+    symbol: String,
+    ty: &Ty,
+) -> Result<ir::Function> {
+    let span = Span::empty(0);
+    let ir_ty = ctx.ir_type(ty, span)?;
+    let mut b = FnBuilder::new();
+    let value = b.new_value(ir_ty.clone());
+    let cases: Vec<(InstKind, String)> = match ty {
+        Ty::Bool => vec![
+            (InstKind::Const(Constant::Bool(true)), "true".to_string()),
+            (InstKind::Const(Constant::Bool(false)), "false".to_string()),
+        ],
+        Ty::Enum(id) => {
+            let decl = &ctx.reg.enums[id.0];
+            let ir_enum = ctx.enum_id(*id);
+            decl.cases
+                .iter()
+                .enumerate()
+                .map(|(case, name)| {
+                    (
+                        InstKind::EnumCase { ty: ir_enum, case },
+                        format!("{}.{name}", decl.name),
+                    )
+                })
+                .collect()
+        }
+        _ => return Err(internal(span, "describe needs bool or a payload-free enum")),
+    };
+    for (constant, name) in cases {
+        let expected = b.emit(constant, ir_ty.clone(), span);
+        let compare = match ty {
+            Ty::Bool => InstKind::BoolCompare {
+                op: CompareOp::Eq,
+                left: value,
+                right: expected,
+            },
+            _ => InstKind::EnumCompare {
+                op: CompareOp::Eq,
+                left: value,
+                right: expected,
+            },
+        };
+        let matches = b.emit(compare, Type::Bool, span);
+        let found = b.new_block();
+        let next = b.new_block();
+        b.terminate(
+            TermKind::Cond {
+                condition: matches,
+                then_target: Target::new(found),
+                else_target: Target::new(next),
+            },
+            span,
+        );
+        b.switch_to(found);
+        let text = text_const(&mut b, &name, span);
+        b.terminate(TermKind::Ret(Some(text)), span);
+        b.switch_to(next);
+    }
+    b.terminate(
+        TermKind::Trap {
+            code: TrapCode::Empty,
+            message: "Enum case is out of range".into(),
+        },
+        span,
+    );
+    let (values, blocks, params) = b
+        .finish(&[value])
+        .map_err(|message| internal(span, &message))?;
+    Ok(ir::Function {
+        symbol,
+        params,
+        result: ResultType::Value(Type::Str),
+        attrs: Vec::new(),
+        values,
+        blocks,
+        span,
+    })
+}
+
+/// Текст одного значения payload ошибки (типы ограничены анализом).
+fn show(
+    ctx: &mut Ctx<'_, '_>,
+    b: &mut FnBuilder,
+    value: ValueId,
+    ty: &Ty,
+    span: Span,
+) -> Result<ValueId> {
+    Ok(match ty {
+        Ty::Str => {
+            let quoted = append_to(b, "\"", value, span);
+            append(b, quoted, "\"", span)
+        }
+        Ty::Int | Ty::Byte | Ty::Float | Ty::Rat => b.emit(InstKind::Cvt(value), Type::Str, span),
+        Ty::Bool | Ty::Enum(_) => {
+            let func = ctx.describe(ty);
+            b.emit(
+                InstKind::Call {
+                    func,
+                    args: vec![value],
+                },
+                Type::Str,
+                span,
+            )
+        }
+        Ty::Variant(..) => {
+            let Type::Object(object) = ctx.ir_type(ty, span)? else {
+                return Err(internal(span, "a variant lowers to an object"));
+            };
+            let func = ctx.variant_text(object);
+            b.emit(
+                InstKind::Call {
+                    func,
+                    args: vec![value],
+                },
+                Type::Str,
+                span,
+            )
+        }
+        _ => return Err(internal(span, "unsupported error payload type")),
+    })
+}
+
+fn text_const(b: &mut FnBuilder, text: &str, span: Span) -> ValueId {
+    b.emit(InstKind::Const(Constant::Str(text.to_string())), Type::Str, span)
+}
+
+fn concat(b: &mut FnBuilder, left: ValueId, right: ValueId, span: Span) -> ValueId {
+    b.emit(InstKind::StrConcat { left, right }, Type::Str, span)
+}
+
+fn append(b: &mut FnBuilder, left: ValueId, text: &str, span: Span) -> ValueId {
+    let right = text_const(b, text, span);
+    concat(b, left, right, span)
+}
+
+fn append_to(b: &mut FnBuilder, text: &str, right: ValueId, span: Span) -> ValueId {
+    let left = text_const(b, text, span);
+    concat(b, left, right, span)
 }

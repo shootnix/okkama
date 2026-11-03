@@ -99,7 +99,7 @@ role_member         = role_action_decl | fake_block | test_block ;
 role_action_decl    = async_mark? IDENT "(" param_list? ")" result_spec ";" ;
 fake_block          = "fake" object_body ;
 
-enum_decl           = "enum" TYPE_NAME generic_params? "=" "(" enum_cases? ")" ";" ;
+enum_decl           = "enum" TYPE_NAME generic_params? ("is" "Error")? "=" "(" enum_cases? ")" ";" ;
 enum_cases          = enum_case ("," enum_case)* ;
 enum_case           = IDENT ("(" param_list? ")")? ;
 
@@ -151,7 +151,10 @@ confirm_stmt        = "confirm" expr confirm_else? ";" ;
 confirm_else        = "else" "panic" expr ;
 
 try_stmt            = "try" block catch_clause+ ;
-catch_clause        = "catch" BINDING_NAME "is" type_ref block ;
+catch_clause        = "catch" ( BINDING_NAME "is" type_ref ("," type_ref)*
+                              | catch_pattern ("," catch_pattern)* ) block ;
+catch_pattern       = qualified_type ("." IDENT ("(" IDENT ("," IDENT)* ")")?)? ;
+                      (* an error enum case or an error type; checked semantically *)
 
 successor_assign    = "^" IDENT "=" expr ";" ;
 
@@ -240,7 +243,8 @@ primary             = literal
                     | loop_expr
                     ;
 
-try_expr            = "try" block catch_clause+ ;
+try_expr            = "try" block catch_clause+
+                    | ("try?" | "try!") logic_or ;        (* no space after try *)
 if_expr             = "if" expr block "else" block ;
 match_expr          = match_stmt ;
 loop_expr           = "loop" block ;

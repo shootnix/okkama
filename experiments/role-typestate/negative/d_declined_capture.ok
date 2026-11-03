@@ -1,0 +1,14 @@
+// Experiment D / Pattern D. In the declined branch the payload is Declined: capture() is rejected.
+// EXPECT: check-error: Role "Declined" has no action "capture"
+module app;
+import "../models/payment_hybrid" take Payments, Authorization, ApprovingGateway;
+
+main() is int {
+    let outcome = Payments().open("p", 1).authorize(ApprovingGateway());
+    let s = match outcome {
+        case Authorization.approved(payment) { payment.id(); }
+        case Authorization.declined(payment) { payment.capture().id(); }
+        case Authorization.failed(error) { error.text(); }
+    };
+    0;
+}

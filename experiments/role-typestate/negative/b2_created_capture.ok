@@ -1,0 +1,10 @@
+// Experiment A / Pattern B2 (one class, role views, successors). Created view has no capture().
+// EXPECT: check-error: Role "Created" has no action "capture"
+module app;
+import "../models/payment_views" take Payments;
+
+main() is int {
+    let created = Payments().open("p");
+    let bad = created.capture();
+    0;
+}

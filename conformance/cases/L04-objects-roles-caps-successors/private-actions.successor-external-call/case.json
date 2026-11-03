@@ -1,0 +1,53 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.private-actions.successor-external-call",
+  "title": "a private successor action cannot be called from outside the object",
+  "purpose": "Private successors keep internal transitions out of the public API.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.PRIVATE-ACTIONS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage; static analysis may reject it, otherwise execution fails. Either way the program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.7"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "role-oriented typestate research (docs/research/role-oriented-typestate.md)",
+    "expected_basis": "spec 11.7: private actions, including private successors, cannot be called from outside."
+  },
+  "status": "mandatory"
+}

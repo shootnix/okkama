@@ -391,6 +391,10 @@ impl<'s> Printer<'s> {
                 self.word("enum ");
                 self.word(&decl.name.text);
                 self.generics(&decl.generics);
+                if let Some(role) = &decl.role {
+                    self.word(" is ");
+                    self.word(&role.text);
+                }
                 self.word(" = (");
                 for (index, case) in decl.cases.iter().enumerate() {
                     if index > 0 {
@@ -1073,9 +1077,23 @@ impl<'s> Printer<'s> {
         for catch in &body.catches {
             self.else_line(catch.span.start);
             self.word("catch ");
-            self.word(&catch.name.text);
-            self.word(" is ");
-            self.ty(&catch.ty);
+            if let Some(name) = &catch.name {
+                self.word(&name.text);
+                self.word(" is ");
+                for (index, ty) in catch.types.iter().enumerate() {
+                    if index > 0 {
+                        self.word(", ");
+                    }
+                    self.ty(ty);
+                }
+            } else {
+                for (index, pattern) in catch.patterns.iter().enumerate() {
+                    if index > 0 {
+                        self.word(", ");
+                    }
+                    self.expr(pattern);
+                }
+            }
             self.word(" ");
             self.block(&catch.body);
         }
@@ -1355,6 +1373,10 @@ impl<'s> Printer<'s> {
             }
             ExprKind::Await { value } => {
                 self.word("await ");
+                self.expr(value);
+            }
+            ExprKind::TryMark { force, value } => {
+                self.word(if *force { "try! " } else { "try? " });
                 self.expr(value);
             }
             ExprKind::Spawn { call } => {

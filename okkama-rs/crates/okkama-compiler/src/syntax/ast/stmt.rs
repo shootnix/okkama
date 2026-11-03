@@ -123,11 +123,16 @@ pub struct TryBody {
     pub span: Span,
 }
 
-/// `catch name is Type { }`
+/// `catch name is Type, Other { }` or `catch Enum.case(x), Type { }`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CatchClause {
-    pub name: Name,
-    pub ty: TypeExpr,
+    /// The binding of the binding form; `None` for the pattern form.
+    pub name: Option<Name>,
+    /// Types of the binding form (one or more).
+    pub types: Vec<TypeExpr>,
+    /// Patterns of the pattern form: error enum cases (`Enum.case`,
+    /// `Enum.case(x, _)`) or whole error types.
+    pub patterns: Vec<Expr>,
     pub body: Block,
     pub span: Span,
 }

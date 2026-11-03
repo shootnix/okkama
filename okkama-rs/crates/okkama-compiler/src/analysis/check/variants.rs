@@ -401,6 +401,13 @@ impl Checker<'_, '_> {
         args: &[ast::Argument],
         span: Span,
     ) -> Expr {
+        // `text()` error enum — слот роли Error (порождённый текст варианта).
+        if self.reg.enums[id.0].error && name.text == "text" {
+            let error = Ty::role(self.reg.system.error);
+            let target = self.coerce(target, &error, span, "Error value");
+            let role = self.reg.system.error;
+            return self.role_method(target, role, Vec::new(), name, args, span);
+        }
         let output = match (id.0, name.text.as_str(), args.len()) {
             (1, "fold", 0) => EnumId(0),
             (0, "as_presence", 0) => EnumId(1),

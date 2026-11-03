@@ -1,0 +1,61 @@
+// Model for Pattern B1: one role per state, one hidden class per state.
+// Transitions are ordinary actions whose declared result is the NEXT ROLE;
+// bodies construct the next concrete class (role-typed boundary wraps it).
+module payment_roles;
+
+role Created {
+    id() is string;
+    authorize() is Authorized;
+    decline(reason is string) is Declined;
+}
+role Authorized {
+    id() is string;
+    capture() is Captured;
+}
+role Captured {
+    id() is string;
+    refund() is Refunded;
+}
+role Refunded { id() is string; }
+role Declined {
+    id() is string;
+    reason() is string;
+}
+
+object NewCharge does Created {
+    has key is string;
+    NewCharge(:key);
+    id() is string { key; }
+    authorize() is Authorized { HeldCharge(key: key); }
+    decline(reason is string) is Declined { RejectedCharge(key: key, why: reason); }
+}
+object HeldCharge does Authorized {
+    has key is string;
+    HeldCharge(:key);
+    id() is string { key; }
+    capture() is Captured { SettledCharge(key: key); }
+}
+object SettledCharge does Captured {
+    has key is string;
+    SettledCharge(:key);
+    id() is string { key; }
+    refund() is Refunded { ReturnedCharge(key: key); }
+}
+object ReturnedCharge does Refunded {
+    has key is string;
+    ReturnedCharge(:key);
+    id() is string { key; }
+}
+object RejectedCharge does Declined {
+    has key is string;
+    has why is string;
+    RejectedCharge(:key, :why);
+    id() is string { key; }
+    reason() is string { why; }
+}
+
+// Entry point: the only intended way to obtain a payment.
+object Payments {
+    Payments();
+    open(id is string) is Created { NewCharge(key: id); }
+}

@@ -78,8 +78,17 @@ ABI-документ сверен с текущими статусами и owne
 в foundation-evidence.md. Полные фазы 0–1 остаются открытыми.
 Отказ ленивой JIT-компиляции проверен тестовой fault injection: terminal error,
 нет fallback, GC освобождает мёртвые значения, новая сессия может повторить компиляцию.
-Следующая доступная задача: составить точную матрицу ABI → тесты перед закрытием
-соответствующего пункта фазы 1; отдельно отметить непроверенные platform/OS failures.
+Создана [матрица ABI → тесты](abi-evidence.md), platform/OS failures отмечены
+отдельно. Точечные live-call, tail-arguments и suspension-spills проверки прошли.
+Выбранные lifetime/exception циклы ограничены; CodeMemory ownership,
+exceptional spills и parked roots проверены. Дополнительная серия: 13 PASS,
+включая все восемь потребителей изменённого failure helper; детали в abi-evidence.md.
+Проверены cleanup, closure и failure roots: ещё 7 PASS. Native failure тест
+усилен сборкой через единственный cached Future root и проверкой освобождения.
+Closure/resource циклы ограничены, все затронутые проверки прошли.
+Следующая доступная задача: сверить roots native handles (включая JSON arenas)
+и полную границу suspended/native requests, затем уточнить открытые пункты
+фаз 1–3. Полный ABI-пункт пока не закрывать.
 
 Наблюдения аудита: исторический inventory содержит устаревшие `not implemented`;
 противоречивые ранние ограничения ABI-документа исправлены. Отчёт

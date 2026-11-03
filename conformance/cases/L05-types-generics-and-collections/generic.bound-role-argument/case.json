@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.bound-role-argument",
+  "title": "a role-bounded type parameter accepts a role reference that narrows to the bound",
+  "purpose": "With T = Counted and bound Named, the body calls the bound's action and callers get T back with its own role contract.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.BOUNDS",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "#tally\n7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5",
+    "docs/okkama-spec-11072026.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "role-oriented typestate research (docs/research/role-oriented-typestate.md)",
+    "expected_basis": "spec 6.5 role bounds; spec 12.1: generic inference from a role reference uses the role type, and a role reference crosses another role boundary when it already exposes every target action."
+  },
+  "status": "mandatory"
+}

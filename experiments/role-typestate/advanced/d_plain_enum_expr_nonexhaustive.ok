@@ -1,0 +1,17 @@
+// Experiment D. Same question for an expression match on a payload-free enum:
+// it is rejected, but by the value-flow rule ("does not produce a value"),
+// not by an exhaustiveness diagnostic naming the missing case.
+// EXPECT: check-error: Expression does not produce a value
+module app;
+import "io/stdout" take Stdout;
+
+enum Stage = (created, authorized, captured);
+
+main() is int {
+    let text = match Stage.created {
+        case Stage.created { "created"; }
+        case Stage.authorized { "authorized"; }
+    };
+    Stdout().writeln(text);
+    0;
+}

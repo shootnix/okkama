@@ -1,0 +1,13 @@
+// Experiment C9 / Patterns A and B1. A transition implemented as an ORDINARY
+// action (`is Authorized`, constructing a new class) has no must-use
+// obligation: the result is silently discarded. Violation remains possible.
+// EXPECT: run-ok
+module app;
+import "../models/payment_roles" take Payments;
+import "../models/payment_classes" take Created;
+
+main() is int {
+    Payments().open("p").authorize();
+    Created(id: "p", amount: 1).authorize();
+    0;
+}

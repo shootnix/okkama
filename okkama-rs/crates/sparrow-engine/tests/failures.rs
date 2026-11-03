@@ -110,12 +110,22 @@ fn check(p: &Program, expected: i64) {
         let code = Executable::new(p, mode).unwrap();
         for budget in [1, 4096] {
             let mut session = code.start();
-            loop {
-                if let Outcome::Returned(n) = session.resume(budget).unwrap() {
-                    assert_eq!(n, expected);
-                    break;
+            let mut completed = false;
+            // Small synchronous fixtures: never spin forever on a dispatcher regression.
+            for _ in 0..4096 / budget {
+                match session.resume(budget).unwrap() {
+                    Outcome::Returned(n) => {
+                        assert_eq!(n, expected);
+                        completed = true;
+                        break;
+                    }
+                    Outcome::Yielded => {}
+                    Outcome::Waiting => {
+                        panic!("synchronous failure fixture unexpectedly suspended")
+                    }
                 }
             }
+            assert!(completed, "failure fixture exceeded 4096 VM instructions");
         }
     }
 }

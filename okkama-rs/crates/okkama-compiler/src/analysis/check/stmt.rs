@@ -320,11 +320,19 @@ impl Checker<'_, '_> {
         };
         let current = self.locals[local.0].ty.taken();
         if !self.locals[local.0].rebindable && !current.is_error() {
-            let message = format!(
-                "Cannot rebind variable \"{}\": type \"{}\" has no successor actions",
-                name.text,
-                self.type_name(&current)
-            );
+            let message = if matches!(current, Ty::Role(..)) {
+                format!(
+                    "Cannot rebind variable \"{}\": role type \"{}\" cannot be rebound; bind the next state to a new name",
+                    name.text,
+                    self.type_name(&current)
+                )
+            } else {
+                format!(
+                    "Cannot rebind variable \"{}\": type \"{}\" has no successor actions",
+                    name.text,
+                    self.type_name(&current)
+                )
+            };
             self.error(name.span, message);
             let _ = self.value(value, None);
             return (StmtKind::Expr(Self::poisoned(name.span)), Flow::unit());
@@ -456,6 +464,7 @@ impl Checker<'_, '_> {
         let error = self.reg.system.error;
         match ty.taken() {
             Ty::Role(role, _) => role == error,
+            Ty::Variant(id, _) => self.reg.enums[id.0].error,
             other @ Ty::Object(..) => self
                 .reg
                 .roles_of(&other)
@@ -475,7 +484,7 @@ impl Checker<'_, '_> {
         let ty = Self::ty_of(&error);
         if !error.diverges && !ty.is_error() && !self.throwable(&ty) {
             let message = format!(
-                "Type \"{}\" cannot be thrown; only objects that do Error are catchable",
+                "Type \"{}\" cannot be thrown; only error enums and objects that do Error are catchable",
                 self.type_name(&ty.taken())
             );
             self.error(value.span, message);

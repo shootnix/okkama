@@ -1,0 +1,9 @@
+module app v1.0.0;
+
+enum DbError is Error = (failed(code is int));
+enum NetError is Error = (status(code is int));
+
+main() is int {
+    let x = try { 1; } catch DbError.failed(code), NetError.status(code) { code; };
+    x;
+}

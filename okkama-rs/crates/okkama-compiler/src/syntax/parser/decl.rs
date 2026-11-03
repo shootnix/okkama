@@ -711,7 +711,7 @@ impl Parser<'_> {
 
     // ===== enums and tests ===================================================
 
-    /// After `enum`: `Name = (a, b);`
+    /// After `enum`: `Name = (a, b);` or `Name is Error = (a(message is string));`
     fn enum_declaration(&mut self) -> PResult<EnumDecl> {
         let keyword = self.previous().span;
         let name = self.consume_type_name("Expect enum name after \"enum\".")?;
@@ -721,6 +721,11 @@ impl Parser<'_> {
                 "Enum type parameter bounds are not supported; payload types are invariant.",
             ));
         }
+        let role = if self.eat(TokenKind::Is) {
+            Some(self.consume_type_name("Expect role name after \"is\" in an enum declaration.")?)
+        } else {
+            None
+        };
         self.consume(TokenKind::Equal, "Expect \"=\" after enum name.")?;
         self.consume(TokenKind::LeftParen, "Expect \"(\" before enum cases.")?;
         let mut cases = Vec::new();
@@ -744,6 +749,7 @@ impl Parser<'_> {
         Ok(EnumDecl {
             name,
             generics,
+            role,
             payloads,
             cases,
             span: keyword.to(semicolon.span),

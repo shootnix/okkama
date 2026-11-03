@@ -1,0 +1,10 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum DatabaseError is Error = (connection(message is string), closed);
+
+main() is int {
+    Stdout().writeln("before");
+    throw DatabaseError.connection("refused");
+}

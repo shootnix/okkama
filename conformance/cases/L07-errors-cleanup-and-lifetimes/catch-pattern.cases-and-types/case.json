@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.catch-pattern.cases-and-types",
+  "title": "catch clauses select error enum cases and several error types",
+  "purpose": "Missed cases fall through to later clauses of the same try.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CATCH-PATTERNS",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "closed-or-timeout\nfailed 5 disk\nclosed-or-timeout\nnet-or-denied: NetError.reset\nnet-or-denied: denied\n100\nouter NetError.reset\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "error handling phase 4 (docs/POC/error-handling.md)",
+    "expected_basis": "spec 9.6: a catch clause lists types (binding typed Error when several) or error enum case patterns; alternatives are tried in order and a missed case continues with the next clause."
+  },
+  "status": "mandatory"
+}

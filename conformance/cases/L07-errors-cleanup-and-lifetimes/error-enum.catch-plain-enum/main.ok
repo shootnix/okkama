@@ -1,0 +1,8 @@
+module app v1.0.0;
+
+enum Stage = (created, failed(reason is string));
+
+main() is int {
+    let x = try { 1; } catch e is Stage { 2; };
+    x;
+}

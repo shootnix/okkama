@@ -1,0 +1,17 @@
+// Experiment C1. A successor body cannot hand back a freshly constructed
+// object of another class; `return value;` is rejected.
+// EXPECT: check-error: A successor action cannot return a replacement value; use bare `return;`
+module app;
+
+role Authorized { capture() is string; }
+object Held does Authorized {
+    Held();
+    capture() is string { "captured"; }
+}
+object Created does Authorized {
+    Created();
+    capture() is string { "never"; }
+    authorize() is ^Authorized { return Held(); }
+}
+
+main() is int { 0; }

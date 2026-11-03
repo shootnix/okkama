@@ -1,0 +1,15 @@
+// Experiment C1. A successor cannot return a different concrete class: the
+// result must be ^Self (see also negative/c_successor_role_*).
+// EXPECT: check-error: Successor action "authorize" on object "Created" must return ^Created
+module app;
+
+object Authorized {
+    Authorized();
+}
+object Created {
+    has ok is bool = false;
+    Created();
+    authorize() is ^Authorized { ^ok = true; }
+}
+
+main() is int { 0; }

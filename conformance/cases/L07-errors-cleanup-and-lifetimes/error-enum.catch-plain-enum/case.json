@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.error-enum.catch-plain-enum",
+  "title": "an enum without is Error is not a catch type",
+  "purpose": "Only error enums satisfy Error.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.ENUM",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "error handling phase 1 (docs/POC/error-handling.md)",
+    "expected_basis": "spec 9.5.1: error enums are thrown and caught by enum type or Error; text() is Type.case(payload, ...) with quoted strings, string() numbers, true/false and Enum.case."
+  },
+  "status": "mandatory"
+}

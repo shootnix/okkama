@@ -1,0 +1,11 @@
+// Experiment B / Pattern B2. The constructor allow-list `Payment(:key)` does
+// not accept the defaulted `stage` field, so a caller cannot construct a
+// payment directly in a later state.
+// EXPECT: check-error: No constructor of "Payment" accepts (key: string, stage: Stage)
+module app;
+import "../models/payment_views";
+
+main() is int {
+    let p = payment_views.Payment(key: "p", stage: payment_views.Stage.captured);
+    0;
+}

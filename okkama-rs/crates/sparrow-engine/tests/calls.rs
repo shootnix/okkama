@@ -307,13 +307,19 @@ fn closure_captures_survive_source_changes_calls_and_collection() {
     for mode in [Mode::Cold, Mode::Jit] {
         let code = Executable::new(&p, mode).unwrap();
         let mut session = code.start();
-        loop {
+        let mut completed = false;
+        for _ in 0..4096 {
             if let Outcome::Returned(n) = session.resume(1).unwrap() {
                 assert_eq!(n.to_string(), "18446744073709551615");
                 assert!(session.collection_count() >= 3);
+                completed = true;
                 break;
             }
         }
+        assert!(
+            completed,
+            "closure GC fixture exceeded 4096 instruction slices"
+        );
         let mut bad = p.clone();
         if let I::Closure { captures, .. } = &mut bad.functions[0].code[3] {
             captures.clear();

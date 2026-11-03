@@ -1,0 +1,22 @@
+// Experiment C2. A final expression of the successor's own type would be
+// silently discarded (the successor is the staged copy of the receiver), so
+// it is rejected like `return value;`. Before the fix this program ran and
+// printed 1. Final values of other types are still evaluated and discarded.
+// EXPECT: check-error: A successor action cannot return a replacement value; its final expression would be discarded
+module app;
+import "io/stdout" take Stdout;
+
+object Created {
+    has done is bool = false;
+    Created();
+    finish() is ^Created {
+        ^done = true;
+        Created();
+    }
+    flag() is bool { done; }
+}
+
+main() is int {
+    Stdout().writeln(Created().finish().flag().string());
+    0;
+}

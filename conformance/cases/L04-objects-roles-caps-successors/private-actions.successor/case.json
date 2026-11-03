@@ -1,0 +1,50 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.private-actions.successor",
+  "title": "a private successor action is an internal transition called through self",
+  "purpose": "Private successors stage fields like public ones; public actions return their results.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.PRIVATE-ACTIONS",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "SUCC.DECL",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "open\nclosed\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.7",
+    "docs/okkama-spec-11072026.md#11.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "role-oriented typestate research (docs/research/role-oriented-typestate.md)",
+    "expected_basis": "spec 11.7: private successor actions are supported and callable as self.name(...) inside the same object; spec 11.9: a successor returns the receiver with staged fields."
+  },
+  "status": "mandatory"
+}

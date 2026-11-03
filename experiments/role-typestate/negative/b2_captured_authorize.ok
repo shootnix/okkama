@@ -1,0 +1,10 @@
+// Experiment A / Pattern B2 (one class, role views, successors). Captured view has no authorize().
+// EXPECT: check-error: Role "Captured" has no action "authorize"
+module app;
+import "../models/payment_views" take Payments;
+
+main() is int {
+    let captured = Payments().open("p").authorize().capture();
+    let bad = captured.authorize();
+    0;
+}

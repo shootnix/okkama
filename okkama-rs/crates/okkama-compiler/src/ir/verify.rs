@@ -324,9 +324,6 @@ fn check_signature(module: &Module, function: &Function) -> std::result::Result<
             if function.result != ResultType::Value(Type::Successor(*object)) {
                 return Err("a successor action must return ^ of its object".to_string());
             }
-            if function.is_private() {
-                return Err("private successor actions are not supported".to_string());
-            }
         }
         Some(Attr::Destroy(object)) => {
             receiver(object)?;

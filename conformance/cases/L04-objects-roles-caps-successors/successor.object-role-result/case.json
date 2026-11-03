@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.successor.object-role-result",
+  "title": "an object successor action must return its own type, not a role",
+  "purpose": "A `^Role` result belongs to role signatures; an object declares `^Self` and satisfies `^Role` covariantly.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "SUCC.DECL",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.9",
+    "docs/okkama-spec-11072026.md#6.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "role-oriented typestate research (docs/research/role-oriented-typestate.md)",
+    "expected_basis": "spec 11.9: on an object a successor action declares `is ^Self`; `^Role` results are declared in role signatures and implemented as `^Self`."
+  },
+  "status": "mandatory"
+}

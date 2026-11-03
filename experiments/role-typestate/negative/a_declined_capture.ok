@@ -1,0 +1,10 @@
+// Experiment A / Pattern A (class per state). Declined has no capture().
+// EXPECT: check-error: Object "Declined" has no action "capture"
+module app;
+import "../models/payment_classes" take Created;
+
+main() is int {
+    let declined = Created(id: "p", amount: 1).decline("no");
+    let bad = declined.capture();
+    0;
+}

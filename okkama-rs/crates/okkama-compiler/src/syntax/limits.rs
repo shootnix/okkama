@@ -206,6 +206,7 @@ fn expr_children<'a>(expr: &'a Expr, push: &mut impl FnMut(Node<'a>)) {
             object: operand, ..
         }
         | ExprKind::Panic { value: operand }
+        | ExprKind::TryMark { value: operand, .. }
         | ExprKind::Await { value: operand }
         | ExprKind::Spawn { call: operand } => expr_node(operand),
         ExprKind::Coalesce {

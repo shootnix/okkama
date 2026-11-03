@@ -177,6 +177,8 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
         Task::VariantGet { object, field } => {
             adapters::lower_variant_get(ctx, symbol, object, field)
         }
+        Task::VariantText { object } => adapters::lower_variant_text(ctx, symbol, object),
+        Task::Describe { ty } => adapters::lower_describe(ctx, symbol, &ty),
         Task::Closure { index } => lower_closure(ctx, symbol, index),
         Task::Test { index } => lower_test(ctx, symbol, index),
         Task::Runtime {
@@ -2601,6 +2603,26 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
         if matches!(typed.ty, Type::Object(_)) {
             return Ok(self.emit(InstKind::RoleWrap(typed.value), target, span));
+        }
+        // Параметр с границей-ролью, специализированный ролью (`T = Authorized`
+        // при `T: Identified`): ссылка сужается, как при присваивании роли роли.
+        if matches!(typed.ty, Type::Role(_)) {
+            let message = match (from, to) {
+                (Some(from), Some(to)) => format!(
+                    "Value must be {}, got {}",
+                    self.ctx.reg.type_name(&to.subst(&self.env)),
+                    self.ctx.reg.type_name(&from.subst(&self.env).taken())
+                ),
+                _ => "Value does not implement the role".to_string(),
+            };
+            return Ok(self.emit(
+                InstKind::RoleNarrow {
+                    value: typed.value,
+                    message,
+                },
+                target,
+                span,
+            ));
         }
         let (Some(from), Some(to)) = (from, to) else {
             return Err(unsupported(

@@ -186,6 +186,7 @@ fn check_object(reg: &mut Registry<'_>, object: ObjectId, bodies: &mut Vec<Body>
         }
         let block = if successor {
             let out = checker.block(&decl.body, false, None);
+            checker.replacement_tail(&out, &decl.body);
             checker.block_of(out)
         } else {
             checker.body(&decl.body, &decl.name.text)
@@ -778,6 +779,24 @@ impl<'r, 'a> Checker<'r, 'a> {
             (_, None) => {}
         }
         thir
+    }
+
+    /// Последнее значение тела successor отбрасывается; значение типа результата
+    /// выглядит как замена successor — та же ошибка, что у `return value;`.
+    fn replacement_tail(&mut self, out: &Expr, block: &ast::Block) {
+        let (Some(Ty::Successor(target)), Some(actual)) = (&self.result, &out.ty) else {
+            return;
+        };
+        if out.diverges || actual.is_error() || actual.is_successor() {
+            return;
+        }
+        if self.reg.assignable(actual, target) {
+            let span = block.stmts.last().map_or(block.span, |stmt| stmt.span);
+            self.error(
+                span,
+                "A successor action cannot return a replacement value; its final expression would be discarded",
+            );
+        }
     }
 
     /// Блок как выражение; `expected` — тип, которого ждут от значения.

@@ -1,0 +1,87 @@
+// Showcase: State Views — typestate from roles, successors and enums.
+// Each role is one state; a transition returns the next view; alternative
+// outcomes are an enum of views. See docs/research/role-oriented-typestate.md.
+// Run: okkama examples/showcase/state-views.ok
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// One role per state: a state exposes only what is valid in it.
+role Created    { id() is string; authorize(approve is bool) is Authorization; }
+role Authorized { id() is string; capture() is ^Captured; }
+role Captured   { id() is string; refund() is ^Refunded; }
+role Refunded   { id() is string; }
+role Declined   { id() is string; reason() is string; }
+
+// Alternative outcomes: each case carries a different view.
+enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
+
+enum Stage = (created, authorized, captured, refunded, declined(reason is string));
+
+object InvalidTransition does Error {
+    has action is string;
+    InvalidTransition(:action);
+    text() is string { "invalid transition: " + action; }
+}
+
+// One immutable class implements every view.
+object Payment does Created, Authorized, Captured, Refunded, Declined {
+    has key is string;
+    has stage is Stage = Stage.created;      // not in the constructor: unforgeable
+    Payment(:key);
+
+    id() is string { key; }
+
+    authorize(approve is bool) is Authorization {
+        approve
+            ?? Authorization.approved(self.approved())
+            !! Authorization.declined(self.rejected("insufficient funds"));
+    }
+
+    reason() is string {
+        match stage {
+            case Stage.declined(reason) { reason; }
+            else { throw InvalidTransition(action: "reason"); }
+        }
+    }
+
+    capture() is ^Payment {                  // satisfies `capture() is ^Captured`
+        confirm stage == Stage.authorized else throw InvalidTransition(action: "capture");
+        ^stage = Stage.captured;
+    }
+
+    refund() is ^Payment {
+        confirm stage == Stage.captured else throw InvalidTransition(action: "refund");
+        ^stage = Stage.refunded;
+    }
+
+    private:
+    approved() is ^Payment { ^stage = Stage.authorized; }
+    rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }   // callers start from a view
+}
+
+object Checkout {
+    Checkout();
+    run(id is string, approve is bool) is string {
+        match Payments().open(id).authorize(approve) {
+            case Authorization.approved(payment) {
+                "refunded " + payment.capture().refund().id();
+            }
+            case Authorization.declined(payment) {
+                "declined: " + payment.reason();
+            }
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(Checkout().run("p-1", true));
+    out.writeln(Checkout().run("p-2", false));
+    0;
+}

@@ -1,0 +1,58 @@
+// Experiment A / Pattern A: one concrete immutable class per state.
+// Transitions are ordinary actions that construct the next state's object.
+// Property: valid sequences Created->Authorized->Captured and
+// Created->Authorized->Captured->Refunded compile and run; Declined exists.
+// EXPECT: run-ok
+// STDOUT: authorized p1 1000|captured p1 1000|refunded p1 1000|declined p2: insufficient funds
+module app;
+import "io/stdout" take Stdout;
+
+object Created {
+    has id is string;
+    has amount is int;
+    Created(:id, :amount);
+    authorize() is Authorized { Authorized(id: id, amount: amount); }
+    decline(reason is string) is Declined { Declined(id: id, reason: reason); }
+}
+
+object Authorized {
+    has id is string;
+    has amount is int;
+    Authorized(:id, :amount);
+    capture() is Captured { Captured(id: id, amount: amount); }
+    describe() is string { "authorized " + id + " " + amount.string(); }
+}
+
+object Captured {
+    has id is string;
+    has amount is int;
+    Captured(:id, :amount);
+    refund() is Refunded { Refunded(id: id, amount: amount); }
+    describe() is string { "captured " + id + " " + amount.string(); }
+}
+
+object Refunded {
+    has id is string;
+    has amount is int;
+    Refunded(:id, :amount);
+    describe() is string { "refunded " + id + " " + amount.string(); }
+}
+
+object Declined {
+    has id is string;
+    has reason is string;
+    Declined(:id, :reason);
+    describe() is string { "declined " + id + ": " + reason; }
+}
+
+main() is int {
+    let out = Stdout();
+    let authorized = Created(id: "p1", amount: 1000).authorize();
+    out.writeln(authorized.describe());
+    let captured = authorized.capture();
+    out.writeln(captured.describe());
+    let refunded = captured.refund();
+    out.writeln(refunded.describe());
+    out.writeln(Created(id: "p2", amount: 5).decline("insufficient funds").describe());
+    0;
+}

@@ -29,6 +29,30 @@ pub(crate) enum Handle {
         closed: bool,
     },
 }
+impl Handle {
+    /// Exhaustive on purpose: adding a provider requires an explicit decision
+    /// about VM edges. Rust-owned strings, byte buffers and OS handles are leaves.
+    pub(crate) fn roots(&self, roots: &mut Vec<Slot>) {
+        match self {
+            Self::Json(json) => json.roots(roots),
+            Self::Input(_)
+            | Self::TemporaryDirectory(_)
+            | Self::FileState(_)
+            | Self::FileLock(_)
+            | Self::Directory(_)
+            | Self::File(_)
+            | Self::Network(_)
+            | Self::Db(_)
+            | Self::Regex(_)
+            | Self::Secret(_)
+            | Self::Buffer(_)
+            | Self::Digest(_)
+            | Self::TestState { .. } => {}
+            #[cfg(unix)]
+            Self::Process(_) | Self::Rooted(_) | Self::Watch(_) => {}
+        }
+    }
+}
 impl Heap {
     pub(crate) fn handle_test(&mut self, native: Native, args: &[Slot]) -> Result<Outcome, Error> {
         let failure = |heap: &mut Heap, code: &str, message: &str| {

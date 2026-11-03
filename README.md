@@ -25,35 +25,61 @@ is enforced by the runtime — not by code review.**
 
 ---
 
-Okkama has no `null`, no inheritance, no setters and no hidden mutation.
-Objects are immutable; a change of state is a *new* object returned by a
-successor action, and the runtime refuses programs that throw it away.
+Okkama has no `null`, no inheritance, no setters and no hidden mutation —
+and still reads like a modern expressive language. Absence is a typed
+`Maybe<T>`, failures are enums you `match` on, choices are one-liners, and the
+compiler checks that every case is handled.
 
 ```okkama
-module app v1.0.0;
+module shop v1.0.0;
 
-object Bottle {
-    has opened is bool = false;
+import "io/stdout" take Stdout;
 
-    Bottle() {}
+enum PaymentError is Error = (              // an error is just an enum with payloads
+    declined(reason is string),
+    timeout(ms is int)
+);
 
-    open() is ^Bottle {              // a successor action: returns a NEW Bottle
-        confirm !opened;             // fail fast — no partial results
-        ^opened = true;              // stage the update; the original is untouched
-    }
+object Gateway {
+    Gateway();
 
-    is_open() is bool {
-        opened;                      // the last expression IS the result
+    charge(cents is int) is string {
+        confirm cents > 0 else throw PaymentError.declined("empty cart");
+        "receipt #" + cents.string();
     }
 }
 
 main() is int {
-    let bottle = Bottle();
-    let opened = bottle.open();      // discarding a successor is a runtime error
-    confirm opened.is_open();       // bottle.is_open() is still false
-    return 0;
+    let out = Stdout();
+    let gateway = Gateway();
+
+    let receipt = try? gateway.charge(1500) else "no receipt";   // error → Maybe → fallback
+    out.writeln(receipt);                                         // receipt #1500
+
+    try {
+        gateway.charge(0);
+    }
+    catch PaymentError.declined(reason) { out.writeln("declined: " + reason); }
+    catch PaymentError.timeout(_) { out.writeln("try again later"); }
+
+    out.writeln(receipt.length() > 10 ?? "paid" !! "unpaid");    // a ternary, typed
+    0;
 }
 ```
+
+<sub>Runnable: [`examples/showcase/checkout.ok`](examples/showcase/checkout.ok) ·
+more in [`examples/showcase/`](examples/showcase/)</sub>
+
+| ✨ | What you get |
+|---|---|
+| **Enums with payloads** | `enum Shape = (circle(radius is float), point);` and an exhaustive `match` |
+| **`Maybe<T>` / `Presence<T>`** | explicit absence instead of `null`; `value else fallback`; *missing* ≠ *null* ≠ *value* |
+| **Ternary and compact choice** | `ok ?? "yes" !! "no"` and `maybe ?? .some(v): v !! .none: 0` |
+| **Errors are enums** | `enum DbError is Error = (...)`, generated `text()`, causes as payloads |
+| **`try?` / `try!`** | Swift-style: an error becomes `Maybe.none`, or a panic when it "cannot happen" |
+| **Catch by case** | `catch DbError.query(sql, code)`, `catch DbError.closed, NetError.reset`, `catch e is A, B` |
+| **Immutable objects + successors** | state changes return a new object, and the compiler makes you use it |
+| **[State views](#state-views--typestate-without-new-syntax)** | `Created` → `Authorized` → `Captured`: a wrong transition does not compile |
 
 ## Install
 
@@ -141,10 +167,10 @@ the only style the language accepts.
 
 | Elegant Objects principle | Okkama language rule |
 |---|---|
-| Never use `null` | There is no `null`, `none`, or `nil`. The words are parse errors. |
+| Never use `null` | There is no `null` or `nil`. Absence is an explicit `Maybe<T>` / `Presence<T>` that you must unwrap. |
 | Controlled field access | Fields are private through ordinary references. Caps expose explicit computed contracts; there is no setter syntax. |
 | Objects are immutable | Fields bind during construction. After that — no mutation. |
-| State change returns a new object | Successor actions (`is ^Type`) return a new object; the result **must** be used. |
+| State change returns a new object | Successor actions (`is ^Type`) return a new object; the compiler rejects code that drops the result. |
 | No inheritance | No `extends`, `isa`, `super`, `abstract`. Composition and roles instead. |
 | Interfaces everywhere | Roles are nominal contracts, implemented explicitly with `does`. |
 | Fake objects instead of mocks | Every role ships its own test-only `fake` — the reference test double. |
@@ -157,7 +183,7 @@ the only style the language accepts.
 Okkama is defined as much by what it removes as by what it provides.
 These are decisions, not gaps:
 
-- ❌ `null` in any spelling — no optionals, no `?.` chaining
+- ❌ `null` in any spelling — absence is a typed `Maybe<T>`, never a hidden value; no `?.` chaining
 - ❌ inheritance — behavior is shared through roles and composition
 - ❌ truthiness — every condition is a real `bool`
 - ❌ implicit conversions — `1 == 1.0` is an *error*, not `false`
@@ -165,19 +191,123 @@ These are decisions, not gaps:
 - ❌ hidden state changes — mutations are visible in signatures (`is ^Type`) and at call sites
 - ❌ standalone named/free functions — named behavior lives on objects;
   compact first-class computations use object-shaped anonymous actions
+- ❌ catch-all `catch`, `finally`, untyped exceptions
 - ❌ `while` loops, string interpolation, wildcard imports
 
 ## A taste of the language
 
-### No null — absence is an explicit decision
+### Enums with payloads — and the compiler counts the cases
 
 ```okkama
-let prices is %string:int = ["apple": 120, "pear": 140];
+enum Shape = (
+    circle(radius is float),
+    rect(width is float, height is float),
+    point
+);
 
-prices["apple"];             // 120
-prices["fig"];               // runtime error — missing keys never return null
-prices["fig"] else 0;        // 0 — the fallback is your explicit decision
+object Geometry {
+    Geometry();
+
+    area(shape is Shape) is float {
+        match shape {
+            case Shape.circle(radius) { 3.14159 * radius * radius; }
+            case Shape.rect(width, height) { width * height; }
+            case Shape.point { 0.0; }
+        }                               // forget a case → "Non-exhaustive match: missing point"
+    }
+}
 ```
+
+Variants are values: they compare by case and payload
+(`Shape.rect(2.0, 3.0) == Shape.rect(2.0, 3.0)`), nest, and can be generic
+(`enum Reading<T> = (empty, value(item is T));`).
+
+### No null — absence is a type you have to open
+
+```okkama
+let name = user.nickname() else "anonymous";      // Maybe<string> → string, lazily
+
+let prices is %string:int = ["apple": 120];
+prices["fig"] else 0;                              // a missing key is never null
+
+// PATCH semantics: "not sent", "sent as null" and "sent a value" are three states
+patch.email()
+    ?? .some(value): "set to " + value
+    !! .none: "cleared"
+    !! .missing: "unchanged";
+
+let email = patch.email().fold() else "default";  // merge missing + none explicitly
+```
+
+`Maybe<T>` is `some | none`; `Presence<T>` adds `missing`. Nothing converts
+implicitly: an empty string, `0` and `false` are present values, and
+`Presence else …` is a compile error until you `fold()` it.
+
+### Ternaries and compact choices
+
+```okkama
+let label = stock > 0 ?? "in stock" !! "sold out";          // bool → typed ternary
+
+let text = cache.lookup(key)                                // enum → compact match
+    ?? .some(hit): hit
+    !! .none: "miss";
+
+let shown = order.status()
+    ?? .paid(amount): "paid " + amount.string()
+    !! _: "not paid";                                        // `_` covers the rest
+```
+
+Both branches are lazy, the subject is evaluated once, and the branch types
+must agree — no implicit common type, no truthiness.
+
+### Errors are enums — catch by case, recover with `try?`
+
+```okkama
+enum DbError is Error = (
+    connection(host is string),
+    query(sql is string, code is int),
+    closed
+);
+enum RepoError is Error = (db(cause is DbError), missing(id is int));
+
+let user = try? repo.find(id) else "nobody";      // any thrown error → Maybe.none
+let config = try! Config.parse(text);             // "cannot fail" → panic if it does
+
+try {
+    repo.find(id);
+}
+catch RepoError.missing(missing) { report(missing); }   // one case, payload bound
+catch DbError.closed, DbError.connection(_) { reconnect(); }  // several cases
+catch e is RepoError, DbError { log(e.text()); }   // several types: e is Error
+```
+
+`text()` is generated from the case: `RepoError.db(DbError.query("select", 42))`.
+A thrown value of the right type but another case falls through to the next
+`catch` of the same `try`. Panics are not errors and are never caught.
+Runnable: [`examples/showcase/errors.ok`](examples/showcase/errors.ok).
+
+### Immutable objects and successors
+
+```okkama
+object Bottle {
+    has opened is bool = false;
+    Bottle();
+
+    open() is ^Bottle {              // a successor: returns a NEW Bottle
+        confirm !opened;             // fail fast — no partial results
+        ^opened = true;              // stage the update; the original is untouched
+    }
+
+    is_open() is bool { opened; }
+}
+
+let opened = Bottle().open();        // `Bottle().open();` alone does not compile
+confirm opened.is_open();
+```
+
+Successors are the only way to change state, and the compiler tracks their
+results on every path: a dropped successor is a compile error. Combined with
+roles they give [state views](#state-views--typestate-without-new-syntax).
 
 <details>
 <summary><b>Object capabilities (`cap`): computed consumer contracts</b></summary>
@@ -241,35 +371,6 @@ See the [role example](examples/role-boundaries.ok) and
 </details>
 
 <details>
-<summary><b>Typed failures — errors are objects, bugs are not values</b></summary>
-
-```okkama
-object InvalidCents does Error {
-    has cents is int;
-    InvalidCents(:cents);
-    cents_value() is int { cents; }
-    text() is string { "invalid cents"; }
-}
-
-object Cash {
-    has digit is int;
-    has cents is int;
-    Cash(:digit, :cents) {
-        confirm cents >= 0 && cents < 100 else throw InvalidCents(cents: cents);
-    }
-}
-
-try {
-    let cash = Cash(digit: 1, cents: 250);
-}
-catch error is InvalidCents {
-    error.cents_value();      // 250 — typed payload, no string parsing
-}
-```
-
-</details>
-
-<details>
 <summary><b>Functional collections — eager, immutable, deterministic</b></summary>
 
 ```okkama
@@ -319,6 +420,76 @@ See [anonymous actions and action types](docs/anonymous-actions.md) for the full
 
 </details>
 
+## State views — typestate without new syntax
+
+A protocol like *created → authorized → captured → refunded* is usually
+guarded by `if (status == ...)` checks at runtime. In Okkama the existing
+pieces — **roles**, **successors** and **enums** — compose into a typestate
+pattern where an invalid transition simply does not type-check.
+
+```okkama
+// 1. One role per state: a state exposes only what is valid in it.
+role Created    { id() is string; authorize(approve is bool) is Authorization; }
+role Authorized { id() is string; capture() is ^Captured; }
+role Captured   { id() is string; refund() is ^Refunded; }
+role Refunded   { id() is string; }
+role Declined   { id() is string; reason() is string; }
+
+// 2. Alternative outcomes are an enum whose payloads are different views.
+enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
+
+// 3. One immutable class implements every view.
+object Payment does Created, Authorized, Captured, Refunded, Declined {
+    has key is string;
+    has stage is Stage = Stage.created;      // not in the constructor: unforgeable
+    Payment(:key);
+
+    capture() is ^Payment {                  // implements `capture() is ^Captured`
+        confirm stage == Stage.authorized else throw InvalidTransition(action: "capture");
+        ^stage = Stage.captured;
+    }
+    // ... authorize(), refund(), reason(), id()
+
+    private:
+    approved() is ^Payment { ^stage = Stage.authorized; }     // internal transitions
+    rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
+}
+
+// 4. Callers only ever hold views.
+match Payments().open("p-1").authorize(true) {
+    case Authorization.approved(payment) { payment.capture().refund().id(); }
+    case Authorization.declined(payment) { payment.reason(); }
+}
+```
+
+The trick is a covariant successor: the role promises `capture() is ^Captured`,
+the class implements it as `^Payment`, and a call through the role hands back a
+**restricted `^Captured` view** of the new immutable object. Everything below
+is rejected by `okkama check` — these are the compiler's actual messages:
+
+| You write | The compiler says |
+|---|---|
+| `created.capture()` | `Role "Created" has no action "capture"` |
+| `authorized.authorize(true)` | `Role "Authorized" has no action "authorize"` |
+| `authorized.capture();` (result dropped) | `Successor action result must be used` |
+| `let a is Authorized = created;` | `Cannot initialize variable "a" of type Authorized with Created` |
+| `let p is Payment = created;` (downcast) | `Cannot initialize variable "p" of type Payment with Created` |
+| `let back is Authorized = boxed;` (via `any`) | `Cannot initialize variable "back" of type Authorized with any` |
+| `Payment(key: "x", stage: Stage.captured)` | `No constructor of "Payment" accepts (key: string, stage: Stage)` |
+| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is private` |
+| a `match` without the `declined` case | `Non-exhaustive match: missing declined` |
+| `payment.refund()` in the `approved` branch | `Role "Authorized" has no action "refund"` |
+
+No annotations, no new keywords, no linear types: just nominal roles that stay
+restricted through aliases, parameters, generics, `Maybe`, enum payloads and
+`any`. What it deliberately does not do: an old immutable state stays valid, so
+"authorize twice" is a job for durable state and idempotency, and code that names
+the concrete class meets the runtime `confirm` instead of a compile error.
+
+Full program: [`examples/showcase/state-views.ok`](examples/showcase/state-views.ok) ·
+the research behind it, with 91 checked experiments:
+[role-oriented typestate](docs/research/role-oriented-typestate.md).
+
 ## Three engines, one language
 
 The compiler lowers Okkama to one intermediate representation
@@ -366,6 +537,8 @@ in-place successor updates and a cycle collector
 | 🤖 [LLM Context Pack](docs/okkama-llm-context-1.0.md) | Self-contained context for AI agents generating Okkama code |
 | 🔌 [Native Functions Tutorial](docs/native-functions-tutorial.md) | How the language talks to the host OS |
 | 🗺️ [Stdlib roadmap](docs/std/stdlib-roadmap-v4.md) | Current standard-library plan and module contracts |
+| 🧭 [Role-oriented typestate](docs/research/role-oriented-typestate.md) | Research: state views from roles, successors and enums, with experiments |
+| 🚨 [Error handling](docs/POC/error-handling.md) | Error enums, `try?` / `try!`, catch patterns: design and status |
 | 🧪 [Conformance suite](conformance/README.md) | Executable specification: 787 cases with expected observations |
 | ⚙️ [OIR-1](docs/compiler/OIR-1.md) | The compiler's intermediate representation |
 

@@ -129,6 +129,12 @@ pub enum ExprKind {
     },
     /// `try { } catch ...` in expression position.
     Try(Box<TryBody>),
+    /// `try? value` (`Maybe<T>`, none on a thrown error) or `try! value`
+    /// (a thrown error becomes a panic).
+    TryMark {
+        force: bool,
+        value: Box<Expr>,
+    },
     /// `panic value`
     Panic {
         value: Box<Expr>,
@@ -312,6 +318,7 @@ impl ExprKind {
                 object: operand, ..
             }
             | ExprKind::Panic { value: operand }
+            | ExprKind::TryMark { value: operand, .. }
             | ExprKind::Await { value: operand }
             | ExprKind::Spawn { call: operand }
             | ExprKind::If {

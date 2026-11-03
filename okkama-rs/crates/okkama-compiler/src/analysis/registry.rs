@@ -157,6 +157,8 @@ pub struct EnumInfo {
     pub params: Vec<ParamId>,
     pub payloads: Vec<Vec<(String, Ty)>>,
     pub variant: bool,
+    /// `enum Name is Error`: значения бросаются и ловятся, `text()` порождается.
+    pub error: bool,
     pub name: String,
     pub module: usize,
     pub cases: Vec<String>,
@@ -355,6 +357,7 @@ impl<'a> Registry<'a> {
             registry.collect_does(module);
         }
         registry.check_variant_recursion();
+        registry.check_error_payloads();
         registry.find_standard();
         registry.add_adapters();
         for (module, ty, span) in std::mem::take(&mut registry.pending_bounds) {
@@ -494,6 +497,7 @@ impl<'a> Registry<'a> {
                 params: vec![param],
                 payloads,
                 variant: true,
+                error: false,
                 cases: cases.into_iter().map(str::to_string).collect(),
                 span: Span::empty(0),
             });
@@ -687,13 +691,37 @@ impl<'a> Registry<'a> {
                         }
                         cases.push(case.text.clone());
                     }
+                    let error = match &decl.role {
+                        Some(role) if role.text != "Error" => {
+                            self.error(
+                                role.span,
+                                format!(
+                                    "An enum can only be declared \"is Error\", not \"is {}\"",
+                                    role.text
+                                ),
+                            );
+                            false
+                        }
+                        Some(role) if !decl.generics.is_empty() => {
+                            self.error(
+                                role.span,
+                                format!("Error enum \"{name}\" cannot have type parameters"),
+                            );
+                            false
+                        }
+                        Some(_) => true,
+                        None => false,
+                    };
                     let id = EnumId(self.enums.len());
                     let params = self.new_params(&decl.generics);
                     self.enums.push(EnumInfo {
                         params,
                         payloads: vec![Vec::new(); cases.len()],
-                        variant: !decl.generics.is_empty()
+                        // Error enum — всегда вариантный: полный match и объект в OIR.
+                        variant: error
+                            || !decl.generics.is_empty()
                             || decl.payloads.iter().any(|p| !p.is_empty()),
+                        error,
                         name: name.clone(),
                         module,
                         cases,
@@ -1325,6 +1353,44 @@ impl<'a> Registry<'a> {
         }
     }
 
+    /// Payload error enum — значения, которые `text()` умеет показать: строки,
+    /// числа, `bool`, enum (в том числе другие ошибки) с такими же payload.
+    fn check_error_payloads(&mut self) {
+        fn shown(reg: &Registry<'_>, ty: &Ty, depth: usize) -> bool {
+            match ty {
+                Ty::Str | Ty::Int | Ty::Byte | Ty::Float | Ty::Rat | Ty::Bool | Ty::Enum(_) => true,
+                Ty::Variant(id, args) if depth < 64 => {
+                    let decl = &reg.enums[id.0];
+                    let env: Vec<(ParamId, Ty)> =
+                        decl.params.iter().copied().zip(args.iter().cloned()).collect();
+                    decl.payloads
+                        .iter()
+                        .flatten()
+                        .all(|(_, field)| shown(reg, &field.subst(&env), depth + 1))
+                }
+                Ty::Error => true,
+                _ => false,
+            }
+        }
+        for index in 0..self.enums.len() {
+            if !self.enums[index].error {
+                continue;
+            }
+            let decl = self.enums[index].clone();
+            for (field, ty) in decl.payloads.iter().flatten() {
+                if !shown(self, ty, 0) {
+                    self.current = decl.module;
+                    let message = format!(
+                        "Payload \"{field}\" of error enum \"{}\" has type {}; error payloads are limited to string, int, byte, float, rat, bool and enums with such payloads",
+                        decl.name,
+                        self.type_name(ty)
+                    );
+                    self.error(decl.span, message);
+                }
+            }
+        }
+    }
+
     fn collect_enum_payloads(&mut self, module: usize) {
         for item in &self.modules[module].program.items {
             let ast::Item::Enum(decl) = item else {
@@ -1839,24 +1905,25 @@ impl<'a> Registry<'a> {
             let mut result = self.resolve_result(&action.result, &scope);
             let successor = matches!(action.result, ast::ResultSpec::Successor { .. });
             let private = action.visibility == ast::Visibility::Private;
+            // Successor объекта — его собственная копия (§11.9); `^Role` бывает
+            // только в сигнатуре роли, реализация которой возвращает `^Self`.
             if let Some(Ty::Successor(target)) = &result {
-                let allowed = **target == self_type || matches!(&**target, Ty::Role(..));
-                if !allowed {
-                    self.error(
-                        action.result.span(),
+                if **target != self_type {
+                    let message = if matches!(&**target, Ty::Role(..)) {
                         format!(
-                            "Successor action \"{}\" on object \"{name}\" must return ^{name} or a role it does",
+                            "Successor action \"{}\" on object \"{name}\" must return ^{name}; declare ^{} in a role signature and implement it as ^{name}",
+                            action.name.text,
+                            self.type_name(target)
+                        )
+                    } else {
+                        format!(
+                            "Successor action \"{}\" on object \"{name}\" must return ^{name}",
                             action.name.text
-                        ),
-                    );
+                        )
+                    };
+                    self.error(action.result.span(), message);
                     result = Some(Ty::Error);
                 }
-            }
-            if successor && private {
-                self.error(
-                    action.name.span,
-                    "Private successor actions are not supported",
-                );
             }
             let candidate = MethodInfo {
                 name: action.name.text.clone(),
@@ -2240,6 +2307,7 @@ impl<'a> Registry<'a> {
                     .collect()
             }
             Ty::Param(param) => self.params[param.0].bound.iter().cloned().collect(),
+            Ty::Variant(id, _) if self.enums[id.0].error => vec![Ty::role(self.system.error)],
             Ty::Int | Ty::Float | Ty::Rat | Ty::Byte | Ty::Str | Ty::Char => {
                 let mut roles: Vec<Ty> = self
                     .standard

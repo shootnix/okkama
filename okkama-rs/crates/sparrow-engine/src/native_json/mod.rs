@@ -682,6 +682,35 @@ mod tests {
         value(heap.native_json(Native::JsonJsonParseState, &[source, Slot::small(depth)]))
     }
     #[test]
+    fn json_parse_and_child_handles_retain_only_reachable_nodes() {
+        let mut heap = Heap::new(&[], &[]);
+        let state = parse(&mut heap, "[[1,2],[3]]", 8);
+        let root = value(heap.native_json(Native::JsonJsonParseRoot, &[state]));
+        let root_id = heap.json_id(root).unwrap();
+        // Parse-state alone retains its cached document, not transient handles.
+        heap.collect(std::iter::once(state)).unwrap();
+        assert!(heap.json_handle(root).is_err());
+        let root = value(heap.native_json(Native::JsonJsonParseRoot, &[state]));
+        assert_eq!(heap.json_id(root).unwrap(), root_id);
+        let child = value(heap.native_json(Native::JsonJsonNodeItem, &[root, Slot::small(0)]));
+        let sibling = value(heap.native_json(Native::JsonJsonNodeItem, &[root, Slot::small(1)]));
+        let child_id = heap.json_id(child).unwrap();
+        let sibling_id = heap.json_id(sibling).unwrap();
+        // Child ownership does not retain the parent or a sibling subtree.
+        heap.collect(std::iter::once(child)).unwrap();
+        assert!(heap.json_handle(state).is_err());
+        assert!(heap.json_nodes.get(root_id).is_err());
+        assert!(heap.json_nodes.get(sibling_id).is_err());
+        assert_eq!(heap.json_write(child_id, None).unwrap(), "[1,2]");
+        heap.collect(std::iter::empty()).unwrap();
+        assert!(heap.json_nodes.get(child_id).is_err());
+        assert!(heap.json_handle(child).is_err());
+        let replacement = value(heap.native_json(Native::JsonJsonNullNode, &[]));
+        assert!(heap.json_id(replacement).is_ok());
+        assert!(heap.json_id(child).is_err());
+    }
+
+    #[test]
     fn deep_json_parse_write_gc_and_reclamation_use_flat_storage() {
         let mut heap = Heap::new(&[], &[]);
         let depth = 20_000;

@@ -525,14 +525,26 @@ pub struct Match {
 pub enum CatchType {
     Object(ObjectId, Vec<Ty>),
     Role(RoleId, Vec<Ty>),
+    /// Error enum (`enum Name is Error`): ловятся все его варианты.
+    Variant(EnumId),
 }
 
 #[derive(Clone, Debug)]
 pub struct Catch {
     pub local: LocalId,
+    /// Тип привязки: тип единственной альтернативы, иначе роль `Error`.
     pub ty: CatchType,
+    /// Альтернативы в порядке исходника; первая совпавшая выбирает этот catch.
+    pub alternatives: Vec<CatchAlt>,
     pub body: Block,
     pub span: Span,
+}
+
+/// Альтернатива catch: тип и, для error enum, допустимые варианты.
+#[derive(Clone, Debug)]
+pub struct CatchAlt {
+    pub ty: CatchType,
+    pub cases: Option<Vec<usize>>,
 }
 
 #[derive(Clone, Debug)]

@@ -1,0 +1,14 @@
+// Experiment D / Pattern D. Pattern arity is checked.
+// EXPECT: check-error: Wrong number of variant pattern bindings
+module app;
+import "../models/payment_hybrid" take Payments, Authorization, ApprovingGateway;
+
+main() is int {
+    let outcome = Payments().open("p", 1).authorize(ApprovingGateway());
+    let s = match outcome {
+        case Authorization.approved(payment, extra) { payment.id(); }
+        case Authorization.declined(payment) { payment.reason(); }
+        case Authorization.failed(error) { error.text(); }
+    };
+    0;
+}

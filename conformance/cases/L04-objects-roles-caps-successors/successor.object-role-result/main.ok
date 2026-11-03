@@ -1,0 +1,17 @@
+module app v1.0.0;
+
+role Opened {
+    level() is int;
+}
+
+object Valve does Opened {
+    has open is bool = false;
+    Valve();
+    level() is int { 1; }
+    opened() is ^Opened { ^open = true; }
+}
+
+main() is int {
+    let v = Valve().opened();
+    v.level();
+}

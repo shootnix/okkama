@@ -1,0 +1,35 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Named {
+    name() is string;
+}
+
+role Counted {
+    name() is string;
+    count() is int;
+}
+
+object Tally does Named, Counted {
+    has n is int;
+    Tally(:n);
+    name() is string { "tally"; }
+    count() is int { n; }
+}
+
+object Tagged<T: Named> {
+    has item is T;
+    Tagged(:item);
+    label() is string { "#" + item.name(); }
+    get() is T { item; }
+}
+
+main() is int {
+    let out = Stdout();
+    let counted is Counted = Tally(n: 7);
+    let tagged = Tagged(item: counted);
+    out.writeln(tagged.label());
+    out.writeln(tagged.get().count().string());
+    0;
+}

@@ -1,0 +1,42 @@
+// Showcase: Maybe<T> with else, Presence<T> (some / none / missing), ternary.
+// Run: okkama examples/showcase/absence.ok
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object User {
+    has nickname is Maybe<string>;
+    User(:nickname);
+    nickname() is Maybe<string> { nickname; }
+}
+
+object Patch {
+    has email is Presence<string>;
+    Patch(:email);
+
+    describe() is string {
+        email
+            ?? .some(value): "set to " + value
+            !! .none: "cleared"
+            !! .missing: "unchanged";
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let anna = User(nickname: Maybe.some("anna"));
+    let guest = User(nickname: Maybe<string>.none);
+
+    out.writeln(anna.nickname() else "anonymous");
+    out.writeln(guest.nickname() else "anonymous");
+
+    out.writeln(Patch(email: Presence.some("a@b.c")).describe());
+    out.writeln(Patch(email: Presence<string>.none).describe());
+    out.writeln(Patch(email: Presence<string>.missing).describe());
+
+    let stock = 0;
+    out.writeln(stock > 0 ?? "in stock" !! "sold out");
+    let fallback = Presence<string>.missing.fold() else "default";
+    out.writeln(fallback);
+    0;
+}

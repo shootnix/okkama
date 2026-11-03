@@ -1,0 +1,10 @@
+// Experiment A / Pattern A (class per state). Refunded has no capture().
+// EXPECT: check-error: Object "Refunded" has no action "capture"
+module app;
+import "../models/payment_classes" take Created;
+
+main() is int {
+    let refunded = Created(id: "p", amount: 1).authorize().capture().refund();
+    let bad = refunded.capture();
+    0;
+}

@@ -1,0 +1,22 @@
+// Experiment C2 (preliminary question). An OBJECT action declared directly as
+// `is ^SomeRole` is rejected: an object successor returns its own type, and
+// `^Role` results belong to role signatures (implemented as `^Self`).
+// Before the fix the checker accepted it and IR verification crashed with an
+// internal compiler error.
+// EXPECT: check-error: Successor action "authorize" on object "Payment" must return ^Payment; declare ^Authorized in a role signature and implement it as ^Payment
+module app;
+import "io/stdout" take Stdout;
+
+role Authorized { capture() is string; }
+object Payment does Authorized {
+    has authorized is bool = false;
+    Payment();
+    authorize() is ^Authorized { ^authorized = true; }
+    capture() is string { "captured"; }
+}
+
+main() is int {
+    let a = Payment().authorize();
+    Stdout().writeln(a.capture());
+    0;
+}

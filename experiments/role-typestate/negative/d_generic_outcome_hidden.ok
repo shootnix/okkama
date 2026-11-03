@@ -1,0 +1,19 @@
+// Experiment D. Negative twin of advanced/d_generic_outcome: the value taken
+// out of Outcome<Authorized> is still Authorized; refund() stays hidden.
+// EXPECT: check-error: Role "Authorized" has no action "refund"
+module app;
+import "../models/payment_hybrid" take Payments, Authorization, Authorized, ApprovingGateway, PaymentError;
+
+enum Outcome<T> = (ok(value is T), err(error is PaymentError));
+
+main() is int {
+    let outcome = Payments().open("p", 1).authorize(ApprovingGateway());
+    let result = match outcome {
+        case Authorization.approved(payment) { Outcome.ok(payment); }
+        else { Outcome<Authorized>.err(PaymentError(reason: "no")); }
+    };
+    let text = result
+        ?? .ok(payment): payment.refund().id()
+        !! .err(error): error.text();
+    0;
+}

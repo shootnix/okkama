@@ -300,6 +300,14 @@ fn constructor_bodies_follow_the_perl_scope_rules() {
             "A successor action cannot return a replacement value",
         ),
         (
+            "object Q { has v is int = 0; Q(); bumped() is ^Q { ^v = v + 1; self; } }",
+            "A successor action cannot return a replacement value; its final expression would be discarded",
+        ),
+        (
+            "role R { level() is int; } object Q does R { has v is int = 0; Q(); level() is int { v; } opened() is ^R { ^v = 1; } }",
+            "Successor action \"opened\" on object \"Q\" must return ^Q; declare ^R in a role signature",
+        ),
+        (
             "object Q { has v is int = 0; Q(); touch() is int { ^v = 1; 0; } }",
             "`^field = value` is allowed only in successor actions",
         ),

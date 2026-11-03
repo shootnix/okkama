@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.catch-pattern.unmatched-propagates",
+  "title": "a case that no clause selects propagates",
+  "purpose": "Case patterns filter; the failure is not swallowed.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CATCH-PATTERNS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "failure",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "uncaught-error"
+      ],
+      "error_type": "DbError"
+    },
+    "stdout": {
+      "text": "start\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "error handling phase 4 (docs/POC/error-handling.md)",
+    "expected_basis": "spec 9.6: a catch clause lists types (binding typed Error when several) or error enum case patterns; alternatives are tried in order and a missed case continues with the next clause."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,25 @@
+// Experiment B (adversarial). Throwing a role reference whose role does not
+// itself guarantee Error is rejected, even if the hidden object does Error.
+// EXPECT: check-error: Type "Created" cannot be thrown; only error enums and objects that do Error are catchable
+module app;
+
+role Created {
+    text() is string;
+    authorize() is string;
+}
+object Payment does Created, Error {
+    Payment();
+    text() is string { "payment"; }
+    authorize() is string { "authorized"; }
+    capture() is string { "captured via catch"; }
+}
+
+main() is int {
+    let created is Created = Payment();
+    try {
+        throw created;
+    } catch e is Payment {
+        let x = e.capture();
+    }
+    0;
+}

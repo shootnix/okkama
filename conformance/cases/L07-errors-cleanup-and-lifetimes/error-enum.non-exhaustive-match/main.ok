@@ -1,0 +1,12 @@
+module app v1.0.0;
+
+enum Timeout is Error = (expired, cancelled);
+
+main() is int {
+    let x = try { throw Timeout.expired; } catch e is Timeout {
+        match e {
+            case Timeout.expired { 1; }
+        }
+    };
+    x;
+}

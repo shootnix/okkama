@@ -1,0 +1,10 @@
+// Experiment A / Pattern A (class per state). Created has no capture().
+// EXPECT: check-error: Object "Created" has no action "capture"
+module app;
+import "../models/payment_classes" take Created;
+
+main() is int {
+    let created = Created(id: "p", amount: 1);
+    let bad = created.capture();
+    0;
+}

@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Broken {
+    Broken();
+    value() is int { panic "bug"; }
+}
+
+main() is int {
+    Stdout().writeln("before");
+    let x = try? Broken().value() else 0;
+    x;
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.try-mark.optional-void",
+  "title": "try? needs a value",
+  "purpose": "A void call has no value to wrap in Maybe.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.TRY-MARK",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "error handling phase 4 (docs/POC/error-handling.md)",
+    "expected_basis": "spec 9.6.1: try? value is Maybe.some(value) or Maybe.none when an error is thrown; try! value is the value or a panic; panics pass through."
+  },
+  "status": "mandatory"
+}

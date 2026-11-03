@@ -8,9 +8,10 @@ use super::calls::ir_compare;
 use super::{Arm, BodyLowerer, Out, TryCtx, Typed};
 use crate::analysis::thir::{self, ArithOp, BinaryOp, BitOp, CompareKind, NumericKind, UnaryOp};
 use crate::ir::{
-    self, CatchType, Constant, InstKind, IntBinaryOp, IntUnaryOp, Target, TermKind, Type,
+    self, CatchType, Constant, InstKind, IntBinaryOp, IntUnaryOp, IntValue, Target, TermKind,
+    Type,
 };
-use crate::lowering::Result;
+use crate::lowering::{LoweringError, Result};
 use crate::source::Span;
 
 /// Сравнение двух значений одной категории `kind`.
@@ -473,14 +474,32 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 let args = args.iter().map(|arg| arg.subst(&self.env)).collect();
                 CatchType::Role(self.ctx.role_instance(*role, args, span)?)
             }
+            // Значение error enum в OIR — объект варианта, делающий Error.
+            thir::CatchType::Variant(id) => {
+                match self.ctx.ir_type(&crate::analysis::ty::Ty::Variant(*id, Vec::new()), span)? {
+                    Type::Object(object) => CatchType::Object(object),
+                    _ => {
+                        return Err(LoweringError::invalid(
+                            span,
+                            "internal compiler error: an error enum lowers to an object",
+                        ))
+                    }
+                }
+            }
         })
     }
 
     /// `try { } catch e is T { } ...` как оператор и как выражение (§19.3).
     pub(super) fn try_body(&mut self, body: &'r thir::Try, want: bool, span: Span) -> Result<Out> {
         let mut catch_types = Vec::new();
+        let mut alternatives = Vec::new();
         for catch in &body.catches {
             catch_types.push(self.catch_type(&catch.ty, catch.span)?);
+            let mut alts = Vec::new();
+            for alt in &catch.alternatives {
+                alts.push((self.catch_type(&alt.ty, catch.span)?, alt.cases.clone()));
+            }
+            alternatives.push(alts);
         }
         let base = self.vars.len();
         let tracked = self.tracked_for_try(body, span);
@@ -514,34 +533,155 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         let mut failure = *dispatch_params
             .last()
             .expect("dispatch has a failure parameter");
-        for (catch, catch_type) in body.catches.iter().zip(catch_types) {
+        for ((catch, catch_type), alts) in body.catches.iter().zip(catch_types).zip(alternatives) {
             let caught = catch_type.ty();
             let (handler, handler_params) =
                 self.block_with(&types, &[Type::Failure, caught.clone()]);
-            let (next, next_params) = self.block_with(&types, &[Type::Failure]);
             self.inherit_taken(&tracked, &handler_params);
-            self.inherit_taken(&tracked, &next_params);
-            let mut args = self.tracked_args(&tracked);
-            args.push(failure);
-            self.b.terminate(
-                TermKind::Catch {
-                    failure,
-                    ty: catch_type,
-                    handler: Target {
-                        block: handler,
-                        args: args.clone(),
+            let count = tracked.len();
+            // Альтернативы по порядку: совпадение типа, затем варианта error
+            // enum; промах — к следующей альтернативе, после последней — к
+            // следующему catch. Значение приводится к типу привязки.
+            let mut next = None;
+            for (alt_type, cases) in alts {
+                let alt_ty = alt_type.ty();
+                if cases.is_none() && alt_ty == caught {
+                    // Совпадение типа без фильтра ведёт прямо в handler.
+                    let (missed, missed_params) = self.block_with(&types, &[Type::Failure]);
+                    self.inherit_taken(&tracked, &missed_params);
+                    let mut args = self.tracked_args(&tracked);
+                    args.push(failure);
+                    self.b.terminate(
+                        TermKind::Catch {
+                            failure,
+                            ty: alt_type,
+                            handler: Target {
+                                block: handler,
+                                args: args.clone(),
+                            },
+                            next: Target {
+                                block: missed,
+                                args,
+                            },
+                        },
+                        catch.span,
+                    );
+                    self.restore(&entry);
+                    self.b.switch_to(missed);
+                    self.bind_tracked(&tracked, &types, &missed_params);
+                    failure = missed_params[count];
+                    next = Some((missed, missed_params));
+                    continue;
+                }
+                let (matched, matched_params) =
+                    self.block_with(&types, &[Type::Failure, alt_ty.clone()]);
+                let (missed, missed_params) = self.block_with(&types, &[Type::Failure]);
+                self.inherit_taken(&tracked, &matched_params);
+                self.inherit_taken(&tracked, &missed_params);
+                let mut args = self.tracked_args(&tracked);
+                args.push(failure);
+                self.b.terminate(
+                    TermKind::Catch {
+                        failure,
+                        ty: alt_type,
+                        handler: Target {
+                            block: matched,
+                            args: args.clone(),
+                        },
+                        next: Target {
+                            block: missed,
+                            args,
+                        },
                     },
-                    next: Target { block: next, args },
-                },
-                catch.span,
-            );
+                    catch.span,
+                );
+                self.restore(&entry);
+                self.b.switch_to(matched);
+                self.bind_tracked(&tracked, &types, &matched_params);
+                let matched_failure = matched_params[count];
+                let value = matched_params[count + 1];
+                if let Some(cases) = cases {
+                    let Type::Object(object) = alt_ty else {
+                        return Err(LoweringError::invalid(
+                            catch.span,
+                            "internal compiler error: a catch case filter needs an enum",
+                        ));
+                    };
+                    let getter = self.ctx.variant_getter(object, 0);
+                    let tag = self.emit(
+                        InstKind::Call {
+                            func: getter,
+                            args: vec![value],
+                        },
+                        Type::Int,
+                        catch.span,
+                    );
+                    let accept = self.b.new_block();
+                    for case in cases {
+                        let expected = self.constant(
+                            Constant::Int(IntValue::from_i64(case as i64)),
+                            catch.span,
+                        );
+                        let same = self.emit(
+                            InstKind::IntCompare {
+                                op: ir::CompareOp::Eq,
+                                left: tag.value,
+                                right: expected.value,
+                            },
+                            Type::Bool,
+                            catch.span,
+                        );
+                        let other = self.b.new_block();
+                        self.b.terminate(
+                            TermKind::Cond {
+                                condition: same.value,
+                                then_target: Target::new(accept),
+                                else_target: Target::new(other),
+                            },
+                            catch.span,
+                        );
+                        self.b.switch_to(other);
+                    }
+                    let mut args = self.tracked_args(&tracked);
+                    args.push(matched_failure);
+                    self.b.terminate(
+                        TermKind::Br(Target {
+                            block: missed,
+                            args,
+                        }),
+                        catch.span,
+                    );
+                    self.b.switch_to(accept);
+                }
+                let value = if alt_ty == caught {
+                    value
+                } else {
+                    self.emit(InstKind::RoleWrap(value), caught.clone(), catch.span)
+                        .value
+                };
+                let mut args = self.tracked_args(&tracked);
+                args.push(matched_failure);
+                args.push(value);
+                self.b.terminate(
+                    TermKind::Br(Target {
+                        block: handler,
+                        args,
+                    }),
+                    catch.span,
+                );
+                self.restore(&entry);
+                self.b.switch_to(missed);
+                self.bind_tracked(&tracked, &types, &missed_params);
+                failure = missed_params[count];
+                next = Some((missed, missed_params));
+            }
+            let (next, next_params) = next.expect("a catch has at least one alternative");
 
             // Тело catch: его отказ получает причину — обрабатываемый отказ.
             let (caused, caused_params) = self.block_with(&types, &[Type::Failure, Type::Failure]);
             self.inherit_taken(&tracked, &caused_params);
             self.restore(&entry);
             self.b.switch_to(handler);
-            let count = tracked.len();
             let handled = handler_params[count];
             let error = handler_params[count + 1];
             self.tries.push(TryCtx {

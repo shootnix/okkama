@@ -1,0 +1,56 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Stage = (created, authorized);
+
+enum DatabaseError is Error = (
+    connection(message is string),
+    request(sql is string, code is int),
+    auth(user is string, retry is bool),
+    closed
+);
+
+enum RepoError is Error = (db(cause is DatabaseError), missing(id is int, stage is Stage));
+
+object Db {
+    Db();
+    query(sql is string) is int {
+        if sql == "boom" { throw DatabaseError.request(sql, 42); }
+        if sql == "auth" { throw DatabaseError.auth("bob", false); }
+        if sql == "closed" { throw DatabaseError.closed; }
+        1;
+    }
+}
+
+object Repo {
+    Repo();
+    load(sql is string) is int {
+        try { Db().query(sql); } catch e is DatabaseError { throw RepoError.db(e); }
+    }
+    guarded(sql is string) is int {
+        try { Db().query(sql); } catch e is Error { throw e; }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let a = try { Db().query("boom"); } catch e is DatabaseError {
+        match e {
+            case DatabaseError.request(sql, code) { out.writeln("request " + sql + " " + code.string()); }
+            case DatabaseError.connection(message) { out.writeln(message); }
+            case DatabaseError.auth(user, retry) { out.writeln(user); }
+            case DatabaseError.closed { out.writeln("closed"); }
+        }
+        0;
+    };
+    let b = try { Db().query("auth"); } catch e is Error { out.writeln(e.text()); 0; };
+    let c = try { Repo().load("closed"); } catch e is RepoError { out.writeln(e.text()); 0; };
+    let d = try { Repo().guarded("boom"); } catch e is DatabaseError { out.writeln(e.text()); 0; };
+    let f = try { throw RepoError.missing(7, Stage.authorized); } catch e is Error { out.writeln(e.text()); 0; };
+    let absent is Maybe<int> = Maybe<int>.none;
+    let g = try { absent else throw DatabaseError.connection("none"); } catch e is DatabaseError { out.writeln(e.text()); 0; };
+    let h is Error = DatabaseError.closed;
+    out.writeln(h.text());
+    a + b + c + d + f + g;
+}

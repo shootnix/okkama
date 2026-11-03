@@ -70,9 +70,12 @@ fn item_node(item: &Item) -> Node {
         Item::Object(decl) => object_node(decl),
         Item::Role(decl) => role_node(decl),
         Item::Enum(decl) => {
-            let node = Node::new("EnumDecl", decl.span)
+            let mut node = Node::new("EnumDecl", decl.span)
                 .field("name", name(&decl.name))
                 .field("cases", names(&decl.cases));
+            if let Some(role) = &decl.role {
+                node = node.field("role", name(role));
+            }
             if decl.generics.is_empty() && decl.payloads.iter().all(Vec::is_empty) {
                 node
             } else {
@@ -276,10 +279,19 @@ fn try_fields(node: Node, body: &TryBody) -> Node {
         .field(
             "catches",
             list(&body.catches, |clause| {
-                Node::new("CatchClause", clause.span)
-                    .field("name", name(&clause.name))
-                    .field("type", Value::node(type_node(&clause.ty)))
-                    .field("body", Value::node(block_node(&clause.body)))
+                let mut node = Node::new("CatchClause", clause.span);
+                if let Some(binding) = &clause.name {
+                    node = node.field("name", name(binding));
+                }
+                if let [single] = &clause.types[..] {
+                    node = node.field("type", Value::node(type_node(single)));
+                } else if !clause.types.is_empty() {
+                    node = node.field("types", list(&clause.types, type_node));
+                }
+                if !clause.patterns.is_empty() {
+                    node = node.field("patterns", list(&clause.patterns, expr_node));
+                }
+                node.field("body", Value::node(block_node(&clause.body)))
             }),
         )
 }
@@ -571,6 +583,9 @@ fn expr_node(expr: &Expr) -> Node {
             Node::new("LoopExpression", span).field("body", Value::node(block_node(body)))
         }
         ExprKind::Try(body) => try_fields(Node::new("TryExpression", span), body),
+        ExprKind::TryMark { force, value } => Node::new("TryMark", span)
+            .field("force", Value::Bool(*force))
+            .field("value", Value::node(expr_node(value))),
         ExprKind::Panic { value } => {
             Node::new("Panic", span).field("value", Value::node(expr_node(value)))
         }

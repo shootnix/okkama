@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.catch-pattern.bindings-need-one-pattern",
+  "title": "payload bindings need a single catch pattern",
+  "purpose": "Alternatives cannot share payload bindings.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "ERR.CATCH-PATTERNS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "error handling phase 4 (docs/POC/error-handling.md)",
+    "expected_basis": "spec 9.6: a catch clause lists types (binding typed Error when several) or error enum case patterns; alternatives are tried in order and a missed case continues with the next clause."
+  },
+  "status": "mandatory"
+}

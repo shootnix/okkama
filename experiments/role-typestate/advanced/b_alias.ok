@@ -1,0 +1,11 @@
+// Experiment B. Aliases share the restricted reference.
+// EXPECT: check-error: Role "Created" has no action "capture"
+module app;
+import "../models/payment_views" take Payments;
+
+main() is int {
+    let created = Payments().open("p");
+    let alias = created;
+    let x = alias.capture();
+    0;
+}

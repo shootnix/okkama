@@ -1,0 +1,32 @@
+// Showcase: enums with payloads and exhaustive match.
+// Run: okkama examples/showcase/shapes.ok
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Shape = (
+    circle(radius is float),
+    rect(width is float, height is float),
+    point
+);
+
+object Area {
+    Area();
+    of(shape is Shape) is float {
+        match shape {
+            case Shape.circle(radius) { 3.14159 * radius * radius; }
+            case Shape.rect(width, height) { width * height; }
+            case Shape.point { 0.0; }
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let shapes is @Shape = [Shape.circle(1.0), Shape.rect(2.0, 3.0), Shape.point];
+    for shapes -> shape {
+        out.writeln(Area().of(shape).string());
+    }
+    out.writeln((Shape.rect(2.0, 3.0) == Shape.rect(2.0, 3.0)).string());
+    0;
+}

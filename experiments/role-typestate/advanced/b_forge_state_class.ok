@@ -1,0 +1,16 @@
+// Experiment B / Pattern B1 (class per state). Any module that can name a
+// state class constructs that state from nothing: SettledCharge is "captured"
+// without authorization. Nothing records history, so no runtime check can
+// detect it. Violation remains possible (prevented only by API convention:
+// importing just `Payments` and the roles with `take`).
+// EXPECT: run-ok
+// STDOUT: refunded forged
+module app;
+import "io/stdout" take Stdout;
+import "../models/payment_roles";
+
+main() is int {
+    let refunded = payment_roles.SettledCharge(key: "forged").refund();
+    Stdout().writeln("refunded " + refunded.id());
+    0;
+}

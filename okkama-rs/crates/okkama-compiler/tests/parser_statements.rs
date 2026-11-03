@@ -210,6 +210,11 @@ fn try_throw_and_return() {
     parse_ok(&wrap(
         "try { x; } catch a is @int {} catch b is %string:int {} catch c is State {}",
     ));
+    parse_ok(&wrap(
+        "try { x; } catch e is DbError, NetError {} catch DbError.failed(code, _) {} \
+         catch DbError.closed, net.NetError.reset, Denied {}",
+    ));
+    parse_ok(&wrap("let a = try? f() else 0; try! g(); let b = try? h() ?? .some(v): v !! .none: 0;"));
     for (body, expected) in [
         ("try {}", "Expect \"catch\" after try block."),
         (
@@ -219,6 +224,11 @@ fn try_throw_and_return() {
         (
             "try {} catch error Problem {}",
             "Expect \"is\" after catch error name.",
+        ),
+        ("try {} catch e {}", "Expect \"is\" after catch error name."),
+        (
+            "try {} catch 42 {}",
+            "Expect an error name or an error pattern after \"catch\".",
         ),
         (
             "try {} catch error is {}",
