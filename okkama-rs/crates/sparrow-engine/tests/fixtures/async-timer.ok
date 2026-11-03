@@ -1,0 +1,8 @@
+module async_timer v1.0.0;
+import "runtime/time" take sleep_nanoseconds;
+async main() is int {
+    let pending = sleep_nanoseconds("10000000");
+    let first = await pending;
+    let second = await pending;
+    if first && second { 42; } else { 0; };
+}

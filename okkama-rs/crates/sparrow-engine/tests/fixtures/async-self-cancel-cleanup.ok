@@ -1,0 +1,29 @@
+module async_self_cancel_cleanup v1.0.0;
+import "runtime/time" take sleep_nanoseconds;
+object CleanupFailure does Error {
+    CleanupFailure();
+    text() is string { "cleanup"; }
+}
+object Resource {
+    Resource();
+    destroy { throw CleanupFailure(); }
+}
+object Waiter {
+    Waiter();
+    async value() is int { await sleep_nanoseconds("20000000"); 42; }
+}
+object Maker {
+    Maker();
+    make(job is Job) is Future<int> { job.run(); }
+}
+object Job {
+    has future is Future<int>;
+    Job() { self.future = Maker().make(self); }
+    pending() is Future<int> { future; }
+    async run() is int {
+        let resource = Resource();
+        future.cancel();
+        await Waiter().value();
+    }
+}
+async main() is int { await Job().pending(); }

@@ -1,0 +1,37 @@
+module bench/scalar v1.0.0;
+import "os/environment" take Environment;
+import "strings/parse" take ParsedInt;
+import "time/clock" take SystemClock;
+import "io/stdout" take Stdout;
+object Point {
+    has x,y is int;
+    Point(x is int,y is int) { self.x=x;self.y=y; }
+    first() is int { x; }
+    second() is int { y; }
+}
+object Sum {
+    has total is int;
+    Sum(total is int) { self.total=total; }
+    add(value is int) is ^Sum { ^total=total+value; }
+    value() is int { total; }
+}
+object Work {
+    Work();
+    compute(a is int,b is int) is int {
+        let p=Point(a,b);
+        p.first()+p.second();
+    }
+}
+main() is int {
+    let count=ParsedInt(Environment().variable("SCALAR_COUNT")).value();
+    let work=Work();
+    for 0..3000 -> i { confirm work.compute(i,3)==i+3; }
+    let clock=SystemClock();
+    let start=clock.monotonic_instant();
+    let sum=Sum(0);
+    for 0..count -> i { sum=sum.add(work.compute(i,3)); }
+    let elapsed=clock.monotonic_instant().minus(start).nanoseconds();
+    confirm sum.value()*2==count*(count+5);
+    Stdout().writeln(elapsed.string()+" "+sum.value().string());
+    0;
+}

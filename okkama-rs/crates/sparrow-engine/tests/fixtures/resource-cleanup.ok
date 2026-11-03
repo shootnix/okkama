@@ -1,0 +1,26 @@
+module resource_cleanup v1.0.0;
+
+object Released does Error {
+    has code is int;
+    Released(:code);
+    text() is string { "released"; }
+    value() is int { code; }
+}
+
+object Resource {
+    Resource();
+    destroy { throw Released(code: 42); }
+}
+
+object Scope {
+    Scope();
+    close() is int {
+        { let resource = Resource(); }
+        0;
+    }
+}
+
+main() is int {
+    let answer = try { Scope().close(); } catch failure is Released { failure.value(); };
+    answer;
+}

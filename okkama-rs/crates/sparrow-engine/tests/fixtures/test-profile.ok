@@ -1,0 +1,14 @@
+module test_profile v1.0.0;
+import "runtime/time" take sleep_nanoseconds, clock_domain;
+import "runtime/testing" take test_context_active;
+test "assertions accumulate" {
+    test.ok(test_context_active());
+    test.isnt(clock_domain(true),clock_domain(true));
+    test.ok(false);
+    test.is(1,2);
+    test.fail("third failure");
+}
+async test "async test continues after another failed test" {
+    await sleep_nanoseconds("1000");
+    test.is([1,2],[1,2]);
+}

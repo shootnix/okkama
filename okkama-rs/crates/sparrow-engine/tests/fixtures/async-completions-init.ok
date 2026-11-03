@@ -1,0 +1,35 @@
+module stream_init_timing v1.0.0;
+import "async/collect" take FutureCompletions;
+import "async/atomic" take Atomic;
+import "collections/sequence" take Sequencing;
+import "collections/iteration" take Cursor;
+object Problem does Error {Problem();text() is string {"initialization failed";}}
+object Sources does Sequencing<Future<int>> {
+    has calls is Atomic<int>;
+    has origin is Sequencing<Future<int>>;
+    has fail is bool;
+    Sources(:calls,:origin,:fail);
+    size() is int {calls.replace(calls.value()+1);if fail && calls.value() == 1 {throw Problem();}origin.size();}
+    item(index is int) is Future<int> {origin.item(index);}
+    first() is Future<int> {origin.first();}
+    last() is Future<int> {origin.last();}
+    cursor() is Cursor<Future<int>> {origin.cursor();}
+}
+object Work {Work();async run() is int {42;}}
+async main() is int {
+    let calls=Atomic(0);
+    let stream is FutureCompletions<int> = FutureCompletions(origins:Sources(calls:calls,origin:[Work().run()],fail:false));
+    let pending=stream.completion();
+    confirm calls.value() == 1;
+    let child=await pending;
+    confirm (await child) == 42;
+    let attempts=Atomic(0);
+    let retry is FutureCompletions<int> = FutureCompletions(origins:Sources(calls:attempts,origin:[Work().run()],fail:true));
+    let failed=try {retry.completion();false;} catch failure is Problem {true;};
+    confirm failed && attempts.value() == 1;
+    let request=retry.completion();
+    confirm attempts.value() == 2;
+    let ready=await request;
+    confirm attempts.value() == 2;
+    await ready;
+}

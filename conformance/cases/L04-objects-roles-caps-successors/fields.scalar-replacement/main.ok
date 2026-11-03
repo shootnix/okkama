@@ -1,0 +1,24 @@
+module app v1.0.0;
+object Point {
+    has x,y is int;
+    Point(x is int,y is int) { self.x=x;self.y=y; }
+    first() is int { x; }
+    second() is int { y; }
+}
+object Work {
+    Work();
+    compute(a is int,b is int) is int {
+        let p=Point(a,b);
+        p.first()+p.second();
+    }
+}
+main() is int {
+    let work=Work();
+    for 0..1100 -> i { confirm work.compute(i,3)==i+3; }
+    confirm work.compute(9223372036854775808,3)==9223372036854775811;
+    confirm work.compute(9223372036854775807,1)==9223372036854775808;
+    let p=Point(17,23);
+    let alias=p;
+    confirm alias.first()+p.second()==40;
+    0;
+}

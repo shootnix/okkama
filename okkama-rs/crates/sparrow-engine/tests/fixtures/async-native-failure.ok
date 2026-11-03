@@ -1,0 +1,13 @@
+module async_native_failure v1.0.0;
+import "runtime/time" take sleep_nanoseconds;
+async main() is int {
+    let result = try { await sleep_nanoseconds("01"); 0; }
+    catch failure is NativeFailure {
+        confirm failure.domain() == "core.time" else panic "domain";
+        confirm failure.code() == "invalid_input" else panic "code";
+        confirm failure.operation() == "runtime/time@1::sleep_nanoseconds/1" else panic "operation";
+        confirm failure.message() == "Wait duration must be a canonical non-negative integer" else panic "message";
+        42;
+    };
+    result;
+}

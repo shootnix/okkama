@@ -3,7 +3,12 @@
 use std::{fs::File, io::Read, path::Path, process::ExitCode};
 
 #[global_allocator]
+#[cfg(not(feature = "allocation-stats"))]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+#[cfg(feature = "allocation-stats")]
+#[global_allocator]
+static ALLOCATOR: okkama_allocation_counter::Counting = okkama_allocation_counter::Counting;
 
 const HELP: &str = "Sparrow virtual machine
 
@@ -158,6 +163,8 @@ fn run() -> Result<u8, Failure> {
 }
 
 fn main() -> ExitCode {
+    #[cfg(feature = "allocation-stats")]
+    let _allocation_report = okkama_allocation_counter::Report;
     match run() {
         Ok(code) => ExitCode::from(code),
         Err((code, message)) => {

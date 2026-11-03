@@ -1,0 +1,296 @@
+{
+  "scope": "focused successful run cases; not full conformance",
+  "levels": [
+    "L10"
+  ],
+  "allowed_environment": [
+    "args",
+    "env-vars",
+    "filesystem",
+    "process-spawn",
+    "real-clock",
+    "real-random",
+    "stderr",
+    "stdin",
+    "stdout",
+    "worker-process"
+  ],
+  "compiler": "/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/target/nom-origin/debug/okkama",
+  "compiler_sha256": "cf2471a1c3c3203f2fa30578302c107e9b60f432c5517077ac6e7b845d79c5b6",
+  "runtime_sha256": "9e8da1379b27a3d47cb866ee75589f1cc3416636d02b42b0e835c1bdb1393e28",
+  "counts_by_mode_run": {
+    "PASS": 22,
+    "UNSUPPORTED": 2
+  },
+  "omitted": [],
+  "cases": [
+    {
+      "id": "L10.args.utf8-arguments",
+      "source_sha256": "baa331fc30be6418474b8acb480bf148770f62888567b03000379ea47acea402",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "3\n[alpha]\n[]\n[\u03b2eta two]\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "3\n[alpha]\n[]\n[\u03b2eta two]\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.clock.monotonic-order",
+      "source_sha256": "31e6dd3b5937563dc7af77c341e5b07886877d88f81a0eae2b107a695641dfa0",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "advanced\nwaited\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "advanced\nwaited\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.env.isolated-snapshot",
+      "source_sha256": "371f96dbaf33f410d40489e8175aad97c8f213877c8aa81479c1337aa46e4cdb",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "base has LANG\nchild lacks LANG\n[]\ntest\nmissing ABSENT\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "base has LANG\nchild lacks LANG\n[]\ntest\nmissing ABSENT\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.env.process-snapshot",
+      "source_sha256": "8ef1ab50e4aa5c6198f220298230f82b92df00c49026e77fd02b4febeccd5422",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "hello world\nUTC\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "hello world\nUTC\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.fs.directory-entries-sorted",
+      "source_sha256": "7c20ca72cf62911de688a860f8516778271c2489da8cafb23742694f266f8719",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "tree/a.txt\ntree/b.txt\ntree/c.txt\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "tree/a.txt\ntree/b.txt\ntree/c.txt\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.fs.line-reading",
+      "source_sha256": "78d020b2db23720776404b6e7266fb064883a46ca1fe05238bdf25f335f042b6",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "[a]\n[b]\n[]\n[last]\nEOF\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "[a]\n[b]\n[]\n[last]\nEOF\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.fs.missing-file",
+      "source_sha256": "62bb204837bff73f91082e4dfbfeaaaa31003ab984f9b9cede48d1a552bbacd2",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "failure not_found\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "failure not_found\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.fs.temporary-directory-cleanup",
+      "source_sha256": "13890cbb13a4302bfb153321f2ea9e5799e32f41556df430cdd3871a7cd4c25d",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "exists\nremoved\nclosed\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "exists\nremoved\nclosed\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.fs.write-then-read",
+      "source_sha256": "509d2c7e28cb564ce06ad34bd07e2d2e03a077ed42d8574029c34b10343fb923",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "first line\nsecond line\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "first line\nsecond line\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.process.capture",
+      "source_sha256": "29dc101b2e814963272be0096b53536e61361aec1c9524c2206cce4c9fb0f296",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "a b|c;d\nsuccess\n1\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "a b|c;d\nsuccess\n1\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "id": "L10.random.secure-invariants",
+      "source_sha256": "441d2034ac2c070251e23ef2bd9781058f41c851cc2e9e986b1bb015cf5718f4",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "UNSUPPORTED",
+          "reasons": [
+            "sparrow-next: unsupported native provider runtime/random@1::random_sample_accepted/3 in new engine"
+          ],
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "sparrow-next: unsupported native provider runtime/random@1::random_sample_accepted/3 in new engine\n"
+        },
+        {
+          "mode": "jit",
+          "status": "UNSUPPORTED",
+          "reasons": [
+            "sparrow-next: unsupported native provider runtime/random@1::random_sample_accepted/3 in new engine"
+          ],
+          "exit_status": 1,
+          "stdout": "",
+          "stderr": "sparrow-next: unsupported native provider runtime/random@1::random_sample_accepted/3 in new engine\n"
+        }
+      ]
+    },
+    {
+      "id": "L10.stdin.lines",
+      "source_sha256": "96dd0babe9f28e2bd4e5f25c31edc6380bf21298ebb2d68fbf6af616d5e0aed3",
+      "runs": [
+        {
+          "mode": "cold",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "first=h\u00e9llo\nrest=second\nthird\nEOF\n",
+          "stderr": ""
+        },
+        {
+          "mode": "jit",
+          "status": "PASS",
+          "reasons": [],
+          "exit_status": 0,
+          "stdout": "first=h\u00e9llo\nrest=second\nthird\nEOF\n",
+          "stderr": ""
+        }
+      ]
+    }
+  ]
+}

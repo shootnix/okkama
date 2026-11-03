@@ -1,0 +1,24 @@
+module async_self_cancel_ready v1.0.0;
+object Ready {
+    Ready();
+    async value() is int { 42; }
+}
+object Maker {
+    Maker();
+    make(job is Job) is Future<int> { job.run(); }
+}
+object Job {
+    has future is Future<int>;
+    Job() { self.future = Maker().make(self); }
+    pending() is Future<int> { future; }
+    async run() is int {
+        future.cancel();
+        await Ready().value();
+    }
+}
+async main() is int {
+    let pending = Job().pending();
+    let result = await pending;
+    confirm pending.done() && !pending.cancelled() else panic "ready await must not deliver cancellation";
+    result;
+}

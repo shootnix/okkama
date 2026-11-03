@@ -7,7 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+allocation-stats = ["dep:okkama-allocation-counter"]
+
 [dependencies]
+okkama-allocation-counter = { path = "../../../benchmarks/db/allocation-counter", optional = true }
 okkama-sparrow = { path = "../okkama-sparrow" }
 sparrow-vm = { path = "../sparrow-vm" }
 mimalloc = { version = "0.1.52", default-features = false }

@@ -1,0 +1,8 @@
+module async_deep v1.0.0;
+object Walk {
+    Walk();
+    async descend(depth is int) is int {
+        if depth == 0 { 42; } else { await self.descend(depth - 1); };
+    }
+}
+async main() is int { await Walk().descend(10000); }

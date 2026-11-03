@@ -1,0 +1,30 @@
+module resource_return v1.0.0;
+object Released does Error {
+    Released();
+    text() is string { "released too early"; }
+}
+object Early does Error {
+    Early();
+    text() is string { "early cleanup"; }
+}
+object Resource {
+    Resource();
+    value() is int { 42; }
+    destroy { throw Released(); }
+}
+object Factory {
+    Factory();
+    make() is Resource {
+        let made = try { let fresh = Resource(); fresh; }
+            catch failure is Released { throw Early(); };
+        made;
+    }
+}
+main() is int {
+    let answer = try {
+        let resource = Factory().make();
+        confirm resource.value() == 42 else panic "wrong value";
+        42;
+    } catch failure is Released { 42; } catch failure is Early { 0; };
+    answer;
+}

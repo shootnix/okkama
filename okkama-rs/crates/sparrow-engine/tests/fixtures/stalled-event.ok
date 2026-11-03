@@ -1,0 +1,8 @@
+module stalled_event v1.0.0;
+import "async/event" take Event;
+async main() is int {
+    let cleaned=Event();
+    defer cleaned.set();
+    await Event().wait();
+    42;
+}

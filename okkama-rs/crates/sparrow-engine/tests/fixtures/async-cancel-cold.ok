@@ -1,0 +1,14 @@
+module async_cancel_cold v1.0.0;
+object Job {
+    Job();
+    async run() is int { panic "cancelled cold body must not run"; }
+}
+async main() is int {
+    let pending = Job().run();
+    confirm !pending.done() else panic "not cold";
+    pending.cancel();
+    pending.cancel();
+    let answer = try { await pending; } catch failure is Cancelled { 42; };
+    confirm pending.done() && pending.cancelled() else panic "cancel status";
+    answer;
+}

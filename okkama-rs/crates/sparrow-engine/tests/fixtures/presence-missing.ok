@@ -1,0 +1,8 @@
+module presence_missing v1.0.0;
+object Source {
+    Source();
+    missing() is Presence<int> { Presence.missing; }
+}
+main() is int {
+    Source().missing() ?? .some(value): value !! .none: 1 !! .missing: 42;
+}

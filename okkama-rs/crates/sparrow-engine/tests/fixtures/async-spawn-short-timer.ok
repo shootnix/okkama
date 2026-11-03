@@ -1,0 +1,10 @@
+module async_spawn_short_timer v1.0.0;
+import "runtime/time" take sleep_nanoseconds;
+object Job {
+    Job();
+    async run() is int { await sleep_nanoseconds("1"); 42; }
+}
+async main() is int {
+    let pending = spawn Job().run();
+    if pending.done() { 0; } else { await pending; };
+}

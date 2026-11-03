@@ -5,6 +5,8 @@ import subprocess
 
 manifest = Path(__file__).resolve().parents[1] / 'Cargo.toml'
 for package, forbidden in (
+    ('sparrow-engine', {'okkama-compiler', 'okkama-runtime', 'okkama-runtime-core',
+                        'sparrow-vm', 'sparrow-runtime', 'sparrow-cli', 'corosensei'}),
     ('sparrow-cli', {'okkama-compiler', 'okkama-runtime', 'okkama-runtime-core'}),
     ('okkama-runtime', {'sparrow-vm', 'sparrow-runtime', 'sparrow-cli'}),
 ):

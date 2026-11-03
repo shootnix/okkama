@@ -1,0 +1,27 @@
+module fake_storage_fixture v1.0.0;
+role Storage {
+    put(key is string, value is @byte) is void;
+    get(key is string) is @byte;
+    has(key is string) is bool;
+    remove(key is string) is void;
+    clear() is void;
+    size() is int;
+    fake {
+        put(key is string, value is @byte) is void {fake.storage.set(key,value);}
+        get(key is string) is @byte {fake.storage.get(key);}
+        has(key is string) is bool {fake.storage.has(key);}
+        remove(key is string) is void {fake.storage.remove(key);}
+        clear() is void {fake.storage.clear();}
+        size() is int {fake.storage.size();}
+    }
+}
+test "fake storage keeps values through GC and isolates receiver state" {
+    let first=Storage.fake();let second=Storage.fake();
+    first.put("kept",[byte(255)]);
+    for (0..300) -> index {first.put("loop",[byte(index % 256)]);}
+    test.is(first.get("kept"),[byte(255)]);
+    test.is(first.get("loop"),[byte(43)]);
+    test.is(first.size(),2);test.is(second.size(),0);test.ok(!second.has("kept"));
+    let old=first.get("kept");first.remove("kept");test.ok(!first.has("kept"));
+    first.clear();test.is(first.size(),0);test.is(old,[byte(255)]);
+}

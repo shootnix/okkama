@@ -1,0 +1,383 @@
+{
+  "method": "Standalone Sparrow executes identical precompiled SPB. Five rotated rounds, four warmups; 5000 rows/500 queries. Same VM binary for all Sparrow modes. Disabling regions changes destroy semantics; inline SQLite blocks the event loop. Diagnostic modes only.",
+  "sha256": {
+    "/tmp/sparrow-nom-ablation": "a79507d45cc81e03e8db62c3166b7903a6201494c7f56623a89ed7ec7a1fdb43",
+    "/tmp/sparrow-db-main.spb": "5c326d6c292ce55eeb22366d79985bcb17089bf7861018fd3eb3f781d6ed6ae7",
+    "/tmp/sparrow-db-regions.spb": "f5637d12d0e780e693607b7438ec29f564d9f2843613ff149525a9ee6c1b16dc",
+    "/tmp/sparrow-db-inline.spb": "d9c6a11658dac2fa21ae995520a0ad5019b0688ed42279e992592cafc848a94e"
+  },
+  "samples": [
+    {
+      "round": 0,
+      "mode": "regions_worker",
+      "ms": {
+        "projection_only": 4.71825,
+        "scan_raw": 18.9385,
+        "scan_stream": 26.506,
+        "scan_all": 27.520042,
+        "lookup_prepared": 34.959792,
+        "lookup_statement": 35.974917,
+        "insert_transaction": 10.470375
+      }
+    },
+    {
+      "round": 0,
+      "mode": "disabled_worker",
+      "ms": {
+        "projection_only": 4.803958,
+        "scan_raw": 17.962583,
+        "scan_stream": 26.39125,
+        "scan_all": 25.94275,
+        "lookup_prepared": 24.67475,
+        "lookup_statement": 24.630708,
+        "insert_transaction": 19.863709
+      }
+    },
+    {
+      "round": 0,
+      "mode": "regions_inline",
+      "ms": {
+        "projection_only": 4.738291,
+        "scan_raw": 17.00925,
+        "scan_stream": 24.643458,
+        "scan_all": 26.706458,
+        "lookup_prepared": 23.673042,
+        "lookup_statement": 24.556584,
+        "insert_transaction": 5.119333
+      }
+    },
+    {
+      "round": 0,
+      "mode": "disabled_inline",
+      "ms": {
+        "projection_only": 4.6285,
+        "scan_raw": 15.949,
+        "scan_stream": 25.614333,
+        "scan_all": 24.951417,
+        "lookup_prepared": 15.141916,
+        "lookup_statement": 15.125167,
+        "insert_transaction": 4.785458
+      }
+    },
+    {
+      "round": 0,
+      "mode": "python",
+      "ms": {
+        "projection_only": 0.951,
+        "scan_raw": 2.002417,
+        "scan_stream": 2.931375,
+        "scan_all": 3.177584,
+        "lookup_prepared": 0.789625,
+        "lookup_statement": 0.848375,
+        "insert_transaction": 0.321875
+      }
+    },
+    {
+      "round": 1,
+      "mode": "disabled_worker",
+      "ms": {
+        "projection_only": 4.866625,
+        "scan_raw": 17.469334,
+        "scan_stream": 25.113625,
+        "scan_all": 26.094208,
+        "lookup_prepared": 24.224292,
+        "lookup_statement": 24.241042,
+        "insert_transaction": 9.693958
+      }
+    },
+    {
+      "round": 1,
+      "mode": "regions_inline",
+      "ms": {
+        "projection_only": 4.684709,
+        "scan_raw": 16.812875,
+        "scan_stream": 26.487542,
+        "scan_all": 27.243916,
+        "lookup_prepared": 24.86625,
+        "lookup_statement": 26.636417,
+        "insert_transaction": 5.36575
+      }
+    },
+    {
+      "round": 1,
+      "mode": "disabled_inline",
+      "ms": {
+        "projection_only": 4.989833,
+        "scan_raw": 31.066125,
+        "scan_stream": 23.716459,
+        "scan_all": 25.901834,
+        "lookup_prepared": 15.5615,
+        "lookup_statement": 15.659834,
+        "insert_transaction": 4.587
+      }
+    },
+    {
+      "round": 1,
+      "mode": "python",
+      "ms": {
+        "projection_only": 0.9615,
+        "scan_raw": 1.956292,
+        "scan_stream": 3.082792,
+        "scan_all": 3.119416,
+        "lookup_prepared": 0.756375,
+        "lookup_statement": 0.858042,
+        "insert_transaction": 0.323834
+      }
+    },
+    {
+      "round": 1,
+      "mode": "regions_worker",
+      "ms": {
+        "projection_only": 4.644083,
+        "scan_raw": 18.009833,
+        "scan_stream": 25.496834,
+        "scan_all": 25.89925,
+        "lookup_prepared": 33.447542,
+        "lookup_statement": 35.936042,
+        "insert_transaction": 10.342625
+      }
+    },
+    {
+      "round": 2,
+      "mode": "regions_inline",
+      "ms": {
+        "projection_only": 4.849209,
+        "scan_raw": 17.177167,
+        "scan_stream": 24.831333,
+        "scan_all": 25.622833,
+        "lookup_prepared": 23.381042,
+        "lookup_statement": 24.751583,
+        "insert_transaction": 5.11125
+      }
+    },
+    {
+      "round": 2,
+      "mode": "disabled_inline",
+      "ms": {
+        "projection_only": 4.812792,
+        "scan_raw": 16.211666,
+        "scan_stream": 24.431958,
+        "scan_all": 24.203166,
+        "lookup_prepared": 15.666125,
+        "lookup_statement": 14.973083,
+        "insert_transaction": 4.679375
+      }
+    },
+    {
+      "round": 2,
+      "mode": "python",
+      "ms": {
+        "projection_only": 0.942416,
+        "scan_raw": 1.959834,
+        "scan_stream": 2.908209,
+        "scan_all": 3.082792,
+        "lookup_prepared": 0.760583,
+        "lookup_statement": 0.8445,
+        "insert_transaction": 0.322
+      }
+    },
+    {
+      "round": 2,
+      "mode": "regions_worker",
+      "ms": {
+        "projection_only": 4.896167,
+        "scan_raw": 18.224834,
+        "scan_stream": 27.46,
+        "scan_all": 27.027167,
+        "lookup_prepared": 34.332791,
+        "lookup_statement": 37.058041,
+        "insert_transaction": 10.41225
+      }
+    },
+    {
+      "round": 2,
+      "mode": "disabled_worker",
+      "ms": {
+        "projection_only": 4.653583,
+        "scan_raw": 17.255875,
+        "scan_stream": 24.788292,
+        "scan_all": 25.153875,
+        "lookup_prepared": 23.748792,
+        "lookup_statement": 23.680584,
+        "insert_transaction": 9.812167
+      }
+    },
+    {
+      "round": 3,
+      "mode": "disabled_inline",
+      "ms": {
+        "projection_only": 4.625333,
+        "scan_raw": 15.926625,
+        "scan_stream": 23.728916,
+        "scan_all": 24.210708,
+        "lookup_prepared": 15.256292,
+        "lookup_statement": 15.664916,
+        "insert_transaction": 4.598958
+      }
+    },
+    {
+      "round": 3,
+      "mode": "python",
+      "ms": {
+        "projection_only": 0.952,
+        "scan_raw": 1.987459,
+        "scan_stream": 2.898,
+        "scan_all": 3.071459,
+        "lookup_prepared": 0.810416,
+        "lookup_statement": 0.857209,
+        "insert_transaction": 0.318375
+      }
+    },
+    {
+      "round": 3,
+      "mode": "regions_worker",
+      "ms": {
+        "projection_only": 4.589666,
+        "scan_raw": 17.929125,
+        "scan_stream": 25.703083,
+        "scan_all": 26.146666,
+        "lookup_prepared": 33.81775,
+        "lookup_statement": 38.052708,
+        "insert_transaction": 10.399958
+      }
+    },
+    {
+      "round": 3,
+      "mode": "disabled_worker",
+      "ms": {
+        "projection_only": 4.91825,
+        "scan_raw": 18.093584,
+        "scan_stream": 24.505,
+        "scan_all": 24.903834,
+        "lookup_prepared": 26.02925,
+        "lookup_statement": 23.688083,
+        "insert_transaction": 9.773625
+      }
+    },
+    {
+      "round": 3,
+      "mode": "regions_inline",
+      "ms": {
+        "projection_only": 4.6795,
+        "scan_raw": 16.8015,
+        "scan_stream": 24.428334,
+        "scan_all": 24.961792,
+        "lookup_prepared": 23.212875,
+        "lookup_statement": 24.782709,
+        "insert_transaction": 5.151166
+      }
+    },
+    {
+      "round": 4,
+      "mode": "python",
+      "ms": {
+        "projection_only": 0.944166,
+        "scan_raw": 1.960333,
+        "scan_stream": 2.885541,
+        "scan_all": 3.078833,
+        "lookup_prepared": 0.762208,
+        "lookup_statement": 0.913708,
+        "insert_transaction": 0.325166
+      }
+    },
+    {
+      "round": 4,
+      "mode": "regions_worker",
+      "ms": {
+        "projection_only": 4.601083,
+        "scan_raw": 17.838041,
+        "scan_stream": 25.427333,
+        "scan_all": 25.706125,
+        "lookup_prepared": 34.099792,
+        "lookup_statement": 35.767042,
+        "insert_transaction": 10.257333
+      }
+    },
+    {
+      "round": 4,
+      "mode": "disabled_worker",
+      "ms": {
+        "projection_only": 4.661333,
+        "scan_raw": 17.007,
+        "scan_stream": 25.13525,
+        "scan_all": 25.404542,
+        "lookup_prepared": 24.088416,
+        "lookup_statement": 23.761084,
+        "insert_transaction": 9.68775
+      }
+    },
+    {
+      "round": 4,
+      "mode": "regions_inline",
+      "ms": {
+        "projection_only": 4.574333,
+        "scan_raw": 16.843875,
+        "scan_stream": 24.371667,
+        "scan_all": 24.749625,
+        "lookup_prepared": 23.448084,
+        "lookup_statement": 24.44325,
+        "insert_transaction": 5.175292
+      }
+    },
+    {
+      "round": 4,
+      "mode": "disabled_inline",
+      "ms": {
+        "projection_only": 4.754583,
+        "scan_raw": 16.343708,
+        "scan_stream": 24.184,
+        "scan_all": 25.19675,
+        "lookup_prepared": 15.54325,
+        "lookup_statement": 15.160583,
+        "insert_transaction": 4.637417
+      }
+    }
+  ],
+  "medians": {
+    "regions_worker": {
+      "projection_only": 4.644083,
+      "scan_raw": 18.009833,
+      "scan_stream": 25.703083,
+      "scan_all": 26.146666,
+      "lookup_prepared": 34.099792,
+      "lookup_statement": 35.974917,
+      "insert_transaction": 10.399958
+    },
+    "disabled_worker": {
+      "projection_only": 4.803958,
+      "scan_raw": 17.469334,
+      "scan_stream": 25.113625,
+      "scan_all": 25.404542,
+      "lookup_prepared": 24.224292,
+      "lookup_statement": 23.761084,
+      "insert_transaction": 9.773625
+    },
+    "regions_inline": {
+      "projection_only": 4.684709,
+      "scan_raw": 16.843875,
+      "scan_stream": 24.643458,
+      "scan_all": 25.622833,
+      "lookup_prepared": 23.448084,
+      "lookup_statement": 24.751583,
+      "insert_transaction": 5.151166
+    },
+    "disabled_inline": {
+      "projection_only": 4.754583,
+      "scan_raw": 16.211666,
+      "scan_stream": 24.184,
+      "scan_all": 24.951417,
+      "lookup_prepared": 15.54325,
+      "lookup_statement": 15.160583,
+      "insert_transaction": 4.637417
+    },
+    "python": {
+      "projection_only": 0.951,
+      "scan_raw": 1.960333,
+      "scan_stream": 2.908209,
+      "scan_all": 3.082792,
+      "lookup_prepared": 0.762208,
+      "lookup_statement": 0.857209,
+      "insert_transaction": 0.322
+    }
+  }
+}

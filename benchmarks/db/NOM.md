@@ -170,3 +170,66 @@ Validation:
 - Dependency guard and git diff --check passed. No installation or commit.
 
 [Architecture and commands](../../okkama-rs/crates/sparrow-runtime/README.md), [validation and source hashes](results/runtime-split-validation.json). Changing Sparrow memory management is the next separate step; this crate split does not implement it.
+
+
+## Step 6: standalone baseline before a larger runtime redesign
+
+Measured commit `1c289f8b` using standalone Sparrow and a precompiled, identical SPB file. No compiler, LSP or IR interpreter executes in the benchmark process. Five rotated rounds, four warmups, 5000 rows / 500 queries. All checksums and both diagnostic mode probes passed. Release binary restored afterwards (SHA-256 matches the saved normal build). No production runtime change was made in this step; the proposed per-intrinsic VmHost allocation optimization was deferred in favour of evaluating a larger redesign.
+
+| Phase (ms) | Regions, worker | No regions, worker | Regions, inline | No regions, inline | Python |
+|---|---:|---:|---:|---:|---:|
+| projection_only | 4.644 | 4.804 | 4.685 | 4.755 | 0.951 |
+| scan_raw | 18.010 | 17.469 | 16.844 | 16.212 | 1.960 |
+| scan_stream | 25.703 | 25.114 | 24.643 | 24.184 | 2.908 |
+| scan_all | 26.147 | 25.405 | 25.623 | 24.951 | 3.083 |
+| lookup_prepared | 34.100 | 24.224 | 23.448 | 15.543 | 0.762 |
+| lookup_statement | 35.975 | 23.761 | 24.752 | 15.161 | 0.857 |
+| insert_transaction | 10.400 | 9.774 | 5.151 | 4.637 | 0.322 |
+
+Region removal reduces prepared worker time by about 29%, but inline/no-regions remains about 20.4x Python. These diagnostic modes change destruction and scheduling semantics; they are not a production speedup. Small phase differences are not statistical proof of regression or improvement. Native library version differences remain as documented above.
+
+Measured Rust layouts on this host: Value 24 bytes, IntValue 16, Object 64, Region 96, FutureCell 184. These are size_of results, excluding Rc allocation headers, field buffers, retained values, closures and coroutine stacks. Sizes alone do not establish CPU cost. JIT h_obj_new builds Vec<Value> fields and invokes ObjectHeap.allocate; machine Frame stores Vec<Value>. The execution representation remains shared between VM and JIT even though Sparrow is now independent of IR.
+
+### Proposed next POC boundary (not implemented)
+
+Replace the value/heap/call-frame subsystem as one vertical slice, instead of tuning each allocation separately. Candidate representation: compact tagged slots with immediate scalar values and heap references for objects, strings, large integers and other composites. Preserve exact integer semantics. Allocate objects and their fields together; avoid a separate Vec allocation for each object. Use reusable contiguous frame storage, with explicit roots at allocation/suspension/native-call boundaries. Start with a non-moving tracing design to keep the first root/FFI contract tractable; generational or moving collection requires separate evidence and barriers.
+
+Automatic resource cleanup must be specified separately from memory reclamation. Existing defer/close paths remain explicit. Merely skipping objects without their own destroy is incorrect when they contain a resource-bearing child. The existing no-regions flag remains a diagnostic ablation, not the optional-destroy implementation.
+
+Before integrating SQL, the POC must exercise the real object allocation/field access/call path, aliases and successors, cyclic and deep structures, and collection while values are live. Every JIT spill, suspended coroutine, Future capture and native-held value needs an explicit rooting/tracing contract. Keeping everything alive until process exit is not an acceptable memory-management result. Then test sustained SQL workloads and peak memory as well as latency. The SQL drivers and protocol libraries are not scheduled for replacement in this first slice.
+
+[Standalone samples and hashes](results/standalone-sparrow-regions.json), [runner](compare-sparrow-regions.py). Build diagnostic VM with `cargo build --offline --release --manifest-path okkama-rs/Cargo.toml -p sparrow-cli -p sparrow-runtime --features sparrow-runtime/no-regions-bench,sparrow-runtime/sqlite-inline-bench`; compile main.ok and both probes to SPB using the ordinary compiler, then pass them to the runner's --bytecode, --region-probe and --inline-probe arguments. No acceleration is claimed from this investigation.
+
+
+## Шаг 7: scalar replacement для локальных объектов
+
+Реализован первый узкий путь в JIT Sparrow: конструктор с прямым заполнением int-полей и простые getters могут исполняться без объекта. Поля захватываются как SSA-значения в момент создания; перезапись исходных регистров не меняет снимок. В ARM64 dump тестового Work.compute значения загружаются в x21/x19. Для больших int выполняется исходный путь; переполнение арифметики остаётся точным. Ни язык, ни IR-runtime не менялись.
+
+Консервативные ограничения: линейные функции до 256 инструкций, до восьми полей, без async/handlers/destroy. Возврат или передача объекта неизвестному коду, алиасы, перезапись его регистра и участие в регионах исключают кандидат. Разрешены пустые переходы к следующей инструкции; в выбранной функции нет обратных переходов, вход JIT только с начала. Объектный header/fields не выделяются, но универсальные Value-слоты, вызовный ABI и fallback пока остаются. Это не обещание «все значения в CPU-регистрах».
+
+Финальные измерения: 200000 вычислений Point(a,b).first()+second(), 3000 прогревочных вызовов, девять чередующихся раундов, standalone SPB, таймер внутри программы:
+
+| Сравнение | До / off, мс | После / on, мс | Ускорение |
+|---|---:|---:|---:|
+| Сохранённый sparrow-origin против финального release | 19.976 | 9.460 | 2.11× |
+| Один финальный бинарник, OKKAMA_JIT_SCALAR off/on | 20.109 | 9.478 | 2.12× |
+
+Диагностический счётчик MiMalloc, две серии по 5000/10000/15000 вызовов после одинакового прогрева: на каждой разности 2 → 0 alloc/call, устранены 128 запрошенных байт и два освобождения на вызов. Это наклон счётчиков, исключающий фиксированную загрузку и JIT; весь процесс не является безаллокаторным. Время инструментированной debug-сборки не использовано для оценки скорости.
+
+SQL/DB измерялся отдельно, worker включён, 5000 строк / 500 запросов, четыре прогрева и пять чередующихся раундов. Prepared lookup: origin 34.158 → new 33.840 мс; same-binary off 34.186 → on 34.582 мс. Остальные фазы в same-binary контроле изменились от +0.4% до +4.2%, тогда как origin-серия дала разнонаправленные небольшие изменения. Устойчивое ускорение SQL НЕ установлено; улучшение Point нельзя переносить на весь runtime. Цель 1.5× Python (~1.14 мс для этих 500 lookup при Python ~0.762 мс) пока не достигнута.
+
+Проверки: 8 VM unit/integration PASS; 194 выбранных conformance с eager JIT PASS (641 NOT_RUN); новый кейс на IR PASS; после ограничения размера анализа новый SPB-кейс повторно прошёл JIT off/eager и VM tests. Проверяются точные большие целые, переполнение, снимок полей при перезаписи источника, исключение escape/destroy/control-flow и слишком больших функций. Release собран, dependency guard и diff check прошли.
+
+Исходный release сохранён в корне как `sparrow-origin` (Mach-O arm64), хеш 0961567b86755d430b58512d38e9c51ca2f19198b397d184e835d7b8b8886260. Это сохранённый бинарник до POC, а не извлечённый из Git artifact. [Происхождение](results/sparrow-origin.json). Бинарник и изменения не закоммичены.
+
+[Origin comparison](results/scalar-origin-timing.json), [same-binary comparison](results/scalar-timing-final.json), [allocation slopes](results/scalar-allocations-final.json), [CLIF и ARM64](results/scalar-work-code.txt), [проверки и хеши](results/scalar-validation.json).
+
+### Следующий участок: реальная SQL-цепочка
+
+После POC снят новый профиль standalone Sparrow на 300000 prepared lookup после четырёх прогревов. Чистый повтор без параллельных бенчмарков, восемь секунд sample с интервалом 1 мс. Контрольная сумма 753623580 подтверждена. Время процесса под профилировщиком не является benchmark timing.
+
+В 5799 наблюдениях основного потока: Region inclusive 19.57%; collect inclusive 10.36%; allocator inclusive 7.92%; Value clone self 3.17%; Value drop self 7.38%; ожидание inclusive 13.88%; JIT call helpers inclusive 12.90%. Категории inclusive пересекаются, складывать их нельзя. Scheduler inclusive охватывает почти всю программу и НЕ означает соответствующую стоимость планировщика. SQLite работает на другом потоке; отсутствие sqlite3 на основном потоке не доказывает нулевую стоимость SQL. Неизвестные JIT-адреса и инлайнинг ограничивают атрибуцию.
+
+Найден конкретный кандидат на удаление лишней цепочки: PreparedQueryOpening создаёт DbValueSnapshot, который уже формирует native DbCellState и возвращает DbNativeValue. SqliteBindings затем снова создаёт ObservedDbValue для каждого такого значения. Его print восстанавливает типизированные значения (для integer — BigInt из native строки), а DbValueCapture снова формирует native ячейку. Нужен путь повторного использования готовых native-ячеек с сохранением проверки лимитов и поведения пользовательских DbValue. В этом шаге этот путь ещё НЕ изменён, его эффект не измерен. Существующие проверки cardinality, cancellation, закрытия курсора и ошибок должны сохраниться.
+
+[Профиль](results/scalar-sql-sample.txt.gz), [агрегация](results/scalar-sql-sample-summary.json), [метаданные](results/scalar-sql-profile-run.json). Воспроизводимые инструменты: profile-sparrow.py и summarize-runtime-sample.py.

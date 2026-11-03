@@ -1,0 +1,39 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.fields.scalar-replacement",
+  "title": "Local object fields retain exact integer values across optimized calls",
+  "purpose": "Hot local construction and getters preserve small and large integers, overflow and aliases.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.FIELDS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "Sparrow scalar replacement regression",
+    "expected_basis": "Fields preserve constructor arguments, integer arithmetic remains exact and aliases retain the same object."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,14 @@
+module caught_error v1.0.0;
+object Problem does Error {
+    Problem();
+    text() is string { "problem"; }
+}
+object Source {
+    Source();
+    value() is int { throw Problem(); }
+}
+main() is int {
+    let answer = try { Source().value(); }
+    catch failure is Problem { 42; };
+    answer;
+}

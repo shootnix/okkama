@@ -1,0 +1,31 @@
+module async_lock v1.0.0;
+import "async/lock" take Lock;
+import "async/event" take Event;
+object Reader {
+    has lock is Lock;
+    has signal is Event;
+    has first is bool;
+    Reader(:lock, :signal, :first);
+    async run() is int {
+        let guard = await lock.guard();
+        defer guard.close();
+        if first { signal.set(); 21; } else { if signal.ready() { 21; } else { 0; }; };
+    }
+}
+async main() is int {
+    let lock = Lock();
+    let guard = await lock.guard();
+    let signal = Event();
+    let poison = Event();
+    let first = spawn Reader(lock: lock, signal: signal, first: true).run();
+    let cancelled = spawn Reader(lock: lock, signal: poison, first: true).run();
+    let second = spawn Reader(lock: lock, signal: signal, first: false).run();
+    cancelled.cancel();
+    cancelled.cancel();
+    guard.close();
+    guard.close();
+    let a = await first;
+    let b = await second;
+    let removed = try { await cancelled; false; } catch failure is Cancelled { true; };
+    if removed && !poison.ready() && !lock.locked() && guard.closed() { a + b; } else { 0; };
+}

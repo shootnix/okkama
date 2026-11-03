@@ -1,0 +1,46 @@
+module async_barrier v1.0.0;
+import "async/barrier" take Barrier, BrokenBarrier, InvalidPartyCount;
+object Job {
+    has barrier is Barrier;
+    Job(:barrier);
+    async run() is int { await barrier.wait(); }
+}
+async main() is int {
+    let barrier = Barrier(parties: 3);
+    let a = spawn Job(barrier:barrier).run();
+    let b = spawn Job(barrier:barrier).run();
+    let before = barrier.state();
+    confirm before.parties() == 3 && before.waiters() == 2 && before.generation() == 0 && !before.broken();
+    confirm (await barrier.wait()) == 2;
+    confirm (await a) == 0 && (await b) == 1;
+    confirm barrier.state().generation() == 1 && barrier.state().waiters() == 0;
+    confirm before.waiters() == 2 && before.generation() == 0;
+    let cancelled = spawn Job(barrier:barrier).run();
+    let peer = spawn Job(barrier:barrier).run();
+    cancelled.cancel();
+    let cancellation = try {await cancelled;false;} catch failure is Cancelled {true;};
+    let broken = try {await peer;false;} catch failure is BrokenBarrier {true;};
+    confirm cancellation && broken && barrier.state().broken();
+    let rejected = try {await barrier.wait();false;} catch failure is BrokenBarrier {true;};
+    confirm rejected;
+    barrier.reset();
+    confirm !barrier.state().broken() && barrier.state().generation() == 2;
+    let old = spawn Job(barrier:barrier).run();
+    barrier.reset();
+    let reset = try {await old;false;} catch failure is BrokenBarrier {true;};
+    confirm reset && barrier.state().generation() == 3;
+    let first = spawn Job(barrier:barrier).run();
+    let second = spawn Job(barrier:barrier).run();
+    confirm (await barrier.wait()) == 2;
+    confirm (await first) == 0 && (await second) == 1;
+    barrier.abort();
+    barrier.abort();
+    confirm barrier.state().broken();
+    barrier.reset();
+    let one = Barrier(parties:1);
+    confirm (await one.wait()) == 0 && (await one.wait()) == 0;
+    confirm one.state().generation() == 2;
+    let invalid = try {Barrier(parties:0);false;} catch failure is InvalidPartyCount {true;};
+    confirm invalid;
+    42;
+}

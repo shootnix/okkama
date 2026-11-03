@@ -6,6 +6,7 @@
 mod host;
 mod jit;
 mod liveness;
+mod scalar;
 mod machine;
 mod tests;
 

@@ -1,0 +1,1327 @@
+jit: CLIF of Work.compute
+function u0:0(i64, i64, i64, i32) -> i32 apple_aarch64 {
+    ss0 = explicit_slot 1536, align = 8
+    ss1 = explicit_slot 24, align = 8
+    sig0 = (i64, i64, i32, i32) -> i32 apple_aarch64
+    sig1 = (i64, i64, i64, i32) -> i32 apple_aarch64
+    sig2 = (i64, i64, i64, i32) -> i32 apple_aarch64
+    sig3 = (i64, i32, i32) -> i32 apple_aarch64
+    sig4 = (i64) apple_aarch64
+    sig5 = (i64, i64) apple_aarch64
+    sig6 = (i64) -> i64 apple_aarch64
+    sig7 = (i64, i64, i32, i32, i64) -> i32 apple_aarch64
+    sig8 = (i64, i64, i32, i32, i64, i64) -> i32 apple_aarch64
+
+block0(v0: i64, v1: i64, v2: i64, v3: i32):
+    br_table v3, block5, [block1, block5, block5, block5, block5, block5, block5, block5]
+
+block5:
+    v4 = iconst.i32 7
+    v5 = iconst.i32 0
+    v6 = iconst.i64 0x0001_0311_0dcc
+    v7 = call_indirect sig3, v6(v0, v4, v5)  ; v6 = 0x0001_0311_0dcc, v4 = 7, v5 = 0
+    return v7
+
+block1:
+    jump block2
+
+block2:
+    jump block3
+
+block3:
+    v8 = iconst.i8 1
+    v9 = uload8.i32 notrap aligned v1+24
+    v10 = uload8.i32 notrap aligned v1+32
+    v11 = iconst.i32 4
+    v12 = icmp eq v9, v11  ; v11 = 4
+    v13 = iconst.i32 0
+    v14 = icmp eq v10, v13  ; v13 = 0
+    v15 = band v12, v14
+    v16 = load.i64 notrap aligned v1+40
+    v17 = band v8, v15  ; v8 = 1
+    v18 = uload8.i32 notrap aligned v1+48
+    v19 = uload8.i32 notrap aligned v1+56
+    v20 = iconst.i32 4
+    v21 = icmp eq v18, v20  ; v20 = 4
+    v22 = iconst.i32 0
+    v23 = icmp eq v19, v22  ; v22 = 0
+    v24 = band v21, v23
+    v25 = load.i64 notrap aligned v1+64
+    v26 = band v17, v24
+    brif v26, block6, block7
+
+block6:
+    v27 = uload8.i32 notrap aligned v1+72
+    v28 = iconst.i32 3
+    v29 = icmp ne v27, v28  ; v28 = 3
+    brif v29, block9, block10
+
+block9:
+    v30 = iconst.i64 72
+    v31 = iadd.i64 v1, v30  ; v30 = 72
+    v32 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v32(v31)  ; v32 = 0x0001_030f_4180
+    jump block10
+
+block10:
+    v33 = iconst.i8 3
+    store notrap aligned v33, v1+72  ; v33 = 3
+    jump block8
+
+block7:
+    v34 = stack_addr.i64 ss0
+    v35 = iconst.i8 3
+    store notrap aligned v35, v34  ; v35 = 3
+    v36 = iconst.i8 3
+    store notrap aligned v36, v34+24  ; v36 = 3
+    v37 = iconst.i8 3
+    store notrap aligned v37, v34+48  ; v37 = 3
+    v38 = load.i64 notrap aligned v1+24
+    store notrap aligned v38, v34
+    v39 = load.i64 notrap aligned v1+32
+    store notrap aligned v39, v34+8
+    v40 = load.i64 notrap aligned v1+40
+    store notrap aligned v40, v34+16
+    v41 = iconst.i8 3
+    store notrap aligned v41, v1+24  ; v41 = 3
+    v42 = load.i64 notrap aligned v1+48
+    store notrap aligned v42, v34+24
+    v43 = load.i64 notrap aligned v1+56
+    store notrap aligned v43, v34+32
+    v44 = load.i64 notrap aligned v1+64
+    store notrap aligned v44, v34+40
+    v45 = iconst.i8 3
+    store notrap aligned v45, v1+48  ; v45 = 3
+    v46 = stack_addr.i64 ss1
+    v47 = iconst.i8 3
+    store notrap aligned v47, v46  ; v47 = 3
+    v48 = get_stack_pointer.i64 
+    v49 = load.i64 notrap aligned v0+8
+    v50 = load.i64 notrap aligned v49
+    v51 = iconst.i64 0
+    v52 = icmp ne v50, v51  ; v51 = 0
+    v53 = iconst.i64 0x0040_0000
+    v54 = iadd v50, v53  ; v53 = 0x0040_0000
+    v55 = icmp ugt v48, v54
+    v56 = band v52, v55
+    v57 = load.i64 notrap aligned v0
+    v58 = load.i64 notrap aligned v57
+    v59 = iconst.i64 0
+    v60 = icmp ne v58, v59  ; v59 = 0
+    v61 = band v56, v60
+    brif v61, block11, block12
+
+block11:
+    v63 = iconst.i32 0
+    v64 = call_indirect.i64 sig2, v58(v0, v34, v46, v63)  ; v63 = 0
+    jump block13(v64)
+
+block12:
+    v65 = iconst.i32 0
+    v66 = iconst.i64 0x0001_0311_0378
+    v67 = call_indirect sig1, v66(v0, v34, v46, v65)  ; v66 = 0x0001_0311_0378, v65 = 0
+    jump block13(v67)
+
+block13(v62: i32):
+    v68 = iconst.i64 7
+    v69 = iconst.i64 0x0001_0311_0820
+    call_indirect sig5, v69(v34, v68)  ; v69 = 0x0001_0311_0820, v68 = 7
+    brif v62, block15(v62), block14
+
+block15(v70: i32):
+    v71 = iconst.i32 7
+    v72 = iconst.i32 2
+    v73 = iconst.i64 0x0001_0310_e688
+    v74 = call_indirect sig0, v73(v0, v1, v71, v72)  ; v73 = 0x0001_0310_e688, v71 = 7, v72 = 2
+    return v70
+
+block14:
+    v75 = uload8.i32 notrap aligned v1+72
+    v76 = iconst.i32 3
+    v77 = icmp ne v75, v76  ; v76 = 3
+    brif v77, block16, block17
+
+block16:
+    v78 = iconst.i64 72
+    v79 = iadd.i64 v1, v78  ; v78 = 72
+    v80 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v80(v79)  ; v80 = 0x0001_030f_4180
+    jump block17
+
+block17:
+    v81 = load.i64 notrap aligned v46
+    store notrap aligned v81, v1+72
+    v82 = load.i64 notrap aligned v46+8
+    store notrap aligned v82, v1+80
+    v83 = load.i64 notrap aligned v46+16
+    store notrap aligned v83, v1+88
+    jump block8
+
+block8:
+    brif.i8 v26, block18, block19
+
+block18:
+    v84 = uload8.i32 notrap aligned v1+24
+    v85 = uload8.i32 notrap aligned v1+32
+    v86 = iconst.i32 4
+    v87 = icmp eq v84, v86  ; v86 = 4
+    v88 = iconst.i32 0
+    v89 = icmp ne v85, v88  ; v88 = 0
+    v90 = band v87, v89
+    brif v90, block21, block22
+
+block21:
+    v91 = iconst.i64 24
+    v92 = iadd.i64 v1, v91  ; v91 = 24
+    v93 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v93(v92)  ; v93 = 0x0001_030f_4180
+    jump block22
+
+block22:
+    v94 = iconst.i8 4
+    store notrap aligned v94, v1+24  ; v94 = 4
+    v95 = iconst.i8 0
+    store notrap aligned v95, v1+32  ; v95 = 0
+    store.i64 notrap aligned v16, v1+40
+    jump block20
+
+block19:
+    v96 = stack_addr.i64 ss0
+    v97 = iconst.i8 3
+    store notrap aligned v97, v96  ; v97 = 3
+    v98 = iconst.i8 3
+    store notrap aligned v98, v96+24  ; v98 = 3
+    v99 = uload8.i32 notrap aligned v1+72
+    v100 = uextend.i64 v99
+    v101 = iconst.i64 1960
+    v102 = ushr v101, v100  ; v101 = 1960
+    v103 = iconst.i64 1
+    v104 = band v102, v103  ; v103 = 1
+    v105 = iconst.i64 0
+    v106 = icmp ne v104, v105  ; v105 = 0
+    v107 = uload8.i32 notrap aligned v1+72
+    v108 = uload8.i32 notrap aligned v1+80
+    v109 = iconst.i32 4
+    v110 = icmp eq v107, v109  ; v109 = 4
+    v111 = iconst.i32 0
+    v112 = icmp eq v108, v111  ; v111 = 0
+    v113 = band v110, v112
+    v114 = load.i64 notrap aligned v1+88
+    v115 = bor v106, v113
+    brif v115, block23, block24
+
+block23:
+    v116 = load.i64 notrap aligned v1+72
+    store notrap aligned v116, v96
+    v117 = load.i64 notrap aligned v1+80
+    store notrap aligned v117, v96+8
+    v118 = load.i64 notrap aligned v1+88
+    store notrap aligned v118, v96+16
+    jump block25
+
+block24:
+    v119 = iconst.i64 72
+    v120 = iadd.i64 v1, v119  ; v119 = 72
+    v121 = iconst.i64 0
+    v122 = iadd.i64 v96, v121  ; v121 = 0
+    v123 = iconst.i64 0x0001_0310_dbb8
+    call_indirect sig5, v123(v120, v122)  ; v123 = 0x0001_0310_dbb8
+    jump block25
+
+block25:
+    v124 = stack_addr.i64 ss1
+    v125 = iconst.i8 3
+    store notrap aligned v125, v124  ; v125 = 3
+    v126 = get_stack_pointer.i64 
+    v127 = load.i64 notrap aligned v0+8
+    v128 = load.i64 notrap aligned v127
+    v129 = iconst.i64 0
+    v130 = icmp ne v128, v129  ; v129 = 0
+    v131 = iconst.i64 0x0040_0000
+    v132 = iadd v128, v131  ; v131 = 0x0040_0000
+    v133 = icmp ugt v126, v132
+    v134 = band v130, v133
+    v135 = load.i64 notrap aligned v0
+    v136 = load.i64 notrap aligned v135+8
+    v137 = iconst.i64 0
+    v138 = icmp ne v136, v137  ; v137 = 0
+    v139 = band v134, v138
+    brif v139, block26, block27
+
+block26:
+    v141 = iconst.i32 0
+    v142 = call_indirect.i64 sig2, v136(v0, v96, v124, v141)  ; v141 = 0
+    jump block28(v142)
+
+block27:
+    v143 = iconst.i32 1
+    v144 = iconst.i64 0x0001_0311_0378
+    v145 = call_indirect sig1, v144(v0, v96, v124, v143)  ; v144 = 0x0001_0311_0378, v143 = 1
+    jump block28(v145)
+
+block28(v140: i32):
+    v146 = uload8.i32 notrap aligned v96
+    v147 = uextend.i64 v146
+    v148 = iconst.i64 1960
+    v149 = ushr v148, v147  ; v148 = 1960
+    v150 = iconst.i64 1
+    v151 = band v149, v150  ; v150 = 1
+    v152 = iconst.i64 0
+    v153 = icmp ne v151, v152  ; v152 = 0
+    v154 = uload8.i32 notrap aligned v96
+    v155 = uload8.i32 notrap aligned v96+8
+    v156 = iconst.i32 4
+    v157 = icmp eq v154, v156  ; v156 = 4
+    v158 = iconst.i32 0
+    v159 = icmp eq v155, v158  ; v158 = 0
+    v160 = band v157, v159
+    v161 = load.i64 notrap aligned v96+16
+    v162 = bor v153, v160
+    brif v162, block30, block29
+
+block29:
+    v163 = iconst.i64 0
+    v164 = iadd.i64 v96, v163  ; v163 = 0
+    v165 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v165(v164)  ; v165 = 0x0001_030f_4180
+    jump block30
+
+block30:
+    v166 = uload8.i32 notrap aligned v96+24
+    v167 = uextend.i64 v166
+    v168 = iconst.i64 1960
+    v169 = ushr v168, v167  ; v168 = 1960
+    v170 = iconst.i64 1
+    v171 = band v169, v170  ; v170 = 1
+    v172 = iconst.i64 0
+    v173 = icmp ne v171, v172  ; v172 = 0
+    v174 = uload8.i32 notrap aligned v96+24
+    v175 = uload8.i32 notrap aligned v96+32
+    v176 = iconst.i32 4
+    v177 = icmp eq v174, v176  ; v176 = 4
+    v178 = iconst.i32 0
+    v179 = icmp eq v175, v178  ; v178 = 0
+    v180 = band v177, v179
+    v181 = load.i64 notrap aligned v96+40
+    v182 = bor v173, v180
+    brif v182, block32, block31
+
+block31:
+    v183 = iconst.i64 24
+    v184 = iadd.i64 v96, v183  ; v183 = 24
+    v185 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v185(v184)  ; v185 = 0x0001_030f_4180
+    jump block32
+
+block32:
+    brif.i32 v140, block34(v140), block33
+
+block34(v186: i32):
+    v187 = iconst.i32 7
+    v188 = iconst.i32 3
+    v189 = iconst.i64 0x0001_0310_e688
+    v190 = call_indirect sig0, v189(v0, v1, v187, v188)  ; v189 = 0x0001_0310_e688, v187 = 7, v188 = 3
+    return v186
+
+block33:
+    v191 = uload8.i32 notrap aligned v1+24
+    v192 = uload8.i32 notrap aligned v1+32
+    v193 = iconst.i32 4
+    v194 = icmp eq v191, v193  ; v193 = 4
+    v195 = iconst.i32 0
+    v196 = icmp ne v192, v195  ; v195 = 0
+    v197 = band v194, v196
+    brif v197, block35, block36
+
+block35:
+    v198 = iconst.i64 24
+    v199 = iadd.i64 v1, v198  ; v198 = 24
+    v200 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v200(v199)  ; v200 = 0x0001_030f_4180
+    jump block36
+
+block36:
+    v201 = load.i64 notrap aligned v124
+    store notrap aligned v201, v1+24
+    v202 = load.i64 notrap aligned v124+8
+    store notrap aligned v202, v1+32
+    v203 = load.i64 notrap aligned v124+16
+    store notrap aligned v203, v1+40
+    jump block20
+
+block20:
+    brif.i8 v26, block37, block38
+
+block37:
+    v204 = uload8.i32 notrap aligned v1+48
+    v205 = uload8.i32 notrap aligned v1+56
+    v206 = iconst.i32 4
+    v207 = icmp eq v204, v206  ; v206 = 4
+    v208 = iconst.i32 0
+    v209 = icmp ne v205, v208  ; v208 = 0
+    v210 = band v207, v209
+    brif v210, block40, block41
+
+block40:
+    v211 = iconst.i64 48
+    v212 = iadd.i64 v1, v211  ; v211 = 48
+    v213 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v213(v212)  ; v213 = 0x0001_030f_4180
+    jump block41
+
+block41:
+    v214 = iconst.i8 4
+    store notrap aligned v214, v1+48  ; v214 = 4
+    v215 = iconst.i8 0
+    store notrap aligned v215, v1+56  ; v215 = 0
+    store.i64 notrap aligned v25, v1+64
+    jump block39
+
+block38:
+    v216 = stack_addr.i64 ss0
+    v217 = iconst.i8 3
+    store notrap aligned v217, v216  ; v217 = 3
+    v218 = iconst.i8 3
+    store notrap aligned v218, v216+24  ; v218 = 3
+    v219 = load.i64 notrap aligned v1+72
+    store notrap aligned v219, v216
+    v220 = load.i64 notrap aligned v1+80
+    store notrap aligned v220, v216+8
+    v221 = load.i64 notrap aligned v1+88
+    store notrap aligned v221, v216+16
+    v222 = iconst.i8 3
+    store notrap aligned v222, v1+72  ; v222 = 3
+    v223 = stack_addr.i64 ss1
+    v224 = iconst.i8 3
+    store notrap aligned v224, v223  ; v224 = 3
+    v225 = get_stack_pointer.i64 
+    v226 = load.i64 notrap aligned v0+8
+    v227 = load.i64 notrap aligned v226
+    v228 = iconst.i64 0
+    v229 = icmp ne v227, v228  ; v228 = 0
+    v230 = iconst.i64 0x0040_0000
+    v231 = iadd v227, v230  ; v230 = 0x0040_0000
+    v232 = icmp ugt v225, v231
+    v233 = band v229, v232
+    v234 = load.i64 notrap aligned v0
+    v235 = load.i64 notrap aligned v234+16
+    v236 = iconst.i64 0
+    v237 = icmp ne v235, v236  ; v236 = 0
+    v238 = band v233, v237
+    brif v238, block42, block43
+
+block42:
+    v240 = iconst.i32 0
+    v241 = call_indirect.i64 sig2, v235(v0, v216, v223, v240)  ; v240 = 0
+    jump block44(v241)
+
+block43:
+    v242 = iconst.i32 2
+    v243 = iconst.i64 0x0001_0311_0378
+    v244 = call_indirect sig1, v243(v0, v216, v223, v242)  ; v243 = 0x0001_0311_0378, v242 = 2
+    jump block44(v244)
+
+block44(v239: i32):
+    v245 = uload8.i32 notrap aligned v216
+    v246 = uextend.i64 v245
+    v247 = iconst.i64 1960
+    v248 = ushr v247, v246  ; v247 = 1960
+    v249 = iconst.i64 1
+    v250 = band v248, v249  ; v249 = 1
+    v251 = iconst.i64 0
+    v252 = icmp ne v250, v251  ; v251 = 0
+    v253 = uload8.i32 notrap aligned v216
+    v254 = uload8.i32 notrap aligned v216+8
+    v255 = iconst.i32 4
+    v256 = icmp eq v253, v255  ; v255 = 4
+    v257 = iconst.i32 0
+    v258 = icmp eq v254, v257  ; v257 = 0
+    v259 = band v256, v258
+    v260 = load.i64 notrap aligned v216+16
+    v261 = bor v252, v259
+    brif v261, block46, block45
+
+block45:
+    v262 = iconst.i64 0
+    v263 = iadd.i64 v216, v262  ; v262 = 0
+    v264 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v264(v263)  ; v264 = 0x0001_030f_4180
+    jump block46
+
+block46:
+    v265 = uload8.i32 notrap aligned v216+24
+    v266 = uextend.i64 v265
+    v267 = iconst.i64 1960
+    v268 = ushr v267, v266  ; v267 = 1960
+    v269 = iconst.i64 1
+    v270 = band v268, v269  ; v269 = 1
+    v271 = iconst.i64 0
+    v272 = icmp ne v270, v271  ; v271 = 0
+    v273 = uload8.i32 notrap aligned v216+24
+    v274 = uload8.i32 notrap aligned v216+32
+    v275 = iconst.i32 4
+    v276 = icmp eq v273, v275  ; v275 = 4
+    v277 = iconst.i32 0
+    v278 = icmp eq v274, v277  ; v277 = 0
+    v279 = band v276, v278
+    v280 = load.i64 notrap aligned v216+40
+    v281 = bor v272, v279
+    brif v281, block48, block47
+
+block47:
+    v282 = iconst.i64 24
+    v283 = iadd.i64 v216, v282  ; v282 = 24
+    v284 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v284(v283)  ; v284 = 0x0001_030f_4180
+    jump block48
+
+block48:
+    brif.i32 v239, block50(v239), block49
+
+block50(v285: i32):
+    v286 = iconst.i32 7
+    v287 = iconst.i32 4
+    v288 = iconst.i64 0x0001_0310_e688
+    v289 = call_indirect sig0, v288(v0, v1, v286, v287)  ; v288 = 0x0001_0310_e688, v286 = 7, v287 = 4
+    return v285
+
+block49:
+    v290 = uload8.i32 notrap aligned v1+48
+    v291 = uload8.i32 notrap aligned v1+56
+    v292 = iconst.i32 4
+    v293 = icmp eq v290, v292  ; v292 = 4
+    v294 = iconst.i32 0
+    v295 = icmp ne v291, v294  ; v294 = 0
+    v296 = band v293, v295
+    brif v296, block51, block52
+
+block51:
+    v297 = iconst.i64 48
+    v298 = iadd.i64 v1, v297  ; v297 = 48
+    v299 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v299(v298)  ; v299 = 0x0001_030f_4180
+    jump block52
+
+block52:
+    v300 = load.i64 notrap aligned v223
+    store notrap aligned v300, v1+48
+    v301 = load.i64 notrap aligned v223+8
+    store notrap aligned v301, v1+56
+    v302 = load.i64 notrap aligned v223+16
+    store notrap aligned v302, v1+64
+    jump block39
+
+block39:
+    v303 = uload8.i32 notrap aligned v1+24
+    v304 = uload8.i32 notrap aligned v1+32
+    v305 = iconst.i32 4
+    v306 = icmp eq v303, v305  ; v305 = 4
+    v307 = iconst.i32 0
+    v308 = icmp eq v304, v307  ; v307 = 0
+    v309 = band v306, v308
+    v310 = load.i64 notrap aligned v1+40
+    v311 = uload8.i32 notrap aligned v1+48
+    v312 = uload8.i32 notrap aligned v1+56
+    v313 = iconst.i32 4
+    v314 = icmp eq v311, v313  ; v313 = 4
+    v315 = iconst.i32 0
+    v316 = icmp eq v312, v315  ; v315 = 0
+    v317 = band v314, v316
+    v318 = load.i64 notrap aligned v1+64
+    v319 = band v309, v317
+    brif v319, block53, block55
+
+block53:
+    v321, v322 = sadd_overflow.i64 v310, v318
+    brif v322, block55, block54(v321)
+
+block54(v320: i64):
+    v323 = uload8.i32 notrap aligned v1+96
+    v324 = uload8.i32 notrap aligned v1+104
+    v325 = iconst.i32 4
+    v326 = icmp eq v323, v325  ; v325 = 4
+    v327 = iconst.i32 0
+    v328 = icmp ne v324, v327  ; v327 = 0
+    v329 = band v326, v328
+    brif v329, block57, block58
+
+block57:
+    v330 = iconst.i64 96
+    v331 = iadd.i64 v1, v330  ; v330 = 96
+    v332 = iconst.i64 0x0001_030f_4180
+    call_indirect sig4, v332(v331)  ; v332 = 0x0001_030f_4180
+    jump block58
+
+block58:
+    v333 = iconst.i8 4
+    store notrap aligned v333, v1+96  ; v333 = 4
+    v334 = iconst.i8 0
+    store notrap aligned v334, v1+104  ; v334 = 0
+    store.i64 notrap aligned v320, v1+112
+    jump block56
+
+block55:
+    v335 = iconst.i32 7
+    v336 = iconst.i32 5
+    v337 = iconst.i64 0x0001_030f_4438
+    v338 = call_indirect sig0, v337(v0, v1, v335, v336)  ; v337 = 0x0001_030f_4438, v335 = 7, v336 = 5
+    brif v338, block60(v338), block59
+
+block60(v339: i32):
+    v340 = iconst.i32 7
+    v341 = iconst.i32 5
+    v342 = iconst.i64 0x0001_0310_e688
+    v343 = call_indirect sig0, v342(v0, v1, v340, v341)  ; v342 = 0x0001_0310_e688, v340 = 7, v341 = 5
+    return v339
+
+block59:
+    jump block56
+
+block56:
+    jump block4
+
+block4:
+    v344 = load.i64 notrap aligned v1+96
+    store notrap aligned v344, v2
+    v345 = load.i64 notrap aligned v1+104
+    store notrap aligned v345, v2+8
+    v346 = load.i64 notrap aligned v1+112
+    store notrap aligned v346, v2+16
+    v347 = iconst.i8 3
+    store notrap aligned v347, v1+96  ; v347 = 3
+    v348 = iconst.i32 0
+    return v348  ; v348 = 0
+}
+
+jit: machine code of Work.compute
+  unwind Aarch64SetPointerAuth { return_addresses: false }
+  stp fp, lr, [sp, #-16]!
+  unwind PushFrameRegs { offset_upward_to_caller_sp: 16 }
+  mov fp, sp
+  unwind DefineNewFrame { offset_upward_to_caller_sp: 16, offset_downward_to_clobbers: 64 }
+  stp x25, x26, [sp, #-16]!
+  unwind SaveReg { clobber_offset: 48, reg: p25i }
+  unwind SaveReg { clobber_offset: 56, reg: p26i }
+  stp x23, x24, [sp, #-16]!
+  unwind SaveReg { clobber_offset: 32, reg: p23i }
+  unwind SaveReg { clobber_offset: 40, reg: p24i }
+  stp x21, x22, [sp, #-16]!
+  unwind SaveReg { clobber_offset: 16, reg: p21i }
+  unwind SaveReg { clobber_offset: 24, reg: p22i }
+  stp x19, x20, [sp, #-16]!
+  unwind SaveReg { clobber_offset: 0, reg: p19i }
+  unwind SaveReg { clobber_offset: 8, reg: p20i }
+  sub sp, sp, #1568
+  unwind StackAlloc { size: 1568 }
+block0:
+  mov x25, x2
+  emit_island 68
+  subs wzr, w3, #8
+  mov x2, #8 ; csel x2, x3, x2, lo ; csdb ; adr x4, pc+16 ; ldrsw x2, [x4, x2, uxtw #2] ; add x4, x4, x2 ; br x4 ; jt_entries [MachLabel(9), MachLabel(2), MachLabel(3), MachLabel(4), MachLabel(5), MachLabel(6), MachLabel(7), MachLabel(8)] ; default label1
+block1:
+  mov x24, x0
+  b label81
+block2:
+  mov x24, x0
+  b label81
+block3:
+  mov x24, x0
+  b label81
+block4:
+  mov x24, x0
+  b label81
+block5:
+  mov x24, x0
+  b label81
+block6:
+  mov x24, x0
+  b label81
+block7:
+  mov x24, x0
+  b label81
+block8:
+  mov x24, x0
+  b label81
+block9:
+  b label10
+block10:
+  b label11
+block11:
+  ldrb w5, [x1, #24]
+  ldrb w4, [x1, #32]
+  ldr x21, [x1, #40]
+  ldrb w3, [x1, #48]
+  ldrb w2, [x1, #56]
+  ldr x19, [x1, #64]
+  subs wzr, w5, #4
+  cset x5, eq
+  subs wzr, w4, #0
+  cset x4, eq
+  and w4, w5, w4
+  and w4, w4, #1
+  subs wzr, w3, #4
+  cset x3, eq
+  subs wzr, w2, #0
+  cset x2, eq
+  and w2, w3, w2
+  and w20, w4, w2
+  ands wzr, w20, #255
+  b.ne label21 ; b label12
+block12:
+  movz w3, #3
+  mov x22, sp
+  strb w3, [sp]
+  strb w3, [sp, #24]
+  strb w3, [sp, #48]
+  ldr x4, [x1, #24]
+  str x4, [sp]
+  ldr x4, [x1, #32]
+  str x4, [sp, #8]
+  ldr x5, [x1, #40]
+  str x5, [sp, #16]
+  strb w3, [x1, #24]
+  ldr x7, [x1, #48]
+  str x7, [sp, #24]
+  ldr x8, [x1, #56]
+  str x8, [sp, #32]
+  ldr x9, [x1, #64]
+  str x9, [sp, #40]
+  strb w3, [x1, #48]
+  mov x23, x1
+  add x2, sp, #1536
+  strb w3, [sp, #1536]
+  ldr x12, [x0, #8]
+  ldr x13, [x12]
+  ldr x12, [x0]
+  mov x24, x0
+  ldr x12, [x12]
+  subs xzr, x13, #0
+  cset x14, ne
+  mov x15, sp
+  add x13, x13, #4194304
+  subs xzr, x15, x13
+  cset x15, hi
+  and w14, w14, w15
+  subs xzr, x12, #0
+  cset x15, ne
+  and w15, w14, w15
+  ands wzr, w15, #255
+  b.ne label14 ; b label13
+block13:
+  movz x4, #888
+  movk x4, x4, #785, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w3, #0
+  mov x0, x24
+  mov x1, x22
+  blr x4
+  mov x26, x0
+  b label15
+block14:
+  movz w3, #0
+  mov x0, x24
+  mov x1, x22
+  blr x12
+  mov x26, x0
+  b label15
+block15:
+  movz x2, #2080
+  movk x2, x2, #785, LSL #16
+  movk x2, x2, #1, LSL #32
+  movz x1, #7
+  mov x0, x22
+  blr x2
+  mov x0, x26
+  cbnz w0, label20 ; b label16
+block16:
+  mov x1, x23
+  ldrb w0, [x1, #72]
+  subs wzr, w0, #3
+  b.ne label18 ; b label17
+block17:
+  mov x23, x1
+  b label19
+block18:
+  movz x2, #16768
+  movk x2, x2, #783, LSL #16
+  movk x2, x2, #1, LSL #32
+  add x0, x1, #72
+  mov x23, x1
+  blr x2
+  b label19
+block19:
+  ldr x0, [sp, #1536]
+  mov x1, x23
+  str x0, [x1, #72]
+  ldr x0, [sp, #1544]
+  str x0, [x1, #80]
+  ldr x0, [sp, #1552]
+  str x0, [x1, #88]
+  b label25
+block20:
+  mov x26, x0
+  movz x4, #59016
+  movk x4, x4, #784, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w2, #7
+  movz w3, #2
+  mov x0, x24
+  mov x1, x23
+  blr x4
+  mov x0, x26
+  add sp, sp, #1568
+  ldp x19, x20, [sp], #16
+  ldp x21, x22, [sp], #16
+  ldp x23, x24, [sp], #16
+  ldp x25, x26, [sp], #16
+  ldp fp, lr, [sp], #16
+  ret
+block21:
+  mov x23, x1
+  mov x24, x0
+  ldrb w0, [x1, #72]
+  subs wzr, w0, #3
+  b.ne label23 ; b label22
+block22:
+  b label24
+block23:
+  movz x1, #16768
+  movk x1, x1, #783, LSL #16
+  movk x1, x1, #1, LSL #32
+  mov x0, x23
+  add x0, x0, #72
+  blr x1
+  b label24
+block24:
+  movz w0, #3
+  mov x1, x23
+  strb w0, [x1, #72]
+  b label25
+block25:
+  ands wzr, w20, #255
+  b.ne label44 ; b label26
+block26:
+  movz w22, #3
+  mov x21, sp
+  strb w22, [sp]
+  strb w22, [sp, #24]
+  mov x1, x23
+  ldrb w1, [x1, #72]
+  mov x2, x23
+  ldrb w0, [x2, #80]
+  movz x2, #1960
+  lsr x2, x2, x1
+  and x2, x2, #1
+  subs xzr, x2, #0
+  cset x2, ne
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x0, eq
+  and w0, w1, w0
+  orr w0, w2, w0
+  ands wzr, w0, #255
+  b.ne label28 ; b label27
+block27:
+  movz x2, #56248
+  movk x2, x2, #784, LSL #16
+  movk x2, x2, #1, LSL #32
+  mov x1, x23
+  add x0, x1, #72
+  mov x1, x21
+  blr x2
+  b label29
+block28:
+  mov x1, x23
+  ldr x0, [x1, #72]
+  str x0, [sp]
+  ldr x0, [x1, #80]
+  str x0, [sp, #8]
+  ldr x0, [x1, #88]
+  str x0, [sp, #16]
+  b label29
+block29:
+  add x2, sp, #1536
+  strb w22, [sp, #1536]
+  mov x0, x24
+  ldr x0, [x0, #8]
+  ldr x0, [x0]
+  mov x1, x24
+  ldr x1, [x1]
+  ldr x5, [x1, #8]
+  subs xzr, x0, #0
+  cset x1, ne
+  mov x4, sp
+  add x0, x0, #4194304
+  subs xzr, x4, x0
+  cset x0, hi
+  and w0, w1, w0
+  subs xzr, x5, #0
+  cset x1, ne
+  and w0, w0, w1
+  ands wzr, w0, #255
+  b.ne label31 ; b label30
+block30:
+  movz x4, #888
+  movk x4, x4, #785, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w3, #1
+  mov x0, x24
+  mov x1, x21
+  blr x4
+  mov x22, x0
+  b label32
+block31:
+  movz w3, #0
+  mov x0, x24
+  mov x1, x21
+  blr x5
+  mov x22, x0
+  b label32
+block32:
+  ldrb w1, [sp]
+  ldrb w0, [sp, #8]
+  movz x2, #1960
+  lsr x2, x2, x1
+  and x2, x2, #1
+  subs xzr, x2, #0
+  cset x2, ne
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x3, eq
+  and w1, w1, w3
+  orr w1, w2, w1
+  ands wzr, w1, #255
+  b.ne label33 ; b label34
+block33:
+  b label35
+block34:
+  movz x4, #16768
+  movk x4, x4, #783, LSL #16
+  movk x4, x4, #1, LSL #32
+  mov x0, x21
+  blr x4
+  b label35
+block35:
+  ldrb w7, [sp, #24]
+  ldrb w6, [sp, #32]
+  movz x8, #1960
+  lsr x8, x8, x7
+  and x8, x8, #1
+  subs xzr, x8, #0
+  cset x8, ne
+  subs wzr, w7, #4
+  cset x9, eq
+  subs wzr, w6, #0
+  cset x10, eq
+  and w9, w9, w10
+  orr w9, w8, w9
+  ands wzr, w9, #255
+  b.ne label36 ; b label37
+block36:
+  mov x0, x22
+  b label38
+block37:
+  movz x12, #16768
+  movk x12, x12, #783, LSL #16
+  movk x12, x12, #1, LSL #32
+  add x0, x21, #24
+  blr x12
+  mov x0, x22
+  b label38
+block38:
+  cbnz w0, label43 ; b label39
+block39:
+  mov x1, x23
+  ldrb w0, [x1, #24]
+  ldrb w15, [x1, #32]
+  subs wzr, w0, #4
+  cset x0, eq
+  subs wzr, w15, #0
+  cset x1, ne
+  and w0, w0, w1
+  ands wzr, w0, #255
+  b.ne label41 ; b label40
+block40:
+  b label42
+block41:
+  movz x1, #16768
+  movk x1, x1, #783, LSL #16
+  movk x1, x1, #1, LSL #32
+  mov x0, x23
+  add x0, x0, #24
+  blr x1
+  b label42
+block42:
+  ldr x0, [sp, #1536]
+  mov x1, x23
+  str x0, [x1, #24]
+  ldr x0, [sp, #1544]
+  str x0, [x1, #32]
+  ldr x0, [sp, #1552]
+  str x0, [x1, #40]
+  b label48
+block43:
+  mov x22, x0
+  movz x4, #59016
+  movk x4, x4, #784, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w2, #7
+  movz w3, #3
+  mov x0, x24
+  mov x1, x23
+  blr x4
+  mov x0, x22
+  add sp, sp, #1568
+  ldp x19, x20, [sp], #16
+  ldp x21, x22, [sp], #16
+  ldp x23, x24, [sp], #16
+  ldp x25, x26, [sp], #16
+  ldp fp, lr, [sp], #16
+  ret
+block44:
+  mov x1, x23
+  ldrb w1, [x1, #24]
+  mov x0, x23
+  ldrb w0, [x0, #32]
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x0, ne
+  and w0, w1, w0
+  ands wzr, w0, #255
+  b.ne label46 ; b label45
+block45:
+  b label47
+block46:
+  movz x1, #16768
+  movk x1, x1, #783, LSL #16
+  movk x1, x1, #1, LSL #32
+  mov x0, x23
+  add x0, x0, #24
+  blr x1
+  b label47
+block47:
+  movz w0, #4
+  mov x1, x23
+  strb w0, [x1, #24]
+  movz w0, #0
+  strb w0, [x1, #32]
+  str x21, [x1, #40]
+  b label48
+block48:
+  ands wzr, w20, #255
+  b.ne label64 ; b label49
+block49:
+  movz w0, #3
+  mov x19, sp
+  strb w0, [sp]
+  strb w0, [sp, #24]
+  mov x1, x23
+  ldr x1, [x1, #72]
+  str x1, [sp]
+  mov x1, x23
+  ldr x1, [x1, #80]
+  str x1, [sp, #8]
+  mov x1, x23
+  ldr x1, [x1, #88]
+  str x1, [sp, #16]
+  mov x1, x23
+  strb w0, [x1, #72]
+  add x2, sp, #1536
+  strb w0, [sp, #1536]
+  mov x0, x24
+  ldr x0, [x0, #8]
+  ldr x0, [x0]
+  mov x1, x24
+  ldr x1, [x1]
+  ldr x5, [x1, #16]
+  subs xzr, x0, #0
+  cset x1, ne
+  mov x4, sp
+  add x0, x0, #4194304
+  subs xzr, x4, x0
+  cset x0, hi
+  and w0, w1, w0
+  subs xzr, x5, #0
+  cset x1, ne
+  and w0, w0, w1
+  ands wzr, w0, #255
+  b.ne label51 ; b label50
+block50:
+  movz x4, #888
+  movk x4, x4, #785, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w3, #2
+  mov x0, x24
+  mov x1, x19
+  blr x4
+  mov x21, x0
+  b label52
+block51:
+  movz w3, #0
+  mov x0, x24
+  mov x1, x19
+  blr x5
+  mov x21, x0
+  b label52
+block52:
+  ldrb w1, [sp]
+  ldrb w0, [sp, #8]
+  movz x20, #1960
+  lsr x2, x20, x1
+  and x2, x2, #1
+  subs xzr, x2, #0
+  cset x2, ne
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x0, eq
+  and w0, w1, w0
+  orr w0, w2, w0
+  ands wzr, w0, #255
+  b.ne label53 ; b label54
+block53:
+  b label55
+block54:
+  movz x1, #16768
+  movk x1, x1, #783, LSL #16
+  movk x1, x1, #1, LSL #32
+  mov x0, x19
+  blr x1
+  b label55
+block55:
+  ldrb w1, [sp, #24]
+  ldrb w0, [sp, #32]
+  lsr x2, x20, x1
+  and x2, x2, #1
+  subs xzr, x2, #0
+  cset x2, ne
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x3, eq
+  and w3, w1, w3
+  orr w2, w2, w3
+  ands wzr, w2, #255
+  b.ne label56 ; b label57
+block56:
+  mov x0, x21
+  b label58
+block57:
+  movz x5, #16768
+  movk x5, x5, #783, LSL #16
+  movk x5, x5, #1, LSL #32
+  add x0, x19, #24
+  blr x5
+  mov x0, x21
+  b label58
+block58:
+  cbnz w0, label63 ; b label59
+block59:
+  mov x1, x23
+  ldrb w9, [x1, #48]
+  ldrb w8, [x1, #56]
+  subs wzr, w9, #4
+  cset x9, eq
+  subs wzr, w8, #0
+  cset x10, ne
+  and w10, w9, w10
+  ands wzr, w10, #255
+  b.ne label61 ; b label60
+block60:
+  b label62
+block61:
+  movz x13, #16768
+  movk x13, x13, #783, LSL #16
+  movk x13, x13, #1, LSL #32
+  mov x1, x23
+  add x0, x1, #48
+  blr x13
+  b label62
+block62:
+  ldr x15, [sp, #1536]
+  mov x1, x23
+  str x15, [x1, #48]
+  ldr x0, [sp, #1544]
+  str x0, [x1, #56]
+  ldr x0, [sp, #1552]
+  str x0, [x1, #64]
+  b label68
+block63:
+  mov x21, x0
+  movz x4, #59016
+  movk x4, x4, #784, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w2, #7
+  movz w3, #4
+  mov x0, x24
+  mov x1, x23
+  blr x4
+  mov x0, x21
+  add sp, sp, #1568
+  ldp x19, x20, [sp], #16
+  ldp x21, x22, [sp], #16
+  ldp x23, x24, [sp], #16
+  ldp x25, x26, [sp], #16
+  ldp fp, lr, [sp], #16
+  ret
+block64:
+  mov x1, x23
+  ldrb w1, [x1, #48]
+  mov x0, x23
+  ldrb w0, [x0, #56]
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x0, ne
+  and w0, w1, w0
+  ands wzr, w0, #255
+  b.ne label66 ; b label65
+block65:
+  b label67
+block66:
+  movz x1, #16768
+  movk x1, x1, #783, LSL #16
+  movk x1, x1, #1, LSL #32
+  mov x0, x23
+  add x0, x0, #48
+  blr x1
+  b label67
+block67:
+  movz w0, #4
+  mov x1, x23
+  strb w0, [x1, #48]
+  movz w0, #0
+  strb w0, [x1, #56]
+  str x19, [x1, #64]
+  b label68
+block68:
+  mov x1, x23
+  ldrb w5, [x1, #24]
+  ldrb w4, [x1, #32]
+  ldr x0, [x1, #40]
+  ldrb w3, [x1, #48]
+  ldrb w2, [x1, #56]
+  ldr x1, [x1, #64]
+  subs wzr, w5, #4
+  cset x5, eq
+  subs wzr, w4, #0
+  cset x4, eq
+  and w4, w5, w4
+  subs wzr, w3, #4
+  cset x3, eq
+  subs wzr, w2, #0
+  cset x2, eq
+  and w2, w3, w2
+  and w2, w4, w2
+  ands wzr, w2, #255
+  b.ne label70 ; b label69
+block69:
+  b label76
+block70:
+  adds x19, x0, x1
+  cset x0, vs
+  ands wzr, w0, #255
+  b.ne label71 ; b label72
+block71:
+  b label76
+block72:
+  mov x1, x23
+  ldrb w1, [x1, #96]
+  mov x0, x23
+  ldrb w0, [x0, #104]
+  subs wzr, w1, #4
+  cset x1, eq
+  subs wzr, w0, #0
+  cset x0, ne
+  and w0, w1, w0
+  ands wzr, w0, #255
+  b.ne label74 ; b label73
+block73:
+  b label75
+block74:
+  movz x1, #16768
+  movk x1, x1, #783, LSL #16
+  movk x1, x1, #1, LSL #32
+  mov x0, x23
+  add x0, x0, #96
+  blr x1
+  b label75
+block75:
+  movz w0, #4
+  mov x1, x23
+  strb w0, [x1, #96]
+  movz w0, #0
+  strb w0, [x1, #104]
+  str x19, [x1, #112]
+  b label78
+block76:
+  movz x4, #17464
+  movk x4, x4, #783, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w2, #7
+  mov x19, x2
+  movz w3, #5
+  mov x0, x24
+  mov x1, x23
+  blr x4
+  cbnz w0, label80 ; b label77
+block77:
+  b label78
+block78:
+  b label79
+block79:
+  mov x1, x23
+  ldr x0, [x1, #96]
+  mov x2, x25
+  str x0, [x2]
+  ldr x0, [x1, #104]
+  str x0, [x2, #8]
+  ldr x0, [x1, #112]
+  str x0, [x2, #16]
+  movz w0, #3
+  strb w0, [x1, #96]
+  movz w0, #0
+  add sp, sp, #1568
+  ldp x19, x20, [sp], #16
+  ldp x21, x22, [sp], #16
+  ldp x23, x24, [sp], #16
+  ldp x25, x26, [sp], #16
+  ldp fp, lr, [sp], #16
+  ret
+block80:
+  mov x20, x0
+  movz x4, #59016
+  movk x4, x4, #784, LSL #16
+  movk x4, x4, #1, LSL #32
+  movz w3, #5
+  mov x0, x24
+  mov x1, x23
+  mov x2, x19
+  blr x4
+  mov x0, x20
+  add sp, sp, #1568
+  ldp x19, x20, [sp], #16
+  ldp x21, x22, [sp], #16
+  ldp x23, x24, [sp], #16
+  ldp x25, x26, [sp], #16
+  ldp fp, lr, [sp], #16
+  ret
+block81:
+  movz x3, #3532
+  movk x3, x3, #785, LSL #16
+  movk x3, x3, #1, LSL #32
+  movz w1, #7
+  movz w2, #0
+  mov x0, x24
+  blr x3
+  add sp, sp, #1568
+  ldp x19, x20, [sp], #16
+  ldp x21, x22, [sp], #16
+  ldp x23, x24, [sp], #16
+  ldp x25, x26, [sp], #16
+  ldp fp, lr, [sp], #16
+  ret
+

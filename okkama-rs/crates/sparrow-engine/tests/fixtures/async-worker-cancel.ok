@@ -1,0 +1,13 @@
+module async_worker_cancel v1.0.0;
+import "runtime/time" take sleep_nanoseconds;
+object Endless {Endless();run() is int {loop {} 42;}}
+async main() is int {
+    let child=spawn Endless().run();
+    await sleep_nanoseconds("10000000");
+    child.cancel();
+    child.cancel();
+    let cancelled=try {await child;false;} catch failure is Cancelled {true;};
+    confirm cancelled && child.cancelled() && child.done();
+    spawn Endless().run();
+    42;
+}

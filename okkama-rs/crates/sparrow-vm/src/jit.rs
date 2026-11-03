@@ -445,7 +445,7 @@ impl Jit {
         }
     }
 
-    fn build(&self, program: &Program, index: usize, constants: &[Value]) -> Result<usize, String> {
+    pub(crate) fn build(&self, program: &Program, index: usize, constants: &[Value]) -> Result<usize, String> {
         let registers = program.functions[index].registers.len();
         if registers > MAX_JIT_REGISTERS {
             return Err(format!("{registers} registers (the limit is {MAX_JIT_REGISTERS})"));
@@ -478,7 +478,11 @@ impl Jit {
         if self.dump.contains(&program.functions[index].symbol) {
             eprintln!("jit: CLIF of {}\n{}", program.functions[index].symbol, context.func.display());
         }
+        context.set_disasm(self.dump.contains(&program.functions[index].symbol));
         module.define_function(id, &mut context).map_err(|error| format!("{error:?}"))?;
+        if let Some(vcode) = context.compiled_code().and_then(|code| code.vcode.as_ref()) {
+            eprintln!("jit: machine code of {}\n{}", program.functions[index].symbol, vcode);
+        }
         // Адрес публикуется только для кадра в пределах запаса стека.
         let frame = context
             .compiled_code()
@@ -1277,6 +1281,8 @@ struct Gen<'a, 'b> {
     /// Регистры прямо вызываемой функции и её результат.
     area: Option<ir::StackSlot>,
     result: Option<ir::StackSlot>,
+    scalar: Vec<Option<crate::scalar::Action>>,
+    virtuals: Vec<Option<(ir::Value, Vec<ir::Value>)>>,
 }
 
 fn flags() -> MemFlagsData {
@@ -1340,13 +1346,17 @@ impl<'a, 'b> Gen<'a, 'b> {
             role_maps,
             area: None,
             result: None,
+            scalar: if std::env::var("OKKAMA_JIT_SCALAR").as_deref() == Ok("off") { vec![None; function.code.len()] } else { crate::scalar::plan(program, function) },
+            virtuals: vec![None; function.code.len()],
         };
         generator.leaders();
         // Вход: начало функции или цель перехода (OSR).
         let bad = generator.b.create_block();
+        let scalar_entry = generator.scalar.iter().any(Option::is_some);
         let calls: Vec<_> = (0..function.code.len())
             .map(|pc| {
-                let block = generator.blocks[pc].unwrap_or(bad);
+                // Scalar plans admit only straight-line functions: there is no OSR backedge.
+                let block = if pc != 0 && scalar_entry { bad } else { generator.blocks[pc].unwrap_or(bad) };
                 generator.b.func.dfg.block_call(block, &[])
             })
             .collect();
@@ -1579,7 +1589,7 @@ impl<'a, 'b> Gen<'a, 'b> {
             } else if !open {
                 continue; // недостижимо без входа
             }
-            self.instruction(pc, instruction)?;
+            self.scalar_instruction(pc, instruction)?;
             open = !instruction.is_terminator();
         }
         if open {
@@ -1600,6 +1610,54 @@ impl<'a, 'b> Gen<'a, 'b> {
         let status = self.fault(pc);
         self.b.ins().return_(&[status]);
         Ok(())
+    }
+
+    // Values captured here are Cranelift SSA values, not heap objects or Value slots.
+    fn scalar_instruction(&mut self, pc: usize, instruction: &I) -> Result<(), String> {
+        let Some(action) = self.scalar[pc].clone() else { return self.instruction(pc, instruction); };
+        let regs = self.regs;
+        match action {
+            crate::scalar::Action::New { dst, fields } => {
+                let mut values = Vec::with_capacity(fields.len());
+                let mut eligible = self.b.ins().iconst(types::I8, 1);
+                for field in fields {
+                    let (small, value) = self.small_int(regs, offset(field));
+                    eligible = self.b.ins().band(eligible, small);
+                    values.push(value);
+                }
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(eligible, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                self.release_register(dst);
+                self.store8(self.layout.undef, regs, offset(dst));
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.instruction(pc, instruction)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
+                self.virtuals[pc] = Some((eligible, values));
+            }
+            crate::scalar::Action::Get { allocation, field, dst } => {
+                let (eligible, values) = self.virtuals[allocation].as_ref().expect("dominating virtual object");
+                let (eligible, value) = (*eligible, values[field]);
+                let fast = self.b.create_block();
+                let slow = self.b.create_block();
+                let done = self.b.create_block();
+                self.b.ins().brif(eligible, fast, &[], slow, &[]);
+                self.b.switch_to_block(fast);
+                self.release_register(dst);
+                self.store_small(regs, offset(dst), value);
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(slow);
+                self.instruction(pc, instruction)?;
+                self.b.ins().jump(done, &[]);
+                self.b.switch_to_block(done);
+            }
+        }
+        Ok(())
+
     }
 
     fn instruction(&mut self, pc: usize, instruction: &I) -> Result<(), String> {

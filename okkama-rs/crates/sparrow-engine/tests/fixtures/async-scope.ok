@@ -1,0 +1,61 @@
+module async_scope v1.0.0;
+import "async/scope" take FutureScope, Supervising;
+import "async/event" take Event;
+import "async/atomic" take Atomic;
+import "runtime/time" take sleep_nanoseconds;
+object Child {
+    has done is Event;
+    has delay is string;
+    Child(:done,:delay);
+    async run() is int {
+        defer done.set();
+        await sleep_nanoseconds(delay);
+        21;
+    }
+}
+object Problem does Error {Problem();text() is string {"body failed";}}
+object Body {
+    has done is Event;
+    has calls is Atomic<int>;
+    has fail is bool;
+    Body(:done,:calls,:fail);
+    async run(group is Supervising<int>) is string {
+        calls.replace(calls.value() + 1);
+        group.start(Child(done:done,delay: if fail {"9223372036854775807"} else {"1000000"}).run());
+        if fail {throw Problem();}
+        "answer";
+    }
+}
+object WaitingBody {
+    has done is Event;
+    WaitingBody(:done);
+    async run(group is Supervising<int>) is int {
+        group.start(Child(done:done,delay:"9223372036854775807").run());
+        42;
+    }
+}
+object Waiting {
+    has scope is FutureScope<int,int>;
+    Waiting(:scope);
+    async run() is int {await scope.result();}
+}
+async main() is int {
+    let done=Event();
+    let calls=Atomic(0);
+    let scope is FutureScope<int,string> = FutureScope(action:Body(done:done,calls:calls,fail:false).run);
+    let first=scope.result();
+    confirm first == scope.result() && calls.value() == 0;
+    confirm (await first) == "answer" && done.ready();
+    confirm (await scope.result()) == "answer" && calls.value() == 1;
+    let cleanup=Event();
+    let failed is FutureScope<int,string> = FutureScope(action:Body(done:cleanup,calls:calls,fail:true).run);
+    let caught=try {await failed.result();false;} catch failure is Problem {true;};
+    confirm caught && cleanup.ready() && calls.value() == 2;
+    let final=Event();
+    let cancelled_scope is FutureScope<int,int> = FutureScope(action:WaitingBody(done:final).run);
+    let waiting=spawn Waiting(scope:cancelled_scope).run();
+    waiting.cancel();
+    let cancelled=try {await waiting;false;} catch failure is Cancelled {true;};
+    confirm cancelled && final.ready();
+    42;
+}

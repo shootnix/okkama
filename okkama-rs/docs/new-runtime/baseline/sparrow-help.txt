@@ -1,0 +1,22 @@
+Sparrow virtual machine
+
+USAGE:
+    sparrow <FILE.spb> [ARGS...]
+    sparrow run <FILE.spb> [ARGS...]   (compatibility alias)
+    sparrow test <FILE.spb>
+    sparrow check <FILE.spb>
+    sparrow --assemble <FILE.spa> -o <FILE.spb>
+    sparrow --disassemble <FILE.spb> [-o <FILE.spa>]
+    sparrow --version
+
+run          Verify and execute bytecode in this process; ARGS are the
+             program's arguments. main's integer result in 0..255 becomes the
+             exit status; an uncaught failure is reported on stderr (exit 1)
+             with the call stack in Sparrow terms (OKKAMA_TRACE=off: without).
+test         Run the tests of bytecode built with `okkama build -t`.
+check        Verify bytecode without executing it (including infinite loops).
+--assemble   Assemble Sparrow assembly text into bytecode.
+--disassemble  Print bytecode as Sparrow assembly (stdout without -o).
+
+SPB 9 is supported. Source files, Okkama compiler and Java are not
+required. Format/runtime errors exit 1, usage errors 2, I/O errors 3.

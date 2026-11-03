@@ -1,0 +1,51 @@
+module async_semaphore v1.0.0;
+import "async/semaphore" take Semaphore, InvalidPermitCount;
+import "async/event" take Event;
+object Job {
+    has pool is Semaphore;
+    has before is Event;
+    has after is Event;
+    Job(:pool,:before,:after);
+    async run() is int {
+        let permit = await pool.permit();
+        defer permit.close();
+        confirm before.ready();
+        after.set();
+        21;
+    }
+}
+async main() is int {
+    let pool = Semaphore(permits: 2);
+    let a = await pool.permit();
+    let b = await pool.permit();
+    confirm pool.permits() == 0;
+    let initial = Event(ready: true);
+    let signal = Event();
+    let finish = Event();
+    let poison = Event();
+    let first = spawn Job(pool:pool,before:initial,after:signal).run();
+    let removed = spawn Job(pool:pool,before:initial,after:poison).run();
+    let second = spawn Job(pool:pool,before:signal,after:finish).run();
+    removed.cancel();
+    a.close();
+    b.close();
+    // Resumed tasks may already have returned their permits. Global scheduling
+    // order is not a language guarantee; final counts below are exact.
+    confirm pool.permits() >= 0 && pool.permits() <= 2;
+    let x = await first;
+    let y = await second;
+    confirm finish.ready() && !poison.ready();
+    confirm pool.permits() == 2;
+    let cancelled = try { await removed; false; } catch failure is Cancelled {true;};
+    confirm cancelled;
+    a.close();
+    confirm a.closed() && pool.permits() == 2;
+    let big = Semaphore(permits: 9223372036854775807);
+    let grant = await big.permit();
+    confirm big.permits() == 9223372036854775806;
+    grant.close();
+    confirm big.permits() == 9223372036854775807;
+    let invalid = try {Semaphore(permits: 0);false;} catch failure is InvalidPermitCount {true;};
+    confirm invalid;
+    x + y;
+}
