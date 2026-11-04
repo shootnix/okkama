@@ -160,6 +160,10 @@ import "sql/pool" as db_pool;    // explicit namespace
   bindings; declaration bodies and role fakes use defining-module scope rather
   than caller scope.
 - **`as` import** replaces the basename namespace with the requested name.
+- `hidden object/role/enum` (contextual keyword) is visible only inside its
+  module: no `take`, no `ns.Name`. Public signatures, `does` lists, enum
+  payloads and bounds cannot name hidden types; values leave only as a role,
+  `Error` or `any`. A public object cannot do a hidden role.
 - No wildcard imports. Duplicate bare `take` names error; same-named
   namespace-qualified or hidden declarations from different modules coexist.
   Re-imports are idempotent. Imported `main()` never runs. Cyclic imports are

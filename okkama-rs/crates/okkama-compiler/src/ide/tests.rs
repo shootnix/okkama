@@ -383,6 +383,26 @@ main() is int {
 }
 
 #[test]
+fn lint_reports_hidden_errors_thrown_by_public_actions() {
+    let text = r#"module app v1.0.0;
+hidden enum Inner is Error = (broken(code is int));
+
+object Service {
+    Service();
+    run(n is int) is int {
+        confirm n > 0 else throw Inner.broken(n);
+        n;
+    }
+}
+
+main() is int {
+    Service().run(1);
+}
+"#;
+    assert_eq!(lints(text), [("hidden-error".to_string(), 6)]);
+}
+
+#[test]
 fn lint_reports_non_exhaustive_matches_over_plain_enums() {
     let text = r#"module app v1.0.0;
 enum Stage = (created, authorized, captured);

@@ -1,0 +1,11 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "lib/payments" take Payments, Created, Authorized;
+
+main() is int {
+    let created is Created = Payments().open("p-1");
+    let authorized is Authorized = created.authorize();
+    Stdout().writeln(authorized.id());
+    0;
+}

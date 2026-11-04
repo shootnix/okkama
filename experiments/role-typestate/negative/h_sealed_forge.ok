@@ -1,0 +1,11 @@
+// Hidden declarations. With `hidden object Payment` a plain import no longer
+// reaches the class: the concrete-class bypass of b_concrete_full_access and
+// b_concrete_to_wrong_role is rejected statically.
+// EXPECT: check-error: Type "payment_sealed.Payment" is hidden in module "payment_sealed"
+module app;
+import "../models/payment_sealed";
+
+main() is int {
+    let p = payment_sealed.Payment(key: "p");
+    0;
+}

@@ -90,6 +90,7 @@ pub fn desugar_test_items(mut program: Program) -> Program {
                         })
                         .collect();
                     fakes.push(Item::Object(ObjectDecl {
+                        hidden: role.hidden,
                         name,
                         generics: role.generics.clone(),
                         roles: vec![TypeExpr {

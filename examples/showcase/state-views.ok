@@ -17,12 +17,12 @@ role Declined   { id() is string; reason() is string; }
 enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
 
 // The real state: a private field of this enum, checked by every transition.
-enum Stage = (created, authorized, captured, refunded, declined(reason is string));
+hidden enum Stage = (created, authorized, captured, refunded, declined(reason is string));
 
 enum PaymentError is Error = (invalid_transition(action is string));
 
-// One immutable class implements every view.
-object Payment does Created, Authorized, Captured, Refunded, Declined {
+// One immutable class implements every view; hidden: other modules cannot name it.
+hidden object Payment does Created, Authorized, Captured, Refunded, Declined {
     has key is string;
     has stage is Stage = Stage.created;      // not in the constructor: unforgeable
     Payment(:key);

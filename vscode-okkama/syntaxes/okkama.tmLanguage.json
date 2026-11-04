@@ -31,6 +31,9 @@
       "include": "#capAccess"
     },
     {
+      "include": "#enumCases"
+    },
+    {
       "include": "#types"
     },
     {
@@ -178,6 +181,10 @@
     "declarations": {
       "patterns": [
         {
+          "name": "storage.modifier.hidden.okkama",
+          "match": "\\bhidden\\b(?=\\s+(?:object|role|enum)\\b)"
+        },
+        {
           "name": "meta.declaration.cap.okkama",
           "begin": "\\b(cap)(?=[ \\t]+(?:[A-Za-z_][A-Za-z0-9_]*[ \\t]*::[ \\t]*)?[A-Za-z_][A-Za-z0-9_]*[ \\t]*(?:\\{|$)|[ \\t]*$)",
           "beginCaptures": {
@@ -284,6 +291,17 @@
     "keywords": {
       "patterns": [
         {
+          "match": "\\b(try)([?!])",
+          "captures": {
+            "1": {
+              "name": "keyword.control.exception.okkama"
+            },
+            "2": {
+              "name": "keyword.operator.try-mark.okkama"
+            }
+          }
+        },
+        {
           "name": "keyword.declaration.cap.okkama",
           "match": "\\bcap\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*(?:\\s*::\\s*[A-Za-z_][A-Za-z0-9_]*)?\\s*\\{)"
         },
@@ -330,6 +348,10 @@
         {
           "name": "support.type.native-failure.okkama",
           "match": "\\bNativeFailure\\b"
+        },
+        {
+          "name": "support.type.builtin.okkama",
+          "match": "\\b(Maybe|Presence|Error)\\b"
         },
         {
           "name": "entity.name.type.okkama",
@@ -639,6 +661,53 @@
         {
           "name": "constant.other.enum.okkama",
           "match": "(?<=\\.)\\s*(?:some|none|missing)\\b"
+        }
+      ]
+    },
+    "enumCases": {
+      "patterns": [
+        {
+          "comment": "Enum case or variant: Shape.circle, DbError.closed, Maybe.some (not Role.fake).",
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)(\\.)(?!fake\\b)([a-z_][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "patterns": [
+                {
+                  "include": "#types"
+                }
+              ]
+            },
+            "2": {
+              "name": "punctuation.accessor.okkama"
+            },
+            "3": {
+              "name": "constant.other.enum.okkama"
+            }
+          }
+        },
+        {
+          "comment": "Case of an applied generic enum: Maybe<int>.none, Reading<T>.empty.",
+          "match": "(?<=>)(\\.)([a-z_][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.okkama"
+            },
+            "2": {
+              "name": "constant.other.enum.okkama"
+            }
+          }
+        },
+        {
+          "comment": "Leading-dot case in compact choices: ?? .some(v): v !! .none: 0.",
+          "match": "(?<![\\w)\\]>])(\\.)([a-z_][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.okkama"
+            },
+            "2": {
+              "name": "constant.other.enum.okkama"
+            }
+          }
         }
       ]
     }

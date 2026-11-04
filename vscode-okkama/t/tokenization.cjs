@@ -82,8 +82,37 @@ let checks = 0;
   check('"cap Card {"', 0, 'cap', 'keyword.declaration.cap.okkama', true);
   check('```\ncap Card {\n```\nlet after is int = 1;', 1, 'cap', 'string.quoted.other.raw.fenced.okkama');
   check('cap Card {\n text is string { ```\n } cap Fake {\n ```; }\n nextValue is int { 1; }\n}', 4, 'nextValue', 'variable.other.property.cap.okkama');
+  // hidden declarations: contextual modifier only
+  check('hidden object Payment does Created {', 0, 'hidden', 'storage.modifier.hidden.okkama');
+  check('hidden enum Stage = (created, done);', 0, 'hidden', 'storage.modifier.hidden.okkama');
+  check('object Tag { has hidden is int; }', 0, 'hidden', 'storage.modifier.hidden.okkama', true);
+  // try? / try!
+  check('let rows = try? db.query(sql) else 0;', 0, 'try', 'keyword.control.exception.okkama');
+  check('let rows = try? db.query(sql) else 0;', 0, '?', 'keyword.operator.try-mark.okkama');
+  check('let rows = try? db.query(sql) else 0;', 0, '?', 'invalid.illegal.removed-operator.okkama', true);
+  check('try! config.parse(text);', 0, '!', 'keyword.operator.try-mark.okkama');
+  check('let bad = a ? b;', 0, '?', 'invalid.illegal.removed-operator.okkama');
+  // built-in types
+  check('enum DbError is Error = (closed);', 0, 'Error', 'support.type.builtin.okkama');
+  check('let m is Maybe<int> = Maybe<int>.none;', 0, 'Maybe', 'support.type.builtin.okkama');
+  check('let p is Presence<string> = Presence<string>.missing;', 0, 'missing', 'constant.other.enum.okkama');
+  // enum cases and variants
+  check('throw DbError.query("select", 42);', 0, 'query', 'constant.other.enum.okkama');
+  check('throw DbError.query("select", 42);', 0, 'DbError', 'entity.name.type.okkama');
+  check('catch DbError.closed, NetError.reset {', 0, 'closed', 'constant.other.enum.okkama');
+  check('catch DbError.closed, NetError.reset {', 0, 'reset', 'constant.other.enum.okkama');
+  check('case Shape.circle(radius) { radius; }', 0, 'circle', 'constant.other.enum.okkama');
+  check('let r = Reading<int>.empty;', 0, 'empty', 'constant.other.enum.okkama');
+  check('let s = order.status() ?? .paid(amount): "paid" !! _: "other";', 0, 'paid', 'constant.other.enum.okkama');
+  check('let s = order.status() ?? .paid(amount): "paid" !! _: "other";', 0, 'status', 'constant.other.enum.okkama', true);
+  check('let package is Package = Package.fake();', 0, 'fake', 'constant.other.enum.okkama', true);
+  check('Stdout().writeln(text);', 0, 'writeln', 'constant.other.enum.okkama', true);
+  check('for 1..10 -> i { i; }', 0, '10', 'constant.numeric.integer.okkama');
   for (const file of ['examples/object-caps.ok',
-    'examples/choices.ok', 'examples/variants.ok']) {
+    'examples/choices.ok', 'examples/variants.ok',
+    'examples/showcase/checkout.ok', 'examples/showcase/errors.ok',
+    'examples/showcase/absence.ok', 'examples/showcase/shapes.ok',
+    'examples/showcase/state-views.ok']) {
     const source = fs.readFileSync(path.join(root, '..', file), 'utf8');
     const rows = tokenize(source + '\n__okkama_end__');
     checks++;

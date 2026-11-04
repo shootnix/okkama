@@ -8,6 +8,7 @@
 //! | `unused-private` | приватное действие объекта нигде не вызывается |
 //! | `unreachable` | оператор после `return`, `throw`, `next`, `last` или другого ухода управления |
 //! | `snake-case` | локальная, параметр, поле или действие не в `snake_case` |
+//! | `hidden-error` | публичное действие бросает `hidden` error enum: снаружи его не поймать по типу |
 //! | `non-exhaustive-match` | `match` по enum без payload без `else` пропускает варианты (для payload-enum это ошибка анализа) |
 //!
 //! Правила намеренно консервативны: ложное предупреждение хуже пропущенного.
@@ -142,6 +143,7 @@ impl Linter<'_, '_> {
         }
         self.unreachable(&body.block);
         self.enum_matches(&body.block);
+        self.hidden_throws(body);
         for inner in closures(&body.block) {
             self.body(inner);
         }
@@ -181,6 +183,35 @@ impl Linter<'_, '_> {
         }
         for stmt in &block.stmts {
             for_nested_blocks(stmt, &mut |inner| self.unreachable(inner));
+        }
+    }
+
+    /// Публичное действие публичного объекта бросает `hidden` error enum.
+    fn hidden_throws(&mut self, body: &Body) {
+        let thir::BodyOwner::Method { object, method } = body.owner else {
+            return;
+        };
+        let registry = self.registry;
+        let info = &registry.objects[object.0];
+        if info.methods[method].private || registry.modules[info.module].hidden.contains(&info.name)
+        {
+            return;
+        }
+        let mut thrown = Vec::new();
+        collect_thrown(&body.block, &mut thrown);
+        for (span, id) in thrown {
+            let error = &registry.enums[id.0];
+            if error.error && registry.modules[error.module].hidden.contains(&error.name) {
+                self.warn(
+                    span,
+                    "hidden-error",
+                    format!(
+                        "public action `{}` throws hidden error `{}`; callers cannot catch it by type",
+                        info.methods[method].name, error.name
+                    ),
+                    false,
+                );
+            }
         }
     }
 
@@ -908,6 +939,24 @@ fn collect_lets(block: &thir::Block, out: &mut Vec<LocalId>) {
 
 /// Блоки внутри оператора (`if`, `match`, `for`, `try`, `loop`, вложенные
 /// блоки) без тел closures.
+/// Значения `throw` и `confirm ... else throw` типа варианта (вне замыканий).
+fn collect_thrown(block: &thir::Block, out: &mut Vec<(Span, crate::analysis::ty::EnumId)>) {
+    for stmt in &block.stmts {
+        let value = match &stmt.kind {
+            StmtKind::Throw(value) => Some(value),
+            StmtKind::Confirm {
+                fallback: Some(thir::Fallback::Throw(value)),
+                ..
+            } => Some(value),
+            _ => None,
+        };
+        if let Some(Ty::Variant(id, _)) = value.and_then(|value| value.ty.as_ref()) {
+            out.push((value.map_or(stmt.span, |value| value.span), *id));
+        }
+        for_nested_blocks(stmt, &mut |inner| collect_thrown(inner, out));
+    }
+}
+
 fn for_nested_blocks(stmt: &thir::Stmt, visit: &mut dyn FnMut(&thir::Block)) {
     let mut exprs = Vec::new();
     stmt_exprs(stmt, &mut exprs);

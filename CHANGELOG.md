@@ -43,6 +43,19 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   and hotness thresholds 2 and 10 (mixed execution and OSR), checks that machine code
   and OSR actually ran, and runs the inline tests of every std module on IR and Sparrow
   against a list of known failures (`tools/gate/known-failures.txt`).
+- VS Code extension 0.7.0: highlighting for enum cases and variants (`Shape.circle`,
+  `Maybe<int>.none`, `.paid(amount):` in compact choices, catch patterns), built-in
+  `Maybe`/`Presence`/`Error`, `try?`/`try!` and the contextual `hidden`; 76 tokenization
+  checks.
+- **Hidden declarations** ([design](docs/POC/private-objects.md)): `hidden object`,
+  `hidden role` and `hidden enum` are visible only inside their module. `take` and
+  namespaces reject them (`Type "payments.Payment" is hidden in module "payments"`);
+  public signatures, constructors, role signatures, enum payloads, generic bounds and
+  cap fields cannot name hidden types, and a public object cannot do a hidden role.
+  Values leave the module only as a role, `Error` or `any`, so a hidden class behind
+  public state roles cannot be bypassed from other modules. `hidden` is a contextual
+  keyword. New lint `hidden-error`: a public action throws a hidden error enum.
+  Front end only (spec §5.1.1).
 - **Error enums** (error handling phase 1, [proposal](docs/POC/error-handling.md)):
   `enum DatabaseError is Error = (connection(message is string), closed);`. Values are
   thrown with `throw DatabaseError.connection("refused")`, caught with

@@ -1,0 +1,13 @@
+// Hidden declarations / Pattern B2 sealed: the same lifecycle through views
+// when the class and its stage enum are `hidden`.
+// EXPECT: run-ok
+// STDOUT: captured p1
+module app;
+import "io/stdout" take Stdout;
+import "../models/payment_sealed" take Payments;
+
+main() is int {
+    let captured = Payments().open("p1").authorize().capture();
+    Stdout().writeln("captured " + captured.id());
+    0;
+}

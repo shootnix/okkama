@@ -1,0 +1,11 @@
+module payments v1.0.0;
+
+hidden object Payment {
+    has key is string;
+    Payment(:key);
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Payment { Payment(key: id); }
+}

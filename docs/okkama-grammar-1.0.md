@@ -47,9 +47,9 @@ take_clause         = "take" ident_list ;
 ident_list          = IDENT ("," IDENT)* ;
 
 declaration         = external_cap_decl
-                    | object_decl
-                    | role_decl
-                    | enum_decl
+                    | "hidden"? object_decl            (* "hidden" is contextual *)
+                    | "hidden"? role_decl
+                    | "hidden"? enum_decl
                     | test_block
                     | native_object_decl
                     | native_action_decl

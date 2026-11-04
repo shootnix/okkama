@@ -146,6 +146,8 @@ pub struct GenericParam {
 /// `object Name<T> does Role, Other { members }`
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectDecl {
+    /// `hidden object`: not visible outside its module.
+    pub hidden: bool,
     pub name: Name,
     pub generics: Vec<GenericParam>,
     pub roles: Vec<TypeExpr>,
@@ -310,6 +312,8 @@ pub struct Param {
 /// `role Name<T> { signatures, fake, tests }`
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoleDecl {
+    /// `hidden role`: not visible outside its module.
+    pub hidden: bool,
     pub name: Name,
     pub generics: Vec<GenericParam>,
     pub members: Vec<RoleMember>,
@@ -359,6 +363,8 @@ pub enum FakeBody {
 /// `enum Name = (a, b);`
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnumDecl {
+    /// `hidden enum`: not visible outside its module.
+    pub hidden: bool,
     pub name: Name,
     pub generics: Vec<GenericParam>,
     /// `enum Name is Error = (...)`: роль, которую делают значения enum.

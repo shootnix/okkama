@@ -45,6 +45,33 @@ impl Parser<'_> {
         if self.check(TokenKind::Async) && self.check_next(TokenKind::Native) {
             return Err(self.error_here("Native declarations cannot be async."));
         }
+        // `hidden` is contextual: only before `object`, `role` or `enum`.
+        if self.check_name()
+            && self.lexeme(self.peek()) == "hidden"
+            && matches!(
+                self.nth(1).kind,
+                TokenKind::Object | TokenKind::Role | TokenKind::Enum
+            )
+        {
+            let start = self.advance().span;
+            let mut item = self.module_item()?;
+            match &mut item {
+                Item::Object(decl) => {
+                    decl.hidden = true;
+                    decl.span = start.to(decl.span);
+                }
+                Item::Role(decl) => {
+                    decl.hidden = true;
+                    decl.span = start.to(decl.span);
+                }
+                Item::Enum(decl) => {
+                    decl.hidden = true;
+                    decl.span = start.to(decl.span);
+                }
+                _ => {}
+            }
+            return Ok(item);
+        }
         if self.eat(TokenKind::Object) {
             return Ok(Item::Object(self.object_declaration()?));
         }
@@ -205,6 +232,7 @@ impl Parser<'_> {
         }
         let (members, close) = self.object_body(Some(&name))?;
         Ok(ObjectDecl {
+            hidden: false,
             name,
             generics,
             roles,
@@ -658,6 +686,7 @@ impl Parser<'_> {
         }
         let close = self.consume(TokenKind::RightBrace, "Expect \"}\" after role body.")?;
         Ok(RoleDecl {
+            hidden: false,
             name,
             generics,
             members,
@@ -747,6 +776,7 @@ impl Parser<'_> {
         let semicolon =
             self.consume(TokenKind::Semicolon, "Expect \";\" after enum declaration.")?;
         Ok(EnumDecl {
+            hidden: false,
             name,
             generics,
             role,

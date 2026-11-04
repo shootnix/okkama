@@ -388,6 +388,9 @@ impl<'s> Printer<'s> {
             Item::Object(decl) => self.object(decl),
             Item::Role(decl) => self.role(decl),
             Item::Enum(decl) => {
+                if decl.hidden {
+                    self.word("hidden ");
+                }
                 self.word("enum ");
                 self.word(&decl.name.text);
                 self.generics(&decl.generics);
@@ -451,6 +454,9 @@ impl<'s> Printer<'s> {
     }
 
     fn object(&mut self, decl: &ObjectDecl) {
+        if decl.hidden {
+            self.word("hidden ");
+        }
         self.word("object ");
         self.word(&decl.name.text);
         self.generics(&decl.generics);
@@ -616,6 +622,9 @@ impl<'s> Printer<'s> {
     }
 
     fn role(&mut self, decl: &RoleDecl) {
+        if decl.hidden {
+            self.word("hidden ");
+        }
         self.word("role ");
         self.word(&decl.name.text);
         self.generics(&decl.generics);

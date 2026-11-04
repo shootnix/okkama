@@ -5,7 +5,7 @@
 //! (поля, конструкторы, actions, `does`). Проверки объявлений — тексты
 //! Perl-анализатора; ошибки копятся, а не обрывают проход.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::SemanticError;
 use super::ty::{ActionTy, EnumId, HandleId, ObjectId, ParamId, RoleId, Ty};
@@ -57,6 +57,8 @@ pub struct ModuleInfo<'a> {
     pub scope: Names,
     pub namespaces: HashMap<String, Namespace>,
     pub imports: Vec<(usize, &'a ast::ImportDecl)>,
+    /// `hidden` объявления: видны только внутри модуля.
+    pub hidden: HashSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -305,6 +307,7 @@ impl<'a> Registry<'a> {
                     scope: Names::default(),
                     namespaces: HashMap::new(),
                     imports: source.imports,
+                    hidden: hidden_names(source.program),
                 })
                 .collect(),
             objects: Vec::new(),
@@ -358,6 +361,7 @@ impl<'a> Registry<'a> {
         }
         registry.check_variant_recursion();
         registry.check_error_payloads();
+        registry.check_hidden_leaks();
         registry.find_standard();
         registry.add_adapters();
         for (module, ty, span) in std::mem::take(&mut registry.pending_bounds) {
@@ -873,6 +877,16 @@ impl<'a> Registry<'a> {
                     );
                     continue;
                 }
+                if self.modules[dependency].hidden.contains(&name.text) {
+                    self.error(
+                        name.span,
+                        format!(
+                            "Import \"{path}\" cannot take hidden declaration \"{}\"",
+                            name.text
+                        ),
+                    );
+                    continue;
+                }
                 let own = &self.modules[dependency].own;
                 if !own.types.contains_key(&name.text) && !own.natives.contains_key(&name.text) {
                     self.error(
@@ -976,6 +990,9 @@ impl<'a> Registry<'a> {
     /// `ns.Name`: собственное объявление модуля пространства имён.
     pub fn find_qualified(&self, module: usize, namespace: &str, name: &str) -> Option<TypeRef> {
         let space = self.modules[module].namespaces.get(namespace)?;
+        if self.modules[space.module].hidden.contains(name) {
+            return None;
+        }
         if space
             .only
             .as_ref()
@@ -984,6 +1001,18 @@ impl<'a> Registry<'a> {
             return None;
         }
         self.modules[space.module].own.types.get(name).copied()
+    }
+
+    /// `ns.Name` называет `hidden` объявление модуля `ns`: текст ошибки.
+    pub fn hidden_qualified(&self, module: usize, namespace: &str, name: &str) -> Option<String> {
+        let space = self.modules[module].namespaces.get(namespace)?;
+        let owner = &self.modules[space.module];
+        owner.hidden.contains(name).then(|| {
+            format!(
+                "Type \"{namespace}.{name}\" is hidden in module \"{}\"",
+                owner.name
+            )
+        })
     }
 
     pub fn find_native(&self, module: usize, name: &str) -> Option<usize> {
@@ -1176,7 +1205,11 @@ impl<'a> Registry<'a> {
             [namespace, name] => match self.find_qualified(module, &namespace.text, &name.text) {
                 Some(found) => found,
                 None => {
-                    let message = if self.is_namespace(module, &namespace.text) {
+                    let message = if let Some(hidden) =
+                        self.hidden_qualified(module, &namespace.text, &name.text)
+                    {
+                        hidden
+                    } else if self.is_namespace(module, &namespace.text) {
                         format!(
                             "Namespace \"{}\" has no type \"{}\"",
                             namespace.text, name.text
@@ -1388,6 +1421,210 @@ impl<'a> Registry<'a> {
                     self.error(decl.span, message);
                 }
             }
+        }
+    }
+
+    /// `hidden` тип не утекает через публичную сигнатуру: его нельзя назвать
+    /// снаружи, значит, и получить в публичном контракте. Публичный объект не
+    /// делает скрытую роль: так наружу ушёл бы внутренний контракт.
+    fn check_hidden_leaks(&mut self) {
+        let mut found: Vec<(usize, Span, String)> = Vec::new();
+        let bound_leak = |reg: &Registry<'_>, params: &[ParamId]| {
+            params
+                .iter()
+                .filter_map(|param| reg.params[param.0].bound.as_ref())
+                .find_map(|bound| reg.hidden_in(bound))
+        };
+        for object in &self.objects {
+            let Some(decl) = object.decl else {
+                continue;
+            };
+            if self.is_hidden(object.module, &object.name) {
+                continue;
+            }
+            let module = object.module;
+            for (role, args) in &object.does {
+                let info = &self.roles[role.0];
+                if self.is_hidden(info.module, &info.name) {
+                    found.push((
+                        module,
+                        decl.name.span,
+                        format!(
+                            "Public object \"{}\" does hidden role \"{}\"",
+                            object.name, info.name
+                        ),
+                    ));
+                } else if let Some(hidden) = args.iter().find_map(|arg| self.hidden_in(arg)) {
+                    found.push((
+                        module,
+                        decl.name.span,
+                        format!(
+                            "Public object \"{}\" exposes hidden type \"{hidden}\" in role \"{}\"",
+                            object.name, info.name
+                        ),
+                    ));
+                }
+            }
+            if let Some(hidden) = bound_leak(self, &object.params) {
+                found.push((
+                    module,
+                    decl.name.span,
+                    format!(
+                        "Type parameter bound of public object \"{}\" exposes hidden type \"{hidden}\"",
+                        object.name
+                    ),
+                ));
+            }
+            for method in &object.methods {
+                let Some(action) = method.decl else {
+                    continue;
+                };
+                if method.private {
+                    continue;
+                }
+                let leak = method
+                    .params
+                    .iter()
+                    .map(|(_, ty)| ty)
+                    .chain(method.result.iter())
+                    .find_map(|ty| self.hidden_in(ty));
+                if let Some(hidden) = leak {
+                    found.push((
+                        module,
+                        action.name.span,
+                        format!(
+                            "Public action \"{}\" of \"{}\" exposes hidden type \"{hidden}\"",
+                            method.name, object.name
+                        ),
+                    ));
+                }
+            }
+            for ctor in &object.ctors {
+                let leak = match &ctor.shape {
+                    CtorShape::Full { params, .. } => {
+                        params.iter().find_map(|(_, ty)| self.hidden_in(ty))
+                    }
+                    CtorShape::Shorthand { fields, .. } => fields
+                        .iter()
+                        .find_map(|field| self.hidden_in(&object.fields[*field].ty)),
+                };
+                if let Some(hidden) = leak {
+                    found.push((
+                        module,
+                        ctor.span,
+                        format!(
+                            "Constructor of public object \"{}\" exposes hidden type \"{hidden}\"",
+                            object.name
+                        ),
+                    ));
+                }
+            }
+            for cap in &object.caps {
+                if let Some((field, hidden)) = cap
+                    .fields
+                    .iter()
+                    .find_map(|(field, ty, _)| self.hidden_in(ty).map(|hidden| (field, hidden)))
+                {
+                    found.push((
+                        module,
+                        cap.span,
+                        format!(
+                            "Cap \"{}\" field \"{field}\" of public object \"{}\" exposes hidden type \"{hidden}\"",
+                            cap.name, object.name
+                        ),
+                    ));
+                }
+            }
+        }
+        for role in &self.roles {
+            let Some(decl) = role.decl else {
+                continue;
+            };
+            if self.is_hidden(role.module, &role.name) {
+                continue;
+            }
+            let leak = bound_leak(self, &role.params).or_else(|| {
+                role.methods.iter().find_map(|method| {
+                    method
+                        .params
+                        .iter()
+                        .map(|(_, ty)| ty)
+                        .chain(method.result.iter())
+                        .find_map(|ty| self.hidden_in(ty))
+                })
+            });
+            if let Some(hidden) = leak {
+                found.push((
+                    role.module,
+                    decl.name.span,
+                    format!(
+                        "Public role \"{}\" exposes hidden type \"{hidden}\"",
+                        role.name
+                    ),
+                ));
+            }
+        }
+        for info in &self.enums {
+            if info.module >= self.modules.len() || self.is_hidden(info.module, &info.name) {
+                continue;
+            }
+            if let Some((field, hidden)) = info
+                .payloads
+                .iter()
+                .flatten()
+                .find_map(|(field, ty)| self.hidden_in(ty).map(|hidden| (field, hidden)))
+            {
+                found.push((
+                    info.module,
+                    info.span,
+                    format!(
+                        "Payload \"{field}\" of public enum \"{}\" exposes hidden type \"{hidden}\"",
+                        info.name
+                    ),
+                ));
+            }
+        }
+        for (module, span, message) in found {
+            self.current = module;
+            self.error(span, message);
+        }
+    }
+
+    fn is_hidden(&self, module: usize, name: &str) -> bool {
+        self.modules
+            .get(module)
+            .is_some_and(|info| info.hidden.contains(name))
+    }
+
+    /// Первый `hidden` тип внутри типа (с аргументами и элементами).
+    fn hidden_in(&self, ty: &Ty) -> Option<String> {
+        let own = |module: usize, name: &String| self.is_hidden(module, name).then(|| name.clone());
+        match ty {
+            Ty::Object(id, args) | Ty::Cap(id, args, _) => {
+                let info = &self.objects[id.0];
+                own(info.module, &info.name).or_else(|| args.iter().find_map(|arg| self.hidden_in(arg)))
+            }
+            Ty::Role(id, args) => {
+                let info = &self.roles[id.0];
+                own(info.module, &info.name).or_else(|| args.iter().find_map(|arg| self.hidden_in(arg)))
+            }
+            Ty::Variant(id, args) => {
+                let info = &self.enums[id.0];
+                own(info.module, &info.name).or_else(|| args.iter().find_map(|arg| self.hidden_in(arg)))
+            }
+            Ty::Enum(id) => {
+                let info = &self.enums[id.0];
+                own(info.module, &info.name)
+            }
+            Ty::Array(inner) | Ty::Successor(inner) | Ty::Varargs(inner) => self.hidden_in(inner),
+            Ty::Future(Some(inner)) => self.hidden_in(inner),
+            Ty::Map(key, value) => self.hidden_in(key).or_else(|| self.hidden_in(value)),
+            Ty::Action(action) => action
+                .params
+                .iter()
+                .chain(action.result.iter())
+                .find_map(|ty| self.hidden_in(ty)),
+            _ => None,
         }
     }
 
@@ -2598,4 +2835,18 @@ fn module_name(program: &ast::Program) -> String {
 fn last_segment(path: &str) -> String {
     let path = path.strip_suffix(".ok").unwrap_or(path);
     path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+/// Имена `hidden` объявлений программы модуля.
+fn hidden_names(program: &ast::Program) -> HashSet<String> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            ast::Item::Object(decl) if decl.hidden => Some(decl.name.text.clone()),
+            ast::Item::Role(decl) if decl.hidden => Some(decl.name.text.clone()),
+            ast::Item::Enum(decl) if decl.hidden => Some(decl.name.text.clone()),
+            _ => None,
+        })
+        .collect()
 }

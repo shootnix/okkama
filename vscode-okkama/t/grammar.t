@@ -30,7 +30,7 @@ my $repository = $grammar->{repository};
 for my $name (
     qw(
         rawStrings comments strings numbers declarations
-        optionalVariants keywords types functions
+        optionalVariants enumCases keywords types functions
         invalidSyntax operators punctuation
     )
 ) {

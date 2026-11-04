@@ -5,9 +5,11 @@ on 2026-11-03, branch `nom`, okkama 0.3.4, after the compiler fixes listed in
 [Defects found and fixed](#defects-found-and-fixed).
 
 ```text
-passed: 91  failed: 0  (okkama: okkama 0.3.4, engines: ir jvm sparrow)
+passed: 95  failed: 0  (okkama: okkama 0.3.4, engines: ir jvm)
 ```
 
+The latest run (after `hidden` declarations, 2026-11-04) covers 95 programs on
+IR and JVM; Sparrow is excluded while its runtime is being rewritten.
 The first run (before the fixes, unchanged compiler at `57d8b0aa`) had 92
 programs: four reproduced defects as `blocked`. Three of them now expect a
 `check-error` or `run-ok`, and one (`c_successor_tail_ignored`) was removed
@@ -43,7 +45,8 @@ Legend for the "class" column (task §10):
 | Preservation of state through generic functions | SUPPORTED (role type, also through a bounded generic) / UNSUPPORTED (must-use) | `advanced/b_generic_box`, `negative/f_bounded_generic_hidden`, `positive/f_bounded_generic_role`, `advanced/g_generic_launder` | Must-use is lost through `T` |
 | Safe role conversions | PARTIALLY | `advanced/b_role_to_role_widen`, `advanced/b_role_to_concrete`, `advanced/b_any_roundtrip`, `advanced/b_narrow_ok` | Concrete → any implemented role (`advanced/b_concrete_to_wrong_role`); throw/catch recovers the concrete object (`advanced/b_throw_catch_recover`) |
 | Must-use of transition results | SUPPORTED for successors; UNSUPPORTED for ordinary actions | `negative/c_discard_successor`, `negative/c_unused_successor_binding`, `negative/c_branch_unused_successor`, `negative/g_bound_successor`; `advanced/c_discard_ordinary_transition` | Any use discharges it (`advanced/c_must_use_weak`) |
-| Prevention of state forging by construction | SUPPORTED for a private stage field (Patterns B2/D); UNSUPPORTED for class-per-state and ADT state | `advanced/b_forge_state_ctor`; `advanced/b_forge_state_class`, `advanced/c_adt_forge_state` | Module hiding is only a `take` convention (`advanced/b_take_hides_class`) |
+| Prevention of state forging by construction | SUPPORTED for a private stage field (Patterns B2/D) and, across modules, for `hidden` classes; UNSUPPORTED for public class-per-state and ADT state | `advanced/b_forge_state_ctor`; `negative/h_sealed_forge`, `negative/h_sealed_take`; `advanced/b_forge_state_class`, `advanced/c_adt_forge_state` | Without `hidden`, module hiding is only a `take` convention (`advanced/b_take_hides_class`) |
+| Concrete-class bypass across modules | SUPPORTED with `hidden object` (added after the research) | `positive/h_sealed_lifecycle`, `negative/h_sealed_forge`, `negative/h_sealed_wrong_view` | Inside the defining module the class stays nameable; the runtime `confirm` remains the second line |
 
 ## Experiment A — minimal transitions
 

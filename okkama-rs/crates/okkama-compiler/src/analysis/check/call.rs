@@ -629,10 +629,11 @@ impl Checker<'_, '_> {
         {
             return self.native_call(native, args, span);
         }
-        self.error(
-            name.span,
-            format!("Namespace \"{space}\" has no declaration \"{}\"", name.text),
-        );
+        let message = self
+            .reg
+            .hidden_qualified(self.module, space, &name.text)
+            .unwrap_or_else(|| format!("Namespace \"{space}\" has no declaration \"{}\"", name.text));
+        self.error(name.span, message);
         Self::poisoned(span)
     }
 
@@ -1450,10 +1451,15 @@ impl Checker<'_, '_> {
         if let ast::ExprKind::Name(space) = &strip_grouping(receiver).kind {
             if self.local(&space.text).is_none() {
                 if self.reg.is_namespace(self.module, &space.text) {
-                    let message = format!(
-                        "\"{}.{}\" is not a value; call it or use it as a type",
-                        space.text, name.text
-                    );
+                    let message = self
+                        .reg
+                        .hidden_qualified(self.module, &space.text, &name.text)
+                        .unwrap_or_else(|| {
+                            format!(
+                                "\"{}.{}\" is not a value; call it or use it as a type",
+                                space.text, name.text
+                            )
+                        });
                     self.error(span, message);
                     return Self::poisoned(span);
                 }

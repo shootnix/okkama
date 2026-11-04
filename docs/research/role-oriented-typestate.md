@@ -470,7 +470,7 @@ results.md):
 
 | Escape | Effect | Mitigation today |
 |---|---|---|
-| Name the concrete class (plain import) | every state action visible; any view assignable | runtime stage check; `take`-only imports by convention |
+| Name the concrete class (plain import) | every state action visible; any view assignable | *(fixed across modules: `hidden object`, `negative/h_sealed_forge`)*; inside the module, the runtime stage check |
 | Public internal successors (`approve`) | authorize without a gateway | *(fixed: private successors, `negative/g_internal_successor_leak`)* |
 | Class-per-state / ADT-variant construction (A, B1, C) | forge any state | prefer B2/D |
 | throw/catch through `Error` | recovers the concrete object | state classes must not `does Error` |
@@ -538,7 +538,10 @@ for its guarantees.
 ### Category B/C boundary — access control
 
 7. **Module-private declarations or constructors**
-   (`advanced/b_forge_state_class`, `advanced/b_take_hides_class`). This is
+   (`advanced/b_forge_state_class`, `advanced/b_take_hides_class`).
+   *Status: done as `hidden object/role/enum` (spec §5.1.1,
+   [design](../POC/private-objects.md)); `negative/h_sealed_*` show the
+   concrete-class bypass rejected statically across modules.* This is
    the only change that removes the concrete-class bypass instead of
    catching it at runtime. It needs a visibility notation or a module export
    policy (an experimental qualified-export prototype exists:

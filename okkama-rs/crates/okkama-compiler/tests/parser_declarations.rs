@@ -605,6 +605,21 @@ fn enums() {
         panic!()
     };
     assert_eq!(error.role.as_ref().map(|role| role.text.as_str()), Some("Error"));
+    let program = parse_ok(
+        "module app v1.0.0; hidden enum Stage = (a); hidden object Box { Box(); } \
+         hidden role Shape { area() is int; } object Tag { has hidden is int; Tag(:hidden); }",
+    );
+    let flags: Vec<bool> = program
+        .items
+        .iter()
+        .map(|item| match item {
+            Item::Enum(decl) => decl.hidden,
+            Item::Object(decl) => decl.hidden,
+            Item::Role(decl) => decl.hidden,
+            _ => false,
+        })
+        .collect();
+    assert_eq!(flags, [true, true, true, false]);
     for (source, expected) in [
         ("enum State is = (a);", "Expect role name after \"is\" in an enum declaration."),
         ("enum state = (a);", "Expect enum name after \"enum\"."),

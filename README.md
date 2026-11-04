@@ -439,11 +439,11 @@ role Declined   { id() is string; reason() is string; }
 enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
 
 // 3. The real state: a private field of this enum, checked by every transition.
-enum Stage = (created, authorized, captured, refunded, declined(reason is string));
+hidden enum Stage = (created, authorized, captured, refunded, declined(reason is string));
 enum PaymentError is Error = (invalid_transition(action is string));
 
-// 4. One immutable class implements every view.
-object Payment does Created, Authorized, Captured, Refunded, Declined {
+// 4. One immutable class implements every view — hidden: other modules cannot name it.
+hidden object Payment does Created, Authorized, Captured, Refunded, Declined {
     has key is string;
     has stage is Stage = Stage.created;      // not in the constructor: unforgeable
     Payment(:key);
@@ -483,12 +483,14 @@ is rejected by `okkama check` — these are the compiler's actual messages:
 | `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is private` |
 | a `match` without the `declined` case | `Non-exhaustive match: missing declined` |
 | `payment.refund()` in the `approved` branch | `Role "Authorized" has no action "refund"` |
+| `payments.Payment(key: "x")` in another module | `Type "payments.Payment" is hidden in module "payments"` |
+| `open() is Payment` in a public object | `Public action "open" of "Payments" exposes hidden type "Payment"` |
 
-No annotations, no new keywords, no linear types: just nominal roles that stay
-restricted through aliases, parameters, generics, `Maybe`, enum payloads and
-`any`. What it deliberately does not do: an old immutable state stays valid, so
-"authorize twice" is a job for durable state and idempotency, and code that names
-the concrete class meets the runtime `confirm` instead of a compile error.
+No annotations, no linear types, one contextual word (`hidden`): nominal roles
+stay restricted through aliases, parameters, generics, `Maybe`, enum payloads
+and `any`, and the class behind them cannot be named outside its module. What it
+deliberately does not do: an old immutable state stays valid, so "authorize
+twice" is a job for durable state and idempotency.
 
 Full program: [`examples/showcase/state-views.ok`](examples/showcase/state-views.ok) ·
 the research behind it, with 91 checked experiments:

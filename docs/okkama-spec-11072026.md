@@ -233,6 +233,50 @@ Rules:
   file no version). A mismatch is a semantic error, and the combined module
   MUST NOT declare more than one `main`.
 
+#### 5.1.1 Hidden Declarations
+
+```okkama
+module payments v1.0.0;
+
+role Created { id() is string; }
+
+hidden enum Stage = (created, authorized);
+
+hidden object Payment does Created {
+    has key is string;
+    has stage is Stage = Stage.created;
+    Payment(:key);
+    id() is string { key; }
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}
+```
+
+`hidden` before `object`, `role` or `enum` at module scope makes the
+declaration visible only inside its module: in every file of the module, its
+tests and fakes, and in bodies and defaults defined there. `hidden` is a
+contextual keyword; elsewhere it is an ordinary identifier.
+
+- `take` cannot select a hidden declaration, and a namespace does not expose
+  it (`payments.Payment` is a semantic error naming the hidden type).
+- Values of hidden types may leave the module only under a public type: a
+  role, `Error` or `any`. A role reference cannot be converted back (§12.1),
+  so outside code holds only the role's view.
+- A public declaration cannot name a hidden type in what other modules see:
+  parameters and results of public actions of public objects (including
+  successor, async and action types), constructor parameters (a shorthand
+  field's type is a parameter type), role signatures, enum payloads, generic
+  arguments and bounds, and cap fields. Private actions, fields and bodies may
+  use hidden types.
+- A public object cannot do a hidden role: its `does` list is part of its
+  public contract. A hidden object may do public and hidden roles.
+- A hidden error enum may be thrown out of the module; callers can catch it
+  only as `Error`. `okkama lint` reports such a throw from a public action
+  (`hidden-error`).
+
 ### 5.2 Imports
 
 Import syntax:

@@ -1,0 +1,53 @@
+// Model for Pattern B2 sealed with `hidden`: ONE hidden immutable class does every
+// state role. Each role exposes only the operations valid in its state.
+// Role transitions are successors declared `is ^NextRole`; the class
+// implements them as `is ^Payment` (covariant successor conformance), stages
+// a new `stage`, and re-checks the stage at runtime with `confirm`.
+module payment_sealed;
+
+hidden enum Stage = (created, authorized, captured, refunded);
+
+object InvalidTransition does Error {
+    has action is string;
+    InvalidTransition(:action);
+    text() is string { "invalid transition: " + action; }
+}
+
+role Created {
+    id() is string;
+    authorize() is ^Authorized;
+}
+role Authorized {
+    id() is string;
+    capture() is ^Captured;
+}
+role Captured {
+    id() is string;
+    refund() is ^Refunded;
+}
+role Refunded { id() is string; }
+
+hidden object Payment does Created, Authorized, Captured, Refunded {
+    has key is string;
+    has stage is Stage = Stage.created;
+    Payment(:key);
+
+    id() is string { key; }
+    authorize() is ^Payment {
+        confirm stage == Stage.created else throw InvalidTransition(action: "authorize");
+        ^stage = Stage.authorized;
+    }
+    capture() is ^Payment {
+        confirm stage == Stage.authorized else throw InvalidTransition(action: "capture");
+        ^stage = Stage.captured;
+    }
+    refund() is ^Payment {
+        confirm stage == Stage.captured else throw InvalidTransition(action: "refund");
+        ^stage = Stage.refunded;
+    }
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}

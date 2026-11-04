@@ -1,0 +1,20 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Tagged {
+    has hidden is int;
+    Tagged(:hidden);
+    value() is int { hidden; }
+}
+
+hidden object Local {
+    Local();
+    size() is int { 2; }
+}
+
+main() is int {
+    let hidden = Tagged(hidden: 40).value() + Local().size();
+    Stdout().writeln(hidden.string());
+    0;
+}

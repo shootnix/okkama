@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.hidden.public-does-hidden-role",
+  "title": "a public object cannot do a hidden role",
+  "purpose": "A does list is part of the public contract.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.HIDDEN",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "support": [
+    "lib/payments.ok"
+  ],
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "hidden declarations (docs/POC/private-objects.md)",
+    "expected_basis": "spec 5.1.1: hidden declarations are visible only inside their module; take and namespace access reject them; public signatures and does lists cannot name hidden types."
+  },
+  "status": "mandatory"
+}

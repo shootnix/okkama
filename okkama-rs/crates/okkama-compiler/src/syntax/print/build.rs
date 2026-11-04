@@ -70,7 +70,7 @@ fn item_node(item: &Item) -> Node {
         Item::Object(decl) => object_node(decl),
         Item::Role(decl) => role_node(decl),
         Item::Enum(decl) => {
-            let mut node = Node::new("EnumDecl", decl.span)
+            let mut node = hidden(Node::new("EnumDecl", decl.span), decl.hidden)
                 .field("name", name(&decl.name))
                 .field("cases", names(&decl.cases));
             if let Some(role) = &decl.role {
@@ -113,8 +113,17 @@ fn generic_node(param: &GenericParam) -> Node {
         .field("bound", opt_node(param.bound.as_ref(), type_node))
 }
 
+/// `hidden: true` only on hidden declarations (keeps other snapshots unchanged).
+fn hidden(node: Node, hidden: bool) -> Node {
+    if hidden {
+        node.field("hidden", Value::Bool(true))
+    } else {
+        node
+    }
+}
+
 fn object_node(decl: &ObjectDecl) -> Node {
-    Node::new("ObjectDecl", decl.span)
+    hidden(Node::new("ObjectDecl", decl.span), decl.hidden)
         .field("name", name(&decl.name))
         .field("generics", list(&decl.generics, generic_node))
         .field("roles", list(&decl.roles, type_node))
@@ -200,7 +209,7 @@ fn param_node(param: &Param) -> Node {
 }
 
 fn role_node(decl: &RoleDecl) -> Node {
-    Node::new("RoleDecl", decl.span)
+    hidden(Node::new("RoleDecl", decl.span), decl.hidden)
         .field("name", name(&decl.name))
         .field("generics", list(&decl.generics, generic_node))
         .field(

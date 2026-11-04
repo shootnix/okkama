@@ -1,0 +1,25 @@
+module payments v1.0.0;
+
+role Created {
+    id() is string;
+    authorize() is ^Authorized;
+}
+
+role Authorized {
+    id() is string;
+}
+
+hidden enum Stage = (created, authorized);
+
+hidden object Payment does Created, Authorized {
+    has key is string;
+    has stage is Stage = Stage.created;
+    Payment(:key);
+    id() is string { key; }
+    authorize() is ^Payment { ^stage = Stage.authorized; }
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}

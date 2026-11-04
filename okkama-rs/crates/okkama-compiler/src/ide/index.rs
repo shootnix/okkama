@@ -356,7 +356,9 @@ impl<'r, 'a> Builder<'r, 'a> {
     /// Собственные имена модуля `module` (для `take` и `alias.`); `only` — взятые.
     fn module_names(&self, module: usize, only: Option<&Vec<String>>) -> Vec<Completion> {
         let names = &self.registry.modules[module].own;
-        let visible = |name: &String| only.is_none_or(|only| only.contains(name));
+        let hidden = &self.registry.modules[module].hidden;
+        let visible =
+            |name: &String| only.is_none_or(|only| only.contains(name)) && !hidden.contains(name);
         let mut out: Vec<Completion> = names
             .types
             .iter()
@@ -1134,6 +1136,9 @@ impl<'r, 'a> Builder<'r, 'a> {
         let module = &self.registry.modules[self.root];
         if let Some(alias) = qualifier {
             if let Some(namespace) = module.namespaces.get(alias) {
+                if self.registry.modules[namespace.module].hidden.contains(name) {
+                    return None;
+                }
                 if let Some(only) = &namespace.only {
                     if !only.iter().any(|taken| taken == name) {
                         return None;
