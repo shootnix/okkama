@@ -666,16 +666,25 @@ let rotated = byte(128).rotate_left(1); // byte(1)
 настоящего `bool`. Числа, строки, коллекции, диапазоны и объекты никогда не
 преобразуются неявно.
 
-**Null нет.** Ни `null`, ни `none`, ни `nil`, ни опциональных типов, ни
-цепочек `?.`. Там, где возникли бы «нулевые» ситуации, Okkama требует
-явного решения:
+**Null нет.** Ни `null`, ни `nil`, ни цепочек `?.`, ни значения, которое
+молча означает «ничего». Отсутствие — явное типизированное решение:
 
+- значение, которого может не быть, имеет тип `Maybe<T>` (`some(value)` или
+  `none`); поле, которое может ещё и *отсутствовать* («не прислали» в JSON
+  PATCH), — тип `Presence<T>` (`some`, `none`, `missing`). Это обычные enum
+  (глава 24), и их нужно открыть перед использованием:
+  `user.nickname() else "anonymous"`;
 - отсутствующий ключ отображения — ошибка времени выполнения, если не
   написан `else`-фолбэк: `prices["missing"] else 0;`
-- неудачный поиск или некорректное состояние выражаются через throw
-  номинального объекта Error, перехватываемого типизированным `catch`;
+- неудачный поиск или некорректное состояние выражаются через throw error
+  enum и перехватываются типизированным `catch`
+  (глава 14); `try?` превращает брошенную ошибку в `Maybe.none`, когда
+  отсутствие — честный ответ;
 - «ещё не вычислено» моделируется объектами и ролями, а не
   значениями-сентинелами.
+
+Пустая строка, `0`, `false` и пустая коллекция — присутствующие значения;
+ничто не превращается в «отсутствие» неявно.
 
 Некоторые операции рантайма могут внутренне породить *неопределённый*
 результат (например, `if` без `else` с ложным условием). Пользовательский
@@ -870,6 +879,8 @@ prices.values();             // @V, тот же порядок пар, что у
 В порядке приоритета (сначала самый слабый), как разбирает парсер:
 
 ```text
+?? … !!                короткий выбор (раздел 24.3; без вложенности)
+else                   фолбэк (Maybe<T> else T, map[k] else v)
 ||                     булево «или»       (только операнды bool)
 &&                     булево «и»         (только операнды bool)
 <-                     потоковая запись
@@ -885,6 +896,10 @@ prices.values();             // @V, тот же порядок пар, что у
 !  -  ~                унарное «не», унарный минус, инверсия битов
 постфиксные            вызовы, доступ к членам, индексирование, распаковка `...`
 ```
+
+`try?` и `try!` (раздел 14.5) — префиксные формы без пробела после `try`;
+они охватывают весь операнд справа до `else` или `??`, поэтому
+`try? f() + 1 else 0` означает `(try? (f() + 1)) else 0`.
 
 Бинарные битовые операторы левоассоциативны. `flags & mask != 0` означает
 `(flags & mask) != 0`; `1 << 2 + 1` означает `1 << (2 + 1)`.
@@ -1080,8 +1095,13 @@ match status {
   case может перечислить несколько значений.
 - `else` обрабатывает несовпавший остаток.
 - Сопоставление *по* непрозрачному значению `any` отвергается.
-- Проверка полноты и совместимости типов веток — будущая работа
-  семантического анализа.
+- `match` по enum с данными, error enum, `Maybe` или `Presence` обязан
+  покрыть все варианты либо иметь `else`:
+  `Non-exhaustive match: missing closed`. Ветки match-выражения должны давать
+  один тип.
+- `match` по enum без данных сохраняет прежнее правило: match-инструкция может
+  пропустить варианты; `okkama lint` сообщает об этом как
+  `non-exhaustive-match`.
 
 ### 12.5 `for`
 
@@ -1290,9 +1310,10 @@ let materialized is @int = values.map() -> value { value; };
 Okkama разделяет отказ на два канала:
 
 1. **Ожидаемые типизированные отказы** — поднимаемые
-   `throw ErrorObject(...)`, `confirm ... else throw ErrorObject(...)` и
-   нормализованными нативными отказами. Они несут номинальный `Error` и могут
-   быть перехвачены типизированным `catch`.
+   `throw DbError.closed`, `throw ErrorObject(...)`,
+   `confirm ... else throw ...` и нормализованными нативными отказами. Они
+   удовлетворяют номинальной роли `Error` и перехватываются типизированным
+   `catch`.
 2. **Неперехватываемые отказы** — `panic "message"`, голый проваленный
    `confirm`, неопределённые переменные, несоответствия типов, выход за
    границы и недопустимые операции. Они выполняют очистку и завершают
@@ -1311,24 +1332,50 @@ confirm condition else panic "Инвариант сломан"; // непере�
 вызывающий должен уметь обработать, и `else panic` для аварии с
 детерминированной строкой.
 
-### 14.2 `Error`, `throw` и `panic`
+### 14.2 Error enum, `Error`, `throw` и `panic`
+
+Предпочтительный способ объявить ошибки — **error enum**: enum с пометкой
+`is Error`, варианты которого — отказы, а данные — их контекст.
 
 ```okkama
-object InvalidValue does Error {
-    has value is int;
-    InvalidValue(:value);
-    text() is string { "invalid value"; }
-}
+enum DbError is Error = (
+    connection(host is string),
+    query(sql is string, code is int),
+    closed
+);
 
-throw InvalidValue(value: 10);
+enum RepoError is Error = (db(cause is DbError), missing(id is int));
+
+throw DbError.query("select 1", 42);
+```
+
+- `is Error` — единственная роль, которую может объявить enum; error enum не
+  бывает generic. Он всегда вариантный, поэтому `match` по нему обязан быть
+  полным, даже если данных нет ни у одного варианта.
+- Данные — значения: `string`, `int`, `byte`, `float`, `rat`, `bool` и enum
+  с такими же данными, в том числе другие error enum — так прикрепляется
+  причина (`RepoError.db(cause)`). Объекты, роли, коллекции, `char`, действия
+  и `any` запрещены.
+- `text()` порождается из варианта: `DbError.closed`,
+  `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Строки — в
+  кавычках, числа — через `string()`, булевы — `true`/`false`, варианты enum —
+  `Enum.case`. Вызывается на значении и через `Error`.
+- Значение error enum приводится к `Error`; неперехваченное, оно выводится
+  как `DbError: DbError.query("select 1", 42)`.
+
+```okkama
+throw DbError.closed;
 throw;                  // повторный выброс — только лексически внутри catch
 panic "Unreachable";   // точная строка, никогда не перехватывается
 ```
 
 `Error` — автоматически доступная номинальная роль, требующая публичный
-`text() is string`. Одного метода `text()` недостаточно: исходный объект
-должен явно объявить `does Error`. `throw` принимает только такие объекты и
-системный `NativeFailure`. Голый `throw;` сохраняет identity и происхождение
+`text() is string`. Её реализуют только error enum и системные отказы
+(`NativeFailure`, `Cancelled`). **Объект не может делать `Error`**:
+`object X does Error` отвергается (`Object "X" cannot do Error: errors are
+enums`), поэтому объекты никогда не бросаются и не перехватываются. `throw`
+принимает значения error enum, ссылки `Error` (перебрасываемую пойманную
+ошибку) и `NativeFailure`. Голый `throw;` сохраняет identity и происхождение
 активной ошибки; это *лексическая* способность catch-тел, проверяемая до
 выполнения — действие, вызванное из catch, не может выполнить неявный
 повторный выброс. `panic` принимает только точную строку; голый `panic;`
@@ -1357,10 +1404,27 @@ catch error is InvalidValue {
   `next`/`last` и нормальное завершение никогда не совпадают с catch.
 - Ссылки на типы catch проверяются до выполнения программы; гарантия
   `Error` — до выполнения тела try. Тип catch обязан гарантировать `Error`:
-  `Error`, concrete/applied объект с явным `does Error` или `NativeFailure`.
-  Скаляры, коллекции, enum, `any` и произвольные роли недопустимы.
+  `Error`, error enum или системные `NativeFailure` / `Cancelled`. Объекты,
+  скаляры, коллекции, прочие enum, `any` и произвольные роли недопустимы.
 - Допустимые клаузы рассматриваются в порядке исходного кода; побеждает
   первая совместимая.
+- Клауза может перечислить несколько типов; связывание тогда имеет тип
+  `Error`: `catch e is DbError, NetError, Denied { log(e.text()); }`.
+- Вместо связывания клауза может перечислить **образцы**: варианты error enum
+  и типы ошибок.
+
+  ```okkama
+  try { repo.find(id); }
+  catch RepoError.missing(missing_id) { report(missing_id); }   // один вариант, данные связаны
+  catch DbError.closed, DbError.connection(_) { reconnect(); }  // несколько вариантов
+  catch e is RepoError, DbError { log(e.text()); }              // остальное из обоих enum
+  ```
+
+  Связывания данных позиционные, `_` пропускает поле, именованные связывания
+  требуют единственного образца в клаузе. Значение подходящего типа, но
+  другого варианта переходит к следующей клаузе того же `try` и не покидает
+  его. Одинокое имя в нижнем регистре (`catch e { }`) по-прежнему ошибка:
+  catch-all нет.
 - Несовпавший отказ распространяется без изменений.
 - Тело try и каждое тело catch — отдельные лексические дочерние области.
   Связывание catch существует только в его собственном теле; локальные
@@ -1371,10 +1435,11 @@ catch error is InvalidValue {
   уничтожаются до возврата значения выражения. Отказ тела имеет приоритет
   над отказом очистки.
 
-Рекомендации по проектированию в духе EO: бросайте выделенные номинальные
-объекты Error с контекстом, перехватывайте конкретно или по `Error` и
-перебрасывайте (`throw;`), когда не можете полностью обработать отказ.
-`panic` оставляйте для сломанных инвариантов.
+Рекомендации по проектированию в духе EO: объявляйте отказы компонента одним
+error enum с контекстом в данных, перехватывайте варианты, которые умеете
+обработать, и перебрасывайте (`throw;` или `throw e;` из `catch e is Error`),
+когда не можете обработать отказ полностью, — значение сохраняет тип enum для
+внешних клауз. `panic` оставляйте для сломанных инвариантов.
 
 ### 14.4 Контекст без потери исходной ошибки
 
@@ -1386,41 +1451,50 @@ catch error is InvalidValue {
 контейнер без добавления причины. После успешного catch причина не переносится
 на последующие throw. Паника и программные ошибки не становятся Error.
 
-Базовая роль `Error` по-прежнему требует только `text()`. Если причина должна
-передаваться как обычное значение приложения, объявите отдельную обёртку:
+Если причина должна передаваться как обычное значение приложения, сделайте её
+данными: error enum может нести другой error enum.
 
 ```okkama
-object Contextual does Error {
-    has original is Error;
-    Contextual(:original);
-    text() is string { "invoice i1"; }
-    cause() is Error { original; }
-}
+enum InvoiceError is Error = (unpaid(id is string), storage(cause is DbError));
+
+catch e is DbError { throw InvoiceError.storage(e); }   // text(): InvoiceError.storage(DbError.closed)
 ```
 
-У обычной доменной ошибки такого поля нет: null и фиктивный Error не нужны.
-Обязательное поле обёртки сохраняет Error и вне catch. Runtime не исследует поля
-и не вызывает `cause()` автоматически. Runtime-цепочка доступна host-инструментам
+У вариантов без данных такого поля нет: null и фиктивный Error не нужны.
+Runtime-цепочка доступна host-инструментам
 через `Thrown.cause()`; минимальная диагностика выводит `Caused by:` и стек каждой
 причины, не исполняя пользовательский `text()` и не раскрывая произвольные поля.
 Ошибки cleanup остаются отдельными `secondary_failures`.
 
-Обычный CLI показывает конкретный тип Error, сообщение, прикладной контекст,
-цепочку причин, исходные стеки и ошибки cleanup без `-d`. Флаг `-d` отдельно
-включает трассировку вычислителя. Для сообщения достаточно, например,
-`text() is string { code; }`; дополнительный контекст можно явно предоставить
-через `context() is string { label; }`.
-
-Renderer читает ограниченные выражения над данными: литералы, собственные поля,
-конкатенацию строк, условия и простые вспомогательные действия. Произвольный
-прикладной код, I/O и async после ошибки не исполняются; приватные поля не
-перечисляются автоматически. Для неподдерживаемого выражения сообщение
-помечается недоступным, но тип, стек и причины сохраняются. Управляющие символы
+Обычный CLI показывает тип ошибки, её сгенерированный `text()`, цепочку причин,
+исходные стеки и ошибки cleanup без `-d`. Флаг `-d` отдельно включает
+трассировку вычислителя. Управляющие символы
 экранируются, слишком длинные строки получают отметку усечения. Ошибка индекса
 массива дополнительно показывает `index` и `length`.
 
 Для host-инструментов `Interpreter.diagnostic(failure)` возвращает отдельную
 структурированную модель. Исходный объект ошибки и правила catch не меняются.
+
+### 14.5 `try?` и `try!`
+
+```okkama
+let rows = try? db.query(sql) else 0;       // Maybe<int>, затем фолбэк
+let text = try? fetch(url)
+    ?? .some(body): body
+    !! .none: "offline";
+let config = try! Config.parse(source);     // «не может упасть» → panic, если упало
+```
+
+- `try? value` имеет тип `Maybe<T>`: `Maybe.some(value)` или `Maybe<T>.none`,
+  если вычисление бросило любой `Error`. Вложенный `Maybe` сохраняется и не
+  схлопывается. Вызов `void` отвергается (оборачивать нечего — используйте
+  `try`/`catch`), как и результат successor (иначе потерялось бы обязательство
+  использования).
+- `try! value` сохраняет тип значения, включая `void` и successor. Брошенная
+  ошибка становится panic `Unexpected error: <text()>` в месте `try!`.
+- Обе формы пишутся без пробела после `try` и охватывают весь операнд справа
+  до `else` или `??`. Обе перехватывают только брошенные ошибки: panic и
+  программные ошибки проходят насквозь, очистка выполняется как у `try`.
 
 ## Глава 15. `defer`
 
@@ -1729,16 +1803,12 @@ object Min<T> {
 ### 17.5 Проверки в конструкторе
 
 ```okkama
-object InvalidScore does Error {
-    has value is int;
-    InvalidScore(:value);
-    text() is string { "invalid score: " + value.string(); }
-}
+enum InvalidScore is Error = (negative(value is int));
 object Score {
     has value is int;
     Score(value is int) {
         self.value = value;
-        confirm value >= 0 else throw InvalidScore(value: value);
+        confirm value >= 0 else throw InvalidScore.negative(value);
     }
 }
 ```
@@ -2237,9 +2307,36 @@ Defer учитывает binding на выходе из своей област�
 builders всё равно моделируют публичные setters; вместо них нужны полное
 состояние конструктора, композиция value objects или decorators.
 
+Ещё два правила держат преемника честным:
+
+- У объекта преемник возвращает свой тип: `open() is ^Bottle`. Объявление
+  `is ^Package` у объекта — семантическая ошибка
+  (`must return ^Bottle; declare ^Package in a role signature`); результаты
+  `^Role` объявляются в сигнатурах ролей и реализуются как `^Self`.
+- Последнее выражение тела вычисляется и отбрасывается, как в `void`-действии.
+  Завершить преемника значением его собственного типа — `self;` или
+  `Bottle();` — запрещено, как и `return value;`: это читается как
+  результат-замена, который был бы молча проигнорирован.
+
 Типы преемников сочетаются с ролями: `^Bottle` удовлетворяет `^Package`,
-когда `Bottle does Package` (глава 22). Приватные действия-преемники не
-поддерживаются.
+когда `Bottle does Package` (глава 22). Вызов через роль возвращает новый
+объект как ограниченный `^Package`.
+
+Преемник может быть приватным: внутренний переход, который вызывают только
+действия самого объекта через `self`. Обязательство использования сохраняется;
+реализовать действие роли он не может:
+
+```okkama
+object Door {
+    has open is bool = false;
+    Door();
+    toggled() is Door { if open { self.shut(); } else { self.opened(); } }
+
+    private:
+    opened() is ^Door { ^open = true; }
+    shut() is ^Door { ^open = false; }
+}
+```
 
 Это дисциплина иммутабельности EO с зубами рантайма: переходы состояния
 явны в сигнатурах (`is ^Type`), видимы в местах вызова
@@ -2526,12 +2623,16 @@ Generic `T`, выведенный из ограниченной ссылки, с
 синхронного process worker они не передаются: существующий codec переноса
 значений не расширялся.
 
-У исключений сохраняется существующая маршрутизация: ссылка роли может
-попасть в `throw`, только если она разрешает контракт `Error`. `throw`
-передаёт исходный Error в контейнер отказа, и конкретный `catch e is InvalidCents`
-может открыть его конкретный контракт. `catch e is Error` разрешает только
-`text()`. Это специальное правило обработки исключений; обычный параметр
-`Error` не допускает приведения к конкретной ошибке.
+Исключения ограничение тоже не открывают: объект не может делать `Error`,
+поэтому ссылку роли на объект нельзя бросить, а `catch` не может назвать тип
+объекта. `catch e is Error` разрешает только `text()`.
+
+### 22.2 Роли как представления состояний
+
+Преемник, объявленный в роли, возвращает *следующую роль*, поэтому роли могут
+описывать состояния протокола: каждая роль показывает только то, что допустимо
+в этом состоянии, а недопустимый переход не проходит проверку типов. Полный
+паттерн — в разделе 30.6.
 
 ## Глава 23. Фейки ролей и тестирование
 
@@ -2863,8 +2964,17 @@ let label = enabled ?? active_label !! "off";
 по-прежнему требует скобок: `obj.name()`, а не `obj.name`. Префиксное
 `!!flag` сохраняет прежний смысл двойного логического отрицания.
 
-Рабочие программы: [choices.ok](../examples/choices.ok) и
-[variants.ok](../examples/variants.ok).
+### 24.4 Error enum и полнота
+
+Enum с пометкой `is Error` (раздел 14.2) — вариантный даже без данных, поэтому
+любой `match` по нему обязан быть полным. Enum без данных и без `is Error`
+сохраняет прежнее правило: match-инструкция может пропустить варианты, а
+`okkama lint` сообщает об этом как `non-exhaustive-match`. Если варианты
+моделируют состояния, которые нужно обработать, берите enum с данными.
+
+Рабочие программы: [choices.ok](../examples/choices.ok),
+[variants.ok](../examples/variants.ok) и
+[examples/showcase/](../examples/showcase/).
 
 ## Глава 25. Обобщённые параметры типов
 
@@ -2898,10 +3008,18 @@ role Echo<T> {
 - `int`, `float`, `rat` и `byte` различны и никогда не унифицируются:
   `Min(1, 2, 3)` выводит `T = int`; `Min(1, 2.0)` **падает** — без
   расширения, без объединения, без фолбэка в `any`.
-- Нет ограничений (bounds) — `T is number` не существует, — нет
-  вариантности, нет подстановочных знаков, нет значений по умолчанию, нет
-  типов высших порядков. Параметр — конкретный тип, поэтому `T<int>`
-  недопустим.
+- Параметр объекта может иметь одно номинальное ограничение-роль, например
+  `object Heap<T: Comparing<T>>`. После точного вывода в конструкторе
+  выведенный тип обязан реализовать подставленную роль до выполнения тела.
+  Ограничения не расширяют значения и не заменяют недостающие данные вывода.
+  Аргумент-роль удовлетворяет ограничению, если сужается до него:
+  `Audit<T: Identified>` принимает `T = Authorized`, когда `Authorized`
+  показывает все действия `Identified`, и вызывающий получает `T` обратно как
+  `Authorized`.
+- Ограничения параметров ролей, категорийные ограничения вроде `T: number`,
+  несколько ограничений, вариантность, подстановочные знаки, значения по
+  умолчанию и типы высших порядков не поддерживаются. Параметр — конкретный
+  тип, поэтому `T<int>` недопустим.
 - Применённые типы принимают ровно объявленную арность: `Pair<int>`
   недопустим для `Pair<K, V>`; необобщённый тип не принимает аргументов.
 
@@ -3050,6 +3168,53 @@ import "io/stdout" as output take Stdout;
   замыкание, нужное для регистрации и исполнения, но оно не создаёт bindings
   у consumer. Конструкторы, actions, defaults, lifecycle-блоки и role fakes
   разрешают имена в scope определяющего модуля, а не вызывающего.
+
+### 26.3.1 Скрытые объявления
+
+```okkama
+module payments v1.0.0;
+
+role Created { id() is string; }
+
+hidden enum Stage = (created, authorized);
+
+hidden object Payment does Created {
+    has key is string;
+    has stage is Stage = Stage.created;
+    Payment(:key);
+    id() is string { key; }
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}
+```
+
+`hidden` перед `object`, `role` или `enum` оставляет объявление внутри модуля:
+оно видно во всех файлах модуля, в его тестах и фейках и в телах, объявленных
+в нём, — и больше нигде.
+
+- `take Payment` отвергается (`Import "payments" cannot take hidden
+  declaration "Payment"`), и пространство имён его не открывает
+  (`Type "payments.Payment" is hidden in module "payments"`).
+- Значения скрытых типов покидают модуль только под публичным типом — ролью,
+  `Error` или `any`, — а роль обратно не приводится (22.1). Внешний код держит
+  только представление.
+- Публичное объявление не может называть скрытый тип там, где его видят
+  другие модули: параметры и результаты публичных действий (включая
+  коллекции, `Maybe`, successor, async и типы действий), параметры
+  конструкторов, сигнатуры ролей, данные enum, generic-аргументы и
+  ограничения, поля cap. Приватные действия, поля и тела могут использовать
+  скрытые типы.
+- Публичный объект не может реализовать скрытую роль — список `does` входит в
+  его публичный контракт. Скрытый объект может реализовать публичные и
+  скрытые роли; так реализация прячется за контрактом.
+- Скрытый error enum можно бросить за пределы модуля, но поймать его там можно
+  только как `Error`; `okkama lint` сообщает о таких throw из публичных
+  действий (`hidden-error`).
+
+`hidden` — контекстное ключевое слово: `has hidden is int` остаётся полем.
 
 ### 26.4 Правила гигиены
 
@@ -5453,6 +5618,11 @@ Variable "leaked" uses undeclared type "T"
 Successor assignment is not allowed inside destroy
 Object "Cash" does role "Priced" but does not implement action "price"
 Duplicate test "Box :: same"
+Successor action result must be used
+Non-exhaustive match: missing closed
+Role "Created" has no action "capture"
+Type "payments.Payment" is hidden in module "payments"
+try? needs a value; a void call is handled with try/catch
 ```
 
 Подлинно динамические отказы — зависящие от значений — остаются ошибками
@@ -5468,22 +5638,38 @@ Runtime error at line 7: Object "Box" has no action "missing"
 Runtime error at line 10: Duplicate construction field "digit"
 Object "Cash" field "cents" was not initialized
 Action "secret" on object "Cash" is private
-Successor action result must be used
 Cannot rebind variable "n": type "int" has no successor actions
 Cannot rebind variable "counter" of type Counter with int
 ```
 
 В обеих фазах префикс с номером строки появляется только при наличии
-исходного токена. Фрагменты исходника, отрисовка каретки и пути файлов —
-будущая работа.
+исходного токена.
+
+### 28.3 `okkama lint`
+
+`okkama lint FILE` (и редактор) сообщает о корректном коде, который, вероятно,
+написан не так, как задумано:
+
+| Правило | Что находит |
+|---|---|
+| `unused-import` | имя из `take` или псевдоним не используется |
+| `unused-let` | значение `let` не читается (кроме `_name` и объектов с `destroy`) |
+| `unused-private` | приватное действие нигде не вызывается |
+| `unreachable` | оператор после `return`, `throw`, `next`, `last` |
+| `snake-case` | локальная, параметр, поле или действие не в `snake_case` |
+| `non-exhaustive-match` | `match` по enum без данных пропускает варианты |
+| `hidden-error` | публичное действие бросает скрытый error enum |
 
 ## Глава 29. Чего в Okkama сознательно нет
 
 Явно не входит в Okkama 1.0 — это решения, а не пробелы:
 
-- **null / none / nil** — никакого null ни в каком написании (глава 7).
-- **Опциональные типы и `?.`** — отсутствие моделируется, а не убирается
-  типами.
+- **null / nil** — никакого null ни в каком написании (глава 7); `none`
+  существует только как вариант `Maybe.none` / `Presence.none`.
+- **Неявные опциональные значения и `?.`** — отсутствие — это явный
+  `Maybe<T>` / `Presence<T>`, который нужно открыть (раздел 24.2).
+- **Catch-all `catch` и `finally`** — catch называет типы или варианты
+  error enum (раздел 14.3).
 - **Наследование, `isa`, `super`, abstract/protected** — вместо них
   композиция и роли (глава 30).
 - **Мутабельные поля после конструирования** — вместо них преемники
@@ -5557,27 +5743,33 @@ object Water {
 }
 ```
 
-### 30.3 Типизированные ошибки как объекты
+### 30.3 Типизированные ошибки как enum
 
-Бросайте выделенные номинальные объекты Error, несущие контекст, и
-перехватывайте по конкретному типу или по `Error`:
+Объявляйте отказы компонента одним error enum, кладите контекст в данные и
+перехватывайте варианты, которые вызывающий умеет обработать:
 
 ```okkama
-object InvalidCents does Error {
-    has cents is int;
-    InvalidCents(:cents);
-    cents_value() is int { cents; }
-    text() is string { "invalid cents"; }
-}
+enum CashError is Error = (invalid_cents(cents is int), negative(digit is int));
 
 object Cash {
     has digit is int;
     has cents is int;
     Cash(:digit, :cents) {
-        confirm cents >= 0 && cents < 100 else throw InvalidCents(cents: cents);
+        confirm self.digit >= 0 else throw CashError.negative(self.digit);
+        confirm self.cents >= 0 && self.cents < 100 else throw CashError.invalid_cents(self.cents);
     }
+    total() is int { digit * 100 + cents; }
 }
+
+let message = try {
+    Cash(digit: 1, cents: 250).total().string();
+}
+catch CashError.invalid_cents(cents) { "bad cents: " + cents.string(); }
+catch e is CashError { e.text(); };
 ```
+
+Новый вариант в `CashError` делает каждый полный `match` по нему ошибкой
+компиляции, пока вариант не обработан: enum и есть контракт.
 
 ### 30.4 Тестируйте фейками, а не моками
 
@@ -5595,6 +5787,76 @@ object Cash {
   сломанных инвариантов.
 - Пусть область видимости владеет ресурсами: связывайте их через `let` в
   самом узком блоке и кладите очистку в `destroy`.
+
+### 30.6 Представления состояний: typestate на ролях и преемниках
+
+Протокол вроде *создан → авторизован → списан → возвращён* обычно охраняют
+проверками статуса во время исполнения. В Okkama роли, преемники, enum и
+`hidden` складываются в паттерн, где недопустимый переход не компилируется.
+
+```okkama
+// 1. Роль на каждое состояние: состояние показывает только допустимое в нём.
+role Created    { id() is string; authorize(approve is bool) is Authorization; }
+role Authorized { id() is string; capture() is ^Captured; }
+role Captured   { id() is string; refund() is ^Refunded; }
+role Refunded   { id() is string; }
+role Declined   { id() is string; reason() is string; }
+
+// 2. Альтернативные исходы — enum, данные которого — разные представления.
+enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
+
+// 3. Настоящее состояние — приватное поле этого enum, его проверяет каждый переход.
+hidden enum Stage = (created, authorized, captured, refunded, declined(reason is string));
+enum PaymentError is Error = (invalid_transition(action is string));
+
+// 4. Один иммутабельный класс реализует все представления; другие модули его не видят.
+hidden object Payment does Created, Authorized, Captured, Refunded, Declined {
+    has key is string;
+    has stage is Stage = Stage.created;        // не в конструкторе: не подделать
+    Payment(:key);
+
+    capture() is ^Payment {                    // реализует `capture() is ^Captured`
+        confirm stage == Stage.authorized else throw PaymentError.invalid_transition("capture");
+        ^stage = Stage.captured;
+    }
+    // ... authorize(), refund(), reason(), id()
+
+    private:
+    approved() is ^Payment { ^stage = Stage.authorized; }
+    rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
+}
+
+// 5. Вызывающий начинает с представления и держит только представления.
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}
+
+match Payments().open("p-1").authorize(true) {
+    case Authorization.approved(payment) { payment.capture().refund().id(); }
+    case Authorization.declined(payment) { payment.reason(); }
+}
+```
+
+Роль обещает `capture() is ^Captured`, класс реализует его как `^Payment`, а
+вызов через роль возвращает ограниченное представление `^Captured` нового
+иммутабельного объекта. Что отвергает компилятор:
+
+| Код | Сообщение компилятора |
+|---|---|
+| `created.capture()` | `Role "Created" has no action "capture"` |
+| `authorized.capture();` (результат выброшен) | `Successor action result must be used` |
+| `let a is Authorized = created;` | `Cannot initialize variable "a" of type Authorized with Created` |
+| `match` без `declined` | `Non-exhaustive match: missing declined` |
+| `payments.Payment(key: "x")` в другом модуле | `Type "payments.Payment" is hidden in module "payments"` |
+| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is private` |
+
+Чего паттерн сознательно не делает: старое иммутабельное состояние остаётся
+валидным, поэтому «авторизовать дважды» — задача долговременного состояния и
+идемпотентности, а не системы типов. Внутри объявляющего модуля класс можно
+назвать; второй линией защиты остаётся `confirm` в каждом переходе. Полная
+программа — [examples/showcase/state-views.ok](../examples/showcase/state-views.ok),
+разбор — [role-oriented typestate](research/role-oriented-typestate.md).
 
 ## Глава 31. Дорога вперёд: спроектированные и запланированные возможности
 
@@ -5918,9 +6180,12 @@ let shares is @Money = MoneyAllocation(discounted, 3).shares();
 отказов: паник, границ, несоответствий значение–тип, выбора перегрузки,
 вывода дженериков и полноты инициализации полей полными конструкторами.
 
-Ещё запланирована **полнота match (веха 16)** — проверка типа предмета
-match против значений кейсов, решение, обязан ли match-*выражение* иметь
-`else`, и обеспечение совместимости типов результатов веток. От неё зависит
+Полнота match **реализована для вариантных enum**: match и короткий выбор
+по enum с данными, error enum, `Maybe` и `Presence` обязаны покрыть все
+варианты, а типы результатов веток должны совпадать. Enum без данных сохраняют
+прежнее правило для инструкций с предупреждением lint. Для остальных предметов
+ещё запланированы проверка типа предмета match против произвольных значений
+кейсов и решение, обязан ли такой match-*выражение* иметь `else`. От неё зависит
 более сильный анализ путей возврата. Сейчас проверяются пустые типизированные
 тела и явно несовместимые хвостовые значения async; распознанные безусловные
 пути `return` исключают недостижимый хвост из этой проверки. Полного анализа
@@ -5964,14 +6229,19 @@ Okkama.pm и cli/01,02,04,07 tests.
 Удалённые слова (ошибки разбора, никогда не допустимы):
 
 ```text
-null none nil optional ?. isa super abstract protected with setters mutable var
+null nil optional ?. isa super abstract protected with setters mutable var
 ```
+
+`none` — не значение: он существует только как вариант `Maybe.none` /
+`Presence.none`. Одиночный `?` — ошибка; `??` и `!!` образуют короткий выбор,
+а `try?` / `try!` — префиксные формы без пробела.
 
 Инвентарь активно используемых ключевых слов: `module`, `import`, `as`,
 `take`, `object`, `role`, `enum`, `has`, `is`, `does`, `self`, `let`, `if`,
 `else`, `match`, `case`, `for`, `loop`, `next`, `last`, `return`, `confirm`, `throw`, `panic`, `try`,
 `catch`, `defer`, `test`, `fake`, `destroy`, `private`,
-`native`, `async`, `await`, `spawn`, `true`, `false`, `main` (контекстно).
+`native`, `async`, `await`, `spawn`, `true`, `false`, `main` (контекстно),
+`hidden` (контекстно, перед `object`, `role` или `enum`).
 
 Контекстные имена пространств (не обычные идентификаторы) включают
 keyword-shaped сегменты пути вроде `test` в `test/more`, объявляемые метки
@@ -6011,6 +6281,12 @@ actions вроде `is`, `fake` в `Role.fake()`, имена утвержден�
 - владение по идентичности и автоматический `destroy` при выходе из
   области;
 - строгие границы лексической области видимости;
+- enum с данными и полными паттернами, `Maybe` / `Presence` с `else` и
+  `fold()`, короткий выбор `?? … !!`;
+- error enum (`enum E is Error`), образцы и списки типов в catch,
+  `try?` / `try!`;
+- приватные действия-преемники; скрытые объявления `hidden` с проверкой утечки
+  через публичные сигнатуры;
 - перечисления; роли, конформность, роле-типизированная диспетчеризация;
   фейки ролей в тестовом режиме;
 - точные дженерики на объектах и ролях, вывод при конструировании,
@@ -6038,7 +6314,9 @@ constructor projections также входят в текущий контрак
 
 Статический semantic pass и builtin scalar casts реализованы; casts не
 раскрывают `any`. Остаются будущими: явное сужение `any`, decimal literals,
-статическая полнота match, parse/AST-print и интерактивный prompt.
+полнота match по произвольным значениям и `throws` в сигнатурах (отложено).
+Режимы parse/AST-print и REPL есть в Rust-инструментах (`okkama ast`,
+`okkama repl`).
 Production/debug/test modes уже работают. Актуальный объём stdlib и её остатки
 описаны в [v4 roadmap](std/stdlib-roadmap-v4.md), а не в исторической вехе MVP.
 
@@ -6081,11 +6359,10 @@ role Wallet { total() is int; }
 object Purse does Wallet { ... }
 
 enum Status = (ready, failed, done);
+enum Shape = (circle(radius is float), point);          // enum с данными
+enum DbError is Error = (closed, query(code is int));  // error enum
 
-object Failed does Error {
-    Failed();
-    text() is string { "failed"; }
-}
+hidden object Ledger { Ledger(); }                      // только внутри модуля
 
 // ---- main ----
 main() is int {
@@ -6104,8 +6381,16 @@ main() is int {
     let add_one is (int) is int = (value is int) is int { value + 1; };
     add_one(41);
 
-    try { throw Failed(); }
-    catch error is Error { error.text(); }
+    try { throw DbError.query(42); }
+    catch DbError.query(code) { code; }
+    catch e is Error { e.text(); }
+
+    let n = try? risky() else 0;       // Maybe<int>, затем фолбэк
+    let nick = user.nickname() else "anon";   // Maybe<string>
+    let label = n > 0 ?? "some" !! "none";    // типизированный тернарник
+    let area = Shape.circle(1.0)
+        ?? .circle(r): r * r
+        !! .point: 0.0;
 
     prices["fig"] else 0;              // явный фолбэк, никакого null
     return 0;

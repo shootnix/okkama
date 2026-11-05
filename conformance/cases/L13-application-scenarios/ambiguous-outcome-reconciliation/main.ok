@@ -3,10 +3,7 @@ module billing v1.0.0;
 import "conformance/check" take Checks;
 import "async/atomic" take Atomic;
 
-object ResponseLost does Error {
-    ResponseLost();
-    text() is string { "provider response lost"; }
-}
+enum ResponseLost is Error = (response_lost);
 
 object Provider {
     has charged is Atomic<@string>;
@@ -18,7 +15,7 @@ object Provider {
         }
         if lose_next.value() {
             lose_next.replace(false);
-            throw ResponseLost();
+            throw ResponseLost.response_lost;
         }
         "ok " + key;
     }

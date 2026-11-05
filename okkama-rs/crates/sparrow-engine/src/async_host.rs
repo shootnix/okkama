@@ -63,6 +63,9 @@ impl Drop for AsyncHost {
         }
     }
 }
+/// Longest uninterrupted run of instruction slices before a Tokio turn.
+const YIELD_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
+
 impl Session {
     /// Cooperatively drive a session using Tokio's ordinary Future/Waker path.
     /// The finite budget also bounds uninterrupted native/JIT instruction loops.
@@ -128,6 +131,7 @@ impl Session {
     ) -> std::pin::Pin<Box<dyn Future<Output = Result<TaskOutcome, Error>> + '_>> {
         Box::pin(async move {
             let activity = crate::stall::Driver::new(self.driver_group());
+            let mut slice = std::time::Instant::now();
             loop {
                 activity.running();
                 // Ready spawn/notification transitions can return before the
@@ -160,7 +164,17 @@ impl Session {
                         }
                         return Ok(outcome);
                     }
-                    TaskOutcome::Yielded => tokio::task::yield_now().await,
+                    TaskOutcome::Yielded => {
+                        // Each Tokio turn of a current-thread runtime polls the
+                        // I/O driver (a system call); yielding after every
+                        // instruction slice spent half of the time there. Run
+                        // slices for up to YIELD_INTERVAL; the cooperative budget
+                        // above still forces a turn after 128 slices.
+                        if slice.elapsed() >= YIELD_INTERVAL {
+                            tokio::task::yield_now().await;
+                            slice = std::time::Instant::now();
+                        }
+                    }
                     TaskOutcome::Waiting => {
                         if let Some(child) = self.take_spawn()? {
                             if let Some(mut child) = child {

@@ -12,13 +12,7 @@ object Book {
     title() is string { title; }
 }
 
-object MissingBook does Error {
-    has id is int;
-    MissingBook(:id);
-
-    id() is int { id; }
-    text() is string { "book is missing"; }
-}
+enum MissingBook is Error = (missing_book(id is int));
 
 object BooksState {
     has entries is List<Book>;
@@ -40,7 +34,7 @@ object BooksState {
 
     find_in(remaining is List<Book>, id is int) is Book {
         if (remaining.size() == 0) {
-            throw MissingBook(id: id);
+            throw MissingBook.missing_book(id);
         }
         else if remaining.first().id() == id {
             remaining.first();
@@ -191,7 +185,7 @@ object BooksInMemory {
             result.book();
         }
         else {
-            throw MissingBook(id: id);
+            throw MissingBook.missing_book(id);
         }
     }
 
@@ -240,8 +234,8 @@ object ExampleResult {
             await reader.book(1);
             0;
         }
-        catch error is MissingBook {
-            error.id();
+        catch MissingBook.missing_book(id) {
+            id;
         };
 
         let final_size = await writer.stop();

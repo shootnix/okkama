@@ -2,17 +2,14 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object AlreadyOpen does Error {
-    AlreadyOpen();
-    text() is string { "already open"; }
-}
+enum AlreadyOpen is Error = (already_open);
 
 object Bottle {
     has opened is bool = false;
     has sips is int = 0;
     Bottle() {}
     open() is ^Bottle {
-        confirm !opened else throw AlreadyOpen();
+        confirm !opened else throw AlreadyOpen.already_open;
         ^opened = true;
     }
     sip() is ^Bottle {

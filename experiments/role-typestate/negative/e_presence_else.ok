@@ -7,6 +7,6 @@ import "../models/payment_views" take Payments, Authorized, InvalidTransition;
 
 main() is int {
     let p is Presence<Authorized> = Presence<Authorized>.missing;
-    let a = p else throw InvalidTransition(action: "x");
+    let a = p else throw InvalidTransition.invalid_transition("x");
     0;
 }

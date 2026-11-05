@@ -52,7 +52,7 @@ object Utf8Decoded {
 
     string() is string {
         let offset is int = utf8_valid_prefix(origin);
-        confirm offset == origin.size() else throw InvalidUtf8(offset);
+        confirm offset == origin.size() else throw InvalidUtf8.at(offset);
         utf8_decode(origin);
     }
 }
@@ -89,7 +89,7 @@ object Utf16Decoded {
     string() is string {
         let name is string = self.order_name();
         let offset is int = utf16_valid_prefix(origin, name);
-        confirm offset == origin.size() else throw InvalidUtf16(offset);
+        confirm offset == origin.size() else throw InvalidUtf16.at(offset);
         utf16_decode(origin, name);
     }
 
@@ -132,7 +132,7 @@ object Utf32Decoded {
     string() is string {
         let name is string = self.order_name();
         let offset is int = utf32_valid_prefix(origin, name);
-        confirm offset == origin.size() else throw InvalidUtf32(offset);
+        confirm offset == origin.size() else throw InvalidUtf32.at(offset);
         utf32_decode(origin, name);
     }
 
@@ -143,53 +143,13 @@ object Utf32Decoded {
     }
 }
 
-object InvalidUtf8 does Error {
-    has invalid_offset is int;
+// Malformed input reports the byte offset of the first invalid sequence:
+// InvalidUtf8.at(offset), InvalidUtf16.at(offset), InvalidUtf32.at(offset).
+enum InvalidUtf8 is Error = (at(offset is int));
 
-    InvalidUtf8(offset is int) {
-        invalid_offset = offset;
-    }
+enum InvalidUtf16 is Error = (at(offset is int));
 
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid UTF-8 sequence at byte offset " + invalid_offset.string();
-    }
-}
-
-object InvalidUtf16 does Error {
-    has invalid_offset is int;
-
-    InvalidUtf16(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid UTF-16 sequence at byte offset " + invalid_offset.string();
-    }
-}
-
-object InvalidUtf32 does Error {
-    has invalid_offset is int;
-
-    InvalidUtf32(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid UTF-32 sequence at byte offset " + invalid_offset.string();
-    }
-}
+enum InvalidUtf32 is Error = (at(offset is int));
 
 // Every Unicode scalar is preserved, including the 66 noncharacters. These
 // values are not surrogate codepoints and do not make UTF text malformed.
@@ -223,7 +183,7 @@ test "empty UTF values and BOM-shaped scalars are stable" {
     test.is(Utf16Encoded(bom, ByteOrder.big).bytes(), [byte(254), byte(255)]);
 }
 test "malformed scalar boundaries retain typed byte offsets" {
-    test.is(try {Utf8Decoded([byte(65), byte(192), byte(128)]).string(); -1;} catch error is InvalidUtf8 {error.offset();}, 1);
-    test.is(try {Utf16Decoded([byte(0), byte(65), byte(216), byte(0)], ByteOrder.big).string(); -1;} catch error is InvalidUtf16 {error.offset();}, 2);
-    test.is(try {Utf32Decoded([byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)], ByteOrder.big).string(); -1;} catch error is InvalidUtf32 {error.offset();}, 4);
+    test.is(try {Utf8Decoded([byte(65), byte(192), byte(128)]).string(); -1;} catch InvalidUtf8.at(offset) {offset;}, 1);
+    test.is(try {Utf16Decoded([byte(0), byte(65), byte(216), byte(0)], ByteOrder.big).string(); -1;} catch InvalidUtf16.at(offset) {offset;}, 2);
+    test.is(try {Utf32Decoded([byte(0), byte(0), byte(0), byte(65), byte(0), byte(17), byte(0), byte(0)], ByteOrder.big).string(); -1;} catch InvalidUtf32.at(offset) {offset;}, 4);
 }

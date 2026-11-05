@@ -24,16 +24,13 @@ object Quiet {
     async run() is int { result; }
 }
 
-object Broken does Error {
-    Broken();
-    text() is string { "broken"; }
-}
+enum Broken is Error = (broken);
 
 object Failing {
     Failing();
     async run() is int {
         Stdout().writeln("failing body");
-        throw Broken();
+        throw Broken.broken;
     }
 }
 

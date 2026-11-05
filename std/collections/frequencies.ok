@@ -47,7 +47,7 @@ object Frequency<T> {
 
     Frequency(item is T, amount is int) {
         confirm amount > 0
-            else throw InvalidArgument("frequency amount must be positive");
+            else throw InvalidArgument.because("frequency amount must be positive");
         origin = item;
         quantity = amount;
     }
@@ -155,7 +155,7 @@ object FrequencyBuilding<T> {
 
     FrequencyBuilding(frequencies is List<Frequency<T>>, total is int) {
         confirm total >= 0
-            else throw InvalidArgument("frequency total cannot be negative");
+            else throw InvalidArgument.because("frequency total cannot be negative");
         origin = frequencies;
         quantity = total;
     }

@@ -1,7 +1,7 @@
 //! Explicit resource ownership, independent of memory reclamation.
 //! Ordinary programs leave identity metadata disabled. No assignment walks a graph.
 use crate::{Error, arena::Arena, value::*};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Closed-world type reachability: a plain wrapper is skipped only when none of
 /// its declared fields can reach a destroy-bearing identity. Cycles converge by
@@ -89,9 +89,9 @@ pub(crate) struct Resources {
     pub enabled: bool,
     pub descriptors: Option<std::rc::Rc<[bool]>>,
     serial: u64,
-    identities: HashMap<u64, Identity>,
+    identities: crate::value::HandleMap<Identity>,
     pending: Vec<Slot>,
-    seen: HashSet<(u64, u64)>,
+    seen: HashSet<(u64, u64), crate::value::HandleBuild>,
 }
 impl Resources {
     pub fn created(&mut self, descriptor: usize, object: Slot) -> Result<(), Error> {

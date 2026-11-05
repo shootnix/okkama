@@ -11,10 +11,7 @@ import "numbers/bigint" take BigInt;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
 
-object FetchFailed does Error {
-    FetchFailed();
-    text() is string { "fetch failed"; }
-}
+enum FetchFailed is Error = (fetch_failed);
 object ProbeRows does RowReading {
     has count,fail_at is int;
     has reads,closes is Atomic<int>;
@@ -29,7 +26,7 @@ object ProbeRows does RowReading {
     close_count() is int { closes.value(); }
     async row() is Row {
         let index=reads.value();reads.replace(index+1);
-        if index==fail_at { throw FetchFailed(); }
+        if index==fail_at { throw FetchFailed.fetch_failed; }
         confirm index<count else throw RowsEnded();
         Row([Column(0,"id","")],[DbInteger(BigInt("7"))]);
     }

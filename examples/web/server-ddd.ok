@@ -37,7 +37,7 @@ object UserId {
     has number is BigInt;
 
     UserId(:number) {
-        confirm number.sign() > 0 else throw InvalidUserId(origin: number.string());
+        confirm number.sign() > 0 else throw InvalidUserId.invalid_user_id(number.string());
     }
 
     number() is BigInt { number; }
@@ -51,7 +51,7 @@ object ParsedUserId {
     ParsedUserId(:origin);
 
     value() is UserId {
-        let number = try { BigInt(origin); } catch failure is InvalidBigInt { throw InvalidUserId(origin: origin); };
+        let number = try { BigInt(origin); } catch failure is InvalidBigInt { throw InvalidUserId.invalid_user_id(origin); };
         UserId(number: number);
     }
 }
@@ -60,7 +60,7 @@ object UserName {
     has origin is string;
 
     UserName(:origin) {
-        confirm origin.length() > 0 && origin.length() <= 100 else throw InvalidUserName(origin: origin);
+        confirm origin.length() > 0 && origin.length() <= 100 else throw InvalidUserName.invalid_user_name(origin);
     }
 
     string() is string { origin; }
@@ -70,7 +70,7 @@ object Email {
     has origin is string;
 
     Email(:origin) {
-        confirm origin.split("@").size() == 2 && origin.length() <= 254 else throw InvalidEmail(origin: origin);
+        confirm origin.split("@").size() == 2 && origin.length() <= 254 else throw InvalidEmail.invalid_email(origin);
     }
 
     string() is string { origin; }
@@ -99,11 +99,11 @@ role UserRepository {
     async saved(user is User) is void;
 }
 
-object InvalidUserId does Error { has origin is string; InvalidUserId(:origin); text() is string { "invalid user id: " + origin; } }
-object InvalidUserName does Error { has origin is string; InvalidUserName(:origin); text() is string { "user name must be 1..100 characters"; } }
-object InvalidEmail does Error { has origin is string; InvalidEmail(:origin); text() is string { "invalid email: " + origin; } }
-object UserNotFound does Error { has id is UserId; UserNotFound(:id); text() is string { "user " + id.string() + " not found"; } }
-object EmailTaken does Error { has email is Email; EmailTaken(:email); text() is string { "email " + email.string() + " is already registered"; } }
+enum InvalidUserId is Error = (invalid_user_id(origin is string));
+enum InvalidUserName is Error = (invalid_user_name(origin is string));
+enum InvalidEmail is Error = (invalid_email(origin is string));
+enum UserNotFound is Error = (user_not_found(id is UserId));
+enum EmailTaken is Error = (email_taken(email is Email));
 
 // =============================================================================
 // shop/users/application: use cases. They speak domain types, never HTTP.
@@ -137,7 +137,7 @@ object UserService {
     async user(id is UserId) is User { await users.user(id); }
 
     async registered(command is RegisterUser) is User {
-        if await users.email_taken(command.email()) { throw EmailTaken(email: command.email()); }
+        if await users.email_taken(command.email()) { throw EmailTaken.email_taken(command.email()); }
         await users.added(command.name(), command.email());
     }
 
@@ -161,7 +161,7 @@ object SqliteUserRepository does UserRepository {
     async user(id is UserId) is User {
         let statement = await Prepared(db, "SELECT id, name, email FROM users WHERE id = ?").statement();
         defer statement.close();
-        let row = (await Query(statement,[Param(id.number())]).maybe()) else throw UserNotFound(id: id);
+        let row = (await Query(statement,[Param(id.number())]).maybe()) else throw UserNotFound.user_not_found(id);
         UserRow(row: row).user();
     }
 
@@ -213,7 +213,7 @@ object MemoryUserRepository does UserRepository {
         let index = if current.size() == 0 { -1; } else {
             for (0..current.size()) -> index { last index if current[index].id().string() == id.string(); -1; }
         };
-        confirm index >= 0 else throw UserNotFound(id: id);
+        confirm index >= 0 else throw UserNotFound.user_not_found(id);
         current[index];
     }
 

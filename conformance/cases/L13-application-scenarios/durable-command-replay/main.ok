@@ -9,10 +9,7 @@ import "db/read" take RowReader;
 import "db/row" take RowsEnded;
 import "numbers/bigint" take BigInt;
 
-object IdempotencyConflict does Error {
-    IdempotencyConflict();
-    text() is string { "idempotency key reused with a different payload"; }
-}
+enum IdempotencyConflict is Error = (idempotency_conflict);
 
 object Commands {
     has connection is SqliteConnection;
@@ -30,7 +27,7 @@ object Commands {
         rows.close();
         if previous.size() == 2 {
             let ended = await tx.rollback();
-            confirm previous[0] == payload else throw IdempotencyConflict();
+            confirm previous[0] == payload else throw IdempotencyConflict.idempotency_conflict;
             return "replayed " + previous[1];
         }
         await tx.execution(Statement("INSERT INTO ledger(entry) VALUES(?)", [DbText(payload)]));

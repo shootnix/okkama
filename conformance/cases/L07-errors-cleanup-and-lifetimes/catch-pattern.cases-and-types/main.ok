@@ -5,10 +5,7 @@ import "io/stdout" take Stdout;
 enum DbError is Error = (closed, failed(code is int, reason is string));
 enum NetError is Error = (timeout(ms is int), reset);
 
-object Denied does Error {
-    Denied();
-    text() is string { "denied"; }
-}
+enum Denied is Error = (denied);
 
 object Source {
     Source();
@@ -17,7 +14,7 @@ object Source {
         if kind == 1 { throw DbError.failed(5, "disk"); }
         if kind == 2 { throw NetError.timeout(30); }
         if kind == 3 { throw NetError.reset; }
-        if kind == 4 { throw Denied(); }
+        if kind == 4 { throw Denied.denied; }
         100;
     }
 }

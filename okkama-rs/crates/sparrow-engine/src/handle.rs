@@ -18,6 +18,8 @@ pub(crate) enum Handle {
     File(crate::native_file::RawFile),
     Network(crate::native_network::NetworkHandle),
     Db(crate::native_db::DbHandle),
+    Sqlite(std::rc::Rc<std::cell::RefCell<crate::native_sqlite::Connection>>),
+    SqliteReply(std::rc::Rc<crate::native_sqlite::Reply>),
     Json(crate::native_json::JsonHandle),
     Regex(crate::native_regex::RegexHandle),
     Secret(crate::native_secret::Secret),
@@ -43,6 +45,8 @@ impl Handle {
             | Self::File(_)
             | Self::Network(_)
             | Self::Db(_)
+            | Self::Sqlite(_)
+            | Self::SqliteReply(_)
             | Self::Regex(_)
             | Self::Secret(_)
             | Self::Buffer(_)

@@ -484,7 +484,7 @@ impl Checker<'_, '_> {
         let ty = Self::ty_of(&error);
         if !error.diverges && !ty.is_error() && !self.throwable(&ty) {
             let message = format!(
-                "Type \"{}\" cannot be thrown; only error enums and objects that do Error are catchable",
+                "Type \"{}\" cannot be thrown; only error enums are thrown: `enum Name is Error = (...)`",
                 self.type_name(&ty.taken())
             );
             self.error(value.span, message);

@@ -365,6 +365,7 @@ fn deeply_nested_cleanup_uses_explicit_continuations_and_keeps_outer_roots() {
     for mode in [Mode::Cold, Mode::Jit] {
         let code = Executable::new(&p, mode).unwrap();
         let mut session = code.start();
+        session.stress_collection();
         let mut peak = 0;
         loop {
             let result = session.resume(1).unwrap();

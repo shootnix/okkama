@@ -49,6 +49,7 @@ mod native_regex;
 #[cfg(unix)]
 mod native_root;
 mod native_secret;
+mod native_sqlite;
 mod native_temporary;
 mod native_text;
 mod native_udp;
@@ -71,6 +72,7 @@ mod scalar;
 mod semaphore;
 mod signal;
 mod stall;
+pub mod stats;
 mod stream;
 mod testing;
 mod text;
@@ -127,6 +129,8 @@ pub(crate) struct Code {
     error_methods: Vec<Option<usize>>,
     native_descriptor: Option<usize>,
     error_role: Option<u32>,
+    /// Task buffer sizes, see `execution::window`.
+    window: (usize, usize, usize),
 }
 
 #[derive(Debug)]
@@ -434,11 +438,13 @@ impl Executable {
             }
             functions[index] = Some(function);
         }
+        let window = execution::window(&functions);
         Ok(Self {
             code: Rc::new(Code {
                 // Embedding must never implicitly relaunch the host executable.
                 worker_command: Vec::new(),
                 arguments: Vec::new(),
+                window,
                 functions,
                 entry,
                 constants: cache.constants.clone(),

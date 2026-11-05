@@ -1,7 +1,5 @@
 module io/stream v1.0.0;
 
-import "error" take InvalidArgument;
-
 // Small nominal contracts for byte and text streams.
 //
 //     writer.write(packet);
@@ -18,8 +16,8 @@ import "error" take InvalidArgument;
 // from left to right; a failed write prevents evaluation of later sources.
 //
 // Writing.write() either consumes the complete source or throws
-// IncompleteWrite with the consumed prefix length. It does not retry, flush or
-// close implicitly. Reading.bytes(limit) requires limit > 0. An empty result is
+// IncompleteWrite.after(written) with the consumed prefix length. It does not
+// retry, flush or close implicitly. Reading.bytes(limit) requires limit > 0. An empty result is
 // normal EOF, remains empty on later reads, and is not an error.
 
 role ByteSource {
@@ -50,38 +48,8 @@ role Closing {
     close() is void;
 }
 
-object IncompleteWrite does Error {
-    has amount is int;
+// IncompleteWrite.after(written) carries the consumed prefix length;
+// InvalidReadLimit.limit(value) carries the rejected limit.
+enum IncompleteWrite is Error = (after(written is int));
 
-    IncompleteWrite(written is int) {
-        amount = written;
-
-        confirm self.amount >= 0 else throw InvalidArgument(
-            "written byte count cannot be negative"
-        );
-    }
-
-    written() is int {
-        amount;
-    }
-
-    text() is string {
-        "incomplete write after " + amount.string() + " bytes";
-    }
-}
-
-object InvalidReadLimit does Error {
-    has value is int;
-
-    InvalidReadLimit(limit is int) {
-        value = limit;
-    }
-
-    limit() is int {
-        value;
-    }
-
-    text() is string {
-        "read limit must be positive, got " + value.string();
-    }
-}
+enum InvalidReadLimit is Error = (limit(value is int));

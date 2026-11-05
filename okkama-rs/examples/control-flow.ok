@@ -5,19 +5,14 @@ import "io/stdout" take Stdout;
 // Conditionals, loops, typed errors and early return. Exits with status 0
 // when every computed value matches.
 
-object TooLarge does Error {
-    has value is int;
-    TooLarge(:value);
-    text() is string { "too large: " + value.string(); }
-    value() is int { value; }
-}
+enum TooLarge is Error = (too_large(value is int));
 
 object Checker {
     Checker();
 
     check(value is int) is int {
         if value > 100 {
-            throw TooLarge(value: value);
+            throw TooLarge.too_large(value);
         }
         value;
     }
@@ -49,8 +44,8 @@ main() is int {
 
     let guarded = try {
         checker.check(500);
-    } catch error is TooLarge {
-        error.value() - 400;
+    } catch TooLarge.too_large(value) {
+        value - 400;
     };
 
     let words = [checker.classify(-1), checker.classify(0), checker.classify(7)];

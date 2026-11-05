@@ -3,7 +3,7 @@ import "conformance/check" take Checks;
 import "async/atomic" take Atomic;
 
 role Reading<T> { async next() is Maybe<T>; }
-object Failed does Error { Failed();text() is string { "fetch failed"; } }
+enum Failed is Error = (failed);
 object Stream does Reading<int> {
     has position,calls,closed is Atomic<int>;
     has end,fail_at is int;
@@ -17,7 +17,7 @@ object Stream does Reading<int> {
     async next() is Maybe<int> {
         calls.replace(calls.value()+1);
         let value=position.value();
-        if value==fail_at { throw Failed(); }
+        if value==fail_at { throw Failed.failed; }
         if value==end { Maybe.none; }
         else { position.replace(value+1);Maybe.some(value); }
     }

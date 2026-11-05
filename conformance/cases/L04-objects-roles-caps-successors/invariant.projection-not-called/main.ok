@@ -2,16 +2,13 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object NegativeValue does Error {
-    NegativeValue();
-    text() is string { "negative"; }
-}
+enum NegativeValue is Error = (negative_value);
 
 object Checked {
     has value is int;
     Checked(value is int) {
         self.value = value;
-        confirm value >= 0 else throw NegativeValue();
+        confirm value >= 0 else throw NegativeValue.negative_value;
     }
 
     positive() is int {

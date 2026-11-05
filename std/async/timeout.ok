@@ -50,7 +50,7 @@ object Within<T> {
 
     Within(origin is Future<T>, limit is Duration, clock is Timing) {
         confirm limit.seconds() >= 0.rat()
-            else throw InvalidArgument("timeout duration cannot be negative");
+            else throw InvalidArgument.because("timeout duration cannot be negative");
         self.origin = origin;
         self.limit = limit;
         self.clock = clock;

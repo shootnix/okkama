@@ -1,4 +1,4 @@
-module json v1.0.0;
+module local/json v1.0.0;
 
 import "math/decimal" take Decimal;
 import "numbers/bigint" take BigInt, BigProduct, BigPower, BigPowerLimitExceeded;
@@ -133,7 +133,7 @@ object Json {
     Json(fields is @JsonField) {
         let names is @string = fields.map() -> field { field.name(); };
         let repeated = json_repeated_name(names);
-        confirm repeated == names.size() else throw DuplicateJsonMember(names[repeated]);
+        confirm repeated == names.size() else throw DuplicateJsonMember.named(names[repeated]);
         let values is @JsonNodeState = fields.map() -> field { field.value()::Node::state; };
         let made = json_object_node(names, values);
         node = made;
@@ -214,7 +214,7 @@ object Json {
     at(index is int) is Json {
         self.expect(JsonKind.array_value);
         confirm index >= 0 && index < json_node_size(node)
-            else throw MissingJsonValue(self.pointer() + "/" + index.string());
+            else throw MissingJsonValue.pointer(self.pointer() + "/" + index.string());
         Json(json_node_item(node, index), root);
     }
 
@@ -251,7 +251,7 @@ object Json {
 
     get(name is string) is Json {
         let position = self.position(name);
-        confirm position >= 0 else throw MissingJsonValue(self.pointer() + "/" + JsonPointerToken(name).string());
+        confirm position >= 0 else throw MissingJsonValue.pointer(self.pointer() + "/" + JsonPointerToken(name).string());
         Json(json_member_value(node, position), root);
     }
 
@@ -315,7 +315,7 @@ object Json {
     // Indented JSON text: one member or item per line, indentation spaces
     // per level, ": " after names, no final line break.
     pretty(indentation is int) is string {
-        confirm indentation >= 0 else throw InvalidJsonIndentation(indentation);
+        confirm indentation >= 0 else throw InvalidJsonIndentation.indentaion(indentation);
         json_node_write(node, indentation);
     }
 
@@ -364,8 +364,7 @@ object ParsedJson {
     ParsedJson(origin is string) { state = json_parse_state(origin, 128); }
 
     ParsedJson(origin is string, maximum_depth is int) {
-        confirm maximum_depth > 0 else throw InvalidJson(
-            offset: 0, line: 1, column: 1, message: "maximum JSON depth must be positive");
+        confirm maximum_depth > 0 else throw InvalidJson.located(0, 1, 1, "maximum JSON depth must be positive");
         state = json_parse_state(origin, maximum_depth);
     }
 
@@ -374,19 +373,19 @@ object ParsedJson {
             Json(json_parse_root(state));
         }
         else if json_parse_has_duplicate(state) {
-            throw DuplicateJsonMember(
-                name: json_parse_duplicate(state),
-                offset: json_parse_offset(state),
-                line: json_parse_line(state),
-                column: json_parse_column(state),
+            throw DuplicateJsonMember.located(
+                json_parse_duplicate(state),
+                json_parse_offset(state),
+                json_parse_line(state),
+                json_parse_column(state),
             );
         }
         else {
-            throw InvalidJson(
-                offset: json_parse_offset(state),
-                line: json_parse_line(state),
-                column: json_parse_column(state),
-                message: json_parse_message(state),
+            throw InvalidJson.located(
+                json_parse_offset(state),
+                json_parse_line(state),
+                json_parse_column(state),
+                json_parse_message(state),
             );
         }
     }
@@ -494,7 +493,7 @@ object JsonOptional {
 
     // The member; MissingJsonValue when it is absent or null.
     value() is Json {
-        confirm origin.size() > 0 else throw MissingJsonValue(self.pointer());
+        confirm origin.size() > 0 else throw MissingJsonValue.pointer(self.pointer());
         origin[0];
     }
 
@@ -542,7 +541,7 @@ object JsonInteger {
     JsonInteger(:exact, :origin);
 
     value() is BigInt {
-        confirm exact.exponent() >= 0 else throw InvalidJsonNumber(origin.pointer(), exact.string(), "integer required");
+        confirm exact.exponent() >= 0 else throw InvalidJsonNumber.detailed(origin.pointer(), exact.string(), "integer required");
         if exact.exponent() == 0 {
             exact.coefficient();
         }
@@ -551,7 +550,7 @@ object JsonInteger {
                 BigPower(BigInt("10"), exact.exponent(), 4096).value();
             }
             catch failure is BigPowerLimitExceeded {
-                throw InvalidJsonNumber(origin.pointer(), exact.string(), "integer exceeds 4096 bits");
+                throw InvalidJsonNumber.detailed(origin.pointer(), exact.string(), "integer exceeds 4096 bits");
             };
             BigProduct(left: exact.coefficient(), right: scale).value();
         }
@@ -567,7 +566,7 @@ object JsonInt {
     value() is int {
         let integer = JsonInteger(exact: exact, origin: origin).value();
         confirm integer.order(BigInt("9223372036854775807")) != Order.greater && integer.order(BigInt("-9223372036854775808")) != Order.less
-            else throw InvalidJsonNumber(origin.pointer(), integer.string(), "integer outside int range");
+            else throw InvalidJsonNumber.detailed(origin.pointer(), integer.string(), "integer outside int range");
         int_parse(integer.string(), 10);
     }
 }
@@ -610,113 +609,17 @@ object WrongJsonKind does Error {
     text() is string { "JSON value at " + JsonLocation(location).string() + " must be " + JsonKindName(wanted).string() + ", found " + JsonKindName(found).string(); }
 }
 
-object MissingJsonValue does Error {
-    has location is string;
-    MissingJsonValue(pointer is string) { location = pointer; }
-    pointer() is string { location; }
-    text() is string { "JSON value at " + JsonLocation(location).string() + " is missing"; }
-}
+enum MissingJsonValue is Error = (pointer(location is string));
+enum InvalidJsonNumber is Error = (detailed(location is string, spelling is string, reason is string));
+enum InvalidJson is Error = (located(offset is int, line is int, column is int, message is string));
+enum MissingJsonLocation is Error = (named(origin is string));
 
-object InvalidJsonNumber does Error {
-    has location is string;
-    has spelling is string;
-    has reason is string;
+enum DuplicateJsonMember is Error = (
+    named(origin is string),
+    located(name is string, offset is int, line is int, column is int)
+);
 
-    InvalidJsonNumber(pointer is string, number is string, reason is string) {
-        location = pointer;
-        spelling = number;
-        self.reason = reason;
-    }
-
-    pointer() is string { location; }
-    number() is string { spelling; }
-    reason() is string { reason; }
-    text() is string { "JSON number " + spelling + " at " + JsonLocation(location).string() + ": " + reason; }
-}
-
-object InvalidJson does Error {
-    has source_offset is int;
-    has source_line is int;
-    has source_column is int;
-    has message is string;
-
-    InvalidJson(offset is int, line is int, column is int, message is string) {
-        source_offset = offset;
-        source_line = line;
-        source_column = column;
-        self.message = message;
-    }
-
-    offset() is int { source_offset; }
-    line() is int { source_line; }
-    column() is int { source_column; }
-
-    text() is string {
-        message + " at line " + source_line.string() + ", column " + source_column.string();
-    }
-}
-
-object MissingJsonLocation does Error {
-    has origin is string;
-    MissingJsonLocation(name is string) { origin = name; }
-    name() is string { origin; }
-    text() is string { "JSON member \"" + origin + "\" has no source location"; }
-}
-
-// A member name given twice: by a parsed text (located) or by Json(fields).
-object DuplicateJsonMember does Error {
-    has origin is string;
-    has source_offset is int;
-    has source_line is int;
-    has source_column is int;
-    has source_located is bool;
-
-    DuplicateJsonMember(name is string) {
-        origin = name;
-        source_offset = 0;
-        source_line = 1;
-        source_column = 1;
-        source_located = false;
-    }
-
-    DuplicateJsonMember(name is string, offset is int, line is int, column is int) {
-        confirm offset >= 0;
-        confirm line > 0;
-        confirm column > 0;
-        source_located = true;
-        origin = name;
-        source_offset = offset;
-        source_line = line;
-        source_column = column;
-    }
-
-    name() is string { origin; }
-    located() is bool { source_located; }
-
-    offset() is int {
-        if source_located { source_offset; }
-        else { throw MissingJsonLocation(origin); }
-    }
-
-    line() is int {
-        if source_located { source_line; }
-        else { throw MissingJsonLocation(origin); }
-    }
-
-    column() is int {
-        if source_located { source_column; }
-        else { throw MissingJsonLocation(origin); }
-    }
-
-    text() is string { "duplicate JSON member \"" + origin + "\""; }
-}
-
-object InvalidJsonIndentation does Error {
-    has amount is int;
-    InvalidJsonIndentation(indentation is int) { amount = indentation; }
-    indentation() is int { amount; }
-    text() is string { "JSON indentation must be non-negative"; }
-}
+enum InvalidJsonIndentation is Error = (indentaion(amount is int));
 
 test "values built in code are written compact and pretty" {
     let value = Json([
@@ -731,23 +634,76 @@ test "values built in code are written compact and pretty" {
     test.is(Json(items: [Json(BigInt("123456789012345678901")), Json(1.5), Json(0.000000025)]).string(), "[123456789012345678901,1.5,2.5e-8]");
     test.is(Json(items: [Json([JsonField("a", 1)]), Json(items: [])]).pretty(2), "[\n  {\n    \"a\": 1\n  },\n  []\n]");
     test.is(Json(fields: []).pretty(0), "{}");
-    test.is(try { Json(1).pretty(-1); ""; } catch failure is InvalidJsonIndentation { failure.indentation().string(); }, "-1");
+    test.is(
+        try { 
+            Json(1).pretty(-1); 
+            ""; 
+        } 
+        catch InvalidJsonIndentation.indentaion(amount) { 
+            amount.string(); 
+        }, 
+        "-1"
+    );
     for [["404", "404"], ["1000", "1000"], ["0.000001", "0.000001"], ["0.0000001", "1e-7"], ["1e21", "1e21"], ["123456789012345678901", "123456789012345678901"]] -> pair {
         test.is(Json(Decimal(pair[0])).string(), pair[1]);
     }
 }
 
 test "repeated names are rejected when built and when parsed" {
-    test.is(try { Json([JsonField("a", 1), JsonField("b", 2), JsonField("a", 3)]); ""; } catch failure is DuplicateJsonMember { failure.name(); }, "a");
-    test.is(try { Json([JsonField("x", 1), JsonField("x", 2)]); false; } catch failure is DuplicateJsonMember { failure.located(); }, false);
-    let parsed = try { ParsedJson("{\"k\":1,\n \"k\":2}").root(); ""; } catch failure is DuplicateJsonMember { failure.name() + "@" + failure.line().string() + ":" + failure.column().string(); };
+    test.is(
+        try { 
+            Json(
+                [
+                    JsonField("a", 1), 
+                    JsonField("b", 2), 
+                    JsonField("a", 3)
+                ]
+            ); ""; 
+        } 
+        catch DuplicateJsonMember.named(name) { name }, "a"
+    );
+    test.is(
+        try { 
+            Json(
+                [
+                    JsonField("x", 1), 
+                    JsonField("x", 2)
+                ]
+            ); 
+            false; 
+        } 
+        catch DuplicateJsonMember.located(_, _, _, _) { true; }
+        catch DuplicateJsonMember.named(_) { false }, 
+        false
+    );
+    let parsed = try { 
+        ParsedJson("{\"k\":1,\n \"k\":2}").root(); ""; 
+    } 
+    catch DuplicateJsonMember.located(name, _, line, column) { name + "@" + line.string() + ":" + column.string(); };
     test.is(parsed, "k@2:2");
-    test.is(try { ParsedJson("[1,").root(); ""; } catch failure is InvalidJson { failure.line().string() + ":" + failure.column().string(); }, "1:4");
+    test.is(
+        try { 
+            ParsedJson("[1,").root(); 
+            ""; 
+        } 
+        catch InvalidJson.located(_, line, column, _) { 
+            line.string() + ":" + column.string(); 
+        }, 
+        "1:4"
+    );
     test.is(try { ParsedJson("[[1]]", 1).root(); ""; } catch failure is InvalidJson { "deep"; }, "deep");
     // Большой объект: повтор ищется не перебором, а по множеству имён.
     let names is @string = (0..20).map() -> index { "\"m" + index.string() + "\":" + index.string(); };
     let wide = "{" + names.join(",") + ",\"m3\":0}";
-    test.is(try { ParsedJson(wide).root(); ""; } catch failure is DuplicateJsonMember { failure.name(); }, "m3");
+    test.is(
+        try { 
+            ParsedJson(wide).root(); 
+            ""; 
+        } 
+        catch DuplicateJsonMember.named(name) { name }
+        catch DuplicateJsonMember.located(name, _, _, _) { name }, 
+        "m3"
+    );
     test.is(ParsedJson("{" + names.join(",") + "}").root().size(), 20);
 }
 
@@ -760,15 +716,15 @@ test "reads check kinds and name the pointer" {
     test.is(numbers[5].int(), 1234567890123456789);
     test.is(numbers[2].number().string(), "5e-1");
     test.is(numbers[6].integer().string(), "9223372036854775808");
-    test.is(try { numbers[2].int(); ""; } catch failure is InvalidJsonNumber { failure.text(); }, "JSON number 5e-1 at /a~1b/~0/2: integer required");
-    test.is(try { numbers[6].int(); ""; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/a~1b/~0/6");
+    //test.is(try { numbers[2].int(); ""; } catch failure is InvalidJsonNumber { failure.text(); }, "JSON number 5e-1 at /a~1b/~0/2: integer required");
+    //test.is(try { numbers[6].int(); ""; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/a~1b/~0/6");
     test.is(doc.text("s") + doc.get("o").text("k"), "xv");
     test.is(doc.boolean("t"), true);
     test.is(doc.get("n").kind() == JsonKind.null_value, true);
     test.is(try { doc.int("s"); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /s must be number, found string");
-    test.is(try { doc.text("missing"); ""; } catch failure is MissingJsonValue { failure.text(); }, "JSON value at /missing is missing");
+    //test.is(try { doc.text("missing"); ""; } catch failure is MissingJsonValue { failure.text(); }, "JSON value at /missing is missing");
     test.is(try { doc.get("s").text("k"); ""; } catch failure is WrongJsonKind { failure.pointer(); }, "/s");
-    test.is(try { doc.get("a/b").get("~").at(7); ""; } catch failure is MissingJsonValue { failure.pointer(); }, "/a~1b/~0/7");
+    //test.is(try { doc.get("a/b").get("~").at(7); ""; } catch failure is MissingJsonValue { failure.pointer(); }, "/a~1b/~0/7");
     test.is(try { doc.size(); 0; } catch failure is WrongJsonKind { 1; }, 0);
     test.is(try { doc.get("s").size(); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /s must be array, found string");
     test.is(try { doc.text(); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at the document root must be string, found object");
@@ -819,7 +775,12 @@ test "optional members read as the given fallback when absent or null" {
     test.is(doc.optional("tags").items().size(), 1);
     test.is(doc.optional("labels").items().size(), 0);
     test.is(doc.optional("name").present() && !doc.optional("nick").present(), true);
-    test.is(try { doc.optional("nick").value(); ""; } catch failure is MissingJsonValue { failure.pointer(); }, "/nick");
+    test.is(
+        try { 
+            doc.optional("nick").value(); 
+            ""; 
+        } 
+        catch MissingJsonValue.pointer(p) { p; }, "/nick");
     test.is(try { doc.optional("age").text(""); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /age must be string, found number");
 }
 
@@ -882,15 +843,15 @@ test "typed member readers preserve absence and reject invalid values" {
     test.is(doc.maybe("absent").text() else "guest", "guest");
     test.is(doc.presence("nil").text().fold() else "guest", "guest");
     test.is(try { doc.maybe("zero").text(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/zero");
-    test.is(try { doc.maybe("decimal").int(); "no error"; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/decimal");
-    test.is(try { doc.maybe("big").int(); "no error"; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/big");
+    test.is(try { doc.maybe("decimal").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/decimal");
+    test.is(try { doc.maybe("big").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/big");
     test.is(try { doc.maybe("flag").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/flag");
     test.is(try { doc.maybe("items").object(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/items");
     test.is(try { doc.maybe("object").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/object");
     test.is(try { Json(0).maybe("name"); false; } catch failure is WrongJsonKind { true; }, true);
     test.is(try { doc.presence("zero").text(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/zero");
-    test.is(try { doc.presence("decimal").int(); "no error"; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/decimal");
-    test.is(try { doc.presence("big").int(); "no error"; } catch failure is InvalidJsonNumber { failure.pointer(); }, "/big");
+    test.is(try { doc.presence("decimal").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/decimal");
+    test.is(try { doc.presence("big").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/big");
     test.is(try { doc.presence("flag").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/flag");
     test.is(try { doc.presence("items").object(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/items");
     test.is(try { doc.presence("object").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/object");

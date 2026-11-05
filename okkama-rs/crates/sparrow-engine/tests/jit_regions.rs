@@ -103,3 +103,79 @@ fn region_edges_preserve_parallel_moves_big_tags_and_exact_instruction_budgets()
     }
     panic!("region dispatcher did not finish within the expected instruction count");
 }
+
+#[test]
+fn heap_instructions_run_from_machine_code_and_collect_at_the_next_pc() {
+    let big = "9223372036854775808";
+    let code = vec![
+        constant(0, big),
+        constant(1, "0"),
+        constant(2, "1000"),
+        constant(3, "1"),
+        constant(5, big),
+        // Big-integer addition allocates on every iteration.
+        I::IntAdd {
+            dst: Dst(R(0)),
+            left: R(0),
+            right: R(5),
+        },
+        I::IntAdd {
+            dst: Dst(R(1)),
+            left: R(1),
+            right: R(3),
+        },
+        I::IntCmp {
+            op: Cmp::Lt,
+            dst: Dst(R(4)),
+            left: R(1),
+            right: R(2),
+        },
+        I::Branch {
+            condition: R(4),
+            then_target: target(5, vec![]),
+            else_target: target(9, vec![]),
+        },
+        I::Return { value: Some(R(0)) },
+    ];
+    let program = Program {
+        module: "heap_calls".into(),
+        version: "1.0.0".into(),
+        types: vec![Type::Int, Type::Bool],
+        entry: Some(FuncRef(0)),
+        functions: vec![Function {
+            symbol: "main".into(),
+            is_async: false,
+            native: None,
+            intrinsic: None,
+            registers: vec![
+                TypeRef(0),
+                TypeRef(0),
+                TypeRef(0),
+                TypeRef(0),
+                TypeRef(1),
+                TypeRef(0),
+            ],
+            params: vec![],
+            result: Some(TypeRef(0)),
+            handlers: vec![],
+            code,
+        }],
+        ..Program::default()
+    };
+    let expected = (big.parse::<num_bigint::BigInt>().unwrap() * 1001u32).to_string();
+    sparrow_engine::stats::enable();
+    sparrow_engine::stats::take();
+    let mut session = Executable::new(&program, Mode::Jit).unwrap().start();
+    let result = loop {
+        if let Outcome::Returned(n) = session.resume(u64::MAX).unwrap() {
+            break n;
+        }
+    };
+    let stats = sparrow_engine::stats::take();
+    assert_eq!(result.to_string(), expected);
+    assert_eq!(stats.heap_calls.get("Arithmetic.Add"), Some(&1000));
+    assert_eq!(stats.exits.get("service"), None);
+    // Each collection resumes after the committed addition, with its result live.
+    assert!(stats.exits.get("collect").copied().unwrap_or(0) >= 3);
+    assert_eq!(stats.exits.get("collect").copied(), Some(stats.collections));
+}

@@ -257,7 +257,7 @@ object Modes<T> does Sequencing<T>, Iterating<T>, Sizing {
 
     item(index is int) is T {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("mode index is outside the sequence");
+            else throw OutOfRange.because("mode index is outside the sequence");
         origin[index];
     }
 

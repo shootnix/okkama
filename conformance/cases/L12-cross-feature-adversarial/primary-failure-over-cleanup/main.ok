@@ -7,16 +7,13 @@ import "db/statement" take Statement;
 import "db/value" take DbText;
 import "db/error" take DbFailure;
 
-object CleanupFailed does Error {
-    CleanupFailed();
-    text() is string { "cleanup failed"; }
-}
+enum CleanupFailed is Error = (cleanup_failed);
 
 object Cleaner {
     Cleaner();
     fail() is void {
         Stdout().writeln("cleanup ran");
-        throw CleanupFailed();
+        throw CleanupFailed.cleanup_failed;
     }
 }
 

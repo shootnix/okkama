@@ -380,11 +380,11 @@ fn successor_results_must_be_taken_on_every_normal_path() {
 }
 
 const FAILURES: &str = "module app v1.0.0;
-object Boom does Error { Boom(); text() is string { \"boom\"; } }
+enum Boom is Error = (boom);
 object C { has n is int = 0; C() {} inc() is ^C { ^n = n + 1; } value() is int { n; } }
 main() is int {
     let c = C();
-    let r = try { c = c.inc(); throw Boom(); } catch e is Boom { 7; };
+    let r = try { c = c.inc(); throw Boom.boom; } catch e is Boom { 7; };
     r + c.value();
 }";
 
@@ -421,7 +421,7 @@ fn catch_handlers_receive_the_caught_type_and_throw_requires_error() {
     module.functions[main].values[handler.0] = Type::Int;
     rejects(
         &module,
-        &format!("the last parameter {handler} of ^b4 must have type object#0"),
+        &format!("the last parameter {handler} of ^b4 must have type object#1"),
     );
 
     let mut module = lowered(FAILURES);
@@ -431,7 +431,7 @@ fn catch_handlers_receive_the_caught_type_and_throw_requires_error() {
         TermKind::Throw(_)
     ));
     module.functions[main].blocks[2].term.kind = TermKind::Throw(ValueId(0));
-    rejects(&module, "throw %0: object#1 does not do Error");
+    rejects(&module, "throw %0: object#0 does not do Error");
 }
 
 /// `%b` — сборщик из блока 0; `then`/`else` — тела блоков 1 и 2.

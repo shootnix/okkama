@@ -18,7 +18,7 @@ object Flow {
         let outcome = Payments().open(id, 1).authorize(ApprovingGateway());
         match outcome {
             case Authorization.approved(p) { p.capture(); }
-            else { throw InvalidTransition(action: "flow"); }
+            else { throw InvalidTransition.invalid_transition("flow"); }
         }
     }
 }

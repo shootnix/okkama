@@ -1,10 +1,9 @@
-// Experiment B (adversarial). Created exposes text(), so it may legally narrow
-// to the standard Error role (subset of actions, Payment does both). Throwing
-// that Error reference and catching the concrete class binds the FULL object:
-// a hidden action becomes callable again. Requires the state class to do
-// Error and a role that exposes text().
-// EXPECT: run-ok
-// STDOUT: captured via catch
+// Experiment B (adversarial), closed by the language. Originally a role that
+// exposes text() could be narrowed to Error, thrown, and caught as the
+// concrete class, recovering every hidden action. Objects can no longer do
+// Error (errors are error enums), so the escape cannot be written: the class
+// is rejected at its declaration.
+// EXPECT: check-error: Object "Payment" cannot do Error: errors are enums, declare `enum Payment is Error = (...)`
 module app;
 import "io/stdout" take Stdout;
 

@@ -43,6 +43,13 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   and hotness thresholds 2 and 10 (mixed execution and OSR), checks that machine code
   and OSR actually ran, and runs the inline tests of every std module on IR and Sparrow
   against a list of known failures (`tools/gate/known-failures.txt`).
+- The Book ([EN](docs/OkkamaBook.md), [RU](docs/OkkamaBook-RU.md)) covers the new language:
+  absence as `Maybe`/`Presence` (ch. 7, 24), compact choices and the optional `;`
+  (ch. 11, 24), exhaustive matches (ch. 12), error enums, catch patterns and
+  `try?`/`try!` (ch. 14), successor rules and private successors (ch. 19), access
+  through roles and state views (ch. 22, 30.6), role arguments of bounded generics
+  (ch. 25), `hidden` declarations (ch. 26.3.1), lint rules (ch. 28.3) and updated
+  appendices.
 - VS Code extension 0.7.0: highlighting for enum cases and variants (`Shape.circle`,
   `Maybe<int>.none`, `.paid(amount):` in compact choices, catch patterns), built-in
   `Maybe`/`Presence`/`Error`, `try?`/`try!` and the contextual `hidden`; 76 tokenization
@@ -136,7 +143,41 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   literal of 20 000 elements took 6.5 s in `okkama ir`). Builder uses are now collected
   in one pass; the same program builds in 1 s instead of 132 s (H-39).
 
+- New Sparrow runtime (`sparrow-next`): garbage collection ran a full mark/sweep every
+  128 allocations regardless of the live heap, so programs holding many values were
+  quadratic (300 000 live role objects: 3.6 s). The trigger now follows the work traced
+  by the previous collection, and pinned constants are no longer rescanned: the same
+  program runs in 0.32 s, string and collection benchmarks 2–2.5× faster, with peak
+  memory no higher than the reference Sparrow. `--stats` prints JIT exits, served
+  operations, calls and collections; `tools/new-runtime/overhead-bench.py` compares
+  timings with sparrow-origin and checks that outputs match. Integer `%` on machine
+  integers now runs in JIT code instead of leaving it for every operation: the
+  arithmetic benchmark went from 0.18 s to 0.07 s. Object, array, map, text and
+  equality instructions are executed from JIT code through one heap call instead
+  of leaving it for the interpreter loop (objects benchmark 0.25 s → 0.19 s).
+- New Sparrow runtime: SQLite provider (`runtime/database`) on rusqlite with bundled
+  SQLite, one worker thread per connection, cancellation that interrupts SQLite and
+  releases what a cancelled operation still acquired; rows reach programs as DB
+  cells. The SQLite conformance cases pass on it. Syntax errors reported by SQLite
+  while preparing a statement now have kind `syntax`; the previous runtime reported
+  them as `unexpected`. On the DB benchmark it is 2–3× faster than at the start of
+  this work (point lookups 155 ms → 52 ms) but still slower than the previous
+  runtime: a collector that rescanned large post-peak arenas, a system call on
+  every 4096-instruction slice, and per-task scans of the whole program were removed.
+
 ### Removed
+
+- **Objects can no longer do `Error`** (error handling phase 2, compiler part): errors
+  are error enums. `object X does Error` is a semantic error that suggests
+  `enum X is Error = (...)`; `throw` accepts error
+  enum values, `Error` references and `NativeFailure`; catch types are error enums,
+  `Error` and the system failures. This closes the last way to recover a concrete
+  object from a role (a concrete `catch` of a value thrown through a role). The base
+  `std` used by `io/stdout` is migrated (`error`: `InvalidArgument.because(reason)`
+  and siblings; `io/stream`: `IncompleteWrite.after(written)`,
+  `InvalidReadLimit.limit(value)`; `encoding/utf`: `InvalidUtf8.at(offset)` and
+  siblings); the rest of `std` still declares error objects and fails to compile until
+  it is migrated.
 - Action directives and constructor projections, including `#projected`. Use
   `Object(arguments).method()`; stdlib and positive conformance examples are migrated.
   Method signatures state the complete result type, with no implicit unwrapping.

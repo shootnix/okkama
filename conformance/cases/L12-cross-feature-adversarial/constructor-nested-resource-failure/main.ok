@@ -10,10 +10,7 @@ object Res {
     }
 }
 
-object Refused does Error {
-    Refused();
-    text() is string { "refused"; }
-}
+enum Refused is Error = (refused);
 
 object Holder {
     has first is Res;
@@ -29,7 +26,7 @@ object Holder {
             0;
         };
         let temporary = Res(name: "temporary");
-        confirm !fail else throw Refused();
+        confirm !fail else throw Refused.refused;
     }
     destroy {
         Stdout().writeln("holder destroyed");

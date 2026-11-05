@@ -1,8 +1,8 @@
 {
   "schema": "ocs-case/1",
   "id": "L07.error-role.missing-text",
-  "title": "an Error object must provide text()",
-  "purpose": "The construct is invalid and must not complete.",
+  "title": "an object cannot do Error, even with text()",
+  "purpose": "Errors are error enums; an object declaring does Error is rejected.",
   "level": "L07",
   "contracts": [
     {
@@ -47,7 +47,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 9.5: Error requires a public synchronous text() is string."
+    "expected_basis": "spec 9.5: only error enums (and the system NativeFailure) are errors; an object declaring does Error is a semantic error."
   },
   "status": "mandatory"
 }

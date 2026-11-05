@@ -63,6 +63,9 @@ fn exact_operations_cross_machine_integer_boundaries() {
         ("5", "2"),
         ("-5", "2"),
         ("5", "-2"),
+        ("7", "-1"),
+        ("0", "5"),
+        ("-9223372036854775808", "7"),
         ("9223372036854775807", "1"),
         ("-9223372036854775808", "-1"),
         ("9223372036854775808", "-9223372036854775808"),
@@ -94,10 +97,15 @@ fn exact_operations_cross_machine_integer_boundaries() {
 
 #[test]
 fn zero_divisor_is_an_error_in_both_modes() {
-    for mode in [Mode::Cold, Mode::Jit] {
+    for (mode, left) in [
+        (Mode::Cold, "12345678901234567890"),
+        (Mode::Jit, "12345678901234567890"),
+        (Mode::Cold, "5"),
+        (Mode::Jit, "5"),
+    ] {
         let code = Executable::new(
             &program(
-                "12345678901234567890",
+                left,
                 "0",
                 I::IntMod {
                     dst: Dst(R(2)),

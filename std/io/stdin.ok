@@ -44,7 +44,7 @@ object Stdin does Reading {
     Stdin();
 
     bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         stdin_read(limit);
     }
 }

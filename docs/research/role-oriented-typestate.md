@@ -226,17 +226,9 @@ It runs on IR, JVM and Sparrow and prints
 module app;
 import "io/stdout" take Stdout;
 
-object InvalidTransition does Error {
-    has action is string;
-    InvalidTransition(:action);
-    text() is string { "invalid transition: " + action; }
-}
+enum InvalidTransition is Error = (invalid_transition(action is string));
 
-object PaymentError does Error {
-    has reason is string;
-    PaymentError(:reason);
-    text() is string { reason; }
-}
+enum PaymentError is Error = (payment_error(reason is string));
 
 // ---- boundary: what the external gateway says --------------------------
 
@@ -292,38 +284,38 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     has stage is Stage = Stage.created;   // not in the constructor allow-list
 
     Payment(:key, :amount) {
-        confirm self.amount > 0 else throw PaymentError(reason: "amount must be positive");
+        confirm self.amount > 0 else throw PaymentError.payment_error("amount must be positive");
     }
 
     id() is string { key; }
 
     authorize(gateway is Gateway) is Authorization {
-        confirm stage == Stage.created else throw InvalidTransition(action: "authorize");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("authorize");
         match gateway.authorize(key, amount) {
             case GatewayReply.approved(code) { Authorization.approved(self.approve(code)); }
             case GatewayReply.declined(reason) { Authorization.declined(self.decline(reason)); }
-            case GatewayReply.unavailable(detail) { Authorization.failed(PaymentError(reason: detail)); }
+            case GatewayReply.unavailable(detail) { Authorization.failed(PaymentError.payment_error(detail)); }
         }
     }
 
     code() is string {
         match stage {
             case Stage.authorized(code) { code; }
-            else { throw InvalidTransition(action: "code"); }
+            else { throw InvalidTransition.invalid_transition("code"); }
         }
     }
 
     reason() is string {
         match stage {
             case Stage.declined(reason) { reason; }
-            else { throw InvalidTransition(action: "reason"); }
+            else { throw InvalidTransition.invalid_transition("reason"); }
         }
     }
 
     capture() is ^Payment {
         let code = match stage {
             case Stage.authorized(code) { code; }
-            else { throw InvalidTransition(action: "capture"); }
+            else { throw InvalidTransition.invalid_transition("capture"); }
         };
         ^stage = Stage.captured(code);
     }
@@ -331,7 +323,7 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     refund() is ^Payment {
         let code = match stage {
             case Stage.captured(code) { code; }
-            else { throw InvalidTransition(action: "refund"); }
+            else { throw InvalidTransition.invalid_transition("refund"); }
         };
         ^stage = Stage.refunded(code);
     }
@@ -339,11 +331,11 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     // Internal transitions: private successors, callable only through `self`.
     private:
     approve(code is string) is ^Payment {
-        confirm stage == Stage.created else throw InvalidTransition(action: "approve");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("approve");
         ^stage = Stage.authorized(code);
     }
     decline(reason is string) is ^Payment {
-        confirm stage == Stage.created else throw InvalidTransition(action: "decline");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("decline");
         ^stage = Stage.declined(reason);
     }
 }
@@ -367,7 +359,10 @@ object Checkout {
                 "refunded " + refunded.id() + " (" + code + ")";
             }
             case Authorization.declined(payment) { "declined: " + payment.reason(); }
-            case Authorization.failed(error) { "failed: " + error.text(); }
+            case Authorization.failed(error) {
+                let reason = match error { case PaymentError.payment_error(reason) { reason; } };
+                "failed: " + reason;
+            }
         };
         id + ": " + text;
     }
@@ -414,8 +409,9 @@ Rules that make the pattern work, each tied to an experiment:
 5. **Model alternative outcomes as an ADT with role-typed payloads**, and
    match it exhaustively. Avoid `else` in such matches, so that adding an
    outcome breaks callers at compile time.
-6. **Do not let state classes `does Error`**, and do not give state roles a
-   `text()` action (`advanced/b_throw_catch_recover`).
+6. **Errors are error enums.** *(Now enforced: objects cannot do `Error`, so
+   the throw/catch recovery in `negative/b_throw_catch_recover` no longer
+   compiles.)*
 
 ## 5. Compile-time guarantees
 
@@ -473,7 +469,7 @@ results.md):
 | Name the concrete class (plain import) | every state action visible; any view assignable | *(fixed across modules: `hidden object`, `negative/h_sealed_forge`)*; inside the module, the runtime stage check |
 | Public internal successors (`approve`) | authorize without a gateway | *(fixed: private successors, `negative/g_internal_successor_leak`)* |
 | Class-per-state / ADT-variant construction (A, B1, C) | forge any state | prefer B2/D |
-| throw/catch through `Error` | recovers the concrete object | state classes must not `does Error` |
+| throw/catch through `Error` | recovered the concrete object | *(fixed: objects cannot do `Error`; `negative/b_throw_catch_recover`)* |
 | Reuse of an old state value | forked history, double transitions | durable state and idempotency |
 | Must-use laundering | any use discharges it; through a generic `T` it disappears (`advanced/g_generic_launder`); outcome ADTs and ordinary actions have none | review discipline |
 | Payload-free enum matches | silently non-exhaustive statements | use payload enums for state |

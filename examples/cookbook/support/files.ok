@@ -16,7 +16,7 @@ object LocalFiles {
         let file=File(mode:FileMode.reading,path:Path(path),binary:true);defer file.close();
         let buffer=ByteBuffer();defer buffer.closing().close();
         loop{let chunk=file.binary().bytes(4096);last if chunk.size()==0;
-            confirm buffer.content().size()+chunk.size()<=limit else throw LocalInputLimit(path);
+            confirm buffer.content().size()+chunk.size()<=limit else throw LocalInputLimit.exceeded(path);
             buffer.writing().write(ByteSnapshot(chunk));}
         buffer.content().bytes();
     }
@@ -30,4 +30,4 @@ object LocalFiles {
         file.binary().write(ByteSnapshot(Utf8Encoded(text).bytes()));
     }
 }
-object LocalInputLimit does Error{has path is string;LocalInputLimit(path is string){self.path=path;}text() is string{"input exceeds its byte budget: "+path;}}
+enum LocalInputLimit is Error = (exceeded(path is string));

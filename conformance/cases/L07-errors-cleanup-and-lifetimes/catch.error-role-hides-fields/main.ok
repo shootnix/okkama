@@ -2,19 +2,14 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object Coded does Error {
-    has code is int;
-    Coded(:code);
-    code() is int { code; }
-    text() is string { "coded"; }
-}
+enum Coded is Error = (coded(code is int));
 
 main() is int {
     let out = Stdout();
     try {
-        throw Coded(code: 7);
+        throw Coded.coded(7);
     } catch e is Error {
-        let n = e.code();
+        let n = match e { case Coded.coded(code) { code; } };
     }
     out.writeln("unreachable");
     0;

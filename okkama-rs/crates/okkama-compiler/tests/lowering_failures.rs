@@ -6,7 +6,7 @@ use okkama_compiler::lowering::{LoweringError, lower_program};
 use okkama_compiler::syntax::{self, ParseOptions};
 
 const DECLS: &str = "
-object Boom does Error { has code is int; Boom(:code); text() is string { \"boom\"; } code_value() is int { code; } }
+enum Boom is Error = (failed(code is int));
 role Wallet { total() is int; add(extra is int) is int; }
 object Purse does Wallet {
     has digit is int;
@@ -54,7 +54,8 @@ fn error(main: &str) -> String {
 
 #[test]
 fn roles_are_declared_with_witness_tables() {
-    let text = module("0;").to_string();
+    // Значение error enum — объект варианта; он делает Error с порождённым text().
+    let text = module("let w is Wallet = Purse(digit: 1); throw Boom.failed(w.total());").to_string();
     assert!(
         text.contains("role Wallet {\n    total() -> int\n    add(int) -> int\n}\n"),
         "{text}"
@@ -90,8 +91,8 @@ fn role_boundaries_wrap_and_role_calls_use_slots() {
 fn try_catch_lowers_to_dispatch_handlers_and_causes() {
     assert_eq!(
         main_listing(
-            "let c = C(); let r = try { c = c.inc(); throw Boom(code: 1); } \
-             catch e is Boom { e.code_value(); }; r + c.value();"
+            "let c = C(); let r = try { c = c.inc(); throw Boom.failed(1); } \
+             catch e is Boom { 7; }; r + c.value();"
         ),
         concat!(
             "func @main() -> int [entry] {\n",
@@ -103,23 +104,25 @@ fn try_catch_lowers_to_dispatch_handlers_and_causes() {
             "    %2: C = succ.take %1\n",
             "    br ^b2\n",
             "^b2 unwind ^b3(%2):\n",
-            "    %3: int = const 1\n",
-            "    %4: Boom = call @Boom.new#0(%3)\n",
-            "    throw %4\n",
-            "^b3(%5: C, %6: failure):\n",
-            "    catch %6 is Boom, ^b4(%5, %6), ^b7(%5, %6)\n",
-            "^b4(%7: C, %8: failure, %9: Boom) unwind ^b6(%7, %8):\n",
-            "    %10: int = call @Boom.code_value(%9)\n",
+            "    %3: int = const 0\n",
+            "    %4: int = const 1\n",
+            "    %5: array<int> = array.new [%4]\n",
+            "    %6: Boom = call @Boom.new(%3, %5)\n",
+            "    throw %6\n",
+            "^b3(%7: C, %8: failure):\n",
+            "    catch %8 is Boom, ^b4(%7, %8), ^b7(%7, %8)\n",
+            "^b4(%9: C, %10: failure, %11: Boom) unwind ^b6(%9, %10):\n",
+            "    %12: int = const 7\n",
             "    br ^b5\n",
             "^b5:\n",
-            "    %11: int = call @C.value(%7)\n",
-            "    %12: int = int.add %10, %11\n",
-            "    ret %12\n",
-            "^b6(%13: C, %14: failure, %15: failure):\n",
-            "    %16: failure = fail.caused %15, %14\n",
-            "    raise %16\n",
-            "^b7(%17: C, %18: failure):\n",
+            "    %13: int = call @C.value(%9)\n",
+            "    %14: int = int.add %12, %13\n",
+            "    ret %14\n",
+            "^b6(%15: C, %16: failure, %17: failure):\n",
+            "    %18: failure = fail.caused %17, %16\n",
             "    raise %18\n",
+            "^b7(%19: C, %20: failure):\n",
+            "    raise %20\n",
             "}\n",
         )
     );
@@ -129,7 +132,7 @@ fn try_catch_lowers_to_dispatch_handlers_and_causes() {
 fn rethrow_and_confirm_else_throw() {
     let main = main_listing(
         "let a = try { try { 1; } catch e is Boom { throw; } } catch e is Error { 2; }; \
-         confirm a > 0 else throw Boom(code: a); a;",
+         confirm a > 0 else throw Boom.failed(a); a;",
     );
     assert!(main.contains("raise %"), "{main}");
     assert!(main.contains("catch %"), "{main}");
@@ -142,19 +145,19 @@ fn failure_rules_use_okkama_messages() {
     for (main, expected) in [
         (
             "throw C(); 0;",
-            "Type \"C\" cannot be thrown; only error enums and objects that do Error are catchable",
+            "Type \"C\" cannot be thrown; only error enums are thrown: `enum Name is Error = (...)`",
         ),
         (
             "throw 5; 0;",
-            "Type \"int\" cannot be thrown; only error enums and objects that do Error are catchable",
+            "Type \"int\" cannot be thrown; only error enums are thrown: `enum Name is Error = (...)`",
         ),
         (
             "try { 1; } catch e is C { 2; }",
-            "Catch type \"C\" does not satisfy Error",
+            "Catch type \"C\" does not satisfy Error; catch an error enum or Error",
         ),
         (
             "try { 1; } catch e is Wallet { 2; }",
-            "Catch type \"Wallet\" does not satisfy Error",
+            "Catch type \"Wallet\" does not satisfy Error; catch an error enum or Error",
         ),
         (
             "throw; 0;",
@@ -165,8 +168,8 @@ fn failure_rules_use_okkama_messages() {
     }
     for (decls, expected) in [
         (
-            "object Q does Error { Q(); }",
-            "Object \"Q\" does role \"Error\" but does not implement action \"text\"",
+            "object Q does Error { Q(); text() is string { \"q\"; } }",
+            "Object \"Q\" cannot do Error: errors are enums, declare `enum Q is Error = (...)`",
         ),
         (
             "role R { go(x is int) is int; } object Q does R { Q(); go(x is string) is int { 0; } }",

@@ -1,7 +1,7 @@
 {
   "schema": "ocs-case/1",
   "id": "L07.throw.role-reference",
-  "title": "a role reference exposing Error may be thrown",
+  "title": "an Error reference to an error enum value may be thrown",
   "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
   "level": "L07",
   "contracts": [
@@ -32,7 +32,7 @@
     "outcome": "success",
     "exit_status": 0,
     "stdout": {
-      "text": "concrete catch not found: r\n"
+      "text": "concrete catch NotFound.not_found(\"r\")\n"
     }
   },
   "spec_refs": [
@@ -43,7 +43,7 @@
   },
   "provenance": {
     "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 12.1: a role reference exposing the Error contract may enter throw; throw retains the original object, so a concrete catch matches."
+    "expected_basis": "spec 9.5.1, 12.1: an error enum value converts to Error; throwing that reference keeps the enum value, so a typed catch of the enum matches. Error text follows spec 9.5.1 (generated Type.case(payload))."
   },
   "status": "mandatory"
 }

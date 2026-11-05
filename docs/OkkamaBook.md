@@ -629,15 +629,23 @@ logic, `confirm`, the operands of `!`, `&&`, `||`, postfix `if` — requires an
 actual `bool`. Numbers, strings, collections, ranges, and objects are never
 implicitly converted.
 
-**There is no null.** No `null`, `none`, `nil`, no optional types, no `?.`
-chaining. Where would-be-null situations arise, Okkama forces an explicit
-decision:
+**There is no null.** No `null`, no `nil`, no `?.` chaining and no value that
+silently stands for "nothing". Absence is an explicit, typed decision:
 
+- a value that may be absent has type `Maybe<T>` (`some(value)` or `none`);
+  a field that may also be *missing* — "not sent" in a JSON PATCH — has type
+  `Presence<T>` (`some`, `none`, `missing`). Both are ordinary enums
+  (Chapter 24) and must be opened before use:
+  `user.nickname() else "anonymous"`;
 - a missing map key is a runtime error unless you write an `else` fallback:
   `prices["missing"] else 0;`
-- a failed lookup or invalid state is expressed by throwing a nominal Error
-  object, caught by a typed `catch`;
+- a failed lookup or invalid state is expressed by throwing an error enum,
+  caught by a typed `catch` (Chapter 14); `try?` turns a thrown
+  error into `Maybe.none` where absence is the honest answer;
 - "not yet computed" is modeled with objects and roles, not sentinel values.
+
+An empty string, `0`, `false` and an empty collection are present values;
+nothing converts to "absent" implicitly.
 
 Some runtime operations may internally produce an *undefined* result (for
 example an `if` without `else` whose condition is false). User code cannot
@@ -818,6 +826,8 @@ Rules:
 In precedence order (loosest first), as parsed:
 
 ```text
+?? … !!                compact choice    (Chapter 24.3; never nested)
+else                   optional fallback (Maybe<T> else T, map[k] else v)
 ||                     boolean or        (bool operands only)
 &&                     boolean and       (bool operands only)
 <-                     stream write
@@ -833,6 +843,10 @@ In precedence order (loosest first), as parsed:
 !  -  ~                unary not, unary minus, bitwise complement
 postfix                calls, member access, indexing, unpack `...`
 ```
+
+`try?` and `try!` (Chapter 14.5) are prefix forms written without a space
+after `try`; they cover the whole operand to their right up to `else` or `??`,
+so `try? f() + 1 else 0` is `(try? (f() + 1)) else 0`.
 
 Binary bitwise operators are left-associative. `flags & mask != 0` means
 `(flags & mask) != 0`; `1 << 2 + 1` means `1 << (2 + 1)`.
@@ -1023,8 +1037,11 @@ match status {
   case may list several values.
 - `else` handles the unmatched remainder.
 - Matching *on* an opaque `any` value is rejected.
-- Exhaustiveness checking and branch type compatibility are future semantic
-  analysis work.
+- A `match` over a payload enum, an error enum, `Maybe` or `Presence` must
+  cover every case or have `else`: `Non-exhaustive match: missing closed`.
+  Branches of a value-producing `match` must produce the same type.
+- A `match` over a payload-free enum keeps the older rule: a statement match
+  may omit cases; `okkama lint` reports it as `non-exhaustive-match`.
 
 ### 12.5 `for`
 
@@ -1222,9 +1239,10 @@ map-entry transformation, and mutable accumulators.
 
 Okkama splits failure into two channels:
 
-1. **Expected typed failures** — raised by `throw ErrorObject(...)`, by
-   `confirm ... else throw ErrorObject(...)`, and by normalized native
-   failures. They carry a nominal `Error` and can be caught by typed `catch`.
+1. **Expected typed failures** — raised by `throw DbError.closed`,
+   `throw ErrorObject(...)`, `confirm ... else throw ...`, and by normalized
+   native failures. They satisfy the nominal `Error` role and can be caught by
+   typed `catch`.
 2. **Uncatchable failures** — `panic "message"`, a plain failed `confirm`,
    undefined variables, type mismatches, out-of-bounds indexing and invalid
    operations. They unwind cleanup and then terminate. A bug is not a value.
@@ -1241,25 +1259,50 @@ confirm condition else panic "Invariant lost"; // uncatchable emergency
 form for internal invariants, `else throw` for failures a caller is expected
 to handle, and `else panic` for an emergency with a deterministic string.
 
-### 14.2 `Error`, `throw`, and `panic`
+### 14.2 Error enums, `Error`, `throw`, and `panic`
+
+The preferred way to declare errors is an **error enum**: an enum marked
+`is Error` whose cases are the failures and whose payloads carry context.
 
 ```okkama
-object InvalidValue does Error {
-    has value is int;
-    InvalidValue(:value);
-    text() is string { "invalid value"; }
-}
+enum DbError is Error = (
+    connection(host is string),
+    query(sql is string, code is int),
+    closed
+);
 
-throw InvalidValue(value: 10);
+enum RepoError is Error = (db(cause is DbError), missing(id is int));
+
+throw DbError.query("select 1", 42);
+```
+
+- `is Error` is the only role an enum may declare; error enums are not
+  generic. An error enum is always a variant enum, so a `match` over it is
+  exhaustive even when no case has a payload.
+- Payloads are values: `string`, `int`, `byte`, `float`, `rat`, `bool` and
+  enums whose payloads follow the same rule — including other error enums,
+  which is how a cause is attached (`RepoError.db(cause)`). Objects, roles,
+  collections, `char`, actions and `any` are rejected.
+- `text()` is generated from the case: `DbError.closed`,
+  `DbError.query("select 1", 42)`, `RepoError.db(DbError.closed)`. Strings
+  are quoted, numbers use `string()`, booleans are `true`/`false`, enum cases
+  are `Enum.case`. It is callable on the value and through `Error`.
+- An error enum value converts to `Error`; uncaught, it reports
+  `DbError: DbError.query("select 1", 42)`.
+
+```okkama
+throw DbError.closed;
 throw;                  // rethrow — lexically inside a catch body only
 panic "Unreachable";   // exact string, never catchable
 ```
 
 `Error` is an automatically available nominal role requiring public
-`text() is string`. Merely having a `text()` action is not enough: a source
-object must explicitly `does Error`. `throw` accepts only such objects and the
-system `NativeFailure`. Bare `throw;` preserves the active thrown object's
-identity and origin; it is a *lexical* capability of catch bodies, validated
+`text() is string`. Only error enums and the system failures (`NativeFailure`,
+`Cancelled`) implement it. **An object cannot do `Error`**: `object X does
+Error` is rejected (`Object "X" cannot do Error: errors are enums`), so objects
+are never thrown or caught. `throw` accepts error enum values, `Error`
+references (a caught error being rethrown) and `NativeFailure`. Bare `throw;`
+preserves the active thrown value's identity and origin; it is a *lexical* capability of catch bodies, validated
 before execution — an action called from a catch cannot rethrow implicitly.
 `panic` accepts only an exact string; bare `panic;` is invalid and panic never
 participates in catch matching.
@@ -1286,11 +1329,27 @@ Rules:
   `next`/`last`, and normal completion never match a catch.
 - Catch type references are validated before execution; the `Error` guarantee
   is enforced before the try body runs. A catch type must guarantee `Error`:
-  `Error`, a concrete/applied object explicitly doing `Error`, or
-  `NativeFailure`. Scalars, collections, enums, `any`, and arbitrary roles are
-  invalid catch boundaries.
+  `Error`, an error enum, or the system `NativeFailure` / `Cancelled`. Scalars, collections, other enums, `any`, and arbitrary
+  roles are invalid catch boundaries.
 - Valid clauses are examined in source order; the first compatible clause
   wins.
+- A clause may list several types; the binding is then an `Error`:
+  `catch e is DbError, NetError, Denied { log(e.text()); }`.
+- Instead of a binding, a clause may list **patterns**: error enum cases and
+  error types.
+
+  ```okkama
+  try { repo.find(id); }
+  catch RepoError.missing(missing_id) { report(missing_id); }   // one case, payload bound
+  catch DbError.closed, DbError.connection(_) { reconnect(); }  // several cases
+  catch e is RepoError, DbError { log(e.text()); }              // the rest of both enums
+  ```
+
+  Payload bindings are positional, `_` ignores a field, and named bindings
+  need a single pattern in the clause. A value of a matching type but another
+  case continues with the next clause of the same `try` — it does not leave
+  the `try`. A lone lowercase name (`catch e { }`) is still an error: there is
+  no catch-all.
 - A non-matching failure propagates unchanged.
 - The try body and each catch body are separate lexical child scopes. The
   catch binding exists only in its own body; try locals are not visible in
@@ -1301,9 +1360,11 @@ Rules:
   destroyed before an expression yields. A body failure has precedence over
   a cleanup failure.
 
-Design guidance, in the EO spirit: throw dedicated nominal Error objects with
-context, catch concretely or by `Error`, and rethrow (`throw;`) when you cannot
-fully handle a failure. Reserve panic for broken invariants.
+Design guidance, in the EO spirit: declare the failures of a component as one
+error enum with context in its payloads, catch the cases you can handle, and
+rethrow (`throw;` or `throw e;` from `catch e is Error`) when you cannot fully
+handle a failure — the value keeps its enum type for outer clauses. Reserve
+panic for broken invariants.
 
 ### 14.4 Adding context without losing an error
 
@@ -1315,35 +1376,47 @@ uncatchable. A normally completed catch leaves no cause attached to later
 throws. The link records an error during handling, even when it comes from a
 helper rather than an explicit wrapper constructor.
 
-`Error` still requires only `text()`. For a cause that must travel as an ordinary
-application value, use a separate wrapper with a required Error field:
+For a cause that must travel as an ordinary application value, make it a
+payload: an error enum may carry another error enum.
 
 ```okkama
-object Contextual does Error {
-    has original is Error;
-    Contextual(:original);
-    text() is string { "invoice i1"; }
-    cause() is Error { original; }
-}
+enum InvoiceError is Error = (unpaid(id is string), storage(cause is DbError));
+
+catch e is DbError { throw InvoiceError.storage(e); }   // text(): InvoiceError.storage(DbError.closed)
 ```
 
-Plain errors have no such field, so no null or sentinel is necessary. This
-explicit value protocol works outside catch too; the runtime does not inspect
-fields or call `cause()` automatically. Host diagnostics traverse the private
-carrier's `cause()` metadata and render `Caused by:` entries with source stacks.
+Plain cases have no such payload, so no null or sentinel is necessary. Host
+diagnostics also keep the runtime cause chain and render `Caused by:` entries
+with source stacks.
 Default CLI diagnostics show the concrete Error type, public message, optional
 application context, causes, source stacks and secondary cleanup failures.
 `-d` additionally shows the evaluator trace; it is not needed to see errors.
-For example, `text() is string { code; }` and optional
-`context() is string { label; }` expose explicitly chosen diagnostic text.
-The renderer uses bounded data-only projections (fields, literals, string
-concatenation, conditions and simple helpers), without executing arbitrary
-application effects or enumerating private fields. If the projection is
-unsupported, the message is marked unavailable while type, stack and causes
-remain visible. Control characters are escaped; long strings are marked as
+The message is the error's generated `text()`. Control characters are escaped; long strings are marked as
 truncated. Array bounds diagnostics also show `index` and `length`.
 Embedding APIs preserve the original failure objects; host tools can obtain a
 separate structured model through `Interpreter.diagnostic(failure)`.
+
+### 14.5 `try?` and `try!`
+
+```okkama
+let rows = try? db.query(sql) else 0;       // Maybe<int>, then a fallback
+let text = try? fetch(url)
+    ?? .some(body): body
+    !! .none: "offline";
+let config = try! Config.parse(source);     // "cannot fail" → panic if it does
+```
+
+- `try? value` has type `Maybe<T>`: `Maybe.some(value)`, or `Maybe<T>.none`
+  when evaluating it throws any `Error`. A nested `Maybe` is kept, not
+  flattened. A void call is rejected (there is no value to wrap; use
+  `try`/`catch`), and so is a successor result (its must-use obligation would
+  be lost).
+- `try! value` keeps the value's type, including void and successor results.
+  A thrown error becomes the panic `Unexpected error: <text()>` located at the
+  `try!`.
+- Both are written without a space after `try` and cover the whole operand to
+  the right up to `else` or `??`. Both catch thrown errors only: panics and
+  programming errors pass through, and cleanup runs as for `try`.
 
 ## Chapter 15. `defer`
 
@@ -1635,16 +1708,12 @@ object Min<T> {
 ### 17.5 Constructor validation
 
 ```okkama
-object InvalidScore does Error {
-    has value is int;
-    InvalidScore(:value);
-    text() is string { "invalid score: " + value.string(); }
-}
+enum InvalidScore is Error = (negative(value is int));
 object Score {
     has value is int;
     Score(value is int) {
         self.value = value;
-        confirm value >= 0 else throw InvalidScore(value: value);
+        confirm value >= 0 else throw InvalidScore.negative(value);
     }
 }
 ```
@@ -2162,9 +2231,36 @@ one successor per field. Immutable copy-setters and stepwise configuration
 builders still model public setters; use complete constructor state, composed
 value objects, or decorators instead.
 
+Two more rules keep a successor honest:
+
+- On an object, a successor returns its own type: `open() is ^Bottle`.
+  Declaring `is ^Package` on the object is a semantic error
+  (`must return ^Bottle; declare ^Package in a role signature`); `^Role`
+  results belong in role signatures and are implemented as `^Self`.
+- The body's final expression is evaluated and discarded, as in a void
+  action. Ending a successor with a value of its own type — `self;` or
+  `Bottle();` — is rejected like `return value;`: it reads as a replacement
+  result that would be silently ignored.
+
 Successor types compose with roles: `^Bottle` satisfies `^Package` when
-`Bottle does Package` (Chapter 22). A successor may be private: an internal
-transition that only the object's own actions call through `self`.
+`Bottle does Package` (Chapter 22). A call through the role returns the new
+object as a restricted `^Package`.
+
+A successor may be private: an internal transition that only the object's own
+actions call through `self`. It keeps the must-use obligation and cannot
+implement a role action:
+
+```okkama
+object Door {
+    has open is bool = false;
+    Door();
+    toggled() is Door { if open { self.shut(); } else { self.opened(); } }
+
+    private:
+    opened() is ^Door { ^open = true; }
+    shut() is ^Door { ^open = false; }
+}
+```
 
 This is the EO immutability discipline with runtime teeth: state transitions
 are explicit in signatures (`is ^Type`), visible at call sites (`let opened =
@@ -2388,6 +2484,51 @@ Once an object conforms:
 Roles are the backbone of composition (Chapter 30): depend on `Package`, not
 on `Bottle`.
 
+### 22.1 Access through a role
+
+A role type restricts what its holder can do, not only what is checked at the
+boundary:
+
+```okkama
+role Presentation { label() is string; }
+
+object Customer does Presentation {
+    has number is int;
+    Customer(:number);
+    label() is string { "customer " + number.string(); }
+    id() is int { number; }
+}
+
+let shown is Presentation = Customer(number: 7);
+shown.label();     // ok
+shown.id();        // error: Role "Presentation" has no action "id"
+```
+
+The restricted reference points at the same object; nothing is copied, and the
+implementation still runs on its full `self`. The restriction survives aliases,
+parameters, fields, results, collections, bound actions, generic inference
+(`T` becomes the role), `Maybe`/`Presence` and enum payloads, and boxing into
+`any`. Named arguments use the role's parameter names. A covariant successor
+result `^Customer` comes back as `^Presentation` when the role declares it,
+and the must-use obligation stays.
+
+There is no way back: a role cannot be assigned to the concrete type
+(`Cannot initialize variable "c" of type Customer with Presentation`), and
+`any` never narrows. A role may cross into another role only if the original
+object nominally does it and every target action is already exposed by the
+current role — narrowing, never widening.
+
+Exceptions do not reopen it either: objects cannot do `Error`, so a role
+reference to an object can never be thrown, and no `catch` can name an object
+type.
+
+### 22.2 Roles as state views
+
+Because a successor declared on a role returns the *next role*, roles can
+describe the states of a protocol: each role exposes only what is valid in
+that state, and an invalid transition does not type-check. Section 30.6 shows
+the full pattern.
+
 ## Chapter 23. Role Fakes and Testing
 
 Elegant Objects argues that an interface should ship its own fake so tests
@@ -2581,6 +2722,133 @@ match status {
 Enums are values, not integers: there is no ordinal, no implicit numeric
 conversion, and no case fall-through.
 
+### 24.1 Variants with payloads
+
+A case may carry typed payload fields, given positionally in declaration order
+when constructing and matching:
+
+```okkama
+enum Reading<T> = (empty, value(item is T), pair(left is T, right is T));
+
+let reading = Reading.pair(20, 22);
+let total = match reading {
+    case Reading.empty { 0; }
+    case Reading.value(item) { item; }
+    case Reading.pair(left, right) { left + right; }
+};
+```
+
+`Reading<int>` is inferred from the arguments; a payload-free case without
+context needs explicit arguments: `Reading<int>.empty`. Payload fields are
+immutable and are read only through `match` patterns. The compiler checks that
+every case is covered (or `else` is present), the number of bindings and
+their types; `_` ignores a field. Equality compares the type, the case and the
+active payload. Recursive enums, nested patterns and variant map keys are not
+supported yet.
+
+### 24.2 `Maybe` and `Presence`
+
+Both are available without imports:
+
+| Type | Cases | Meaning |
+|---|---|---|
+| `Maybe<T>` | `some(value)`, `none` | a value is present or absent |
+| `Presence<T>` | `some(value)`, `none`, `missing` | also tells a missing field apart |
+
+Cases are qualified by the type: `Maybe.some("Anton")`, `Maybe<string>.none`,
+`Presence<string>.missing`. A type from a signature or annotation lets you
+omit the argument: `let name is Maybe<string> = Maybe.none;`. An empty
+string, zero, `false` and an empty collection are present values.
+
+```okkama
+object User {
+    User();
+    name() is Maybe<string> { Maybe.some("Anton"); }
+}
+
+let name = User().name() else "anonymous";
+```
+
+`else` unwraps `some` and evaluates the fallback only for `none`; the
+fallback may be `else throw MyError.missing` or `else panic "Required"`.
+Failures of the call on the left are not caught. Result types are written in
+full; there is no automatic wrapping.
+
+For a JSON adapter the convention is: an absent field is `Presence.missing`,
+an explicit JSON null is `Presence.none`, a value (even empty) is
+`Presence.some(value)` — "keep", "clear" and "set" in PATCH terms.
+
+`Presence.fold()` returns a `Maybe`: `missing` and `none` both become
+`Maybe.none`. A direct `else` on `Presence` is a compile error — losing the
+distinction must be explicit: `patch.name().fold() else "anonymous"`.
+`Maybe.as_presence()` keeps `some`/`none` and never creates `missing`. Nested
+`Maybe` values are never collapsed.
+
+### Optional semicolon before a closing brace
+
+The last expression of a block may omit `;`:
+
+```okkama
+main() is int { if true { 1 } else { 0 }; }
+```
+
+`{ 1 }` and `{ 1; }` produce the same value. The rule applies to action bodies,
+`match` arms and functional blocks. Between statements `;` is still required,
+and `let`, `return`, `throw`, `defer` and assignments keep it even before `}`.
+A statement-level `if` may take one optional `;`. The formatter keeps the
+chosen spelling.
+
+### 24.3 Compact choices: `?? … !!`
+
+A boolean choice has exactly two branches — a typed ternary:
+
+```okkama
+let label = enabled ?? "enabled" !! "disabled";
+```
+
+The left side must be `bool`; the branch types must agree; only the selected
+branch is evaluated.
+
+On an enum, patterns and results follow `??` and `!!` separated by `:`:
+
+```okkama
+let description = patch.name()
+    ?? .some(value): "New name: " + value
+    !! .none: "Clear the name"
+    !! .missing: "Keep the current name";
+
+let shown = order.status()
+    ?? .paid(amount): "paid " + amount.string()
+    !! _: "not paid";                          // `_` covers the remaining cases
+```
+
+The subject is evaluated once, bindings exist only in their branch, coverage
+must be complete and repeats are rejected. Ordinary enums work too:
+`Status.ready ?? .ready: "go" !! .failed: "stop" !! .done: "done"`.
+
+**Nested `?? … !!` are forbidden**, including in the condition, in call
+arguments inside a branch and through parentheses. Use separate variables:
+
+```okkama
+let active_label = ready ?? "go" !! "wait";
+let label = enabled ?? active_label !! "off";
+```
+
+`if` and `match` remain for complex logic. Prefix `!!flag` keeps its meaning
+of double negation.
+
+### 24.4 Error enums and exhaustiveness
+
+An enum declared `is Error` (Chapter 14.2) is a variant enum even without
+payloads, so every `match` over it is exhaustive. A payload-free enum without
+`is Error` keeps the older rule: a statement `match` may omit cases, and
+`okkama lint` reports that as `non-exhaustive-match`. Prefer a payload enum
+whenever the cases model states you must handle.
+
+Runnable programs: [choices.ok](../examples/choices.ok),
+[variants.ok](../examples/variants.ok) and
+[examples/showcase/](../examples/showcase/).
+
 ## Chapter 25. Generic Type Parameters
 
 Objects and roles may declare ordered type parameters:
@@ -2617,6 +2885,9 @@ specialization**.
   `object Heap<T: Comparing<T>>`. After exact constructor inference, the
   inferred type must implement the substituted role before the constructor
   body runs. Bounds never widen values or supply missing inference evidence.
+  A role argument satisfies a role bound when it narrows to it:
+  `Audit<T: Identified>` accepts `T = Authorized` if `Authorized` exposes
+  every `Identified` action, and callers get `T` back as `Authorized`.
   Role parameters, category bounds such as `T: number`, multiple bounds,
   variance, wildcards, defaults, and higher-kinded types are not supported.
   A parameter is a concrete type, so `T<int>` is invalid.
@@ -2777,6 +3048,52 @@ version (`module app;`): the version is set in `blade.toml` (spec §5.2.2).
   needed for registration and execution, but it creates no consumer bindings.
   Constructors, actions, defaults, lifecycle blocks, and role fakes resolve
   names in their defining module scope rather than the caller's scope.
+
+### 26.3.1 Hidden declarations
+
+```okkama
+module payments v1.0.0;
+
+role Created { id() is string; }
+
+hidden enum Stage = (created, authorized);
+
+hidden object Payment does Created {
+    has key is string;
+    has stage is Stage = Stage.created;
+    Payment(:key);
+    id() is string { key; }
+}
+
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}
+```
+
+`hidden` before `object`, `role` or `enum` keeps a declaration inside its
+module: it is visible in every file of the module, in its tests and fakes, and
+in bodies defined there — and nowhere else.
+
+- `take Payment` is rejected (`Import "payments" cannot take hidden
+  declaration "Payment"`), and a namespace does not expose it
+  (`Type "payments.Payment" is hidden in module "payments"`).
+- Values of hidden types leave the module only under a public type — a role,
+  `Error` or `any` — and a role never converts back (22.1). Outside code holds
+  only the view.
+- A public declaration cannot name a hidden type where other modules see it:
+  parameters and results of public actions (including collections, `Maybe`,
+  successors, async and action types), constructor parameters, role
+  signatures, enum payloads, generic arguments and bounds, cap fields.
+  Private actions, fields and bodies may use hidden types.
+- A public object cannot do a hidden role — the `does` list is part of its
+  public contract. A hidden object may do public and hidden roles; that is how
+  an implementation is hidden behind a contract.
+- A hidden error enum may be thrown out of the module but can then be caught
+  only as `Error`; `okkama lint` reports such throws from public actions
+  (`hidden-error`).
+
+`hidden` is a contextual keyword: `has hidden is int` is still a field.
 
 ### 26.4 Hygiene rules
 
@@ -5051,6 +5368,11 @@ Variable "leaked" uses undeclared type "T"
 Successor assignment is not allowed inside destroy
 Object "Cash" does role "Priced" but does not implement action "price"
 Duplicate test "Box :: same"
+Successor action result must be used
+Non-exhaustive match: missing closed
+Role "Created" has no action "capture"
+Type "payments.Payment" is hidden in module "payments"
+try? needs a value; a void call is handled with try/catch
 ```
 
 Genuinely dynamic failures — those that depend on values — remain runtime
@@ -5066,20 +5388,38 @@ Runtime error at line 7: Object "Box" has no action "missing"
 Runtime error at line 10: Duplicate construction field "digit"
 Object "Cash" field "cents" was not initialized
 Action "secret" on object "Cash" is private
-Successor action result must be used
 Cannot rebind variable "n": type "int" has no successor actions
 Cannot rebind variable "counter" of type Counter with int
 ```
 
 In both phases the location prefix appears only when a source token is
-available. Source snippets, caret rendering, and file paths are future work.
+available.
+
+### 28.3 `okkama lint`
+
+`okkama lint FILE` (and the editor) reports correct code that is probably not
+what was meant:
+
+| Rule | Finding |
+|---|---|
+| `unused-import` | a `take` name or alias is never used |
+| `unused-let` | a `let` value is never read (`_name` and objects with `destroy` are exempt) |
+| `unused-private` | a private action is never called |
+| `unreachable` | a statement after `return`, `throw`, `next`, `last` |
+| `snake-case` | a local, parameter, field or action is not `snake_case` |
+| `non-exhaustive-match` | a `match` over a payload-free enum misses cases |
+| `hidden-error` | a public action throws a hidden error enum |
 
 ## Chapter 29. What Okkama Deliberately Leaves Out
 
 Explicitly not part of Okkama 1.0 — these are decisions, not gaps:
 
-- **null / none / nil** — no null in any spelling (Chapter 7).
-- **Optional types and `?.`** — absence is modeled, not typed away.
+- **null / nil** — no null in any spelling (Chapter 7); `none` exists only
+  as the case `Maybe.none` / `Presence.none`.
+- **Implicit optionals and `?.`** — absence is the explicit `Maybe<T>` /
+  `Presence<T>` that must be opened (Chapter 24.2).
+- **Catch-all `catch` and `finally`** — catches name types or error enum
+  cases (Chapter 14.3).
 - **Inheritance, `isa`, `super`, abstract/protected** — composition and roles
   instead (Chapter 30).
 - **Mutable fields after construction** — successors instead (Chapter 19).
@@ -5147,27 +5487,33 @@ object Water {
 }
 ```
 
-### 30.3 Typed errors as objects
+### 30.3 Typed errors as enums
 
-Throw dedicated nominal Error objects that carry context, and catch by their
-concrete type or by `Error`:
+Declare the failures of a component as one error enum, put the context into
+payloads, and catch the cases a caller can handle:
 
 ```okkama
-object InvalidCents does Error {
-    has cents is int;
-    InvalidCents(:cents);
-    cents_value() is int { cents; }
-    text() is string { "invalid cents"; }
-}
+enum CashError is Error = (invalid_cents(cents is int), negative(digit is int));
 
 object Cash {
     has digit is int;
     has cents is int;
     Cash(:digit, :cents) {
-        confirm cents >= 0 && cents < 100 else throw InvalidCents(cents: cents);
+        confirm self.digit >= 0 else throw CashError.negative(self.digit);
+        confirm self.cents >= 0 && self.cents < 100 else throw CashError.invalid_cents(self.cents);
     }
+    total() is int { digit * 100 + cents; }
 }
+
+let message = try {
+    Cash(digit: 1, cents: 250).total().string();
+}
+catch CashError.invalid_cents(cents) { "bad cents: " + cents.string(); }
+catch e is CashError { e.text(); };
 ```
+
+Adding a case to `CashError` makes every exhaustive `match` over it a compile
+error until the new case is handled — the enum is the contract.
 
 ### 30.4 Test with fakes, not mocks
 
@@ -5183,6 +5529,77 @@ ever sees the role.
   expected invalid input can be checked; use panic only for broken invariants.
 - Let scope own resources: bind them with `let` in the narrowest block, and
   put cleanup in `destroy`.
+
+### 30.6 State views: typestate with roles and successors
+
+A protocol such as *created → authorized → captured → refunded* is usually
+guarded by status checks at runtime. In Okkama roles, successors, enums and
+`hidden` compose into a pattern where an invalid transition does not compile.
+
+```okkama
+// 1. One role per state: a state exposes only what is valid in it.
+role Created    { id() is string; authorize(approve is bool) is Authorization; }
+role Authorized { id() is string; capture() is ^Captured; }
+role Captured   { id() is string; refund() is ^Refunded; }
+role Refunded   { id() is string; }
+role Declined   { id() is string; reason() is string; }
+
+// 2. Alternative outcomes are an enum whose payloads are different views.
+enum Authorization = (approved(payment is Authorized), declined(payment is Declined));
+
+// 3. The real state: a private field of this enum, checked by every transition.
+hidden enum Stage = (created, authorized, captured, refunded, declined(reason is string));
+enum PaymentError is Error = (invalid_transition(action is string));
+
+// 4. One immutable class implements every view; other modules cannot name it.
+hidden object Payment does Created, Authorized, Captured, Refunded, Declined {
+    has key is string;
+    has stage is Stage = Stage.created;        // not in the constructor: unforgeable
+    Payment(:key);
+
+    capture() is ^Payment {                    // implements `capture() is ^Captured`
+        confirm stage == Stage.authorized else throw PaymentError.invalid_transition("capture");
+        ^stage = Stage.captured;
+    }
+    // ... authorize(), refund(), reason(), id()
+
+    private:
+    approved() is ^Payment { ^stage = Stage.authorized; }
+    rejected(reason is string) is ^Payment { ^stage = Stage.declined(reason); }
+}
+
+// 5. Callers start from a view and only ever hold views.
+object Payments {
+    Payments();
+    open(id is string) is Created { Payment(key: id); }
+}
+
+match Payments().open("p-1").authorize(true) {
+    case Authorization.approved(payment) { payment.capture().refund().id(); }
+    case Authorization.declined(payment) { payment.reason(); }
+}
+```
+
+The role promises `capture() is ^Captured`; the class implements it as
+`^Payment`; a call through the role returns a restricted `^Captured` view of
+the new immutable object. What the compiler rejects:
+
+| You write | The compiler says |
+|---|---|
+| `created.capture()` | `Role "Created" has no action "capture"` |
+| `authorized.capture();` (result dropped) | `Successor action result must be used` |
+| `let a is Authorized = created;` | `Cannot initialize variable "a" of type Authorized with Created` |
+| a `match` without `declined` | `Non-exhaustive match: missing declined` |
+| `payments.Payment(key: "x")` in another module | `Type "payments.Payment" is hidden in module "payments"` |
+| `Payment(key: "x").approved()` | `Action "approved" on object "Payment" is private` |
+
+What it deliberately does not do: an old immutable state stays valid, so
+"authorize twice" is a job for durable state and idempotency, not for the type
+system. Inside the defining module the class can still be named; the runtime
+`confirm` in each transition is the second line of defence. The full program
+is [examples/showcase/state-views.ok](../examples/showcase/state-views.ok); the
+analysis behind it is in
+[role-oriented typestate](research/role-oriented-typestate.md).
 
 ## Chapter 31. The Road Ahead: Designed and Planned Features
 
@@ -5453,9 +5870,12 @@ execution, as `Semantic error` diagnostics (28.2). Runtime errors remain for
 genuinely dynamic failures: panics, bounds, value–type mismatches, overload
 selection, generic inference, and full-constructor field completeness.
 
-Still planned: **match completeness (Milestone 16)** — type-checking the
-match subject against case values, deciding whether a match *expression* must
-have `else`, and enforcing branch result type compatibility. A stronger
+Match completeness is **implemented for variant enums**: matches and compact
+choices over payload enums, error enums, `Maybe` and `Presence` must cover
+every case, and branch result types must agree. Payload-free enums keep the
+older statement rule with a lint warning. Still planned for the remaining
+subjects: type-checking the match subject against arbitrary case values and
+deciding whether such a match *expression* must have `else`. A stronger
 return-path analysis depends on it. Current checks reject empty typed bodies
 and obvious incompatible async tail values; recognized unconditional return
 paths bypass the tail heuristic. This is not a complete control-flow analysis:
@@ -5497,14 +5917,19 @@ Alias imports use the same qualified lookup as basename namespaces:
 Removed words (parse errors, never valid):
 
 ```text
-null none nil optional ?. isa super abstract protected with setters mutable var
+null nil optional ?. isa super abstract protected with setters mutable var
 ```
+
+`none` is not a value: it exists only as the case `Maybe.none` /
+`Presence.none`. A single `?` is an error; `??` and `!!` form compact choices,
+and `try?` / `try!` are prefix forms written without a space.
 
 Keyword inventory in active use: `module`, `import`, `as`, `take`, `object`,
 `role`, `enum`, `has`, `is`, `does`, `self`, `let`, `if`, `else`, `match`,
 `case`, `for`, `loop`, `next`, `last`, `return`, `confirm`, `throw`, `panic`, `try`, `catch`, `defer`,
 `test`, `fake`, `destroy`, `private`, `native`, `async`,
-`await`, `spawn`, `true`, `false`, `main` (contextually).
+`await`, `spawn`, `true`, `false`, `main` (contextually), `hidden`
+(contextually, before `object`, `role` or `enum`).
 
 Contextual namespace names (not ordinary identifiers) include keyword-shaped
 module path segments such as `test` in `test/more`, declared action labels such
@@ -5539,6 +5964,12 @@ Runtime-supported and covered by tests (`okkama-pl/t/interpreter`,
 - successor actions with must-use results;
 - ownership by identity and automatic `destroy` on scope exit;
 - strict lexical scope boundaries;
+- enums, payload enums with exhaustive patterns, `Maybe` / `Presence` with
+  `else` and `fold()`, compact choices `?? … !!`;
+- error enums (`enum E is Error`), catch patterns and type lists, `try?` /
+  `try!`;
+- private successor actions; `hidden` declarations with the public-signature
+  leak check;
 - enums; roles, conformance, role-typed dispatch; role fakes in test mode;
 - exact generics on objects and roles, construction inference, generic
   fakes with declared targets, and explicit role evidence retained across
@@ -5565,8 +5996,9 @@ Private fields are accessible only to their owner.
 
 The static semantic pass and builtin scalar casts are implemented. Casts do not
 inspect an `any` box. Still planned: explicit `any` narrowing, decimal literal
-semantics, static match completeness, parse/AST-print modes and an interactive
-prompt. Production/debug/test runner modes already work. Active stdlib scope
+semantics, completeness of matches over arbitrary values, and `throws` in
+signatures (on hold). Parse/AST-print modes and the REPL exist in the Rust
+toolchain (`okkama ast`, `okkama repl`). Production/debug/test runner modes already work. Active stdlib scope
 and remaining work are tracked in the [v4 roadmap](std/stdlib-roadmap-v4.md),
 not the historical MVP milestone.
 
@@ -5609,11 +6041,10 @@ role Wallet { total() is int; }
 object Purse does Wallet { ... }
 
 enum Status = (ready, failed, done);
+enum Shape = (circle(radius is float), point);          // payload enum
+enum DbError is Error = (closed, query(code is int));  // error enum
 
-object Failed does Error {
-    Failed();
-    text() is string { "failed"; }
-}
+hidden object Ledger { Ledger(); }                      // module-only
 
 // ---- main ----
 main() is int {
@@ -5632,8 +6063,16 @@ main() is int {
     let add_one is (int) is int = (value is int) is int { value + 1; };
     add_one(41);
 
-    try { throw Failed(); }
-    catch error is Error { error.text(); }
+    try { throw DbError.query(42); }
+    catch DbError.query(code) { code; }
+    catch e is Error { e.text(); }
+
+    let n = try? risky() else 0;       // Maybe<int>, then fallback
+    let nick = user.nickname() else "anon";   // Maybe<string>
+    let label = n > 0 ?? "some" !! "none";    // typed ternary
+    let area = Shape.circle(1.0)
+        ?? .circle(r): r * r
+        !! .point: 0.0;
 
     prices["fig"] else 0;              // explicit fallback, no null
     return 0;

@@ -10,7 +10,7 @@ main() is int {
     let outcome = Payments().open("p", 1).authorize(ApprovingGateway());
     let result = match outcome {
         case Authorization.approved(payment) { Outcome.ok(payment); }
-        else { Outcome<Authorized>.err(PaymentError(reason: "no")); }
+        else { Outcome<Authorized>.err(PaymentError.payment_error("no")); }
     };
     let text = result
         ?? .ok(payment): payment.refund().id()

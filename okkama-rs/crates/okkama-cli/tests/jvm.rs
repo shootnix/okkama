@@ -446,26 +446,26 @@ fn a_failed_constructor_invariant_is_a_runtime_error() {
 
 /// Программы сверены с okkama-pl: те же исходники дают те же коды завершения.
 const TYPED_FAILURES: &str = r#"module app v1.0.0;
-object Boom does Error { has code is int; Boom(:code); text() is string { "boom " + code.string(); } code_value() is int { code; } }
-object Other does Error { Other(); text() is string { "other"; } }
-object P { P(); risky(x is int) is int { confirm x > 0 else throw Boom(code: x); x; } }
+enum Boom is Error = (failed(code is int));
+enum Other is Error = (other);
+object P { P(); risky(x is int) is int { confirm x > 0 else throw Boom.failed(x); x; } }
 main() is int {
     let p = P();
-    let a = try { p.risky(-3); } catch e is Boom { e.code_value() * -1; };
+    let a = try { p.risky(-3); } catch Boom.failed(code) { code * -1; };
     let b = try { p.risky(-4); } catch e is Error { 10; };
     let c = try { p.risky(5); } catch e is Boom { 0; };
     let d = try {
         try { p.risky(-1); } catch e is Other { 100; }
     } catch e is Boom { 20; };
     let f = try {
-        try { p.risky(-2); } catch e is Boom { throw Other(); }
+        try { p.risky(-2); } catch e is Boom { throw Other.other; }
     } catch e is Other { 30; };
     a + b + c + d + f;
 }
 "#;
 
 const FAILURES_AND_ROLES: &str = r#"module app v1.0.0;
-object Boom does Error { has code is int; Boom(:code); text() is string { "boom"; } code_value() is int { code; } }
+enum Boom is Error = (failed(code is int));
 role Wallet { total() is int; add(extra is int) is int; }
 object Purse does Wallet {
     has digit is int;
@@ -479,12 +479,12 @@ object C {
     C() {}
     inc() is ^C { ^n = n + 1; }
     value() is int { n; }
-    risky(x is int) is int { confirm x > 0 else throw Boom(code: x); x; }
+    risky(x is int) is int { confirm x > 0 else throw Boom.failed(x); x; }
 }
 object Parsed {
     has v is int;
     Parsed(x is int) {
-        try { v = C().risky(x); } catch e is Boom { v = 100 + e.code_value() * -1; }
+        try { v = C().risky(x); } catch Boom.failed(code) { v = 100 + code * -1; }
     }
     value() is int { v; }
 }
@@ -497,11 +497,11 @@ main() is int {
     let w is Wallet = Purse(digit: 3);
     let d = try {
         try { c.risky(-2) > 0; } catch e is Boom { throw; }
-    } catch e is Error { e.text() == "boom"; };
+    } catch e is Error { e.text() == "Boom.failed(-2)"; };
     let f = if d { 1; } else { 0; };
     let g = try {
         try { c.risky(-3); } catch e is Boom { c.risky(-4); }
-    } catch e is Boom { e.code_value(); };         // -4
+    } catch Boom.failed(code) { code; };            // -4
     a + b + h + w.total() + f + g + 4 - 100;
 }
 "#;
@@ -535,8 +535,8 @@ fn an_uncaught_throw_prints_the_error_type_and_text() {
     dir.build_source(
         "Uncaught",
         "module app v1.0.0;
-object Boom does Error { has code is int; Boom(:code); text() is string { \"boom \" + code.string(); } }
-main() is int { throw Boom(code: 7); }",
+enum Boom is Error = (failed(code is int));
+main() is int { throw Boom.failed(7); }",
     );
     let output = dir.java("Uncaught", &[]);
     assert_eq!(output.status.code(), Some(1));
@@ -544,7 +544,7 @@ main() is int { throw Boom(code: 7); }",
     // Как в okkama-pl: `<Тип>: <text()>`.
     assert_eq!(
         String::from_utf8_lossy(&output.stderr).trim_end(),
-        "Boom: boom 7"
+        "Boom: Boom.failed(7)"
     );
 }
 
@@ -978,20 +978,15 @@ fn enum_and_match_programs_compute_the_same_results_as_the_interpreter() {
 /// Объекты, чей `destroy` бросает `Boom(code)`: победивший отказ виден в
 /// `catch` и даёт код завершения, поэтому порядок очистки наблюдаем без вывода.
 const OWNERSHIP: &str = "module app v1.0.0;
-object Boom does Error {
-    has code is int;
-    Boom(:code);
-    text() is string { \"boom \" + code.string(); }
-    code() is int { code; }
-}
-object Fragile { has code is int; Fragile(:code); destroy { throw Boom(code: code); } }
+enum Boom is Error = (failed(code is int));
+object Fragile { has code is int; Fragile(:code); destroy { throw Boom.failed(code); } }
 object Bad { Bad(); destroy { confirm false; } }
 object Log {
     Log();
     look(f is Fragile) is int { 1; }
     keep(f is Fragile) is Fragile { f; }
     make(c is int) is Fragile { let t = Fragile(code: c + 100); Fragile(code: c); }
-    fail(c is int) is void { throw Boom(code: c); }
+    fail(c is int) is void { throw Boom.failed(c); }
     run(c is int) is int { defer Log().fail(c); let f = Fragile(code: c + 1); return c; }
     nested(c is int) is int {
         for 1..=3 -> i { let f = Fragile(code: c + i); if i == 2 { return 0; } }
@@ -1002,27 +997,20 @@ object Holder {
     has child is Fragile;
     has code is int;
     Holder(:child, :code);
-    destroy { throw Boom(code: code); }
+    destroy { throw Boom.failed(code); }
 }
-object T { has tag is int; T(:tag); next() is ^T { ^tag = tag + 1; } destroy { throw Boom(code: tag); } }
+object T { has tag is int; T(:tag); next() is ^T { ^tag = tag + 1; } destroy { throw Boom.failed(tag); } }
 object Holder2 {
     has child is Fragile;
-    Holder2(fail is bool) { child = Fragile(code: 5); confirm !fail else throw Boom(code: 9); }
+    Holder2(fail is bool) { child = Fragile(code: 5); confirm !fail else throw Boom.failed(9); }
 }
 object Counter { has value is int; Counter(:value); inc() is ^Counter { ^value = value + 1; } value() is int { value; } }
-object Lost does Error {
-    has code is int;
-    Lost(:code);
-    text() is string { \"lost\"; }
-    code() is int { code; }
-    destroy { throw Boom(code: code + 50); }
-}
 ";
 
 #[test]
 fn ownership_cleanup_order_matches_the_interpreter() {
     let dir = WorkDir::new();
-    let caught = "catch e is Boom { e.code(); }; r;";
+    let caught = "catch Boom.failed(code) { code; }; r;";
     // Ожидаемые коды сверены с okkama-pl на тех же программах.
     for (index, (body, expected)) in [
         // destroy в обратном порядке регистрации; первый отказ — основной.
@@ -1032,7 +1020,7 @@ fn ownership_cleanup_order_matches_the_interpreter() {
         ),
         // Отказ тела важнее отказа destroy.
         (
-            "let r = try { let a = Fragile(code: 1); throw Boom(code: 9); 0; }",
+            "let r = try { let a = Fragile(code: 1); throw Boom.failed(9); 0; }",
             9,
         ),
         // Непривязанное значение принадлежит блоку.
@@ -1044,7 +1032,7 @@ fn ownership_cleanup_order_matches_the_interpreter() {
             2,
         ),
         (
-            "let r = try { defer Log().fail(3); defer Log().fail(4); throw Boom(code: 1); 0; }",
+            "let r = try { defer Log().fail(3); defer Log().fail(4); throw Boom.failed(1); 0; }",
             1,
         ),
         (
@@ -1053,15 +1041,15 @@ fn ownership_cleanup_order_matches_the_interpreter() {
         ),
         // Свежий аргумент принимает вызванное действие: destroy при его выходе.
         (
-            "let r = try { let n = Log().look(Fragile(code: 3)); throw Boom(code: 8); }",
+            "let r = try { let n = Log().look(Fragile(code: 3)); throw Boom.failed(8); }",
             3,
         ),
         (
-            "let r = try { let f = Log().make(1); throw Boom(code: 7); }",
+            "let r = try { let f = Log().make(1); throw Boom.failed(7); }",
             101,
         ),
         (
-            "let r = try { let k = Log().keep(Fragile(code: 6)); throw Boom(code: 2); }",
+            "let r = try { let k = Log().keep(Fragile(code: 6)); throw Boom.failed(2); }",
             2,
         ),
         // Родитель уничтожается раньше своих детей.
@@ -1087,16 +1075,16 @@ fn ownership_cleanup_order_matches_the_interpreter() {
         ),
         // Значение ветви `if`/`match`/`try` принадлежит внешнему блоку.
         (
-            "let r = try { if true { let f = Fragile(code: 2); } throw Boom(code: 1); }",
+            "let r = try { if true { let f = Fragile(code: 2); } throw Boom.failed(1); }",
             1,
         ),
         (
             "let n = 1; let r = try { match n { case 1 { let f = Fragile(code: 2); } else { 0; } } \
-             throw Boom(code: 1); }",
+             throw Boom.failed(1); }",
             1,
         ),
         (
-            "let r = try { { let f = Fragile(code: 2); } throw Boom(code: 1); }",
+            "let r = try { { let f = Fragile(code: 2); } throw Boom.failed(1); }",
             2,
         ),
         // defer читает текущие значения привязок.
@@ -1107,10 +1095,6 @@ fn ownership_cleanup_order_matches_the_interpreter() {
         ),
         ("let r = try { Log().run(5); }", 5),
         ("let r = try { Log().nested(10); }", 11),
-        (
-            "let r = try { try { throw Lost(code: 3); } catch e is Lost { e.code(); } }",
-            53,
-        ),
         (
             "let r = try { let x = loop { let f = Fragile(code: 3); last 5; }; x; }",
             3,
@@ -1146,15 +1130,15 @@ fn ownership_cleanup_order_matches_the_interpreter() {
     for (index, (body, expected)) in [
         (
             "{ let a = Fragile(code: 1); let b = Bad(); } 0;",
-            "RuntimeError: confirm failed\nSecondary cleanup failure:\n  Boom: boom 1",
+            "RuntimeError: confirm failed\nSecondary cleanup failure:\n  Boom: Boom.failed(1)",
         ),
         (
-            "let r = Fragile(code: 1); throw Boom(code: 2);",
-            "Boom: boom 2\nSecondary cleanup failure:\n  Boom: boom 1",
+            "let r = Fragile(code: 1); throw Boom.failed(2);",
+            "Boom: Boom.failed(2)\nSecondary cleanup failure:\n  Boom: Boom.failed(1)",
         ),
         (
             "let h = Holder2(fail: true); 0;",
-            "Boom: boom 9\nSecondary cleanup failure:\n  Boom: boom 5",
+            "Boom: Boom.failed(9)\nSecondary cleanup failure:\n  Boom: Boom.failed(5)",
         ),
     ]
     .into_iter()
@@ -1914,12 +1898,12 @@ fn async_futures_are_lazy_cached_and_spawned_eagerly() {
             "main.ok",
             "module app v1.0.0;\n\
              import \"io/stdout\" take Stdout;\n\
-             object Broken does Error { Broken(); text() is string { \"broken\"; } }\n\
+             enum Broken is Error = (broken);\n\
              object Job {\n\
                  has name is string;\n\
                  Job(:name);\n\
                  async run() is int { Stdout().writeln(\"running \" + name); 7; }\n\
-                 async fail() is int { Stdout().writeln(\"failing \" + name); throw Broken(); }\n\
+                 async fail() is int { Stdout().writeln(\"failing \" + name); throw Broken.broken; }\n\
              }\n\
              async main() is int {\n\
                  let out = Stdout();\n\
@@ -1957,7 +1941,7 @@ fn async_futures_are_lazy_cached_and_spawned_eagerly() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "Broken: broken\n"
+        "Broken: Broken.broken\n"
     );
 }
 
@@ -2101,7 +2085,7 @@ fn test_mode_runs_tests_with_fakes_and_reports_failures() {
              }\n\
          }\n\
          object Worker { Worker(); async value() is int { 7; } test \"scoped\" { test.ok(true); } }\n\
-         object Denied does Error { Denied(); text() is string { \"denied\"; } }\n\
+         enum Denied is Error = (denied);\n\
          test \"fakes keep state\" {\n\
              let first is Books = Books.fake();\n\
              let second is Books = Books.fake();\n\
@@ -2111,7 +2095,7 @@ fn test_mode_runs_tests_with_fakes_and_reports_failures() {
          }\n\
          async test \"async\" { test.is(await Worker().value(), 7); }\n\
          test \"wrong\" { test.is(1 + 1, 3); test.ok(true); }\n\
-         test \"throws\" { throw Denied(); }\n\
+         test \"throws\" { throw Denied.denied; }\n\
          main() is int { panic \"main does not run in test mode\"; }\n",
     )
     .unwrap();
@@ -2136,7 +2120,7 @@ fn test_mode_runs_tests_with_fakes_and_reports_failures() {
          === RUN   fakes keep state\n--- PASS: fakes keep state\n\
          === RUN   async\n--- PASS: async\n\
          === RUN   wrong\n--- FAIL: wrong\n    expected 3, got 2\n\
-         === RUN   throws\n--- FAIL: throws\n    Denied: denied\nFAIL\n"
+         === RUN   throws\n--- FAIL: throws\n    Denied: Denied.denied\nFAIL\n"
     );
 }
 
@@ -2153,9 +2137,9 @@ fn synchronous_spawn_runs_in_a_worker_process() {
                  Worker(:seed);\n\
                  calculate(input is int) is int { Stdout().writeln(\"worker \" + seed.string()); seed * input; }\n\
                  tagged(word is string) is %string:@byte { [word: [1.byte(), 2.byte()]]; }\n\
-                 boom(input is int) is int { confirm input < 0 else throw Bad(); input; }\n\
+                 boom(input is int) is int { confirm input < 0 else throw Bad.bad_input; input; }\n\
              }\n\
-             object Bad does Error { Bad(); text() is string { \"bad input\"; } }\n\
+             enum Bad is Error = (bad_input);\n\
              async main() is int {\n\
                  let left = spawn Worker(seed: 7).calculate(input: 20);\n\
                  let bound is (int) is int = Worker(seed: 9).calculate;\n\
@@ -2182,7 +2166,7 @@ fn synchronous_spawn_runs_in_a_worker_process() {
     assert!(stdout.ends_with("194 2\n"), "{stdout}");
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("runtime: Bad: bad input"),
+        String::from_utf8_lossy(&output.stderr).contains("runtime: Bad: Bad.bad_input"),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -2216,8 +2200,8 @@ fn bound_role_actions_and_future_selectors_run_on_the_jvm() {
              import \"async/collect\" take FirstSuccessful, FutureCompletions;\n\
              role Valued { value() is int; }\n\
              object Fixed does Valued { has n is int; Fixed(:n); value() is int { n; } }\n\
-             object Task { has n is int; Task(:n); async run() is int { confirm n > 1 else throw Low(); n; } }\n\
-             object Low does Error { Low(); text() is string { \"low\"; } }\n\
+             object Task { has n is int; Task(:n); async run() is int { confirm n > 1 else throw Low.low; n; } }\n\
+             enum Low is Error = (low);\n\
              async main() is int {\n\
                  let r is Valued = Fixed(n: 4);\n\
                  let read is () is int = r.value;\n\

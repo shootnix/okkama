@@ -17,7 +17,7 @@ object Lookup {
 
 main() is int {
     let out = Stdout();
-    let found = Lookup().find("p") else throw InvalidTransition(action: "lookup");
+    let found = Lookup().find("p") else throw InvalidTransition.invalid_transition("lookup");
     out.writeln("captured " + found.capture().id());
     let text = Lookup().find("x")
         ?? .some(payment): "captured " + payment.capture().id()

@@ -7,11 +7,7 @@ module payment_sealed;
 
 hidden enum Stage = (created, authorized, captured, refunded);
 
-object InvalidTransition does Error {
-    has action is string;
-    InvalidTransition(:action);
-    text() is string { "invalid transition: " + action; }
-}
+enum InvalidTransition is Error = (invalid_transition(action is string));
 
 role Created {
     id() is string;
@@ -34,15 +30,15 @@ hidden object Payment does Created, Authorized, Captured, Refunded {
 
     id() is string { key; }
     authorize() is ^Payment {
-        confirm stage == Stage.created else throw InvalidTransition(action: "authorize");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("authorize");
         ^stage = Stage.authorized;
     }
     capture() is ^Payment {
-        confirm stage == Stage.authorized else throw InvalidTransition(action: "capture");
+        confirm stage == Stage.authorized else throw InvalidTransition.invalid_transition("capture");
         ^stage = Stage.captured;
     }
     refund() is ^Payment {
-        confirm stage == Stage.captured else throw InvalidTransition(action: "refund");
+        confirm stage == Stage.captured else throw InvalidTransition.invalid_transition("refund");
         ^stage = Stage.refunded;
     }
 }

@@ -17,6 +17,37 @@ pub(crate) const CLOSE: u32 = 8;
 pub(crate) const UNREACHABLE: u32 = 9;
 pub(crate) const AWAIT: u32 = 10;
 pub(crate) const REGION_TRANSFER: u32 = 11;
+/// A JIT heap call committed its instruction; collect before resuming at `pc`.
+pub(crate) const COLLECT: u32 = 12;
+
+/// Largest edge move list, argument list and register frame of a program:
+/// the sizes of every task's reusable buffers. Computed once per program.
+pub(crate) fn window(functions: &[Option<Rc<crate::FunctionPlan>>]) -> (usize, usize, usize) {
+    let functions = || functions.iter().filter_map(Option::as_ref);
+    let maximum_moves = functions()
+        .flat_map(|f| &f.plan)
+        .map(|op| match op {
+            Op::Jump(t) => t.moves.len(),
+            Op::Branch(_, a, b)
+            | Op::Catch {
+                found: a,
+                missing: b,
+                ..
+            }
+            | Op::Lookup {
+                found: a,
+                missing: b,
+                ..
+            } => a.moves.len().max(b.moves.len()),
+            _ => 0,
+        })
+        .chain(functions().flat_map(|f| f.handlers.iter().map(|h| h.target.moves.len())))
+        .max()
+        .unwrap_or(0);
+    let maximum_arguments = functions().map(|f| f.params.len()).max().unwrap_or(0);
+    let maximum_registers = functions().map(|f| f.registers).max().unwrap_or(0);
+    (maximum_moves, maximum_arguments, maximum_registers)
+}
 
 /// Private JIT boundary, valid only during resume. No native stack address is
 /// retained by the continuation; slot storage is exclusively owned by Session.
@@ -26,6 +57,12 @@ pub(crate) struct RunState {
     pub fuel: u64,
     pub result: Slot,
     pub pc: u32,
+    /// Heap calls from machine code: the resuming task's slot window and heap,
+    /// both exclusively borrowed for the duration of the run.
+    pub slot_count: usize,
+    pub heap: *mut Heap,
+    /// Immutable program, for native calls made from machine code.
+    pub code: *const Code,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,29 +173,7 @@ impl Task {
     }
 
     pub(crate) fn new(code: &Code) -> Self {
-        let functions = || code.functions.iter().filter_map(Option::as_ref);
-        let maximum_moves = functions()
-            .flat_map(|f| &f.plan)
-            .map(|op| match op {
-                Op::Jump(t) => t.moves.len(),
-                Op::Branch(_, a, b)
-                | Op::Catch {
-                    found: a,
-                    missing: b,
-                    ..
-                }
-                | Op::Lookup {
-                    found: a,
-                    missing: b,
-                    ..
-                } => a.moves.len().max(b.moves.len()),
-                _ => 0,
-            })
-            .chain(functions().flat_map(|f| f.handlers.iter().map(|h| h.target.moves.len())))
-            .max()
-            .unwrap_or(0);
-        let maximum_arguments = functions().map(|f| f.params.len()).max().unwrap_or(0);
-        let maximum_registers = functions().map(|f| f.registers).max().unwrap_or(0);
+        let (maximum_moves, maximum_arguments, maximum_registers) = code.window;
         // One reusable active window. The verifier proves every observed slot is
         // initialized along its path; dead slots need no clearing on a call.
         let slots = vec![Slot::default(); maximum_registers];
@@ -311,6 +326,7 @@ impl Task {
                     let start = region * crate::jit::REGION_SIZE;
                     let end = (start + crate::jit::REGION_SIZE).min(function.plan.len());
                     let compiled = crate::jit::Compiled::new(
+                        code,
                         &function.plan,
                         kinds,
                         &function.live,
@@ -329,10 +345,31 @@ impl Task {
                     fuel,
                     result: Slot::default(),
                     pc: self.pc,
+                    slot_count: self.slots.len(),
+                    heap: &mut *heap,
+                    code,
                 };
                 let status = compiled.run(&mut state);
                 self.pc = state.pc;
                 fuel = state.fuel;
+                crate::stats::record(|s| {
+                    s.jit_entries += 1;
+                    let name = match status {
+                        RETURNED => "returned",
+                        REGION_TRANSFER => "region-transfer",
+                        COLLECT => "collect",
+                        YIELDED => "yielded",
+                        UNBOUND_VALUE => "unbound",
+                        RAISE => "raise",
+                        CLOSE => "close",
+                        AWAIT => "await",
+                        TRANSFER => "transfer",
+                        ARITHMETIC => "service",
+                        CALL => "call",
+                        _ => "other",
+                    };
+                    *s.exits.entry(name).or_default() += 1;
+                });
                 match status {
                     RETURNED => {
                         if let Some(value) = self.return_value(code, heap, state.result)? {
@@ -340,6 +377,7 @@ impl Task {
                         }
                     }
                     REGION_TRANSFER => {}
+                    COLLECT => self.collect(code, heap)?,
                     YIELDED => return Ok(TaskOutcome::Yielded),
                     UNBOUND_VALUE => self.program_failure(
                         code,
@@ -365,6 +403,7 @@ impl Task {
                 }
             } else {
                 fuel -= 1;
+                crate::stats::record(|s| s.cold_steps += 1);
                 let op = function
                     .plan
                     .get(self.pc as usize)
@@ -506,6 +545,11 @@ impl Task {
     }
 
     fn dispatch_call(&mut self, code: &Code, heap: &mut Heap) -> Result<(), Error> {
+        crate::stats::record(|s| {
+            s.calls += 1;
+            let name = crate::stats::op_name(&code.function(self.function).plan[self.pc as usize]);
+            *s.service.entry(name).or_default() += 1;
+        });
         match &code.function(self.function).plan[self.pc as usize] {
             Op::CallCap {
                 dst,
@@ -603,6 +647,21 @@ impl Task {
         dst: Option<usize>,
         tail: bool,
     ) -> Result<(), Error> {
+        crate::stats::record(|s| {
+            let function = code.function(callee);
+            let kind = if function.native.is_some() {
+                "native"
+            } else if function.is_async {
+                "async"
+            } else if function.jit_kinds.is_none() {
+                "plan"
+            } else {
+                "jit"
+            };
+            *s.callees
+                .entry(format!("{kind} {}", function.symbol))
+                .or_default() += 1;
+        });
         if let Some(native) = code.function(callee).native {
             match heap.native_invoke(
                 native,
@@ -894,7 +953,20 @@ impl Task {
         Ok(())
     }
     fn service(&mut self, code: &Code, heap: &mut Heap) -> Result<(), Error> {
-        if let Err(error) = self.arithmetic(code, heap) {
+        crate::stats::record(|s| {
+            let name = crate::stats::op_name(&code.function(self.function).plan[self.pc as usize]);
+            *s.service.entry(name).or_default() += 1;
+        });
+        // A JIT heap or native call that failed left its outcome; do not execute
+        // the instruction twice.
+        if let Some(failure) = heap.deferred_raise.take() {
+            return self.unwind(code, heap, failure);
+        }
+        let result = match heap.deferred_failure.take() {
+            Some(error) => Err(error),
+            None => self.arithmetic(code, heap),
+        };
+        if let Err(error) = result {
             let kind = if matches!(
                 code.function(self.function).plan[self.pc as usize],
                 Op::Panic(_)
@@ -998,7 +1070,8 @@ impl Task {
         }
     }
     fn arithmetic(&mut self, code: &Code, heap: &mut Heap) -> Result<(), Error> {
-        match code.function(self.function).plan[self.pc as usize] {
+        let op = &code.function(self.function).plan[self.pc as usize];
+        match *op {
             Op::Intrinsic(operation, dst, arguments) => {
                 let args = arguments.map(|r| r.map(|r| self.slots[r]));
                 self.slots[dst] = if let crate::intrinsic::Operation::Test(operation) = operation {
@@ -1114,139 +1187,7 @@ impl Task {
                 }
                 self.slots[dst] = value;
             }
-            Op::Closure {
-                dst,
-                function,
-                ref captures,
-            } => {
-                self.slots[dst] =
-                    heap.closure_new(function, captures.iter().map(|r| self.slots[*r]))?;
-            }
-            Op::FailureLink(dst, a, b, secondary) => {
-                self.slots[dst] = heap.failure_link(self.slots[a], self.slots[b], secondary)?;
-            }
-            Op::AnyBox(dst, src) => {
-                self.slots[dst] = heap.any_box(self.slots[src])?;
-            }
-            Op::Equal(op, dst, a, b) => {
-                let equal = heap.equal(self.slots[a], self.slots[b])?;
-                self.slots[dst] = Slot::boolean(if matches!(op, Cmp::Eq) { equal } else { !equal });
-            }
-            Op::ObjectNew(dst, descriptor, ref fields) => {
-                self.slots[dst] =
-                    heap.object_new(descriptor, fields.iter().map(|r| self.slots[*r]))?;
-            }
-            Op::ObjectNext(dst, object, ref updates) => {
-                self.slots[dst] = heap.object_next(
-                    self.slots[object],
-                    updates.iter().map(|(field, r)| (*field, self.slots[*r])),
-                )?;
-            }
-            Op::ObjectInit(object, field, value) => {
-                heap.object_init(self.slots[object], field, self.slots[value])?;
-            }
-            Op::ObjectGet(dst, object, field) => {
-                self.slots[dst] = heap.object_get(self.slots[object], field)?;
-            }
-            Op::RangeNew(dst, start, end, inclusive) => {
-                self.slots[dst] = heap.range_new(self.slots[start], self.slots[end], inclusive)?;
-            }
-            Op::RangePart(dst, range, end) => {
-                self.slots[dst] = heap.range_part(self.slots[range], end)?;
-            }
-            Op::BuilderRange(dst, builder, start, end, inclusive) => {
-                self.slots[dst] = heap.builder_range(
-                    self.slots[builder],
-                    self.slots[start],
-                    self.slots[end],
-                    inclusive,
-                )?;
-            }
-            Op::MapNew(dst, ref entries) => {
-                self.slots[dst] = heap.map_new(
-                    entries
-                        .iter()
-                        .map(|(k, v)| (self.slots[*k], self.slots[*v])),
-                )?;
-            }
-            Op::Map(op, dst, args) => {
-                self.slots[dst] = heap.map_op(
-                    op,
-                    args.map(|r| r.map(|r| self.slots[r]).unwrap_or_default()),
-                )?;
-            }
-            Op::ArrayNew(dst, ref elements) => {
-                self.slots[dst] =
-                    heap.allocate_array(elements.iter().map(|r| self.slots[*r]).collect())?;
-            }
-            Op::Array(op, dst, args) => {
-                self.slots[dst] = heap.array_op(
-                    op,
-                    args.map(|r| r.map(|r| self.slots[r]).unwrap_or_default()),
-                )?;
-            }
-            Op::Text(op, dst, args) => {
-                self.slots[dst] = heap.text_op(
-                    op,
-                    args.map(|r| r.map(|r| self.slots[r]).unwrap_or_default()),
-                )?;
-            }
-            Op::RatPart(dst, src, denominator) => {
-                self.slots[dst] = heap.rat_part(self.slots[src], denominator)?;
-            }
-            Op::RatNew(dst, a, b) => {
-                self.slots[dst] = heap.rat_new(self.slots[a], self.slots[b])?;
-            }
-            Op::RatBinary(op, dst, a, b) => {
-                self.slots[dst] = heap.rat_binary(op, self.slots[a], self.slots[b])?;
-            }
-            Op::RatUnary(op, dst, src) => {
-                self.slots[dst] = heap.rat_unary(op, self.slots[src])?;
-            }
-            Op::ByteBinary(op, dst, left, right) => {
-                self.slots[dst] = heap.byte_binary(op, self.slots[left], self.slots[right])?;
-            }
-            Op::ByteNot(dst, src) => {
-                self.slots[dst] = Slot {
-                    bits: self.slots[src].bits ^ 255,
-                    tag: crate::value::BYTE,
-                };
-            }
-            Op::Bits(op, byte, dst, value, count) => {
-                self.slots[dst] =
-                    heap.bits(op, byte, self.slots[value], count.map(|r| self.slots[r]))?;
-            }
-            Op::FloatBinary(op, dst, left, right) => {
-                self.slots[dst] =
-                    crate::scalar::float_binary(op, self.slots[left], self.slots[right])?;
-            }
-            Op::FloatUnary(op, dst, source) => {
-                self.slots[dst] = crate::scalar::float_unary(op, self.slots[source])?;
-            }
-            Op::Convert(target, dst, source) => {
-                self.slots[dst] = heap.convert(target, self.slots[source])?;
-            }
-            Op::ByteFrom(dst, source, ref context) => {
-                self.slots[dst] = heap.byte_from(self.slots[source], context.as_deref())?;
-            }
-            Op::Unary(op, dst, source) => {
-                self.slots[dst] = heap.unary(op, self.slots[source])?;
-            }
-            Op::Arithmetic(op, dst, left, right) => {
-                self.slots[dst] = heap.arithmetic(op, self.slots[left], self.slots[right])?;
-            }
-            Op::Compare(op, dst, left, right) => {
-                let order = heap.compare(self.slots[left], self.slots[right])?;
-                self.slots[dst] = Slot::boolean(match op {
-                    Cmp::Eq => order.is_eq(),
-                    Cmp::Ne => !order.is_eq(),
-                    Cmp::Lt => order.is_lt(),
-                    Cmp::Le => !order.is_gt(),
-                    Cmp::Gt => order.is_gt(),
-                    Cmp::Ge => !order.is_lt(),
-                });
-            }
-            _ => return Err(Error("invalid numeric request".into())),
+            _ => return heap_op(op, &mut self.slots, heap),
         }
         Ok(())
     }
@@ -1415,6 +1356,149 @@ impl Task {
         }
         self.pc = target.pc;
     }
+}
+
+/// Instructions that read registers and the heap and write at most their
+/// destination register. Shared by the service path and JIT heap calls, so both
+/// have one semantics. Validation precedes mutation; a failure is returned to
+/// the caller, which raises it as a program failure.
+pub(crate) fn heap_op(op: &Op, slots: &mut [Slot], heap: &mut Heap) -> Result<(), Error> {
+    match *op {
+        Op::Closure {
+            dst,
+            function,
+            ref captures,
+        } => {
+            slots[dst] =
+                heap.closure_new(function, captures.iter().map(|r| slots[*r]))?;
+        }
+        Op::FailureLink(dst, a, b, secondary) => {
+            slots[dst] = heap.failure_link(slots[a], slots[b], secondary)?;
+        }
+        Op::AnyBox(dst, src) => {
+            slots[dst] = heap.any_box(slots[src])?;
+        }
+        Op::Equal(op, dst, a, b) => {
+            let equal = heap.equal(slots[a], slots[b])?;
+            slots[dst] = Slot::boolean(if matches!(op, Cmp::Eq) { equal } else { !equal });
+        }
+        Op::ObjectNew(dst, descriptor, ref fields) => {
+            slots[dst] =
+                heap.object_new(descriptor, fields.iter().map(|r| slots[*r]))?;
+        }
+        Op::ObjectNext(dst, object, ref updates) => {
+            slots[dst] = heap.object_next(
+                slots[object],
+                updates.iter().map(|(field, r)| (*field, slots[*r])),
+            )?;
+        }
+        Op::ObjectInit(object, field, value) => {
+            heap.object_init(slots[object], field, slots[value])?;
+        }
+        Op::ObjectGet(dst, object, field) => {
+            slots[dst] = heap.object_get(slots[object], field)?;
+        }
+        Op::RangeNew(dst, start, end, inclusive) => {
+            slots[dst] = heap.range_new(slots[start], slots[end], inclusive)?;
+        }
+        Op::RangePart(dst, range, end) => {
+            slots[dst] = heap.range_part(slots[range], end)?;
+        }
+        Op::BuilderRange(dst, builder, start, end, inclusive) => {
+            slots[dst] = heap.builder_range(
+                slots[builder],
+                slots[start],
+                slots[end],
+                inclusive,
+            )?;
+        }
+        Op::MapNew(dst, ref entries) => {
+            slots[dst] = heap.map_new(
+                entries
+                    .iter()
+                    .map(|(k, v)| (slots[*k], slots[*v])),
+            )?;
+        }
+        Op::Map(op, dst, args) => {
+            slots[dst] = heap.map_op(
+                op,
+                args.map(|r| r.map(|r| slots[r]).unwrap_or_default()),
+            )?;
+        }
+        Op::ArrayNew(dst, ref elements) => {
+            slots[dst] =
+                heap.allocate_array(elements.iter().map(|r| slots[*r]).collect())?;
+        }
+        Op::Array(op, dst, args) => {
+            slots[dst] = heap.array_op(
+                op,
+                args.map(|r| r.map(|r| slots[r]).unwrap_or_default()),
+            )?;
+        }
+        Op::Text(op, dst, args) => {
+            slots[dst] = heap.text_op(
+                op,
+                args.map(|r| r.map(|r| slots[r]).unwrap_or_default()),
+            )?;
+        }
+        Op::RatPart(dst, src, denominator) => {
+            slots[dst] = heap.rat_part(slots[src], denominator)?;
+        }
+        Op::RatNew(dst, a, b) => {
+            slots[dst] = heap.rat_new(slots[a], slots[b])?;
+        }
+        Op::RatBinary(op, dst, a, b) => {
+            slots[dst] = heap.rat_binary(op, slots[a], slots[b])?;
+        }
+        Op::RatUnary(op, dst, src) => {
+            slots[dst] = heap.rat_unary(op, slots[src])?;
+        }
+        Op::ByteBinary(op, dst, left, right) => {
+            slots[dst] = heap.byte_binary(op, slots[left], slots[right])?;
+        }
+        Op::ByteNot(dst, src) => {
+            slots[dst] = Slot {
+                bits: slots[src].bits ^ 255,
+                tag: crate::value::BYTE,
+            };
+        }
+        Op::Bits(op, byte, dst, value, count) => {
+            slots[dst] =
+                heap.bits(op, byte, slots[value], count.map(|r| slots[r]))?;
+        }
+        Op::FloatBinary(op, dst, left, right) => {
+            slots[dst] =
+                crate::scalar::float_binary(op, slots[left], slots[right])?;
+        }
+        Op::FloatUnary(op, dst, source) => {
+            slots[dst] = crate::scalar::float_unary(op, slots[source])?;
+        }
+        Op::Convert(target, dst, source) => {
+            slots[dst] = heap.convert(target, slots[source])?;
+        }
+        Op::ByteFrom(dst, source, ref context) => {
+            slots[dst] = heap.byte_from(slots[source], context.as_deref())?;
+        }
+        Op::Unary(op, dst, source) => {
+            slots[dst] = heap.unary(op, slots[source])?;
+        }
+        Op::Arithmetic(op, dst, left, right) => {
+            slots[dst] = heap.arithmetic(op, slots[left], slots[right])?;
+        }
+        Op::Compare(op, dst, left, right) => {
+            let order = heap.compare(slots[left], slots[right])?;
+            slots[dst] = Slot::boolean(match op {
+                Cmp::Eq => order.is_eq(),
+                Cmp::Ne => !order.is_eq(),
+                Cmp::Lt => order.is_lt(),
+                Cmp::Le => !order.is_gt(),
+                Cmp::Gt => order.is_gt(),
+                Cmp::Ge => !order.is_lt(),
+            });
+        }
+        _ => return Err(Error("invalid numeric request".into())),
+    }
+    Ok(())
 }
 
 /// A standalone invocation. Immutable machine code can outlive the loader handle.
@@ -1802,6 +1886,11 @@ impl Session {
     }
     pub fn saved_value_count(&self) -> usize {
         self.task.saved_value_count()
+    }
+    /// Root checks: collect every COLLECTION_FLOOR allocations regardless of
+    /// the live heap size, as the fixed trigger did before it became adaptive.
+    pub fn stress_collection(&mut self) {
+        self.heap.borrow_mut().stress_collection = true;
     }
     pub fn collection_count(&self) -> usize {
         self.heap.borrow().collections

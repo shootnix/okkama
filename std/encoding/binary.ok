@@ -58,11 +58,11 @@ object IntegerFromBytes {
 
     value() is int {
         confirm origin.size() > 0
-            else throw InvalidArgument("integer input width must be positive");
+            else throw InvalidArgument.because("integer input width must be positive");
         let sign is string = self.signedness_name();
         let order_name is string = self.order_name();
         confirm binary_integer_from_bytes_fits(origin, sign, order_name)
-            else throw InvalidArgument("decoded integer is outside the int range");
+            else throw InvalidArgument.because("decoded integer is outside the int range");
         binary_integer_from_bytes(origin, sign, order_name);
     }
 
@@ -92,10 +92,10 @@ object IntegerBytes {
 
     bytes() is @byte {
         confirm size > 0
-            else throw InvalidArgument("integer byte size must be positive");
+            else throw InvalidArgument.because("integer byte size must be positive");
         let sign is string = self.signedness_name();
         confirm binary_integer_fits(origin, size, sign)
-            else throw InvalidArgument("integer does not fit the requested binary width");
+            else throw InvalidArgument.because("integer does not fit the requested binary width");
         binary_integer_bytes(origin, size, sign, self.order_name());
     }
 
@@ -124,10 +124,10 @@ object FloatFromBytes {
     value() is float {
         let bits is int = self.width_bits();
         confirm origin.size() == self.width_size()
-            else throw InvalidArgument("floating-point input width does not match FloatWidth");
+            else throw InvalidArgument.because("floating-point input width does not match FloatWidth");
         let order_name is string = self.order_name();
         confirm binary_float_finite(origin, bits, order_name)
-            else throw InvalidArgument("binary floating-point value must be finite");
+            else throw InvalidArgument.because("binary floating-point value must be finite");
         binary_float_from_bytes(origin, bits, order_name);
     }
 
@@ -160,7 +160,7 @@ object FloatBytes {
     bytes() is @byte {
         let bits is int = self.width_bits();
         confirm binary_float_fits(origin, bits)
-            else throw InvalidArgument("float does not fit the requested binary width");
+            else throw InvalidArgument.because("float does not fit the requested binary width");
         binary_float_bytes(origin, bits, self.order_name());
     }
 

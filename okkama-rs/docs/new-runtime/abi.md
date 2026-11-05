@@ -11,15 +11,35 @@ it borrows the session slot buffer for one synchronous invocation. Slots are
 16-byte payload/tag pairs. Offsets are computed with Rust `offset_of!`, not copied
 into a second hand-maintained layout. Generated code is owned by `CodeMemory`;
 no function pointer escapes that owner's lifetime. A session cannot move or grow
-its slot buffer while generated code is running. Heap service runs only after
-native code has returned. No Rust unwind crosses this boundary.
+its slot buffer while generated code is running. No Rust unwind crosses this
+boundary.
+
+Heap calls (2026-11-05): `RunState` also borrows the task's slot count and heap,
+and (2026-11-06) the immutable program: a static `Call` of a native function is
+also a heap call, so natives run without the dispatcher round trip. A typed native
+failure is left in `Heap::deferred_raise` and unwound by the service path.
+For heap-only instructions (`jit::heap_call`: objects, arrays, maps, text, ranges,
+equality, rationals, conversions and the general cases of natively specialised
+scalar operations) generated code stores the live values of the PC to their
+slots and calls `jit::heap_service(RunState*, const Op*)` through an indirect C
+call. It runs `execution::heap_op`, the same function as the service path, and
+returns 0 (committed), 1 (committed, collection due) or 2 (failed). After a
+commit the code reloads the successor's live values from slots, so no machine
+register is kept live across the call. On 1 it exits with status 12 at the next
+PC and the dispatcher collects. On 2 the error is left in `Heap::deferred_failure`
+and the code exits with status 4 at the same PC; the service path raises the
+deferred failure instead of executing the instruction again. Collection never
+runs inside a heap call. An internal panic inside `heap_service` cannot unwind
+through generated code and aborts the process. The instruction pointer is
+embedded in the code; the immutable plan owns the compiled region.
 
 Status 0 returns a slot (ignored for a statically void call), 1 yields with PC and
 remaining fuel, 2 reports invalid internal state, 3 requests call dispatch, 4
 requests heap/scalar service, 5 reports unbound evaluation, and 6 requests a
 conditional lookup/catch transfer; 7 requests throw/rethrow dispatch; 8 requests resource cleanup, 9 reports an unreachable internal terminator,
-10 requests await dispatch, and 11 transfers to another compiled region while
-remaining in the dispatcher (it is not a host yield). These are internal constants, not a public plugin
+10 requests await dispatch, 11 transfers to another compiled region while
+remaining in the dispatcher (it is not a host yield), and 12 requests collection
+before resuming at the stored PC. These are internal constants, not a public plugin
 ABI. Literal trap categories remain in the immutable plan. The present public
 host error is text, and uncaught terminal failures are memoized by Session.
 `Session::failure_report()` additionally exposes a structured snapshot of the

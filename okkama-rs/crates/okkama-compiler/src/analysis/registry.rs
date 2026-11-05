@@ -2221,6 +2221,17 @@ impl<'a> Registry<'a> {
                     );
                     continue;
                 }
+                // Ошибки — только error enum (§9.5.1): объект не делает Error.
+                if role == self.system.error {
+                    self.error(
+                        role_type.span,
+                        format!(
+                            "Object \"{}\" cannot do Error: errors are enums, declare `enum {} is Error = (...)`",
+                            decl.name.text, decl.name.text
+                        ),
+                    );
+                    continue;
+                }
                 does.push((role, args));
             }
             // Конформность проверяется по полному списку: роль может

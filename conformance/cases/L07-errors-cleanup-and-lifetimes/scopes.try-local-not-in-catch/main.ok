@@ -2,22 +2,15 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object NotFound does Error {
-    has key is string;
-    NotFound(:key);
-    text() is string { "not found: " + key; }
-}
+enum NotFound is Error = (not_found(key is string));
 
-object Denied does Error {
-    Denied();
-    text() is string { "denied"; }
-}
+enum Denied is Error = (denied);
 
 main() is int {
     let out = Stdout();
     try {
         let local = 1;
-        throw Denied();
+        throw Denied.denied;
     } catch e is Denied {
         let x = local;
     }

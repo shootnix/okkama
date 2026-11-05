@@ -13,7 +13,7 @@ object Step {
     approved(outcome is Authorization) is Outcome<Authorized> {
         match outcome {
             case Authorization.approved(payment) { Outcome.ok(payment); }
-            case Authorization.declined(payment) { Outcome<Authorized>.err(PaymentError(reason: payment.reason())); }
+            case Authorization.declined(payment) { Outcome<Authorized>.err(PaymentError.payment_error(payment.reason())); }
             case Authorization.failed(error) { Outcome<Authorized>.err(error); }
         }
     }

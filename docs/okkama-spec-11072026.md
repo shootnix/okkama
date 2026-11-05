@@ -2483,11 +2483,14 @@ throw;                         // rethrow inside a selected catch body
 panic "Unreachable state";    // exact string only
 ```
 
-`throw value` accepts a value of an error enum (9.5.1), an ordinary object
-that nominally `does Error`, or the system `NativeFailure`. The system role is
-available without import and requires a public synchronous `text() is string`.
-Throwing scalars, collections, other enums, `any`, handles, or structurally
-similar objects is an error.
+`throw value` accepts a value of an error enum (9.5.1), a reference of type
+`Error` (for example a caught error being rethrown), or the system
+`NativeFailure`. The system role is available without import and requires a
+public synchronous `text() is string`; it is implemented only by error enums
+and the system failure objects. An object cannot do `Error`: declaring
+`object X does Error` is a semantic error, so objects are never thrown.
+Throwing objects, scalars, collections, other enums, `any` or handles is an
+error.
 
 `throw;` rethrows the currently handled thrown error without replacing its
 identity or origin. It is valid only while executing a selected catch body. A
@@ -2551,8 +2554,8 @@ Rules:
 - Only failures raised by `throw` (including implicit native throws)
   participate in matching. Panic and programming errors pass through.
 - Every catch type is validated before the try body executes and must itself
-  guarantee `Error`: `Error`, an error enum (9.5.1), a concrete/applied object
-  explicitly doing `Error`, or `NativeFailure`.
+  guarantee `Error`: `Error`, an error enum (9.5.1), or the system
+  `NativeFailure` / `Cancelled`.
 - Clauses are examined in source order; the first compatible declared type
   wins. An error enum clause catches every case of that enum; the binding has
   the enum type and is inspected with `match`. Arbitrary roles, scalars,
@@ -3265,16 +3268,12 @@ Rules:
 ### 11.4 Constructor Invariants
 
 ```okkama
-object InvalidScore does Error {
-    has value is int;
-    InvalidScore(:value);
-    text() is string { "invalid score: " + value.string(); }
-}
+enum InvalidScore is Error = (negative(value is int));
 object Score {
     has value is int;
     Score(value is int) {
         self.value = value;
-        confirm value >= 0 else throw InvalidScore(value: value);
+        confirm value >= 0 else throw InvalidScore.negative(value);
     }
 }
 ```
@@ -3282,7 +3281,7 @@ object Score {
 A constructor MAY contain any number of `confirm` statements. They execute in
 source order in the constructor's lexical scope, after any preceding bindings.
 An unsuccessful condition evaluates its `else` branch; `else throw` raises the
-specified Error object. Without `else`, an unsuccessful condition panics.
+specified error. Without `else`, an unsuccessful condition panics.
 Constructors initialize state and validate it directly with `confirm`. They MUST
 NOT invoke any public, private or async action on their unfinished receiver,
 including in conditions, field initializers or nested lexical blocks. This
@@ -3880,12 +3879,11 @@ Restricted role references are VM-owned values: local async tasks can retain
 them, but the existing synchronous process-worker codec cannot transfer them.
 No new native or process serialization ABI is introduced.
 
-Checked exception routing is an explicit exception to ordinary conversion:
-Only a role reference exposing the Error contract may enter `throw` routing.
-`throw` retains the original Error object in the failure container, allowing
-existing concrete typed catches. A role-typed catch binds a restricted
-reference; in particular `catch e is Error` exposes only `text()`. Ordinary
-role parameters/results do not acquire this exception-routing privilege.
+Exception routing never recovers an object from a role: only error enums
+(and the system failures) implement `Error`, and objects cannot do it, so a
+role reference to an object can never be thrown. A rethrown `Error` reference
+keeps its error enum value, which typed catches of that enum match; `catch e is
+Error` exposes only `text()`.
 
 ## 13. Role Fake
 

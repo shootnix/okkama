@@ -117,6 +117,38 @@ mod tests {
     }
 
     #[test]
+    fn collection_threshold_follows_the_live_heap() {
+        let mut heap = Heap::new(&[], &[]);
+        let held: Vec<Slot> = (0..10_000)
+            .map(|_| heap.object_new(0, [Slot::small(1)].into_iter()).unwrap())
+            .collect();
+        heap.collect(held.iter().copied()).unwrap();
+        let before = heap.collections;
+        for _ in 0..50_000 {
+            heap.object_new(0, [Slot::small(2)].into_iter()).unwrap();
+            if heap.needs_collection() {
+                heap.collect(held.iter().copied()).unwrap();
+            }
+            // Live objects plus at most one traced-size batch of garbage.
+            assert!(heap.objects.len() <= 3 * 10_000 + COLLECTION_FLOOR);
+        }
+        // A fixed floor would re-trace the held graph about 390 times.
+        assert!(heap.collections - before <= 4);
+        assert!(held.iter().all(|&h| heap.object_get(h, 0).is_ok()));
+        // After the live heap shrinks, the next collection waits until the
+        // vacant entries are reused, and the arena does not grow meanwhile.
+        heap.collect(std::iter::empty()).unwrap();
+        let capacity = heap.objects.len();
+        let mut allocated = 0;
+        while !heap.needs_collection() {
+            heap.object_new(0, std::iter::empty()).unwrap();
+            allocated += 1;
+        }
+        assert!(allocated >= 10_000);
+        assert_eq!(heap.objects.len(), capacity);
+    }
+
+    #[test]
     fn small_rationals_do_not_allocate_and_large_rationals_collect() {
         let mut heap = Heap::new(&[], &[]);
         let half = heap.rat_new(Slot::small(1), Slot::small(2)).unwrap();
@@ -278,6 +310,30 @@ pub(crate) enum Unary {
     Sign,
 }
 
+/// Multiplicative hashing for engine-assigned handle keys
+/// (`generation << 32 | index`) and per-program lookup tables such as row
+/// schemas: SipHash's flooding resistance buys nothing there, and it dominated
+/// Atomic/Event and column-position lookups.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct HandleHasher(u64);
+impl std::hash::Hasher for HandleHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(word));
+        }
+    }
+    fn write_u64(&mut self, n: u64) {
+        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+pub(crate) type HandleBuild = std::hash::BuildHasherDefault<HandleHasher>;
+pub(crate) type HandleMap<V> = std::collections::HashMap<u64, V, HandleBuild>;
+
 /// Separate typed arenas share the same generational-handle contract.
 #[derive(Debug)]
 pub(crate) struct Heap {
@@ -307,9 +363,9 @@ pub(crate) struct Heap {
     pub(super) native_failures: Arena<[Slot; 4]>,
     pub(super) native_descriptor: Option<usize>,
     pub(super) equality_work: Vec<(Slot, Slot)>,
-    pub(super) equality_seen: std::collections::HashSet<(u64, u64, u64)>,
+    pub(super) equality_seen: std::collections::HashSet<(u64, u64, u64), HandleBuild>,
     closures: Arena<Box<[Slot]>>,
-    pub(crate) worker_bindings: std::collections::HashMap<u64, (Slot, Vec<Slot>)>,
+    pub(crate) worker_bindings: HandleMap<(Slot, Vec<Slot>)>,
     trace: Vec<Slot>,
     // Suspended Tokio tasks publish roots here; the active task supplies its
     // current liveness directly at each collection safepoint.
@@ -317,26 +373,38 @@ pub(crate) struct Heap {
     free_root_sets: Vec<usize>,
     next_activation: u64,
     pub(super) spawned: Vec<Slot>,
-    pub(super) collectors: std::collections::HashMap<u64, crate::collect::Collection>,
-    pub(super) cached_futures: std::collections::HashMap<u64, Vec<(usize, Slot)>>,
+    pub(super) collectors: HandleMap<crate::collect::Collection>,
+    pub(super) cached_futures: HandleMap<Vec<(usize, Slot)>>,
     pub(super) completion_clock: u64,
     pub(super) completion_signal: Option<tokio::sync::watch::Sender<()>>,
-    pub(super) streams: std::collections::HashMap<u64, crate::stream::Stream>,
+    pub(super) streams: HandleMap<crate::stream::Stream>,
     pub(super) barriers:
-        std::collections::HashMap<u64, Rc<std::cell::RefCell<crate::barrier::Barrier>>>,
-    pub(super) barrier_snapshots: std::collections::HashMap<u64, crate::barrier::Snapshot>,
-    pub(super) semaphores: std::collections::HashMap<u64, Rc<crate::semaphore::Pool>>,
-    pub(super) groups: std::collections::HashMap<u64, crate::group::Group>,
+        HandleMap<Rc<std::cell::RefCell<crate::barrier::Barrier>>>,
+    pub(super) barrier_snapshots: HandleMap<crate::barrier::Snapshot>,
+    pub(super) semaphores: HandleMap<Rc<crate::semaphore::Pool>>,
+    pub(super) groups: HandleMap<crate::group::Group>,
     pub(super) channels:
-        std::collections::HashMap<u64, Rc<std::cell::RefCell<crate::channel::Channel>>>,
+        HandleMap<Rc<std::cell::RefCell<crate::channel::Channel>>>,
     pub(crate) json_nodes: Arena<crate::native_json::Node>,
-    pub(crate) fake_storage: std::collections::HashMap<u64, crate::fake_storage::Storage>,
-    pub(super) atomics: std::collections::HashMap<u64, Option<Slot>>,
-    pub(super) locks: std::collections::HashMap<u64, std::sync::Arc<tokio::sync::Semaphore>>,
-    pub(super) grants: std::collections::HashMap<u64, crate::intrinsic::Grant>,
-    pub(super) events: std::collections::HashMap<u64, tokio::sync::watch::Sender<bool>>,
+    pub(crate) fake_storage: HandleMap<crate::fake_storage::Storage>,
+    pub(super) atomics: HandleMap<Option<Slot>>,
+    pub(super) locks: HandleMap<std::sync::Arc<tokio::sync::Semaphore>>,
+    pub(super) grants: HandleMap<crate::intrinsic::Grant>,
+    pub(super) events: HandleMap<tokio::sync::watch::Sender<bool>>,
     pub collections: usize,
+    collection_threshold: usize,
+    pub(crate) stress_collection: bool,
+    /// Failure of a heap instruction executed from machine code, raised by the
+    /// service path at the same PC.
+    pub(crate) deferred_failure: Option<Error>,
+    /// Typed failure of a native called from machine code, unwound by the
+    /// service path at the same PC.
+    pub(crate) deferred_raise: Option<Slot>,
 }
+
+/// Minimum allocations between allocation-triggered collections.
+pub(crate) const COLLECTION_FLOOR: usize = 128;
+
 impl Heap {
     pub fn new(constants: &[Rc<BigInt>], strings: &[Rc<str>]) -> Self {
         Self {
@@ -364,31 +432,35 @@ impl Heap {
             native_failures: Arena::default(),
             native_descriptor: None,
             equality_work: Vec::new(),
-            equality_seen: std::collections::HashSet::new(),
+            equality_seen: Default::default(),
             closures: Arena::default(),
-            worker_bindings: std::collections::HashMap::new(),
+            worker_bindings: Default::default(),
             trace: Vec::new(),
             parked_roots: Vec::new(),
             free_root_sets: Vec::new(),
             next_activation: 0,
             spawned: Vec::new(),
-            events: std::collections::HashMap::new(),
-            locks: std::collections::HashMap::new(),
-            collectors: std::collections::HashMap::new(),
-            cached_futures: std::collections::HashMap::new(),
+            events: Default::default(),
+            locks: Default::default(),
+            collectors: Default::default(),
+            cached_futures: Default::default(),
             completion_clock: 0,
             completion_signal: None,
-            streams: std::collections::HashMap::new(),
-            barriers: std::collections::HashMap::new(),
-            barrier_snapshots: std::collections::HashMap::new(),
-            semaphores: std::collections::HashMap::new(),
-            groups: std::collections::HashMap::new(),
-            channels: std::collections::HashMap::new(),
-            atomics: std::collections::HashMap::new(),
-            fake_storage: std::collections::HashMap::new(),
+            streams: Default::default(),
+            barriers: Default::default(),
+            barrier_snapshots: Default::default(),
+            semaphores: Default::default(),
+            groups: Default::default(),
+            channels: Default::default(),
+            atomics: Default::default(),
+            fake_storage: Default::default(),
             json_nodes: Arena::default(),
-            grants: std::collections::HashMap::new(),
+            grants: Default::default(),
             collections: 0,
+            collection_threshold: COLLECTION_FLOOR,
+            stress_collection: false,
+            deferred_failure: None,
+            deferred_raise: None,
         }
     }
     pub(crate) fn allocate_frame(&mut self) -> Result<u64, Error> {
@@ -930,7 +1002,16 @@ impl Heap {
         }
         Ok(self.big(left)?.cmp(&self.big(right)?))
     }
+    /// Allocation-triggered collection is proportional to the work of the last
+    /// one: the next collection waits for as many new values as it traced
+    /// (references visited, at least the survivors) or left vacant entries to
+    /// reuse. Marking and sweeping cost amortized O(1) per allocation instead of
+    /// re-walking a large graph or a large post-peak arena every COLLECTION_FLOOR
+    /// allocations. The heap stays within about twice the larger of the two.
     pub fn needs_collection(&self) -> bool {
+        self.allocations() >= self.collection_threshold
+    }
+    fn allocations(&self) -> usize {
         self.integers.allocations
             + self.rationals.allocations
             + self.objects.allocations
@@ -948,7 +1029,44 @@ impl Heap {
             + self.ranges.allocations
             + self.maps.allocations
             + self.map_builders.allocations
-            >= 128
+    }
+    fn vacant_entries(&self) -> usize {
+        self.integers.vacant()
+            + self.rationals.vacant()
+            + self.objects.vacant()
+            + self.handles.vacant()
+            + self.json_nodes.vacant()
+            + self.closures.vacant()
+            + self.boxes.vacant()
+            + self.failures.vacant()
+            + self.regions.vacant()
+            + self.futures.vacant()
+            + self.native_failures.vacant()
+            + self.strings.vacant()
+            + self.arrays.vacant()
+            + self.builders.vacant()
+            + self.ranges.vacant()
+            + self.maps.vacant()
+            + self.map_builders.vacant()
+    }
+    fn live_values(&self) -> usize {
+        self.integers.live
+            + self.rationals.live
+            + self.objects.live
+            + self.handles.live
+            + self.json_nodes.live
+            + self.closures.live
+            + self.boxes.live
+            + self.failures.live
+            + self.regions.live
+            + self.futures.live
+            + self.native_failures.live
+            + self.strings.live
+            + self.arrays.live
+            + self.builders.live
+            + self.ranges.live
+            + self.maps.live
+            + self.map_builders.live
     }
 
     pub fn convert(&mut self, target: crate::scalar::Kind, value: Slot) -> Result<Slot, Error> {
@@ -1071,6 +1189,7 @@ impl Heap {
         }))
     }
     pub fn collect(&mut self, roots: impl Iterator<Item = Slot>) -> Result<(), Error> {
+        let started = crate::stats::enabled().then(std::time::Instant::now);
         // Completed tasks need registration roots only for unobserved failures.
         // Live language references still retain the Future and its cached result.
         for &handle in &self.spawned {
@@ -1108,7 +1227,9 @@ impl Heap {
                 .flatten()
                 .flat_map(|roots| roots.iter().copied()),
         );
+        let mut traced = 0usize;
         while let Some(root) = self.trace.pop() {
+            traced += 1;
             match root.tag {
                 NATIVE_FAILURE => {
                     if self.native_failures.mark(root.bits)? {
@@ -1297,6 +1418,25 @@ impl Heap {
         self.maps.sweep();
         self.map_builders.sweep();
         self.collections += 1;
+        let live = self.live_values();
+        // Large live arrays and maps cost more to trace than their count shows;
+        // sweeping walks every entry, so after a peak the vacant entries left by
+        // it are reused before the next collection (no growth beyond the peak).
+        self.collection_threshold = if self.stress_collection {
+            COLLECTION_FLOOR
+        } else {
+            live.max(traced)
+                .max(self.vacant_entries())
+                .max(COLLECTION_FLOOR)
+        };
+        if let Some(start) = started {
+            crate::stats::record(|s| {
+                s.collections += 1;
+                s.collection_time += start.elapsed();
+                s.live = live as u64;
+                s.peak_live = s.peak_live.max(live as u64);
+            });
+        }
         Ok(())
     }
 }

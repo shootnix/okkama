@@ -52,7 +52,7 @@
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Error enums: `enum Name is Error`, throw/catch, generated `text()` | **implemented** |
-| 2 | Migrate `std` error objects to error enums; then forbid `does Error` on objects | owner: Alexander |
+| 2 | Forbid `does Error` on objects; migrate `std` error objects to error enums | **compiler done, base std migrated** (2026-11-05); rest of `std`: owner Alexander |
 | 3 | `throws` in signatures (checked errors) | on hold |
 | 4 | Swift-like `try?` / `try!`, catch patterns | **implemented** |
 
@@ -108,7 +108,7 @@ Rules (spec §9.5.1, §9.6):
   typed `catch e is DatabaseError` catches every case.
 - Uncaught: `DatabaseError: DatabaseError.request("select 1", 42)` with the
   usual location and stack trace.
-- Error objects (`does Error`) keep working until phase 2 removes them.
+- *(Superseded 2026-11-05: objects can no longer do `Error`; see "Phase 2" below.)*
 
 Implementation: an error enum value is already a variant object in OIR, so
 lowering gives that object `does Error` with a generated `text()` (built from
@@ -170,3 +170,40 @@ Implementation: `try?`/`try!` are desugared in the checker into `try` with a
 plus a variant-tag check, all leading to one handler; no new IR instructions.
 Conformance contracts `ERR.TRY-MARK` and `ERR.CATCH-PATTERNS` (9 cases) pass on
 IR, JVM and Sparrow.
+
+## Phase 2: objects cannot do `Error` (compiler part implemented)
+
+`object X does Error` is a semantic error:
+
+```text
+Object "X" cannot do Error: errors are enums, declare `enum X is Error = (...)`
+```
+
+Only error enums and the system failures (`NativeFailure`, `Cancelled`)
+implement `Error`. `throw` accepts error enum values, `Error` references
+(rethrow) and `NativeFailure`; catch types are error enums, `Error` and the
+system failures. Objects are never thrown or caught, which closes the
+role-recovery hole (`catch e is ConcreteClass` on a value thrown through a
+role) completely.
+
+Migrated in the same change:
+
+- base `std` closure of `io/stdout`: `error` (`InvalidArgument`,
+  `InvalidState`, `OutOfRange`, `UnsupportedOperation` →
+  `X.because(reason)`), `io/stream` (`IncompleteWrite.after(written)`,
+  `InvalidReadLimit.limit(value)`), `encoding/utf`
+  (`InvalidUtf8/16/32.at(offset)`), and their callers `io/stdout`,
+  `encoding/binary`, `text/layout`. 149 `std` modules compile; programs using
+  `Stdout` work;
+- conformance: 75 cases moved to error enums; 9 expected outputs follow the
+  generated `text()`; `ERR.ERROR-ROLE`/`ERR.THROW` restated;
+  `L07.error-role.missing-text` now checks that an object cannot do Error;
+- Rust tests (compiler, runtime, JVM), examples (except cookbook labs),
+  experiments, spec, books, context pack.
+
+Still on the `std` side (phase 2, owner Alexander): 381 modules fail with
+`cannot do Error` (`collections/iteration`, `async/*`, `numbers/bigint`,
+`fs/path`, `strings/parse`, ...). Conformance `full-release` on IR: every
+remaining failure (93) is such a module. Sparrow-engine fixtures
+(`okkama-rs/crates/sparrow-engine/tests/fixtures/*.ok`, 8 files) still use
+error objects and were left untouched.

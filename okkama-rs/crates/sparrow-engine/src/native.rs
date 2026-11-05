@@ -24,6 +24,7 @@ pub(crate) fn supported(native: Native) -> bool {
         || crate::native_network::handles(native)
         || crate::native_dns::handles(native)
         || crate::native_db::handles(native)
+        || crate::native_sqlite::handles(native)
         || crate::native_json::handles(native)
         || crate::native_regex::handles(native)
         || crate::native_idna::handles(native)
@@ -118,33 +119,8 @@ fn matches_type(
         | (Some(Type::Byte), Abi::Byte)
         | (Some(Type::Float), Abi::Float) => true,
         (Some(Type::Handle(handle)), Abi::Handle(expected)) => {
-            let module = match *expected {
-                "FileHandle"
-                | "DirectoryHandle"
-                | "FileState"
-                | "FileLockState"
-                | "TemporaryDirectoryState"
-                | "FileWatchState" => "runtime/fs",
-                "FileRootState" | "RootedEntryState" => "runtime/fs_root",
-                "SnapshotRootState" => "runtime/snapshot",
-                "ProcessState" | "PipelineState" | "CapturedProcess" | "CapturedPipeline" => {
-                    "runtime/process"
-                }
-                "Utf8InputState" => "runtime/input_state",
-                "TestState" => "runtime/testing",
-                "SocketState" | "TcpListenerState" | "ListenerState" | "PairState"
-                | "MembershipState" => "runtime/network",
-                "DbCellState" | "DbSchemaState" | "DbCaptureState" => "runtime/db",
-                "DigestState" => "runtime/host_crypto",
-                "BufferState" => "runtime/buffer",
-                "SecretState" => "runtime/secret",
-                "RegexState"
-                | "RegexQueryState"
-                | "RegexMatchState"
-                | "RegexReplacementState"
-                | "RegexSubstitutionState" => "runtime/regex",
-                "JsonParseState" | "JsonNodeState" | "JsonOutputState" => "runtime/json",
-                _ => return false,
+            let Some(module) = handle_module(expected) else {
+                return false;
             };
             program
                 .handles
@@ -161,11 +137,168 @@ fn matches_type(
         _ => false,
     }
 }
+/// The runtime module that declares each native handle type.
+fn handle_module(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "FileHandle"
+        | "DirectoryHandle"
+        | "FileState"
+        | "FileLockState"
+        | "TemporaryDirectoryState"
+        | "FileWatchState" => "runtime/fs",
+        "FileRootState" | "RootedEntryState" => "runtime/fs_root",
+        "SnapshotRootState" => "runtime/snapshot",
+        "ProcessState" | "PipelineState" | "CapturedProcess" | "CapturedPipeline" => {
+            "runtime/process"
+        }
+        "Utf8InputState" => "runtime/input_state",
+        "TestState" => "runtime/testing",
+        "SocketState" | "TcpListenerState" | "ListenerState" | "PairState" | "MembershipState" => {
+            "runtime/network"
+        }
+        "DbCellState" | "DbSchemaState" | "DbCaptureState" => "runtime/db",
+        "SqliteState" | "SqliteReplyState" => "runtime/database",
+        "DigestState" => "runtime/host_crypto",
+        "BufferState" => "runtime/buffer",
+        "SecretState" => "runtime/secret",
+        "RegexState"
+        | "RegexQueryState"
+        | "RegexMatchState"
+        | "RegexReplacementState"
+        | "RegexSubstitutionState" => "runtime/regex",
+        "JsonParseState" | "JsonNodeState" | "JsonOutputState" => "runtime/json",
+        _ => return None,
+    })
+}
 // Root-module declarations are unqualified in SPB; imported declarations carry
 // the dotted module prefix. A short name is valid only in its owning module.
 fn nominal_name_matches(root: &str, actual: &str, module: &str, expected: &str) -> bool {
     (root == module && actual == expected)
         || actual == format!("{}::{expected}", module.replace('/', "."))
+}
+
+/// Provider of each native, resolved once instead of testing every provider's
+/// symbol prefix on each call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Provider {
+    #[cfg(unix)]
+    Unix,
+    #[cfg(unix)]
+    Root,
+    #[cfg(unix)]
+    Process,
+    Input,
+    Fs,
+    Environment,
+    Multicast,
+    Udp,
+    Network,
+    Dns,
+    Sqlite,
+    Db,
+    Json,
+    Regex,
+    Idna,
+    Net,
+    Binary,
+    Secret,
+    Encoding,
+    Numbers,
+    Buffer,
+    Crypto,
+    Text,
+    Core,
+}
+fn classify(native: Native) -> Provider {
+    #[cfg(unix)]
+    if crate::native_unix::handles(native) {
+        return Provider::Unix;
+    }
+    #[cfg(unix)]
+    if crate::native_root::handles(native) {
+        return Provider::Root;
+    }
+    #[cfg(unix)]
+    if crate::native_process::handles(native) {
+        return Provider::Process;
+    }
+    if crate::native_input::handles(native) {
+        return Provider::Input;
+    }
+    if crate::native_fs::handles(native) {
+        return Provider::Fs;
+    }
+    if crate::native_environment::handles(native) {
+        return Provider::Environment;
+    }
+    if crate::native_multicast::handles(native) {
+        return Provider::Multicast;
+    }
+    if crate::native_udp::handles(native) {
+        return Provider::Udp;
+    }
+    if crate::native_network::handles(native) {
+        return Provider::Network;
+    }
+    if crate::native_dns::handles(native) {
+        return Provider::Dns;
+    }
+    if crate::native_sqlite::handles(native) {
+        return Provider::Sqlite;
+    }
+    if crate::native_db::handles(native) {
+        return Provider::Db;
+    }
+    if crate::native_json::handles(native) {
+        return Provider::Json;
+    }
+    if crate::native_regex::handles(native) {
+        return Provider::Regex;
+    }
+    if crate::native_idna::handles(native) {
+        return Provider::Idna;
+    }
+    if crate::native_net::handles(native) {
+        return Provider::Net;
+    }
+    if crate::native_binary::handles(native) {
+        return Provider::Binary;
+    }
+    if crate::native_secret::handles(native) {
+        return Provider::Secret;
+    }
+    if crate::native_encoding::handles(native) {
+        return Provider::Encoding;
+    }
+    if crate::native_numbers::handles(native) {
+        return Provider::Numbers;
+    }
+    if crate::native_buffer::handles(native) {
+        return Provider::Buffer;
+    }
+    if crate::native_crypto::handles(native) {
+        return Provider::Crypto;
+    }
+    if crate::native_text::handles(native) {
+        return Provider::Text;
+    }
+    Provider::Core
+}
+fn provider(native: Native) -> Provider {
+    static TABLE: std::sync::OnceLock<Vec<Provider>> = std::sync::OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        let size = Native::ALL
+            .iter()
+            .map(|n| *n as usize + 1)
+            .max()
+            .unwrap_or(0);
+        let mut table = vec![Provider::Core; size];
+        for &native in Native::ALL {
+            table[native as usize] = classify(native);
+        }
+        table
+    });
+    table[native as usize]
 }
 
 #[derive(Debug)]
@@ -191,74 +324,34 @@ impl Heap {
         native: Native,
         args: &[Slot],
     ) -> Result<Outcome, Error> {
-        #[cfg(unix)]
-        if crate::native_unix::handles(native) {
-            return self.native_unix(native, args);
-        }
-        #[cfg(unix)]
-        if crate::native_root::handles(native) {
-            return self.native_root(native, args);
-        }
-        #[cfg(unix)]
-        if crate::native_process::handles(native) {
-            return self.native_process(native, args);
-        }
-        if crate::native_input::handles(native) {
-            return self.native_input(native, args);
-        }
-        if crate::native_fs::handles(native) {
-            return self.native_fs(native, args);
-        }
-        if crate::native_environment::handles(native) {
-            return self.native_environment(native, args);
-        }
-        if crate::native_multicast::handles(native) {
-            return self.native_multicast(native, args);
-        }
-        if crate::native_udp::handles(native) {
-            return self.native_udp(native, args);
-        }
-        if crate::native_network::handles(native) {
-            return self.native_network(native, args);
-        }
-        if crate::native_dns::handles(native) {
-            return self.native_dns(native, args);
-        }
-        if crate::native_db::handles(native) {
-            return self.native_db(native, args);
-        }
-        if crate::native_json::handles(native) {
-            return self.native_json(native, args);
-        }
-        if crate::native_regex::handles(native) {
-            return self.native_regex(native, args);
-        }
-        if crate::native_idna::handles(native) {
-            return self.native_idna(native, args);
-        }
-        if crate::native_net::handles(native) {
-            return self.native_net(native, args);
-        }
-        if crate::native_binary::handles(native) {
-            return self.native_binary(native, args);
-        }
-        if crate::native_secret::handles(native) {
-            return self.native_secret(native, args);
-        }
-        if crate::native_encoding::handles(native) {
-            return self.native_encoding(native, args);
-        }
-        if crate::native_numbers::handles(native) {
-            return self.native_numbers(native, args);
-        }
-        if crate::native_buffer::handles(native) {
-            return self.native_buffer(native, args);
-        }
-        if crate::native_crypto::handles(native) {
-            return self.native_crypto(native, args);
-        }
-        if crate::native_text::handles(native) {
-            return self.native_text(native, args);
+        match provider(native) {
+            #[cfg(unix)]
+            Provider::Unix => return self.native_unix(native, args),
+            #[cfg(unix)]
+            Provider::Root => return self.native_root(native, args),
+            #[cfg(unix)]
+            Provider::Process => return self.native_process(native, args),
+            Provider::Input => return self.native_input(native, args),
+            Provider::Fs => return self.native_fs(native, args),
+            Provider::Environment => return self.native_environment(native, args),
+            Provider::Multicast => return self.native_multicast(native, args),
+            Provider::Udp => return self.native_udp(native, args),
+            Provider::Network => return self.native_network(native, args),
+            Provider::Dns => return self.native_dns(native, args),
+            Provider::Sqlite => return self.native_sqlite(native, args),
+            Provider::Db => return self.native_db(native, args),
+            Provider::Json => return self.native_json(native, args),
+            Provider::Regex => return self.native_regex(native, args),
+            Provider::Idna => return self.native_idna(native, args),
+            Provider::Net => return self.native_net(native, args),
+            Provider::Binary => return self.native_binary(native, args),
+            Provider::Secret => return self.native_secret(native, args),
+            Provider::Encoding => return self.native_encoding(native, args),
+            Provider::Numbers => return self.native_numbers(native, args),
+            Provider::Buffer => return self.native_buffer(native, args),
+            Provider::Crypto => return self.native_crypto(native, args),
+            Provider::Text => return self.native_text(native, args),
+            Provider::Core => {}
         }
         match native {
             Native::TestingTestStateOpen
@@ -527,10 +620,11 @@ mod tests {
                     ty(p, value, module, local).unwrap(),
                 ),
                 Abi::Handle(name) => {
-                    let name = if local {
+                    let owner = handle_module(name).unwrap_or(module);
+                    let name = if local && owner == module {
                         name.to_string()
                     } else {
-                        format!("{}::{name}", module.replace('/', "."))
+                        format!("{}::{name}", owner.replace('/', "."))
                     };
                     let index = p
                         .handles

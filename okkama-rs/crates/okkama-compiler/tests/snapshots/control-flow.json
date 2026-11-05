@@ -19,111 +19,31 @@
   ],
   "items": [
     {
-      "node": "ObjectDecl",
+      "node": "EnumDecl",
       "name": "TooLarge",
-      "generics": [],
-      "roles": [
-        {
-          "node": "NamedType",
-          "path": [
-            "Error"
-          ],
-          "args": []
-        }
+      "cases": [
+        "too_large"
       ],
-      "members": [
+      "role": "Error",
+      "generics": [],
+      "variants": [
         {
-          "node": "HasDecl",
-          "names": [
-            "value"
-          ],
-          "type": {
-            "node": "NamedType",
-            "path": [
-              "int"
-            ],
-            "args": []
-          },
-          "default": null
-        },
-        {
-          "node": "ShorthandConstructor",
-          "name": "TooLarge",
+          "node": "EnumVariant",
+          "name": "too_large",
           "fields": [
-            "value"
-          ],
-          "body": null
-        },
-        {
-          "node": "ActionDecl",
-          "async": false,
-          "visibility": "public",
-          "name": "text",
-          "params": [],
-          "result": {
-            "node": "NamedType",
-            "path": [
-              "string"
-            ],
-            "args": []
-          },
-          "body": {
-            "node": "Block",
-            "statements": [
-              {
-                "node": "ExpressionStatement",
-                "expression": {
-                  "node": "Binary",
-                  "operator": "+",
-                  "left": {
-                    "node": "StringLiteral",
-                    "form": "quoted",
-                    "value": "too large: "
-                  },
-                  "right": {
-                    "node": "Call",
-                    "callee": {
-                      "node": "Get",
-                      "object": {
-                        "node": "NameExpression",
-                        "name": "value"
-                      },
-                      "name": "string"
-                    },
-                    "arguments": []
-                  }
-                },
-                "condition": null
+            {
+              "node": "Param",
+              "name": "value",
+              "variadic": false,
+              "type": {
+                "node": "NamedType",
+                "path": [
+                  "int"
+                ],
+                "args": []
               }
-            ]
-          }
-        },
-        {
-          "node": "ActionDecl",
-          "async": false,
-          "visibility": "public",
-          "name": "value",
-          "params": [],
-          "result": {
-            "node": "NamedType",
-            "path": [
-              "int"
-            ],
-            "args": []
-          },
-          "body": {
-            "node": "Block",
-            "statements": [
-              {
-                "node": "ExpressionStatement",
-                "expression": {
-                  "node": "NameExpression",
-                  "name": "value"
-                },
-                "condition": null
-              }
-            ]
-          }
+            }
+          ]
         }
       ]
     },
@@ -191,13 +111,17 @@
                       "value": {
                         "node": "Call",
                         "callee": {
-                          "node": "NameExpression",
-                          "name": "TooLarge"
+                          "node": "Get",
+                          "object": {
+                            "node": "NameExpression",
+                            "name": "TooLarge"
+                          },
+                          "name": "too_large"
                         },
                         "arguments": [
                           {
                             "node": "Argument",
-                            "name": "value",
+                            "name": null,
                             "value": {
                               "node": "NameExpression",
                               "name": "value"
@@ -628,14 +552,29 @@
               "catches": [
                 {
                   "node": "CatchClause",
-                  "name": "error",
-                  "type": {
-                    "node": "NamedType",
-                    "path": [
-                      "TooLarge"
-                    ],
-                    "args": []
-                  },
+                  "patterns": [
+                    {
+                      "node": "Call",
+                      "callee": {
+                        "node": "Get",
+                        "object": {
+                          "node": "NameExpression",
+                          "name": "TooLarge"
+                        },
+                        "name": "too_large"
+                      },
+                      "arguments": [
+                        {
+                          "node": "Argument",
+                          "name": null,
+                          "value": {
+                            "node": "NameExpression",
+                            "name": "value"
+                          }
+                        }
+                      ]
+                    }
+                  ],
                   "body": {
                     "node": "Block",
                     "statements": [
@@ -645,16 +584,8 @@
                           "node": "Binary",
                           "operator": "-",
                           "left": {
-                            "node": "Call",
-                            "callee": {
-                              "node": "Get",
-                              "object": {
-                                "node": "NameExpression",
-                                "name": "error"
-                              },
-                              "name": "value"
-                            },
-                            "arguments": []
+                            "node": "NameExpression",
+                            "name": "value"
                           },
                           "right": {
                             "node": "IntLiteral",

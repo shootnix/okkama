@@ -16,7 +16,7 @@ main() is int {
     }
     let raw = FileContent(origin: FileEntry(path: Path("blob.bin"))).bytes();
     out.writeln(raw.size().string());
-    let decoded = try { Utf8Decoded(origin: raw).string(); } catch e is InvalidUtf8 { "invalid utf-8 at " + e.offset().string(); };
+    let decoded = try { Utf8Decoded(origin: raw).string(); } catch InvalidUtf8.at(offset) { "invalid utf-8 at " + offset.string(); };
     out.writeln(decoded);
     let deep = try {
         ParsedJson(origin: "[[[1]]]", maximum_depth: 2).root().items().size().string();

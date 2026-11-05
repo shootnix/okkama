@@ -76,7 +76,7 @@ object Wrapped {
 
     Wrapped(origin is string, width is int) {
         confirm width > 0
-            else throw InvalidArgument("wrap width must be positive");
+            else throw InvalidArgument.because("wrap width must be positive");
         source = origin;
         line_width = width;
     }
@@ -93,9 +93,9 @@ object Shortened {
 
     Shortened(origin is string, width is int, placeholder is string) {
         confirm width >= 0
-            else throw InvalidArgument("shorten width cannot be negative");
+            else throw InvalidArgument.because("shorten width cannot be negative");
         confirm placeholder.length() <= width
-            else throw InvalidArgument("shorten placeholder exceeds width");
+            else throw InvalidArgument.because("shorten placeholder exceeds width");
         source = origin;
         line_width = width;
         ending = placeholder;

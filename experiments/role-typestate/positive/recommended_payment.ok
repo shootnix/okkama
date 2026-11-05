@@ -17,17 +17,9 @@
 module app;
 import "io/stdout" take Stdout;
 
-object InvalidTransition does Error {
-    has action is string;
-    InvalidTransition(:action);
-    text() is string { "invalid transition: " + action; }
-}
+enum InvalidTransition is Error = (invalid_transition(action is string));
 
-object PaymentError does Error {
-    has reason is string;
-    PaymentError(:reason);
-    text() is string { reason; }
-}
+enum PaymentError is Error = (payment_error(reason is string));
 
 // ---- boundary: what the external gateway says --------------------------
 
@@ -83,38 +75,38 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     has stage is Stage = Stage.created;   // not in the constructor allow-list
 
     Payment(:key, :amount) {
-        confirm self.amount > 0 else throw PaymentError(reason: "amount must be positive");
+        confirm self.amount > 0 else throw PaymentError.payment_error("amount must be positive");
     }
 
     id() is string { key; }
 
     authorize(gateway is Gateway) is Authorization {
-        confirm stage == Stage.created else throw InvalidTransition(action: "authorize");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("authorize");
         match gateway.authorize(key, amount) {
             case GatewayReply.approved(code) { Authorization.approved(self.approve(code)); }
             case GatewayReply.declined(reason) { Authorization.declined(self.decline(reason)); }
-            case GatewayReply.unavailable(detail) { Authorization.failed(PaymentError(reason: detail)); }
+            case GatewayReply.unavailable(detail) { Authorization.failed(PaymentError.payment_error(detail)); }
         }
     }
 
     code() is string {
         match stage {
             case Stage.authorized(code) { code; }
-            else { throw InvalidTransition(action: "code"); }
+            else { throw InvalidTransition.invalid_transition("code"); }
         }
     }
 
     reason() is string {
         match stage {
             case Stage.declined(reason) { reason; }
-            else { throw InvalidTransition(action: "reason"); }
+            else { throw InvalidTransition.invalid_transition("reason"); }
         }
     }
 
     capture() is ^Payment {
         let code = match stage {
             case Stage.authorized(code) { code; }
-            else { throw InvalidTransition(action: "capture"); }
+            else { throw InvalidTransition.invalid_transition("capture"); }
         };
         ^stage = Stage.captured(code);
     }
@@ -122,7 +114,7 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     refund() is ^Payment {
         let code = match stage {
             case Stage.captured(code) { code; }
-            else { throw InvalidTransition(action: "refund"); }
+            else { throw InvalidTransition.invalid_transition("refund"); }
         };
         ^stage = Stage.refunded(code);
     }
@@ -130,11 +122,11 @@ object Payment does Created, Authorized, Captured, Refunded, Declined {
     // Internal transitions: private successors, callable only through `self`.
     private:
     approve(code is string) is ^Payment {
-        confirm stage == Stage.created else throw InvalidTransition(action: "approve");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("approve");
         ^stage = Stage.authorized(code);
     }
     decline(reason is string) is ^Payment {
-        confirm stage == Stage.created else throw InvalidTransition(action: "decline");
+        confirm stage == Stage.created else throw InvalidTransition.invalid_transition("decline");
         ^stage = Stage.declined(reason);
     }
 }
@@ -158,7 +150,10 @@ object Checkout {
                 "refunded " + refunded.id() + " (" + code + ")";
             }
             case Authorization.declined(payment) { "declined: " + payment.reason(); }
-            case Authorization.failed(error) { "failed: " + error.text(); }
+            case Authorization.failed(error) {
+                let reason = match error { case PaymentError.payment_error(reason) { reason; } };
+                "failed: " + reason;
+            }
         };
         id + ": " + text;
     }

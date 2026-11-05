@@ -17,7 +17,7 @@ main() is int {
     let earlier=CollatedString("file2",Locale("en"),options);
     let later=CollatedString("file10",Locale("en"),options);
     Stdout().writeln(earlier.string());
-    confirm earlier.order(later)==Order.less else throw InvalidExample();
+    confirm earlier.order(later)==Order.less else throw InvalidExample.invalid_example;
     0;
 }
-object InvalidExample does Error {InvalidExample();text() is string{"unexpected numeric ordering";}}
+enum InvalidExample is Error = (invalid_example);

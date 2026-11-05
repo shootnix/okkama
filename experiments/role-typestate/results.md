@@ -43,7 +43,7 @@ Legend for the "class" column (task §10):
 | Prevention of old-state reuse | UNSUPPORTED | `advanced/c_reuse_old_state`, `advanced/c_rebind_concrete` | Immutable values fork history; no affine use |
 | Prevention of duplicate transitions | UNSUPPORTED | `advanced/c_reuse_old_state`, `advanced/c_reuse_old_state_classes`, `advanced/g_double_authorize` | The in-memory runtime stage check cannot see it either |
 | Preservation of state through generic functions | SUPPORTED (role type, also through a bounded generic) / UNSUPPORTED (must-use) | `advanced/b_generic_box`, `negative/f_bounded_generic_hidden`, `positive/f_bounded_generic_role`, `advanced/g_generic_launder` | Must-use is lost through `T` |
-| Safe role conversions | PARTIALLY | `advanced/b_role_to_role_widen`, `advanced/b_role_to_concrete`, `advanced/b_any_roundtrip`, `advanced/b_narrow_ok` | Concrete → any implemented role (`advanced/b_concrete_to_wrong_role`); throw/catch recovers the concrete object (`advanced/b_throw_catch_recover`) |
+| Safe role conversions | PARTIALLY | `advanced/b_role_to_role_widen`, `advanced/b_role_to_concrete`, `advanced/b_any_roundtrip`, `advanced/b_narrow_ok` | Concrete → any implemented role (`advanced/b_concrete_to_wrong_role`); throw/catch recovery is closed: objects cannot do `Error` (`negative/b_throw_catch_recover`) |
 | Must-use of transition results | SUPPORTED for successors; UNSUPPORTED for ordinary actions | `negative/c_discard_successor`, `negative/c_unused_successor_binding`, `negative/c_branch_unused_successor`, `negative/g_bound_successor`; `advanced/c_discard_ordinary_transition` | Any use discharges it (`advanced/c_must_use_weak`) |
 | Prevention of state forging by construction | SUPPORTED for a private stage field (Patterns B2/D) and, across modules, for `hidden` classes; UNSUPPORTED for public class-per-state and ADT state | `advanced/b_forge_state_ctor`; `negative/h_sealed_forge`, `negative/h_sealed_take`; `advanced/b_forge_state_class`, `advanced/c_adt_forge_state` | Without `hidden`, module hiding is only a `take` convention (`advanced/b_take_hides_class`) |
 | Concrete-class bypass across modules | SUPPORTED with `hidden object` (added after the research) | `positive/h_sealed_lifecycle`, `negative/h_sealed_forge`, `negative/h_sealed_wrong_view` | Inside the defining module the class stays nameable; the runtime `confirm` remains the second line |
@@ -84,8 +84,8 @@ poisoned call no longer consumes the successor binding.
 | `advanced/b_concrete_full_access` | 2 | `InvalidTransition: invalid transition: capture` (runtime `confirm`) |
 | `advanced/b_concrete_to_wrong_role` | 2 | `InvalidTransition: invalid transition: capture` |
 | `advanced/b_forge_state_class` | 4 | B1: `SettledCharge(key: "forged").refund()` runs |
-| `advanced/b_throw_role_rejected` | 1 | `Type "Created" cannot be thrown; only error enums and objects that do Error are catchable` |
-| `advanced/b_throw_catch_recover` | 4 | role → `Error` → `throw` → `catch e is Payment` recovers hidden `capture()` |
+| `advanced/b_throw_role_rejected` | 1 | `Object "Payment" cannot do Error: errors are enums, declare `enum Payment is Error = (...)`` |
+| `negative/b_throw_catch_recover` | 1 | `Object "Payment" cannot do Error: errors are enums, declare `enum Payment is Error = (...)`` (before errors became enum-only: class 4, the concrete catch recovered `capture()`) |
 
 Guarantees: **interface restriction** — yes, static, for role references.
 **State restriction** — only at runtime, and only in models that keep the
@@ -159,7 +159,7 @@ Pattern C: `advanced/c_adt_capture_created` (2,
 | Reuse an old immutable value | 4 | `advanced/c_reuse_old_state`, `advanced/c_rebind_concrete` |
 | Operations through another role | 1 | `advanced/b_role_to_role_widen` |
 | Widen to a less restrictive type | 1 / 2 | `advanced/b_role_to_concrete` (1); `advanced/g_wrong_view` (concrete → wrong view, 2: `invalid transition: code`) |
-| Downcast to recover hidden operations | 1 / 4 | no cast syntax (`advanced/b_any_roundtrip`); throw/catch route (`advanced/b_throw_catch_recover`) |
+| Downcast to recover hidden operations | 1 / 4 | no cast syntax (`advanced/b_any_roundtrip`); throw/catch route closed (`negative/b_throw_catch_recover`) |
 | Multiple references to one entity | 4 | `advanced/b_concrete_to_wrong_role` (2 at use), `advanced/c_reuse_old_state` |
 | Incorrect successor/result type | 1 | `negative/g_wrong_result_state`: `Action result must be Authorized, got Created`; `negative/c_role_successor_*` |
 | Through a generic | 1 / 4 | `advanced/b_generic_box`, `negative/f_bounded_generic_hidden`; `advanced/g_generic_launder` |

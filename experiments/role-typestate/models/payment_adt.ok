@@ -3,11 +3,7 @@
 // The type system knows only "PaymentState", never which variant it holds.
 module payment_adt;
 
-object InvalidTransition does Error {
-    has action is string;
-    InvalidTransition(:action);
-    text() is string { "invalid transition: " + action; }
-}
+enum InvalidTransition is Error = (invalid_transition(action is string));
 
 enum PaymentState = (
     created(id is string),
@@ -23,19 +19,19 @@ object Processor {
     authorize(state is PaymentState, code is string) is PaymentState {
         match state {
             case PaymentState.created(id) { PaymentState.authorized(id, code); }
-            else { throw InvalidTransition(action: "authorize"); }
+            else { throw InvalidTransition.invalid_transition("authorize"); }
         }
     }
     capture(state is PaymentState) is PaymentState {
         match state {
             case PaymentState.authorized(id, code) { PaymentState.captured(id, code); }
-            else { throw InvalidTransition(action: "capture"); }
+            else { throw InvalidTransition.invalid_transition("capture"); }
         }
     }
     refund(state is PaymentState) is PaymentState {
         match state {
             case PaymentState.captured(id, _) { PaymentState.refunded(id); }
-            else { throw InvalidTransition(action: "refund"); }
+            else { throw InvalidTransition.invalid_transition("refund"); }
         }
     }
     describe(state is PaymentState) is string {

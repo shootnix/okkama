@@ -6,10 +6,7 @@ import "fs/file" take File, FileMode;
 import "fs/temp" take TemporaryDirectory;
 import "io/stream" take ReadingText;
 
-object UnreachableBranch does Error {
-    UnreachableBranch();
-    text() is string { "unreachable"; }
-}
+enum UnreachableBranch is Error = (unreachable_branch);
 
 object ExampleResult {
     ExampleResult();
@@ -25,7 +22,7 @@ object ExampleResult {
         let input is ReadingText = if true {
             let owner = File(mode: FileMode.reading, path: path);
             owner.text();
-        } else { throw UnreachableBranch(); };
+        } else { throw UnreachableBranch.unreachable_branch; };
         input.line();
     }
 }

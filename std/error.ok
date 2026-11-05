@@ -1,52 +1,15 @@
 module error v1.0.0;
 
-object InvalidArgument does Error {
-    has message is string = "invalid argument";
-    // ctor
-    InvalidArgument();
-    InvalidArgument(msg is string) {
-        message = msg;
-    }
+// Common argument and state failures. Each carries a human-readable reason,
+// and text() shows it: InvalidArgument.because("width must be positive").
+//
+//     confirm width > 0 else throw InvalidArgument.because("width must be positive");
+//     catch InvalidArgument.because(reason) { report(reason); }
 
-    text() is string { message; }
-}
+enum InvalidArgument is Error = (because(reason is string));
 
-// InvalidState
+enum InvalidState is Error = (because(reason is string));
 
-object InvalidState does Error {
-    has message is string = "invalid state";
-    // ctor
-    InvalidState();
-    InvalidState(msg is string) {
-        message = msg;
-    }
+enum OutOfRange is Error = (because(reason is string));
 
-    text() is string { message; }
-}
-
-// OutOfRange
-
-object OutOfRange does Error {
-    has message is string = "out of range";
-
-    // ctor
-    OutOfRange();
-    OutOfRange(msg is string) {
-        message = msg;
-    }
-
-    text() is string { message; }
-}
-
-// UnsupportedOperation
-
-object UnsupportedOperation does Error {
-    has message is string = "unsupported operation";
-    // ctor
-    UnsupportedOperation();
-    UnsupportedOperation(msg is string) {
-        message = msg;
-    }
-
-    text() is string { message; }
-}
+enum UnsupportedOperation is Error = (because(reason is string));

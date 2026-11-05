@@ -1,8 +1,8 @@
 //! The only unsafe boundary: owned executable memory and its exact C ABI.
 #![allow(unsafe_code)]
-use crate::execution::{ARITHMETIC, CALL, INVALID_STATE, RETURNED, RunState, YIELDED};
+use crate::execution::{ARITHMETIC, CALL, COLLECT, INVALID_STATE, RETURNED, RunState, YIELDED};
 use crate::scalar::{FloatBinary, FloatUnary, Kind};
-use crate::value::{Arithmetic, BOOL, SMALL};
+use crate::value::{Arithmetic, BOOL, SMALL, Slot};
 use crate::{Error, Op};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::{
@@ -46,6 +46,7 @@ impl std::fmt::Debug for Compiled {
 }
 impl Compiled {
     pub(crate) fn new(
+        code: &crate::Code,
         plan: &[Op],
         kinds: &[Kind],
         live: &[Vec<usize>],
@@ -94,9 +95,14 @@ impl Compiled {
         if registers > (i32::MAX as usize / 16) {
             return Err(failure("frame exceeds native displacement range".into()));
         }
+        let mut heap_signature = module.make_signature();
+        heap_signature.params.push(AbiParam::new(pointer));
+        heap_signature.params.push(AbiParam::new(pointer));
+        heap_signature.returns.push(AbiParam::new(types::I32));
         let mut frontend = FunctionBuilderContext::new();
         {
             let mut builder = FunctionBuilder::new(&mut context.func, &mut frontend);
+            let heap_signature = builder.import_signature(heap_signature);
             let entry = builder.create_block();
             builder.append_block_params_for_function_params(entry);
             builder.switch_to_block(entry);
@@ -121,23 +127,6 @@ impl Compiled {
             let tags: Vec<_> = (0..registers)
                 .map(|_| builder.declare_var(types::I64))
                 .collect();
-            for (i, var) in vars.iter().enumerate() {
-                let value = builder.ins().load(
-                    if kinds[i] == Kind::Float {
-                        types::F64
-                    } else {
-                        types::I64
-                    },
-                    memory,
-                    slots,
-                    (i * 16) as i32,
-                );
-                builder.def_var(*var, value);
-                let tag = builder
-                    .ins()
-                    .load(types::I64, memory, slots, (i * 16 + 8) as i32);
-                builder.def_var(tags[i], tag);
-            }
             let fuel_var = builder.declare_var(types::I64);
             let fuel = builder.ins().load(
                 types::I64,
@@ -172,14 +161,39 @@ impl Compiled {
             for &pc in &targets {
                 blocks[pc] = builder.create_block();
             }
+            // Entering at a PC loads only the values live there (on a call, the
+            // parameters); every exit stored exactly those. Registers dead at
+            // the entry PC are redefined before any use.
+            let entries: Vec<_> = region.clone().map(|_| builder.create_block()).collect();
             let mut dispatch = Switch::new();
-            for pc in region.clone() {
-                dispatch.set_entry(pc as u128, blocks[pc]);
+            for (pc, entry) in region.clone().zip(&entries) {
+                dispatch.set_entry(pc as u128, *entry);
             }
             dispatch.emit(&mut builder, pc, invalid);
             builder.switch_to_block(invalid);
             let status = builder.ins().iconst(types::I32, i64::from(INVALID_STATE));
             builder.ins().return_(&[status]);
+            for (pc, entry) in region.clone().zip(entries) {
+                builder.switch_to_block(entry);
+                for &i in &live[pc] {
+                    let value = builder.ins().load(
+                        if kinds[i] == Kind::Float {
+                            types::F64
+                        } else {
+                            types::I64
+                        },
+                        memory,
+                        slots,
+                        (i * 16) as i32,
+                    );
+                    builder.def_var(vars[i], value);
+                    let tag = builder
+                        .ins()
+                        .load(types::I64, memory, slots, (i * 16 + 8) as i32);
+                    builder.def_var(tags[i], tag);
+                }
+                builder.ins().jump(blocks[pc], &[]);
+            }
             for pc in region.clone() {
                 let op = &plan[pc];
                 builder.switch_to_block(blocks[pc]);
@@ -346,6 +360,10 @@ impl Compiled {
                     | Op::Trap(..)
                     | Op::Panic(..) => {
                         let slow = builder.create_block();
+                        // Heap instructions, and the general cases of natively
+                        // specialised ones, run in Rust without leaving machine code.
+                        let call = heap_call(code, op).then(|| builder.create_block());
+                        let fallback = call.unwrap_or(slow);
                         match op {
                             Op::FloatBinary(
                                 kind @ (FloatBinary::Add
@@ -373,7 +391,7 @@ impl Compiled {
                                     maximum,
                                 );
                                 let commit = builder.create_block();
-                                builder.ins().brif(finite, commit, &[], slow, &[]);
+                                builder.ins().brif(finite, commit, &[], fallback, &[]);
                                 builder.switch_to_block(commit);
                                 builder.def_var(vars[*dst], value);
                                 let tag =
@@ -429,7 +447,7 @@ impl Compiled {
                                 let right_tag = builder.use_var(tags[*right]);
                                 let non_small = builder.ins().bor(left_tag, right_tag);
                                 let fast = builder.create_block();
-                                builder.ins().brif(non_small, slow, &[], fast, &[]);
+                                builder.ins().brif(non_small, fallback, &[], fast, &[]);
                                 builder.switch_to_block(fast);
                                 let left = builder.use_var(vars[*left]);
                                 let right = builder.use_var(vars[*right]);
@@ -444,8 +462,34 @@ impl Compiled {
                                     _ => unreachable!(),
                                 };
                                 let commit = builder.create_block();
-                                builder.ins().brif(overflow, slow, &[], commit, &[]);
+                                builder.ins().brif(overflow, fallback, &[], commit, &[]);
                                 builder.switch_to_block(commit);
+                                builder.def_var(vars[*dst], value);
+                                let tag = builder.ins().iconst(types::I64, SMALL as i64);
+                                builder.def_var(tags[*dst], tag);
+                                builder.ins().jump(blocks[pc + 1], &[]);
+                            }
+                            Op::Arithmetic(Arithmetic::Remainder, dst, left, right) => {
+                                let left_tag = builder.use_var(tags[*left]);
+                                let right_tag = builder.use_var(tags[*right]);
+                                let non_small = builder.ins().bor(left_tag, right_tag);
+                                let fast = builder.create_block();
+                                builder.ins().brif(non_small, fallback, &[], fast, &[]);
+                                builder.switch_to_block(fast);
+                                let left = builder.use_var(vars[*left]);
+                                let right = builder.use_var(vars[*right]);
+                                // Divisors 0 (typed failure) and -1 (MIN % -1) stay
+                                // on the service path: right + 1 <= 1 unsigned.
+                                let shifted = builder.ins().iadd_imm_s(right, 1);
+                                let special = builder.ins().icmp_imm_u(
+                                    IntCC::UnsignedLessThanOrEqual,
+                                    shifted,
+                                    1,
+                                );
+                                let commit = builder.create_block();
+                                builder.ins().brif(special, fallback, &[], commit, &[]);
+                                builder.switch_to_block(commit);
+                                let value = builder.ins().srem(left, right);
                                 builder.def_var(vars[*dst], value);
                                 let tag = builder.ins().iconst(types::I64, SMALL as i64);
                                 builder.def_var(tags[*dst], tag);
@@ -456,7 +500,7 @@ impl Compiled {
                                 let right_tag = builder.use_var(tags[*right]);
                                 let non_small = builder.ins().bor(left_tag, right_tag);
                                 let fast = builder.create_block();
-                                builder.ins().brif(non_small, slow, &[], fast, &[]);
+                                builder.ins().brif(non_small, fallback, &[], fast, &[]);
                                 builder.switch_to_block(fast);
                                 let left = builder.use_var(vars[*left]);
                                 let right = builder.use_var(vars[*right]);
@@ -476,8 +520,99 @@ impl Compiled {
                                 builder.ins().jump(blocks[pc + 1], &[]);
                             }
                             _ => {
-                                builder.ins().jump(slow, &[]);
+                                builder.ins().jump(fallback, &[]);
                             }
+                        }
+                        if let Some(block) = call {
+                            builder.switch_to_block(block);
+                            for &i in &live[pc] {
+                                let value = builder.use_var(vars[i]);
+                                builder.ins().store(memory, value, slots, (i * 16) as i32);
+                                let tag = builder.use_var(tags[i]);
+                                builder.ins().store(memory, tag, slots, (i * 16 + 8) as i32);
+                            }
+                            // The plan owns this compiled region (see heap_service).
+                            let instruction = builder.ins().iconst(pointer, op as *const Op as i64);
+                            let callee = builder.ins().iconst(
+                                pointer,
+                                heap_service as extern "C" fn(*mut RunState, *const Op) -> u32
+                                    as usize as i64,
+                            );
+                            let call = builder.ins().call_indirect(
+                                heap_signature,
+                                callee,
+                                &[state, instruction],
+                            );
+                            let status = builder.inst_results(call)[0];
+                            let failed =
+                                builder
+                                    .ins()
+                                    .icmp_imm_u(IntCC::Equal, status, i64::from(HEAP_FAILED));
+                            let done = builder.create_block();
+                            let raise = builder.create_block();
+                            builder.ins().brif(failed, raise, &[], done, &[]);
+                            // Live values are already in their slots: exit to the
+                            // service path, which raises the deferred failure.
+                            builder.switch_to_block(raise);
+                            let at = builder.ins().iconst(types::I32, pc as i64);
+                            builder.ins().store(
+                                memory,
+                                at,
+                                state,
+                                std::mem::offset_of!(RunState, pc) as i32,
+                            );
+                            builder.ins().store(
+                                memory,
+                                remaining,
+                                state,
+                                std::mem::offset_of!(RunState, fuel) as i32,
+                            );
+                            let exit = builder.ins().iconst(types::I32, i64::from(ARITHMETIC));
+                            builder.ins().return_(&[exit]);
+                            // Slots are the home of every value across the call:
+                            // reload what the successor needs instead of keeping
+                            // machine registers live (and spilled) around it.
+                            builder.switch_to_block(done);
+                            for &i in live.get(pc + 1).into_iter().flatten() {
+                                let value = builder.ins().load(
+                                    if kinds[i] == Kind::Float {
+                                        types::F64
+                                    } else {
+                                        types::I64
+                                    },
+                                    memory,
+                                    slots,
+                                    (i * 16) as i32,
+                                );
+                                builder.def_var(vars[i], value);
+                                let tag =
+                                    builder
+                                        .ins()
+                                        .load(types::I64, memory, slots, (i * 16 + 8) as i32);
+                                builder.def_var(tags[i], tag);
+                            }
+                            let collect = builder.create_block();
+                            let next = blocks.get(pc + 1).copied().unwrap_or(invalid);
+                            builder.ins().brif(status, collect, &[], next, &[]);
+                            builder.switch_to_block(collect);
+                            let resume = builder.ins().iconst(types::I32, (pc + 1) as i64);
+                            builder.ins().store(
+                                memory,
+                                resume,
+                                state,
+                                std::mem::offset_of!(RunState, pc) as i32,
+                            );
+                            builder.ins().store(
+                                memory,
+                                remaining,
+                                state,
+                                std::mem::offset_of!(RunState, fuel) as i32,
+                            );
+                            let status = builder.ins().iconst(types::I32, i64::from(COLLECT));
+                            builder.ins().return_(&[status]);
+                        }
+                        if call.is_some() {
+                            continue;
                         }
                         builder.switch_to_block(slow);
                         for &i in &live[pc] {
@@ -626,6 +761,107 @@ impl Compiled {
         // SAFETY: only Session constructs RunState, with storage sized for this
         // executable. It remains alive and exclusively borrowed for this call.
         unsafe { (self.entry)(state) }
+    }
+}
+
+const HEAP_DONE: u32 = 0;
+const HEAP_COLLECT: u32 = 1;
+const HEAP_FAILED: u32 = 2;
+const NATIVE_ARGUMENTS: usize = 16;
+
+/// Instructions machine code hands to `heap_service`: those executed by
+/// `execution::heap_op`, exactly as on the service path. Only the exit, dispatch
+/// and re-entry around them are saved.
+fn heap_call(code: &crate::Code, op: &Op) -> bool {
+    if let Op::Call { function, args, .. } = op {
+        // Natives run in Rust either way; only the dispatcher round trip is saved.
+        return code.function(*function).native.is_some() && args.len() <= NATIVE_ARGUMENTS;
+    }
+    matches!(
+        op,
+        Op::Equal(..)
+            | Op::ObjectNew(..)
+            | Op::ObjectNext(..)
+            | Op::ObjectGet(..)
+            | Op::ObjectInit(..)
+            | Op::RangeNew(..)
+            | Op::RangePart(..)
+            | Op::BuilderRange(..)
+            | Op::MapNew(..)
+            | Op::Map(..)
+            | Op::ArrayNew(..)
+            | Op::Array(..)
+            | Op::Text(..)
+            | Op::RatPart(..)
+            | Op::RatNew(..)
+            | Op::RatBinary(..)
+            | Op::RatUnary(..)
+            | Op::ByteBinary(..)
+            | Op::ByteNot(..)
+            | Op::Bits(..)
+            | Op::FloatBinary(..)
+            | Op::FloatUnary(..)
+            | Op::Convert(..)
+            | Op::ByteFrom(..)
+            | Op::Unary(..)
+            | Op::Arithmetic(..)
+            | Op::Compare(..)
+            | Op::Closure { .. }
+            | Op::AnyBox(..)
+    )
+}
+
+/// Executes one heap instruction for machine code. A failure is left in
+/// `Heap::deferred_failure` and the code exits to the service path at the same
+/// PC, which raises it. An internal panic cannot unwind through machine code
+/// and aborts the process (`catch_unwind` here cost 40% of object-heavy runs).
+extern "C" fn heap_service(state: *mut RunState, op: *const Op) -> u32 {
+    // SAFETY: only code compiled above calls this, during Compiled::run. `state`
+    // is the RunState exclusively borrowed by that run; its slot window and heap
+    // belong to the resuming task, which does not use them until the run returns.
+    // `op` points into the immutable plan that owns the compiled region.
+    let (state, op) = unsafe { (&mut *state, &*op) };
+    let heap = unsafe { &mut *state.heap };
+    let slots = unsafe { std::slice::from_raw_parts_mut(state.slots, state.slot_count) };
+    let result = if let Op::Call {
+        dst,
+        function,
+        ref args,
+        ..
+    } = *op
+    {
+        // SAFETY: the program outlives every run of its compiled regions.
+        let code = unsafe { &*state.code };
+        let native = code.function(function).native.expect("native call");
+        let mut arguments = [Slot::default(); NATIVE_ARGUMENTS];
+        for (argument, register) in arguments.iter_mut().zip(args) {
+            *argument = slots[*register];
+        }
+        match heap.native_invoke(native, &arguments[..args.len()]) {
+            Ok(crate::native::Outcome::Value(value)) => {
+                if let Some(dst) = dst {
+                    slots[dst] = value;
+                }
+                Ok(())
+            }
+            Ok(crate::native::Outcome::Failure(failure)) => {
+                heap.deferred_raise = Some(failure);
+                return HEAP_FAILED;
+            }
+            Err(error) => Err(error),
+        }
+    } else {
+        crate::execution::heap_op(op, slots, heap)
+    };
+    let heap = unsafe { &mut *state.heap };
+    crate::stats::record(|s| *s.heap_calls.entry(crate::stats::op_name(op)).or_default() += 1);
+    match result {
+        Ok(()) if heap.needs_collection() => HEAP_COLLECT,
+        Ok(()) => HEAP_DONE,
+        Err(error) => {
+            heap.deferred_failure = Some(error);
+            HEAP_FAILED
+        }
     }
 }
 

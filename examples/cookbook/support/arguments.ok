@@ -27,7 +27,7 @@ object Arguments {
 
     text(index is int) is string {
         confirm index >= 0 && index < origin.size()
-            else throw Usage("missing argument " + index.string());
+            else throw Usage.usage("missing argument " + index.string());
         origin[index];
     }
 
@@ -47,19 +47,9 @@ object Arguments {
         let exact = BigInt(self.text(index));
         confirm exact.order(BigInt("-9223372036854775808")) != Order.less
             && exact.order(BigInt("9223372036854775807")) != Order.greater
-            else throw Usage("integer outside signed 64-bit range");
+            else throw Usage.usage("integer outside signed 64-bit range");
         ParsedInt(exact.string()).value();
     }
 }
 
-object Usage does Error {
-    has message is string;
-
-    Usage(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum Usage is Error = (usage(message is string));

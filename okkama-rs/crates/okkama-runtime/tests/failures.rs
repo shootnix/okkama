@@ -84,7 +84,7 @@ fn ir_program_errors_unwind_and_panic_bypasses_error_catches() {
 }
 
 fn typed(body: &str) -> ir::Module {
-    let source = SourceFile::new("typed.ok", format!("module app v1.0.0; object Missing does Error {{ has code is int; Missing(:code); text() is string {{ \"missing \" + code.string(); }} }} object Denied does Error {{ Denied(); text() is string {{ \"denied\"; }} }} object Bomb does Error {{ Bomb(); text() is string {{ panic \"text must stay lazy\"; }} }} object Sender {{ Sender(); fail() is int {{ throw Missing(code: 42); }} }} main() is int {{ {body} }}")).unwrap();
+    let source = SourceFile::new("typed.ok", format!("module app v1.0.0; enum Missing is Error = (code(value is int)); enum Denied is Error = (denied); object Sender {{ Sender(); fail() is int {{ throw Missing.code(42); }} }} main() is int {{ {body} }}")).unwrap();
     lowering::lower_program(&syntax::parse(&source, &syntax::ParseOptions::default()).unwrap())
         .unwrap()
 }
@@ -92,11 +92,11 @@ fn typed(body: &str) -> ir::Module {
 #[test]
 fn ir_typed_failure_matches_nominal_catches_and_role_references() {
     for body in [
-        "try { Sender().fail(); } catch e is Denied { 1; } catch e is Missing { if e.text() == \"missing 42\" { 42; } else { 2; } }",
-        "let problem is Error = Missing(code: 42); try { throw problem; 0; } catch e is Missing { 42; }",
-        "try { throw Bomb(); 0; } catch e is Error { 42; } catch e is Bomb { 1; }",
-        "try { try { throw Missing(code: 42); 0; } catch e is Denied { 1; } } catch e is Missing { 42; }",
-        "try { try { throw Missing(code: 42); 0; } catch e is Missing { throw; 1; } } catch e is Missing { 42; }",
+        "try { Sender().fail(); } catch e is Denied { 1; } catch e is Missing { if e.text() == \"Missing.code(42)\" { 42; } else { 2; } }",
+        "let problem is Error = Missing.code(42); try { throw problem; 0; } catch e is Missing { 42; }",
+        "try { throw Denied.denied; 0; } catch e is Error { 42; } catch e is Denied { 1; }",
+        "try { try { throw Missing.code(42); 0; } catch e is Denied { 1; } } catch e is Missing { 42; }",
+        "try { try { throw Missing.code(42); 0; } catch e is Missing { throw; 1; } } catch e is Missing { 42; }",
     ] {
         assert_eq!(execute(&typed(body)).unwrap().to_string(), "42", "{body}");
         assert_eq!(run_sparrow(&typed(body)).unwrap().to_string(), "42", "{body}");
@@ -106,24 +106,24 @@ fn ir_typed_failure_matches_nominal_catches_and_role_references() {
 #[test]
 fn ir_uncaught_typed_failure_formats_text_only_at_the_boundary() {
     let error = execute(&typed("Sender().fail();")).unwrap_err();
-    assert_eq!(error.to_string(), "Missing: missing 42");
+    assert_eq!(error.to_string(), "Missing: Missing.code(42)");
     let module = typed("defer Sender().fail(); panic \"primary\";");
     assert_eq!(
         execute(&module).unwrap_err().to_string(),
-        "Panic: primary\nSecondary cleanup failure:\n  Missing: missing 42"
+        "Panic: primary\nSecondary cleanup failure:\n  Missing: Missing.code(42)"
     );
 }
 
 #[test]
 fn ir_new_failure_keeps_handled_failure_as_its_cause() {
     let error = execute(&typed(
-        "try { throw Missing(code: 42); 0; } catch e is Missing { throw Denied(); 0; }",
+        "try { throw Missing.code(42); 0; } catch e is Missing { throw Denied.denied; 0; }",
     ))
     .unwrap_err();
     let RuntimeError::Unwind { failure, .. } = error else {
         panic!("expected typed failure");
     };
-    assert_eq!(failure.to_string(), "Denied: denied");
+    assert_eq!(failure.to_string(), "Denied: Denied.denied");
     assert_eq!(failure.category(), "uncaught-error");
     assert!(
         matches!(&failure.cause().unwrap().kind, okkama_runtime::FailureKind::Thrown { name, .. } if name == "Missing")
@@ -164,7 +164,7 @@ fn sparrow_typed_diagnostics_causes_and_uncatchable_failures_match_ir() {
     for body in [
         "Sender().fail();",
         "defer Sender().fail(); panic \"primary\";",
-        "try { throw Missing(code: 42); 0; } catch e is Missing { throw Denied(); 0; }",
+        "try { throw Missing.code(42); 0; } catch e is Missing { throw Denied.denied; 0; }",
         "try { panic \"primary\"; } catch e is Error { 42; }",
         "try { 7 % 0; } catch e is Error { 42; }",
     ] {

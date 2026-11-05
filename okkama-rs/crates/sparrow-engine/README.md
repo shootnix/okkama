@@ -17,6 +17,9 @@ language compatibility.
 cargo test -p sparrow-engine
 cargo run -p sparrow-engine --bin sparrow-next -- program.spb
 cargo run -p sparrow-engine --bin sparrow-next -- --cold program.spb
+cargo run -p sparrow-engine --bin sparrow-next -- --stats program.spb
+python3 tools/new-runtime/overhead-bench.py --origin ../sparrow-origin \
+    --next target/release/sparrow-next --stats program.spb
 python3 tools/check-sparrow-boundary.py
 ```
 
@@ -26,6 +29,12 @@ plan. Cross-region edges spill destination-live values and preserve exact PC,
 parallel moves and instruction fuel. Large functions do not become one giant SSA
 graph. The test runner shares these plans across cases while isolating heaps.
 
+`--stats` prints execution counters to stderr after the run: JIT entries and
+exit statuses, operations served by the Rust path, calls and collections (count,
+time, live values). `tools/new-runtime/overhead-bench.py` times prebuilt programs
+on sparrow-origin and sparrow-next, sequentially and bounded, and rejects timings
+whose output differs from the reference.
+
 `--test program.spb` runs the compiled test profile (build it with `okkama build -t`).
 Assertions accumulate within a case; runtime failures end the current case and
 later cases continue. Native coverage currently includes clocks, UTF and wire
@@ -34,7 +43,10 @@ BufferState, SecretState, TestState, Decimal, IDNA/PSL, regex, flat-arena JSON,
 DB cells/schemas/captures, forward/reverse DNS, TCP/Unix streams, UDP and multicast.
 Environment and cwd are VM-local. Files, directories, locks, temporary resources,
 glob, Tokio file watch and descriptor-relative roots/snapshots have native adapters.
-DB drivers, TLS, process APIs
+SQLite (`runtime/database`) runs on rusqlite with one worker thread per connection;
+its Engine never leaves that thread, requests are native I/O Futures, cancellation
+interrupts SQLite and releases what a cancelled operation still acquired, and rows
+reach programs as DB cells. PostgreSQL/MySQL drivers, TLS, process APIs
 and the remaining ABI are still required by the roadmap.
 
 Native I/O owns a Rust future with no VM slots or heap borrow across suspension.
@@ -113,7 +125,12 @@ fields, addressed by a generational arena handle. A stop-the-world, nonmoving
 mark/sweep pass traces outgoing handles with a reusable worklist. Copies and
 argument transfers never traverse object graphs. Native code returns and spills
 live values before heap service; collection runs after an instruction commits.
-Pinned numeric constants are leaves. No collector runs concurrently, so this
+Pinned numeric and text constants are leaves; their mark bits are never reset,
+so a collection does not scan the constant pool. Allocation-triggered collection
+waits for as many new values as the previous collection traced (at least 128), so
+marking costs amortized O(1) per allocation and the heap stays within about twice
+its traced size. `Session::stress_collection()` keeps the 128-allocation trigger
+for root checks. No collector runs concurrently, so this
 initial collector needs no write barrier. Stale handles are rejected. Deep graph
 release does not recurse through Rust ownership. Declared destroy bodies execute through explicit cleanup continuations. This is not yet full phase 3:
 native/async resource cleanup, all root classes and general allocation elimination remain

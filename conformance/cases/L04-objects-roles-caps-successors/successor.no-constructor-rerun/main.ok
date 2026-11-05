@@ -2,23 +2,20 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object NegativeScore does Error {
-    NegativeScore();
-    text() is string { "negative"; }
-}
+enum NegativeScore is Error = (negative_score);
 
 object Score {
     has value is int;
     Score(value is int) {
         self.value = value;
-        confirm value >= 0 else throw NegativeScore();
+        confirm value >= 0 else throw NegativeScore.negative_score;
     }
     value() is int { value; }
     penalized(points is int) is ^Score {
         ^value = value - points;
     }
     checked_penalty(points is int) is ^Score {
-        confirm value - points >= 0 else throw NegativeScore();
+        confirm value - points >= 0 else throw NegativeScore.negative_score;
         ^value = value - points;
     }
 }

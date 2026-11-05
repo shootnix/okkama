@@ -621,25 +621,25 @@ let payload is @byte = @byte(0, 127, b);
 
 Two channels, never mixed:
 
-1. **Expected typed failures** — `throw ErrorObject(...)`,
-   `confirm cond else throw ErrorObject(...)`, and normalized native failures.
-   Only nominal `Error` values are caught by typed `catch`.
+1. **Expected typed failures** — `throw MyError.case(...)` (an error enum),
+   `confirm cond else throw MyError.case(...)`, and normalized native failures.
+   Only `Error` values (error enums, `NativeFailure`) are caught by typed `catch`.
 2. **Uncatchable failures** — `panic "message"`, bare failed `confirm`, type
    mismatches, undefined variables, out-of-bounds. They unwind cleanup and
    terminate with a diagnostic.
 
 ```okkama
 confirm condition;                              // uncatchable on failure
-confirm condition else throw InvalidValue(10);  // expected typed failure
-confirm condition else panic "Broken invariant"; // uncatchable emergency
+confirm condition else throw InvalidValue.too_big(10);  // expected typed failure
+confirm condition else panic "Broken invariant";        // uncatchable emergency
 
 panic "stop";              // exact string only; never caught
 
 try {
-    throw InvalidValue(10);
+    throw InvalidValue.too_big(10);
 }
-catch error is InvalidValue {
-    handle(error);
+catch InvalidValue.too_big(value) {
+    handle(value);
 }
 catch error is Error {
     throw;                 // rethrow unchanged
@@ -650,11 +650,13 @@ catch error is Error {
   selected try/catch body value in expression position. Both forms need ≥1
   typed catch. No `finally`, catch-all, or guards (case patterns and type
   lists are allowed, see Error enums below).
-- `Error` is a system nominal role requiring `text() is string`; throwable
-  source objects must explicitly `does Error`.
+- `Error` is a system nominal role requiring `text() is string`; only error
+  enums (`enum X is Error = (...)`) and system failures implement it. **Never
+  generate `object X does Error`** — it is a semantic error; objects are never
+  thrown or caught.
 - Catch types are preflight-validated and must guarantee Error: `Error`, an
-  error enum, a concrete/applied Error object, or `NativeFailure`. Arbitrary
-  roles, scalars, collections, other enums and `any` are rejected.
+  error enum, or `NativeFailure` / `Cancelled`. Objects, arbitrary roles,
+  scalars, collections, other enums and `any` are rejected.
 - First compatible valid clause in source order wins. Panic and programming
   errors bypass catch.
 - Try body and catch bodies are separate lexical scopes; try locals invisible
@@ -663,10 +665,11 @@ catch error is Error {
   construction order); catch-owned objects are destroyed before an
   expression result leaves the form; a body failure outranks cleanup failure.
 
-Idiom: throw dedicated Error objects carrying context, catch concretely or by
-`Error`, and use bare `throw;` when you cannot fully handle the failure.
+Idiom: declare a component's failures as one error enum with context in its
+payloads, catch the cases you handle, and use bare `throw;` when you cannot
+fully handle the failure.
 
-### Error enums (preferred for new errors)
+### Error enums (the only way to declare errors)
 
 ```okkama
 enum DatabaseError is Error = (
@@ -1665,7 +1668,7 @@ case helpers, match completeness, CLI runner modes.
 | `f"count={n}"` / `"a" + 1` | build strings explicitly; no interpolation, no implicit stringification |
 | `xs.push(v)` | arrays are immutable — build a new array or wrap in an object |
 | `lambda x: ...` passed around | `(x is T) is R { ... }` with an exact declared signature |
-| `throw new Error("msg")` | `throw ErrorObject(context: value);` — nominal `Error` object |
+| `throw new Error("msg")` | `throw MyError.case(value);` — a case of `enum MyError is Error = (...)` |
 | `finally { cleanup() }` | `destroy` on an owning object (guaranteed) or `defer` |
 | mocks in tests | `Role.fake()` — the role ships its own double |
 | `Box<int>(...)` explicit generic call | plain construction; specialization is inferred |
@@ -1682,12 +1685,7 @@ role Wallet { total() is int; }
 
 enum Status = (ready, failed, done);
 
-object InvalidCents does Error {
-    has cents is int;
-    InvalidCents(:cents);
-    cents_value() is int { cents; }
-    text() is string { "invalid cents"; }
-}
+enum InvalidCents is Error = (out_of_range(cents is int));
 
 object Purse does Wallet {
     has digit is int;
@@ -1697,10 +1695,10 @@ object Purse does Wallet {
         digit = digit;
         cents = cents;
 
-        confirm self.cents >= 0 && self.cents < 100 else throw InvalidCents(cents: self.cents);
+        confirm self.cents >= 0 && self.cents < 100 else throw InvalidCents.out_of_range(self.cents);
     }
     Purse(:digit){
-        confirm self.cents >= 0 && self.cents < 100 else throw InvalidCents(cents: self.cents);
+        confirm self.cents >= 0 && self.cents < 100 else throw InvalidCents.out_of_range(self.cents);
     }
 
 
@@ -1733,10 +1731,10 @@ main() is int {
     Dump(doubled).string();              // "[2, 4, 6]"
 
     try {
-        confirm prices.has("fig") else throw InvalidCents(cents: 0);
+        confirm prices.has("fig") else throw InvalidCents.out_of_range(0);
     }
-    catch error is InvalidCents {
-        error.cents_value();
+    catch InvalidCents.out_of_range(cents) {
+        cents;
     }
 
     prices["fig"] else 0;                // explicit fallback — no null, ever

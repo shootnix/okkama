@@ -58,7 +58,7 @@ object Stdout does Writing, WritingText {
 
     write_bytes(value is @byte) is void {
         let written is int = stdout_write(value);
-        confirm written == value.size() else throw IncompleteWrite(written);
+        confirm written == value.size() else throw IncompleteWrite.after(written);
     }
 }
 
@@ -94,6 +94,6 @@ object Stderr does Writing, WritingText {
 
     write_bytes(value is @byte) is void {
         let written is int = stderr_write(value);
-        confirm written == value.size() else throw IncompleteWrite(written);
+        confirm written == value.size() else throw IncompleteWrite.after(written);
     }
 }

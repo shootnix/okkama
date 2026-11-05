@@ -8,61 +8,21 @@ Program
       alias: (none)
       take: [Stdout]
   items:
-    - ObjectDecl
+    - EnumDecl
       name: TooLarge
+      cases: [too_large]
+      role: Error
       generics: []
-      roles:
-        - NamedType
-          path: [Error]
-          args: []
-      members:
-        - HasDecl
-          names: [value]
-          type: NamedType
-            path: [int]
-            args: []
-          default: (none)
-        - ShorthandConstructor
-          name: TooLarge
-          fields: [value]
-          body: (none)
-        - ActionDecl
-          async: false
-          visibility: public
-          name: text
-          params: []
-          result: NamedType
-            path: [string]
-            args: []
-          body: Block
-            statements:
-              - ExpressionStatement
-                expression: Binary
-                  operator: +
-                  left: StringLiteral
-                    form: quoted
-                    value: "too large: "
-                  right: Call
-                    callee: Get
-                      object: NameExpression
-                        name: value
-                      name: string
-                    arguments: []
-                condition: (none)
-        - ActionDecl
-          async: false
-          visibility: public
-          name: value
-          params: []
-          result: NamedType
-            path: [int]
-            args: []
-          body: Block
-            statements:
-              - ExpressionStatement
-                expression: NameExpression
-                  name: value
-                condition: (none)
+      variants:
+        - EnumVariant
+          name: too_large
+          fields:
+            - Param
+              name: value
+              variadic: false
+              type: NamedType
+                path: [int]
+                args: []
     - ObjectDecl
       name: Checker
       generics: []
@@ -100,11 +60,13 @@ Program
                   statements:
                     - ThrowStatement
                       value: Call
-                        callee: NameExpression
-                          name: TooLarge
+                        callee: Get
+                          object: NameExpression
+                            name: TooLarge
+                          name: too_large
                         arguments:
                           - Argument
-                            name: value
+                            name: (none)
                             value: NameExpression
                               name: value
                 else: (none)
@@ -319,21 +281,24 @@ Program
                     condition: (none)
               catches:
                 - CatchClause
-                  name: error
-                  type: NamedType
-                    path: [TooLarge]
-                    args: []
+                  patterns:
+                    - Call
+                      callee: Get
+                        object: NameExpression
+                          name: TooLarge
+                        name: too_large
+                      arguments:
+                        - Argument
+                          name: (none)
+                          value: NameExpression
+                            name: value
                   body: Block
                     statements:
                       - ExpressionStatement
                         expression: Binary
                           operator: -
-                          left: Call
-                            callee: Get
-                              object: NameExpression
-                                name: error
-                              name: value
-                            arguments: []
+                          left: NameExpression
+                            name: value
                           right: IntLiteral
                             radix: decimal
                             digits: 400

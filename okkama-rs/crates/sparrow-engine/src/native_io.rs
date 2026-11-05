@@ -19,10 +19,10 @@ use std::{
 pub(crate) trait Output {
     fn publish(self: Box<Self>, heap: &mut Heap) -> Result<Slot, Error>;
 }
-type ResultValue = Result<Box<dyn Output>, NativeFailure>;
-type Body = Pin<Box<dyn Future<Output = ResultValue>>>;
-type Cleanup = Pin<Box<dyn Future<Output = Result<(), NativeFailure>>>>;
-type CancelHook = Box<dyn FnOnce() -> Cleanup>;
+pub(crate) type ResultValue = Result<Box<dyn Output>, NativeFailure>;
+pub(crate) type Body = Pin<Box<dyn Future<Output = ResultValue>>>;
+pub(crate) type Cleanup = Pin<Box<dyn Future<Output = Result<(), NativeFailure>>>>;
+pub(crate) type CancelHook = Box<dyn FnOnce() -> Cleanup>;
 enum Completion {
     Value(ResultValue),
     Cancelled(Result<(), NativeFailure>),

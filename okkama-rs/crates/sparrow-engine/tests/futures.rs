@@ -47,6 +47,7 @@ fn ten_thousand_nested_awaits_use_flat_continuations_with_gc() {
     for mode in [Mode::Cold, Mode::Jit] {
         let code = Executable::new(&p, mode).unwrap();
         let mut session = code.start();
+        session.stress_collection();
         let mut peak = 0;
         loop {
             let result = session.resume(1).unwrap();

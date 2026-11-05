@@ -14,6 +14,10 @@ pub(crate) struct Arena<T> {
     entries: Vec<Entry<T>>,
     free: Vec<usize>,
     pub allocations: usize,
+    /// Unpinned values that survived the last sweep.
+    pub live: usize,
+    // Pinned entries form a prefix that collection never resets or sweeps.
+    pinned: usize,
 }
 impl<T> Default for Arena<T> {
     fn default() -> Self {
@@ -21,12 +25,16 @@ impl<T> Default for Arena<T> {
             entries: Vec::new(),
             free: Vec::new(),
             allocations: 0,
+            live: 0,
+            pinned: 0,
         }
     }
 }
 impl<T> Arena<T> {
     /// Pinned leaf constants. Owners of graph values must additionally trace
     /// their outgoing references; pinning does not implicitly traverse graphs.
+    /// Their mark bits are never reset, so collection cost does not grow with
+    /// the constant pool.
     pub fn pinned(values: &[T]) -> Self
     where
         T: Clone,
@@ -42,6 +50,7 @@ impl<T> Arena<T> {
                     pinned: true,
                 })
                 .collect(),
+            pinned: values.len(),
             ..Self::default()
         }
     }
@@ -77,8 +86,12 @@ impl<T> Arena<T> {
         });
         Ok(u64::from(index))
     }
+    /// Reusable entries: allocations that cannot grow the arena.
+    pub fn vacant(&self) -> usize {
+        self.free.len()
+    }
     pub fn begin_collection(&mut self) {
-        for e in &mut self.entries {
+        for e in &mut self.entries[self.pinned..] {
             e.marked = false;
         }
     }
@@ -90,11 +103,15 @@ impl<T> Arena<T> {
         Ok(first)
     }
     pub fn sweep(&mut self) {
-        for (index, e) in self.entries.iter_mut().enumerate() {
-            if !e.marked && !e.pinned && e.value.take().is_some() && e.generation != u32::MAX {
+        let mut live = 0;
+        for (index, e) in self.entries.iter_mut().enumerate().skip(self.pinned) {
+            if e.marked {
+                live += usize::from(e.value.is_some());
+            } else if !e.pinned && e.value.take().is_some() && e.generation != u32::MAX {
                 self.free.push(index);
             }
         }
+        self.live = live;
         self.allocations = 0;
     }
     #[cfg(test)]

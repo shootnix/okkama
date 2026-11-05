@@ -2,11 +2,7 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object InvalidCash does Error {
-    has digit is int;
-    InvalidCash(:digit);
-    text() is string { "invalid cash " + digit.string(); }
-}
+enum InvalidCash is Error = (invalid_cash(digit is int));
 
 object Cash {
     has digit is int;
@@ -15,11 +11,11 @@ object Cash {
     Cash(digit is int, cents is int) {
         digit = digit;
         cents = cents;
-        confirm self.digit >= 0 else throw InvalidCash(digit: self.digit);
+        confirm self.digit >= 0 else throw InvalidCash.invalid_cash(self.digit);
     }
 
     Cash(:digit) {
-        confirm self.digit >= 0 else throw InvalidCash(digit: self.digit);
+        confirm self.digit >= 0 else throw InvalidCash.invalid_cash(self.digit);
     }
 
     total() is int { digit * 100 + cents; }

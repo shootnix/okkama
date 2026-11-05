@@ -847,7 +847,7 @@ impl Checker<'_, '_> {
         };
         if catch.is_none() {
             let message = format!(
-                "Catch type \"{}\" does not satisfy Error",
+                "Catch type \"{}\" does not satisfy Error; catch an error enum or Error",
                 self.type_name(&resolved)
             );
             self.error(ty.span, message);

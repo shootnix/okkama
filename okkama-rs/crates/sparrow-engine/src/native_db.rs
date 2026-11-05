@@ -21,7 +21,7 @@ pub(crate) enum Cell {
     Bytes(Rc<[u8]>),
 }
 impl Cell {
-    fn kind(&self) -> i64 {
+    pub(crate) fn kind(&self) -> i64 {
         match self {
             Self::Null => 0,
             Self::Boolean(_) => 1,
@@ -56,7 +56,7 @@ pub(crate) struct Capture {
 pub(crate) enum DbHandle {
     Cell(Cell),
     Capture(Capture),
-    Schema(HashMap<Rc<str>, i64>),
+    Schema(HashMap<Rc<str>, i64, HandleBuild>),
 }
 pub(crate) fn handles(native: Native) -> bool {
     native.symbol().starts_with("runtime/db@1::")
@@ -240,7 +240,8 @@ impl Heap {
             if names.len() > 1024 {
                 return Err(invalid(n));
             }
-            let mut positions = HashMap::with_capacity(names.len());
+            let mut positions =
+                HashMap::with_capacity_and_hasher(names.len(), HandleBuild::default());
             for (i, name) in names.iter().enumerate() {
                 let name = self.db_string(*name)?;
                 if name.len() > 4096 {

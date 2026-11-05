@@ -120,11 +120,11 @@ fn values_survive_collections_and_generic_calls() {
 #[test]
 fn fallback_can_throw_and_does_not_catch_errors_from_the_left() {
     check(
-        "object Absent does Error { Absent(); text() is string { \"absent\"; } } main() is int { try { Maybe<int>.none else throw Absent(); } catch e is Absent { 42; } }",
+        "enum Absent is Error = (absent); main() is int { try { Maybe<int>.none else throw Absent.absent; } catch e is Absent { 42; } }",
         "42",
     );
     check(
-        "object Failed does Error { Failed(); text() is string { \"failed\"; } } object Reader { Reader(); get() is Maybe<int> { throw Failed(); } } main() is int { try { Reader().get() else 0; } catch e is Failed { 42; } }",
+        "enum Failed is Error = (failed); object Reader { Reader(); get() is Maybe<int> { throw Failed.failed; } } main() is int { try { Reader().get() else 0; } catch e is Failed { 42; } }",
         "42",
     );
 }
@@ -270,11 +270,11 @@ fn compact_choice_formatter_roundtrip() {
 fn compact_choices_compose_without_nesting_and_can_throw() {
     check(
         r#"
-        object Absent does Error { Absent(); text() is string { "absent"; } }
+        enum Absent is Error = (absent);
         object Pair { has a is int; has b is int; Pair(:a, :b); sum() is int { a + b; } }
         main() is int {
             let pair = Pair(a: true ?? 20 !! 0, b: Maybe.some(22) ?? .some(v): v !! _: 0);
-            try { Presence<int>.missing ?? .some(v): v !! _: throw Absent(); }
+            try { Presence<int>.missing ?? .some(v): v !! _: throw Absent.absent; }
             catch e is Absent { pair.sum(); }
         }
     "#,

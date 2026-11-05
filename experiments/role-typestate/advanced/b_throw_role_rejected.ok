@@ -1,6 +1,7 @@
-// Experiment B (adversarial). Throwing a role reference whose role does not
-// itself guarantee Error is rejected, even if the hidden object does Error.
-// EXPECT: check-error: Type "Created" cannot be thrown; only error enums and objects that do Error are catchable
+// Experiment B (adversarial). An object that does Error is rejected outright
+// (errors are error enums), so a role reference can never carry a throwable
+// object: the escape through throw/catch cannot be written.
+// EXPECT: check-error: Object "Payment" cannot do Error: errors are enums, declare `enum Payment is Error = (...)`
 module app;
 
 role Created {

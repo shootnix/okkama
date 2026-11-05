@@ -9,8 +9,8 @@ import "numbers/bigint" take BigInt;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 
-object ProbeFailure does Error { ProbeFailure();text() is string { "read failure"; } }
-object CloseFailure does Error { CloseFailure();text() is string { "close failure"; } }
+enum ProbeFailure is Error = (probe_failure);
+enum CloseFailure is Error = (close_failure);
 object WaitingRows does RowReading {
     has started,released is Event;
     has closes is Atomic<int>;
@@ -24,10 +24,10 @@ object WaitingRows does RowReading {
     count() is int { closes.value(); }
     columns() is Sequencing<Column> { [Column(0,"id","")]; }
     closed() is bool { closes.value()>0; }
-    close() is void { closes.replace(closes.value()+1);if fail_close { throw CloseFailure(); } }
+    close() is void { closes.replace(closes.value()+1);if fail_close { throw CloseFailure.close_failure; } }
     async row() is Row {
         started.set();await released.wait();
-        if fail_read { throw ProbeFailure(); }
+        if fail_read { throw ProbeFailure.probe_failure; }
         Row([Column(0,"id","")],[DbInteger(BigInt("1"))]);
     }
 }

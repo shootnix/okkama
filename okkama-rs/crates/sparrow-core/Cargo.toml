@@ -1,0 +1,23 @@
+[package]
+name = "sparrow-core"
+description = "Sparrow execution core: whole-function JIT, direct calls, stackless async frames, precise GC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+okkama-sparrow = { path = "../okkama-sparrow" }
+okkama-runtime-abi = { path = "../okkama-runtime-abi" }
+
+[lints.rust]
+# Machine code, frame walking and the heap need unsafe; each module that uses
+# it opts in with `#![allow(unsafe_code)]` and documents its invariants.
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"

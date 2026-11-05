@@ -6,6 +6,7 @@ struct Options {
     arguments: Vec<std::ffi::OsString>,
     worker: bool,
     tests: bool,
+    stats: bool,
 }
 
 fn parse_arguments(
@@ -17,6 +18,7 @@ fn parse_arguments(
     let mut arguments = Vec::new();
     let mut worker = false;
     let mut tests = false;
+    let mut stats = false;
     for arg in args {
         if path.is_some() {
             arguments.push(arg);
@@ -26,6 +28,8 @@ fn parse_arguments(
             worker = true;
         } else if arg == "--cold" {
             mode = Mode::Cold;
+        } else if arg == "--stats" {
+            stats = true;
         } else {
             path = Some(arg);
         }
@@ -33,13 +37,14 @@ fn parse_arguments(
     if worker_expected && !worker {
         return Err("worker launch rejected: --worker must precede FILE.spb; refusing to run main");
     }
-    let path = path.ok_or("usage: sparrow-next [--cold] [--test] [--worker] FILE.spb")?;
+    let path = path.ok_or("usage: sparrow-next [--cold] [--stats] [--test] [--worker] FILE.spb")?;
     Ok(Options {
         mode,
         path,
         arguments,
         worker,
         tests,
+        stats,
     })
 }
 
@@ -67,6 +72,7 @@ fn main() -> std::process::ExitCode {
         arguments,
         worker,
         tests,
+        stats,
     } = match parse_arguments(
         std::env::args_os().skip(1),
         std::env::var_os("SPARROW_INTERNAL_WORKER").is_some(),
@@ -77,6 +83,9 @@ fn main() -> std::process::ExitCode {
             return 2.into();
         }
     };
+    if stats {
+        sparrow_engine::stats::enable();
+    }
     let mut worker_command = vec![
         std::env::current_exe()
             .unwrap_or_else(|_| std::path::PathBuf::from("sparrow-next"))
@@ -155,6 +164,9 @@ fn main() -> std::process::ExitCode {
                 .ok_or(())
                 .map_err(|_| "entry result outside 0..255".to_owned())
         });
+    if stats {
+        eprint!("{}", sparrow_engine::stats::take());
+    }
     match result {
         Ok(code) => code.into(),
         Err(error) => {

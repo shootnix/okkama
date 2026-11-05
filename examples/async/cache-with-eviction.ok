@@ -12,13 +12,7 @@ object CacheEntry {
     value() is string { value; }
 }
 
-object MissingCacheKey does Error {
-    has key is string;
-    MissingCacheKey(:key);
-
-    key() is string { key; }
-    text() is string { "cache key is missing"; }
-}
+enum MissingCacheKey is Error = (missing_cache_key(key is string));
 
 object CacheState {
     has entries is List<CacheEntry>;
@@ -43,7 +37,7 @@ object CacheState {
 
     find_in(remaining is List<CacheEntry>, key is string) is CacheEntry {
         if (remaining.size() == 0) {
-            throw MissingCacheKey(key: key);
+            throw MissingCacheKey.missing_cache_key(key);
         }
         else if remaining.first().key() == key {
             remaining.first();
@@ -231,7 +225,7 @@ object Cache {
             result.value();
         }
         else {
-            throw MissingCacheKey(key: key);
+            throw MissingCacheKey.missing_cache_key(key);
         }
     }
 
