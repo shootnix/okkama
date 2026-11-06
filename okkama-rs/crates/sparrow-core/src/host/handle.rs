@@ -32,6 +32,8 @@ pub(crate) enum Handle {
     },
     /// A `native object` of a bridged origin provider (`native_origin`).
     Origin(okkama_runtime_core::Value),
+    PgPage(Box<crate::host::native_postgres::PgPage>),
+    Tls(std::rc::Rc<crate::host::native_tls::Tls>),
 }
 impl Handle {
     /// Exhaustive on purpose: adding a provider requires an explicit decision
@@ -54,7 +56,9 @@ impl Handle {
             | Self::Buffer(_)
             | Self::Digest(_)
             | Self::TestState { .. }
-            | Self::Origin(_) => {}
+            | Self::Origin(_)
+            | Self::PgPage(_)
+            | Self::Tls(_) => {}
             #[cfg(unix)]
             Self::Process(_) | Self::Rooted(_) | Self::Watch(_) => {}
         }

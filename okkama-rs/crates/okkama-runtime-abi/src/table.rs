@@ -615,4 +615,12 @@ natives! {
     BytesBytesIntegerFits = 611, "runtime/bytes@1::bytes_integer_fits/5", "(@byte, int, int, bool, bool) -> bool";
     BytesBytesInteger = 612, "runtime/bytes@1::bytes_integer/5", "(@byte, int, int, bool, bool) -> int";
     BytesBytesJoin = 613, "runtime/bytes@1::bytes_join/3", "(@byte, int, @byte) -> @byte";
+    PostgresPgPage = 614, "runtime/postgres@1::pg_page/3", "(@byte, int, @int) -> PgPageState";
+    PostgresPgPageFailure = 615, "runtime/postgres@1::pg_page_failure/1", "(PgPageState) -> string";
+    PostgresPgPageRows = 616, "runtime/postgres@1::pg_page_rows/1", "(PgPageState) -> int";
+    PostgresPgPageKinds = 617, "runtime/postgres@1::pg_page_kinds/1", "(PgPageState) -> @int";
+    PostgresPgPageValues = 618, "runtime/postgres@1::pg_page_values/1", "(PgPageState) -> @int";
+    PostgresPgPageFloats = 619, "runtime/postgres@1::pg_page_floats/1", "(PgPageState) -> @float";
+    PostgresPgPageTexts = 620, "runtime/postgres@1::pg_page_texts/1", "(PgPageState) -> @string";
+    PostgresPgPageBlobs = 621, "runtime/postgres@1::pg_page_blobs/1", "(PgPageState) -> @@byte";
 }

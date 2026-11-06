@@ -44,6 +44,8 @@ object DbPage {
         self.width=width;self.kinds=kinds;self.values=values;self.floats=floats;self.texts=texts;self.blobs=blobs;
     }
     width() is int { width; }
+    // Cells of the page (rows × width).
+    size() is int { kinds.size(); }
     kind(at is int) is int { kinds[at]; }
     integer(at is int) is int { values[at]; }
     text(at is int) is string { texts[values[at]]; }
@@ -53,6 +55,8 @@ object DbPage {
             case 0 { native_db.db_null(); }
             case 2 { native_db.db_integer(values[at].string()); }
             case 3 { native_db.db_floating(floats[values[at]]); }
+            case 1 { native_db.db_boolean(values[at]!=0); }
+            case 4 { native_db.db_decimal(texts[values[at]]); }
             case 5 { native_db.db_text(texts[values[at]]); }
             else { native_db.db_bytes(blobs[values[at]]); }
         }

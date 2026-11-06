@@ -604,6 +604,31 @@ fn trap(message: &str) -> Rc<Failure> {
     Failure::new(Kind::Program(message.into()))
 }
 
+/// Сигнал внешнему циклу событий (ядро Sparrow): пришла доставка.
+static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+
+/// Встроить планировщик в чужой цикл событий: `wake` вызывается из рабочих
+/// потоков после каждой доставки, цикл затем зовёт [`pump`].
+pub fn set_wake(wake: impl Fn() + Send + Sync + 'static) {
+    let _ = WAKE.set(Box::new(wake));
+}
+
+fn wake() {
+    if let Some(wake) = WAKE.get() {
+        wake();
+    }
+}
+
+/// Выполнить доставки, которые уже пришли, не блокируясь.
+pub fn pump() {
+    while let Ok((id, delivery)) = with(|s| s.receiver.try_recv()) {
+        let done = with(|s| s.pending.borrow_mut().remove(&id));
+        if let Some(done) = done {
+            done(delivery);
+        }
+    }
+}
+
 /// Обрабатывать внешние события, пока `until` не завершён.
 fn drive(until: &Future) -> Result<(), Rc<Failure>> {
     while until.state.get() == State::Running {
@@ -719,6 +744,7 @@ impl<R: Send + 'static> Completion<R> {
     pub fn deliver(mut self, result: R) {
         if let Some(sender) = self.sender.take() {
             let _ = sender.send((self.id, Box::new(Some(result))));
+            wake();
         }
     }
 }
@@ -727,6 +753,7 @@ impl<R: Send + 'static> Drop for Completion<R> {
     fn drop(&mut self) {
         if let Some(sender) = self.sender.take() {
             let _ = sender.send((self.id, Box::new(None::<R>)));
+            wake();
         }
     }
 }
@@ -788,6 +815,7 @@ pub fn offload<R: Send + 'static>(
     std::thread::spawn(move || {
         let result = work();
         let _ = sender.send((id, Box::new(result)));
+        wake();
     });
     op
 }

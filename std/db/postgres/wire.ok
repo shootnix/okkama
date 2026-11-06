@@ -2,7 +2,10 @@ module db/postgres/wire v1.0.0;
 import "io/stream" take AsyncReading, AsyncWriting;
 import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
-import "encoding/utf" take Utf8Encoded, Utf8Decoded;
+import "io/input" take ByteInput;
+import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
+import "encoding/binary" take Signedness;
+import "encoding/bytes" take ByteRange, ByteSearch;
 import "async/atomic" take Atomic;
 
 // PostgreSQL frontend/backend protocol 3.0 framing, written in Okkama.
@@ -12,7 +15,9 @@ import "async/atomic" take Atomic;
 // whole backend messages from a borrowed AsyncReading through one buffer and
 // an offset, so each message costs its own size; a message longer than
 // 1 GiB or a closed stream is PgWireFailure. Nothing here interprets message
-// semantics: db/postgres owns the conversation.
+// semantics: db/postgres owns the conversation. Integers and strings are read
+// in place (encoding/bytes); DataRow messages can be taken raw, many at once,
+// for a result page.
 object PgInt32 {
     has value is int;
     PgInt32(value is int) { self.value = value; }
@@ -74,118 +79,102 @@ object PgFields {
     }
     remaining() is int { body.size() - position.value(); }
     take(count is int) is @byte {
-        let start = position.value();
-        confirm count >= 0 && start + count <= body.size() else throw PgWireFailure.because("message body is truncated");
-        position.replace(start + count);
+        let start = self.advance(count);
         body.slice(start, start + count);
     }
-    byte() is int { self.take(1)[0].int(); }
+    byte() is int { body[self.advance(1)].int(); }
     int16() is int {
-        let raw = self.take(2);
-        let value = (raw[0].int() << 8) | raw[1].int();
-        if value >= 32768 { value - 65536; } else { value; }
+        let start = self.advance(2);
+        ByteRange(body, start, start + 2).integer(Signedness.signed, ByteOrder.big);
     }
     int32() is int {
-        let raw = self.take(4);
-        let value = (raw[0].int() << 24) | (raw[1].int() << 16) | (raw[2].int() << 8) | raw[3].int();
-        if value >= 2147483648 { value - 4294967296; } else { value; }
+        let start = self.advance(4);
+        ByteRange(body, start, start + 4).integer(Signedness.signed, ByteOrder.big);
     }
     cstring() is string {
         let start = position.value();
-        let end = PgZero(body, start).index();
+        let end = ByteSearch(body, [0.byte()]).from(start);
+        confirm end >= 0 else throw PgWireFailure.because("unterminated string in message");
         position.replace(end + 1);
-        Utf8Decoded(body.slice(start, end)).string();
+        ByteRange(body, start, end).text();
     }
     rest() is @byte { self.take(self.remaining()); }
-}
 
-// Internal: index of the NUL terminator at or after `start`.
-object PgZero {
-    has body is @byte;
-    has start is int;
-    PgZero(body is @byte, start is int) { self.body = body; self.start = start; }
-    index() is int {
-        let found = Atomic(-1);
-        let position = Atomic(start);
-        loop {
-            let at = position.value();
-            if at >= body.size() { last; }
-            if body[at] == 0.byte() { found.replace(at); last; }
-            position.replace(at + 1);
-        }
-        confirm found.value() >= 0 else throw PgWireFailure.because("unterminated string in message");
-        found.value();
+    private:
+
+    // The start of the next `count` bytes, consumed.
+    advance(count is int) is int {
+        let start = position.value();
+        confirm count >= 0 && start + count <= body.size() else throw PgWireFailure.because("message body is truncated");
+        position.replace(start + count);
+        start;
     }
 }
 
 // Buffered backend message reader over a borrowed stream.
 object PgInput {
-    has source is AsyncReading;
-    has buffer is Atomic<@byte>;
-    has position is Atomic<int>;
-    PgInput(source is AsyncReading) {
-        self.source = source;
-        let empty is @byte = [];
-        buffer = Atomic(empty);
-        position = Atomic(0);
-    }
+    has input is ByteInput;
+    PgInput(source is AsyncReading) { input = ByteInput(source); }
 
-    available() is int { buffer.value().size() - position.value(); }
+    available() is int { input.available(); }
 
-    // Unread bytes plus every chunk needed for `count` are joined once, so a
-    // large message costs its size rather than its size times its chunks.
     async ensure(count is int) is void {
-        if self.available() >= count { return; }
-        let current = buffer.value();
-        let gathered = ByteBuffer(current.slice(position.value(), current.size()));
-        defer gathered.closing().close();
-        let output = gathered.writing();
-        let size = Atomic(current.size() - position.value());
-        loop {
-            if size.value() >= count { last; }
-            let chunk = await source.bytes(65536);
-            confirm chunk.size() > 0 else throw PgWireFailure.because("server closed the connection");
-            output.write(ByteSnapshot(chunk));
-            size.replace(size.value() + chunk.size());
-        }
-        buffer.replace(gathered.content().bytes());
-        position.replace(0);
+        confirm await input.ensure(count) else throw PgWireFailure.because("server closed the connection");
     }
 
-    take(count is int) is @byte {
-        let start = position.value();
-        position.replace(start + count);
-        buffer.value().slice(start, start + count);
-    }
+    take(count is int) is @byte { input.take(count); }
 
     // One byte, without framing (SSLRequest answer).
     async single() is int {
         await self.ensure(1);
-        self.take(1)[0].int();
+        input.take(1)[0].int();
     }
 
     // A whole message already in the buffer, without awaiting: empty when
     // more bytes are needed. Hot loops try this before message().
     buffered() is @PgMessage {
-        let start = position.value();
-        let data = buffer.value();
-        if data.size() - start < 5 { return []; }
-        let length = (data[start + 1].int() << 24) | (data[start + 2].int() << 16) | (data[start + 3].int() << 8) | data[start + 4].int();
-        confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
-        if data.size() - start < length + 1 { return []; }
-        position.replace(start + length + 1);
-        [PgMessage(Utf8Decoded([data[start]]).string(), data.slice(start + 5, start + length + 1))];
+        let length = self.length();
+        if length < 0 || input.available() < length + 1 { return []; }
+        let kind = input.peek(0);
+        input.skip(5);
+        [PgMessage(Utf8Decoded([kind]).string(), input.take(length - 4))];
+    }
+
+    // Consecutive whole DataRow messages already buffered, raw (type byte,
+    // length and body), consumed together; empty when the next message is
+    // not one.
+    data_rows() is @byte {
+        let end = Atomic(0);
+        loop {
+            let at = end.value();
+            last if input.available() < at + 5 || input.peek(at) != 68.byte();
+            let length = input.range(at + 1, at + 5).integer(Signedness.signed, ByteOrder.big);
+            confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
+            last if input.available() < at + 1 + length;
+            end.replace(at + 1 + length);
+        }
+        input.take(end.value());
     }
 
     async message() is PgMessage {
         let ready = self.buffered();
         if ready.size() == 1 { return ready[0]; }
         await self.ensure(5);
-        let header = self.take(5);
-        let length = (header[1].int() << 24) | (header[2].int() << 16) | (header[3].int() << 8) | header[4].int();
+        let length = self.length();
+        await self.ensure(length + 1);
+        let kind = input.peek(0);
+        input.skip(5);
+        PgMessage(Utf8Decoded([kind]).string(), input.take(length - 4));
+    }
+
+    private:
+
+    // The length of the next message, -1 when its header is not buffered.
+    length() is int {
+        if input.available() < 5 { return -1; }
+        let length = input.range(1, 5).integer(Signedness.signed, ByteOrder.big);
         confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
-        await self.ensure(length - 4);
-        PgMessage(Utf8Decoded([header[0]]).string(), self.take(length - 4));
+        length;
     }
 }
 

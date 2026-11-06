@@ -43,28 +43,28 @@ impl Transport {
         }
     }
 
-    async fn readable(&self) -> std::io::Result<()> {
+    pub(crate) async fn readable(&self) -> std::io::Result<()> {
         match self {
             Self::Tcp(s) => s.readable().await,
             #[cfg(unix)]
             Self::Unix(s) => s.readable().await,
         }
     }
-    async fn writable(&self) -> std::io::Result<()> {
+    pub(crate) async fn writable(&self) -> std::io::Result<()> {
         match self {
             Self::Tcp(s) => s.writable().await,
             #[cfg(unix)]
             Self::Unix(s) => s.writable().await,
         }
     }
-    fn try_read(&self, bytes: &mut [u8]) -> std::io::Result<usize> {
+    pub(crate) fn try_read(&self, bytes: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::Tcp(s) => s.try_read(bytes),
             #[cfg(unix)]
             Self::Unix(s) => s.try_read(bytes),
         }
     }
-    fn try_write(&self, bytes: &[u8]) -> std::io::Result<usize> {
+    pub(crate) fn try_write(&self, bytes: &[u8]) -> std::io::Result<usize> {
         match self {
             Self::Tcp(s) => s.try_write(bytes),
             #[cfg(unix)]
@@ -108,6 +108,25 @@ impl Stream {
         self.socket.borrow_mut().take();
         self.changed.send_replace(());
         self.read_changed.send_replace(());
+    }
+    /// Hand the TCP socket over to TLS (`runtime/tls_transport.client`);
+    /// the stream state is closed afterwards.
+    pub(crate) fn take_for_tls(&self, n: Native) -> Result<Rc<Transport>, NativeFailure> {
+        let socket = self.socket.borrow().clone().ok_or_else(|| failure(n, "already_closed", "Native handle is already closed"))?;
+        let Transport::Tcp(tcp) = &*socket else {
+            return Err(failure(n, "invalid_input", "TLS requires a managed TCP stream"));
+        };
+        if self.input_closed.get() || self.output_closed.get() {
+            return Err(failure(n, "already_closed", "TLS requires both open TCP halves"));
+        }
+        if tcp.peer_addr().is_err() {
+            return Err(failure(n, "invalid_input", "TLS requires a connected TCP stream"));
+        }
+        if self.reading.get() || self.writing.get() {
+            return Err(failure(n, "resource_exhausted", "TLS requires drained TCP operations"));
+        }
+        self.close();
+        Ok(socket)
     }
     pub(crate) fn socket(&self, n: Native) -> Result<Rc<Transport>, NativeFailure> {
         self.socket

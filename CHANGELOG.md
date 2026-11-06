@@ -248,6 +248,15 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 - `sparrow-next` now runs on the new core. The previous engine's binary is renamed
   `sparrow-engine` and stays until its removal. Process workers, `--stats` and fake
   storage work on the new core too.
+- **The new core collects correctly on Linux/AArch64.** The collector found the
+  stack slots of a machine frame from the frame record of the helper it had called,
+  which only matches where Apple targets put that record; on Linux (Graviton, Docker
+  on Apple silicon) a collection read wrong slots and crashed (the PostgreSQL client
+  crashed after connecting). It now takes the frame's SP from its own FP and the
+  frame size Cranelift reports. Rust code is built with frame pointers on non-Apple
+  targets (`okkama-rs/.cargo/config.toml`, also in the PGO build), so the walk can pass
+  over Rust frames. std tests pass on the core in Docker (239 of 240; the last needs
+  ICU).
 - **Large async frames no longer allocate separately**: heap size classes of the new
   core reach 128 words (were 32), so a call of an async function with more than 24
   registers takes its frame from a free list instead of a separate allocation per
@@ -277,6 +286,38 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   a `membarrier` IPI on AArch64 Linux (Graviton, Docker on Apple silicon); code runs
   only on the VM thread that wrote it. Start-up there: 7.9 → 1.4 ms; a program with
   two workers: 21 → 6 ms (the previous engine: 10 ms).
+- **PostgreSQL rows as result pages.** The client reads DataRow messages on
+  `io/input` byte primitives, keeps each run of them raw, and turns a result portion
+  into one `db/read.DbPage` in a single native call (`runtime/postgres.pg_page`), the
+  same flat columns SQLite rows use; `Row.int`, `Row.text` and `Row.maybe` read the
+  page. No per-column objects remain; `DbPage` now also holds boolean and decimal
+  cells.
+- **Network replies are noticed at once on the new core.** While waiting for a native
+  reply the scheduler spun for 50 µs before sleeping, but sockets only make progress
+  when the VM thread turns its (single-threaded) Tokio reactor, so every network wait
+  cost the whole spin. The spin now polls the reactor without blocking. PostgreSQL
+  point queries: 275 → 94 µs; inserts in a transaction: 130 → 48 µs. Against Python's
+  `psycopg2` (5000 rows, Docker): scans take 1.3–1.7× as long (streaming scan 9.9 ms
+  vs 6.0 ms, `Query.all` 7.6 ms vs 6.0 ms), point queries 1.4–1.6× (94 µs vs 69 µs),
+  inserts are faster (24 ms vs 29 ms). A point query still takes two round trips
+  (the portal is synced after its end); SQLite is unchanged.
+- **`Query.all` is linear on the new core.** Collecting rows was quadratic in the
+  PostgreSQL program (5000 rows: about 5 s; 20000 rows ran out of memory): every list
+  cursor of the collected rows got a resource identity and a cleanup-region walk over
+  the rest of the list. The core now knows a role value is one of the objects doing
+  that role and a native handle holds no objects, so such data gets no identity:
+  20000 rows take 46 ms. The general cost of region tracking over large data is
+  [#9](https://github.com/shootnix/okkama/issues/9).
+- **TLS and the terminal on the new core**, the last natives it lacked (all 621 ABI
+  natives now run there). `runtime/tls_transport` is a rustls client over the core's
+  TCP sockets, driven by its own reactor like the sockets (no I/O threads), with the
+  origin provider's suites, limits, deferred chain verification (`authorize`) and
+  failure texts; received records and plaintext are buffered as they arrive, so a
+  cancelled read loses nothing. The terminal (`runtime/application`) runs the origin
+  implementation: its promises are settled by origin worker threads that now wake the
+  core, which pumps their deliveries (`sched::pump`, `sched::set_wake`). Checked
+  against `sparrow` in Docker: TLS 1.3/1.2 with ALPN, 100 KB echo, two-way shutdown,
+  refused host names and trust; a pty session with a line, raw mode and a resize.
 
 ### Removed
 

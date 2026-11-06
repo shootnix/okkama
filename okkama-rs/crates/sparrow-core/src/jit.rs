@@ -81,8 +81,9 @@ pub struct Jit {
     module: JITModule,
     helpers: Helpers,
     ids: BTreeMap<usize, FuncId>,
-    /// Return address of every safepoint → SP-relative slots of traced values.
-    maps: Vec<(u64, Vec<u32>)>,
+    /// Stack map of each call site: return address, the frame's FP-to-SP
+    /// distance, and the SP offsets of its live words.
+    maps: Vec<(u64, u32, Vec<u32>)>,
     /// Address ranges of compiled functions, sorted by start.
     ranges: Vec<(u64, u64)>,
     /// (role, slot) → function index by object descriptor (u64::MAX: none).
@@ -147,10 +148,12 @@ impl Jit {
                 frame = caller;
                 continue;
             }
-            // The caller's SP at the call is just above the callee's frame record.
-            let sp = frame + 16;
-            if let Ok(index) = self.maps.binary_search_by_key(&ret, |(address, _)| *address) {
-                for &offset in &self.maps[index].1 {
+            if let Ok(index) = self.maps.binary_search_by_key(&ret, |(address, _, _)| *address) {
+                // The machine frame's SP at the call, from its own FP (`caller`):
+                // the callee's frame record says nothing about where the caller's
+                // SP was (Linux puts the record below the callee's saved registers).
+                let sp = caller - u64::from(self.maps[index].1);
+                for &offset in &self.maps[index].2 {
                     // Integer slots and pointers share one rule: a pointer is
                     // non-zero with a clear low bit.
                     visit(unsafe { *((sp + u64::from(offset)) as *const u64) }, Repr::Int);
@@ -257,15 +260,17 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         .iter()
         .map(|(ret, _, map)| (*ret, map.entries().map(|(_, offset)| offset).collect()))
         .collect();
+    // Distance from the frame's FP down to its SP inside the body.
+    let fp_to_sp = compiled.buffer.frame_layout().map_or(0, |layout| layout.frame_to_fp_offset);
     let size = compiled.code_info().total_size;
     jit.module
         .finalize_definitions()
         .map_err(|e| Error(format!("JIT finalize: {e}")))?;
     let address = jit.module.get_finalized_function(id) as u64;
     for (ret, slots) in maps {
-        jit.maps.push((address + u64::from(ret), slots));
+        jit.maps.push((address + u64::from(ret), fp_to_sp, slots));
     }
-    jit.maps.sort_by_key(|(address, _)| *address);
+    jit.maps.sort_by_key(|(address, _, _)| *address);
     jit.ranges.push((address, address + u64::from(size)));
     jit.ranges.sort_unstable();
     code[function] = address;

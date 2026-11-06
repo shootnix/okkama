@@ -39,6 +39,8 @@ pub(crate) mod native_net;
 pub(crate) mod native_network;
 pub(crate) mod native_numbers;
 pub(crate) mod native_origin;
+pub(crate) mod native_postgres;
+pub(crate) mod native_tls;
 #[cfg(unix)]
 pub(crate) mod native_process;
 pub(crate) mod native_regex;
@@ -577,6 +579,8 @@ enum Provider {
     Text,
     Core,
     Origin,
+    Postgres,
+    Tls,
 }
 
 fn provider(native: Native) -> Option<Provider> {
@@ -660,6 +664,10 @@ fn classify(native: Native) -> Option<Provider> {
             | Native::TestingTestContextActive
     ) {
         Provider::Core
+    } else if native_postgres::handles(native) {
+        Provider::Postgres
+    } else if native_tls::handles(native) {
+        Provider::Tls
     } else if native_origin::handles(native) {
         Provider::Origin
     } else {
@@ -697,6 +705,8 @@ impl Heap {
             Some(Provider::Crypto) => return self.native_crypto(native, args),
             Some(Provider::Text) => return self.native_text(native, args),
             Some(Provider::Origin) => return self.native_origin(native, args),
+            Some(Provider::Postgres) => return self.native_postgres(native, args),
+            Some(Provider::Tls) => return self.native_tls(native, args),
             Some(Provider::Core) => {}
             None => return Err(Error("unsupported native invocation".into())),
         }

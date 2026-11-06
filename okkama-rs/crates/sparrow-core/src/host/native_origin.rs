@@ -4,16 +4,65 @@
 //! origin `native object` stays an origin value inside a core handle.
 //!
 //! `any` arguments convert through their program types (`native_debug`).
-//! Async natives are not bridged, and neither are TLS (it runs over core
-//! sockets) and the terminal (its state comes from async natives).
+//! Async natives of the terminal (`runtime/application`) are bridged too: the
+//! origin returns a promise settled by its scheduler's deliveries (worker
+//! threads), which the core pumps when they wake it. TLS runs over core
+//! sockets (`native_tls`); other async natives have core providers.
 use crate::host::*;
 use okkama_runtime_abi::{Native, Type};
 use okkama_runtime_core::heap::{ArrayHeap, Map, MapKey};
-use okkama_runtime_core::{IntValue, Value};
+use okkama_runtime_abi::NativeFailure;
+use okkama_runtime_core::{IntValue, Value, sched};
 use std::rc::Rc;
 
 pub(crate) fn handles(native: Native) -> bool {
-    !native.signature().is_async && !matches!(native.module(), "runtime/tls_transport" | "runtime/application")
+    !native.signature().is_async || native.module() == "runtime/application"
+}
+
+/// Core wakers of pending origin promises; origin deliveries wake them all.
+static WAITING: std::sync::Mutex<Vec<std::task::Waker>> = std::sync::Mutex::new(Vec::new());
+
+fn hook() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        sched::set_wake(|| {
+            for waker in std::mem::take(&mut *WAITING.lock().expect("origin wakers")) {
+                waker.wake();
+            }
+        })
+    });
+}
+
+/// A pending origin promise; dropping it unsettled cancels it.
+struct Pending(sched::Future);
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        if self.0.running() {
+            sched::cancel(&self.0);
+        }
+    }
+}
+
+/// An origin result, converted by its ABI type when the frame resumes.
+struct Settled(Value, Type);
+
+impl Output for Settled {
+    fn publish(self: Box<Self>, heap: &mut Heap) -> Result<Slot, Error> {
+        heap.from_origin(self.0, &self.1)
+    }
+}
+
+fn native_failure(failure: &okkama_runtime_core::failure::Failure, native: Native) -> NativeFailure {
+    match &failure.kind {
+        okkama_runtime_core::failure::Kind::Native(failure) => (**failure).clone(),
+        _ => NativeFailure {
+            domain: "core.runtime".into(),
+            code: "unexpected".into(),
+            operation: native.symbol().into(),
+            message: failure.message().to_string(),
+        },
+    }
 }
 
 impl Heap {
@@ -37,6 +86,7 @@ impl Heap {
         self.origin = context;
         use okkama_runtime_core::native::Error as Origin;
         match result {
+            Ok(Value::Future(promise)) if native.signature().is_async => self.origin_promise(native, promise),
             Ok(value) => self.from_origin(value, native.result()).map(Outcome::Value),
             Err(Origin::Failure(failure)) => {
                 let payload = self.native_failure_new(failure)?;
@@ -46,6 +96,37 @@ impl Heap {
                 Err(Error(message))
             }
         }
+    }
+
+    /// A core future of an origin promise: settled already, or pumped from
+    /// the origin scheduler whenever one of its deliveries wakes the core.
+    fn origin_promise(&mut self, native: Native, promise: sched::Future) -> Result<Outcome, Error> {
+        let ty = native.result().clone();
+        if !promise.running() {
+            let state = match promise.outcome() {
+                Ok(value) => State::Ready(Ok(self.from_origin(value, &ty)?)),
+                Err(failure) => {
+                    let payload = self.native_failure_new(native_failure(&failure, native))?;
+                    State::Ready(Err(self.failure_new(FailureKind::Native(payload))?))
+                }
+            };
+            return self.future_with_state(state).map(Outcome::Value);
+        }
+        hook();
+        let pending = Pending(promise);
+        self.native_io(std::future::poll_fn(move |cx| {
+            // Register before pumping: a delivery after the pump wakes us.
+            WAITING.lock().expect("origin wakers").push(cx.waker().clone());
+            sched::pump();
+            if pending.0.running() {
+                return std::task::Poll::Pending;
+            }
+            std::task::Poll::Ready(match pending.0.outcome() {
+                Ok(value) => Ok(Settled(value, ty.clone())),
+                Err(failure) => Err(native_failure(&failure, native)),
+            })
+        }))
+        .map(Outcome::Value)
     }
 
     pub(crate) fn to_origin(&self, slot: Slot, ty: &Type) -> Result<Value, Error> {

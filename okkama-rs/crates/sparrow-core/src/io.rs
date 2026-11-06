@@ -79,7 +79,9 @@ impl Runtime {
             return false;
         }
         // Native replies (SQLite workers) usually arrive within microseconds:
-        // spin briefly before paying for a sleep and a wake-up.
+        // spin briefly before paying for a sleep and a wake-up. Sockets make
+        // progress only when this thread turns the reactor, so every 64 turns
+        // the spin also polls it without blocking.
         if !self.io.requests.is_empty() {
             let spin = std::time::Instant::now();
             let mut turns = 0u32;
@@ -87,8 +89,11 @@ impl Runtime {
                 std::hint::spin_loop();
                 turns += 1;
                 // Reading the clock costs more than a turn; look every 64.
-                if turns % 64 == 0 && spin.elapsed() >= std::time::Duration::from_micros(SPIN_MICROS) {
-                    break;
+                if turns % 64 == 0 {
+                    self.io.tokio().block_on(tokio::task::yield_now());
+                    if spin.elapsed() >= std::time::Duration::from_micros(SPIN_MICROS) {
+                        break;
+                    }
                 }
             }
         }

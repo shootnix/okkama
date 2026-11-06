@@ -8,7 +8,7 @@ import "db/prepared" take DbPreparing, PreparedStatement, DbPreparedOpening, DbP
 import "db/acquisition" take DbAcquiring, DbAcquisition;
 import "db/transaction" take Transaction, TransactionOptions, Isolation;
 import "db/statement" take Statement, Execution;
-import "db/row" take DbRowSchema,DbRowData,DbRowCells,Row, Column, RowReading, RowsEnded;
+import "db/row" take DbRowSchema,DbRowData,Row, Column, RowReading, RowsEnded;
 import "db/value" take DbValue, DbValueKind, ObservedDbValue, DbNull, DbBoolean, DbInteger, DbFloating, DbDecimal, DbText, DbBytes;
 import "db/error" take DbFailure, DbFailureKind, DbOperation, DbClosed, DbBusy, TransactionEnded, IndeterminateCommit;
 import "net/tcp" take TcpConnecting, TcpOptions;
@@ -21,14 +21,15 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/base64" take Base64Encoded;
-import "encoding/hex" take HexDecoded;
 import "io/stream" take AsyncReading, AsyncWriting, Closing;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
-import "strings/parse" take ParsedFloat;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/lock" take Lock;
+import "runtime/db" as native_db;
+import "runtime/postgres" as native_pg;
+import "db/read" take DbPage;
 
 // PostgreSQL driver over the frontend/backend protocol 3.0, written in
 // Okkama: framing (db/postgres/wire), SCRAM-SHA-256 and MD5 (db/postgres/auth)
@@ -444,6 +445,12 @@ object PgSession does Closing {
         catch e is Error { self.close(); throw PgLost(operation).value(); }
     }
 
+    // DataRow messages already buffered, raw (see PgInput.data_rows).
+    data_rows(operation is DbOperation) is @byte {
+        try { input.data_rows(); }
+        catch e is Error { self.close(); throw PgLost(operation).value(); }
+    }
+
     async message(operation is DbOperation) is PgMessage {
         try { await input.message(); }
         catch e is Cancelled { self.close(); throw; }
@@ -478,6 +485,7 @@ object PgSession does Closing {
     // is followed by Sync and ReadyForQuery.
     async portion(operation is DbOperation, outcome is PgOutcome) is PgOutcome {
         loop {
+            outcome.data_rows(self.data_rows(operation));
             let ready = self.buffered(operation);
             let message = if ready.size() == 1 { ready[0]; } else { await self.message(operation); };
             let kind = message.kind();
@@ -666,7 +674,7 @@ object PgSession does Closing {
             reader.replace(id);
             reader_statement.replace(statement);
         }
-        PgRows(self, id, description, outcome.rows(), outcome.ended(), source_closed, token);
+        PgRows(self, id, description, outcome.page(description), outcome.ended(), source_closed, token);
     }
 
     async fetch(id is int) is PgOutcome {
@@ -811,7 +819,10 @@ object PgBegin {
 object PgOutcome {
     has operation is DbOperation;
     has tags is Atomic<@string>;
+    // Raw DataRow messages, newest run first (see PgInput.data_rows), and
+    // the number of runs (a list's size walks it).
     has data is Atomic<List<@byte>>;
+    has runs is Atomic<int>;
     has columns is Atomic<@PgDescription>;
     has failures is Atomic<@DbFailure>;
     has count is Atomic<int>;
@@ -822,6 +833,7 @@ object PgOutcome {
         tags = Atomic(@string());
         let empty is List<@byte> = EmptyList();
         data = Atomic(empty);
+        runs = Atomic(0);
         let described is @PgDescription = [];
         columns = Atomic(described);
         let failed is @DbFailure = [];
@@ -833,7 +845,13 @@ object PgOutcome {
 
     operation() is DbOperation { operation; }
     tag(value is string) is void { tags.replace(@string(tags.value()..., value)); }
-    row(body is @byte) is void { data.replace(data.value().prefix(body)); }
+    row(body is @byte) is void { self.data_rows(@byte(68.byte(), PgInt32(body.size() + 4).bytes()..., body...)); }
+    data_rows(raw is @byte) is void {
+        if raw.size() > 0 {
+            data.replace(data.value().prefix(raw));
+            runs.replace(runs.value() + 1);
+        }
+    }
     describe(value is PgDescription) is void { columns.replace([value]); }
     parameters(value is int) is void { count.replace(value); }
     fail(value is DbFailure) is void { if failures.value().size() == 0 { failures.replace([value]); } }
@@ -841,17 +859,23 @@ object PgOutcome {
     end() is void { finished.replace(true); }
 
     ended() is bool { finished.value(); }
-    // Data rows in arrival order (kept newest-first while reading).
-    rows() is List<@byte> {
-        let empty is List<@byte> = EmptyList();
-        let ordered = Atomic(empty);
+    // The data rows read so far as one result page of `description`.
+    page(description is PgDescription) is DbPage {
+        let count = runs.value();
         let rest = Atomic(data.value());
-        loop {
-            if rest.value().size() == 0 { last; }
-            ordered.replace(ordered.value().prefix(rest.value().first()));
-            rest.replace(rest.value().tail());
-        }
-        ordered.value();
+        let newest is @@byte = (0..count).map() -> index {
+            let list = rest.value();
+            rest.replace(list.tail());
+            list.first();
+        };
+        let ordered is @@byte = (0..count).map() -> index { newest[count - 1 - index]; };
+        let width = description.columns().size();
+        let state = native_pg.pg_page(PgJoined(ordered).bytes(), width, description.types());
+        let failure = native_pg.pg_page_failure(state);
+        if failure == "nonfinite" { throw PgNonFinite().value(); }
+        confirm failure == "" else throw PgWireFailure.because("invalid data row: " + failure);
+        DbPage(width, native_pg.pg_page_kinds(state), native_pg.pg_page_values(state), native_pg.pg_page_floats(state),
+            native_pg.pg_page_texts(state), native_pg.pg_page_blobs(state));
     }
     parameter_count() is int { count.value(); }
     description() is PgDescription { if columns.value().size() == 1 { columns.value()[0]; } else { PgDescription(); } }
@@ -919,17 +943,7 @@ object PgDescription {
 
     columns() is @Column { columns; }
     types() is @int { types; }
-
-    row(body is @byte) is Row {
-        let fields = PgFields(body);
-        let count = fields.int16();
-        confirm count == columns.size() else throw PgWireFailure.because("data row width differs from its description");
-        let values is @DbValue = (0..count).map() -> index {
-            let length = fields.int32();
-            if length < 0 { DbNull(); } else { PgTextValue(fields.take(length), types[index]).value(); }
-        };
-        Row(DbRowData(schema,DbRowCells(values,DbLimits()).values()));
-    }
+    schema() is DbRowSchema { schema; }
 }
 
 object PgTypeName {
@@ -945,33 +959,6 @@ object PgTypeName {
             case 1266 { "timetz"; } case 1700 { "numeric"; } case 2950 { "uuid"; } case 3802 { "jsonb"; }
             else { "oid:" + oid.string(); }
         }
-    }
-}
-
-object PgTextValue {
-    has raw is @byte;
-    has oid is int;
-    PgTextValue(raw is @byte, oid is int) {
-        self.raw = raw;
-        self.oid = oid;
-    }
-    value() is DbValue {
-        let text = Utf8Decoded(raw).string();
-        if oid == 16 { return DbBoolean(text == "t"); }
-        if oid == 20 || oid == 21 || oid == 23 || oid == 26 { return DbInteger(BigInt(text)); }
-        if oid == 700 || oid == 701 {
-            confirm text != "NaN" && text != "Infinity" && text != "-Infinity" else throw PgNonFinite().value();
-            return DbFloating(ParsedFloat(text).value());
-        }
-        if oid == 1700 {
-            confirm text != "NaN" && text != "Infinity" && text != "-Infinity" else throw PgNonFinite().value();
-            return DbDecimal(Decimal(text));
-        }
-        if oid == 17 {
-            confirm text.length() >= 2 && text.slice(0, 2) == "\\x" else throw PgWireFailure.because("bytea is not in hex output format");
-            return DbBytes(HexDecoded(text.slice(2, text.length())).bytes());
-        }
-        DbText(text);
     }
 }
 
@@ -1118,16 +1105,19 @@ object PgRows does RowReading, Closing {
     has owner is PgSession;
     has id, token is int;
     has description is PgDescription;
-    has buffered is Atomic<List<@byte>>;
+    // The fetched page and the next row of it to read.
+    has buffered is Atomic<DbPage>;
+    has next_row is Atomic<int>;
     has eof, stopped, source_closed is Event;
     has busy is Atomic<bool>;
 
-    PgRows(owner is PgSession, id is int, description is PgDescription, first is List<@byte>, ended is bool, source_closed is Event, token is int) {
+    PgRows(owner is PgSession, id is int, description is PgDescription, first is DbPage, ended is bool, source_closed is Event, token is int) {
         self.owner = owner;
         self.id = id;
         self.token = token;
         self.description = description;
         buffered = Atomic(first);
+        next_row = Atomic(0);
         let finished = Event();
         if ended { finished.set(); }
         eof = finished;
@@ -1141,8 +1131,8 @@ object PgRows does RowReading, Closing {
     close() is void {
         if !stopped.ready() {
             stopped.set();
-            let empty is List<@byte> = EmptyList();
-            buffered.replace(empty);
+            buffered.replace(DbPage());
+            next_row.replace(0);
             owner.release(id);
         }
     }
@@ -1151,20 +1141,28 @@ object PgRows does RowReading, Closing {
         confirm !self.closed() else throw DbClosed.closed;
         confirm busy.compare_and_replace(false, true) else throw DbBusy.busy;
         defer busy.replace(false);
-        if buffered.value().size() == 0 {
+        if next_row.value() >= self.buffered_rows() {
             if eof.ready() { throw RowsEnded.ended; }
             let outcome = await owner.fetch(id);
             confirm !self.closed() else throw DbClosed.closed;
-            buffered.replace(outcome.rows());
+            buffered.replace(outcome.page(description));
+            next_row.replace(0);
             if outcome.ended() { eof.set(); }
-            if buffered.value().size() == 0 { throw RowsEnded.ended; }
+            if self.buffered_rows() == 0 { throw RowsEnded.ended; }
         }
-        let rest = buffered.value();
-        buffered.replace(rest.tail());
-        description.row(rest.first());
+        let index = next_row.value();
+        next_row.replace(index + 1);
+        Row(DbRowData(description.schema(), buffered.value(), index));
     }
 
     destroy { self.close(); }
+
+    private:
+
+    buffered_rows() is int {
+        let page = buffered.value();
+        if page.width() == 0 { 0; } else { (page.size() / page.width()).int(); }
+    }
 }
 
 object PgTransaction does Transaction, DbExecuting, DbPreparing {
@@ -1273,12 +1271,21 @@ test "bind frames carry formats, NULL and binary bytes" {
 }
 
 test "text results decode by column type" {
-    test.ok(ObservedDbValue(PgTextValue(Utf8Encoded("t").bytes(), 16).value()).boolean());
-    test.is(ObservedDbValue(PgTextValue(Utf8Encoded("-42").bytes(), 20).value()).integer().string(), "-42");
-    test.is(ObservedDbValue(PgTextValue(Utf8Encoded("\\x0aff").bytes(), 17).value()).bytes(), [10.byte(), 255.byte()]);
-    test.is(ObservedDbValue(PgTextValue(Utf8Encoded("12.50").bytes(), 1700).value()).decimal().string(), Decimal("12.5").string());
-    test.is(ObservedDbValue(PgTextValue(Utf8Encoded("2026-10-23").bytes(), 1082).value()).text(), "2026-10-23");
-    test.ok(try { PgTextValue(Utf8Encoded("NaN").bytes(), 701).value(); false; } catch DbFailure.detailed(kind, _, _, _) { kind == DbFailureKind.data; });
+    // One RowDescription column of type `oid` and one DataRow holding `text`.
+    let cell = (text is string, oid is int) is native_db.DbCellState {
+        let described = @byte(PgInt16(1).bytes()..., PgCString("c").bytes()..., PgInt32(0).bytes()..., PgInt16(0).bytes()...,
+            PgInt32(oid).bytes()..., PgInt16(-1).bytes()..., PgInt32(-1).bytes()..., PgInt16(0).bytes()...);
+        let value = Utf8Encoded(text).bytes();
+        let outcome = PgOutcome(DbOperation.fetching);
+        outcome.row(@byte(PgInt16(1).bytes()..., PgInt32(value.size()).bytes()..., value...));
+        outcome.page(PgDescription(PgFields(described))).cell(0);
+    };
+    test.ok(native_db.db_boolean_value(cell("t", 16)));
+    test.is(native_db.db_integer_value(cell("-42", 20)), "-42");
+    test.is(native_db.db_bytes_value(cell("\\x0aff", 17)), [10.byte(), 255.byte()]);
+    test.is(Decimal(native_db.db_decimal_value(cell("12.50", 1700))).string(), Decimal("12.5").string());
+    test.is(native_db.db_text_value(cell("2026-10-23", 1082)), "2026-10-23");
+    test.ok(try { cell("NaN", 701); false; } catch DbFailure.detailed(kind, _, _, _) { kind == DbFailureKind.data; });
 }
 
 test "command tags report affected rows only for data changes" {

@@ -42,6 +42,8 @@ pub struct Resources {
 #[derive(Debug, Default)]
 pub struct RegionValue {
     entries: Vec<Word>,
+    /// The entries as a set: membership checks stay constant-time.
+    members: HashSet<Word>,
 }
 
 /// A region is an array `[overflow, slot × REGION_SLOTS]`: identities fill the
@@ -78,12 +80,14 @@ impl Resources {
     }
 }
 
-/// Closed-world reachability of destroy-bearing objects through declared types.
+/// Closed-world reachability of destroy-bearing objects through declared
+/// types; a role reaches what the objects doing it reach.
 fn descriptor_flags(program: &Program) -> Vec<bool> {
     let offset = program.types.len();
     let mut parents = vec![Vec::new(); offset + program.objects.len()];
     let mut reachable = vec![false; parents.len()];
     let mut pending = Vec::new();
+    let mut roles: HashMap<u32, Vec<usize>> = HashMap::default();
     for (index, ty) in program.types.iter().enumerate() {
         let child = match ty {
             Type::Object(id) | Type::Successor(id) => Some(offset + id.0 as usize),
@@ -100,7 +104,15 @@ fn descriptor_flags(program: &Program) -> Vec<bool> {
             | Type::Range
             | Type::Region
             | Type::Builder(_)
-            | Type::MapBuilder(..) => None,
+            | Type::MapBuilder(..)
+            // The walk never enters a native state.
+            | Type::Handle(_) => None,
+            // A role value is one of the objects doing it (linked below);
+            // runtime-made values of a builtin role (`Error`) are not.
+            Type::Role(role) if !program.roles[role.0 as usize].builtin => {
+                roles.entry(role.0).or_insert_with(Vec::new).push(index);
+                None
+            }
             _ => {
                 pending.push(index);
                 None
@@ -114,6 +126,11 @@ fn descriptor_flags(program: &Program) -> Vec<bool> {
         let node = offset + index;
         if object.destroy.is_some() {
             pending.push(node);
+        }
+        for witness in &object.does {
+            if let Some(types) = roles.get(&witness.role.0) {
+                parents[node].extend(types.iter().copied());
+            }
         }
         for (_, ty) in &object.fields {
             parents[ty.0 as usize].push(node);
@@ -141,6 +158,12 @@ impl Runtime {
 
     /// Free or `via`-owned identities reachable from `roots`, oldest first.
     fn resource_graph(&mut self, roots: &[Word], via: Option<Word>) -> Vec<Word> {
+        self.resource_graph_into(roots, via, None)
+    }
+
+    /// `resource_graph`, not descending into identities already in `known`
+    /// (a region): objects are immutable, so their graph is already there.
+    fn resource_graph_into(&mut self, roots: &[Word], via: Option<Word>, known: Option<Word>) -> Vec<Word> {
         if !self.resources.enabled {
             return Vec::new();
         }
@@ -177,6 +200,9 @@ impl Runtime {
                         continue;
                     };
                     if identity.owner != Owner::Free && Some(identity.owner) != via.map(Owner::Region) {
+                        continue;
+                    }
+                    if known.is_some_and(|region| self.region_contains(region, object)) {
                         continue;
                     }
                     let layout = &self.heap.layouts.objects[descriptor];
@@ -251,11 +277,25 @@ impl Runtime {
         self.heap.payload::<RegionValue>(overflow).expect("region").entries[index - REGION_SLOTS]
     }
 
+    fn region_contains(&self, region: Word, object: Word) -> bool {
+        for slot in 1..=REGION_SLOTS {
+            match self.heap.field(region, slot) {
+                UNBOUND => return false,
+                entry if entry == object => return true,
+                _ => {}
+            }
+        }
+        match self.heap.field(region, 0) {
+            UNBOUND => false,
+            overflow => self.heap.payload::<RegionValue>(overflow).expect("region").members.contains(&object),
+        }
+    }
+
     fn region_push(&mut self, region: Word, object: Word) {
-        let length = self.region_len(region);
-        if (0..length).any(|i| self.region_get(region, i) == object) {
+        if self.region_contains(region, object) {
             return;
         }
+        let length = self.region_len(region);
         if length < REGION_SLOTS {
             self.heap.set_field(region, length + 1, object);
             return;
@@ -265,7 +305,9 @@ impl Runtime {
             self.heap.set_field(region, 0, overflow);
         }
         let overflow = self.heap.field(region, 0);
-        self.heap.payload_mut::<RegionValue>(overflow).expect("region").entries.push(object);
+        let overflow = self.heap.payload_mut::<RegionValue>(overflow).expect("region");
+        overflow.entries.push(object);
+        overflow.members.insert(object);
     }
 
     fn region_clear(&mut self, region: Word) {
@@ -274,7 +316,9 @@ impl Runtime {
         }
         let overflow = self.heap.field(region, 0);
         if overflow != UNBOUND {
-            self.heap.payload_mut::<RegionValue>(overflow).expect("region").entries.clear();
+            let overflow = self.heap.payload_mut::<RegionValue>(overflow).expect("region");
+            overflow.entries.clear();
+            overflow.members.clear();
         }
     }
 
@@ -282,7 +326,10 @@ impl Runtime {
         if !self.may_reach_free(value) {
             return;
         }
-        for object in self.resource_graph(&[value], None) {
+        // Tracking (not owning) skips what the region already holds; adopting
+        // must still take ownership of tracked objects.
+        let known = if own { None } else { Some(region) };
+        for object in self.resource_graph_into(&[value], None, known) {
             if own {
                 self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
             }
@@ -353,7 +400,8 @@ impl Runtime {
         if self.region_len(region) == 0 {
             return primary;
         }
-        let kept = if keep.is_empty() { Vec::new() } else { self.resource_graph(keep, Some(region)) };
+        let kept: HashSet<Word> =
+            if keep.is_empty() { HashSet::default() } else { self.resource_graph(keep, Some(region)).into_iter().collect() };
         // The region and the primary failure stay alive while destroys run.
         self.roots.push((region, Repr::Ref));
         let mut index = self.region_len(region);
