@@ -6,7 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
+## [0.4.0] — 2026-11-07
+
+Sparrow runs on a new core: every function is compiled to machine code
+(Cranelift) before it runs, calls are direct, async frames are stackless and the
+collector is precise — on the engine benchmarks about twice the previous Sparrow
+and 4–6× Python, Perl and Ruby. Errors are enums everywhere (language and std),
+`Maybe`/`Presence`, compact choices and hidden declarations arrive in the
+language, and wave A of the hardening roadmap is done (0.3.3 and 0.3.4 were not
+released separately; their changes are here). The repository now holds the code,
+the conformance suite and the Book; other documents, benchmarks and examples
+moved out.
 
 ### Added
 
@@ -115,6 +125,10 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 
 ### Fixed
 
+- Calling an action through a cap (`customer.wtf()` on a `Customer::Public` value)
+  reported "Can only call actions on objects"; the error now names the cap, says that
+  an owner's action is not available through it and lists the cap's computed fields
+  (`::name`) ([#8](https://github.com/shootnix/okkama/issues/8)).
 - **An object successor declared `is ^Role` is rejected with a clear error** instead of
   passing the checker and crashing in IR verification with an internal compiler error;
   the checker also accepted a role the object does not do. An object successor returns
@@ -200,6 +214,24 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 
 ### Changed
 
+- **The core is the Sparrow runtime.** `sparrow`, `okkama run --engine sparrow`,
+  `okkama exec` and the conformance adapter (`OCS_RUST_ENGINE=sparrow`) run on
+  `sparrow-core`; process workers of the core run `okkama --worker FILE.spb` or
+  `sparrow --worker FILE.spb`. The previous VM stays for one release as
+  `sparrow-origin` and `--engine sparrow-origin` (removed in 0.5,
+  [#14](https://github.com/shootnix/okkama/issues/14)). Known limitation: an uncaught
+  failure on the core prints its report without the source line and call stack
+  ([#10](https://github.com/shootnix/okkama/issues/10)). `make gate` runs the release
+  gate in a container (`tools/gate/docker.sh`, `tools/docker/Dockerfile`; `make
+  gate-local` without it): conformance on ir, jvm, sparrow and sparrow-origin, std
+  tests on ir and sparrow.
+- **The repository keeps the code, the conformance suite and the Book.** The
+  specification, grammar, std reference, guides, roadmap, audits, runtime documents,
+  benchmarks with their reports, examples and experiments moved to a documents folder
+  outside the repository; `docs/` holds the Book (EN/RU) and `docs/LLM-GUIDE.md`, a
+  guide for LLM agents working on the code. PGO trains on
+  `okkama-rs/tools/pgo/workloads`; the allocation counter is
+  `okkama-rs/tools/allocation-counter`.
 - **SQLite rows without per-value native calls.** A fetched batch reaches `std/db`
   as one page of plain values (cell kinds, integers, floats, texts, bytes) instead
   of a native cell object per value; `Row.int`, `Row.text` and `Row.maybe` read the
@@ -321,6 +353,8 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 
 ### Removed
 
+- `sparrow-engine` and `sparrow-proto`, the intermediate runtimes of the core rebuild,
+  and the `sparrow-next` binary (the core is `sparrow`).
 - **Objects can no longer do `Error`** (error handling phase 2, compiler part): errors
   are error enums. `object X does Error` is a semantic error that suggests
   `enum X is Error = (...)`; `throw` accepts error

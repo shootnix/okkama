@@ -4,7 +4,7 @@
 #     make install         # сборка и установка в ~/.local (PREFIX=/opt/okkama make install)
 #     make uninstall
 #     make test            # тесты Rust
-#     make gate            # ворота релиза: тесты, conformance во всех режимах JIT, std
+#     make gate            # ворота релиза в контейнере: тесты, conformance, std (make gate-local — без контейнера)
 #     make pgo             # release-сборка с PGO (нужен `rustup component add llvm-tools`)
 #     make install-pgo     # PGO-сборка и установка
 #     make dist            # пакеты этой платформы в dist/ (tar.gz + .pkg/.deb)
@@ -24,7 +24,7 @@ STAMP   := $(RUNTIME)/classes/.built
 JAVA    := $(wildcard $(RUNTIME)/src/okkama/rt/*.java $(RUNTIME)/src22/okkama/rt/*.java)
 VSIX    := vscode-okkama/okkama-vscode.vsix
 
-.PHONY: all build runtime pgo install install-pgo uninstall test gate dist vscode clean
+.PHONY: all build runtime pgo install install-pgo uninstall test gate gate-local dist vscode clean
 
 all: build
 
@@ -60,7 +60,10 @@ uninstall:
 test:
 	cd $(RS) && $(CARGO) test --release --workspace
 
-gate: runtime
+gate:
+	./tools/gate/docker.sh
+
+gate-local: runtime
 	./tools/gate/gate.sh
 
 dist: runtime
