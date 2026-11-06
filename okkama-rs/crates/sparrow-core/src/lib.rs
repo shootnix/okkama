@@ -1,4 +1,4 @@
-//! Sparrow execution core (rebuild, see `docs/new-runtime/core-rebuild.md`).
+//! Sparrow execution core (rebuild journal: okkama-docs `runtime/new-runtime/core-rebuild.md`).
 //!
 //! Model, validated by `crates/sparrow-proto` (`docs/new-runtime/core-spike.md`):
 //! - synchronous functions are compiled whole and call each other directly on

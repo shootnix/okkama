@@ -1,0 +1,280 @@
+# Okkama — guide for LLM agents
+
+Concentrated context for an agent working on this repository: how the owner
+wants work done, where things are, how to build, test, measure and release,
+and how the implementation is put together. Read it before searching the
+tree. The language itself is taught by the Book (`docs/OkkamaBook.md`,
+`docs/OkkamaBook-RU.md`); everything else lives outside the repository (see
+[Documents outside the repository](#documents-outside-the-repository)).
+
+## 1. Working rules
+
+- **Language of replies**: Russian, informal «ты». Code, comments, commit
+  messages, CHANGELOG and documents in English unless the surrounding text is
+  Russian (some scripts and the Makefile are commented in Russian — match the
+  file).
+- **What you may change on your own**: the low layer — `sparrow-core`, OIR
+  (`okkama-compiler/src/ir`), the runtime ABI (`okkama-runtime-abi`), natives,
+  runtime tooling. **Needs the owner's permission**: the language, the
+  compiler's front end and checks, and the public API of `std`. When a
+  compiler change would help, explain the risk and ask (or file an issue).
+- **Commits**: the owner commits, unless the task explicitly includes merging
+  or a release. Commit messages end with the attribution line the harness
+  asks for.
+- **CHANGELOG.md**: every feature or visible change gets an entry, unprompted
+  (Keep a Changelog; release sections `## [X.Y.Z] — date`).
+- **After every step**: a benchmark table (before/after, against Python where
+  it applies).
+- **Limitations and deferred work**: file a GitHub issue right away
+  (`gh issue create`, `gh` is logged in) and give the link — not just a line
+  in a report.
+- **Safety on the owner's machine**: never run real process workers, network
+  servers or clients, PostgreSQL, stress tests, mass probe/conformance suites
+  or long recursion directly on macOS. Use the cage (`caged.py`, §4) for
+  single programs and Docker (§4) for workers, networks, conformance, the gate
+  and benchmarks that need services. Never kill processes you did not start.
+  Never `rm` top-level paths of the drive.
+- **Priorities**: PostgreSQL and server databases matter more than SQLite;
+  crypto, TLS, X.509 and PEM stay native (do not rewrite them in Okkama).
+- **Restoring files**: `git checkout`-style reverts may be blocked; keep a
+  copy in the scratchpad before temporary instrumentation and restore from it.
+
+## 2. Repository map
+
+```text
+okkama-new/
+├── okkama-rs/                  Rust workspace (version in okkama-rs/Cargo.toml)
+│   ├── crates/
+│   │   ├── okkama-compiler     lexer, parser, AST, checker (THIR), lowering to OIR,
+│   │   │                       IR verifier, codegen: sparrow (SPB) and jvm; LSP/ide
+│   │   ├── okkama-cli          `okkama`: run/build/exec/check/fmt/lint/lsp/repl, OCS adapter
+│   │   ├── okkama-runtime      IR interpreter (`--engine ir`, default of `okkama run`)
+│   │   ├── okkama-runtime-core values, natives (origin implementations), scheduler `sched`;
+│   │   │                       used by the IR engine and bridged by the core
+│   │   ├── okkama-runtime-abi  native identities and signatures: src/table.rs (≈620 natives)
+│   │   ├── okkama-sparrow      SPB format: Program, Instruction, encode/decode, assembler
+│   │   ├── sparrow-core        THE Sparrow runtime: JIT (Cranelift), heap, GC, async, natives
+│   │   ├── sparrow-cli         binaries `sparrow` (core) and `sparrow-origin` (previous VM)
+│   │   ├── sparrow-vm, sparrow-runtime   previous VM (until 0.5, issue #14)
+│   │   ├── okkama-native       host cryptography (C ABI dylib)
+│   │   └── blade, blade-cli    project manager
+│   ├── examples/               small programs used by compiler tests (printer, corpus)
+│   └── tools/
+│       ├── new-runtime/        caged.py (the cage), core-compare.py, std-compare.py
+│       ├── pgo/                build.sh, json.ok, workloads/NN-*/ (PGO training)
+│       ├── allocation-counter/ counting allocator (feature allocation-stats)
+│       └── check-sparrow-boundary.py   dependency boundaries between crates
+├── std/                        standard library (.ok); std/runtime/*.ok declare natives
+├── conformance/                OCS: cases/L00…L13, runner `ocs`, adapters/rust, profiles
+├── tools/                      gate/ (gate.sh, docker.sh, std-tests.py, known-failures.txt),
+│                               docker/Dockerfile, package.sh, CLDR/IANA/ICU generators
+├── docs/                       the Book (EN/RU) and this guide
+├── vscode-okkama/              VS Code extension
+├── Makefile, install.sh, CHANGELOG.md, README.md
+└── .github/workflows/          ci.yml (tests, conformance per engine), packages.yml (release)
+```
+
+## 3. Build, install, run
+
+```sh
+make build                 # okkama, sparrow(+origin), blade, okkama-native — release
+make install               # ./install.sh: build and install into ~/.local
+make install-pgo           # profile-guided build (rustup component add llvm-tools)
+make test                  # cargo test --workspace
+make gate                  # release gate in Docker (§5)
+```
+
+`./install.sh` puts `okkama`, `sparrow`, `blade` into `<prefix>/bin` and std,
+the native dylib and ICU into `<prefix>/lib/okkama`; `okkama` finds them next
+to itself. Without installing, set `OKKAMA_STDLIB_DIR=<repo>/std`.
+
+Builds for experiments go to the scratchpad, not to `okkama-rs/target`:
+`CARGO_TARGET_DIR=$SCRATCH/target cargo build --release -p okkama-cli -p sparrow-cli`.
+
+Running programs:
+
+```sh
+okkama hello.ok                          # IR interpreter (default; OKKAMA_ENGINE changes it)
+okkama run --engine sparrow hello.ok     # Sparrow core
+okkama run --engine sparrow-origin x.ok  # previous VM (comparison only, until 0.5)
+okkama run --engine jvm hello.ok         # JVM classes + java (JDK 22+)
+okkama run -t module.ok                  # the module's inline tests
+okkama build x.ok --target sparrow -o x.spb [--tests]
+sparrow x.spb [args]   |  sparrow --test t.spb  |  sparrow --stats x.spb
+sparrow --disassemble x.spb   |  sparrow --native-capabilities
+okkama exec x.spb      # SPB on the core inside okkama
+```
+
+Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE`,
+`SPARROW_CORE_STATS=1` (= `--stats`: counts of natives, intrinsics, slow paths,
+regions, awaits, heap bytes), `OKKAMA_TRACE=off` (no stack in failures; the
+core prints none yet, #10), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
+`tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
+VM only.
+
+## 4. Isolation: the cage and Docker
+
+**Cage** (macOS sandbox + limits; no network, no process spawning):
+
+```sh
+python3 okkama-rs/tools/new-runtime/caged.py --cpu-seconds 30 --timeout 60 \
+    [--memory-mb 1024] [--writable DIR] -- <command…>
+```
+
+zsh does not split `$var`; use `${=var}` or a function when passing commands.
+
+**Docker** (everything with workers, sockets, PostgreSQL, the gate):
+
+- Image: `docker build -t okkama-dev tools/docker` (Rust, JDK 25, Python with
+  psycopg2, Perl, Ruby, gdb). Older ad-hoc image `okkama-bench:latest` is the
+  same idea.
+- Linux build of the core: mount the repo read-only and keep outputs in a
+  volume:
+  `docker run --rm --cpus 3 --memory 6g -v $REPO:/repo:ro -v okkama-core-target:/target -v okkama-cargo-registry:/usr/local/cargo/registry -e CARGO_TARGET_DIR=/target -w /repo/okkama-rs okkama-dev cargo build --release -p sparrow-cli`
+- Run with limits: `--cpus 2 --memory 2g --pids-limit 256`, `--network none`
+  unless a service is needed.
+- PostgreSQL: network `okkama-pg`, container `okkama-pg-db`
+  (`postgres:latest`, password `okkama`, IP 172.19.0.2):
+  `docker network create okkama-pg; docker run -d --name okkama-pg-db --network okkama-pg -e POSTGRES_PASSWORD=okkama postgres:latest`;
+  clients run with `--network okkama-pg -e OKKAMA_PG_ADDRESS=172.19.0.2 -e OKKAMA_PG_PASSWORD=okkama`.
+- Sampling profiles: build with `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`
+  into a separate volume (`okkama-core-dbg`), run with `--cap-add SYS_PTRACE`,
+  attach `gdb -p PID -batch -ex "thread apply all bt 12"` in a loop and count
+  top frames (JIT frames show as `??`).
+- Linux AArch64 needs frame pointers (`okkama-rs/.cargo/config.toml` sets them
+  for non-Apple targets); the core walks frame records.
+
+## 5. Tests
+
+| What | How | Notes |
+|---|---|---|
+| Rust | `cargo test --release -p <crate>`; compiler: `--test analysis`, `corpus`, `printer`, `lowering*` | `tests/analysis.rs` has `messages("…")` for diagnostics |
+| One std module | `okkama build --tests std/X.ok --target sparrow -o t.spb` then `sparrow --test t.spb` (in the cage) | `okkama run -t std/X.ok` for IR |
+| All std, core vs previous VM | `python3 okkama-rs/tools/new-runtime/std-compare.py --compiler okkama --stdlib std --reference sparrow-origin --core sparrow --work DIR [prefixes]` | runs each module caged; expected fails: `locale/collation` (ICU), `net/tcp` (network in cage) |
+| Conformance, core vs previous VM | `core-compare.py --compiler … --stdlib std --origin sparrow-origin --core sparrow --work DIR L00 … L13` | caged; skips workers/network; `SPEC` = core matches case.json where the previous VM cannot |
+| Conformance (OCS) | `cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 6 --adapter-env OCS_RUST_ENGINE=sparrow` | Docker only; the adapter builds its own debug `okkama` in `adapters/rust/.target` |
+| Release gate | `make gate` (= `tools/gate/docker.sh`, ~30–40 min) | Rust tests, conformance ir/jvm/sparrow/sparrow-origin, std tests ir/sparrow vs `tools/gate/known-failures.txt`; logs in `conformance/reports/runs/gate-*` |
+
+Last known state (0.4.0): conformance 420/420 on core-compare + 13 core-only
+DB cases matching their spec; std 238 modules pass on the core.
+
+## 6. Benchmarks
+
+Benchmarks live outside the repository in `../okkama-docs/benchmarks`
+(`OKKAMA_REPO` points the runner at a checkout; default `../okkama-new`).
+
+- Engine ladder: `python3 run.py --runs 10 [--only 03-float] [--engines sparrow-core,sparrow,ir,jvm,python,perl,ruby]`
+  — `sparrow-core` is the core (`sparrow`), `sparrow` the previous VM
+  (`sparrow-origin`); results in `results/`; `export.py` writes a report into
+  `reports/<date>-v<X.Y.Z>/` (results.json, before.json, CSVs, REPORT.md; a
+  hand-written README.md with conclusions). One report per release.
+- DB: `db/main.ok` + `db/main.py` (SQLite), `db/postgres.ok` +
+  `db/postgres.py` (PostgreSQL, Docker). Env: `DB_BENCH_ROWS=5000
+  DB_BENCH_LOOKUPS=500 DB_BENCH_WARMUPS=6`. Each prints `kind nanos checksum`
+  lines; compare medians of several alternating rounds with checksums.
+- PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
+
+Reference numbers (0.4.0, Apple M2 Max / Docker arm64): the core is ~2× the
+previous VM, 5.4× Python, 6.1× Perl, 4.0× Ruby on the ladder (geometric
+mean). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, point query 94 µs vs 69
+µs, inserts faster.
+
+## 7. Architecture
+
+**Pipeline**: source → lexer/parser (`syntax`) → registry and checker
+(`analysis`: types, roles, caps, errors; THIR) → lowering (`lowering`) to OIR
+(`ir`, verified by `ir/verify.rs`) → backends: IR interpreter
+(`okkama-runtime`), SPB (`codegen/sparrow`) executed by `sparrow-core`, JVM
+classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`).
+
+**Language facts that shape the runtime**: objects are immutable (a successor
+`^` makes a changed copy; `Atomic` is the mutable cell); errors are enums
+(`enum E is Error = (case(payload is T), …)`, lowered to objects
+`{$tag, $<case>_<name>: array}`; runtime-raised errors are the first case);
+resources (`destroy`) are released by cleanup regions that the compiler emits
+(`region.enter/track/adopt/leave/transfer`); plainness (`is_plain`) decides
+where regions are needed.
+
+**sparrow-core** (`crates/sparrow-core/src`):
+
+| File | Role |
+|---|---|
+| `lib.rs` | entry points: `run_configured`, `run_reported` (OCS: `Uncaught`), `run_tests`, `run_worker`, `default_environment`; VM thread with a 1 GiB stack |
+| `program.rs` | loaded program facts: machine representation (`Kind`) of every type |
+| `word.rs` | one word per value; reprs Int/Raw/Ref |
+| `jit.rs` | whole-function Cranelift compilation on first call; stack maps (`maps`: frame-to-SP offset + live slots); safepoints |
+| `code_memory.rs` | JIT memory: one reservation per kind, no membarrier |
+| `heap.rs` | non-moving precise mark-sweep heap, size classes up to 128 words, object/array/closure/payload kinds |
+| `runtime.rs` | runtime state shared with machine code, helpers (`rt_*`), `run_function_with`, stats |
+| `tasks.rs`, `drivers.rs` | stackless async: an async call's heap frame is its Future; drivers are bodies of async natives/intrinsics |
+| `io.rs` | external waits: native I/O requests (Rust futures), timers; single-thread Tokio reactor polled while spinning (`wait_external`) |
+| `failures.rs` | failures, cleanup regions, resource identities and graph walks (`descriptor_flags`: closed-world reachability of `destroy`), failure reports |
+| `intrinsics.rs`, `primitives.rs` | runtime-provided functions; Atomic, Event, Lock, channels, groups |
+| `natives.rs` + `host/` | native providers: `host/mod.rs` classifies each ABI native to a provider (`native_network`, `native_tls`, `native_sqlite`, `native_postgres`, `native_db`, `native_json`, …); `native_origin.rs` bridges the rest to `okkama-runtime-core` (sync, plus terminal promises pumped through `sched::pump`) |
+| `worker.rs`, `worker_process.rs` | process workers (OKW1 format), child `--worker FILE.spb` |
+
+**Adding a native**: entry in `okkama-runtime-abi/src/table.rs` (id, symbol,
+signature), declaration in `std/runtime/<module>.ok`, implementation in a core
+provider (`host/native_*.rs`, register in `host/mod.rs` `classify`) — or rely
+on the origin bridge if `okkama-runtime-core` implements it; the IR engine
+uses `okkama-runtime-core`. `sparrow --native-capabilities` lists coverage.
+
+**DB layer**: `std/db/*` (query, row, read/DbPage, statement, transaction),
+drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
+(protocol in Okkama over `io/input` byte primitives; result portions become a
+`DbPage` via the native `runtime/postgres.pg_page`).
+
+## 8. Okkama pitfalls (when writing .ok)
+
+- Reserved words: `next`, `loop`, `last`, `none`, `null`.
+- Imports come before every declaration.
+- `/` on ints gives `rat`; use `.int()`.
+- `char` has no `.string()`; `@@byte()` is not a constructor; empty typed
+  arrays need a type: `let empty is @T = [];`.
+- A `;` after a `match` inside `try` is a syntax error.
+- Program arguments: `runtime/process.process_arguments()` (not `Environment`).
+- `Stdout` is in `io/stdout`; there is no `io/stderr` module (`Stderr` is in
+  `io/stdout`).
+- A cap value (`owner::Cap`) exposes computed fields via `::`, no actions.
+
+## 9. Debugging recipes
+
+- Runtime event counts: `sparrow --stats x.spb` or `SPARROW_CORE_STATS=1`.
+- Bytecode: `sparrow --disassemble x.spb`.
+- Temporary instrumentation in the core: copy the file to the scratchpad,
+  add counters (print them from `stats_report`), build in Docker into
+  `okkama-core-dbg`, measure, then restore the copy.
+- Quadratic behaviour around regions: count `resource_graph_into` pops per
+  site; tracked values reachable from large structures are the usual cause
+  (issue #9).
+
+## 10. Release process
+
+1. Feature branches merge into `release/0X0` (cut from `develop`).
+2. Bump `version` in `okkama-rs/Cargo.toml` (`cargo update --workspace
+   --offline` refreshes Cargo.lock); move CHANGELOG `[Unreleased]` to
+   `## [X.Y.Z] — date` with a summary.
+3. `make gate` (Docker) must pass; write the benchmark report (§6).
+4. Merge the release branch into `develop` (fast-forward history on
+   `develop`), tag `vX.Y.Z` (annotated, must match Cargo.toml), push `develop`,
+   the release branch and the tag: `.github/workflows/packages.yml` builds
+   tar.gz/.pkg/.deb and the GitHub Release; pushes to `develop` publish the
+   `nightly` pre-release.
+5. Install locally: `./install.sh` (or `make install-pgo`).
+6. Delete merged branches locally and on GitHub.
+
+## Documents outside the repository
+
+`/Volumes/SamsungSSD/stuff/okkama-docs` (`../okkama-docs` from the repo):
+
+- `docs/` — specification (`okkama-spec-11072026.md`), grammar, std reference
+  (`docs/std`), guides, `roadmap/hardening.md` (H-01…H-38, waves per release),
+  audits, compiler (OIR-1), security model, language LLM context pack.
+- `runtime/` — architecture, Sparrow ISA, compatibility,
+  `new-runtime/core-rebuild.md` (journal of the core rebuild, stages 0–6).
+- `benchmarks/`, `examples/` (to be reworked), `experiments/`, `archive/`.
+
+Open issues worth knowing: #7 inline blocking natives, #9 region tracking
+cost, #10 source locations on the core, #11 PostgreSQL round trips, #12 TLS and
+terminal cancellation tests, #13 format natives in Okkama, #14 removal of the
+previous VM.
