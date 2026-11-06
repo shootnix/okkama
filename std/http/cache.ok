@@ -39,15 +39,15 @@ object Caching does Exchanging {
         if leases.size()==1{let shared=leases[0].published();if shared.size()==1 && shared[0].revision()==cache.revision() && shared[0].entry().matches(request){return shared[0].entry().response(request,admitted_at);}}
         let selected is @CachedHttpEntry=if eligible{try{[cache.entry(request)];}catch e is MissingCachedResponse{let empty is @CachedHttpEntry=[];empty;}}else{let empty is @CachedHttpEntry=[];empty;};
         if selected.size()==1{if CacheRequestFreshness(request,selected[0]).usable(admitted_at){return selected[0].response(request,admitted_at);}}
-        let only_cached=try{CacheControl(request.headers()).present("only-if-cached");}catch e is Error{false;};confirm !only_cached else throw MissingCachedResponse();
+        let only_cached=try{CacheControl(request.headers()).present("only-if-cached");}catch e is Error{false;};confirm !only_cached else throw MissingCachedResponse.missing;
         let validation is @CacheValidation=if selected.size()==1{[CacheValidation(request,selected[0])];}else{let empty is @CacheValidation=[];empty;};
         let outgoing=if validation.size()==1 && validation[0].conditional(){validation[0].request();}else{request;};
         let revision=cache.revision();let started=clock.monotonic_instant();let result=await origin.response(outgoing);
         let timing=CacheResponseTiming(clock.instant(),started,clock.monotonic_instant());
         let code=result.response().status().code();
         if code==304 && validation.size()==1 && validation[0].conditional(){
-            let body=result.response().body().reading();defer body.close();let empty=await body.bytes(1);confirm empty.size()==0 else throw InvalidCacheRevalidation();body.trailers();body.close();
-            confirm cache.revision()==revision else throw InvalidCacheRevalidation();let refreshed=validation[0].refreshed(result,timing);
+            let body=result.response().body().reading();defer body.close();let empty=await body.bytes(1);confirm empty.size()==0 else throw InvalidCacheRevalidation.invalid;body.trailers();body.close();
+            confirm cache.revision()==revision else throw InvalidCacheRevalidation.invalid;let refreshed=validation[0].refreshed(result,timing);
             if CacheResponseSelection(refreshed.result().response().headers()).allowed() && refreshed.storable(){cache.conditional_store(refreshed,revision);CacheVerifiedPublication(cache,request,refreshed,revision,leases).publish();}else{cache.invalidate(request);}
             return refreshed.response(request,clock.monotonic_instant());
         }
@@ -83,9 +83,9 @@ object CacheBodyReading does BodyReading {
         self.origin=origin;self.cache=cache;self.request=request;self.result=result;self.timing=timing;self.revision=revision;self.leases=leases;budget=cache.budget();buffer=ByteBuffer();stopped=Event();finished=Event();overflow=Event();let empty is @Headers=[];trailers=Atomic(empty);lock=Lock();let waiting is @Future<@byte>=[];pending=Atomic(waiting);
     }
     async bytes(limit is int) is @byte{
-        confirm limit>0 else throw InvalidReadLimit(limit);confirm !stopped.ready() else throw BodyClosed();let guard=await lock.guard();defer guard.close();confirm !stopped.ready() else throw BodyClosed();if finished.ready(){return [];}
+        confirm limit>0 else throw InvalidReadLimit.limit(limit);confirm !stopped.ready() else throw BodyClosed.closed;let guard=await lock.guard();defer guard.close();confirm !stopped.ready() else throw BodyClosed.closed;if finished.ready(){return [];}
         let group is FutureGroup<@byte>=FutureGroup();let complete=Event();let cleanup=CacheReadSettlement(self,group,complete);defer await cleanup.close();
-        let waiting=origin.bytes(limit);pending.replace([waiting]);group.start(waiting);let chunk=await waiting;confirm chunk.size()<=limit else throw InvalidReading("cache body source exceeded requested limit");confirm !stopped.ready() else throw BodyClosed();
+        let waiting=origin.bytes(limit);pending.replace([waiting]);group.start(waiting);let chunk=await waiting;confirm chunk.size()<=limit else throw InvalidReading.because("cache body source exceeded requested limit");confirm !stopped.ready() else throw BodyClosed.closed;
         if chunk.size()>0{
             if !overflow.ready(){let held=buffer.content().size();if chunk.size()<=budget-held{buffer.writing().write(ByteSnapshot(chunk));}else{overflow.set();buffer.closing().close();}}
         }else{
@@ -96,7 +96,7 @@ object CacheBodyReading does BodyReading {
             buffer.closing().close();origin.close();finished.set();
         }complete.set();chunk;
     }
-    trailers() is Headers{confirm finished.ready() else throw TrailersUnavailable();trailers.value()[0];}
+    trailers() is Headers{confirm finished.ready() else throw TrailersUnavailable.unavailable;trailers.value()[0];}
     closed() is bool{stopped.ready();}
     close() is void{if !stopped.ready(){stopped.set();for pending.value() -> waiting{waiting.cancel();}origin.close();buffer.closing().close();if pending.value().size()==0{self.release();}}}
     settled() is void{let empty is @Future<@byte>=[];pending.replace(empty);if stopped.ready() || finished.ready() || overflow.ready(){self.release();}}

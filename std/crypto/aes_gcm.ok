@@ -11,7 +11,7 @@ import "encoding/hex" take HexEncoded;
 object AesGcm does Sealing {
     has key is SecretBytes;
     AesGcm(key is SecretBytes) {
-        confirm key.size() == 16 || key.size() == 32 else throw InvalidCryptoInput("AES-GCM key must be 16 or 32 bytes");
+        confirm key.size() == 16 || key.size() == 32 else throw InvalidCryptoInput.because("AES-GCM key must be 16 or 32 bytes");
         self.key = key;
     }
     nonce_size() is int { 12; }

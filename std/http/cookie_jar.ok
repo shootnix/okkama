@@ -31,7 +31,7 @@ object CookieLimits {
     CookieLimits(){total=3000;per_domain=180;}
     CookieLimits(total is int, per_domain is int) {
         confirm total>=1 && total<=10000 && per_domain>=1 && per_domain<=total
-            else throw InvalidCookie("jar limits require 1 <= per-domain <= total <= 10000");
+            else throw InvalidCookie.because("jar limits require 1 <= per-domain <= total <= 10000");
         self.total=total;self.per_domain=per_domain;
     }
     total() is int {total;}per_domain() is int {per_domain;}
@@ -46,23 +46,23 @@ object MemoryCookieJar does CookieStoring, Closing {
     MemoryCookieJar(clock is Timing, limits is CookieLimits){self.clock=clock;self.limits=limits;cell=Atomic(CookieJarState());}
     limits() is CookieLimits {limits;}
     cookies(origin is Url, context is CookieContext) is Sequencing<Cookie> {
-        confirm !cell.closed() else throw CookieJarClosed();
+        confirm !cell.closed() else throw CookieJarClosed.closed;
         let endpoint=CookieOrigin(origin);let now=clock.instant();
-        confirm !cell.closed() else throw CookieJarClosed();
+        confirm !cell.closed() else throw CookieJarClosed.closed;
         let current=cell.value();let live is @CookieRecord=current.records().filter()->record{!record.expired(now);};
         let selected is @CookieRecord=live.filter()->record{record.sent(endpoint,context);};
         let ordered is Sorted<CookieRecord>=Sorted(selected);
         let values is @Cookie=(0..ordered.size()).map()->index{ordered.item(index).cookie();};
         let counter=current.counter()+1;
-        confirm counter<=9007199254740991 else throw InvalidCookie("jar revision limit exceeded");
+        confirm counter<=9007199254740991 else throw InvalidCookie.because("jar revision limit exceeded");
         let revised is @CookieRecord=live.map()->record{if record.sent(endpoint,context){record.accessed(counter);}else{record;}};
         cell.replace(CookieJarState(revised,counter));values;
     }
     store(origin is Url, headers is Headers, context is CookieContext) is void {
-        confirm !cell.closed() else throw CookieJarClosed();
+        confirm !cell.closed() else throw CookieJarClosed.closed;
         let endpoint=CookieOrigin(origin);let now=clock.instant();
         let fields=headers.values(HeaderName("Set-Cookie"));
-        confirm !cell.closed() else throw CookieJarClosed();
+        confirm !cell.closed() else throw CookieJarClosed.closed;
         let current=cell.value();let live is @CookieRecord=current.records().filter()->record{!record.expired(now);};
         let update=CookieJarUpdate(live,current.counter(),limits);
         for (0..fields.size()) -> index {
@@ -72,25 +72,25 @@ object MemoryCookieJar does CookieStoring, Closing {
         cell.replace(update.state());
     }
     size() is int {
-        confirm !cell.closed() else throw CookieJarClosed();let now=clock.instant();
-        confirm !cell.closed() else throw CookieJarClosed();let current=cell.value();
+        confirm !cell.closed() else throw CookieJarClosed.closed;let now=clock.instant();
+        confirm !cell.closed() else throw CookieJarClosed.closed;let current=cell.value();
         let live is @CookieRecord=current.records().filter()->record{!record.expired(now);};
         cell.replace(CookieJarState(live,current.counter()));live.size();
     }
-    clear() is void {confirm !cell.closed() else throw CookieJarClosed();cell.replace(CookieJarState());}
+    clear() is void {confirm !cell.closed() else throw CookieJarClosed.closed;cell.replace(CookieJarState());}
     closed() is bool {cell.closed();}close() is void {cell.close();}
 
     persisted_text() is string {
-        confirm !self.closed() else throw CookieJarClosed();let now=clock.instant();
-        confirm !self.closed() else throw CookieJarClosed();let current=cell.value();
+        confirm !self.closed() else throw CookieJarClosed.closed;let now=clock.instant();
+        confirm !self.closed() else throw CookieJarClosed.closed;let current=cell.value();
         let records is @CookieRecord=current.records().filter()->record{record.cookie().attributes().expiry().persistent() && !record.expired(now);};
         CookieStoreText(CookieJarState(records,current.counter()),limits).string();
 
     }
 
     restored(source is string) is ^MemoryCookieJar {
-        let decoded=try{ParsedCookieStore(source).value();}catch e is InvalidCookie{throw InvalidCookieStore("cookie policy rejected record");}
-            catch e is InvalidUrl{throw InvalidCookieStore("invalid stored host or site");};
+        let decoded=try{ParsedCookieStore(source).value();}catch e is InvalidCookie{throw InvalidCookieStore.because("cookie policy rejected record");}
+            catch e is InvalidUrl{throw InvalidCookieStore.because("invalid stored host or site");};
         let now=clock.instant();let live is @CookieRecord=decoded.state().records().filter()->record{!record.expired(now);};
         ^limits=decoded.limits();^cell=Atomic(CookieJarState(live,decoded.state().counter()));
     }
@@ -154,7 +154,7 @@ object CookieJarUpdate {
     following(cookie is Cookie, endpoint is CookieOrigin, context is CookieContext, now is Instant) is ^CookieJarUpdate {
         let policy=cookie.attributes().same_site();
         let allowed=policy==SameSite.cross_site || endpoint.site()==context.key() || context.top_level();
-        let index=counter+1;confirm index<=9007199254740991 else throw InvalidCookie("jar revision limit exceeded");
+        let index=counter+1;confirm index<=9007199254740991 else throw InvalidCookie.because("jar revision limit exceeded");
         let proposed=CookieRecord(cookie,endpoint,context,now,index);
         let overlaid=if endpoint.secure() {false;} else {records.reduce(false)->found,record{found || record.overlays(proposed);};};
         if allowed && !overlaid {
@@ -198,7 +198,7 @@ object CookieJarBounded {
         };result;
     }
 }
-object CookieJarClosed does Error {CookieJarClosed();text() is string {"cookie jar is closed";}}
+enum CookieJarClosed is Error = (closed);
 // Explicit filesystem commands; construction performs no I/O. The intermediate
 // file is closed before same-directory rename, with deferred private-directory
 // cleanup on failure. Atomic visibility does not promise power-loss durability.
@@ -218,15 +218,15 @@ object LoadedCookieJar {
     has origin is FileEntry;has clock is Timing;
     LoadedCookieJar(origin is FileEntry, clock is Timing){self.origin=origin;self.clock=clock;}
     result() is MemoryCookieJar {
-        confirm origin.stat().size()<=67108864 else throw InvalidCookieStore("file byte limit exceeded");
+        confirm origin.stat().size()<=67108864 else throw InvalidCookieStore.because("file byte limit exceeded");
         let file=File(mode:FileMode.reading,path:origin.path(),binary:true);defer file.close();
         let output=ByteBuffer();defer output.closing().close();let writing=output.writing();
         loop {
             let chunk=file.binary().bytes(65536);if chunk.size()==0 {last;}
-            confirm output.content().size()+chunk.size()<=67108864 else throw InvalidCookieStore("file byte limit exceeded");
+            confirm output.content().size()+chunk.size()<=67108864 else throw InvalidCookieStore.because("file byte limit exceeded");
             writing.write(ByteSnapshot(chunk));
         }
-        let text=try{AsciiDecoded(output.content().bytes()).string();}catch e is InvalidAsciiByte{throw InvalidCookieStore("ASCII file required");};
+        let text=try{AsciiDecoded(output.content().bytes()).string();}catch e is InvalidAsciiByte{throw InvalidCookieStore.because("ASCII file required");};
         MemoryCookieJar(clock).restored(text);
     }
 }
@@ -237,7 +237,7 @@ object CookieStoreText {
         let header=["OKKAMA-COOKIE-JAR","1",PublicSuffixList().version(),limits.total().string(),limits.per_domain().string(),state.counter().string()].join("\t");
         let rows is @string=state.records().map()->record{CookieStoreRow(record).string();};
         let bytes=rows.reduce(header.length()+1)->total,row{total+row.length()+1;};
-        confirm bytes<=67108864 else throw InvalidCookieStore("file byte limit exceeded");
+        confirm bytes<=67108864 else throw InvalidCookieStore.because("file byte limit exceeded");
         header+"\n"+if rows.size()==0 {"";}else{rows.join("\n")+"\n";};
     }
 }
@@ -247,7 +247,7 @@ object CookieStoreRow {
         let cookie=origin.cookie();let attrs=cookie.attributes();let flags=attrs.flags();
         let expiry=attrs.expiry().instant().unix_duration().nanoseconds().string();
         let created=origin.created().unix_duration().nanoseconds().string();
-        confirm expiry.length()<=32 && created.length()<=32 else throw InvalidCookieStore("timestamp field width");
+        confirm expiry.length()<=32 && created.length()<=32 else throw InvalidCookieStore.because("timestamp field width");
         let site=match attrs.same_site(){case SameSite.strict{"strict";}case SameSite.lax{"lax";}case SameSite.cross_site{"cross_site";}else{"unspecified";}};
         [cookie.name(),cookie.value(),origin.domain(),if origin.host_only(){"1";}else{"0";},attrs.path(),origin.partition(),site,
             if flags.membership(CookieFlag.secure){"1";}else{"0";},if flags.membership(CookieFlag.http_only){"1";}else{"0";},
@@ -263,20 +263,20 @@ object ParsedCookieStore {
     has origin is string;ParsedCookieStore(origin is string){self.origin=origin;}
     value() is CookieStoreSnapshot {
         confirm origin.length()<=67108864 && origin!="" && origin.slice(origin.length()-1,origin.length())=="\n"
-            else throw InvalidCookieStore("file framing or byte limit");
+            else throw InvalidCookieStore.because("file framing or byte limit");
         let lines=origin.split("\n");let header=lines[0].split("\t");
-        confirm header.size()==6 && header[0]=="OKKAMA-COOKIE-JAR" && header[1]=="1" else throw InvalidCookieStore("unsupported file schema");
-        confirm header[2]==PublicSuffixList().version() else throw InvalidCookieStore("pinned suffix policy mismatch");
+        confirm header.size()==6 && header[0]=="OKKAMA-COOKIE-JAR" && header[1]=="1" else throw InvalidCookieStore.because("unsupported file schema");
+        confirm header[2]==PublicSuffixList().version() else throw InvalidCookieStore.because("pinned suffix policy mismatch");
         let limits=CookieLimits(CookieStoreNumber(header[3]).index(),CookieStoreNumber(header[4]).index());
-        let counter=CookieStoreNumber(header[5]).index();confirm lines.size()-2<=limits.total() else throw InvalidCookieStore("record limit exceeded");
+        let counter=CookieStoreNumber(header[5]).index();confirm lines.size()-2<=limits.total() else throw InvalidCookieStore.because("record limit exceeded");
         let records is @CookieRecord=(1..lines.size()-1).map()->index{ParsedCookieStoreRow(lines[index],counter).value();};
         let identities is SortedBy<CookieRecord,string>=SortedBy(records,(record is CookieRecord) is string {CookieStoreIdentity(record).string();});
         for (0..identities.size()) -> index {
-            if index>0 {confirm !identities.item(index-1).same(identities.item(index)) else throw InvalidCookieStore("duplicate cookie identity");}
+            if index>0 {confirm !identities.item(index-1).same(identities.item(index)) else throw InvalidCookieStore.because("duplicate cookie identity");}
         }
         let revisions is SortedBy<CookieRecord,int>=SortedBy(records,(record is CookieRecord) is int{record.creation_order();});
         for (0..revisions.size()) -> index {
-            if index>0 {confirm revisions.item(index-1).creation_order()!=revisions.item(index).creation_order() else throw InvalidCookieStore("duplicate creation order");}
+            if index>0 {confirm revisions.item(index-1).creation_order()!=revisions.item(index).creation_order() else throw InvalidCookieStore.because("duplicate creation order");}
         }
         let domains is SortedBy<CookieRecord,string>=SortedBy(records,(record is CookieRecord) is string{record.domain();});
         let count=CookieStoreDomainCount(limits.per_domain());for domains -> record{count=count.following(record.domain());}
@@ -294,59 +294,56 @@ object CookieStoreDomainCount {
     has domain is string;has amount,maximum is int;CookieStoreDomainCount(maximum is int){domain="";amount=0;self.maximum=maximum;}
     following(domain is string) is ^CookieStoreDomainCount {
         let next_count=if domain==self.domain {amount+1;}else{1;};
-        confirm next_count<=maximum else throw InvalidCookieStore("per-domain record limit exceeded");^domain=domain;^amount=next_count;
+        confirm next_count<=maximum else throw InvalidCookieStore.because("per-domain record limit exceeded");^domain=domain;^amount=next_count;
     }
 }
 object ParsedCookieStoreRow {
     has origin is string;has counter is int;ParsedCookieStoreRow(origin is string, counter is int){self.origin=origin;self.counter=counter;}
     value() is CookieRecord {
-        confirm origin.length()<=16384 else throw InvalidCookieStore("record byte limit exceeded");
-        let fields=origin.split("\t");confirm fields.size()==14 else throw InvalidCookieStore("record field count");
+        confirm origin.length()<=16384 else throw InvalidCookieStore.because("record byte limit exceeded");
+        let fields=origin.split("\t");confirm fields.size()==14 else throw InvalidCookieStore.because("record field count");
         let host_only=CookieStoreBoolean(fields[3]).value();let partitioned=CookieStoreBoolean(fields[9]).value();
         let domain=fields[2];let literal=if domain.split(":").size()>1 {"["+domain+"]";}else{domain;};
         let endpoint=CookieOrigin(ParsedUrl("https://"+literal+"/").value());
-        confirm endpoint.domain()==domain else throw InvalidCookieStore("noncanonical record domain");
+        confirm endpoint.domain()==domain else throw InvalidCookieStore.because("noncanonical record domain");
         if !host_only && !endpoint.address() {
-            confirm !PublicSuffixList().public(HostName(domain)) else throw InvalidCookieStore("invalid domain-cookie scope");
+            confirm !PublicSuffixList().public(HostName(domain)) else throw InvalidCookieStore.because("invalid domain-cookie scope");
         }
-        let partition=fields[5];confirm partitioned==(partition!="") else throw InvalidCookieStore("partition flag/key mismatch");
-        if partition!="" {confirm CookieOrigin(ParsedUrl(partition).value()).site()==partition else throw InvalidCookieStore("noncanonical partition key");}
+        let partition=fields[5];confirm partitioned==(partition!="") else throw InvalidCookieStore.because("partition flag/key mismatch");
+        if partition!="" {confirm CookieOrigin(ParsedUrl(partition).value()).site()==partition else throw InvalidCookieStore.because("noncanonical partition key");}
         let same_site=match fields[6]{case "strict"{SameSite.strict;}case "lax"{SameSite.lax;}case "cross_site"{SameSite.cross_site;}
-            case "unspecified"{SameSite.unspecified;}else{throw InvalidCookieStore("SameSite field");}};
+            case "unspecified"{SameSite.unspecified;}else{throw InvalidCookieStore.because("SameSite field");}};
         let flags is @CookieFlag=[CookieFlag.secure,CookieFlag.http_only,CookieFlag.partitioned].filter()->flag{
             match flag{case CookieFlag.secure{CookieStoreBoolean(fields[7]).value();}case CookieFlag.http_only{CookieStoreBoolean(fields[8]).value();}
                 case CookieFlag.partitioned{partitioned;}else{false;}}
         };let selected is Set<CookieFlag>=OrderedSet(flags);
         let expiry=CookieStoreNumber(fields[10]).instant();let created=CookieStoreNumber(fields[11]).instant();
         let creation_order=CookieStoreNumber(fields[12]).index();let access_order=CookieStoreNumber(fields[13]).index();
-        confirm creation_order>=1 && creation_order<=access_order && access_order<=counter else throw InvalidCookieStore("record revision bounds");
-        confirm fields[4]!="" else throw InvalidCookieStore("stored absolute path required");
+        confirm creation_order>=1 && creation_order<=access_order && access_order<=counter else throw InvalidCookieStore.because("record revision bounds");
+        confirm fields[4]!="" else throw InvalidCookieStore.because("stored absolute path required");
         let attrs=CookieAttributes(if host_only{"";}else{domain;},fields[4],CookieExpiry(expiry),same_site,selected);
         let cookie=Cookie(fields[0],fields[1],attrs);CookieRecord(cookie,domain,partition,host_only,created,creation_order,access_order);
     }
 }
 object CookieStoreBoolean {
     has origin is string;CookieStoreBoolean(origin is string){self.origin=origin;}
-    value() is bool {confirm origin=="0" || origin=="1" else throw InvalidCookieStore("boolean field");origin=="1";}
+    value() is bool {confirm origin=="0" || origin=="1" else throw InvalidCookieStore.because("boolean field");origin=="1";}
 }
 object CookieStoreNumber {
     has origin is string;CookieStoreNumber(origin is string){self.origin=origin;}
     value() is rat {
-        confirm origin.length()>=1 && origin.length()<=32 else throw InvalidCookieStore("decimal field width");
+        confirm origin.length()>=1 && origin.length()<=32 else throw InvalidCookieStore.because("decimal field width");
         let negative=origin.slice(0,1)=="-";let digits=if negative {origin.slice(1,origin.length());}else{origin;};
-        confirm digits!="" else throw InvalidCookieStore("decimal digits required");
+        confirm digits!="" else throw InvalidCookieStore.because("decimal digits required");
         let number=AsciiEncoded(digits).bytes().reduce(0.rat())->total,octet{
-            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidCookieStore("ASCII decimal required");total*10.rat()+code.rat()-48.rat();
+            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidCookieStore.because("ASCII decimal required");total*10.rat()+code.rat()-48.rat();
         };let signed=if negative {-number;}else{number;};
-        confirm signed.string()==origin else throw InvalidCookieStore("canonical decimal required");signed;
+        confirm signed.string()==origin else throw InvalidCookieStore.because("canonical decimal required");signed;
     }
-    index() is int {let number=self.value();confirm number>=0.rat() && number<=9007199254740991.rat() else throw InvalidCookieStore("revision/limit field bounds");number.int();}
+    index() is int {let number=self.value();confirm number>=0.rat() && number<=9007199254740991.rat() else throw InvalidCookieStore.because("revision/limit field bounds");number.int();}
     instant() is Instant {Instant(Duration(self.value(),DurationUnit.nanosecond));}
 }
-object InvalidCookieStore does Error {
-    has reason is string;InvalidCookieStore(reason is string){self.reason=reason;}
-    reason() is string{reason;}text() is string{"invalid cookie store: "+reason;}
-}
+enum InvalidCookieStore is Error = (because(reason is string));
 test "empty jar is an explicit closeable effect" {
     let jar=MemoryCookieJar(SystemClock());
     test.ok(jar.size()==0);jar.clear();jar.close();jar.close();test.ok(jar.closed());

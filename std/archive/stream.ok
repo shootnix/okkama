@@ -27,16 +27,16 @@ role ReadingArchive {
     // One empty file, then observed EOF. Test storage is per fake instance.
     fake {
         entry() is ArchiveEntry {
-            confirm !self.closed() else throw InvalidState("archive reading is closed");
+            confirm !self.closed() else throw InvalidState.because("archive reading is closed");
             if fake.storage.has("read") {
                 fake.storage.set("finished", true);
-                throw EndOfArchive();
+                throw EndOfArchive.reached;
             }
             fake.storage.set("read", true);
             ArchiveEntry.fake();
         }
         finished() is bool {
-            confirm !self.closed() else throw InvalidState("archive reading is closed");
+            confirm !self.closed() else throw InvalidState.because("archive reading is closed");
             fake.storage.has("finished");
         }
         close() is void { fake.storage.clear(); fake.storage.set("closed", true); }
@@ -54,14 +54,14 @@ role WritingArchive {
     // Accepts values and records completion; it does not encode any format.
     fake {
         write(entry is ArchiveEntry) is void {
-            confirm !self.finished() else throw InvalidState("archive writing has finished");
+            confirm !self.finished() else throw InvalidState.because("archive writing has finished");
         }
         finish() is void {
-            confirm !self.finished() else throw InvalidState("archive writing has finished");
+            confirm !self.finished() else throw InvalidState.because("archive writing has finished");
             fake.storage.set("finished", true);
         }
         finished() is bool {
-            confirm !self.closed() else throw InvalidState("archive writing is closed");
+            confirm !self.closed() else throw InvalidState.because("archive writing is closed");
             fake.storage.has("finished");
         }
         close() is void { fake.storage.clear(); fake.storage.set("closed", true); }
@@ -90,7 +90,7 @@ object ArchiveReading does ReadingArchive, Closing {
     }
 
     entry() is ArchiveEntry {
-        confirm !self.finished() else throw EndOfArchive();
+        confirm !self.finished() else throw EndOfArchive.reached;
         try { next_entry(); }
         catch end is EndOfArchive {
             status.writing() <- [byte(1)];
@@ -111,10 +111,10 @@ object ArchiveReading does ReadingArchive, Closing {
 
     private:
     usable() is void {
-        confirm !self.closed() else throw InvalidState("archive reading is closed");
+        confirm !self.closed() else throw InvalidState.because("archive reading is closed");
         let phase = status.content().bytes();
         confirm phase.size() == 0 || phase[0] != byte(2)
-            else throw InvalidState("archive reading has failed");
+            else throw InvalidState.because("archive reading has failed");
     }
 }
 
@@ -136,12 +136,12 @@ object ArchiveWriting does WritingArchive, Closing {
     }
 
     write(entry is ArchiveEntry) is void {
-        confirm !self.finished() else throw InvalidState("archive writing has finished");
+        confirm !self.finished() else throw InvalidState.because("archive writing has finished");
         try { write_entry(entry); }
         catch error is Error { status.writing() <- [byte(2)]; throw error; }
     }
     finish() is void {
-        confirm !self.finished() else throw InvalidState("archive writing has finished");
+        confirm !self.finished() else throw InvalidState.because("archive writing has finished");
         try { finish_stream(); }
         catch error is Error { status.writing() <- [byte(2)]; throw error; }
         status.writing() <- [byte(1)];
@@ -156,17 +156,14 @@ object ArchiveWriting does WritingArchive, Closing {
 
     private:
     usable() is void {
-        confirm !self.closed() else throw InvalidState("archive writing is closed");
+        confirm !self.closed() else throw InvalidState.because("archive writing is closed");
         let phase = status.content().bytes();
         confirm phase.size() == 0 || phase[0] != byte(2)
-            else throw InvalidState("archive writing has failed");
+            else throw InvalidState.because("archive writing has failed");
     }
 }
 
-object EndOfArchive does Error {
-    EndOfArchive();
-    text() is string { "end of archive"; }
-}
+enum EndOfArchive is Error = (reached);
 
 // Root inline test bodies cannot resolve imported ArchiveEntry identity in
 // anonymous action signatures. Consumer suite 313 verifies the concrete callback
@@ -213,5 +210,5 @@ test "archive fake lifetimes are independent and end diagnostic is stable" {
     test.ok(try { abandoned.finish(); false; } catch error is Error { true; });
     test.ok(try { abandoned.finished(); false; } catch error is Error { true; });
     empty.close();
-    test.is(EndOfArchive().text(), "end of archive");
+    test.is(EndOfArchive.reached.text(), "EndOfArchive.reached");
 }

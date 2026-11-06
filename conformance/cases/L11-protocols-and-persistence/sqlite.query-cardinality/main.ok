@@ -27,7 +27,7 @@ object ProbeRows does RowReading {
     async row() is Row {
         let index=reads.value();reads.replace(index+1);
         if index==fail_at { throw FetchFailed.fetch_failed; }
-        confirm index<count else throw RowsEnded();
+        confirm index<count else throw RowsEnded.ended;
         Row([Column(0,"id","")],[DbInteger(BigInt("7"))]);
     }
 }
@@ -77,9 +77,9 @@ async main() is int {
     c=c.same_int("all preserves first",collected[0].int("id"),7);
     c=c.same_int("all preserves second",collected[1].int("id"),8);
     c=c.same_int("empty zero limit",(await empty.all(0)).size(),0);
-    c=c.ok("limit never truncates",try { await multiple.all(1);false; } catch e is QueryLimitExceeded { e.limit()==1; });
-    c=c.ok("nonempty zero limit",try { await single.all(0);false; } catch e is QueryLimitExceeded { e.limit()==0; });
-    c=c.ok("negative limit rejected",try { await single.all(-1);false; } catch e is InvalidQueryLimit { e.limit()==-1; });
+    c=c.ok("limit never truncates",try { await multiple.all(1);false; } catch QueryLimitExceeded.limit(limit) { limit==1; });
+    c=c.ok("nonempty zero limit",try { await single.all(0);false; } catch QueryLimitExceeded.limit(limit) { limit==0; });
+    c=c.ok("negative limit rejected",try { await single.all(-1);false; } catch InvalidQueryLimit.limit(limit) { limit==-1; });
     c=c.same_int("connection reusable after limit",(await single.one()).int("id"),7);
     let stream=await multiple.rows();
     defer stream.close();

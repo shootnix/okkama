@@ -15,8 +15,8 @@ object HttpTrailerRules {
     }
     check(entry is Header) is void{
         let name=entry.name().lowercase();let banned is bool=forbidden.reduce(false)->found,value{found || value==name;};
-        confirm !banned else throw InvalidHttpMessage("forbidden trailer field");
+        confirm !banned else throw InvalidHttpMessage.because("forbidden trailer field");
         let connection is bool=nominated.reduce(false)->found,value{found || value==name;};
-        confirm !connection else throw InvalidHttpMessage("Connection nominated trailer field");
+        confirm !connection else throw InvalidHttpMessage.because("Connection nominated trailer field");
     }
 }

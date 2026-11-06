@@ -15,13 +15,11 @@ role Checking {check() is void;}
 role AsyncChecking {async check() is void;}
 // Current runtime contextual test capability: even a passing check requires it.
 object CheckContext {CheckContext();verify() is void {TestContext().require();}}
-object InvalidCheck does Error {
-    has reason is string;InvalidCheck(reason is string){self.reason=reason;}text() is string {"invalid check: "+reason;}
-}
+enum InvalidCheck is Error = (because(reason is string));
 object CloseTo does Checking {
     has actual,expected,relative,absolute is float;
     CloseTo(actual is float,expected is float,relative is float,absolute is float){
-        confirm relative>=0.0 && absolute>=0.0 else throw InvalidCheck("negative tolerance");
+        confirm relative>=0.0 && absolute>=0.0 else throw InvalidCheck.because("negative tolerance");
         self.actual=actual;self.expected=expected;self.relative=relative;self.absolute=absolute;
     }
     check() is void {CheckContext().verify();if !self.close(){test.fail("values are not close: expected "+expected.string()+", got "+actual.string());}}
@@ -41,7 +39,7 @@ object CloseTo does Checking {
     }
 }
 object CheckWindow {
-    has origin is int;CheckWindow(origin is int){confirm origin>0 && origin<=64 else throw InvalidCheck("diff context must be 1..64");self.origin=origin;}
+    has origin is int;CheckWindow(origin is int){confirm origin>0 && origin<=64 else throw InvalidCheck.because("diff context must be 1..64");self.origin=origin;}
     start(at is int) is int {if at>origin {at-origin;}else{0;}}
     stop(at is int,length is int) is int {if at+origin+1<length {at+origin+1;}else{length;}}
     size() is int{origin;}
@@ -121,7 +119,7 @@ object SequenceEquals<T> does Checking {
     SequenceEquals(actual is Sequencing<T>,expected is Sequencing<T>,context is int,rendering is (T) is string){self.actual=actual;self.expected=expected;window=CheckWindow(context);printing=[CheckItemRendering(rendering)];}
     check() is void {
         CheckContext().verify();let left=actual.size();let right=expected.size();
-        confirm left>=0 && right>=0 && left<=1048576 && right<=1048576 else throw InvalidCheck("sequence size");
+        confirm left>=0 && right>=0 && left<=1048576 && right<=1048576 else throw InvalidCheck.because("sequence size");
         let limit=if left<right {left;}else{right;};
         for (0..limit)->index {let first=actual.item(index);let second=expected.item(index);if first!=second{self.difference(index,left,right,[first],[second]);return;}}
         if left!=right{let empty is @T=[];self.difference(limit,left,right,empty,empty);}
@@ -143,7 +141,7 @@ object MatchingRegex does Checking {
 object Eventually does AsyncChecking {
     has condition is () is bool;has clock is Timing;has timeout,interval is Duration;
     Eventually(condition is () is bool,clock is Timing,timeout is Duration,interval is Duration){
-        confirm timeout.seconds()>=0.rat() && interval.seconds()>0.rat() else throw InvalidCheck("timeout must be nonnegative and interval positive");
+        confirm timeout.seconds()>=0.rat() && interval.seconds()>0.rat() else throw InvalidCheck.because("timeout must be nonnegative and interval positive");
         self.condition=condition;self.clock=clock;self.timeout=timeout;self.interval=interval;
     }
     async check() is void {
@@ -158,7 +156,7 @@ object Eventually does AsyncChecking {
 object AsyncEventually does AsyncChecking {
     has condition is async () is bool;has clock is Timing;has timeout,interval is Duration;
     AsyncEventually(condition is async () is bool,clock is Timing,timeout is Duration,interval is Duration){
-        confirm timeout.seconds()>=0.rat() && interval.seconds()>0.rat() else throw InvalidCheck("timeout must be nonnegative and interval positive");
+        confirm timeout.seconds()>=0.rat() && interval.seconds()>0.rat() else throw InvalidCheck.because("timeout must be nonnegative and interval positive");
         self.condition=condition;self.clock=clock;self.timeout=timeout;self.interval=interval;
     }
     async check() is void {

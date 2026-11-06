@@ -13,14 +13,14 @@ enum PluralKind = (cardinal, ordinal);
 object PluralNumber does PluralOperands {
     has origin is string;has integer, fraction, trimmed_fraction is BigInt;has visible, trimmed is int;
     PluralNumber(origin is string) {
-        confirm origin.length()>0 && origin.length()<=1024 else throw InvalidPluralNumber("number length");
+        confirm origin.length()>0 && origin.length()<=1024 else throw InvalidPluralNumber.because("number length");
         let absolute=if origin.slice(0,1)=="-" {origin.slice(1,origin.length());} else {origin;};
         let parts=absolute.split(".");
-        confirm parts.size()>=1 && parts.size()<=2 else throw InvalidPluralNumber("plain decimal required");
+        confirm parts.size()>=1 && parts.size()<=2 else throw InvalidPluralNumber.because("plain decimal required");
         for parts->part {
             let valid=Utf8Encoded(part).bytes().reduce(true)->previous,octet{previous && octet.int()>=48 && octet.int()<=57;};
             confirm part.length()>0 && valid
-                else throw InvalidPluralNumber("ASCII decimal digits required");
+                else throw InvalidPluralNumber.because("ASCII decimal digits required");
         }
         let digits=if parts.size()==2 {parts[1];} else {"";};
         let width=(0..digits.length()).reduce(0)->previous,index{if digits.slice(index,index+1)!="0" {index+1;} else {previous;}};
@@ -35,7 +35,7 @@ object PluralNumber does PluralOperands {
             case "i" {integer;}case "f" {fraction;}case "t" {trimmed_fraction;}
             case "v" {BigInt(visible.string());}case "w" {BigInt(trimmed.string());}
             case "c" {BigInt("0");}case "e" {BigInt("0");}
-            else {throw InvalidPluralNumber("unknown integer operand: "+name);}
+            else {throw InvalidPluralNumber.because("unknown integer operand: "+name);}
         }
     }
     relation(name is string, modulus is int, minimum is int, maximum is int) is bool {
@@ -52,7 +52,7 @@ object CanonicalPluralNumber {
     value() is PluralNumber {
         let coefficient=origin.coefficient().string();let negative=coefficient.slice(0,1)=="-";
         let digits=if negative {coefficient.slice(1,coefficient.length());} else {coefficient;};let exponent=origin.exponent();
-        confirm exponent>=-1024 && exponent<=1024 && digits.length()<=1024 else throw InvalidPluralNumber("expanded Decimal length");
+        confirm exponent>=-1024 && exponent<=1024 && digits.length()<=1024 else throw InvalidPluralNumber.because("expanded Decimal length");
         let point=digits.length()+exponent;
         let spelling=if exponent>=0 {
             let zeros is @string=(0..exponent).map()->index{"0";};digits+zeros.join("");
@@ -72,10 +72,7 @@ object PluralCategoryOf {
             case 3{PluralCategory.few;}case 4{PluralCategory.many;}else{PluralCategory.other;}}
     }
 }
-object InvalidPluralNumber does Error {
-    has reason is string;InvalidPluralNumber(reason is string){self.reason=reason;}
-    text() is string {"invalid plural number: "+reason;}
-}
+enum InvalidPluralNumber is Error = (because(reason is string));
 test "visible decimal precision affects English cardinal category" {
     test.is(PluralCategoryOf(PluralNumber("1"),Locale("en"),PluralKind.cardinal).value(),PluralCategory.one);
     test.is(PluralCategoryOf(PluralNumber("1.0"),Locale("en"),PluralKind.cardinal).value(),PluralCategory.other);

@@ -70,11 +70,11 @@ object Uuid8 {
 
     Uuid8(high is int, middle is int, low is int) {
         confirm high >= 0 && high <= 281474976710655
-            else throw InvalidArgument("UUID 8 high field must fit 48 bits");
+            else throw InvalidArgument.because("UUID 8 high field must fit 48 bits");
         confirm middle >= 0 && middle <= 4095
-            else throw InvalidArgument("UUID 8 middle field must fit 12 bits");
+            else throw InvalidArgument.because("UUID 8 middle field must fit 12 bits");
         confirm low >= 0 && low <= 4611686018427387903
-            else throw InvalidArgument("UUID 8 low field must fit 62 bits");
+            else throw InvalidArgument.because("UUID 8 low field must fit 62 bits");
         self.high = high;
         self.middle = middle;
         self.low = low;

@@ -111,23 +111,6 @@ object Receiving<T> {
     }
 }
 
-object ChannelClosed does Error {
-    ChannelClosed();
+enum ChannelClosed is Error = (closed);
 
-    text() is string {
-        "channel is closed";
-    }
-}
-
-object InvalidChannelCapacity does Error {
-    has capacity is int;
-    InvalidChannelCapacity(:capacity);
-
-    capacity() is int {
-        capacity;
-    }
-
-    text() is string {
-        "channel capacity must not be negative";
-    }
-}
+enum InvalidChannelCapacity is Error = (capacity(capacity is int));

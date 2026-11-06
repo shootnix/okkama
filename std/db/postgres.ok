@@ -14,7 +14,6 @@ import "db/error" take DbFailure, DbFailureKind, DbOperation, DbClosed, DbBusy, 
 import "net/tcp" take TcpConnecting, TcpOptions;
 import "net/tls" take TlsClientHandshake, TlsClientPolicy;
 import "net/endpoint" take IpEndpoint;
-import "net/stream" take AsyncReading, AsyncWriting;
 import "crypto/x509/trust" take CertificateIdentity;
 import "crypto/secret" take SecretBytes;
 import "crypto/nonce" take Entropy, RandomNonce;
@@ -23,7 +22,7 @@ import "collections/list" take List, EmptyList;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
 import "encoding/base64" take Base64Encoded;
 import "encoding/hex" take HexDecoded;
-import "io/stream" take Closing;
+import "io/stream" take AsyncReading, AsyncWriting, Closing;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "strings/parse" take ParsedFloat;
@@ -71,13 +70,13 @@ object PostgresCredentials {
     has password is @SecretBytes;
 
     PostgresCredentials(user is string) {
-        confirm user != "" && user.split(Utf8Decoded([0.byte()]).string()).size() == 1 else throw InvalidPostgresOptions("user must be nonempty without NUL");
+        confirm user != "" && user.split(Utf8Decoded([0.byte()]).string()).size() == 1 else throw InvalidPostgresOptions.because("user must be nonempty without NUL");
         self.user = user;
         password = [];
     }
 
     PostgresCredentials(user is string, password is SecretBytes) {
-        confirm user != "" && user.split(Utf8Decoded([0.byte()]).string()).size() == 1 else throw InvalidPostgresOptions("user must be nonempty without NUL");
+        confirm user != "" && user.split(Utf8Decoded([0.byte()]).string()).size() == 1 else throw InvalidPostgresOptions.because("user must be nonempty without NUL");
         self.user = user;
         self.password = [password];
     }
@@ -85,7 +84,7 @@ object PostgresCredentials {
     user() is string { user; }
     has_password() is bool { password.size() == 1; }
     password() is SecretBytes {
-        confirm password.size() == 1 else throw DbFailure(DbFailureKind.permission, DbOperation.connecting, "PG_PASSWORD_REQUIRED", "server requested a password but none was supplied");
+        confirm password.size() == 1 else throw DbFailure.detailed(DbFailureKind.permission, DbOperation.connecting, "PG_PASSWORD_REQUIRED", "server requested a password but none was supplied");
         password[0];
     }
 }
@@ -96,7 +95,7 @@ object PostgresOptions {
     has batch is int;
 
     PostgresOptions(database is string) {
-        confirm database != "" else throw InvalidPostgresOptions("database must be nonempty");
+        confirm database != "" else throw InvalidPostgresOptions.because("database must be nonempty");
         self.database = database;
         application = "okkama";
         md5 = false;
@@ -105,8 +104,8 @@ object PostgresOptions {
     }
 
     PostgresOptions(database is string, application is string, md5 is bool, cleartext is bool, batch is int) {
-        confirm database != "" else throw InvalidPostgresOptions("database must be nonempty");
-        confirm batch >= 1 && batch <= 65536 else throw InvalidPostgresOptions("batch must be 1..65536 rows");
+        confirm database != "" else throw InvalidPostgresOptions.because("database must be nonempty");
+        confirm batch >= 1 && batch <= 65536 else throw InvalidPostgresOptions.because("batch must be 1..65536 rows");
         self.database = database;
         self.application = application;
         self.md5 = md5;
@@ -173,7 +172,7 @@ object PostgresTls does PostgresTransporting {
         defer anchor.close();
         await PgOutput(tcp.output()).send(PgUntypedFrame(PgInt32(80877103).bytes()).bytes());
         let answer = await tcp.input().bytes(1);
-        confirm answer.size() == 1 && answer[0] == 83.byte() else throw DbFailure(DbFailureKind.connection, DbOperation.connecting, "PG_TLS_REFUSED", "PostgreSQL server refused TLS");
+        confirm answer.size() == 1 && answer[0] == 83.byte() else throw DbFailure.detailed(DbFailureKind.connection, DbOperation.connecting, "PG_TLS_REFUSED", "PostgreSQL server refused TLS");
         let tls = await TlsClientHandshake(tcp, server, policy).connection();
         published.set();
         PgTransport(tls.input(), tls.output(), tls);
@@ -230,7 +229,7 @@ object PostgresDatabase {
                 let value = fields.cstring();
                 if name == "server_version" { version.replace(value); }
             }
-            confirm kind == "Z" || kind == "S" || kind == "K" || kind == "N" else throw PgWireFailure("unexpected message after authentication");
+            confirm kind == "Z" || kind == "S" || kind == "K" || kind == "N" else throw PgWireFailure.because("unexpected message after authentication");
         }
         let connection = PostgresConnection(PgSession(channel, input, output, options.batch(), version.value(), status.value()));
         published.set();
@@ -290,7 +289,7 @@ object PgAuthentication {
             let fields = await self.request();
             let code = fields.int32();
             if code == 0 { last; }
-            confirm !scram.value() else throw PgWireFailure("authentication continued after SCRAM completed");
+            confirm !scram.value() else throw PgWireFailure.because("authentication continued after SCRAM completed");
             if code == 3 {
                 confirm options.cleartext() else throw PgDisabledMethod("cleartext password").value();
                 await output.send(PgFrame("p", @byte(credentials.password().export_bytes()..., 0.byte())).bytes());
@@ -305,7 +304,7 @@ object PgAuthentication {
                 await self.scram(fields);
                 scram.replace(true);
             }
-            confirm code == 3 || code == 5 || code == 10 else throw DbFailure(DbFailureKind.unsupported, DbOperation.connecting, "PG_AUTH_METHOD", "unsupported PostgreSQL authentication request " + code.string());
+            confirm code == 3 || code == 5 || code == 10 else throw DbFailure.detailed(DbFailureKind.unsupported, DbOperation.connecting, "PG_AUTH_METHOD", "unsupported PostgreSQL authentication request " + code.string());
         }
     }
 
@@ -313,27 +312,27 @@ object PgAuthentication {
     async request() is PgFields {
         let message = await input.message();
         if message.kind() == "E" { throw PgError(message, DbOperation.connecting).value(); }
-        confirm message.kind() == "R" else throw PgWireFailure("expected an authentication request");
+        confirm message.kind() == "R" else throw PgWireFailure.because("expected an authentication request");
         message.fields();
     }
 
     async scram(offer is PgFields) is void {
         let mechanisms is @string = PgMechanisms(offer).names();
         let offered is @string = mechanisms.filter() -> name { name == "SCRAM-SHA-256"; };
-        confirm offered.size() == 1 else throw DbFailure(DbFailureKind.unsupported, DbOperation.connecting, "PG_AUTH_METHOD", "server offers no SCRAM-SHA-256");
+        confirm offered.size() == 1 else throw DbFailure.detailed(DbFailureKind.unsupported, DbOperation.connecting, "PG_AUTH_METHOD", "server offers no SCRAM-SHA-256");
         let nonce = Base64Encoded(RandomNonce(entropy, 18).bytes()).string();
         let exchange = try { ScramExchange("", credentials.password(), nonce); } catch e is ScramFailure { throw PgScramRefused(e).value(); };
         let first = Utf8Encoded(exchange.client_first()).bytes();
         await output.send(PgFrame("p", @byte(PgCString("SCRAM-SHA-256").bytes()..., PgInt32(first.size()).bytes()..., first...)).bytes());
         let challenge = await self.request();
-        confirm challenge.int32() == 11 else throw PgWireFailure("expected SASLContinue");
+        confirm challenge.int32() == 11 else throw PgWireFailure.because("expected SASLContinue");
         let server_first = Utf8Decoded(challenge.rest()).string();
         let proof = try { exchange.client_final(server_first); } catch e is ScramFailure { throw PgScramRefused(e).value(); };
         await output.send(PgFrame("p", Utf8Encoded(proof).bytes()).bytes());
         let outcome = await self.request();
-        confirm outcome.int32() == 12 else throw PgWireFailure("expected SASLFinal");
+        confirm outcome.int32() == 12 else throw PgWireFailure.because("expected SASLFinal");
         let verified = try { exchange.server_verified(server_first, Utf8Decoded(outcome.rest()).string()); } catch e is ScramFailure { throw PgScramRefused(e).value(); };
-        confirm verified else throw DbFailure(DbFailureKind.permission, DbOperation.connecting, "PG_SCRAM_SERVER", "PostgreSQL server signature is invalid");
+        confirm verified else throw DbFailure.detailed(DbFailureKind.permission, DbOperation.connecting, "PG_SCRAM_SERVER", "PostgreSQL server signature is invalid");
     }
 }
 
@@ -355,14 +354,16 @@ object PgDisabledMethod {
     has method is string;
     PgDisabledMethod(method is string) { self.method = method; }
     value() is DbFailure {
-        DbFailure(DbFailureKind.permission, DbOperation.connecting, "PG_AUTH_DISABLED", "server requested " + method + " authentication, which PostgresOptions does not enable");
+        DbFailure.detailed(DbFailureKind.permission, DbOperation.connecting, "PG_AUTH_DISABLED", "server requested " + method + " authentication, which PostgresOptions does not enable");
     }
 }
 
 object PgScramRefused {
     has origin is ScramFailure;
-    PgScramRefused(origin is ScramFailure) { self.origin = origin; }
-    value() is DbFailure { DbFailure(DbFailureKind.permission, DbOperation.connecting, "PG_SCRAM", origin.reason()); }
+    PgScramRefused(origin is ScramFailure) {
+        self.origin = origin;
+    }
+    value() is DbFailure { DbFailure.detailed(DbFailureKind.permission, DbOperation.connecting, "PG_SCRAM", origin.text()); }
 }
 
 object PostgresConnection does DbConnection, DbExecuting, DbPreparing, DbPreparedOpening, Closing {
@@ -556,21 +557,21 @@ object PgSession does Closing {
     }
 
     permit(token is int) is void {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         if transaction.value() > 0 && status.value() == "I" {
             transaction.replace(0);
             self.end_prepared();
         }
-        if token > 0 && transaction.value() != token { throw TransactionEnded(); }
-        confirm transaction.value() == token else throw DbBusy();
-        confirm reader.value() == 0 else throw DbBusy();
+        if token > 0 && transaction.value() != token { throw TransactionEnded.ended; }
+        confirm transaction.value() == token else throw DbBusy.busy;
+        confirm reader.value() == 0 else throw DbBusy.busy;
     }
 
     active(token is int) is bool { !self.closed() && transaction.value() == token && status.value() != "I"; }
     prepared_closed(token is int) is bool { self.closed() || (token > 0 && !self.active(token)); }
 
     async execution(statement is Statement, token is int) is Execution {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         await self.settle(DbOperation.executing);
@@ -586,7 +587,7 @@ object PgSession does Closing {
     }
 
     async rows(statement is Statement, token is int) is RowReading {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         await self.settle(DbOperation.executing);
@@ -604,7 +605,7 @@ object PgSession does Closing {
     }
 
     async prepare(text is string, token is int) is PreparedStatement {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         await self.settle(DbOperation.preparing);
@@ -625,7 +626,7 @@ object PgSession does Closing {
     }
 
     async prepared_execution(name is string, parameters is int, values is Sequencing<DbValue>, token is int) is Execution {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         await self.settle(DbOperation.executing);
@@ -642,7 +643,7 @@ object PgSession does Closing {
     }
 
     async prepared_rows(name is string, parameters is int, description is PgDescription, values is Sequencing<DbValue>, source_closed is Event, token is int) is RowReading {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         await self.settle(DbOperation.executing);
@@ -669,10 +670,10 @@ object PgSession does Closing {
     }
 
     async fetch(id is int) is PgOutcome {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
-        confirm !self.closed() && reader.value() == id else throw DbClosed();
+        confirm !self.closed() && reader.value() == id else throw DbClosed.closed;
         let complete = Event();
         let cleanup = PgInterrupted(self, complete);
         defer cleanup.close();
@@ -706,12 +707,12 @@ object PgSession does Closing {
     }
 
     async begin(options is TransactionOptions) is PgTransaction {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         await self.settle(DbOperation.executing);
         self.permit(0);
-        confirm status.value() == "I" else throw DbBusy();
+        confirm status.value() == "I" else throw DbBusy.busy;
         let complete = Event();
         let cleanup = PgInterrupted(self, complete);
         defer cleanup.close();
@@ -725,7 +726,7 @@ object PgSession does Closing {
     }
 
     async finish(token is int, commit is bool, state is Atomic<int>) is bool {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         let guard = await lock.guard();
         defer guard.close();
         if !commit && reader.value() > 0 { self.release(reader.value()); }
@@ -741,7 +742,7 @@ object PgSession does Closing {
         transaction.replace(0);
         self.end_prepared();
         outcome.check();
-        confirm !commit || outcome.last_tag() == "COMMIT" else throw DbFailure(PgFailureKind("25P02").value(), DbOperation.committing, "25P02", "PostgreSQL rolled back the failed transaction instead of committing it");
+        confirm !commit || outcome.last_tag() == "COMMIT" else throw DbFailure.detailed(PgFailureKind("25P02").value(), DbOperation.committing, "25P02", "PostgreSQL rolled back the failed transaction instead of committing it");
         true;
     }
 
@@ -788,7 +789,7 @@ object PgFinishInterrupted {
 object PgLost {
     has operation is DbOperation;
     PgLost(operation is DbOperation) { self.operation = operation; }
-    value() is DbFailure { DbFailure(DbFailureKind.connection, operation, "PG_CONNECTION_LOST", "PostgreSQL connection failed"); }
+    value() is DbFailure { DbFailure.detailed(DbFailureKind.connection, operation, "PG_CONNECTION_LOST", "PostgreSQL connection failed"); }
 }
 
 object PgBegin {
@@ -860,7 +861,7 @@ object PgOutcome {
     }
 
     check() is void {
-        confirm !copy.value() else throw DbFailure(DbFailureKind.unsupported, operation, "PG_COPY", "COPY is not supported by db/postgres");
+        confirm !copy.value() else throw DbFailure.detailed(DbFailureKind.unsupported, operation, "PG_COPY", "COPY is not supported by db/postgres");
         if failures.value().size() == 1 { throw failures.value()[0]; }
     }
 
@@ -922,7 +923,7 @@ object PgDescription {
     row(body is @byte) is Row {
         let fields = PgFields(body);
         let count = fields.int16();
-        confirm count == columns.size() else throw PgWireFailure("data row width differs from its description");
+        confirm count == columns.size() else throw PgWireFailure.because("data row width differs from its description");
         let values is @DbValue = (0..count).map() -> index {
             let length = fields.int32();
             if length < 0 { DbNull(); } else { PgTextValue(fields.take(length), types[index]).value(); }
@@ -967,7 +968,7 @@ object PgTextValue {
             return DbDecimal(Decimal(text));
         }
         if oid == 17 {
-            confirm text.length() >= 2 && text.slice(0, 2) == "\\x" else throw PgWireFailure("bytea is not in hex output format");
+            confirm text.length() >= 2 && text.slice(0, 2) == "\\x" else throw PgWireFailure.because("bytea is not in hex output format");
             return DbBytes(HexDecoded(text.slice(2, text.length())).bytes());
         }
         DbText(text);
@@ -976,7 +977,7 @@ object PgTextValue {
 
 object PgNonFinite {
     PgNonFinite();
-    value() is DbFailure { DbFailure(DbFailureKind.data, DbOperation.fetching, "PG_NONFINITE", "NaN or infinite numeric values have no portable database value"); }
+    value() is DbFailure { DbFailure.detailed(DbFailureKind.data, DbOperation.fetching, "PG_NONFINITE", "NaN or infinite numeric values have no portable database value"); }
 }
 
 // Parse and Bind for one SQL text and its values.
@@ -991,7 +992,7 @@ object PgRequest {
     }
 
     require(count is int) is void {
-        confirm values.size() == count else throw DbFailure(DbFailureKind.data, DbOperation.executing, "PG_PARAMETER_COUNT", "prepared statement expects " + count.string() + " parameters, got " + values.size().string());
+        confirm values.size() == count else throw DbFailure.detailed(DbFailureKind.data, DbOperation.executing, "PG_PARAMETER_COUNT", "prepared statement expects " + count.string() + " parameters, got " + values.size().string());
     }
 
     parse(name is string) is @byte {
@@ -1031,7 +1032,7 @@ object PgParameter {
             case DbValueKind.decimal { Utf8Encoded(value.decimal().string()).bytes(); }
             case DbValueKind.text { Utf8Encoded(value.text()).bytes(); }
             case DbValueKind.bytes { value.bytes(); }
-            else { throw InvalidPostgresOptions("unknown value kind"); }
+            else { throw InvalidPostgresOptions.because("unknown value kind"); }
         };
     }
 
@@ -1069,7 +1070,7 @@ object PgError {
     value() is DbFailure {
         let code = if state.length() == 5 { state; } else { "PG_UNKNOWN"; };
         let subject = if constraint != "" { " (constraint " + constraint + ")"; } else { if table != "" { " (table " + table + if column != "" { "." + column; } else { ""; } + ")"; } else { ""; } };
-        DbFailure(PgFailureKind(code).value(), operation, code, "PostgreSQL rejected the operation" + subject);
+        DbFailure.detailed(PgFailureKind(code).value(), operation, code, "PostgreSQL rejected the operation" + subject);
     }
 }
 
@@ -1147,16 +1148,16 @@ object PgRows does RowReading, Closing {
     }
 
     async row() is Row {
-        confirm !self.closed() else throw DbClosed();
-        confirm busy.compare_and_replace(false, true) else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;
+        confirm busy.compare_and_replace(false, true) else throw DbBusy.busy;
         defer busy.replace(false);
         if buffered.value().size() == 0 {
-            if eof.ready() { throw RowsEnded(); }
+            if eof.ready() { throw RowsEnded.ended; }
             let outcome = await owner.fetch(id);
-            confirm !self.closed() else throw DbClosed();
+            confirm !self.closed() else throw DbClosed.closed;
             buffered.replace(outcome.rows());
             if outcome.ended() { eof.set(); }
-            if buffered.value().size() == 0 { throw RowsEnded(); }
+            if buffered.value().size() == 0 { throw RowsEnded.ended; }
         }
         let rest = buffered.value();
         buffered.replace(rest.tail());
@@ -1179,24 +1180,24 @@ object PgTransaction does Transaction, DbExecuting, DbPreparing {
 
     active() is bool { outcome.value() == 0 && owner.active(token); }
     async execution(statement is Statement) is Execution {
-        confirm self.active() else throw TransactionEnded();
+        confirm self.active() else throw TransactionEnded.ended;
         await owner.execution(statement, token);
     }
     async rows(statement is Statement) is RowReading {
-        confirm self.active() else throw TransactionEnded();
+        confirm self.active() else throw TransactionEnded.ended;
         await owner.rows(statement, token);
     }
     async prepared(text is string) is PreparedStatement {
-        confirm self.active() else throw TransactionEnded();
+        confirm self.active() else throw TransactionEnded.ended;
         await owner.prepare(text, token);
     }
     async commit() is Transaction {
-        if outcome.value() == 3 { throw IndeterminateCommit(); }
+        if outcome.value() == 3 { throw IndeterminateCommit.indeterminate; }
         if outcome.value() == 1 { return self; }
-        confirm self.active() else throw TransactionEnded();
+        confirm self.active() else throw TransactionEnded.ended;
         try { await owner.finish(token, true, outcome); }
-        catch e is DbFailure {
-            if outcome.value() == 3 || e.kind() == DbFailureKind.connection { outcome.replace(3); throw IndeterminateCommit(); }
+        catch DbFailure.detailed(kind, _, _, _) {
+            if outcome.value() == 3 || kind == DbFailureKind.connection { outcome.replace(3); throw IndeterminateCommit.indeterminate; }
             throw;
         }
         outcome.replace(1);
@@ -1204,7 +1205,7 @@ object PgTransaction does Transaction, DbExecuting, DbPreparing {
     }
     async rollback() is Transaction {
         if outcome.value() == 2 { return self; }
-        confirm self.active() else throw TransactionEnded();
+        confirm self.active() else throw TransactionEnded.ended;
         await owner.finish(token, false, outcome);
         outcome.replace(2);
         self;
@@ -1236,22 +1237,17 @@ object PgPrepared does PreparedStatement, Closing {
         }
     }
     async execution(values is Sequencing<DbValue>) is Execution {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         await owner.prepared_execution(name, parameters, values, token);
     }
     async rows(values is Sequencing<DbValue>) is RowReading {
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         await owner.prepared_rows(name, parameters, description, values, stopped, token);
     }
     destroy { self.close(); }
 }
 
-object InvalidPostgresOptions does Error {
-    has reason is string;
-    InvalidPostgresOptions(reason is string) { self.reason = reason; }
-    reason() is string { reason; }
-    text() is string { "invalid PostgreSQL options: " + reason; }
-}
+enum InvalidPostgresOptions is Error = (because(reason is string));
 
 test "startup message carries protocol 3.0 and UTF-8 session settings" {
     let bytes = PgStartupMessage("app", PostgresOptions("shop")).bytes();
@@ -1282,7 +1278,7 @@ test "text results decode by column type" {
     test.is(ObservedDbValue(PgTextValue(Utf8Encoded("\\x0aff").bytes(), 17).value()).bytes(), [10.byte(), 255.byte()]);
     test.is(ObservedDbValue(PgTextValue(Utf8Encoded("12.50").bytes(), 1700).value()).decimal().string(), Decimal("12.5").string());
     test.is(ObservedDbValue(PgTextValue(Utf8Encoded("2026-10-23").bytes(), 1082).value()).text(), "2026-10-23");
-    test.ok(try { PgTextValue(Utf8Encoded("NaN").bytes(), 701).value(); false; } catch e is DbFailure { e.kind() == DbFailureKind.data; });
+    test.ok(try { PgTextValue(Utf8Encoded("NaN").bytes(), 701).value(); false; } catch DbFailure.detailed(kind, _, _, _) { kind == DbFailureKind.data; });
 }
 
 test "command tags report affected rows only for data changes" {

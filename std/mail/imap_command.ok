@@ -70,30 +70,30 @@ object ImapCommand {
     }
     ImapCommand(mailbox is ImapMailboxName, message is MailMessage, flags is MailFlags) {
         let bytes=message.bytes();
-        confirm bytes.size()<=16777216 else throw InvalidArgument("IMAP APPEND message exceeds 16777216 bytes");
-        for bytes -> octet {confirm octet.int()!=0 else throw InvalidArgument("IMAP APPEND ordinary literal excludes NUL");}
+        confirm bytes.size()<=16777216 else throw InvalidArgument.because("IMAP APPEND message exceeds 16777216 bytes");
+        for bytes -> octet {confirm octet.int()!=0 else throw InvalidArgument.because("IMAP APPEND ordinary literal excludes NUL");}
         text=ImapCommandText("APPEND "+mailbox.quoted()+" "+ImapWritableFlags(flags).string()+" {"+bytes.size().string()+"}");
         payload=[ByteSnapshot(bytes)];
     }
     bytes(tag is ImapTag) is @byte {Utf8Encoded(tag.string()+" "+text.string()+"\r\n").bytes();}
     literal() is bool {payload.size()>0;}
     literal_bytes() is @byte {
-        confirm self.literal() else throw InvalidState("IMAP command has no continuation payload");
+        confirm self.literal() else throw InvalidState.because("IMAP command has no continuation payload");
         let buffer=ByteBuffer(payload[0].bytes());defer buffer.closing().close();
         buffer.writing().write(ByteSnapshot([13.byte(),10.byte()]));buffer.content().bytes();
     }
     name() is string {text.string().split(" ")[0];}
     uid_operation() is string {
-        confirm self.name()=="UID" else throw InvalidState("not an IMAP UID command");
+        confirm self.name()=="UID" else throw InvalidState.because("not an IMAP UID command");
         text.string().split(" ")[1];
     }
 }
 object ImapCommandText {
     has value is string;
     ImapCommandText(origin is string) {
-        confirm origin.length()<=65536 else throw InvalidArgument("IMAP command text exceeds 65536 bytes");
+        confirm origin.length()<=65536 else throw InvalidArgument.because("IMAP command text exceeds 65536 bytes");
         for Utf8Encoded(origin).bytes() -> octet {
-            confirm octet.int()>=32 && octet.int()<=126 else throw InvalidArgument("IMAP command text must be printable ASCII");
+            confirm octet.int()>=32 && octet.int()<=126 else throw InvalidArgument.because("IMAP command text must be printable ASCII");
         }
         value=origin;
     }
@@ -102,7 +102,7 @@ object ImapCommandText {
 object ImapFetchData {
     has value is string;
     ImapFetchData(origin is Sequencing<ImapDatum>) {
-        let size=origin.size();confirm size>=0 && size<=5 else throw InvalidArgument("IMAP FETCH accepts at most five requested data kinds");
+        let size=origin.size();confirm size>=0 && size<=5 else throw InvalidArgument.because("IMAP FETCH accepts at most five requested data kinds");
         let names is MimeItems<string>=MimeItems();names=names.following("UID");
         for (0..size) -> index {
             let name=match origin.item(index) {
@@ -123,7 +123,7 @@ object ImapWritableFlags {
         let flags is @string=(0..origin.size()).map() -> index {
             let flag=origin.item(index);
             confirm flag.kind()!=MailFlagKind.system || flag.system()!=SystemMailFlag.recent
-                else throw InvalidArgument("IMAP Recent is a server observation, not a writable flag");
+                else throw InvalidArgument.because("IMAP Recent is a server observation, not a writable flag");
             flag.string();
         };
         value="("+flags.join(" ")+")";

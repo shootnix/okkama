@@ -59,7 +59,7 @@ object Exit {
     kind() is ExitKind { classification; }
 
     code() is int {
-        confirm classification == ExitKind.exited else throw MissingExitCode();
+        confirm classification == ExitKind.exited else throw MissingExitCode.missing;
         exit_code;
     }
 
@@ -83,7 +83,7 @@ object Process {
             process_state_id(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -93,7 +93,7 @@ object Process {
             process_state_running(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -103,7 +103,7 @@ object Process {
             await process_state_exit(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         };
         let kind is ExitKind = if status["state"] == 1 {
             ExitKind.exited;
@@ -137,10 +137,10 @@ object Process {
         }
         catch failure is NativeFailure {
             if failure.code() == "unsupported" {
-                throw UnsupportedSignal(value);
+                throw UnsupportedSignal.signal(value);
             }
             else {
-                throw ProcessFailure(failure.code(), failure.message());
+                throw ProcessFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -150,7 +150,7 @@ object Process {
             process_state_close(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -161,9 +161,9 @@ object Process {
             process_state_input_write(state, content);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         };
-        confirm written == content.size() else throw IncompleteWrite(written);
+        confirm written == content.size() else throw IncompleteWrite.after(written);
     }
     input_flush() is void {
         self.start();
@@ -171,7 +171,7 @@ object Process {
             process_state_input_flush(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
     input_closed() is bool {
@@ -179,7 +179,7 @@ object Process {
             process_state_input_closed(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
     input_close() is void {
@@ -189,28 +189,28 @@ object Process {
                 process_state_input_close(state);
             }
             catch failure is NativeFailure {
-                throw ProcessFailure(failure.code(), failure.message());
+                throw ProcessFailure.detailed(failure.code(), failure.message());
             }
         }
     }
     output_bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.start();
         try {
             process_state_output_read(state, limit);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
     error_bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         self.start();
         try {
             process_state_errors_read(state, limit);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
     private:
@@ -226,7 +226,7 @@ object Process {
                 );
             }
             catch failure is NativeFailure {
-                throw ProcessFailure(failure.code(), failure.message());
+                throw ProcessFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -236,7 +236,7 @@ object Process {
             process_state_started(state);
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -268,34 +268,8 @@ object ProcessErrors does Reading {
     bytes(limit is int) is @byte { owner.error_bytes(limit); }
 }
 
-object MissingExitCode does Error {
-    MissingExitCode();
+enum MissingExitCode is Error = (missing);
 
-    text() is string { "process did not exit with a code"; }
-}
+enum UnsupportedSignal is Error = (signal(signal is Signal));
 
-object UnsupportedSignal does Error {
-    has origin is Signal;
-
-    UnsupportedSignal(signal is Signal) {
-        origin = signal;
-    }
-
-    signal() is Signal { origin; }
-
-    text() is string { "process signal is unsupported by this runtime"; }
-}
-
-object ProcessFailure does Error {
-    has failure_code is string;
-    has message is string;
-
-    ProcessFailure(code is string, message is string) {
-        failure_code = code;
-        self.message = message;
-    }
-
-    code() is string { failure_code; }
-
-    text() is string { message; }
-}
+enum ProcessFailure is Error = (detailed(code is string, message is string));

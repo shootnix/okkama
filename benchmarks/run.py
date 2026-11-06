@@ -9,7 +9,11 @@
 пиковая память, инструкции и циклы CPU. Вывод всех конфигураций обязан
 совпадать. Результат — `results/<время>.json` и `results/latest.json`.
 
-    benchmarks/run.py [--runs 5] [--only 03-float,10-app] [--engines jvm,sparrow,sparrow-interp,ir,python,perl,ruby]
+    benchmarks/run.py [--runs 5] [--only 03-float,10-app] [--engines jvm,sparrow,sparrow-core,sparrow-interp,ir,python,perl,ruby]
+
+`sparrow-core` — новое ядро Sparrow (`sparrow-next`). Каждый запуск ограничен
+`--cpu-seconds` процессорного времени (`ulimit -t`) и `--timeout` секундами
+по стене: зависшая или разогнавшаяся программа останавливается.
 
 Нужны собранные `okkama-rs/target/release/{okkama,sparrow}`, `java`, а для
 сравнения — `python3`, `perl`, `ruby` из PATH (`--python`, `--perl`, `--ruby`
@@ -39,7 +43,11 @@ SPARROW = RELEASE / "sparrow"
 BUILD = HERE / "build"
 RESULTS = HERE / "results"
 
+SPARROW_CORE = RELEASE / "sparrow-next"
+
 OKKAMA_ENGINES = ["jvm", "sparrow", "sparrow-interp", "ir"]
+# Пределы одного запуска (см. `--cpu-seconds`, `--timeout`).
+LIMITS = {"cpu_seconds": 300, "timeout": 600}
 # Порты на других языках: тот же алгоритм и вывод, что у `main.ok`.
 REFERENCE_ENGINES = {"python": "main.py", "perl": "main.pl", "ruby": "main.rb"}
 
@@ -57,7 +65,12 @@ def measure(command, env=None):
     full_env = {key: value for key, value in os.environ.items() if key not in ("OKKAMA_JIT", "OKKAMA_GC")}
     full_env.update(env or {})
     start = time.perf_counter()
-    process = subprocess.run(["/usr/bin/time", "-l", *command], capture_output=True, env=full_env, cwd=ROOT)
+    guarded = ["/bin/sh", "-c", f'ulimit -t {LIMITS["cpu_seconds"]}; exec "$@"', "bench", *map(str, command)]
+    try:
+        process = subprocess.run(["/usr/bin/time", "-l", *guarded], capture_output=True, env=full_env, cwd=ROOT,
+                                 timeout=LIMITS["timeout"])
+    except subprocess.TimeoutExpired:
+        sys.exit(f"timeout after {LIMITS['timeout']} s: {' '.join(map(str, command))}")
     wall = time.perf_counter() - start
     stderr = process.stderr.decode(errors="replace")
     # Wall — часы Python (мкс); user/sys — `time` (шаг 10 мс).
@@ -168,6 +181,8 @@ def binaries(env, interpreters):
         "okkama": OKKAMA.stat().st_size,
         "sparrow": SPARROW.stat().st_size,
     }
+    if SPARROW_CORE.exists():
+        sizes["sparrow_core"] = SPARROW_CORE.stat().st_size
     native = RELEASE / "libokkama_native.dylib"
     if native.exists():
         sizes["libokkama_native"] = native.stat().st_size
@@ -189,6 +204,7 @@ def binaries(env, interpreters):
 
 
 def main():
+    global OKKAMA, SPARROW, SPARROW_CORE
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--only", default="")
@@ -196,7 +212,14 @@ def main():
     parser.add_argument("--python", default="python3")
     parser.add_argument("--perl", default="perl")
     parser.add_argument("--ruby", default="ruby")
+    parser.add_argument("--okkama", type=Path, default=OKKAMA, help="компилятор (и движки jvm, ir)")
+    parser.add_argument("--sparrow", type=Path, default=SPARROW)
+    parser.add_argument("--sparrow-core", type=Path, default=SPARROW_CORE)
+    parser.add_argument("--cpu-seconds", type=int, default=LIMITS["cpu_seconds"])
+    parser.add_argument("--timeout", type=int, default=LIMITS["timeout"])
     args = parser.parse_args()
+    OKKAMA, SPARROW, SPARROW_CORE = args.okkama, args.sparrow, args.sparrow_core
+    LIMITS.update(cpu_seconds=args.cpu_seconds, timeout=args.timeout)
     interpreters = {"python": args.python, "perl": args.perl, "ruby": args.ruby}
     for tool in (OKKAMA, SPARROW):
         if not tool.exists():
@@ -223,6 +246,7 @@ def main():
             "jvm": (["java", "--enable-native-access=ALL-UNNAMED", "-jar", jar], {}),
             "sparrow": ([SPARROW, spb], {}),
             "sparrow-interp": ([SPARROW, spb], {"OKKAMA_JIT": "off"}),
+            "sparrow-core": ([SPARROW_CORE, spb], {}),
             "ir": ([OKKAMA, "run", "--engine", "ir", entry], {}),
         }
         for engine, script in REFERENCE_ENGINES.items():

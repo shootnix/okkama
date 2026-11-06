@@ -30,7 +30,7 @@ object SmtpDataLimits {
     has message_bytes, wire_bytes, line_bytes is int;
     SmtpDataLimits() {message_bytes=67108864;wire_bytes=134217731;line_bytes=1000;}
     SmtpDataLimits(message_bytes is int, wire_bytes is int, line_bytes is int) {
-        confirm message_bytes>=0 && wire_bytes>=0 && line_bytes>=0 else throw InvalidArgument("SMTP DATA bounds must be nonnegative");
+        confirm message_bytes>=0 && wire_bytes>=0 && line_bytes>=0 else throw InvalidArgument.because("SMTP DATA bounds must be nonnegative");
         self.message_bytes=message_bytes;self.wire_bytes=wire_bytes;self.line_bytes=line_bytes;
     }
     message_bytes() is int {message_bytes;}
@@ -45,36 +45,25 @@ object PreparedSmtpData does ByteSource {
     message_size() is int {value.message_size();}
     body_mode() is SmtpBodyMode {value.body_mode();}
 }
-object InvalidSmtpData does Error {
-    has position is int;has reason is string;
-    InvalidSmtpData(offset is int, reason is string) {position=offset;self.reason=reason;}
-    offset() is int {position;}
-    reason() is string {reason;}
-    text() is string {"invalid SMTP DATA at byte offset "+position.string()+": "+reason;}
-}
-object MissingSmtpExtension does Error {
-    has name is string;
-    MissingSmtpExtension(name is string) {self.name=name;}
-    name() is string {name;}
-    text() is string {"SMTP DATA requires advertised "+name;}
-}
+enum InvalidSmtpData is Error = (located(offset is int, reason is string));
+enum MissingSmtpExtension is Error = (name(name is string));
 object SmtpDataValue {
     has wire is @byte;has size is int;has mode is SmtpBodyMode;
     SmtpDataValue(origin is MailMessage, capabilities is SmtpCapabilities, limits is SmtpDataLimits) {
         confirm MimeMetadata(origin.headers()).encoding()!=TransferEncoding.binary
-            else throw InvalidSmtpData(0,"binary MIME requires BDAT, not DATA");
+            else throw InvalidSmtpData.located(0, "binary MIME requires BDAT, not DATA");
         let original=origin.limits();let maximum=if original.body_bytes()<limits.message_bytes() {original.body_bytes();} else {limits.message_bytes();};
         let mime=MimeLimits(original.header_bytes(),original.line_bytes(),original.parts(),original.depth(),maximum);
         let rendered=try {DeliveredMail(MailMessage(origin.headers(),origin.body(),mime)).bytes();}
             catch failure is MimeLimitFailure {
-                if failure.kind()=="body_bytes" && maximum<original.body_bytes() {throw SmtpLimitExceeded("message_bytes");}
+                match failure {case MimeLimitFailure.kind(kind) {if kind=="body_bytes" && maximum<original.body_bytes() {throw SmtpLimitExceeded.kind("message_bytes");}}}
                 throw failure;
             };
         let terminated=rendered.size()>=2 && rendered[rendered.size()-2].int()==13 && rendered[rendered.size()-1].int()==10;
         let content is @byte=if !terminated && MimeMetadata(origin.headers()).encoding()==TransferEncoding.base64 {
             if rendered.size()>maximum-2 {
-                if maximum<original.body_bytes() {throw SmtpLimitExceeded("message_bytes");}
-                throw MimeLimitFailure("body_bytes");
+                if maximum<original.body_bytes() {throw SmtpLimitExceeded.kind("message_bytes");}
+                throw MimeLimitFailure.kind("body_bytes");
             }
             let bytes is @byte=(0..rendered.size()+2).map() -> index {
                 if index<rendered.size() {rendered[index];} else {if index==rendered.size() {13.byte();} else {10.byte();}}
@@ -83,10 +72,10 @@ object SmtpDataValue {
         let declared=SmtpDataMime(mime).requires_eight_bit(ParsedMime(content,mime).result());
         let high=content.reduce(false) -> found,octet {found || octet.int()>127;};
         let eight=declared || high;
-        confirm !eight || capabilities.features().membership(SmtpFeature.eight_bit_mime) else throw MissingSmtpExtension("8BITMIME");
+        confirm !eight || capabilities.features().membership(SmtpFeature.eight_bit_mime) else throw MissingSmtpExtension.name("8BITMIME");
         if capabilities.has_maximum_size() {
             let maximum=capabilities.maximum_size();
-            confirm maximum.sign()==0 || BigInt(content.size().string()).order(maximum)!=Order.greater else throw SmtpLimitExceeded("server_size");
+            confirm maximum.sign()==0 || BigInt(content.size().string()).order(maximum)!=Order.greater else throw SmtpLimitExceeded.kind("server_size");
         }
         let buffer=ByteBuffer();defer buffer.closing().close();let output=SmtpDataOutput(buffer,limits.wire_bytes());let start=MimePosition(0);
         loop {
@@ -110,7 +99,7 @@ object SmtpDataMime {
     SmtpDataMime(limits is MimeLimits) {self.limits=limits;}
     requires_eight_bit(part is MimePart) is bool {
         let metadata=MimeContent(part);let encoding=metadata.encoding();
-        confirm encoding!=TransferEncoding.binary else throw InvalidSmtpData(0,"binary MIME part requires BDAT");
+        confirm encoding!=TransferEncoding.binary else throw InvalidSmtpData.located(0, "binary MIME part requires BDAT");
         let type=metadata.type();
         if type.type()!="multipart" {return encoding==TransferEncoding.eight_bit;}
         let bytes=part.body().bytes();
@@ -122,7 +111,7 @@ object SmtpDataMime {
     }
     requires_eight_bit(node is MimeParsedNode) is bool {
         let encoding=MimeContent(node.part()).encoding();
-        confirm encoding!=TransferEncoding.binary else throw InvalidSmtpData(0,"binary MIME part requires BDAT");
+        confirm encoding!=TransferEncoding.binary else throw InvalidSmtpData.located(0, "binary MIME part requires BDAT");
         let nested=node.children().reduce(false) -> found,child {
             let required=self.requires_eight_bit(child);found || required;
         };
@@ -134,21 +123,21 @@ object SmtpDataLine {
     SmtpDataLine(origin is @byte, start is int, maximum is int) {self.origin=origin;self.start=start;self.maximum=maximum;}
     end() is int {
         for (start..origin.size()) -> index {
-            let code=origin[index].int();confirm code!=0 && code!=10 else throw InvalidSmtpData(index,"NUL or bare LF in DATA");
-            confirm index-start<maximum else throw SmtpLimitExceeded("data_line_bytes");
+            let code=origin[index].int();confirm code!=0 && code!=10 else throw InvalidSmtpData.located(index, "NUL or bare LF in DATA");
+            confirm index-start<maximum else throw SmtpLimitExceeded.kind("data_line_bytes");
             if code==13 {
-                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidSmtpData(index,"bare CR in DATA");
-                confirm index-start+2<=maximum else throw SmtpLimitExceeded("data_line_bytes");return index;
+                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidSmtpData.located(index, "bare CR in DATA");
+                confirm index-start+2<=maximum else throw SmtpLimitExceeded.kind("data_line_bytes");return index;
             }
         }
-        throw InvalidSmtpData(origin.size(),"DATA content requires terminal CRLF");
+        throw InvalidSmtpData.located(origin.size(), "DATA content requires terminal CRLF");
     }
 }
 object SmtpDataOutput {
     has buffer is ByteBuffer;has maximum is int;
     SmtpDataOutput(buffer is ByteBuffer, maximum is int) {self.buffer=buffer;self.maximum=maximum;}
     write(bytes is @byte) is void {
-        confirm bytes.size()<=maximum-buffer.content().size() else throw SmtpLimitExceeded("data_bytes");
+        confirm bytes.size()<=maximum-buffer.content().size() else throw SmtpLimitExceeded.kind("data_bytes");
         buffer.writing().write(ByteSnapshot(bytes));
     }
 }

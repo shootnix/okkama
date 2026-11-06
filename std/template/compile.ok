@@ -48,7 +48,7 @@ object TextTemplate {
         maximum_output = 1048576;
     }
     TextTemplate(origin is string, maximum_input is int, maximum_nodes is int, maximum_output is int) {
-        confirm maximum_input >= 0 && maximum_nodes >= 0 && maximum_output >= 0 else throw InvalidTemplateLimits();
+        confirm maximum_input >= 0 && maximum_nodes >= 0 && maximum_output >= 0 else throw InvalidTemplateLimits.invalid;
         self.origin = origin;
         program = TemplateProgram(origin,maximum_input,maximum_nodes);
         self.maximum_output = maximum_output;
@@ -110,15 +110,15 @@ object TemplateProgram {
     has maximum_input, maximum_nodes is int;
     has structured is bool = false;
     TemplateProgram(source is string, maximum_input is int, maximum_nodes is int) {
-        confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits();
+        confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits.invalid;
         self.source=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;
     }
     TemplateProgram(source is string, maximum_input is int, maximum_nodes is int, structured is bool) {
-        confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits();
+        confirm maximum_input >= 0 && maximum_nodes >= 0 else throw InvalidTemplateLimits.invalid;
         self.source=source;self.maximum_input=maximum_input;self.maximum_nodes=maximum_nodes;self.structured=structured;
     }
     instructions() is @TemplateInstruction {
-        confirm source.length() <= maximum_input else throw TemplateFailure(0,1,1,"template input limit exceeded");
+        confirm source.length() <= maximum_input else throw TemplateFailure.located(0, 1, 1, "template input limit exceeded");
         let scanner=TemplateScanner(source,maximum_nodes,structured);
         loop {
             last if !scanner.more();
@@ -314,7 +314,7 @@ object TemplateScanner {
     }
     failure(offset is int, message is string) is TemplateFailure {
         let lines=source.slice(0,offset).replace("\r\n","\n").split("\n");
-        TemplateFailure(offset,lines.size(),lines[lines.size()-1].length()+1,message);
+        TemplateFailure.located(offset, lines.size(), lines[lines.size()-1].length()+1, message);
     }
 }
 // Internal immutable output accumulator. UTF-8 size is computed without
@@ -345,34 +345,18 @@ object TemplateByteBudget {
     has maximum is int;
     has used is int = 0;
     TemplateByteBudget(maximum is int) {
-        confirm maximum >= 0 else throw InvalidTemplateLimits();
+        confirm maximum >= 0 else throw InvalidTemplateLimits.invalid;
         self.maximum = maximum;
     }
     following(text is string) is ^TemplateByteBudget {
         let size = template_output_size(text,maximum-used);
-        confirm size >= 0 else throw TemplateOutputLimitExceeded();
+        confirm size >= 0 else throw TemplateOutputLimitExceeded.exceeded;
         ^used = used+size;
     }
 }
-object TemplateFailure does Error {
-    has at, row, position is int;
-    has message is string;
-    TemplateFailure(offset is int,line is int,column is int,message is string) {
-        at=offset;row=line;position=column;self.message=message;
-    }
-    offset() is int {at;}
-    line() is int {row;}
-    column() is int {position;}
-    text() is string {message;}
-}
-object InvalidTemplateLimits does Error {
-    InvalidTemplateLimits();
-    text() is string {"template limits must be nonnegative";}
-}
-object TemplateOutputLimitExceeded does Error {
-    TemplateOutputLimitExceeded();
-    text() is string {"template output byte limit exceeded";}
-}
+enum TemplateFailure is Error = (located(offset is int, line is int, column is int, message is string));
+enum InvalidTemplateLimits is Error = (invalid);
+enum TemplateOutputLimitExceeded is Error = (exceeded);
 
 // Root test bodies cannot currently resolve imported constructors/fakes.
 // Consumer suites 281/282 exercise nominal lookup and streamed rendering;
@@ -405,11 +389,11 @@ test "Okkama template program standalone comments and escapes" {
 }
 test "Okkama template program preserves failure coordinates and bounds" {
     test.is(try {TemplateProgram("é\r\n{{",20,3).instructions();[0,0,0];}
-        catch e is TemplateFailure {[e.offset(),e.line(),e.column()];},[3,2,1]);
+        catch TemplateFailure.located(offset, line, column, _) {[offset,line,column];},[3,2,1]);
     test.is(try {TemplateProgram("x",1,0).instructions();"bad";}
-        catch e is TemplateFailure {e.text();},"template node limit exceeded");
+        catch TemplateFailure.located(_, _, _, message) {message;},"template node limit exceeded");
     test.is(try {TemplateProgram("x",0,1).instructions();"bad";}
-        catch e is TemplateFailure {e.text();},"template input limit exceeded");
+        catch TemplateFailure.located(_, _, _, message) {message;},"template input limit exceeded");
 }
 
 test "Okkama template program delimiter and comment boundaries" {

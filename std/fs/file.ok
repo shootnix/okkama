@@ -138,9 +138,7 @@ object File does Closing {
         encoding is string,
         binary is bool,
     ) {
-        confirm !binary else throw InvalidFileOperation(
-            "binary files cannot specify a text encoding"
-        );
+        confirm !binary else throw InvalidFileOperation.because("binary files cannot specify a text encoding");
         state = ConfiguredFileState(
             mode: mode,
             path: path,
@@ -160,12 +158,12 @@ object File does Closing {
             file_state_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
     read_bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         try {
             file_state_read(state, limit);
         }
@@ -177,7 +175,7 @@ object File does Closing {
         let bytes is @byte = source.bytes();
         try {
             let written is int = file_state_write(state, bytes);
-            confirm written == bytes.size() else throw IncompleteWrite(written);
+            confirm written == bytes.size() else throw IncompleteWrite.after(written);
         }
         catch failure is NativeFailure {
             throw FileError(failure: failure).value();
@@ -197,7 +195,7 @@ object File does Closing {
         }
         catch failure is NativeFailure {
             if failure.code() == "end_of_input" {
-                throw EndOfInput();
+                throw EndOfInput.reached;
             }
             else {
                 throw FileError(failure: failure).value();
@@ -338,7 +336,7 @@ object FileEntry {
                 false;
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -348,7 +346,7 @@ object FileEntry {
             FileStatFromMap(origin: stat(path_encode(origin.string()))).value();
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -357,7 +355,7 @@ object FileEntry {
             unlink(path_encode(origin.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -369,7 +367,7 @@ object FileEntry {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -386,7 +384,7 @@ object FileContent {
             file_content(path_encode(origin.path().string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -401,7 +399,7 @@ object ConfiguredFileState {
 
     value() is FileState {
         confirm binary || SupportedFileEncoding(origin: encoding).value()
-            else throw UnsupportedFileEncoding(encoding);
+            else throw UnsupportedFileEncoding.encoding(encoding);
         try {
             file_state_create(
                 path_encode(path.string()),
@@ -411,7 +409,7 @@ object ConfiguredFileState {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -466,55 +464,25 @@ object FileError {
     value() is Error {
         if failure.code() == "invalid_input"
             || failure.code() == "already_closed" {
-            InvalidFileOperation(failure.message());
+            InvalidFileOperation.because(failure.message());
         }
         else {
-            FileSystemFailure(failure.code(), failure.message());
+            FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
 
-object InvalidFileOperation does Error {
-    has message is string;
+enum InvalidFileOperation is Error = (because(message is string));
 
-    InvalidFileOperation(message is string) {
-        self.message = message;
-    }
+enum UnsupportedFileEncoding is Error = (encoding(encoding is string));
 
-    text() is string { message; }
-}
-
-object UnsupportedFileEncoding does Error {
-    has encoding is string;
-
-    UnsupportedFileEncoding(encoding is string) {
-        self.encoding = encoding;
-    }
-
-    text() is string {
-        "unsupported file encoding: " + encoding;
-    }
-}
-
-object FileSystemFailure does Error {
-    has failure_code is string;
-    has message is string;
-
-    FileSystemFailure(code is string, message is string) {
-        failure_code = code;
-        self.message = message;
-    }
-
-    code() is string { failure_code; }
-
-    text() is string { message; }
-}
+enum FileSystemFailure is Error = (detailed(code is string, message is string));
 
 // Retains File for precisely the lifetime of its acquired advisory lock.
 object FileLockLease does FileLocking {
     has state is FileLockState;has owner is File;
     FileLockLease(state is FileLockState,owner is File){self.state=state;self.owner=owner;}
-    closed() is bool{try{file_lock_closed(state);}catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}}
-    close() is void{try{file_lock_close(state);}catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}}
+    closed() is bool{try{file_lock_closed(state);}catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}}
+    close() is void{try{file_lock_close(state);}catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}}
     destroy{self.close();}
 }

@@ -27,13 +27,13 @@ import "math/decimal" take Decimal;
 import "io/stdout" take Stdout;
 object StockItem {
     has name is string;has quantity is int;
-    StockItem(name is string,quantity is int){confirm name.length()>0 && name.length()<=100 && quantity>=0 && quantity<=1000000 else throw Usage("invalid stock item");self.name=name;self.quantity=quantity;}
+    StockItem(name is string,quantity is int){confirm name.length()>0 && name.length()<=100 && quantity>=0 && quantity<=1000000 else throw Usage.usage("invalid stock item");self.name=name;self.quantity=quantity;}
     name() is string{name;}quantity() is int{quantity;}
     json() is Json{Json([JsonField("name",Json(name)),JsonField("quantity",Json(Decimal(quantity.string())))]);}
 }
 object Quantity {
     has origin is string;Quantity(origin is string){self.origin=origin;}
-    value() is int{let value=BigInt(origin);confirm value.sign()>=0 && value.order(BigInt("1000000"))!=Order.greater else throw Usage("quantity must be 0..1000000");ParsedInt(value.string()).value();}
+    value() is int{let value=BigInt(origin);confirm value.sign()>=0 && value.order(BigInt("1000000"))!=Order.greater else throw Usage.usage("quantity must be 0..1000000");ParsedInt(value.string()).value();}
 }
 object StockDocument {
     has items is @StockItem;
@@ -43,17 +43,17 @@ object StockDocument {
             case "csv"{
                 let ending=if text.split("\r\n").size()>1{"\r\n";}else{"\n";};
                 let rows=CsvRows(text,CsvDialect(",","\"",ending)).map()->row{row;};
-                confirm rows.size()>0 && rows[0]==["name","quantity"] else throw Usage("expected name,quantity CSV header");
-                (1..rows.size()).map()->index{let row=rows[index];confirm row.size()==2 else throw Usage("two stock columns required");StockItem(row[0],Quantity(row[1]).value());};
+                confirm rows.size()>0 && rows[0]==["name","quantity"] else throw Usage.usage("expected name,quantity CSV header");
+                (1..rows.size()).map()->index{let row=rows[index];confirm row.size()==2 else throw Usage.usage("two stock columns required");StockItem(row[0],Quantity(row[1]).value());};
             }
             case "toml"{
                 let settings=TomlSettings(ParsedToml(text).value(),SettingSource(SettingSourceKind.document,"stock.toml"));
                 let names=settings.entry(SettingKey(["names"])).values();let quantities=settings.entry(SettingKey(["quantities"])).values();
-                confirm names.size()==quantities.size() else throw Usage("TOML names and quantities must align");
+                confirm names.size()==quantities.size() else throw Usage.usage("TOML names and quantities must align");
                 (0..names.size()).map()->index{StockItem(names.item(index),Quantity(quantities.item(index)).value());};
             }
-            else{throw Usage("format must be json, csv or toml");}
-        };confirm values.size()<=10000 else throw Usage("too many stock items");items=values;
+            else{throw Usage.usage("format must be json, csv or toml");}
+        };confirm values.size()<=10000 else throw Usage.usage("too many stock items");items=values;
     }
     string(format is string) is string{
         match format{
@@ -66,7 +66,7 @@ object StockDocument {
                 let names=items.map()->item{(Json(item.name())).string();};let quantities=items.map()->item{item.quantity().string();};
                 "names = ["+names.join(", ")+"]\nquantities = ["+quantities.join(", ")+"]\n";
             }
-            else{throw Usage("format must be json, csv or toml");}
+            else{throw Usage.usage("format must be json, csv or toml");}
         }
     }
 }

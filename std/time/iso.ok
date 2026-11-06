@@ -48,7 +48,7 @@ object DateFromIso {
         confirm origin.length() == 10
             && origin.slice(4, 5) == "-"
             && origin.slice(7, 8) == "-"
-            else throw InvalidIsoDate(origin);
+            else throw InvalidIsoDate.origin(origin);
         try {
             Date(
                 year: ParsedInt(origin.slice(0, 4)).value(),
@@ -57,7 +57,7 @@ object DateFromIso {
             );
         }
         catch error is InvalidInteger {
-            throw InvalidIsoDate(origin);
+            throw InvalidIsoDate.origin(origin);
         }
     }
 }
@@ -106,7 +106,7 @@ object LocalDateTimeFromIso {
             && origin.slice(13, 14) == ":"
             && origin.slice(16, 17) == ":"
             && (!fraction || origin.slice(19, 20) == ".")
-            else throw InvalidIsoLocalDateTime(origin);
+            else throw InvalidIsoLocalDateTime.origin(origin);
 
         try {
             let nanosecond is int = if fraction {
@@ -129,7 +129,7 @@ object LocalDateTimeFromIso {
             );
         }
         catch error is InvalidInteger {
-            throw InvalidIsoLocalDateTime(origin);
+            throw InvalidIsoLocalDateTime.origin(origin);
         }
     }
 }
@@ -160,26 +160,6 @@ object IsoFraction {
     }
 }
 
-object InvalidIsoDate does Error {
-    has origin is string;
+enum InvalidIsoDate is Error = (origin(origin is string));
 
-    InvalidIsoDate(origin is string) {
-        self.origin = origin;
-    }
-
-    text() is string {
-        "invalid ISO date: " + origin;
-    }
-}
-
-object InvalidIsoLocalDateTime does Error {
-    has origin is string;
-
-    InvalidIsoLocalDateTime(origin is string) {
-        self.origin = origin;
-    }
-
-    text() is string {
-        "invalid ISO local date-time: " + origin;
-    }
-}
+enum InvalidIsoLocalDateTime is Error = (origin(origin is string));

@@ -26,13 +26,13 @@ object ShortestFloat {
             let candidate=Decimal(sprintf_values("%."+precision.string()+"g",arguments));
             if FloatDecimalCandidate(candidate).inside(lower,upper,inclusive){return candidate;}
         }
-        throw InvalidFloatRepresentation();
+        throw InvalidFloatRepresentation.invalid;
     }
 }
 object Binary64RoundingInterval {
     has lower,upper is BigRational;
     Binary64RoundingInterval(bits is int){
-        confirm bits>0 && bits<9218868437227405312 else throw InvalidFloatRepresentation();
+        confirm bits>0 && bits<9218868437227405312 else throw InvalidFloatRepresentation.invalid;
         let exponent=(bits/4503599627370496).int();let fraction=bits%4503599627370496;
         let coefficient=fraction+(if exponent==0{0;}else{4503599627370496;});
         let shift=if exponent==0{-1074;}else{exponent-1075;};
@@ -58,7 +58,7 @@ object FloatDecimalCandidate {
     has numerator,denominator is BigInt;
     FloatDecimalCandidate(origin is Decimal){
         let coefficient=origin.coefficient();let absolute=if coefficient.sign()<0{BigDifference(left:BigInt("0"),right:coefficient).value();}else{coefficient;};
-        let exponent=origin.exponent();confirm exponent>=-400 && exponent<=400 else throw InvalidFloatRepresentation();
+        let exponent=origin.exponent();confirm exponent>=-400 && exponent<=400 else throw InvalidFloatRepresentation.invalid;
         if exponent>=0{
             let power=BigPower(base:BigInt("10"),exponent:exponent,maximum_bits:1400).value();
             numerator=BigProduct(left:absolute,right:power).value();denominator=BigInt("1");
@@ -73,8 +73,6 @@ object FloatDecimalCandidate {
         BigProduct(left:numerator,right:other.denominator()).value().order(BigProduct(left:other.numerator(),right:denominator).value());
     }
 }
-object InvalidFloatRepresentation does Error {
-    InvalidFloatRepresentation();text() is string{"finite float has no bounded roundtrip decimal representation";}
-}
+enum InvalidFloatRepresentation is Error = (invalid);
 
 test "binary64 tenth has a one-digit decimal representative" {test.is(ShortestFloat(0.1).value().string(),"1e-1");}

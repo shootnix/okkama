@@ -9,6 +9,6 @@ main() is int {
     c = c.same_text("control and equals", Utf8Decoded(origin: QuotedPrintableEncoded(origin: [byte(0), byte(61), byte(255)]).bytes()).string(), "=00=3D=FF");
     c = c.same_text("space before CRLF", Utf8Decoded(origin: QuotedPrintableEncoded(origin: Utf8Encoded(origin: "a b \r\nc").bytes()).bytes()).string(), "a b=20\r\nc");
     c = c.same_ints("decode lowercase hex", QuotedPrintableDecoded(origin: Utf8Encoded(origin: "=3d=ff").bytes()).bytes().map() -> b { b.int(); }, [61, 255]);
-    c = c.same_text("malformed escape", try { let probe = QuotedPrintableDecoded(origin: Utf8Encoded(origin: "a=G1").bytes()).bytes(); "no error"; } catch e is InvalidQuotedPrintable { "offset " + e.offset().string(); }, "offset 1");
+    c = c.same_text("malformed escape", try { let probe = QuotedPrintableDecoded(origin: Utf8Encoded(origin: "a=G1").bytes()).bytes(); "no error"; } catch InvalidQuotedPrintable.at(offset) { "offset " + offset.string(); }, "offset 1");
     c.done();
 }

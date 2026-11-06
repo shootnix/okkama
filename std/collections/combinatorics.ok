@@ -46,7 +46,7 @@ object Combinations<T> does Iterating<@T> {
 
     Combinations(origin is Sequencing<T>, size is int) {
         confirm size >= 0
-            else throw InvalidArgument("combination size cannot be negative");
+            else throw InvalidArgument.because("combination size cannot be negative");
         self.origin = origin;
         amount = size;
     }
@@ -75,12 +75,12 @@ object CombinationCursor<T> does Cursor<@T> {
         active is bool,
     ) {
         confirm size >= 0 && positions.size() == size
-            else throw InvalidArgument("combination cursor shape is invalid");
+            else throw InvalidArgument.because("combination cursor shape is invalid");
         confirm !active || CombinationPositions(
             positions: positions,
             origin_size: origin.size(),
         ).valid()
-            else throw InvalidArgument("combination cursor positions are invalid");
+            else throw InvalidArgument.because("combination cursor positions are invalid");
         self.origin = origin;
         self.positions = positions;
         amount = size;
@@ -92,7 +92,7 @@ object CombinationCursor<T> does Cursor<@T> {
     }
 
     item() is @T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let result is @T = (0..amount).map() -> index {
             origin.item(positions[index]);
         };
@@ -100,7 +100,7 @@ object CombinationCursor<T> does Cursor<@T> {
     }
 
     successor() is Cursor<@T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if amount == 0 {
             CombinationCursor(
                 origin: origin,
@@ -148,7 +148,7 @@ object CombinationsWithReplacement<T> does Iterating<@T> {
 
     CombinationsWithReplacement(origin is Sequencing<T>, size is int) {
         confirm size >= 0
-            else throw InvalidArgument("combination size cannot be negative");
+            else throw InvalidArgument.because("combination size cannot be negative");
         self.origin = origin;
         amount = size;
     }
@@ -177,12 +177,12 @@ object ReplacementCombinationCursor<T> does Cursor<@T> {
         active is bool,
     ) {
         confirm size >= 0 && positions.size() == size
-            else throw InvalidArgument("replacement combination cursor shape is invalid");
+            else throw InvalidArgument.because("replacement combination cursor shape is invalid");
         confirm !active || ReplacementPositions(
             positions: positions,
             origin_size: origin.size(),
         ).valid()
-            else throw InvalidArgument("replacement combination positions are invalid");
+            else throw InvalidArgument.because("replacement combination positions are invalid");
         self.origin = origin;
         self.positions = positions;
         amount = size;
@@ -194,7 +194,7 @@ object ReplacementCombinationCursor<T> does Cursor<@T> {
     }
 
     item() is @T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let result is @T = (0..amount).map() -> index {
             origin.item(positions[index]);
         };
@@ -202,7 +202,7 @@ object ReplacementCombinationCursor<T> does Cursor<@T> {
     }
 
     successor() is Cursor<@T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if amount == 0 {
             ReplacementCombinationCursor(
                 origin: origin,
@@ -255,7 +255,7 @@ object Permutations<T> does Iterating<@T> {
 
     Permutations(origin is Sequencing<T>, size is int) {
         confirm size >= 0
-            else throw InvalidArgument("permutation size cannot be negative");
+            else throw InvalidArgument.because("permutation size cannot be negative");
         self.origin = origin;
         amount = size;
     }
@@ -284,12 +284,12 @@ object PermutationCursor<T> does Cursor<@T> {
         active is bool,
     ) {
         confirm size >= 0 && positions.size() == size
-            else throw InvalidArgument("permutation cursor shape is invalid");
+            else throw InvalidArgument.because("permutation cursor shape is invalid");
         confirm !active || PermutationPositions(
             positions: positions,
             origin_size: origin.size(),
         ).valid()
-            else throw InvalidArgument("permutation cursor positions are invalid");
+            else throw InvalidArgument.because("permutation cursor positions are invalid");
         self.origin = origin;
         self.positions = positions;
         amount = size;
@@ -301,7 +301,7 @@ object PermutationCursor<T> does Cursor<@T> {
     }
 
     item() is @T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let result is @T = (0..amount).map() -> index {
             origin.item(positions[index]);
         };
@@ -309,7 +309,7 @@ object PermutationCursor<T> does Cursor<@T> {
     }
 
     successor() is Cursor<@T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if amount == 0 {
             PermutationCursor(
                 origin: origin,
@@ -394,12 +394,12 @@ object CartesianCursor<T> does Cursor<@T> {
         active is bool,
     ) {
         confirm positions.size() == origins.size()
-            else throw InvalidArgument("cartesian cursor shape is invalid");
+            else throw InvalidArgument.because("cartesian cursor shape is invalid");
         confirm !active || CartesianPositions(
             origins: origins,
             positions: positions,
         ).valid()
-            else throw InvalidArgument("cartesian cursor positions are invalid");
+            else throw InvalidArgument.because("cartesian cursor positions are invalid");
         self.origins = origins;
         self.positions = positions;
         self.active = active;
@@ -410,7 +410,7 @@ object CartesianCursor<T> does Cursor<@T> {
     }
 
     item() is @T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let result is @T = (0..origins.size()).map() -> index {
             origins.item(index).item(positions[index]);
         };
@@ -418,7 +418,7 @@ object CartesianCursor<T> does Cursor<@T> {
     }
 
     successor() is Cursor<@T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if origins.size() == 0 {
             CartesianCursor(
                 origins: origins,
@@ -574,7 +574,7 @@ object PrefixMembership {
 
     PrefixMembership(positions is @int, stop is int, value is int) {
         confirm stop >= 0 && stop <= positions.size()
-            else throw InvalidArgument("permutation prefix is invalid");
+            else throw InvalidArgument.because("permutation prefix is invalid");
         origin = positions;
         ending = stop;
         sought = value;

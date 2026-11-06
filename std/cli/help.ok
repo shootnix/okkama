@@ -9,7 +9,7 @@ object Usage{
     has origin is CliCommand;has program is string;has width is int;
     Usage(origin is CliCommand,program is string,width is int){self.origin=origin;self.program=program;self.width=width;}
     string() is string{
-        confirm width>=8 else throw InvalidHelpWidth();
+        confirm width>=8 else throw InvalidHelpWidth.invalid;
         DisplayWidth(program).value();
         let syntax=origin.syntax();
         let options=if syntax.options().size()+syntax.flags().size()>0{" [OPTIONS]";}else{"";};
@@ -106,4 +106,4 @@ object FishCompletionLiteral{
     FishCompletionLiteral(origin is string){self.origin=origin;}
     string() is string{"'"+origin.replace("\\","\\\\").replace("'","\\'")+"'";}
 }
-object InvalidHelpWidth does Error{InvalidHelpWidth();text() is string{"help width must be at least eight columns";}}
+enum InvalidHelpWidth is Error = (invalid);

@@ -1,0 +1,13 @@
+# Explicit HTTP2 client profile
+
+HttpClient(resolver,tls,policy,clock) keeps its default H1.1 profile and supports an explicit H2-only ClientPolicy. HTTP URLs require explicit prior knowledge; HTTPS requires actual h2 ALPN after the existing URL-derived certificate identity/SNI verification. Advertised incompatible protocols reject before effects. Mixed H1/H2 [negotiation](http-alpn.md) is supported through the same shared physical pool.
+
+The H2 route normalizes an ordinary H1.1/default or H2 source Request to H2 wire metadata while retaining the original in ClientResponse. Absolute HTTP(S) target and forbidden-field validation precede route effects. No body is opened/measured by this metadata preflight. Actual session budgets still validate the streamed content. Every reused/shared peer is rechecked against the caller's current URL before request frames.
+
+A pool entry represents one supervised physical owner with one global connection permit. Entries are published before acquisition suspends, so concurrent same-key callers share opening. A queue of at most 256 client operations is separate from the session's 100 body/stream holders and current peer concurrency. Physical admission is cancellable and precedes the connection deadline. Header and body-idle deadlines are independent; zero disables the timer. A request/body lease counts users of the entry and never owns the shared physical permit.
+
+EOF releases a request lease and keeps a usable conversation in the pool. Abandonment, stream failure or body deadline cancels only that stream and drains its children; healthy siblings remain available. A last user abandoning an unpublished opening cancels its owner. Client close cancels all request operations before closing every physical owner. Idle eviction is deterministic and never evicts a currently used transport.
+
+GOAWAY stops new pool admission, permits eligible lower-ID responses to complete, and retires the physical owner after its last user releases. A later request acquires a replacement transport; no request is replayed automatically. Stale/replay-safe retry remains separate. Session close drains cancelled I/O before closing TLS, preventing its own close from producing already_closed instead of cancellation.
+
+Tests cover pure preflight, actual HTTPS DNS/IP identity and rejected ALPN, real TCP reuse, two exchanges before either response with one physical permit, stream cancellation, GOAWAY replacement and a gated body-idle timeout with a surviving sibling. The final focused compatibility log records results after refactor; full interpreter regression belongs to the separately fixed lexical ownership race. The stack-depth warning in one memory recovery fixture is measured in PERF-25 and remains visible.

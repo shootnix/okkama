@@ -11,13 +11,13 @@ import "math/decimal" take Decimal;
 
 object Column {
     has index is int;has name,declaration is string;
-    Column(index is int,name is string,declaration is string){confirm index>=0 && index<1024 && Utf8Encoded(name).bytes().size()<=4096 && Utf8Encoded(declaration).bytes().size()<=4096 else throw InvalidRow();self.index=index;self.name=name;self.declaration=declaration;}
+    Column(index is int,name is string,declaration is string){confirm index>=0 && index<1024 && Utf8Encoded(name).bytes().size()<=4096 && Utf8Encoded(declaration).bytes().size()<=4096 else throw InvalidRow.invalid;self.index=index;self.name=name;self.declaration=declaration;}
     index() is int{index;}name() is string{name;}declaration() is string{declaration;}
 }
 // Column is immutable and validates its own bounds; snapshot only the sequence.
 object DbColumns {
     has origin is @Column;
-    DbColumns(values is Sequencing<Column>,limits is DbLimits){let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("column count");let columns is @Column=(0..count).map()->index{let column=values.item(index);confirm column.index()==index else throw InvalidRow();column;};origin=columns;}
+    DbColumns(values is Sequencing<Column>,limits is DbLimits){let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit.kind("column count");let columns is @Column=(0..count).map()->index{let column=values.item(index);confirm column.index()==index else throw InvalidRow.invalid;column;};origin=columns;}
     values() is @Column{origin;}
 }
 // One validated immutable description shared by all rows of a result set.
@@ -37,12 +37,12 @@ object DbRowCells {
     has values is @native_db.DbCellState;
     DbRowCells(origin is Sequencing<DbValue>,limits is DbLimits) {
         let count=origin.size();
-        confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("value count");
+        confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit.kind("value count");
         let used=Atomic(0);
         let values is @native_db.DbCellState=(0..count).map()->index {
             let value=ObservedDbValue(origin.item(index));
             let width=value.width();
-            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");
+            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit.kind("value bytes");
             used.replace(used.value()+width);
             value.state();
         };
@@ -58,12 +58,12 @@ object DbRowData {
     has page is DbPage;
     has base is int;
     DbRowData(schema is DbRowSchema,cells is @native_db.DbCellState) {
-        confirm schema.size()==cells.size() else throw InvalidRow();
-        confirm native_db.db_cells_bytes(cells)<=DbLimits().bytes() else throw DbBoundaryLimit("value bytes");
+        confirm schema.size()==cells.size() else throw InvalidRow.invalid;
+        confirm native_db.db_cells_bytes(cells)<=DbLimits().bytes() else throw DbBoundaryLimit.kind("value bytes");
         self.schema=schema;self.cells=cells;page=DbPage();base=0;
     }
     DbRowData(schema is DbRowSchema,page is DbPage,row is int) {
-        confirm schema.size()==page.width() && page.width()>0 else throw InvalidRow();
+        confirm schema.size()==page.width() && page.width()>0 else throw InvalidRow.invalid;
         self.schema=schema;let empty is @native_db.DbCellState=[];cells=empty;self.page=page;base=row*page.width();
     }
     schema() is DbRowSchema { schema; }
@@ -78,18 +78,18 @@ object Row does RowValues {
     has page is DbPage;
     has base is int;
     Row(columns is Sequencing<Column>,values is Sequencing<DbValue>) {
-        confirm columns.size()==values.size() else throw InvalidRow();
+        confirm columns.size()==values.size() else throw InvalidRow.invalid;
         let limits=DbLimits();schema=DbRowSchema(columns,limits);self.values=DbRowCells(values,limits).values();page=DbPage();base=0;
     }
     Row(columns is Sequencing<Column>,values is Sequencing<DbValue>,limits is DbLimits) {
-        confirm columns.size()==values.size() else throw InvalidRow();
+        confirm columns.size()==values.size() else throw InvalidRow.invalid;
         schema=DbRowSchema(columns,limits);self.values=DbRowCells(values,limits).values();page=DbPage();base=0;
     }
     Row(data is DbRowData) { schema=data.schema();values=data.cells();page=data.page();base=data.base(); }
     size() is int { if page.width()>0 { page.width(); } else { values.size(); } }
     columns() is Sequencing<Column> { schema.columns(); }
     item(index is int) is DbValue {
-        confirm index>=0 && index<self.size() else throw InvalidRowIndex(index);
+        confirm index>=0 && index<self.size() else throw InvalidRowIndex.index(index);
         DbNativeValue(self.cell(index));
     }
     value(name is string) is DbValue { DbNativeValue(self.cell(self.index(name))); }
@@ -126,15 +126,15 @@ object Row does RowValues {
     maybe(name is string) is DbMaybeReader { DbMaybeReader(self.selected(name,self.index(name))); }
     presence(name is string) is DbPresenceReader {
         let at=schema.position(name);
-        confirm at != -2 else throw AmbiguousColumn(name);
+        confirm at != -2 else throw AmbiguousColumn.name(name);
         if at == -1 { DbPresenceReader(Presence<DbColumnReader>.missing); }
         else { self.selected(name,at); }
     }
     private:
     index(name is string) is int {
         let at=schema.position(name);
-        confirm at != -1 else throw MissingColumn(name);
-        confirm at != -2 else throw AmbiguousColumn(name);
+        confirm at != -1 else throw MissingColumn.name(name);
+        confirm at != -2 else throw AmbiguousColumn.name(name);
         at;
     }
     cell(at is int) is native_db.DbCellState { if page.width()>0 { page.cell(base+at); } else { values[at]; } }
@@ -157,8 +157,8 @@ role RowReading {
     closed() is bool;
     close() is void;
 }
-object RowsEnded does Error{RowsEnded();text() is string{"database rows exhausted";}}
-object MissingColumn does Error{has name is string;MissingColumn(name is string){self.name=name;}name() is string{name;}text() is string{"database column is missing";}}
-object AmbiguousColumn does Error{has name is string;AmbiguousColumn(name is string){self.name=name;}name() is string{name;}text() is string{"database column name is ambiguous";}}
-object InvalidRow does Error{InvalidRow();text() is string{"database row width/column coordinates disagree";}}
-object InvalidRowIndex does Error{has index is int;InvalidRowIndex(index is int){self.index=index;}index() is int{index;}text() is string{"database row index is outside its width";}}
+enum RowsEnded is Error = (ended);
+enum MissingColumn is Error = (name(name is string));
+enum AmbiguousColumn is Error = (name(name is string));
+enum InvalidRow is Error = (invalid);
+enum InvalidRowIndex is Error = (index(index is int));

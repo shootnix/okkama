@@ -32,12 +32,12 @@ object BookShelf {
         await QueryJson(c,Statement("SELECT id,book_id,quantity,total_cents,created_at FROM orders ORDER BY id")).value();
     }
     async purchase(book is int,quantity is int) is Json{
-        confirm book>0 && quantity>0 && quantity<=1000 else throw Exception(422,"Проверьте книгу и количество");
+        confirm book>0 && quantity>0 && quantity<=1000 else throw Exception.status(422,"Проверьте книгу и количество");
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
         let tx=await SqliteTransactions(c,SqliteTransactionMode.immediate).transaction(TransactionOptions());
         defer if tx.active(){await tx.rollback();}else{tx;};
-        let row=(await Query(tx,Statement("SELECT price_cents,stock FROM books WHERE id=?",[Param(book)])).maybe()) else throw Exception(404,"Книга не найдена");
-        let fields=row;confirm fields.int("stock")>=quantity else throw Exception(409,"Недостаточно книг на складе");
+        let row=(await Query(tx,Statement("SELECT price_cents,stock FROM books WHERE id=?",[Param(book)])).maybe()) else throw Exception.status(404,"Книга не найдена");
+        let fields=row;confirm fields.int("stock")>=quantity else throw Exception.status(409,"Недостаточно книг на складе");
         let total=fields.int("price_cents")*quantity;
         await tx.execution(Statement("UPDATE books SET stock=stock-? WHERE id=?",[Param(quantity),Param(book)]));
         await tx.execution(Statement("INSERT INTO orders(book_id,quantity,total_cents) VALUES(?,?,?)",[Param(book),Param(quantity),Param(total)]));

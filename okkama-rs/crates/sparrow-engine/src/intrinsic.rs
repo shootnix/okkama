@@ -204,9 +204,11 @@ pub(crate) fn lower(program: &Program, index: usize) -> Result<FunctionPlan, Err
                 if intrinsic.objects.len() != 1 {
                     return Err(invalid());
                 }
+                // AtomicClosed is a payload-less error enum: one `$tag` field.
                 let closed = &program.objects[intrinsic.objects[0].0 as usize];
                 if closed.name != "async.atomic::AtomicClosed"
-                    || !closed.fields.is_empty()
+                    || !(closed.fields.is_empty()
+                        || closed.fields.len() == 1 && closed.fields[0].0 == "$tag")
                     || closed.destroy.is_some()
                 {
                     return Err(invalid());
@@ -543,7 +545,16 @@ pub(crate) fn lower(program: &Program, index: usize) -> Result<FunctionPlan, Err
             } else {
                 Op::ReturnVoid
             },
-            Op::ObjectNew(output, intrinsic.objects[0].0, vec![]),
+            Op::Const(output, Slot::small(0)),
+            Op::ObjectNew(
+                output,
+                intrinsic.objects[0].0,
+                if program.objects[intrinsic.objects[0].0 as usize].fields.is_empty() {
+                    vec![]
+                } else {
+                    vec![output]
+                },
+            ),
             Op::Throw(output),
         ];
         output + 1

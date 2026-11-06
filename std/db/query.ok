@@ -27,7 +27,7 @@ object Query {
 
     // Read one extra row to distinguish exactly-at-limit from truncation.
     async all(max_rows is int) is @Row {
-        confirm max_rows >= 0 else throw InvalidQueryLimit(max_rows);
+        confirm max_rows >= 0 else throw InvalidQueryLimit.limit(max_rows);
         let rows = await self.rows();
         defer rows.close();
         let collected = QueryRowsCollected();
@@ -36,7 +36,7 @@ object Query {
             match found {
                 case Maybe.none { last; }
                 case Maybe.some(row) {
-                    confirm collected.size() < max_rows else throw QueryLimitExceeded(max_rows);
+                    confirm collected.size() < max_rows else throw QueryLimitExceeded.limit(max_rows);
                     collected = collected.addition(row);
                 }
             }
@@ -46,7 +46,7 @@ object Query {
 
     async one() is Row {
         let found = await self.maybe();
-        found else throw NoRows();
+        found else throw NoRows.none;
     }
 
     async maybe() is Maybe<Row> {
@@ -59,7 +59,7 @@ object Query {
                 let second = await rows.next();
                 match second {
                     case Maybe.none { Maybe.some(row); }
-                    case Maybe.some(_) { throw TooManyRows(); }
+                    case Maybe.some(_) { throw TooManyRows.exceeded; }
                 }
             }
         }
@@ -79,21 +79,21 @@ object QueryRows {
         if stopped.compare_and_replace(false,true) { origin.close(); }
     }
     async next() is Maybe<Row> {
-        confirm busy.compare_and_replace(false,true) else throw DbBusy();
+        confirm busy.compare_and_replace(false,true) else throw DbBusy.busy;
         defer busy.replace(false);
         if ended.value() { Maybe.none; }
         else {
-            confirm !self.closed() else throw DbClosed();
+            confirm !self.closed() else throw DbClosed.closed;
             try {
                 let row = await origin.row();
-                confirm !self.closed() else throw DbClosed();
+                confirm !self.closed() else throw DbClosed.closed;
                 Maybe.some(row);
             }
             catch eof is RowsEnded { ended.replace(true);self.close();Maybe.none; }
             catch failure is Cancelled { self.close();throw; }
             catch failure is Error {
                 try { self.close(); }
-                catch cleanup is Error { throw QueryCleanupFailure(failure,cleanup); }
+                catch cleanup is Error { throw QueryCleanupFailure.detailed(failure.text(), cleanup.text()); }
                 throw;
             }
         }
@@ -114,28 +114,12 @@ object QueryRowsCollected {
     }
 }
 
-object InvalidQueryLimit does Error {
-    has amount is int;
-    InvalidQueryLimit(limit is int) { amount=limit; }
-    limit() is int { amount; }
-    text() is string { "database query row limit must be non-negative"; }
-}
-object QueryLimitExceeded does Error {
-    has amount is int;
-    QueryLimitExceeded(limit is int) { amount=limit; }
-    limit() is int { amount; }
-    text() is string { "database query exceeded row limit " + amount.string(); }
-}
+enum InvalidQueryLimit is Error = (limit(limit is int));
+enum QueryLimitExceeded is Error = (limit(limit is int));
 
-object NoRows does Error {
-    NoRows();
-    text() is string { "database query expected one row, found none"; }
-}
+enum NoRows is Error = (none);
 
-object TooManyRows does Error {
-    TooManyRows();
-    text() is string { "database query expected at most one row, found more than one"; }
-}
+enum TooManyRows is Error = (exceeded);
 
 // Both query forms share cardinality, limits and cleanup behavior.
 role QueryOpening { async rows() is RowReading; }
@@ -156,10 +140,4 @@ object PreparedQueryOpening does QueryOpening {
     async rows() is RowReading { await origin.rows(values); }
 }
 
-object QueryCleanupFailure does Error {
-    has original,cleanup is Error;
-    QueryCleanupFailure(original is Error,cleanup is Error) { self.original=original;self.cleanup=cleanup; }
-    cause() is Error { original; }
-    cleanup() is Error { cleanup; }
-    text() is string { "database query failed and cursor cleanup also failed"; }
-}
+enum QueryCleanupFailure is Error = (detailed(cause is string, cleanup is string));

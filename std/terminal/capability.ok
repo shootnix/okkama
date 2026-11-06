@@ -8,7 +8,7 @@ object TerminalSize{
     has width,height is int;
     TerminalSize(columns is int,rows is int){
         confirm columns>=0 && rows>=0 && columns<=65535 && rows<=65535
-            else throw InvalidTerminalSize();
+            else throw InvalidTerminalSize.invalid;
         width=columns;height=rows;
     }
     columns() is int{width;}
@@ -52,4 +52,4 @@ object TerminalFallback{
         }else{0;}
     }
 }
-object InvalidTerminalSize does Error{InvalidTerminalSize();text() is string{"terminal dimensions must be in 0..65535; zero is unknown";}}
+enum InvalidTerminalSize is Error = (invalid);

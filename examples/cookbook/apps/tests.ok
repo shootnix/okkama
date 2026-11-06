@@ -59,7 +59,7 @@ test "recorded calls" {
     test.is(calls.records().item(0).value(),"order-7");test.is(calls.size(),2);
 }
 test "expected error" {
-    let check is Throwing<int>=Throwing(() is int{throw InvalidArgument("стоимость");},ErrorTextMatching("стоимость"));check.check();
+    let check is Throwing<int>=Throwing(() is int{throw InvalidArgument.because("стоимость");},ErrorTextMatching("стоимость"));check.check();
 }
 test "manual clock" {
     let clock=ManualClock(Instant(Duration(0.rat(),DurationUnit.second)));defer clock.close();

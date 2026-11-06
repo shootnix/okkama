@@ -13,11 +13,11 @@ object DbAcquisition{
     DbAcquisition(connection is DbConnection,preparation is DbPreparing,transactions is DbPreparedOpening){self.connection=connection;self.preparation=[preparation];self.transactions=[transactions];}
     connection() is DbConnection{connection;}
     preparing() is DbPreparing{
-        confirm preparation.size()==1 else throw DbFailure(DbFailureKind.unsupported,DbOperation.preparing,"DB_PREPARATION_UNAVAILABLE","connector did not supply preparation capability");
+        confirm preparation.size()==1 else throw DbFailure.detailed(DbFailureKind.unsupported, DbOperation.preparing, "DB_PREPARATION_UNAVAILABLE", "connector did not supply preparation capability");
         preparation[0];
     }
     transactions() is DbPreparedOpening{
-        confirm transactions.size()==1 else throw DbFailure(DbFailureKind.unsupported,DbOperation.preparing,"DB_TRANSACTION_PREPARATION_UNAVAILABLE","connector did not supply transaction preparation capability");
+        confirm transactions.size()==1 else throw DbFailure.detailed(DbFailureKind.unsupported, DbOperation.preparing, "DB_TRANSACTION_PREPARATION_UNAVAILABLE", "connector did not supply transaction preparation capability");
         transactions[0];
     }
 }

@@ -65,21 +65,19 @@ object BufferedReading does Reading, Closing {
 
     BufferedReading(origin is Reading, capacity is int) {
         confirm capacity > 0
-            else throw InvalidArgument("buffer capacity must be positive");
+            else throw InvalidArgument.because("buffer capacity must be positive");
         self.origin = origin;
         self.capacity = capacity;
         cache = buffer_state_create([]);
     }
 
     bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
-        confirm !self.closed() else throw ClosedReading();
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        confirm !self.closed() else throw ClosedReading.closed;
         if buffer_state_size(cache) == 0 {
             let requested is int = if limit > capacity { limit; } else { capacity; };
             let chunk is @byte = origin.bytes(requested);
-            confirm chunk.size() <= requested else throw InvalidReading(
-                "origin returned more bytes than requested"
-            );
+            confirm chunk.size() <= requested else throw InvalidReading.because("origin returned more bytes than requested");
             buffer_state_append(cache, chunk);
         }
         let available is int = buffer_state_size(cache);
@@ -107,13 +105,13 @@ object LimitedReading does Reading {
 
     LimitedReading(origin is Reading, limit is int) {
         confirm limit >= 0
-            else throw InvalidArgument("reading limit cannot be negative");
+            else throw InvalidArgument.because("reading limit cannot be negative");
         self.origin = origin;
         state = limited_reading_state_create(limit);
     }
 
     bytes(size is int) is @byte {
-        confirm size > 0 else throw InvalidReadLimit(size);
+        confirm size > 0 else throw InvalidReadLimit.limit(size);
         let remaining is int = limited_reading_state_remaining(state);
         if remaining == 0 {
             [];
@@ -121,9 +119,7 @@ object LimitedReading does Reading {
         else {
             let requested is int = if size < remaining { size; } else { remaining; };
             let chunk is @byte = origin.bytes(requested);
-            confirm chunk.size() <= requested else throw InvalidReading(
-                "origin exceeded the limited-reading request"
-            );
+            confirm chunk.size() <= requested else throw InvalidReading.because("origin exceeded the limited-reading request");
             limited_reading_state_consume(state, chunk.size());
             chunk;
         }
@@ -140,14 +136,12 @@ object ChainedReading does Reading {
     }
 
     bytes(size is int) is @byte {
-        confirm size > 0 else throw InvalidReadLimit(size);
+        confirm size > 0 else throw InvalidReadLimit.limit(size);
         loop {
             let position is int = chained_reading_state_position(state);
             last [] if position >= origins.size();
             let chunk is @byte = origins.item(position).bytes(size);
-            confirm chunk.size() <= size else throw InvalidReading(
-                "chained origin returned more bytes than requested"
-            );
+            confirm chunk.size() <= size else throw InvalidReading.because("chained origin returned more bytes than requested");
             last chunk if chunk.size() > 0;
             chained_reading_state_advance(state);
         }
@@ -197,22 +191,6 @@ object Discarding does Writing {
     flush() is void {}
 }
 
-object ClosedReading does Error {
-    ClosedReading();
+enum ClosedReading is Error = (closed);
 
-    text() is string {
-        "reading is closed";
-    }
-}
-
-object InvalidReading does Error {
-    has message is string;
-
-    InvalidReading(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidReading is Error = (because(message is string));

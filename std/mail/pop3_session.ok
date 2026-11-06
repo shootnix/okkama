@@ -4,8 +4,7 @@ import "mail/pop3" take PopCapabilities, PopFeature, PopNumber, PopMessage, PopL
 import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyLimits;
 import "mail/pop3_reading" take PopReplyReading;
 import "mail/message" take MailMessage, ParsedMail;
-import "net/stream" take AsyncReading, AsyncWriting;
-import "io/stream" take Closing;
+import "io/stream" take AsyncReading, AsyncWriting, Closing;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
 import "collections/sequence" take Sequencing;
@@ -30,40 +29,40 @@ object PopSession does Closing {
     close() is void {wire.close();}
     abort() is void {try{self.close();}catch failure is Error{}catch failure is NativeFailure{}}
     async state() is PopMailboxState {
-        confirm !self.closed() else throw PopSessionClosed();let guard=await lock.guard();defer guard.close();
-        confirm !self.closed() else throw PopSessionClosed();
+        confirm !self.closed() else throw PopSessionClosed.closed;let guard=await lock.guard();defer guard.close();
+        confirm !self.closed() else throw PopSessionClosed.closed;
         let complete=Event();let cleanup=PopSessionCleanup(self,complete);defer cleanup.close();
         let command=PopCommand(PopSimpleCommand.stat);let reply=await wire.read(command);
-        if !reply.successful(){complete.set();throw PopCommandRejected(command.name(),reply.text());}
+        if !reply.successful(){complete.set();throw PopCommandRejected.detailed(command.name(), reply.text());}
         let state=PopMailboxState(reply,limits);complete.set();state;
     }
     async messages() is Sequencing<PopMessage> {
-        confirm !self.closed() else throw PopSessionClosed();let guard=await lock.guard();defer guard.close();
-        confirm !self.closed() else throw PopSessionClosed();
+        confirm !self.closed() else throw PopSessionClosed.closed;let guard=await lock.guard();defer guard.close();
+        confirm !self.closed() else throw PopSessionClosed.closed;
         let complete=Event();let cleanup=PopSessionCleanup(self,complete);defer cleanup.close();
         let reply=await wire.read(PopCommand(PopSimpleCommand.list));
-        if !reply.successful(){complete.set();throw PopCommandRejected("LIST",reply.text());}
+        if !reply.successful(){complete.set();throw PopCommandRejected.detailed("LIST", reply.text());}
         // Validate LIST before sending another command or holding another body.
         let listed=PopListing(reply,[],limits);let entries=listed.messages();
         let result=if capabilities.features().membership(PopFeature.uidl) {
             let ids=await wire.read(PopCommand(PopSimpleCommand.uidl));
-            if !ids.successful(){complete.set();throw PopCommandRejected("UIDL",ids.text());}
+            if !ids.successful(){complete.set();throw PopCommandRejected.detailed("UIDL", ids.text());}
             let joined=PopListing(reply,[ids],limits);joined.messages();
         } else {entries;};
         complete.set();result;
     }
     async run(command is PopCommand) is PopReply {
         // Typed command only: there is no arbitrary text constructor.
-        confirm !self.closed() else throw PopSessionClosed();
+        confirm !self.closed() else throw PopSessionClosed.closed;
         if command.name()=="TOP" {confirm capabilities.features().membership(PopFeature.top)
-            else throw UnsupportedOperation("POP3 TOP is not advertised");}
+            else throw UnsupportedOperation.because("POP3 TOP is not advertised");}
         if command.name()=="UIDL" {confirm capabilities.features().membership(PopFeature.uidl)
-            else throw UnsupportedOperation("POP3 UIDL is not advertised");}
-        let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw PopSessionClosed();
+            else throw UnsupportedOperation.because("POP3 UIDL is not advertised");}
+        let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw PopSessionClosed.closed;
         let complete=Event();let cleanup=PopSessionCleanup(self,complete);defer cleanup.close();
         let reply=await wire.read(command);
         if command.name()=="QUIT" {self.close();}
-        complete.set();confirm reply.successful() else throw PopCommandRejected(command.name(),reply.text());reply;
+        complete.set();confirm reply.successful() else throw PopCommandRejected.detailed(command.name(), reply.text());reply;
     }
     async quit() is void {await self.run(PopCommand(PopSimpleCommand.quit));}
     async reset() is void {await self.run(PopCommand(PopSimpleCommand.reset));}
@@ -83,7 +82,7 @@ object PopMailbox {
 object PreviewedPopMail {
     has pending is Future<@byte>;
     PreviewedPopMail(origin is PopMailbox, number is PopNumber, lines is int) {
-        confirm lines>=0 else throw InvalidArgument("POP3 TOP line count must be nonnegative");
+        confirm lines>=0 else throw InvalidArgument.because("POP3 TOP line count must be nonnegative");
         pending=origin.preview(number,lines);
     }
     bytes() is Future<@byte> {pending;}
@@ -108,10 +107,10 @@ object PopCommand {
         self.name=name;line=name+" "+number.string()+"\r\n";multiple=operation==PopMessageCommand.retrieve;
     }
     PopCommand(number is PopNumber, lines is int) {
-        confirm lines>=0 else throw InvalidArgument("POP3 TOP line count must be nonnegative");
+        confirm lines>=0 else throw InvalidArgument.because("POP3 TOP line count must be nonnegative");
         let encoded="TOP "+number.string()+" "+lines.string()+"\r\n";
         name="TOP";line=encoded;multiple=true;
-        confirm encoded.length()<=47 else throw InvalidArgument("POP3 command exceeds base command budget");
+        confirm encoded.length()<=47 else throw InvalidArgument.because("POP3 command exceeds base command budget");
     }
     name() is string {name;}
     bytes() is @byte {Utf8Encoded(line).bytes();}
@@ -123,16 +122,16 @@ object PopWire does Closing {
     has input is AsyncReading;has output is AsyncWriting;has owner is Closing;
     has prefix is Atomic<@byte>;has limits is PopReplyLimits;has stopped is Event;
     PopWire(input is AsyncReading, output is AsyncWriting, owner is Closing, prefix is @byte, limits is PopReplyLimits) {
-        confirm prefix.size()<=limits.wire_bytes() && limits.wire_bytes()>0 else throw InvalidArgument("invalid POP3 wire prefix/budget");
+        confirm prefix.size()<=limits.wire_bytes() && limits.wire_bytes()>0 else throw InvalidArgument.because("invalid POP3 wire prefix/budget");
         self.input=input;self.output=output;self.owner=owner;self.limits=limits;self.prefix=Atomic(prefix);stopped=Event();
     }
     closed() is bool {stopped.ready() || owner.closed();}
     close() is void {if !stopped.ready(){stopped.set();owner.close();}}
     async read(command is PopCommand) is PopReply {
-        confirm !self.closed() else throw PopSessionClosed();
+        confirm !self.closed() else throw PopSessionClosed.closed;
         await output.write(ByteSnapshot(command.bytes()));
         let result=await PopReplyReading(input,command.mode(),prefix.value(),limits,4096).result();
-        confirm !self.closed() else throw PopSessionClosed();
+        confirm !self.closed() else throw PopSessionClosed.closed;
         prefix.replace(result.remainder());result.reply();
     }
 }
@@ -141,12 +140,8 @@ object PopSessionCleanup {
     PopSessionCleanup(origin is PopSession, complete is Event){self.origin=origin;self.complete=complete;}
     close() is void {if !complete.ready(){origin.abort();}}
 }
-object PopCommandRejected does Error {
-    has operation,reason is string;
-    PopCommandRejected(operation is string, reason is string){self.operation=operation;self.reason=reason;}
-    operation() is string {operation;}text() is string {"POP3 "+operation+" rejected: "+reason;}
-}
-object PopSessionClosed does Error {PopSessionClosed();text() is string {"POP3 session is closed";}}
+enum PopCommandRejected is Error = (detailed(operation is string, reason is string));
+enum PopSessionClosed is Error = (closed);
 
 test "POP3 commands encode only typed operands" {
     test.is(PopCommand(PopSimpleCommand.quit).bytes(),Utf8Encoded("QUIT\r\n").bytes());

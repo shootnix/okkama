@@ -8,12 +8,12 @@ enum ListStyle=(long,short,narrow);
 object LocalizedList {
     has values,patterns is @string;
     LocalizedList(values is Sequencing<string>,locale is Locale,kind is ListKind,style is ListStyle) {
-        let count=values.size();confirm count>=0 && count<=4096 else throw InvalidLocalizedList("item count must be 0..4096");
+        let count=values.size();confirm count>=0 && count<=4096 else throw InvalidLocalizedList.because("item count must be 0..4096");
         let items is @string=(0..count).map()->index{
-            let text=values.item(index);confirm text.length()<=65536 else throw InvalidLocalizedList("item length exceeds 65536 scalars");text;
+            let text=values.item(index);confirm text.length()<=65536 else throw InvalidLocalizedList.because("item length exceeds 65536 scalars");text;
         };
         let length=items.reduce(0)->total,text{total+text.length();};
-        confirm length<=1048576 else throw InvalidLocalizedList("aggregate input exceeds 1048576 scalars");
+        confirm length<=1048576 else throw InvalidLocalizedList.because("aggregate input exceeds 1048576 scalars");
         self.values=items;
         let base=match kind{case ListKind.conjunction{0;}case ListKind.disjunction{3;}else{6;}};
         let selected=base+match style{case ListStyle.long{0;}case ListStyle.short{1;}else{2;}};
@@ -41,16 +41,14 @@ object LocalizedListPattern {
     has locale is Locale;has style is int;
     LocalizedListPattern(locale is Locale,style is int){self.locale=locale;self.style=style;}
     values() is @string {
-        confirm style>=0 && style<9 else throw InvalidLocalizedList("pattern style");
+        confirm style>=0 && style<9 else throw InvalidLocalizedList.because("pattern style");
         let table=CldrLists();let chain=LocaleFallbacks(locale);
         for (0..chain.size())->index{
             let found=table.lookup(chain.item(index).string(),style);if found.size()!=0{return found;}
         }
-        throw InvalidLocalizedList("missing pinned root data");
+        throw InvalidLocalizedList.because("missing pinned root data");
     }
 }
-object InvalidLocalizedList does Error {
-    has reason is string;InvalidLocalizedList(reason is string){self.reason=reason;}text() is string{"invalid localized list: "+reason;}
-}
+enum InvalidLocalizedList is Error = (because(reason is string));
 
 test "list item placeholders remain literal" {test.is(LocalizedList(["{1}","{0}"],Locale("en"),ListKind.conjunction,ListStyle.long).string(),"{1} and {0}");}

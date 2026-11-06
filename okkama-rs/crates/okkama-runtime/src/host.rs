@@ -49,6 +49,8 @@ impl Host for IrHost {
     }
 
     fn thrown(&self, declaration: usize, fields: Vec<Value>) -> Rc<Failure> {
+        let names = self.module().objects[declaration].fields.iter().map(|field| field.name.as_str());
+        let fields = ObjectHeap.raised_fields(names, fields);
         let Value::Object(object) = self.make(declaration, fields) else {
             unreachable!("allocate makes objects")
         };

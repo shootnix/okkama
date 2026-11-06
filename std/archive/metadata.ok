@@ -18,7 +18,7 @@ object ArchiveOwnership {
 
     ArchiveOwnership(user is string, group is string, user_identity is BigInt, group_identity is BigInt) {
         confirm user_identity.sign() >= 0 && group_identity.sign() >= 0
-            else throw InvalidArchiveOwnership();
+            else throw InvalidArchiveOwnership.invalid;
         user_name = user;
         group_name = group;
         user_id = user_identity;
@@ -73,11 +73,11 @@ object ArchiveMetadata {
     }
 
     mode() is PermissionMode {
-        confirm permission.size() > 0 else throw MissingArchiveMode();
+        confirm permission.size() > 0 else throw MissingArchiveMode.missing;
         permission[0];
     }
     ownership() is ArchiveOwnership {
-        confirm owners.size() > 0 else throw MissingArchiveOwnership();
+        confirm owners.size() > 0 else throw MissingArchiveOwnership.missing;
         owners[0];
     }
     modification() is LocalDateTime { modified; }
@@ -98,18 +98,9 @@ object ArchiveModificationFromEpoch {
     }
 }
 
-object MissingArchiveMode does Error {
-    MissingArchiveMode();
-    text() is string { "archive mode is absent"; }
-}
-object MissingArchiveOwnership does Error {
-    MissingArchiveOwnership();
-    text() is string { "archive ownership is absent"; }
-}
-object InvalidArchiveOwnership does Error {
-    InvalidArchiveOwnership();
-    text() is string { "archive ownership identities must be nonnegative"; }
-}
+enum MissingArchiveMode is Error = (missing);
+enum MissingArchiveOwnership is Error = (missing);
+enum InvalidArchiveOwnership is Error = (invalid);
 
 test "archive metadata retains calendar and comment with explicit absence" {
     let date = ArchiveModificationFromEpoch(0.rat()).value();
@@ -134,7 +125,7 @@ test "archive epoch conversion preserves negative fractional seconds" {
 }
 
 test "archive metadata diagnostics are stable values" {
-    test.is(MissingArchiveMode().text(), "archive mode is absent");
-    test.is(MissingArchiveOwnership().text(), "archive ownership is absent");
-    test.is(InvalidArchiveOwnership().text(), "archive ownership identities must be nonnegative");
+    test.is(MissingArchiveMode.missing.text(), "MissingArchiveMode.missing");
+    test.is(MissingArchiveOwnership.missing.text(), "MissingArchiveOwnership.missing");
+    test.is(InvalidArchiveOwnership.invalid.text(), "InvalidArchiveOwnership.invalid");
 }

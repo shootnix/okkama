@@ -83,12 +83,4 @@ object Order {
     }
 }
 
-object OutOfStock does Error {
-    has product is int;
-    has available is int;
-
-    OutOfStock(:product, :available);
-
-    available() is int { available; }
-    text() is string { "product " + product.string() + " is out of stock"; }
-}
+enum OutOfStock is Error = (detailed(product is int, available is int));

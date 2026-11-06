@@ -18,8 +18,8 @@ object OrderSource {
             let wanted = (id + index * 3) % 12 + 1;
             let quantity = try {
                 catalog.reserved(product, wanted);
-            } catch shortage is OutOfStock {
-                shortage.available();
+            } catch OutOfStock.detailed(_, available) {
+                available;
             };
             order = order.added(Line(product: product, quantity: quantity));
         }

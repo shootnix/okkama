@@ -10,13 +10,7 @@ role Iterating<T> {
     cursor() is Cursor<T>;
 }
 
-object IterationEnded does Error {
-    IterationEnded();
-
-    text() is string {
-        "iteration has ended";
-    }
-}
+enum IterationEnded is Error = (ended);
 
 object CursorItems<T> does Iterating<T> {
     has origin is Cursor<T>;

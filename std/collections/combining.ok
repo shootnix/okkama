@@ -72,12 +72,12 @@ object ZippedCursor<A,B> does Cursor<Pair<A,B>> {
     }
 
     item() is Pair<A,B> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         Pair(first: left.item(), second: right.item());
     }
 
     successor() is Cursor<Pair<A,B>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ZippedCursor(left: left.successor(), right: right.successor());
     }
 }
@@ -102,17 +102,17 @@ object StrictlyZippedCursor<A,B> does Cursor<Pair<A,B>> {
     available() is bool {
         let left_available = left.available();
         let right_available = right.available();
-        confirm left_available == right_available else throw UnequalSizes();
+        confirm left_available == right_available else throw UnequalSizes.unequal;
         left_available;
     }
 
     item() is Pair<A,B> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         Pair(first: left.item(), second: right.item());
     }
 
     successor() is Cursor<Pair<A,B>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         StrictlyZippedCursor(
             left: left.successor(),
             right: right.successor(),
@@ -120,13 +120,7 @@ object StrictlyZippedCursor<A,B> does Cursor<Pair<A,B>> {
     }
 }
 
-object UnequalSizes does Error {
-    UnequalSizes();
-
-    text() is string {
-        "cannot strictly zip sources of unequal sizes";
-    }
-}
+enum UnequalSizes is Error = (unequal);
 
 object Chained<T> does Iterating<T> {
     has origins is Iterating<Iterating<T>>;
@@ -182,7 +176,7 @@ object ChainedCursorCandidate<T>
     }
 
     item() is ChainedCursorCandidateValue<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ChainedCursorCandidateValue(
             origin: origins.item(),
             remaining: origins.successor(),
@@ -190,7 +184,7 @@ object ChainedCursorCandidate<T>
     }
 
     successor() is Cursor<ChainedCursorCandidateValue<T>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ChainedCursorCandidate(origins: origins.successor());
     }
 }
@@ -223,11 +217,11 @@ object ExhaustedChainedCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        throw IterationEnded();
+        throw IterationEnded.ended;
     }
 
     successor() is Cursor<T> {
-        throw IterationEnded();
+        throw IterationEnded.ended;
     }
 }
 
@@ -242,12 +236,12 @@ object ChainedItemCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         current.item();
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let following = current.successor();
         if following.available() {
             ChainedItemCursor(current: following, remaining: remaining);

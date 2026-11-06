@@ -23,18 +23,14 @@ object MulticastOptions {
     MulticastOptions() {hops=1;local_delivery=true;}
     MulticastOptions(hop_limit is int, loopback is bool) {
         confirm hop_limit>=0 && hop_limit<=255
-            else throw InvalidArgument("multicast hop limit must be in 0..255: "+hop_limit.string());
+            else throw InvalidArgument.because("multicast hop limit must be in 0..255: "+hop_limit.string());
         hops=hop_limit;local_delivery=loopback;
     }
     hop_limit() is int {hops;}
     loopback() is bool {local_delivery;}
 }
 
-object InvalidMulticastGroup does Error {
-    has origin is IpAddress;
-    InvalidMulticastGroup(origin is IpAddress) {self.origin=origin;}
-    text() is string {"invalid multicast group: "+origin.string();}
-}
+enum InvalidMulticastGroup is Error = (origin(origin is string));
 
 // Pure validated request. Every membership() call attempts a new acquisition;
 // a duplicate live group fails. The socket is retained, never transferred.
@@ -46,7 +42,7 @@ object MulticastJoining {
     MulticastJoining(socket is UdpSocket, group is IpAddress,
         interface is NetworkInterface, options is MulticastOptions) {
         confirm group.properties().membership(IpProperty.multicast)
-            else throw InvalidMulticastGroup(group);
+            else throw InvalidMulticastGroup.origin(group.string());
         self.socket=socket;self.group=group;self.interface=interface;self.options=options;
     }
     membership() is MulticastMembership {
@@ -68,12 +64,12 @@ object MulticastMembership does UdpMembership {
     MulticastMembership(socket is UdpSocket, group is IpAddress,
         interface is NetworkInterface, options is MulticastOptions) {
         confirm group.properties().membership(IpProperty.multicast)
-            else throw InvalidMulticastGroup(group);
+            else throw InvalidMulticastGroup.origin(group.string());
         lease=try {
             socket.membership(group,interface,options.hop_limit(),options.loopback());
         } catch failure is NativeFailure {
-            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed();}
-            if failure.domain()=="core.net" && failure.code()=="invalid_input" {throw InvalidArgument(failure.message());}
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed.closed;}
+            if failure.domain()=="core.net" && failure.code()=="invalid_input" {throw InvalidArgument.because(failure.message());}
             let translated=NetworkError(NetworkOperation.binding,failure);
             if translated.applicable() {throw translated.value();}
             throw;
@@ -109,6 +105,6 @@ test "multicast hop limit rejects host default and overflow" {
 }
 
 test "invalid multicast group diagnostic preserves canonical address" {
-    let failure=InvalidMulticastGroup(IpAddress("2001:0db8::1"));
-    test.is(failure.text(),"invalid multicast group: 2001:db8::1");
+    let failure=InvalidMulticastGroup.origin((IpAddress("2001:0db8::1")).string());
+    test.is(failure.text(),"InvalidMulticastGroup.origin(\"2001:db8::1\")");
 }

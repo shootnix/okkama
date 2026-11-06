@@ -30,11 +30,11 @@ object Http1Connecting {
     has route is HttpEndpointSelection;has policy is TlsClientPolicy;
     has limits is Http1Limits;has clock is Timing;
     Http1Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy){
-        for policy.protocols() -> protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion();}
+        for policy.protocols() -> protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion.unsupported;}
         self.route=route;self.policy=policy;limits=Http1Limits();clock=SystemClock();
     }
     Http1Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy,limits is Http1Limits,clock is Timing){
-        for policy.protocols() -> protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion();}
+        for policy.protocols() -> protocol{confirm protocol=="http/1.1" else throw UnsupportedHttpVersion.unsupported;}
         self.route=route;self.policy=policy;self.limits=limits;self.clock=clock;
     }
     async session() is Http1Session {

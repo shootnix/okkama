@@ -29,7 +29,7 @@ object WorkingDirectory does DirectoryLocating {
             Path(path_decode(cwd()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }

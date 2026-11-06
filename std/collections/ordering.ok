@@ -65,17 +65,17 @@ object Sorted<T: Comparing<T>> does Sequencing<T>, Iterating<T>, Sizing {
 
     item(index is int) is T {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("ordered index is outside the sequence");
+            else throw OutOfRange.because("ordered index is outside the sequence");
         origin[index];
     }
 
     first() is T {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         origin[0];
     }
 
     last() is T {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         origin[self.size() - 1];
     }
 }
@@ -102,17 +102,17 @@ object SortedBy<T,K: Comparing<K>>
 
     item(index is int) is T {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("ordered index is outside the sequence");
+            else throw OutOfRange.because("ordered index is outside the sequence");
         origin[index].item();
     }
 
     first() is T {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         origin[0].item();
     }
 
     last() is T {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         origin[self.size() - 1].item();
     }
 }
@@ -152,7 +152,7 @@ object PositionOf<T: Comparing<T>> {
         let position = LowerBound(origin: origin, item: sought).value();
         confirm position < origin.size()
             && origin.item(position).order(sought) == Order.equal
-            else throw MissingItem();
+            else throw MissingItem.missing;
         position;
     }
 }
@@ -208,7 +208,7 @@ object LowerSearching<T: Comparing<T>> {
         stop is int,
     ) {
         confirm start >= 0 && start <= stop && stop <= origin.size()
-            else throw InvalidArgument("lower-bound search range is invalid");
+            else throw InvalidArgument.because("lower-bound search range is invalid");
         self.origin = origin;
         sought = item;
         beginning = start;
@@ -254,7 +254,7 @@ object UpperSearching<T: Comparing<T>> {
         stop is int,
     ) {
         confirm start >= 0 && start <= stop && stop <= origin.size()
-            else throw InvalidArgument("upper-bound search range is invalid");
+            else throw InvalidArgument.because("upper-bound search range is invalid");
         self.origin = origin;
         sought = item;
         beginning = start;
@@ -293,7 +293,7 @@ object OrderedCursor<T> does Cursor<T> {
 
     OrderedCursor(values is @T, position is int) {
         confirm position >= 0 && position <= values.size()
-            else throw InvalidArgument("ordered cursor position is invalid");
+            else throw InvalidArgument.because("ordered cursor position is invalid");
         origin = values;
         self.position = position;
     }
@@ -303,12 +303,12 @@ object OrderedCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin[position];
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         OrderedCursor(values: origin, position: position + 1);
     }
 }
@@ -319,7 +319,7 @@ object RankedCursor<T,K: Comparing<K>> does Cursor<T> {
 
     RankedCursor(values is @Ranked<T,K>, position is int) {
         confirm position >= 0 && position <= values.size()
-            else throw InvalidArgument("ranked cursor position is invalid");
+            else throw InvalidArgument.because("ranked cursor position is invalid");
         origin = values;
         self.position = position;
     }
@@ -329,20 +329,14 @@ object RankedCursor<T,K: Comparing<K>> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin[position].item();
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         RankedCursor(values: origin, position: position + 1);
     }
 }
 
-object MissingItem does Error {
-    MissingItem();
-
-    text() is string {
-        "item is absent from the ordered sequence";
-    }
-}
+enum MissingItem is Error = (missing);

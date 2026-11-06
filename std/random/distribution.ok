@@ -51,9 +51,7 @@ object UniformIntegers does Distribution<int> {
     has ending is int;
 
     UniformIntegers(random is Randomizing, start is int, stop is int) {
-        confirm start < stop else throw InvalidDistribution(
-            "uniform integer range must satisfy start < stop"
-        );
+        confirm start < stop else throw InvalidDistribution.because("uniform integer range must satisfy start < stop");
         self.random = random;
         beginning = start;
         ending = stop;
@@ -70,9 +68,7 @@ object UniformFloats does Distribution<float> {
     has ending is float;
 
     UniformFloats(random is Randomizing, start is float, stop is float) {
-        confirm start < stop else throw InvalidDistribution(
-            "uniform float range must satisfy start < stop"
-        );
+        confirm start < stop else throw InvalidDistribution.because("uniform float range must satisfy start < stop");
         self.random = random;
         beginning = start;
         ending = stop;
@@ -93,9 +89,7 @@ object NormalDistribution does Distribution<float> {
         mean is float,
         deviation is float,
     ) {
-        confirm deviation >= 0.0 else throw InvalidDistribution(
-            "normal deviation must be non-negative"
-        );
+        confirm deviation >= 0.0 else throw InvalidDistribution.because("normal deviation must be non-negative");
         self.random = random;
         center = mean;
         spread = deviation;
@@ -133,7 +127,7 @@ object ExponentialDistribution does Distribution<float> {
 
     ExponentialDistribution(random is Randomizing, rate is float) {
         confirm rate > 0.0
-            else throw InvalidDistribution("exponential rate must be positive");
+            else throw InvalidDistribution.because("exponential rate must be positive");
         self.random = random;
         self.rate = rate;
     }
@@ -154,9 +148,9 @@ object GammaDistribution does Distribution<float> {
         scale is float,
     ) {
         confirm shape > 0.0
-            else throw InvalidDistribution("gamma shape must be positive");
+            else throw InvalidDistribution.because("gamma shape must be positive");
         confirm scale > 0.0
-            else throw InvalidDistribution("gamma scale must be positive");
+            else throw InvalidDistribution.because("gamma scale must be positive");
         self.random = random;
         self.shape = shape;
         self.scale = scale;
@@ -236,9 +230,9 @@ object BetaDistribution does Distribution<float> {
         beta is float,
     ) {
         confirm alpha > 0.0
-            else throw InvalidDistribution("beta alpha must be positive");
+            else throw InvalidDistribution.because("beta alpha must be positive");
         confirm beta > 0.0
-            else throw InvalidDistribution("beta beta must be positive");
+            else throw InvalidDistribution.because("beta beta must be positive");
         self.random = random;
         self.alpha = alpha;
         self.beta = beta;
@@ -298,9 +292,7 @@ object LogNormalDistribution does Distribution<float> {
         mean is float,
         deviation is float,
     ) {
-        confirm deviation >= 0.0 else throw InvalidDistribution(
-            "log-normal deviation must be non-negative"
-        );
+        confirm deviation >= 0.0 else throw InvalidDistribution.because("log-normal deviation must be non-negative");
         self.random = random;
         center = mean;
         spread = deviation;
@@ -328,9 +320,7 @@ object VonMisesDistribution does Distribution<float> {
         mean is float,
         concentration is float,
     ) {
-        confirm concentration >= 0.0 else throw InvalidDistribution(
-            "von Mises concentration must be non-negative"
-        );
+        confirm concentration >= 0.0 else throw InvalidDistribution.because("von Mises concentration must be non-negative");
         self.random = random;
         center = mean;
         self.concentration = concentration;
@@ -439,9 +429,9 @@ object ParetoDistribution does Distribution<float> {
         scale is float,
     ) {
         confirm shape > 0.0
-            else throw InvalidDistribution("Pareto shape must be positive");
+            else throw InvalidDistribution.because("Pareto shape must be positive");
         confirm scale > 0.0
-            else throw InvalidDistribution("Pareto scale must be positive");
+            else throw InvalidDistribution.because("Pareto scale must be positive");
         self.random = random;
         self.shape = shape;
         self.scale = scale;
@@ -463,9 +453,9 @@ object WeibullDistribution does Distribution<float> {
         scale is float,
     ) {
         confirm shape > 0.0
-            else throw InvalidDistribution("Weibull shape must be positive");
+            else throw InvalidDistribution.because("Weibull shape must be positive");
         confirm scale > 0.0
-            else throw InvalidDistribution("Weibull scale must be positive");
+            else throw InvalidDistribution.because("Weibull scale must be positive");
         self.random = random;
         self.shape = shape;
         self.scale = scale;
@@ -485,7 +475,7 @@ object Choices<T> does Distribution<T> {
 
     Choices(random is Randomizing, values is Sequencing<T>) {
         confirm values.size() > 0
-            else throw InvalidDistribution("choices require non-empty values");
+            else throw InvalidDistribution.because("choices require non-empty values");
         self.random = random;
         origin = values;
     }
@@ -507,15 +497,13 @@ object WeightedChoices<T> does Distribution<T> {
         values is Sequencing<T>,
         weights is Sequencing<float>,
     ) {
-        confirm values.size() == weights.size() else throw UnequalSizes();
-        confirm values.size() > 0 else throw InvalidDistribution(
-            "weighted choices require non-empty values"
-        );
+        confirm values.size() == weights.size() else throw UnequalSizes.unequal;
+        confirm values.size() > 0 else throw InvalidDistribution.because("weighted choices require non-empty values");
         let valid is bool = (0..weights.size()).reduce(true) -> valid, index {
             valid && weights.item(index) >= 0.0;
         };
         confirm valid
-            else throw InvalidDistribution("weights must be non-negative");
+            else throw InvalidDistribution.because("weights must be non-negative");
         let maximum is float = (0..weights.size()).reduce(0.0)
             -> largest, index {
                 if weights.item(index) > largest {
@@ -525,9 +513,7 @@ object WeightedChoices<T> does Distribution<T> {
                     largest;
                 }
             };
-        confirm maximum > 0.0 else throw InvalidDistribution(
-            "weighted choices require a positive weight"
-        );
+        confirm maximum > 0.0 else throw InvalidDistribution.because("weighted choices require a positive weight");
         self.random = random;
         origin = values;
         self.weights = weights;
@@ -604,9 +590,7 @@ object Samples<T> does Distribution<@T> {
         values is Sequencing<T>,
         count is int,
     ) {
-        confirm count >= 0 && count <= values.size() else throw InvalidDistribution(
-            "sample count must be between zero and the values size"
-        );
+        confirm count >= 0 && count <= values.size() else throw InvalidDistribution.because("sample count must be between zero and the values size");
         self.random = random;
         origin = values;
         amount = count;
@@ -716,14 +700,4 @@ object PermutationSamples<T> does Distribution<@T> {
     }
 }
 
-object InvalidDistribution does Error {
-    has message is string;
-
-    InvalidDistribution(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidDistribution is Error = (because(message is string));

@@ -11,7 +11,7 @@ role DigestCompression64 {
     fake {
         has count is int = 0;
         block(origin is @byte) is ^DigestCompression64 {
-            confirm origin.size() == 64 else throw InvalidDigestBlock();
+            confirm origin.size() == 64 else throw InvalidDigestBlock.invalid;
             ^count = count + 1;
         }
         bytes() is @byte { [byte(count % 256)]; }
@@ -40,7 +40,7 @@ object DigestBlocks64 {
     has little_endian is bool;
 
     DigestBlocks64(compression is DigestCompression64, origin is @byte, little_endian is bool) {
-        confirm origin.size() <= 2305843009213693951 else throw DigestInputTooLong();
+        confirm origin.size() <= 2305843009213693951 else throw DigestInputTooLong.too_long;
         self.compression = compression;
         prefix = [];
         self.origin = origin;
@@ -49,7 +49,7 @@ object DigestBlocks64 {
     }
 
     state(origin is @byte) is ^DigestBlocks64 {
-        confirm origin.size() <= 2305843009213693951 - length else throw DigestInputTooLong();
+        confirm origin.size() <= 2305843009213693951 - length else throw DigestInputTooLong.too_long;
         ^compression = self.completed();
         ^prefix = self.remainder();
         ^origin = origin;
@@ -96,8 +96,8 @@ object DigestPadding64 {
     has length is int;
     has little_endian is bool;
     DigestPadding64(tail is @byte, length is int, little_endian is bool) {
-        confirm length >= 0 && length <= 2305843009213693951 else throw DigestInputTooLong();
-        confirm tail.size() < 64 && tail.size() == length % 64 else throw InvalidDigestPadding();
+        confirm length >= 0 && length <= 2305843009213693951 else throw DigestInputTooLong.too_long;
+        confirm tail.size() < 64 && tail.size() == length % 64 else throw InvalidDigestPadding.invalid;
         self.tail = tail;
         self.length = length;
         self.little_endian = little_endian;
@@ -117,18 +117,9 @@ object DigestPadding64 {
     }
 }
 
-object DigestInputTooLong does Error {
-    DigestInputTooLong();
-    text() is string { "digest message length must be in 0..2305843009213693951 bytes"; }
-}
-object InvalidDigestPadding does Error {
-    InvalidDigestPadding();
-    text() is string { "digest tail must agree with message length modulo 64"; }
-}
-object InvalidDigestBlock does Error {
-    InvalidDigestBlock();
-    text() is string { "digest compression requires exactly 64 bytes"; }
-}
+enum DigestInputTooLong is Error = (too_long);
+enum InvalidDigestPadding is Error = (invalid);
+enum InvalidDigestBlock is Error = (invalid);
 
 test "digest padding has exact one and two block boundaries" {
     let empty = DigestPadding64([], 0, true).bytes();

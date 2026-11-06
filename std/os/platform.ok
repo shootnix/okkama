@@ -102,13 +102,13 @@ object Host {
             system_host_name();
         }
         catch failure is NativeFailure {
-            throw UnavailableHostInformation("host name is unavailable");
+            throw UnavailableHostInformation.because("host name is unavailable");
         };
         processors = try {
             system_cpu_count();
         }
         catch failure is NativeFailure {
-            throw UnavailableHostInformation("CPU count is unavailable");
+            throw UnavailableHostInformation.because("CPU count is unavailable");
         };
         confirm self.processors > 0 else panic "System provider returned no CPUs";
     }
@@ -122,14 +122,4 @@ object Host {
     }
 }
 
-object UnavailableHostInformation does Error {
-    has message is string;
-
-    UnavailableHostInformation(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum UnavailableHostInformation is Error = (because(message is string));

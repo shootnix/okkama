@@ -54,9 +54,7 @@ object HtmlAttribute {
 
     HtmlAttribute(name is string, valued is bool, value is string) {
         confirm valued || value.empty()
-            else throw InvalidArgument(
-                "an unvalued HTML attribute must have an empty value"
-            );
+            else throw InvalidArgument.because("an unvalued HTML attribute must have an empty value");
         attribute_name = name;
         has_value = valued;
         attribute_value = value;
@@ -236,7 +234,7 @@ object HtmlEventCursor does Cursor<HtmlEvent> {
     available() is bool { position < amount; }
 
     item() is HtmlEvent {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         match html_event_kind(origin, position) {
             case 0 {
                 let attributes is @HtmlAttribute = (
@@ -276,7 +274,7 @@ object HtmlEventCursor does Cursor<HtmlEvent> {
     }
 
     successor() is Cursor<HtmlEvent> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         HtmlEventCursor(
             origin: origin,
             position: position + 1,

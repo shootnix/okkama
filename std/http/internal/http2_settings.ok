@@ -18,20 +18,20 @@ object Http2PeerSettings {
     header_list_limited() is bool{header_list_limited;}push_enabled() is bool{push_enabled;}
     setting(identifier is int,value is int,from_server is bool) is ^Http2PeerSettings{
         confirm identifier>=0 && identifier<=65535 && value>=0 && value<=4294967295
-            else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid setting coordinates");
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid setting coordinates");
         if identifier==1{^header_table=value;}
         if identifier==2{
             confirm value<=1 && (!from_server || value==0)
-                else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid push setting");
+                else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid push setting");
             ^push_enabled=value==1;
         }
         if identifier==3{^streams=value;^streams_limited=true;}
         if identifier==4{
-            confirm value<=2147483647 else throw Http2Fault(Http2FaultScope.connection,3,0,"initial window overflow");
+            confirm value<=2147483647 else throw Http2Fault.detailed(Http2FaultScope.connection, 3, 0, "initial window overflow");
             ^initial_window=value;
         }
         if identifier==5{
-            confirm value>=16384 && value<=16777215 else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid peer frame limit");
+            confirm value>=16384 && value<=16777215 else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid peer frame limit");
             ^frame_size=value;
         }
         if identifier==6{^header_list=value;^header_list_limited=true;}
@@ -43,7 +43,7 @@ object ReceivedHttp2Settings {
     value() is Http2PeerSettings{
         Http2FrameRules(origin).check();
         confirm origin.header().kind().int()==4 && (origin.header().flags().int() & 1)==0
-            else throw Http2Fault(Http2FaultScope.connection,1,0,"non-ACK settings required");
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "non-ACK settings required");
         let payload=origin.payload();let state=previous;
         for (0..(payload.size()/6).int()) -> row{
             let offset=row*6;

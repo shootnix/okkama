@@ -24,10 +24,10 @@ object CookieOrigin {
     has origin is Url;has domain,site,path is string;has address,secure is bool;
     CookieOrigin(origin is Url) {
         let parts=origin.parts();let scheme=parts.scheme();
-        confirm scheme=="http" || scheme=="https" else throw InvalidCookie("HTTP origin required");
-        confirm parts.authority().present() else throw InvalidCookie("origin authority required");
+        confirm scheme=="http" || scheme=="https" else throw InvalidCookie.because("HTTP origin required");
+        confirm parts.authority().present() else throw InvalidCookie.because("origin authority required");
         let host=parts.authority().host();let kind=host.kind();
-        confirm kind==UrlHostKind.name || kind==UrlHostKind.address else throw InvalidCookie("DNS or IP origin required");
+        confirm kind==UrlHostKind.name || kind==UrlHostKind.address else throw InvalidCookie.because("DNS or IP origin required");
         let dns=kind==UrlHostKind.name;
         let raw=if dns {host.name().ascii();}else{host.address().string();};
         let canonical=if dns && raw.slice(raw.length()-1,raw.length())=="." {raw.slice(0,raw.length()-1);}else{raw;};
@@ -68,11 +68,11 @@ object ParsedSetCookie {
     has origin is string;has url is Url;has reference is Instant;
     ParsedSetCookie(origin is string, url is Url, reference is Instant){self.origin=origin;self.url=url;self.reference=reference;}
     value() is Cookie {
-        confirm origin.length()<=8192 else throw InvalidCookie("Set-Cookie source limit exceeded");
+        confirm origin.length()<=8192 else throw InvalidCookie.because("Set-Cookie source limit exceeded");
         confirm Utf8Encoded(origin).bytes().reduce(true) -> valid,octet {let code=octet.int();valid && (code==9 || (code>=32 && code<=126));}
-            else throw InvalidCookie("ASCII Set-Cookie source required");
+            else throw InvalidCookie.because("ASCII Set-Cookie source required");
         let endpoint=CookieOrigin(url);let fields=origin.split(";");
-        confirm fields.size()<=129 else throw InvalidCookie("Set-Cookie attribute limit exceeded");
+        confirm fields.size()<=129 else throw InvalidCookie.because("Set-Cookie attribute limit exceeded");
         let pair=fields[0];let coordinates=pair.split("=");
         let name=if coordinates.size()==1 {"";}else{CookieWsp(coordinates[0]).string();};
         let value=CookieWsp(if coordinates.size()==1 {pair;}else{pair.slice(coordinates[0].length()+1,pair.length());}).string();
@@ -111,12 +111,12 @@ object CookieAttributeReading {
         // Validate prefixes against supplied Domain/Path before deriving defaults
         // or applying the PSL exact-origin exception; neither may grant __Host-.
         Cookie(name,value,CookieAttributes(domain,path,CookieExpiry(),same_site,flags));
-        confirm !secure || endpoint.secure() else throw InvalidCookie("Secure cookie requires HTTPS origin");
+        confirm !secure || endpoint.secure() else throw InvalidCookie.because("Secure cookie requires HTTPS origin");
         let proposed=CookieAttributes(domain,path,CookieExpiry(),same_site,flags).domain();
         let target=if proposed=="" {"";}else{
-            confirm CookieDomainMatch(proposed,endpoint.domain(),endpoint.address()).matches() else throw InvalidCookie("cookie Domain does not match origin");
+            confirm CookieDomainMatch(proposed,endpoint.domain(),endpoint.address()).matches() else throw InvalidCookie.because("cookie Domain does not match origin");
             if !endpoint.address() && PublicSuffixList().public(HostName(proposed)) {
-                confirm proposed==endpoint.domain() else throw InvalidCookie("public suffix Domain rejected");"";
+                confirm proposed==endpoint.domain() else throw InvalidCookie.because("public suffix Domain rejected");"";
             }else{proposed;}
         };
         let actual_path=if path=="" {CookieDefaultPath(endpoint.path()).string();}else{path;};

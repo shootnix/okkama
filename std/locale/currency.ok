@@ -14,22 +14,16 @@ enum CurrencyDisplay=(symbol,narrow_symbol,code,name);
 object Currency does Comparing<Currency> {
     has code,minor_units is string;
     Currency(code is string){
-        confirm code.length()==3 else throw InvalidCurrency(code);
-        let digits=CldrCurrencies().digits(code);confirm digits!="" else throw InvalidCurrency(code);
+        confirm code.length()==3 else throw InvalidCurrency.code(code);
+        let digits=CldrCurrencies().digits(code);confirm digits!="" else throw InvalidCurrency.code(code);
         self.code=code;minor_units=digits;
     }
     code() is string{code;}
-    digits() is int{confirm minor_units!="N.A." else throw MissingCurrencyDigits(code);ParsedInt(minor_units).value();}
+    digits() is int{confirm minor_units!="N.A." else throw MissingCurrencyDigits.code(code);ParsedInt(minor_units).value();}
     order(other is Currency) is Order{code.order(other.code());}
 }
-object InvalidCurrency does Error {
-    has code is string;InvalidCurrency(code is string){self.code=code;}code() is string{code;}
-    text() is string{"unknown or nonuppercase ISO currency code: "+code;}
-}
-object MissingCurrencyDigits does Error {
-    has code is string;MissingCurrencyDigits(code is string){self.code=code;}code() is string{code;}
-    text() is string{"ISO minor units are not defined for "+code;}
-}
+enum InvalidCurrency is Error = (code(code is string));
+enum MissingCurrencyDigits is Error = (code(code is string));
 object CurrencyFormat {
     has numbers is NumberFormat;has display is CurrencyDisplay;has accounting,currency_digits is bool;
     CurrencyFormat(numbers is NumberFormat,display is CurrencyDisplay,accounting is bool,currency_digits is bool){self.numbers=numbers;self.display=display;self.accounting=accounting;self.currency_digits=currency_digits;}
@@ -44,7 +38,7 @@ object CurrencyLocaleData {
     CurrencyLocaleData(locale is Locale,currency is Currency,numbers is NumberLocaleData){
         let table=CldrCurrencies();let chain=LocaleFallbacks(locale);
         let profile=(0..chain.size()).reduce(-1)->chosen,index{if chosen>=0{chosen;}else{table.profile(chain.item(index).string(),numbers.system());}};
-        confirm profile>=0 else throw InvalidLocalizedNumber("missing pinned currency root");
+        confirm profile>=0 else throw InvalidLocalizedNumber.because("missing pinned currency root");
         let rows is @@string=(0..chain.size()).map()->index{table.currency(chain.item(index).string(),currency.code());};
         let translations is @string=(0..9).map()->index{rows.reduce("")->chosen,row{if chosen=="" && row.size()==9{row[index];}else{chosen;}};};
         self.table=table;self.profile=profile;self.fields=table.fields(profile);self.translations=translations;code=currency.code();
@@ -126,7 +120,7 @@ object CurrencyCompacts does NumberCompactData {
 object CurrencyPluralCategory {
     has value is int;
     CurrencyPluralCategory(number is NumberRendered,locale is Locale,minimum_fraction is int){
-        let spelling=number.number().ascii(minimum_fraction);confirm spelling.length()<=1024 else throw InvalidLocalizedNumber("currency plural operand exceeds 1024 scalars");
+        let spelling=number.number().ascii(minimum_fraction);confirm spelling.length()<=1024 else throw InvalidLocalizedNumber.because("currency plural operand exceeds 1024 scalars");
         value=match PluralCategoryOf(PluralNumber(spelling),locale,PluralKind.cardinal).value(){case PluralCategory.zero{0;}case PluralCategory.one{1;}case PluralCategory.two{2;}case PluralCategory.few{3;}case PluralCategory.many{4;}else{5;}};
     }
     value() is int{value;}
@@ -142,9 +136,9 @@ object LocalizedCurrency {
         if format.display()==CurrencyDisplay.name{
             let rendered=NumberPrinting(magnitude,locale,numbers,false,false,base).rendering();
             let category=CurrencyPluralCategory(rendered,locale,precision.minimum_fraction()).value();
-            let unit=data.unit(category);let parts=unit.split("{0}");confirm parts.size()==2 else throw InvalidLocalizedNumber("currency unit pattern requires numeric placeholder");
-            confirm unit.split("{1}").size()==2 else throw InvalidLocalizedNumber("currency unit pattern requires name placeholder");
-            let label=data.name(category);let text=parts[0].replace("{1}",label)+rendered.text()+parts[1].replace("{1}",label);confirm text.length()<=8192 else throw InvalidLocalizedNumber("currency output exceeds 8192 scalars");return text;
+            let unit=data.unit(category);let parts=unit.split("{0}");confirm parts.size()==2 else throw InvalidLocalizedNumber.because("currency unit pattern requires numeric placeholder");
+            confirm unit.split("{1}").size()==2 else throw InvalidLocalizedNumber.because("currency unit pattern requires name placeholder");
+            let label=data.name(category);let text=parts[0].replace("{1}",label)+rendered.text()+parts[1].replace("{1}",label);confirm text.length()<=8192 else throw InvalidLocalizedNumber.because("currency output exceeds 8192 scalars");return text;
         }
         let label=data.symbol(format.display());let representation=CurrencyNumberData(base,data,label,format.accounting());
         NumberPrinting(magnitude,locale,numbers,false,false,representation).string();

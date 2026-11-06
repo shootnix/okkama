@@ -1,0 +1,37 @@
+
+==> build
+okkama 0.3.3
+
+==> Rust tests (release, workspace)
+ok: 62 test binaries
+
+==> conformance
+ir: mandatory cases in profile full-release: 790/793 PASS (790 PASS, 3 BLOCKED)
+!! conformance ir
+jvm: mandatory cases in profile full-release: 790/793 PASS (790 PASS, 3 BLOCKED)
+!! conformance jvm
+sparrow: mandatory cases in profile full-release: 790/793 PASS (790 PASS, 3 BLOCKED)
+!! conformance sparrow
+sparrow-eager: mandatory cases in profile full-release: 790/793 PASS (790 PASS, 3 BLOCKED)
+!! conformance sparrow-eager
+sparrow-threshold-2: mandatory cases in profile full-release: 790/793 PASS (790 PASS, 3 BLOCKED)
+!! conformance sparrow-threshold-2
+sparrow-threshold-10: mandatory cases in profile full-release: 790/793 PASS (790 PASS, 3 BLOCKED)
+!! conformance sparrow-threshold-10
+
+==> JIT and OSR actually ran
+01-arith: jit: compiled 6, refused 0, entries 6, osr 2
+02-calls: jit: compiled 6, refused 0, entries 7, osr 1
+07-objects: jit: compiled 12, refused 0, entries 12, osr 3
+09-closures: jit: compiled 13, refused 0, entries 14, osr 2
+
+==> std inline tests
+std: 232 modules, 464 runs, 4 failed (2 known)
+  known: ir std/locale/collation.ok
+  known: sparrow std/locale/collation.ok
+  NEW FAILURE: ir std/net/tcp.ok: FAIL
+  NEW FAILURE: sparrow std/net/tcp.ok: FAIL
+!! std inline tests
+
+logs: /Volumes/SamsungSSD/stuff/okkama-new/conformance/reports/runs/gate-20261101T131216
+GATE FAILED: conformance ir conformance jvm conformance sparrow conformance sparrow-eager conformance sparrow-threshold-2 conformance sparrow-threshold-10 std inline tests

@@ -50,7 +50,7 @@ object Md5Compression does DigestCompression64 {
     has hash is @int;
     Md5Compression() { hash = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]; }
     block(origin is @byte) is ^Md5Compression {
-        confirm origin.size() == 64 else throw InvalidDigestBlock();
+        confirm origin.size() == 64 else throw InvalidDigestBlock.invalid;
         let words = (0..16).map() -> i {
             (0..4).reduce(0) -> value, j { value | (origin[i * 4 + j].int() << (j * 8)); };
         };
@@ -95,7 +95,7 @@ object Sha1Compression does DigestCompression64 {
     has hash is @int;
     Sha1Compression() { hash = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0]; }
     block(origin is @byte) is ^Sha1Compression {
-        confirm origin.size() == 64 else throw InvalidDigestBlock();
+        confirm origin.size() == 64 else throw InvalidDigestBlock.invalid;
         let start = (0..21).map() -> i {
             if i < 5 { hash[i]; }
             else {

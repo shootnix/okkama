@@ -3,7 +3,7 @@ import "http/http2_settings" take Http2Settings,Http2SettingsWire;
 import "http/internal/http2_settings" take Http2PeerSettings,ReceivedHttp2Settings;
 import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
 import "http/internal/http2_reading" take Http2FrameReading,EndOfHttp2Frames;
-import "net/stream" take AsyncReading,AsyncWriting;
+import "io/stream" take AsyncReading,AsyncWriting;
 import "async/scope" take FutureGroup;
 import "io/decorators" take ByteSnapshot;
 import "encoding/utf" take Utf8Encoded;
@@ -40,7 +40,7 @@ object Http2PrefaceOperation {
         let prefix=HttpWireBytes([magic,frame],magic.size()+frame.size()).bytes();
         await self.emit(prefix);
         let peer=try{await Http2FrameReading(input,settings.frame_size()).result();}
-            catch failure is EndOfHttp2Frames{throw Http2Fault(Http2FaultScope.connection,1,0,"missing server preface");};
+            catch failure is EndOfHttp2Frames{throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing server preface");};
         let received=ReceivedHttp2Settings(peer,Http2PeerSettings(),true).value();
         await self.emit(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes());received;
     }
@@ -79,15 +79,15 @@ object Http2ServerPrefaceOperation {
         let magic=Utf8Encoded("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").bytes();let offset=Atomic(0);
         loop{
             if offset.value()==magic.size(){last;}let remaining=magic.size()-offset.value();let bytes=await self.chunk(remaining);
-            confirm bytes.size()<=remaining else throw InvalidReading("HTTP2 preface source exceeded request");
-            confirm bytes.size()>0 else throw Http2Fault(Http2FaultScope.connection,1,0,"truncated client preface");
+            confirm bytes.size()<=remaining else throw InvalidReading.because("HTTP2 preface source exceeded request");
+            confirm bytes.size()>0 else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "truncated client preface");
             for (0..bytes.size()) -> index{
-                confirm bytes[index].int()==magic[offset.value()+index].int() else throw Http2Fault(Http2FaultScope.connection,1,0,"invalid client preface");
+                confirm bytes[index].int()==magic[offset.value()+index].int() else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "invalid client preface");
             }
             offset.replace(offset.value()+bytes.size());
         }
         let first=try{await Http2FrameReading(input,settings.frame_size()).result();}
-            catch failure is EndOfHttp2Frames{throw Http2Fault(Http2FaultScope.connection,1,0,"missing client SETTINGS");};
+            catch failure is EndOfHttp2Frames{throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "missing client SETTINGS");};
         let peer=ReceivedHttp2Settings(first,Http2PeerSettings(),false).value();
         await self.emit(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]).bytes());peer;
     }

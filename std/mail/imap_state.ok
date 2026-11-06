@@ -48,14 +48,14 @@ object ImapSelectionProgress {
         let name=response.name();
         if response.kind()==ImapResponseKind.untagged && (name=="EXISTS" || name=="RECENT" || name=="EXPUNGE") {
             let values=ParsedImapData(response).entries();
-            confirm values.size()==3 && values.item(1).kind()==ImapValueKind.atom else throw InvalidImapData("invalid numeric mailbox update");
+            confirm values.size()==3 && values.item(1).kind()==ImapValueKind.atom else throw InvalidImapData.because("invalid numeric mailbox update");
             let number=ImapUnsigned(values.item(1).string(),name=="EXPUNGE").value();
             if name=="EXISTS" {
-                confirm count<0 || number>=count else throw InvalidImapData("EXISTS cannot decrease without EXPUNGE");
+                confirm count<0 || number>=count else throw InvalidImapData.because("EXISTS cannot decrease without EXPUNGE");
                 ^count=number;
             } else {
                 if name=="RECENT" {^recent=number;} else {
-                    confirm count>=number else throw InvalidImapData("EXPUNGE sequence exceeds mailbox size");
+                    confirm count>=number else throw InvalidImapData.because("EXPUNGE sequence exceeds mailbox size");
                     ^count=count-1;
                     if recent>0 {^recent=-1;}
                     if unseen.size()>0 {
@@ -66,7 +66,7 @@ object ImapSelectionProgress {
             }
         }
         if response.kind()==ImapResponseKind.untagged && name=="FLAGS" {
-            let values=ParsedImapData(response).entries();confirm values.size()==3 else throw InvalidImapData("invalid FLAGS response");
+            let values=ParsedImapData(response).entries();confirm values.size()==3 else throw InvalidImapData.because("invalid FLAGS response");
             ^marks=ImapFlagsValue(values.item(2)).flags();^flags_seen=true;
         }
         if response.kind()==ImapResponseKind.untagged && name=="FETCH" {^unseen=[];}
@@ -75,7 +75,7 @@ object ImapSelectionProgress {
             if code.present() {
                 let key=code.name();let arguments=code.arguments();
                 if key=="UIDVALIDITY" || key=="UIDNEXT" || key=="UNSEEN" {
-                    confirm arguments.size()==1 && arguments.item(0).kind()==ImapValueKind.atom else throw InvalidImapData("invalid numeric response code");
+                    confirm arguments.size()==1 && arguments.item(0).kind()==ImapValueKind.atom else throw InvalidImapData.because("invalid numeric response code");
                     let number=ImapUnsigned(arguments.item(0).string(),true).value();
                     if key=="UIDVALIDITY" {
                         if validity.size()>0 && validity[0].string()!=number.string() {^following_uid=[];^unseen=[];}
@@ -84,9 +84,9 @@ object ImapSelectionProgress {
                     if key=="UIDNEXT" {^following_uid=[ImapUid(BigInt(number.string()))];}
                     if key=="UNSEEN" {^unseen=[ImapSequence(number)];}
                 }
-                if key=="READ-ONLY" {confirm arguments.size()==0 else throw InvalidImapData("READ-ONLY has arguments");^readonly=true;}
+                if key=="READ-ONLY" {confirm arguments.size()==0 else throw InvalidImapData.because("READ-ONLY has arguments");^readonly=true;}
                 if key=="READ-WRITE" {
-                    confirm arguments.size()==0 else throw InvalidImapData("READ-WRITE has arguments");
+                    confirm arguments.size()==0 else throw InvalidImapData.because("READ-WRITE has arguments");
                     // EXAMINE's read-only request cannot be relaxed by the server.
                     ^readonly=forced_readonly;
                 }
@@ -95,18 +95,18 @@ object ImapSelectionProgress {
         }
     }
     validate() is void {
-        confirm count>=0 && validity.size()==1 && flags_seen else throw InvalidImapData("selection requires EXISTS, FLAGS and UIDVALIDITY");
-        confirm recent<0 || recent<=count else throw InvalidImapData("RECENT exceeds EXISTS");
-        confirm unseen.size()==0 || unseen[0].value()<=count else throw InvalidImapData("first unseen sequence exceeds EXISTS");
+        confirm count>=0 && validity.size()==1 && flags_seen else throw InvalidImapData.because("selection requires EXISTS, FLAGS and UIDVALIDITY");
+        confirm recent<0 || recent<=count else throw InvalidImapData.because("RECENT exceeds EXISTS");
+        confirm unseen.size()==0 || unseen[0].value()<=count else throw InvalidImapData.because("first unseen sequence exceeds EXISTS");
     }
     messages() is int {count;}
     has_recent() is bool {recent>=0;}
-    recent() is int {confirm self.has_recent() else throw InvalidState("RECENT is unknown");recent;}
+    recent() is int {confirm self.has_recent() else throw InvalidState.because("RECENT is unknown");recent;}
     has_first_unseen() is bool {unseen.size()>0;}
-    first_unseen() is ImapSequence {confirm self.has_first_unseen() else throw InvalidState("first unseen sequence is unknown");unseen[0];}
-    uid_validity() is ImapUidValidity {confirm validity.size()==1 else throw InvalidState("UIDVALIDITY is unknown");validity[0];}
+    first_unseen() is ImapSequence {confirm self.has_first_unseen() else throw InvalidState.because("first unseen sequence is unknown");unseen[0];}
+    uid_validity() is ImapUidValidity {confirm validity.size()==1 else throw InvalidState.because("UIDVALIDITY is unknown");validity[0];}
     has_uid_next() is bool {following_uid.size()>0;}
-    uid_next() is ImapUid {confirm self.has_uid_next() else throw InvalidState("UIDNEXT is unknown");following_uid[0];}
+    uid_next() is ImapUid {confirm self.has_uid_next() else throw InvalidState.because("UIDNEXT is unknown");following_uid[0];}
     flags() is MailFlags {marks;}
     read_only() is bool {readonly;}
     persistent_uids() is bool {persistent;}

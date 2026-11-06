@@ -14,20 +14,20 @@ object TextWebSocketMessage does WebSocketMessage {
     TextWebSocketMessage(origin is string){self.origin=origin;Utf8Encoded(origin).bytes();}
     kind() is WebSocketMessageKind{WebSocketMessageKind.text;}
     text() is string{origin;}
-    bytes() is @byte{throw WebSocketMessageIsNotBinary();}
+    bytes() is @byte{throw WebSocketMessageIsNotBinary.not_binary;}
 }
 object BinaryWebSocketMessage does WebSocketMessage {
     has origin is @byte;
     BinaryWebSocketMessage(origin is @byte){self.origin=origin;}
     kind() is WebSocketMessageKind{WebSocketMessageKind.binary;}
-    text() is string{throw WebSocketMessageIsNotText();}
+    text() is string{throw WebSocketMessageIsNotText.not_text;}
     bytes() is @byte{origin;}
 }
 object WebSocketLimits {
     has message_bytes is BigInt;has frame_bytes,queue is int;
     WebSocketLimits(){message_bytes=BigInt("16777216");frame_bytes=65536;queue=16;}
     WebSocketLimits(message_bytes is BigInt,frame_bytes is int,queue is int){
-        confirm message_bytes.sign()>0 && message_bytes.order(BigInt("1073741824"))!=Order.greater && frame_bytes>0 && frame_bytes<=1048576 && queue>0 && queue<=1024 else throw WebSocketFailure("invalid budgets");
+        confirm message_bytes.sign()>0 && message_bytes.order(BigInt("1073741824"))!=Order.greater && frame_bytes>0 && frame_bytes<=1048576 && queue>0 && queue<=1024 else throw WebSocketFailure.because("invalid budgets");
         self.message_bytes=message_bytes;self.frame_bytes=frame_bytes;self.queue=queue;
     }
     message_bytes() is BigInt{message_bytes;}frame_bytes() is int{frame_bytes;}queue() is int{queue;}
@@ -40,8 +40,8 @@ object WebSocketClose {
     WebSocketClose(code is int,reason is string){
         let standard=code==1000 || code==1001 || code==1002 || code==1003 || (code>=1007 && code<=1014);
         let registered=code==3000 || code==3003 || code==3008;let application=code>=4000 && code<=4999;
-        confirm standard || registered || application else throw WebSocketFailure("invalid wire close code");
-        confirm Utf8Encoded(reason).bytes().size()<=123 else throw WebSocketFailure("close reason byte limit");self.code=code;self.reason=reason;
+        confirm standard || registered || application else throw WebSocketFailure.because("invalid wire close code");
+        confirm Utf8Encoded(reason).bytes().size()<=123 else throw WebSocketFailure.because("close reason byte limit");self.code=code;self.reason=reason;
     }
     code() is int{code;}reason() is string{reason;}
 }
@@ -52,13 +52,10 @@ role WebSocketConnection {
     async close(code is int,reason is string) is WebSocketConnection;
     closed() is bool;
 }
-object WebSocketMessageIsNotText does Error{WebSocketMessageIsNotText();text() is string{"WebSocket message is not text";}}
-object WebSocketMessageIsNotBinary does Error{WebSocketMessageIsNotBinary();text() is string{"WebSocket message is not binary";}}
-object WebSocketFailure does Error{has reason is string;WebSocketFailure(reason is string){self.reason=reason;}reason() is string{reason;}text() is string{"WebSocket failure: "+reason;}}
-object WebSocketClosed does Error{
-    has code is int;has reason is string;WebSocketClosed(code is int,reason is string){self.code=code;self.reason=reason;}
-    code() is int{code;}reason() is string{reason;}text() is string{"WebSocket connection closed";}
-}
+enum WebSocketMessageIsNotText is Error = (not_text);
+enum WebSocketMessageIsNotBinary is Error = (not_binary);
+enum WebSocketFailure is Error = (because(reason is string));
+enum WebSocketClosed is Error = (detailed(code is int, reason is string));
 
 test "WebSocket values distinguish projections" {
     let message=TextWebSocketMessage("hello");test.is(message.text(),"hello");

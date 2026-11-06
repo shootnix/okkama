@@ -37,13 +37,13 @@ object ZipCompression {
 
     ZipCompression(method is ZipMethod, level is int) {
         confirm method != ZipMethod.stored && method != ZipMethod.lzma
-            else throw InvalidArgument("this ZIP method has no configurable level");
+            else throw InvalidArgument.because("this ZIP method has no configurable level");
         let valid = if method == ZipMethod.deflated {level >= 0 && level <= 9;}
         else {
             if method == ZipMethod.bzip2 {level >= 1 && level <= 9;}
             else {level >= -131072 && level <= 22;}
         };
-        confirm valid else throw InvalidArgument("compression level is outside the ZIP method range");
+        confirm valid else throw InvalidArgument.because("compression level is outside the ZIP method range");
         selected = method;
         effective = if method == ZipMethod.zstandard && level == 0 {3;} else {level;};
     }

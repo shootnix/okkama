@@ -55,7 +55,7 @@ object TerminalSession does Closing,TerminalModeApplying,TerminalScreenApplying,
     }
     move(row is int,column is int) is void{
         self.interactive_screen();
-        confirm row>=0 && column>=0 && row<65535 && column<65535 else throw TerminalUnavailable("screen coordinates must be in 0..65534");
+        confirm row>=0 && column>=0 && row<65535 && column<65535 else throw TerminalUnavailable.because("screen coordinates must be in 0..65534");
         self.control((row+1).string()+";"+(column+1).string()+"H");
     }
     display_cursor(visible is bool) is void{
@@ -74,7 +74,7 @@ object TerminalSession does Closing,TerminalModeApplying,TerminalScreenApplying,
     private:
     interactive_screen() is void{
         confirm observation.capabilities().output_interactive() && observation.screen_capable()
-            else throw TerminalUnavailable("screen control requires interactive VT-capable output");
+            else throw TerminalUnavailable.because("screen control requires interactive VT-capable output");
     }
     control(code is string) is void{writing.write(Utf8Decoded([27.byte()]).string()+"["+code);}
     restoration() is void{
@@ -106,9 +106,9 @@ object TerminalInput{
     TerminalInput(state is TerminalState,observation is TerminalObservation){self.state=state;self.observation=observation;lock=Lock();let empty is @byte=[];buffer=Atomic(empty);}
     capabilities() is TerminalCapabilities{observation.capabilities();}
     async bytes(limit is int) is @byte{
-        confirm limit>0 && limit<=65536 else throw TerminalInputLimit();
+        confirm limit>0 && limit<=65536 else throw TerminalInputLimit.exceeded;
         let guard=await lock.guard();defer guard.close();
-        confirm !terminal_closed(state) else throw TerminalClosed();
+        confirm !terminal_closed(state) else throw TerminalClosed.closed;
         let old=buffer.value();
         if old.size()>0{
             let count=if limit<old.size(){limit;}else{old.size();};
@@ -117,9 +117,9 @@ object TerminalInput{
         }else{await self.read(limit);}
     }
     async line(limit is int) is string{
-        confirm limit>0 && limit<=1048576 else throw TerminalInputLimit();
+        confirm limit>0 && limit<=1048576 else throw TerminalInputLimit.exceeded;
         let guard=await lock.guard();defer guard.close();
-        confirm !terminal_closed(state) else throw TerminalClosed();
+        confirm !terminal_closed(state) else throw TerminalClosed.closed;
         let output=ByteBuffer();defer output.closing().close();let count=Atomic(0);
         loop{
             let old=buffer.value();
@@ -127,7 +127,7 @@ object TerminalInput{
             let chunk is @byte=if old.size()>0{old;}else{await self.read(maximum);};
             let newline=(0..chunk.size()).reduce(-1)->found,index{if found<0 && chunk[index].int()==10{index;}else{found;}};
             let size=if newline>=0{newline;}else{chunk.size();};
-            if size>limit-count.value(){terminal_close(state);throw TerminalInputLimit();}
+            if size>limit-count.value(){terminal_close(state);throw TerminalInputLimit.exceeded;}
             let data is @byte=(0..size).map()->index{chunk[index];};output.writing() <- data;count.replace(count.value()+size);
             let consumed=size+if newline>=0{1;}else{0;};
             let tail is @byte=(consumed..chunk.size()).map()->index{chunk[index];};buffer.replace(tail);
@@ -152,18 +152,18 @@ object TerminalOutput does Writing,WritingText{
     write(value is StyledText) is void{self.write_bytes(Utf8Encoded(value.rendered(observation.capabilities().colors())).bytes());}
     writeln(values is ...string) is void{let items is @string=values...;for items->value{self.write_bytes(Utf8Encoded(value).bytes());}self.write_bytes([10.byte()]);}
     writeln(value is StyledText) is void{self.write(value);self.write_bytes([10.byte()]);}
-    flush() is void{confirm !terminal_closed(state) else throw TerminalClosed();}
+    flush() is void{confirm !terminal_closed(state) else throw TerminalClosed.closed;}
     private:
     write_bytes(bytes is @byte) is void{
         // Keep the Stage07 source size independent of the bounded host write.
         if bytes.size()<=65536{
             let written=self.accepted(bytes);
-            confirm written==bytes.size() else throw IncompleteWrite(written);
+            confirm written==bytes.size() else throw IncompleteWrite.after(written);
         }else{if unicode_console{
             let consumed=Atomic(0);
             for TerminalTextChunks(bytes).items()->chunk{
                 let written=self.accepted(chunk);
-                confirm written==chunk.size() else throw IncompleteWrite(consumed.value()+written);
+                confirm written==chunk.size() else throw IncompleteWrite.after(consumed.value()+written);
                 consumed.replace(consumed.value()+written);
             }
         }else{
@@ -172,7 +172,7 @@ object TerminalOutput does Writing,WritingText{
             loop{
                 let chunk=reading.bytes(65536);if chunk.size()==0{last;}
                 let written=self.accepted(chunk);
-                confirm written==chunk.size() else throw IncompleteWrite(consumed.value()+written);
+                confirm written==chunk.size() else throw IncompleteWrite.after(consumed.value()+written);
                 consumed.replace(consumed.value()+written);
             }
         }}

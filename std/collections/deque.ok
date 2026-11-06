@@ -68,7 +68,7 @@ object Deque<T> does Iterating<T>, Sizing {
 
     item(index is int) is T {
         confirm index >= 0 && index < amount
-            else throw OutOfRange("deque index is outside the sequence");
+            else throw OutOfRange.because("deque index is outside the sequence");
         if index < beginning.size() {
             Dropped(origin: beginning, count: index).cursor().item();
         }
@@ -96,14 +96,14 @@ object DequeFront<T> {
 
     DequeFront(front is List<T>, back is List<T>, size is int) {
         confirm size >= 0 && size == front.size() + back.size()
-            else throw InvalidArgument("deque endpoint state is inconsistent");
+            else throw InvalidArgument.because("deque endpoint state is inconsistent");
         beginning = front;
         ending = back;
         amount = size;
     }
 
     value() is T {
-        confirm amount > 0 else throw EmptyDequeAccess(operation: "front value");
+        confirm amount > 0 else throw EmptyDequeAccess.operation("front value");
         if beginning.size() > 0 { beginning.first(); } else { ending.first(); }
     }
 
@@ -112,7 +112,7 @@ object DequeFront<T> {
     }
 
     remainder() is Deque<T> {
-        confirm amount > 0 else throw EmptyDequeAccess(operation: "front remainder");
+        confirm amount > 0 else throw EmptyDequeAccess.operation("front remainder");
         if beginning.size() > 0 {
             Deque(front: beginning.tail(), back: ending, size: amount - 1);
         }
@@ -129,14 +129,14 @@ object DequeBack<T> {
 
     DequeBack(front is List<T>, back is List<T>, size is int) {
         confirm size >= 0 && size == front.size() + back.size()
-            else throw InvalidArgument("deque endpoint state is inconsistent");
+            else throw InvalidArgument.because("deque endpoint state is inconsistent");
         beginning = front;
         ending = back;
         amount = size;
     }
 
     value() is T {
-        confirm amount > 0 else throw EmptyDequeAccess(operation: "back value");
+        confirm amount > 0 else throw EmptyDequeAccess.operation("back value");
         if ending.size() > 0 { ending.first(); } else { beginning.first(); }
     }
 
@@ -145,7 +145,7 @@ object DequeBack<T> {
     }
 
     remainder() is Deque<T> {
-        confirm amount > 0 else throw EmptyDequeAccess(operation: "back remainder");
+        confirm amount > 0 else throw EmptyDequeAccess.operation("back remainder");
         if ending.size() > 0 {
             Deque(front: beginning, back: ending.tail(), size: amount - 1);
         }
@@ -186,12 +186,12 @@ object ConcatenatedDequeCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if beginning.available() { beginning.item(); } else { ending.item(); }
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if beginning.available() {
             ConcatenatedDequeCursor(front: beginning.successor(), back: ending);
         }
@@ -222,7 +222,7 @@ object ArrayCursor<T> does Cursor<T> {
 
     ArrayCursor(values is @T, position is int, witness is Iterating<T>) {
         confirm position >= 0 && position <= values.size()
-            else throw InvalidArgument("array cursor position is invalid");
+            else throw InvalidArgument.because("array cursor position is invalid");
         origin = values;
         self.position = position;
         self.witness = witness;
@@ -233,12 +233,12 @@ object ArrayCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin[position];
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ArrayCursor(values: origin, position: position + 1, witness: witness);
     }
 }
@@ -283,7 +283,7 @@ object DequeParts<T> {
 
     DequeParts(front is List<T>, back is List<T>, size is int) {
         confirm size >= 0 && size == front.size() + back.size()
-            else throw InvalidArgument("deque parts are inconsistent");
+            else throw InvalidArgument.because("deque parts are inconsistent");
         beginning = front;
         ending = back;
         amount = size;
@@ -326,7 +326,7 @@ object NormalizedDeque<T> {
 
     NormalizedDeque(front is List<T>, back is List<T>, size is int) {
         confirm size >= 0 && size == front.size() + back.size()
-            else throw InvalidArgument("deque state is inconsistent");
+            else throw InvalidArgument.because("deque state is inconsistent");
         beginning = front;
         ending = back;
         amount = size;
@@ -352,18 +352,4 @@ object NormalizedDeque<T> {
     }
 }
 
-object EmptyDequeAccess does Error {
-    has origin is string;
-
-    EmptyDequeAccess(operation is string) {
-        origin = operation;
-    }
-
-    operation() is string {
-        origin;
-    }
-
-    text() is string {
-        "cannot read " + origin + " from an empty deque";
-    }
-}
+enum EmptyDequeAccess is Error = (operation(operation is string));

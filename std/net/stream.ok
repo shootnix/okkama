@@ -1,6 +1,6 @@
 module net/stream v1.0.0;
 
-import "io/stream" take ByteSource,Closing,InvalidReadLimit;
+import "io/stream" take AsyncReading,AsyncWriting,ByteSource,Closing,InvalidReadLimit;
 import "runtime/network" as network;
 import "net/failure" take NetworkClosed,NetworkError,NetworkOperation,NetworkFailure,NetworkFailureKind;
 import "net/endpoint" take IpEndpoint;
@@ -12,25 +12,6 @@ import "async/event" take Event;
 import "async/scope" take FutureGroup;
 import "error" take InvalidState,InvalidArgument;
 import "runtime/tls_transport" as tls;
-
-// Nominal asynchronous byte input. A positive limit bounds each result; short
-// reads are valid and empty bytes mean permanent orderly EOF. Implementations
-// reject non-positive limits with io/stream.InvalidReadLimit. Each call returns
-// a lazy Future; repeated await of that Future observes the same read outcome.
-// This role does not imply synchronous Reading, resource ownership or close().
-role AsyncReading {
-    async bytes(limit is int) is @byte;
-}
-
-// Nominal asynchronous all-or-failure output, returning the same capability.
-// ByteSource materialization belongs to the started write; failures propagate.
-// A failed write may already have emitted a prefix: no rollback/replay promise.
-// Await each write explicitly; this role has no flush() or synchronous Writing
-// conformance and is not an operand for the synchronous stream-write operator.
-// Concrete socket halves must separately implement serialization and cleanup.
-role AsyncWriting {
-    async write(source is ByteSource) is AsyncWriting;
-}
 
 // Immutable observations of the two ends of a connection. No resolution or
 // connection occurs; exact values and direction are preserved for any common T.
@@ -71,8 +52,8 @@ object StreamConnection does Closing {
     input_closed() is bool{network.closed(state) || network.stream_half_closed(state,false);}
     close_input() is void{try{network.stream_shutdown(state,false);}catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.shutting_down,e);if translated.applicable(){throw translated.value();}throw;}}
     async read_bytes(limit is int) is @byte {
-        confirm limit>0 else throw InvalidReadLimit(limit);confirm !self.input_closed() else throw NetworkClosed();
-        confirm reader_busy.compare_and_replace(false,true) else throw InvalidState("stream already has a pending read");
+        confirm limit>0 else throw InvalidReadLimit.limit(limit);confirm !self.input_closed() else throw NetworkClosed.closed;
+        confirm reader_busy.compare_and_replace(false,true) else throw InvalidState.because("stream already has a pending read");
         let ticket=StreamReadTicket(reader_busy);defer ticket.close();
         let group is FutureGroup<@byte>=FutureGroup();let cleanup=StreamReadCleanup(group);defer await cleanup.close();
         try {
@@ -83,8 +64,8 @@ object StreamConnection does Closing {
     close_output() is void{writer_closed.set();if writer_count.value()==0 {self.shutdown_output();}}
     shutdown_output() is void{try{network.stream_shutdown(state,true);}catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.shutting_down,e);if translated.applicable(){throw translated.value();}throw;}}
     reserve_output() is void {
-        confirm !self.output_closed() else throw NetworkClosed();
-        confirm writer_count.value()<9007199254740991 else throw NetworkFailure(NetworkOperation.writing,NetworkFailureKind.resource_exhausted,"stream write queue is exhausted");
+        confirm !self.output_closed() else throw NetworkClosed.closed;
+        confirm writer_count.value()<9007199254740991 else throw NetworkFailure.detailed(NetworkOperation.writing, NetworkFailureKind.resource_exhausted, "stream write queue is exhausted");
         writer_count.replace(writer_count.value()+1);
     }
     released_output() is void{writer_count.replace(writer_count.value()-1);if writer_count.value()==0 && writer_closed.ready(){self.shutdown_output();}}
@@ -94,7 +75,7 @@ object StreamConnection does Closing {
         let empty is @Future<LockGuard>=[];let pending_guard=Atomic(empty);let taken=Event();
         let cleanup=StreamWriteCleanup(guards,writing,pending_guard,taken);defer await cleanup.close();
         let waiting=writer_lock.guard();pending_guard.replace([waiting]);guards.start(waiting);let guard=await waiting;taken.set();defer guard.close();
-        confirm !network.closed(state) && !network.stream_half_closed(state,true) else throw NetworkClosed();
+        confirm !network.closed(state) && !network.stream_half_closed(state,true) else throw NetworkClosed.closed;
         let payload=source.bytes();
         try{let pending=network.stream_write(state,payload);writing.start(pending);await pending;}
         catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.writing,e);if translated.applicable(){throw translated.value();}throw;}
@@ -102,7 +83,7 @@ object StreamConnection does Closing {
     }
     // Execute the existing consume/upgrade operation; never export SocketState.
     upgrade_tls(versions is int,protocols is @string,server is string) is tls.TlsState {
-        confirm !reader_busy.value() && writer_count.value()==0 && !writer_closed.ready() else throw InvalidState("TLS requires drained TCP operations");
+        confirm !reader_busy.value() && writer_count.value()==0 && !writer_closed.ready() else throw InvalidState.because("TLS requires drained TCP operations");
         tls.client(state,versions,protocols,server);
     }
 }
@@ -158,8 +139,8 @@ object StreamFailure {
     StreamFailure(operation is NetworkOperation,failure is NativeFailure){self.operation=operation;self.failure=failure;}
     applicable() is bool{NetworkError(operation,failure).applicable();}
     value() is Error {
-        confirm self.applicable() else throw InvalidArgument("native failure is not a terminal managed stream failure");
-        if failure.domain()=="core.net" && failure.code()=="already_closed"{return NetworkClosed();}
+        confirm self.applicable() else throw InvalidArgument.because("native failure is not a terminal managed stream failure");
+        if failure.domain()=="core.net" && failure.code()=="already_closed"{return NetworkClosed.closed;}
         NetworkError(operation,failure).value();
     }
 }

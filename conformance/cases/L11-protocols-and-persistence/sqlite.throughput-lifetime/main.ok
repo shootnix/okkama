@@ -75,10 +75,10 @@ async main() is int{
         c=c.ok("prepared binding rejects broken printer",try{await prepared.rows([BrokenText(mode)]);false;}catch e is InvalidDbValue{true;});
     }
     let excessive is @DbValue=(0..1025).map()->index{DbNull();};
-    c=c.ok("prepared binding preserves count limit",try{await prepared.rows(excessive);false;}catch e is DbBoundaryLimit{e.kind()=="value count";});
+    c=c.ok("prepared binding preserves count limit",try{await prepared.rows(excessive);false;}catch DbBoundaryLimit.kind(kind) {kind=="value count";});
     // Each text is legal individually; their combined representation is not.
     let text=Atomic("x");for 0..22 -> index{text.replace(text.value()+text.value());}
-    c=c.ok("prepared binding preserves aggregate byte limit",try{await prepared.rows([DbText(text.value()),DbText(text.value()),DbText("x")]);false;}catch e is DbBoundaryLimit{e.kind()=="value bytes";});
+    c=c.ok("prepared binding preserves aggregate byte limit",try{await prepared.rows([DbText(text.value()),DbText(text.value()),DbText("x")]);false;}catch DbBoundaryLimit.kind(kind) {kind=="value bytes";});
     c=c.ok("prepared reusable after binding failures",(await Query(prepared,[DbText("ok")]).one()).text("value")=="ok");
     c.done();
 }

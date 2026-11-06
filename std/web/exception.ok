@@ -7,33 +7,35 @@ import "json" take Json,JsonField;
 import "encoding/utf" take Utf8Encoded;
 import "web/internal/reply" take ReplyHeaders,ReplyResponse,InvalidReply;
 
-// An HTTP failure that is both an Error and a reply. Endpoints and exception
-// scopes may throw it or return it; the framework turns a thrown Exception into
-// its response. The body is RFC 9457 problem details with type about:blank:
+// An HTTP failure. Endpoints and exception scopes throw Exception or return a
+// Problem; the framework turns a thrown Exception into its Problem response.
+// The body is RFC 9457 problem details with type about:blank:
 //
-//     {"type":"about:blank","title":"Not Found","status":404,"detail":"user 7 not found"}
+//     throw Exception.status(404, "user 7 not found");
+//     // {"type":"about:blank","title":"Not Found","status":404,"detail":"user 7 not found"}
+//
+//     Problem(401, "token expired").header("WWW-Authenticate", "Bearer");
 //
 // detail is sent to the client: never put internal diagnostics into it.
+enum Exception is Error = (status(code is int, detail is string));
 
-object Exception does Error, HandlingResult {
+// The problem-details reply of an HTTP failure (4xx or 5xx).
+object Problem does HandlingResult {
     has code is int;
     has message is string;
     has extra is ReplyHeaders;
 
-    Exception(status is int, detail is string) {
-        confirm status >= 400 && status <= 599 else throw InvalidReply("exception status must be 4xx or 5xx");
+    Problem(status is int, detail is string) {
+        confirm status >= 400 && status <= 599 else throw InvalidReply.because("problem status must be 4xx or 5xx");
         code = status;
         message = detail;
         extra = ReplyHeaders();
     }
 
-    // Successor like every reply; throwing consumes it in place:
-    // throw Exception(401, "token expired").header("WWW-Authenticate", "Bearer");
-    header(name is string, value is string) is ^Exception { ^extra = extra.added(name, value); }
+    header(name is string, value is string) is ^Problem { ^extra = extra.added(name, value); }
     status() is int { code; }
     detail() is string { message; }
     title() is string { let phrase = Status(code).phrase(); if phrase == "" { "HTTP " + code.string(); } else { phrase; } }
-    text() is string { code.string() + " " + self.title() + ": " + message; }
 
     kind() is HandlingKind { HandlingKind.response; }
     response() is Response {
@@ -45,12 +47,13 @@ object Exception does Error, HandlingResult {
         ]);
         ReplyResponse(code, "application/problem+json", Utf8Encoded(problem.string()).bytes(), extra).response();
     }
-    websocket() is WebSocketUpgrade { throw WrongHandlingKind(); }
-    application() is WebSocketHandling { throw WrongHandlingKind(); }
+    websocket() is WebSocketUpgrade { throw WrongHandlingKind.mismatch; }
+    application() is WebSocketHandling { throw WrongHandlingKind.mismatch; }
 }
 
-test "exception text names status, title and detail" {
-    test.is(Exception(404, "user 7 not found").text(), "404 Not Found: user 7 not found");
-    test.is(Exception(599, "x").title(), "HTTP 599");
-    test.ok(try { Exception(302, "x"); false; } catch failure is InvalidReply { true; });
+test "problems name status, title and detail" {
+    test.is(Exception.status(404, "user 7 not found").text(), "Exception.status(404, \"user 7 not found\")");
+    test.is(Problem(404, "user 7 not found").title(), "Not Found");
+    test.is(Problem(599, "x").title(), "HTTP 599");
+    test.ok(try { Problem(302, "x"); false; } catch failure is InvalidReply { true; });
 }

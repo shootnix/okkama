@@ -49,8 +49,8 @@ object PipelineCapture {
     }
 
     async completion() is CompletedPipeline {
-        confirm commands.size() > 0 else throw EmptyPipeline();
-        confirm limit > 0 else throw InvalidPipelineCaptureLimit(limit);
+        confirm commands.size() > 0 else throw EmptyPipeline.empty;
+        confirm limit > 0 else throw InvalidPipelineCaptureLimit.limit(limit);
 
         try {
             for commands -> command {
@@ -69,16 +69,12 @@ object PipelineCapture {
             );
             let overflow is int = captured_pipeline_overflow_stream(captured);
             if overflow > 0 {
-                throw PipelineCaptureLimitExceeded(
-                    command_index: captured_pipeline_overflow_index(captured),
-                    stream: if overflow == 1 {
+                throw PipelineCaptureLimitExceeded.detailed(captured_pipeline_overflow_index(captured), if overflow == 1 {
                         PipelineStream.output;
                     }
                     else {
                         PipelineStream.errors;
-                    },
-                    limit: limit,
-                );
+                    }, limit);
             }
             let statuses is @%string:int = captured_pipeline_statuses(captured);
             let exits is @Exit = statuses.map() -> status {
@@ -91,7 +87,7 @@ object PipelineCapture {
             );
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -129,46 +125,8 @@ object CompletedPipeline {
     errors() is @@byte { captured_errors; }
 }
 
-object EmptyPipeline does Error {
-    EmptyPipeline();
+enum EmptyPipeline is Error = (empty);
 
-    text() is string { "pipeline must contain at least one command"; }
-}
+enum InvalidPipelineCaptureLimit is Error = (limit(limit is int));
 
-object InvalidPipelineCaptureLimit does Error {
-    has origin is int;
-
-    InvalidPipelineCaptureLimit(limit is int) {
-        origin = limit;
-    }
-
-    limit() is int { origin; }
-
-    text() is string {
-        "pipeline capture limit must be positive, got " + origin.string();
-    }
-}
-
-object PipelineCaptureLimitExceeded does Error {
-    has origin_index is int;
-    has origin_stream is PipelineStream;
-    has origin_limit is int;
-
-    PipelineCaptureLimitExceeded(
-        command_index is int,
-        stream is PipelineStream,
-        limit is int,
-    ) {
-        origin_index = command_index;
-        origin_stream = stream;
-        origin_limit = limit;
-    }
-
-    command_index() is int { origin_index; }
-
-    stream() is PipelineStream { origin_stream; }
-
-    limit() is int { origin_limit; }
-
-    text() is string { "pipeline capture limit exceeded"; }
-}
+enum PipelineCaptureLimitExceeded is Error = (detailed(command_index is int, stream is PipelineStream, limit is int));

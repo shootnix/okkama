@@ -19,9 +19,9 @@ object ReductionEntry<T> {
 object DistinctReductions<T> does Sequencing<Generated<T>> {
     has values is @Generated<T>;
     DistinctReductions(origin is Sequencing<Generated<T>>,parent is string){
-        let size=origin.size();confirm size>=0 && size<=4096 else throw InvalidGeneration("reduction count");
+        let size=origin.size();confirm size>=0 && size<=4096 else throw InvalidGeneration.because("reduction count");
         let scalars=Atomic(0);defer scalars.close();
-        let entries is @ReductionEntry<T>=(0..size).map()->index{let value=origin.item(index);let text=value.string();confirm text.length()<=65536 else throw InvalidGeneration("reduction reproduction length");let amount=scalars.value()+text.length();confirm amount<=1048576 else throw InvalidGeneration("reduction reproduction budget");scalars.replace(amount);ReductionEntry(index,text,value);};
+        let entries is @ReductionEntry<T>=(0..size).map()->index{let value=origin.item(index);let text=value.string();confirm text.length()<=65536 else throw InvalidGeneration.because("reduction reproduction length");let amount=scalars.value()+text.length();confirm amount<=1048576 else throw InvalidGeneration.because("reduction reproduction budget");scalars.replace(amount);ReductionEntry(index,text,value);};
         let sorted is SortedBy<ReductionEntry<T>,string>=SortedBy(origin:entries,key:(entry is ReductionEntry<T>) is string{entry.text();});
         let empty is List<ReductionEntry<T>>=EmptyList();let chosen is Atomic<List<ReductionEntry<T>>>=Atomic(empty);let previous=Atomic(parent);defer chosen.close();defer previous.close();
         for (0..sorted.size())->index{let entry=sorted.item(index);if entry.text()!=parent && (index==0 || entry.text()!=previous.value()){chosen.replace(chosen.value().prefix(entry));}previous.replace(entry.text());}
@@ -34,11 +34,11 @@ object DistinctReductions<T> does Sequencing<Generated<T>> {
     cursor() is Cursor<Generated<T>>{values.cursor();}
 }
 object GenerationSize {
-    GenerationSize(size is int){confirm size>=0 && size<=65536 else throw InvalidGeneration("size must be 0..65536");}
+    GenerationSize(size is int){confirm size>=0 && size<=65536 else throw InvalidGeneration.because("size must be 0..65536");}
 }
 object GeneratedElement<T> does Generated<T> {
     has origin is T;has representation is string;
-    GeneratedElement(value is T,string is string){confirm string.length()<=4096 else throw InvalidGeneration("reproduction length");origin=value;representation=string;}
+    GeneratedElement(value is T,string is string){confirm string.length()<=4096 else throw InvalidGeneration.because("reproduction length");origin=value;representation=string;}
     value() is T {origin;}string() is string {representation;}
     reductions() is Sequencing<Generated<T>> {let empty is @Generated<T>=[];empty;}
 }
@@ -55,7 +55,7 @@ object GeneratedBoolean does Generated<bool> {
 // overflow while calculating windows and midpoint reductions at int64 limits.
 object IntegerGeneration does Generation<int> {
     has minimum,maximum,target is int;
-    IntegerGeneration(minimum is int,maximum is int){confirm minimum<maximum else throw InvalidGeneration("empty/inverted integer range");self.minimum=minimum;self.maximum=maximum;target=if minimum>0{minimum;}else{if maximum<=0{maximum-1;}else{0;}};}
+    IntegerGeneration(minimum is int,maximum is int){confirm minimum<maximum else throw InvalidGeneration.because("empty/inverted integer range");self.minimum=minimum;self.maximum=maximum;target=if minimum>0{minimum;}else{if maximum<=0{maximum-1;}else{0;}};}
     sample(random is Randomizing,size is int) is Generated<int>{
         GenerationSize(size);let lower=target.rat()-size.rat();let upper=target.rat()+size.rat()+1.rat();
         let start=if lower<minimum.rat(){minimum;}else{lower.int();};let stop=if upper>maximum.rat(){maximum;}else{upper.int();};
@@ -73,7 +73,7 @@ object GeneratedInteger does Generated<int> {
 }
 object FiniteFloatGeneration does Generation<float> {
     has minimum,maximum,target is float;
-    FiniteFloatGeneration(minimum is float,maximum is float){confirm minimum<=maximum else throw InvalidGeneration("inverted float range");self.minimum=minimum;self.maximum=maximum;target=if minimum>0.0{minimum;}else{if maximum<0.0{maximum;}else{0.0;}};}
+    FiniteFloatGeneration(minimum is float,maximum is float){confirm minimum<=maximum else throw InvalidGeneration.because("inverted float range");self.minimum=minimum;self.maximum=maximum;target=if minimum>0.0{minimum;}else{if maximum<0.0{maximum;}else{0.0;}};}
     sample(random is Randomizing,size is int) is Generated<float>{
         GenerationSize(size);if size==0 || minimum==maximum{return GeneratedFloat(target,target);}
         let part=random.float();
@@ -96,19 +96,19 @@ object GeneratedFloat does Generated<float> {
 }
 object ElementGeneration<T> does Generation<T> {
     has origin is @GeneratedElement<T>;
-    ElementGeneration(values is Sequencing<GeneratedElement<T>>){let size=values.size();confirm size>0 && size<=4096 else throw InvalidGeneration("expected 1..4096 elements");let snapshot is @GeneratedElement<T>=(0..size).map()->index{values.item(index);};origin=snapshot;}
+    ElementGeneration(values is Sequencing<GeneratedElement<T>>){let size=values.size();confirm size>0 && size<=4096 else throw InvalidGeneration.because("expected 1..4096 elements");let snapshot is @GeneratedElement<T>=(0..size).map()->index{values.item(index);};origin=snapshot;}
     sample(random is Randomizing,size is int) is Generated<T>{GenerationSize(size);GeneratedChoice(origin,random.integer(0,origin.size()));}
 }
 object GeneratedChoice<T> does Generated<T> {
     has origin is @GeneratedElement<T>;has position is int;
-    GeneratedChoice(origin is @GeneratedElement<T>,position is int){confirm position>=0 && position<origin.size() else throw InvalidGeneration("element position");self.origin=origin;self.position=position;}
+    GeneratedChoice(origin is @GeneratedElement<T>,position is int){confirm position>=0 && position<origin.size() else throw InvalidGeneration.because("element position");self.origin=origin;self.position=position;}
     value() is T{origin[position].value();}string() is string{origin[position].string();}
     reductions() is Sequencing<Generated<T>>{if position==0{let empty is @Generated<T>=[];empty;}else{[GeneratedChoice(origin,0)];}}
 }
 object FilteredGeneration<T> does Generation<T> {
     has origin is Generation<T>;has condition is (T) is bool;has attempts is int;
-    FilteredGeneration(origin is Generation<T>,condition is (T) is bool,attempts is int){confirm attempts>0 && attempts<=10000 else throw InvalidGeneration("attempts must be 1..10000");self.origin=origin;self.condition=condition;self.attempts=attempts;}
-    sample(random is Randomizing,size is int) is Generated<T>{GenerationSize(size);for (0..attempts)->index{let sample=origin.sample(random,size);if condition(sample.value()){return FilteredGenerated(sample,condition);}}throw GenerationExhausted(attempts);}
+    FilteredGeneration(origin is Generation<T>,condition is (T) is bool,attempts is int){confirm attempts>0 && attempts<=10000 else throw InvalidGeneration.because("attempts must be 1..10000");self.origin=origin;self.condition=condition;self.attempts=attempts;}
+    sample(random is Randomizing,size is int) is Generated<T>{GenerationSize(size);for (0..attempts)->index{let sample=origin.sample(random,size);if condition(sample.value()){return FilteredGenerated(sample,condition);}}throw GenerationExhausted.attempts(attempts);}
 }
 object FilteredGenerated<T> does Generated<T> {
     has origin is Generated<T>;has condition is (T) is bool;
@@ -127,7 +127,7 @@ object SequenceGeneration<T> does Generation<Sequencing<T>> {
     has origin is Generation<T>;has minimum,maximum is int;
     SequenceGeneration(origin is Generation<T>,minimum is int,maximum is int) {
         confirm minimum>=0 && minimum<=maximum && maximum<=4096
-            else throw InvalidGeneration("sequence lengths must satisfy 0 <= minimum <= maximum <= 4096");
+            else throw InvalidGeneration.because("sequence lengths must satisfy 0 <= minimum <= maximum <= 4096");
         self.origin=origin;self.minimum=minimum;self.maximum=maximum;
     }
     sample(random is Randomizing,size is int) is Generated<Sequencing<T>> {
@@ -142,13 +142,13 @@ object GeneratedSequence<T> does Generated<Sequencing<T>> {
     has minimum is int;has representation is string;
     GeneratedSequence(origin is @Generated<T>,minimum is int) {
         confirm minimum>=0 && minimum<=origin.size() && origin.size()<=4096
-            else throw InvalidGeneration("generated sequence length");
+            else throw InvalidGeneration.because("generated sequence length");
         self.origin=origin;self.minimum=minimum;
         let texts is @string=origin.map()->item{
-            let text=item.string();confirm text.length()<=4096 else throw InvalidGeneration("element reproduction length");text;
+            let text=item.string();confirm text.length()<=4096 else throw InvalidGeneration.because("element reproduction length");text;
         };
         let length=texts.reduce(0)->total,text{total+text.length()+text.length().string().length()+1;};
-        confirm length+origin.size()+2<=65536 else throw InvalidGeneration("sequence reproduction length");
+        confirm length+origin.size()+2<=65536 else throw InvalidGeneration.because("sequence reproduction length");
         representations=texts;
         let parts is @string=texts.map()->text{text.length().string()+":"+text;};
         representation="["+parts.join(",")+"]";
@@ -162,7 +162,7 @@ object GeneratedSequence<T> does Generated<Sequencing<T>> {
         let budget=4096-lengths.size();let scanned=if count<budget{count;}else{budget;};
         let choices is @SequenceElementReduction<T>=(0..scanned).map()->index{
             let source=origin[index].reductions();let size=source.size();
-            confirm size>=0 && size<=4096 else throw InvalidGeneration("element reduction count");
+            confirm size>=0 && size<=4096 else throw InvalidGeneration.because("element reduction count");
             let replacements is @Generated<T>=if size==0{[];}else{
                 let candidate=source.item(0);
                 if candidate.string()==representations[index]{[];}else{[candidate];}
@@ -186,7 +186,7 @@ object SequenceReductions<T> does Sequencing<Generated<Sequencing<T>>> {
     SequenceReductions(origin is @Generated<T>,minimum is int,lengths is @int,replacements is @SequenceElementReduction<T>){self.origin=origin;self.minimum=minimum;self.lengths=lengths;self.replacements=replacements;}
     size() is int{lengths.size()+replacements.size();}
     item(index is int) is Generated<Sequencing<T>> {
-        confirm index>=0 && index<self.size() else throw InvalidGeneration("sequence reduction index");
+        confirm index>=0 && index<self.size() else throw InvalidGeneration.because("sequence reduction index");
         let items is @Generated<T>=if index<lengths.size(){
             (0..lengths[index]).map()->at{origin[at];};
         }else{
@@ -202,14 +202,10 @@ object SequenceReductionCursor<T> does Cursor<Generated<Sequencing<T>>> {
     has origin is SequenceReductions<T>;has position is int;
     SequenceReductionCursor(origin is SequenceReductions<T>,position is int){self.origin=origin;self.position=position;}
     available() is bool{position<origin.size();}
-    item() is Generated<Sequencing<T>>{confirm self.available() else throw IterationEnded();origin.item(position);}
-    successor() is Cursor<Generated<Sequencing<T>>>{confirm self.available() else throw IterationEnded();SequenceReductionCursor(origin,position+1);}
+    item() is Generated<Sequencing<T>>{confirm self.available() else throw IterationEnded.ended;origin.item(position);}
+    successor() is Cursor<Generated<Sequencing<T>>>{confirm self.available() else throw IterationEnded.ended;SequenceReductionCursor(origin,position+1);}
 }
-object GenerationExhausted does Error {
-    has attempts is int;GenerationExhausted(attempts is int){self.attempts=attempts;}attempts() is int{attempts;}text() is string{"generation exhausted after "+attempts.string()+" attempts";}
-}
-object InvalidGeneration does Error {
-    has reason is string;InvalidGeneration(reason is string){self.reason=reason;}text() is string{"invalid generation: "+reason;}
-}
+enum GenerationExhausted is Error = (attempts(attempts is int));
+enum InvalidGeneration is Error = (because(reason is string));
 
 test "zero complexity generates the admissible integer target" {test.is(IntegerGeneration(-10,11).sample(PcgRandom(42),0).value(),0);}

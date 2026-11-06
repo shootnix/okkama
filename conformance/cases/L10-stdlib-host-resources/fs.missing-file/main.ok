@@ -12,8 +12,8 @@ main() is int {
     let r = try {
         let bytes = FileContent(origin: FileEntry(path: Path("does-not-exist.txt"))).bytes();
         "read";
-    } catch e is FileSystemFailure {
-        "failure " + e.code();
+    } catch FileSystemFailure.detailed(code, _) {
+        "failure " + code;
     };
     out.writeln(r);
     0;

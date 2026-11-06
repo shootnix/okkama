@@ -28,8 +28,8 @@ object NetworkInterface {
         up is bool, loopback is bool) {
         let nul=Utf8Decoded([byte(0)]).string();
         confirm name!="" && name.split(nul).size()==1
-            else throw InvalidArgument("network interface name must be nonempty and contain no NUL");
-        confirm index>0 else throw InvalidArgument("network interface index must be positive: "+index.string());
+            else throw InvalidArgument.because("network interface name must be nonempty and contain no NUL");
+        confirm index>0 else throw InvalidArgument.because("network interface index must be positive: "+index.string());
         label=name;identity=index;assigned=addresses;active=up;local=loopback;
     }
     name() is string {label;}

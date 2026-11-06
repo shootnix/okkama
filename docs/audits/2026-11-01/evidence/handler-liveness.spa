@@ -1,0 +1,25 @@
+sparrow 9
+module "audit" "v1.0.0"
+type t0 int
+type t1 str
+type t2 failure
+function f0 "main" {
+ registers [t1, t1, t0, t2]
+ params []
+ result t0
+ handler 3 4 @4 r3
+ 0: const r0, str "hello"
+ 1: move r1, r0
+ 2: str.len r2, r1
+ 3: call r0, f1, []
+ 4: str.len r2, r0
+ 5: ret r2
+}
+function f1 "fail" {
+ registers [t1]
+ params []
+ result t1
+ 0: const r0, str "boom"
+ 1: panic r0
+}
+entry f0

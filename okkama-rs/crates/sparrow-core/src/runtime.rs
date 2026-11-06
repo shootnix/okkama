@@ -107,6 +107,9 @@ pub struct Runtime {
     pub io: crate::io::Io,
     /// Event counts by name when `SPARROW_CORE_STATS` is set (diagnostics).
     pub stats: Option<Box<std::collections::HashMap<String, u64>>>,
+    /// The command (`sparrow-next`, FILE.spb) process workers run; empty
+    /// when the embedder configured none.
+    pub worker_command: Vec<std::ffi::OsString>,
 }
 
 /// Frame pointer of the calling function's own frame record.
@@ -155,6 +158,7 @@ impl Runtime {
             host: Some(Box::new(crate::host::Heap::new(&loaded.program))),
             io: crate::io::Io::default(),
             stats: std::env::var_os("SPARROW_CORE_STATS").map(|_| Box::default()),
+            worker_command: Vec::new(),
             heap,
             jit: crate::jit::Jit::new()?,
             code: vec![0; functions].into_boxed_slice(),
@@ -225,7 +229,12 @@ impl Runtime {
     /// The statistics report, most frequent first.
     pub fn stats_report(&self) -> Option<String> {
         let stats = self.stats.as_ref()?;
-        let mut entries: Vec<_> = stats.iter().collect();
+        let heap = self.heap.stats();
+        let extra = [
+            ("heap bytes allocated".to_string(), heap.allocated_bytes as u64),
+            ("heap live bytes, mean after collection".to_string(), (heap.live_sum / heap.collections.max(1)) as u64),
+        ];
+        let mut entries: Vec<_> = stats.iter().map(|(k, v)| (k, v)).chain(extra.iter().map(|(k, v)| (k, v))).collect();
         entries.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
         Some(entries.iter().map(|(k, v)| format!("{v:>12} {k}\n")).collect())
     }
@@ -453,9 +462,18 @@ impl Runtime {
     /// Run a parameterless function (sync or async) to completion; its
     /// result word, or the report of its failure.
     pub fn run_function(self: &mut Box<Self>, entry: usize, stack: u64) -> Result<Word, Error> {
-        let function = &self.loaded.program.functions[entry];
-        if !function.params.is_empty() {
+        if !self.loaded.program.functions[entry].params.is_empty() {
             return Err(Error("parameterized entry is not supported".into()));
+        }
+        self.run_function_with(entry, &[], stack)
+    }
+
+    /// Run a function (sync or async) over `arguments` to completion: its
+    /// result word, or the report of its failure (process workers).
+    pub fn run_function_with(self: &mut Box<Self>, entry: usize, arguments: &[Word], stack: u64) -> Result<Word, Error> {
+        let function = &self.loaded.program.functions[entry];
+        if function.params.len() != arguments.len() {
+            return Err(Error("argument count mismatch".into()));
         }
         let asynchronous = function.is_async;
         let marker = 0u8;
@@ -471,7 +489,7 @@ impl Runtime {
         };
         let result = if asynchronous {
             // The root Future, its task tree, then shutdown of spawned tasks.
-            let root = self.future_new(entry, &[]);
+            let root = self.future_new(entry, arguments);
             self.roots.push((root, Repr::Ref));
             unsafe { *((root + crate::tasks::STATE) as *mut u64) = crate::tasks::RUNNING };
             self.run_body(&mut ctx, root);
@@ -497,9 +515,8 @@ impl Runtime {
             if ctx.status != OK {
                 return Err(Error(self.fatal.clone().unwrap_or_default()));
             }
-            // SAFETY: compiled functions take the context and return one word.
-            let entry: extern "C" fn(*mut Ctx) -> Word = unsafe { std::mem::transmute(code) };
-            entry(&mut ctx)
+            // SAFETY: compiled functions take the context and their parameters.
+            unsafe { crate::jit::invoke(code, &mut ctx, arguments) }
         };
         match ctx.status {
             OK => Ok(result),

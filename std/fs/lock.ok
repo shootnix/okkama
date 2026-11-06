@@ -53,14 +53,14 @@ object FileLock does Closing, FileLocking {
         }
         catch failure is NativeFailure {
             if failure.code() == "would_block" {
-                throw UnavailableFileLock();
+                throw UnavailableFileLock.unavailable;
             }
             else if failure.code() == "invalid_input"
                 || failure.code() == "already_closed" {
-                throw InvalidFileOperation(failure.message());
+                throw InvalidFileOperation.because(failure.message());
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -79,14 +79,14 @@ object FileLock does Closing, FileLocking {
         }
         catch failure is NativeFailure {
             if failure.code() == "would_block" {
-                throw UnavailableFileLock();
+                throw UnavailableFileLock.unavailable;
             }
             else if failure.code() == "invalid_input"
                 || failure.code() == "already_closed" {
-                throw InvalidFileOperation(failure.message());
+                throw InvalidFileOperation.because(failure.message());
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -119,8 +119,4 @@ object FileLockWaitingCode {
     }
 }
 
-object UnavailableFileLock does Error {
-    UnavailableFileLock();
-
-    text() is string { "file lock is unavailable"; }
-}
+enum UnavailableFileLock is Error = (unavailable);

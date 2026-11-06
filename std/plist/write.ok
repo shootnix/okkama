@@ -44,7 +44,7 @@ object EncodedPlist {
         self.origin=origin;self.format=format;maximum_bytes=1048576;maximum_nodes=4096;maximum_depth=64;
     }
     EncodedPlist(origin is PlistValue, format is PlistFormat, maximum_bytes is int, maximum_nodes is int, maximum_depth is int) {
-        confirm maximum_bytes>=0 && maximum_nodes>=0 && maximum_depth>=0 else throw InvalidPlistWriteLimits();
+        confirm maximum_bytes>=0 && maximum_nodes>=0 && maximum_depth>=0 else throw InvalidPlistWriteLimits.invalid;
         self.origin=origin;self.format=format;self.maximum_bytes=maximum_bytes;self.maximum_nodes=maximum_nodes;self.maximum_depth=maximum_depth;
     }
     bytes() is @byte {
@@ -53,23 +53,11 @@ object EncodedPlist {
         session.finished(root);
     }
 }
-object InvalidPlistWriteLimits does Error {
-    InvalidPlistWriteLimits();text() is string {"plist write limits must not be negative";}
-}
-object PlistWriteLimitExceeded does Error {
-    has category is string;PlistWriteLimitExceeded(kind is string) {category=kind;}
-    kind() is string {category;}text() is string {"plist write "+category+" limit exceeded";}
-}
-object UnsupportedPlistValue does Error {
-    has detail is string;UnsupportedPlistValue(reason is string) {detail=reason;}
-    reason() is string {detail;}text() is string {"unsupported plist value: "+detail;}
-}
-object InvalidPlistPrintProtocol does Error {
-    InvalidPlistPrintProtocol();text() is string {"plist value must print exactly one event";}
-}
-object InvalidPlistWriteSource does Error {
-    InvalidPlistWriteSource();text() is string {"plist source size must not be negative";}
-}
+enum InvalidPlistWriteLimits is Error = (invalid);
+enum PlistWriteLimitExceeded is Error = (kind(kind is string));
+enum UnsupportedPlistValue is Error = (because(reason is string));
+enum InvalidPlistPrintProtocol is Error = (invalid);
+enum InvalidPlistWriteSource is Error = (invalid);
 
 // Internal encoding session owns all aggregate buffers. Node counting uses a
 // bounded byte buffer; object offsets retain fixed-width checked integers. The
@@ -82,21 +70,21 @@ object PlistWireSession {
         output=ByteBuffer();offsets=ByteBuffer();nodes=ByteBuffer();
         if format==PlistFormat.xml {
             let header=Utf8Encoded("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\">").bytes();
-            confirm header.size()+9<=maximum_bytes else throw PlistWriteLimitExceeded("bytes");
+            confirm header.size()+9<=maximum_bytes else throw PlistWriteLimitExceeded.kind("bytes");
             self.output.writing() <- header;
         }
         else {
-            confirm maximum_bytes>=40 else throw PlistWriteLimitExceeded("bytes");
+            confirm maximum_bytes>=40 else throw PlistWriteLimitExceeded.kind("bytes");
             self.output.writing() <- "bplist00";
         }
     }
     xml() is bool {format==PlistFormat.xml;}
     remaining() is int {maximum_bytes-output.content().size()-(if self.xml() {9;} else {offsets.content().size()+32;});}
-    capacity(amount is int) is void {confirm amount>=0 && amount<=self.remaining() else throw PlistWriteLimitExceeded("bytes");}
+    capacity(amount is int) is void {confirm amount>=0 && amount<=self.remaining() else throw PlistWriteLimitExceeded.kind("bytes");}
     available_nodes() is int {maximum_nodes-nodes.content().size();}
     claim(depth is int) is void {
-        confirm depth<=maximum_depth else throw PlistWriteLimitExceeded("depth");
-        confirm self.available_nodes()>0 else throw PlistWriteLimitExceeded("nodes");
+        confirm depth<=maximum_depth else throw PlistWriteLimitExceeded.kind("depth");
+        confirm self.available_nodes()>0 else throw PlistWriteLimitExceeded.kind("nodes");
         nodes.writing() <- [byte(1)];
     }
     node(value is PlistValue, depth is int) is int {
@@ -106,13 +94,13 @@ object PlistWireSession {
         recipient.result();
     }
     source_size(size is int, keys is bool) is void {
-        confirm size>=0 else throw InvalidPlistWriteSource();
-        confirm size.rat()<=self.available_nodes()/(if keys {2;} else {1;}) else throw PlistWriteLimitExceeded("nodes");
+        confirm size>=0 else throw InvalidPlistWriteSource.invalid;
+        confirm size.rat()<=self.available_nodes()/(if keys {2;} else {1;}) else throw PlistWriteLimitExceeded.kind("nodes");
         // Use division before multiplication: a hostile declared size can be
         // near int's limit. XML's shortest value is <true/> (7 bytes), and
         // even an empty key contributes another 11 bytes per dictionary pair.
         let minimum=if self.xml() {if keys {18;} else {7;}} else {if keys {16;} else {8;}};
-        confirm size.rat()<=self.remaining()/minimum else throw PlistWriteLimitExceeded("bytes");
+        confirm size.rat()<=self.remaining()/minimum else throw PlistWriteLimitExceeded.kind("bytes");
     }
     text(value is string) is void {
         self.capacity(value.length());
@@ -124,7 +112,7 @@ object PlistWireSession {
         for (0..value.length()) -> index {
             let code=IntegerFromBytes(scalars.slice(index*4,index*4+4),Signedness.unsigned,ByteOrder.big).value();
             confirm code==9 || code==10 || code==13 || (code>=32 && code<=55295) || (code>=57344 && code<=65533) || (code>=65536 && code<=1114111)
-                else throw UnsupportedPlistValue("character outside XML 1.0");
+                else throw UnsupportedPlistValue.because("character outside XML 1.0");
             let char=value.slice(index,index+1);
             self.text(match char {case "&" {"&amp;";} case "<" {"&lt;";} case ">" {"&gt;";} case "\r" {"&#13;";} else {char;}});
         }
@@ -157,7 +145,7 @@ object PlistWireSession {
                 <- IntegerBytes(root,8,Signedness.unsigned,ByteOrder.big).bytes()
                 <- IntegerBytes(table,8,Signedness.unsigned,ByteOrder.big).bytes();
         }
-        confirm output.content().size()<=maximum_bytes else throw PlistWriteLimitExceeded("bytes");
+        confirm output.content().size()<=maximum_bytes else throw PlistWriteLimitExceeded.kind("bytes");
         output.content().bytes();
     }
     destroy {output.closing().close();offsets.closing().close();nodes.closing().close();}
@@ -169,7 +157,7 @@ object PlistWireValue does PlistWriting {
     has session is PlistWireSession;has depth is int;has event, identity is ByteBuffer;
     PlistWireValue(session is PlistWireSession, depth is int) {self.session=session;self.depth=depth;event=ByteBuffer();identity=ByteBuffer();}
     result() is int {
-        confirm event.content().size()==1 && identity.content().size()==8 else throw InvalidPlistPrintProtocol();
+        confirm event.content().size()==1 && identity.content().size()==8 else throw InvalidPlistPrintProtocol.invalid;
         IntegerFromBytes(identity.content().bytes(),Signedness.unsigned,ByteOrder.big).value();
     }
     boolean(value is bool) is void {
@@ -207,17 +195,17 @@ object PlistWireValue does PlistWriting {
     }
     date(value is Instant) is void {
         self.begin();let seconds=value.unix_duration().seconds();
-        confirm seconds>=(-62135596800).rat() && seconds<253402300800.rat() else throw UnsupportedPlistValue("date outside UTC years 0001..9999");
+        confirm seconds>=(-62135596800).rat() && seconds<253402300800.rat() else throw UnsupportedPlistValue.because("date outside UTC years 0001..9999");
         if session.xml() {
             session.text("<date>");session.text(Rfc3339(value,Duration(0.rat(),DurationUnit.second)).string());session.text("</date>");self.end(0);
         } else {
             let relative=seconds-978307200.rat();let number=relative.float();
-            confirm number.rat()==relative else throw UnsupportedPlistValue("binary date loses nanoseconds");
+            confirm number.rat()==relative else throw UnsupportedPlistValue.because("binary date loses nanoseconds");
             self.end(session.record([byte(51)],FloatBytes(number,FloatWidth.bits64,ByteOrder.big).bytes()));
         }
     }
     uid(value is BigInt) is void {
-        self.begin();confirm !session.xml() else throw UnsupportedPlistValue("XML has no UID element");
+        self.begin();confirm !session.xml() else throw UnsupportedPlistValue.because("XML has no UID element");
         let number=PlistWireInteger(value,true);
         self.end(session.record([byte(128+number.width()-1)],number.bytes()));
     }
@@ -254,7 +242,7 @@ object PlistWireValue does PlistWriting {
     }
     destroy {event.closing().close();identity.closing().close();}
     private:
-    begin() is void {confirm event.content().size()==0 else throw InvalidPlistPrintProtocol();event.writing() <- [byte(1)];}
+    begin() is void {confirm event.content().size()==0 else throw InvalidPlistPrintProtocol.invalid;event.writing() <- [byte(1)];}
     end(index is int) is void {identity.writing() <- IntegerBytes(index,8,Signedness.unsigned,ByteOrder.big).bytes();}
 }
 
@@ -264,7 +252,7 @@ object PlistWrittenNames {
     has origin is List<string>;
     PlistWrittenNames() {let empty is List<string> = EmptyList();origin=empty;}
     following(name is string) is ^PlistWrittenNames {
-        for origin -> previous {confirm previous!=name else throw DuplicatePlistMember(name);}
+        for origin -> previous {confirm previous!=name else throw DuplicatePlistMember.name(name);}
         ^origin=origin.prefix(name);
     }
 }
@@ -276,12 +264,12 @@ object PlistWireInteger {
     PlistWireInteger(value is BigInt, uid is bool) {
         origin=value;
         if uid {
-            confirm value.sign()>=0 && value.bits()<=128 else throw UnsupportedPlistValue("UID outside unsigned 128-bit range");
+            confirm value.sign()>=0 && value.bits()<=128 else throw UnsupportedPlistValue.because("UID outside unsigned 128-bit range");
             size=if value.bits()==0 {1;} else {((value.bits()+7)/8).int();};
         } else {
             confirm value.order(BigInt("-170141183460469231731687303715884105728"))!=Order.less
                 && value.order(BigInt("170141183460469231731687303715884105727"))!=Order.greater
-                else throw UnsupportedPlistValue("integer outside signed 128-bit range");
+                else throw UnsupportedPlistValue.because("integer outside signed 128-bit range");
             size=if value.sign()<0 {
                 if value.order(BigInt("-9223372036854775808"))!=Order.less {8;} else {16;}
             } else {
@@ -314,10 +302,7 @@ object PlistWireLength {
     }
 }
 
-test "plist writer diagnostics preserve their category and reason" {
-    test.is(PlistWriteLimitExceeded("bytes").kind(),"bytes");
-    test.is(UnsupportedPlistValue("UID").reason(),"UID");
-}
+
 test "plist binary lengths use inline counts before extended records" {
     test.is(PlistWireLength(64,0).bytes(),[byte(64)]);
     test.is(PlistWireLength(160,14).bytes(),[byte(174)]);
@@ -332,5 +317,5 @@ test "plist binary envelope and reserved suffix fit an exact byte budget" {
     let root=session.record([byte(9)],[]);
     test.is(session.finished(root).size(),49);
     test.is(try {PlistWireSession(PlistFormat.binary,39,1,1);"bad";}
-        catch error is PlistWriteLimitExceeded {error.kind();},"bytes");
+        catch PlistWriteLimitExceeded.kind(kind) {kind;},"bytes");
 }

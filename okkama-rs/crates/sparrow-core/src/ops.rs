@@ -150,7 +150,7 @@ impl Runtime {
     fn kind_of(&self, ty: TypeRef) -> Kind {
         Kind::of(&self.loaded.program, ty)
     }
-    fn key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> Key {
+    pub(crate) fn key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> Key {
         match (kind, ty) {
             (Kind::Int, _) => Key::Int(self.big_value(word)),
             (Kind::Float, _) => Key::Float(f64::from_bits(word)),
@@ -282,7 +282,8 @@ pub(crate) fn new_array(runtime: &mut Runtime, function: usize, dst: okkama_spar
 pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> Result<bool, String> {
     let program = &runtime.loaded.program;
     let mut pending = vec![(left, right, ty)];
-    let mut seen = std::collections::HashSet::new();
+    // Visited pairs, only once a composite value is entered.
+    let mut seen: crate::word::FastSet<(Word, Word)> = Default::default();
     while let Some((a, b, ty)) = pending.pop() {
         let kind = runtime.kind_of(ty);
         match kind {
@@ -402,6 +403,15 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
 
 // ---- the helper ----
 
+/// `builder.push`: append a word to a builder (no collection here: the
+/// items vector is Rust memory). Returns the builder.
+#[inline(never)]
+pub extern "C" fn rt_builder_push(ctx: *mut Ctx, builder: Word, item: Word) -> Word {
+    let runtime = unsafe { &mut *(*ctx).runtime };
+    runtime.heap.payload_mut::<Builder>(builder).expect("builder").items.push(item);
+    builder
+}
+
 /// Execute instruction `pc` of `function` with its used words at `uses`.
 ///
 /// SAFETY: called from machine code with its context; `uses` holds one word
@@ -416,24 +426,38 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
     runtime.count(|_| format!("exec {}", instruction.mnemonic()));
-    let mut registers = [okkama_sparrow::Register(u32::MAX); 8];
+    // Uses in visit order: inline for the common case, spilled past 16 (map
+    // and array literals can use any number of registers).
+    let mut inline = [okkama_sparrow::Register(u32::MAX); 16];
+    let mut spilled = Vec::new();
     let mut count = 0;
     instruction.visit(&mut |access| {
         if let Access::Use(register) = access {
-            if count < registers.len() {
-                registers[count] = register;
+            if count < inline.len() {
+                inline[count] = register;
+            } else {
+                if spilled.is_empty() {
+                    spilled.extend_from_slice(&inline);
+                }
+                spilled.push(register);
             }
             count += 1;
         }
     });
-    if count > registers.len() {
-        return crate::runtime::fatal(ctx, runtime, format!("{} uses more than 8 registers", instruction.mnemonic()));
-    }
+    let registers: &[okkama_sparrow::Register] = if count <= inline.len() { &inline[..count] } else { &spilled };
     let words = unsafe { std::slice::from_raw_parts(uses, count) };
     let value = |register: &okkama_sparrow::Register| {
-        words[registers[..count].iter().position(|r| r == register).expect("used register")]
+        words[registers.iter().position(|r| r == register).expect("used register")]
     };
-    match execute(runtime, function, instruction, &value) {
+    let outcome = match instruction {
+        // Spawning runs the worker's driver now: it needs the context.
+        I::WorkerSpawn { entry, args, direct, .. } => {
+            let arguments: Vec<Word> = args.iter().map(value).collect();
+            crate::worker::spawn(runtime, &mut *ctx, value(entry), &arguments, *direct)
+        }
+        _ => execute(runtime, function, instruction, &value),
+    };
+    match outcome {
         Ok(word) => {
             if runtime.heap.needs_collection() {
                 let repr = def_repr(runtime, function, instruction);
@@ -847,6 +871,10 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             map.entries.entry(k).and_modify(|e| e.1 = item).or_insert((key, item));
             Ok(builder)
         }
+        I::WorkerBind { action, entry, fields, .. } => {
+            let fields = fields.iter().map(|r| (value(r), kinds[r.0 as usize].repr())).collect();
+            Ok(crate::worker::bind(runtime, value(action), value(entry), fields))
+        }
         I::MapBuilderFinish { builder, .. } => {
             let map = runtime.heap.payload_mut::<MapValue>(value(builder)).expect("map builder");
             let finished = MapValue { key: map.key, value: map.value, entries: std::mem::take(&mut map.entries) };
@@ -932,14 +960,33 @@ fn key_text(runtime: &Runtime, word: Word, kind: Kind, ty: Option<&Type>) -> Str
     }
 }
 
+/// Decimal text of an integer word (inline integers without a BigInt).
+fn int_text(runtime: &mut Runtime, word: Word) -> Word {
+    let text = match runtime.heap.integer(word) {
+        crate::heap::Integer::Small(n) => n.to_string(),
+        crate::heap::Integer::Big(n) => n.to_string(),
+    };
+    runtime.text_new(&text)
+}
+
+/// `cvt` of an int to a string.
+#[inline(never)]
+pub extern "C" fn rt_int_text(ctx: *mut Ctx, word: Word) -> Word {
+    let frame = crate::runtime::frame_pointer!();
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    let text = int_text(runtime, word);
+    if runtime.heap.needs_collection() {
+        runtime.safepoint(frame, ctx, &[(text, Repr::Ref)]);
+    }
+    text
+}
+
 fn convert(runtime: &mut Runtime, function: usize, source: okkama_sparrow::Register, dst: okkama_sparrow::Register, word: Word) -> Outcome {
     let from = runtime.ty(function, source).cloned();
     let to = runtime.ty(function, dst).cloned();
     match (from, to) {
-        (Some(Type::Int), Some(Type::Str)) => {
-            let text = runtime.big_value(word).to_string();
-            Ok(runtime.text_new(&text))
-        }
+        (Some(Type::Int), Some(Type::Str)) => Ok(int_text(runtime, word)),
         (Some(Type::Bool | Type::Byte), Some(Type::Str)) => Ok(runtime.text_new(&word.to_string())),
         (Some(Type::Float), Some(Type::Str)) => Ok(runtime.text_new(&crate::scalar::float_text(f64::from_bits(word)))),
         (Some(Type::Rat), Some(Type::Str)) => {

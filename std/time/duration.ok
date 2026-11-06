@@ -45,9 +45,7 @@ object Duration does Comparing<Duration> {
         };
         let seconds is rat = value * multiplier;
         confirm (seconds * 1000000000.rat()).denominator() == "1"
-            else throw InvalidDuration(
-                "duration must contain an integral number of nanoseconds"
-            );
+            else throw InvalidDuration.because("duration must contain an integral number of nanoseconds");
         origin = seconds;
     }
 
@@ -107,14 +105,4 @@ object DurationString {
     }
 }
 
-object InvalidDuration does Error {
-    has message is string;
-
-    InvalidDuration(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidDuration is Error = (because(message is string));

@@ -11,7 +11,7 @@ import "support" take DemoServer,DemoClient;
 import "web/routing" take WebRoutes,Post;
 import "web/request" take WebRequest;
 import "web/reply" take Text;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/form" take ParsedMultipartForm,FormLimits,FormText,MultipartFormEnded;
 import "http/media_type" take HttpMediaType;
 import "http/handler" take HandlingResult;
@@ -28,8 +28,8 @@ object FormValues {
         match key{case "name"{^name=value;}case "colour"{^colour=value;}case "title"{^title=value;}else{self;}}
     }
     uploaded(filename is string,bytes is int) is ^FormValues{^file=filename;^size=bytes;}
-    order() is string{confirm name!="" else throw Exception(422,"name required");"order from "+name+" in "+colour;}
-    upload() is string{confirm title!="" && file!="" else throw Exception(422,"title and file required");title+": "+file+", "+size.string()+" bytes";}
+    order() is string{confirm name!="" else throw Exception.status(422,"name required");"order from "+name+" in "+colour;}
+    upload() is string{confirm title!="" && file!="" else throw Exception.status(422,"title and file required");title+": "+file+", "+size.string()+" bytes";}
 }
 object Forms {
     Forms();
@@ -39,7 +39,7 @@ object Forms {
             let parameters=await request.form(16384);
             return parameters.entries().reduce(FormValues())->values,entry{values.field(entry.name(),entry.value());};
         }
-        confirm media.type()=="multipart" && media.subtype()=="form-data" else throw Exception(415,"form encoding required");
+        confirm media.type()=="multipart" && media.subtype()=="form-data" else throw Exception.status(415,"form encoding required");
         let parts=ParsedMultipartForm(request.request().body().reading(),media.parameters().first("boundary"),FormLimits()).parts();
         defer await parts.settled();defer parts.close();let values=FormValues();
         loop{
@@ -47,7 +47,7 @@ object Forms {
                 let part=await parts.part();
                 if part.file(){
                     let reader=part.body();defer reader.close();let buffer=ByteBuffer();defer buffer.closing().close();
-                    loop{let chunk=await reader.bytes(4096);last if chunk.size()==0;confirm buffer.content().size()+chunk.size()<=16384 else throw Exception(413,"file too large");buffer.writing().write(ByteSnapshot(chunk));}
+                    loop{let chunk=await reader.bytes(4096);last if chunk.size()==0;confirm buffer.content().size()+chunk.size()<=16384 else throw Exception.status(413,"file too large");buffer.writing().write(ByteSnapshot(chunk));}
                     values=values.uploaded(part.filename(),buffer.content().size());
                 }else{let text=await FormText(part,"UTF-8",16384).text();values=values.field(part.name(),text);}
             }catch ended is MultipartFormEnded{last;}
@@ -55,7 +55,7 @@ object Forms {
     }
     async order(request is WebRequest) is HandlingResult{let values=await self.values(request);Text(200,values.order());}
     async upload(request is WebRequest) is HandlingResult{let values=await self.values(request);Text(200,values.upload());}
-    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+    async missing(request is WebRequest) is HandlingResult{Problem(404,"No route");}
 }
 async main() is int {
     let forms=Forms();let server=await DemoServer(WebRoutes([Post("/order",forms.order),Post("/upload",forms.upload)],forms.missing)).server();

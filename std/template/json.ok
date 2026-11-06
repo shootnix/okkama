@@ -10,7 +10,7 @@ import "runtime/template" take template_output_size;
 // Explicit JSON-to-template adapter: exact dotted member paths of a Json.
 // String/null/bool/number leaves become literal text/empty/true|false/Decimal
 // text. Arrays/objects at the leaf throw NonScalarTemplateValue; nonobjects on
-// the way to a member and absent members throw MissingTemplateValue(full path).
+// the way to a member and absent members throw MissingTemplateValue.path(full path).
 // string(path is string) accepts compiled tag spelling: '.' is the bound value
 // itself; other spellings parse exact dotted member paths. A fresh adapter
 // binds each section item; there is no parent lookup or array indexing. The
@@ -31,14 +31,14 @@ object JsonTemplateStrings does TemplateStrings {
     }
 
     JsonTemplateStrings(origin is Json, maximum_members is int, maximum_output is int) {
-        confirm maximum_members >= 0 && maximum_output >= 0 else throw InvalidTemplateJsonLimits();
+        confirm maximum_members >= 0 && maximum_output >= 0 else throw InvalidTemplateJsonLimits.invalid;
         self.origin = origin;
         self.maximum_members = maximum_members;
         self.maximum_output = maximum_output;
     }
 
     string(path is TemplatePath) is string {
-        confirm path.segments().size() <= 64 else throw TemplateJsonLimitExceeded();
+        confirm path.segments().size() <= 64 else throw TemplateJsonLimitExceeded.exceeded;
         self.scalar(path, 0);
     }
 
@@ -54,45 +54,29 @@ object JsonTemplateStrings does TemplateStrings {
     scalar(path is TemplatePath, index is int) is string {
         let segments = path.segments();
         let found = (index..segments.size()).reduce(origin) -> current, position {
-            confirm current.kind() == JsonKind.object_value else throw MissingTemplateValue(path);
-            confirm current.size() <= maximum_members else throw TemplateJsonLimitExceeded();
+            confirm current.kind() == JsonKind.object_value else throw MissingTemplateValue.path(path.string());
+            confirm current.size() <= maximum_members else throw TemplateJsonLimitExceeded.exceeded;
             let name = segments.item(position);
-            confirm current.has(name) else throw MissingTemplateValue(path);
+            confirm current.has(name) else throw MissingTemplateValue.path(path.string());
             current.get(name);
         };
         let text = match found.kind() {
-            case JsonKind.array_value { throw NonScalarTemplateValue(path, JsonKind.array_value); }
-            case JsonKind.object_value { throw NonScalarTemplateValue(path, JsonKind.object_value); }
+            case JsonKind.array_value { throw NonScalarTemplateValue.detailed(path.string(), JsonKind.array_value); }
+            case JsonKind.object_value { throw NonScalarTemplateValue.detailed(path.string(), JsonKind.object_value); }
             case JsonKind.null_value { ""; }
             case JsonKind.boolean_value { if found.boolean() { "true"; } else { "false"; } }
             case JsonKind.number_value { found.number().string(); }
             else { found.text(); }
         };
-        confirm template_output_size(text, maximum_output) >= 0 else throw TemplateOutputLimitExceeded();
+        confirm template_output_size(text, maximum_output) >= 0 else throw TemplateOutputLimitExceeded.exceeded;
         text;
     }
 }
 
 // Typed diagnostics retain domain coordinates, not reflected Okkama types.
-object NonScalarTemplateValue does Error {
-    has location is TemplatePath;
-    has category is JsonKind;
-    NonScalarTemplateValue(path is TemplatePath, kind is JsonKind) {
-        location = path;
-        category = kind;
-    }
-    path() is TemplatePath { location; }
-    kind() is JsonKind { category; }
-    text() is string { "non-scalar template value: " + location.string(); }
-}
-object InvalidTemplateJsonLimits does Error {
-    InvalidTemplateJsonLimits();
-    text() is string { "template JSON limits must be nonnegative"; }
-}
-object TemplateJsonLimitExceeded does Error {
-    TemplateJsonLimitExceeded();
-    text() is string { "template JSON traversal limit exceeded"; }
-}
+enum NonScalarTemplateValue is Error = (detailed(path is string, kind is JsonKind));
+enum InvalidTemplateJsonLimits is Error = (invalid);
+enum TemplateJsonLimitExceeded is Error = (exceeded);
 
 test "dotted paths read scalars of a Json" {
     let data = Json([JsonField("name", "Ada"), JsonField("vip", true), JsonField("none", Json()),
@@ -100,13 +84,13 @@ test "dotted paths read scalars of a Json" {
     let strings = JsonTemplateStrings(data);
     test.is(strings.string("name") + "|" + strings.string("vip") + "|" + strings.string("none") + "|"
         + strings.string("total") + "|" + strings.string("address.city"), "Ada|true||1.25e1|Oslo");
-    test.is(try { strings.string("address"); ""; } catch e is NonScalarTemplateValue { e.text(); }, "non-scalar template value: address");
+    test.is(try { strings.string("address"); ""; } catch e is NonScalarTemplateValue { e.text(); }, "NonScalarTemplateValue.detailed(\"address\", JsonKind.object_value)");
     test.is(try { strings.string("name.first"); false; } catch e is MissingTemplateValue { true; }, true);
     test.is(try { JsonTemplateStrings(data, 1, 100).string("name"); false; } catch e is TemplateJsonLimitExceeded { true; }, true);
     test.is(JsonTemplateStrings(Json("me")).string("."), "me");
 }
 
 test "template JSON failures have stable diagnostics" {
-    test.is(InvalidTemplateJsonLimits().text(), "template JSON limits must be nonnegative");
-    test.is(TemplateJsonLimitExceeded().text(), "template JSON traversal limit exceeded");
+    test.is(InvalidTemplateJsonLimits.invalid.text(), "InvalidTemplateJsonLimits.invalid");
+    test.is(TemplateJsonLimitExceeded.exceeded.text(), "TemplateJsonLimitExceeded.exceeded");
 }

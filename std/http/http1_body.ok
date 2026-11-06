@@ -5,9 +5,8 @@ import "http/http1_chunk" take ParsedHttp1ChunkLine,ParsedHttp1Trailers;
 import "http/http1_head" take Http1Limits,Http1LimitExceeded;
 import "http/header" take Headers;
 import "http/message" take InvalidHttpMessage;
-import "net/stream" take AsyncReading;
 import "net/unix" take UnixPaired;
-import "io/stream" take Closing,InvalidReadLimit;
+import "io/stream" take AsyncReading,Closing,InvalidReadLimit;
 import "io/decorators" take ByteSnapshot,InvalidReading;
 import "io/buffer" take ByteBuffer;
 import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
@@ -42,9 +41,9 @@ object Http1BodyReading does BodyReading {
 }
 object Http1IncomingBody does BodyOpening {
     has origin is Http1BodyReading;has opened is Atomic<bool>;
-    Http1IncomingBody(origin is Http1BodyReading){confirm !origin.closed() else throw BodyClosed();self.origin=origin;opened=Atomic(false);}
+    Http1IncomingBody(origin is Http1BodyReading){confirm !origin.closed() else throw BodyClosed.closed;self.origin=origin;opened=Atomic(false);}
     length() is BigInt{origin.length();}replayable() is bool{false;}
-    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();origin;}
+    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened.opened;origin;}
     destroy{try{if !opened.value(){origin.close();}}catch e is Error{}catch e is NativeFailure{}}
 }
 object Http1BodyInput does AsyncReading {
@@ -52,15 +51,15 @@ object Http1BodyInput does AsyncReading {
     has cache is ByteBuffer;has phase,remaining,used,metadata is Atomic<int>;has trailers is Atomic<Headers>;
 
     Http1BodyInput(origin is AsyncReading,plan is Http1BodyPlan,prefix is @byte,head is Headers,limits is Http1Limits){
-        let kind=plan.kind();confirm kind!=Http1BodyKind.tunnel && kind!=Http1BodyKind.upgrade else throw InvalidHttpMessage("upgraded bytes require a dedicated protocol consumer");
-        confirm prefix.size()<=limits.head_bytes()+65536 else throw Http1LimitExceeded("prefix_bytes");
+        let kind=plan.kind();confirm kind!=Http1BodyKind.tunnel && kind!=Http1BodyKind.upgrade else throw InvalidHttpMessage.because("upgraded bytes require a dedicated protocol consumer");
+        confirm prefix.size()<=limits.head_bytes()+65536 else throw Http1LimitExceeded.kind("prefix_bytes");
         let length=if kind==Http1BodyKind.fixed || kind==Http1BodyKind.empty {plan.length();}else{BigInt("0");};
-        confirm length.order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded("body_bytes");
+        confirm length.order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded.kind("body_bytes");
         self.origin=origin;self.kind=kind;self.limits=limits;self.head=head;cache=ByteBuffer(prefix);
         phase=Atomic(0);remaining=Atomic(ParsedInt(length.string()).value());used=Atomic(0);metadata=Atomic(0);trailers=Atomic(Headers([]));
     }
     async bytes(limit is int) is @byte {
-        confirm limit>0 else throw InvalidReadLimit(limit);
+        confirm limit>0 else throw InvalidReadLimit.limit(limit);
         let group is FutureGroup<@byte>=FutureGroup();let complete=Event();let cleanup=Http1BodyOperationCleanup(group,complete);defer await cleanup.close();
         let pending=self.read_step(group,limit);group.start(pending);let result=await pending;complete.set();result;
     }
@@ -74,13 +73,13 @@ object Http1BodyInput does AsyncReading {
         if kind==Http1BodyKind.fixed {
             let left=remaining.value();if left==0{return [];}
             let count=if left<limit{left;}else{limit;};let chunk=await self.data(group,count);
-            confirm chunk.size()>0 else throw InvalidHttpMessage("EOF before declared HTTP1 body length");
+            confirm chunk.size()>0 else throw InvalidHttpMessage.because("EOF before declared HTTP1 body length");
             remaining.replace(left-chunk.size());return chunk;
         }
         if kind==Http1BodyKind.close_delimited {
             let budget=limits.body_bytes()-used.value();let requested=if limit<=budget {limit;}else{budget+1;};
             let chunk=await self.data(group,requested);
-            confirm chunk.size()<=budget else throw Http1LimitExceeded("body_bytes");used.replace(used.value()+chunk.size());return chunk;
+            confirm chunk.size()<=budget else throw Http1LimitExceeded.kind("body_bytes");used.replace(used.value()+chunk.size());return chunk;
         }
         loop {
             let stage=phase.value();
@@ -88,23 +87,23 @@ object Http1BodyInput does AsyncReading {
             if stage==0 {
                 let line=await self.line(group);let size=ParsedHttp1ChunkLine(line,limits).size();
                 let count=ParsedInt(size.string()).value();
-                confirm count<=limits.body_bytes()-used.value() else throw Http1LimitExceeded("body_bytes");
+                confirm count<=limits.body_bytes()-used.value() else throw Http1LimitExceeded.kind("body_bytes");
                 remaining.replace(count);phase.replace(if count==0 {3;}else{1;});
             }else{
                 if stage==1 {
                     let left=remaining.value();let count=if left<limit {left;}else{limit;};
-                    let chunk=await self.data(group,count);confirm chunk.size()>0 else throw InvalidHttpMessage("EOF inside HTTP1 chunk data");
+                    let chunk=await self.data(group,count);confirm chunk.size()>0 else throw InvalidHttpMessage.because("EOF inside HTTP1 chunk data");
                     remaining.replace(left-chunk.size());used.replace(used.value()+chunk.size());
                     if remaining.value()==0 {phase.replace(2);}return chunk;
                 }else{
                     if stage==2 {
-                        let end=await self.line(group);confirm end=="" else throw InvalidHttpMessage("chunk data requires CRLF");phase.replace(0);
+                        let end=await self.line(group);confirm end=="" else throw InvalidHttpMessage.because("chunk data requires CRLF");phase.replace(0);
                     }else{
                         let raw=ByteBuffer();defer raw.closing().close();let rows=Atomic(0);
                         loop {
                             let line=await self.line(group);raw.writing().write(ByteSnapshot(Latin1Encoded(line+"\r\n").bytes()));
                             last if line=="";
-                            rows.replace(rows.value()+1);confirm rows.value()<=limits.fields() else throw Http1LimitExceeded("fields");
+                            rows.replace(rows.value()+1);confirm rows.value()<=limits.fields() else throw Http1LimitExceeded.kind("fields");
                         }
                         let fields=ParsedHttp1Trailers(Latin1Decoded(raw.content().bytes()).string(),head,limits).value();
                         trailers.replace(fields);phase.replace(4);return [];
@@ -116,20 +115,20 @@ object Http1BodyInput does AsyncReading {
     async data(group is Supervising<@byte>,count is int) is @byte {
         if cache.content().size()>0 {return cache.reading().bytes(count);}
         let requested=if count<65536 {count;}else{65536;};let pending=origin.bytes(requested);group.start(pending);let chunk=await pending;
-        confirm chunk.size()<=requested else throw InvalidReading("HTTP1 body source exceeded requested bytes");chunk;
+        confirm chunk.size()<=requested else throw InvalidReading.because("HTTP1 body source exceeded requested bytes");chunk;
     }
     async line(group is Supervising<@byte>) is string {
         let line=ByteBuffer();defer line.closing().close();let tail=Http1LineTail();
         loop {
             if cache.content().size()==0 {
                 let pending=origin.bytes(4096);group.start(pending);let chunk=await pending;
-                confirm chunk.size()<=4096 else throw InvalidReading("HTTP1 metadata source exceeded requested bytes");
-                confirm chunk.size()>0 else throw InvalidHttpMessage("EOF inside HTTP1 chunk metadata");cache.writing().write(ByteSnapshot(chunk));
+                confirm chunk.size()<=4096 else throw InvalidReading.because("HTTP1 metadata source exceeded requested bytes");
+                confirm chunk.size()>0 else throw InvalidHttpMessage.because("EOF inside HTTP1 chunk metadata");cache.writing().write(ByteSnapshot(chunk));
             }
             let current=cache.content().bytes();let text=Latin1Decoded(current).string();let boundary=tail.string()+text;let pieces=boundary.split("\r\n");
             let amount=if pieces.size()>1 {pieces[0].length()+2-tail.string().length();}else{current.size();};
-            confirm amount<=limits.line_bytes()+2-line.content().size() else throw Http1LimitExceeded("line_bytes");
-            confirm amount<=limits.head_bytes()-metadata.value() else throw Http1LimitExceeded("chunk_metadata_bytes");
+            confirm amount<=limits.line_bytes()+2-line.content().size() else throw Http1LimitExceeded.kind("line_bytes");
+            confirm amount<=limits.head_bytes()-metadata.value() else throw Http1LimitExceeded.kind("chunk_metadata_bytes");
             let accepted=cache.reading().bytes(amount);line.writing().write(ByteSnapshot(accepted));metadata.replace(metadata.value()+amount);
             if pieces.size()>1 {let complete=line.content().bytes();return Latin1Decoded(complete.slice(0,complete.size()-2)).string();}
             tail=tail.following(if boundary.length()==0 {"";}else{boundary.slice(boundary.length()-1,boundary.length());});

@@ -15,10 +15,10 @@ object ParsedCommand{
     has arguments is @string;
     ParsedCommand(origin is CliCommand,arguments is Sequencing<string>){
         let size=arguments.size();
-        confirm size>=0 && size<=4096 else throw CliFailure(0,"","argument count budget");
+        confirm size>=0 && size<=4096 else throw CliFailure.detailed(0, "", "argument count budget");
         let snapshot is @string=(0..size).map()->index{arguments.item(index);};
         let length=snapshot.reduce(0)->used,value{used+value.length();};
-        confirm length<=1048576 else throw CliFailure(0,"","argument text budget");
+        confirm length<=1048576 else throw CliFailure.detailed(0, "", "argument text budget");
         self.origin=origin;self.arguments=snapshot;
     }
     value() is Invocation{CliParsing(origin,arguments).value();}
@@ -63,7 +63,7 @@ object CliParsing{
                 self.option(token,at);
             }else{self.operand(token,at);}
         }
-        confirm command.value().children().size()==0 else throw CliFailure(arguments.size(),"","child command required");
+        confirm command.value().children().size()==0 else throw CliFailure.detailed(arguments.size(), "", "child command required");
         self.finish_operands();
         Invocation(command.value(),path.value(),Settings(entries.value().entries()));
     }
@@ -81,9 +81,9 @@ object CliParsing{
                     position.replace(at+1);
                 }else{self.following_value(descriptor,at);}
             }else if flag>=0{
-                confirm token==name else throw CliFailure(at,token,"flags cannot take a value");
+                confirm token==name else throw CliFailure.detailed(at, token, "flags cannot take a value");
                 self.flag(command.value().syntax().flags().item(flag));position.replace(at+1);
-            }else{throw CliFailure(at,token,"unknown option");}
+            }else{throw CliFailure.detailed(at, token, "unknown option");}
         }else{
             let exact_option=self.option_index(token);let exact_flag=self.flag_index(token);
             if exact_option>=0{self.following_value(command.value().syntax().options().item(exact_option),at);}
@@ -95,22 +95,22 @@ object CliParsing{
                     let name="-"+token.slice(index,index+1);
                     let option=self.option_index(name);let flag=self.flag_index(name);
                     if option>=0{
-                        confirm index==token.length()-1 else throw CliFailure(at,token,"value option must be final in a short cluster");
+                        confirm index==token.length()-1 else throw CliFailure.detailed(at, token, "value option must be final in a short cluster");
                         self.following_value(command.value().syntax().options().item(option),at);
                     }else if flag>=0{self.flag(command.value().syntax().flags().item(flag));}
-                    else{throw CliFailure(at,token,"unknown short option");}
+                    else{throw CliFailure.detailed(at, token, "unknown short option");}
                 }
             }
         }
     }
     following_value(option is Option,at is int) is void{
-        confirm at+1<arguments.size() else throw CliFailure(at,arguments[at],"missing option value");
+        confirm at+1<arguments.size() else throw CliFailure.detailed(at, arguments[at], "missing option value");
         self.value_option(option,arguments[at+1],at);position.replace(at+2);
     }
     value_option(option is Option,text is string,at is int) is void{
         let old=entries.value();
         if old.membership(option.key()){
-            confirm option.value().repeated() else throw CliFailure(at,arguments[at],"scalar option repeated");
+            confirm option.value().repeated() else throw CliFailure.detailed(at, arguments[at], "scalar option repeated");
             let previous=old.entry(option.key()).values();
             let revised is @string=(0..previous.size()+1).map()->index{
                 if index<previous.size(){previous.item(index);}else{text;}
@@ -123,7 +123,7 @@ object CliParsing{
         let children=command.value().children();
         if children.size()>0{
             let found=(0..children.size()).reduce(-1)->old,index{if children.item(index).name()==token{index;}else{old;}};
-            confirm found>=0 else throw CliFailure(at,token,"unknown child command");
+            confirm found>=0 else throw CliFailure.detailed(at, token, "unknown child command");
             let old_path=path.value();
             let revised is @string=(0..old_path.size()+1).map()->index{if index<old_path.size(){old_path[index];}else{token;}};
             path.replace(revised);command.replace(children.item(found));
@@ -143,7 +143,7 @@ object CliParsing{
             let at=consumed.value();
             let remaining=values.size()-at;
             confirm spec.cardinality()!=OperandCardinality.required || remaining>0
-                else throw CliFailure(arguments.size(),"","missing required operand: "+spec.name());
+                else throw CliFailure.detailed(arguments.size(), "", "missing required operand: "+spec.name());
             let size=if spec.cardinality()==OperandCardinality.repeated{remaining;}else{if remaining>0{1;}else{0;}};
             if size>0 || spec.cardinality()==OperandCardinality.repeated{
                 let texts is @string=(0..size).map()->index{values[at+index].token();};
@@ -152,14 +152,7 @@ object CliParsing{
             consumed.replace(at+size);
         }
         let count=consumed.value();
-        if count<values.size(){throw CliFailure(values[count].index(),values[count].token(),"unexpected operand");}
+        if count<values.size(){throw CliFailure.detailed(values[count].index(), values[count].token(), "unexpected operand");}
     }
 }
-object CliFailure does Error{
-    has at is int;
-    has origin,message is string;
-    CliFailure(index is int,token is string,message is string){at=index;origin=token;self.message=message;}
-    index() is int{at;}
-    token() is string{origin;}
-    text() is string{message;}
-}
+enum CliFailure is Error = (detailed(index is int, token is string, message is string));

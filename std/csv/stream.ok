@@ -24,7 +24,7 @@ object CsvStream does Closing {
     CsvStream(origin is Reading, maximum_bytes is int, maximum_input is int,
         maximum_field is int, maximum_rows is int, maximum_columns is int) {
         confirm maximum_bytes >= 0 && maximum_input >= 0 && maximum_field >= 0
-            && maximum_rows >= 0 && maximum_columns >= 0 else throw InvalidCsvLimits();
+            && maximum_rows >= 0 && maximum_columns >= 0 else throw InvalidCsvLimits.invalid;
         self.origin = origin;
         state = csv_state_create(maximum_bytes, maximum_input, maximum_field, maximum_rows, maximum_columns);
     }
@@ -32,19 +32,19 @@ object CsvStream does Closing {
         loop {
             let status = csv_state_advance(state);
             if status == "row" { return csv_state_row(state); }
-            if status == "eof" { throw EndOfCsv(); }
-            if status == "closed" { throw ClosedCsvStream(); }
-            if status == "syntax" { throw InvalidCsv(csv_state_offset(state)); }
-            if status == "utf8" { throw InvalidUtf8(csv_state_offset(state)); }
-            if status == "bytes" { throw CsvByteLimitExceeded(); }
-            if status == "input" { throw CsvLimitExceeded(CsvLimit.input); }
-            if status == "field" { throw CsvLimitExceeded(CsvLimit.field); }
-            if status == "rows" { throw CsvLimitExceeded(CsvLimit.rows); }
-            if status == "columns" { throw CsvLimitExceeded(CsvLimit.columns); }
+            if status == "eof" { throw EndOfCsv.reached; }
+            if status == "closed" { throw ClosedCsvStream.closed; }
+            if status == "syntax" { throw InvalidCsv.at(csv_state_offset(state)); }
+            if status == "utf8" { throw InvalidUtf8.at(csv_state_offset(state)); }
+            if status == "bytes" { throw CsvByteLimitExceeded.exceeded; }
+            if status == "input" { throw CsvLimitExceeded.kind(CsvLimit.input); }
+            if status == "field" { throw CsvLimitExceeded.kind(CsvLimit.field); }
+            if status == "rows" { throw CsvLimitExceeded.kind(CsvLimit.rows); }
+            if status == "columns" { throw CsvLimitExceeded.kind(CsvLimit.columns); }
             let requested = csv_state_request(state);
             let chunk = try {
                 let bytes = origin.bytes(requested);
-                confirm bytes.size() <= requested else throw InvalidReading("CSV origin returned more bytes than requested");
+                confirm bytes.size() <= requested else throw InvalidReading.because("CSV origin returned more bytes than requested");
                 bytes;
             } catch failure is Error { self.close(); throw failure; };
             csv_state_feed(state, chunk);
@@ -53,9 +53,5 @@ object CsvStream does Closing {
     closed() is bool { csv_state_closed(state); }
     close() is void { csv_state_close(state); }
 }
-object EndOfCsv does Error {
-    EndOfCsv(); text() is string { "end of CSV input"; }
-}
-object ClosedCsvStream does Error {
-    ClosedCsvStream(); text() is string { "CSV stream is closed"; }
-}
+enum EndOfCsv is Error = (reached);
+enum ClosedCsvStream is Error = (closed);

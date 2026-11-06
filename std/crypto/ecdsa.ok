@@ -33,7 +33,7 @@ object EcdsaPrivateKey does SigningKey {
     has key is SecretBytes;
     EcdsaPrivateKey(curve is EcdsaCurve, pkcs8 is SecretBytes) {
         let algorithm = HostOperation("pkcs8-algorithm", [pkcs8.export_bytes()]).bytes();
-        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string() else throw InvalidCryptoInput("PKCS#8 key is not an ECDSA key of this curve");
+        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string() else throw InvalidCryptoInput.because("PKCS#8 key is not an ECDSA key of this curve");
         self.curve = curve;
         key = pkcs8;
     }
@@ -55,7 +55,7 @@ object EcdsaPublicKey does PublicKey, VerifyingKey {
     has origin is @byte;
     EcdsaPublicKey(curve is EcdsaCurve, spki is @byte) {
         let algorithm = HostOperation("spki-algorithm", [spki]).bytes();
-        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string() else throw InvalidCryptoInput("SubjectPublicKeyInfo is not an ECDSA key of this curve");
+        confirm EcdsaCurveName(curve).algorithm() == Utf8Decoded(algorithm).string() else throw InvalidCryptoInput.because("SubjectPublicKeyInfo is not an ECDSA key of this curve");
         self.curve = curve;
         origin = spki;
     }

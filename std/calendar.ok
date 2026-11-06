@@ -119,12 +119,12 @@ object MonthDateCursor does Cursor<Date> {
     }
 
     item() is Date {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin.item(position);
     }
 
     successor() is Cursor<Date> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         MonthDateCursor(origin: origin, position: position + 1);
     }
 }
@@ -181,12 +181,12 @@ object CalendarWeekCursor does Cursor<Date> {
     }
 
     item() is Date {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin.item(position);
     }
 
     successor() is Cursor<Date> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         CalendarWeekCursor(origin: origin, position: position + 1);
     }
 }
@@ -258,12 +258,12 @@ object CalendarMonthCursor does Cursor<Sequencing<Date>> {
     }
 
     item() is Sequencing<Date> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin.item(position);
     }
 
     successor() is Cursor<Sequencing<Date>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         CalendarMonthCursor(origin: origin, position: position + 1);
     }
 }

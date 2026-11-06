@@ -13,31 +13,31 @@ import "regex/search" take RegexMatches;
 object SnapshotFile {
     has root is Path;has name is string;
     SnapshotFile(root is DirectoryLocating,name is string){
-        confirm name.length()>0 && name!="." && name!=".." && Utf8Encoded(name).bytes().size()<=255 && !RegexMatches(name,Regex("[/\\\\\\x{0}]")).found() else throw InvalidSnapshot("name must be one relative component");
+        confirm name.length()>0 && name!="." && name!=".." && Utf8Encoded(name).bytes().size()<=255 && !RegexMatches(name,Regex("[/\\\\\\x{0}]")).found() else throw InvalidSnapshot.because("name must be one relative component");
         self.root=root.path();self.name=name;
     }
     root() is Path{root;}name() is string{name;}
 }
 object TextSnapshot does ByteSource {
     has content is @byte;
-    TextSnapshot(origin is string){confirm origin.length()<=1048576 else throw InvalidSnapshot("text scalar budget");content=Utf8Encoded(origin.split("\r\n").join("\n").split("\r").join("\n")).bytes();confirm self.content.size()<=1048576 else throw InvalidSnapshot("byte budget");}
+    TextSnapshot(origin is string){confirm origin.length()<=1048576 else throw InvalidSnapshot.because("text scalar budget");content=Utf8Encoded(origin.split("\r\n").join("\n").split("\r").join("\n")).bytes();confirm self.content.size()<=1048576 else throw InvalidSnapshot.because("byte budget");}
     bytes() is @byte{content;}
 }
 object JsonSnapshot does ByteSource {
     has content is @byte;
-    JsonSnapshot(origin is Json){content=Utf8Encoded(origin.string()+"\n").bytes();confirm self.content.size()<=1048576 else throw InvalidSnapshot("byte budget");}
+    JsonSnapshot(origin is Json){content=Utf8Encoded(origin.string()+"\n").bytes();confirm self.content.size()<=1048576 else throw InvalidSnapshot.because("byte budget");}
     bytes() is @byte{content;}
 }
 object RawSnapshot does ByteSource {
     has content is @byte;
-    RawSnapshot(origin is @byte){confirm origin.size()<=1048576 else throw InvalidSnapshot("byte budget");content=origin;}
+    RawSnapshot(origin is @byte){confirm origin.size()<=1048576 else throw InvalidSnapshot.because("byte budget");content=origin;}
     bytes() is @byte{content;}
 }
 object Snapshot does Checking {
     has origin is ByteSource;has file is SnapshotFile;has limit is int;
-    Snapshot(origin is ByteSource,file is SnapshotFile,limit is int){confirm limit>0 && limit<=1048576 else throw InvalidSnapshot("limit must be 1..1048576");self.origin=origin;self.file=file;self.limit=limit;}
+    Snapshot(origin is ByteSource,file is SnapshotFile,limit is int){confirm limit>0 && limit<=1048576 else throw InvalidSnapshot.because("limit must be 1..1048576");self.origin=origin;self.file=file;self.limit=limit;}
     check() is void{
-        CheckContext().verify();let actual=origin.bytes();confirm actual.size()<=limit else throw InvalidSnapshot("actual exceeds limit");
+        CheckContext().verify();let actual=origin.bytes();confirm actual.size()<=limit else throw InvalidSnapshot.because("actual exceeds limit");
         let root=backend.snapshot_root_open(path_encode(file.root().string()));defer backend.snapshot_root_close(root);
         let expected=try{backend.snapshot_read(root,file.name(),limit);}catch error is NativeFailure{
             if error.code()=="not_found"{test.fail("missing snapshot: "+file.name());return;}
@@ -48,16 +48,13 @@ object Snapshot does Checking {
 }
 object SnapshotUpdate {
     has origin is ByteSource;has file is SnapshotFile;has limit is int;
-    SnapshotUpdate(origin is ByteSource,file is SnapshotFile,limit is int){confirm limit>0 && limit<=1048576 else throw InvalidSnapshot("limit must be 1..1048576");self.origin=origin;self.file=file;self.limit=limit;}
+    SnapshotUpdate(origin is ByteSource,file is SnapshotFile,limit is int){confirm limit>0 && limit<=1048576 else throw InvalidSnapshot.because("limit must be 1..1048576");self.origin=origin;self.file=file;self.limit=limit;}
     update() is void{
-        CheckContext().verify();let content=origin.bytes();confirm content.size()<=limit else throw InvalidSnapshot("actual exceeds limit");
+        CheckContext().verify();let content=origin.bytes();confirm content.size()<=limit else throw InvalidSnapshot.because("actual exceeds limit");
         let root=backend.snapshot_root_open(path_encode(file.root().string()));defer backend.snapshot_root_close(root);
         backend.snapshot_write(root,file.name(),content);
     }
 }
-object InvalidSnapshot does Error {
-    has reason is string;InvalidSnapshot(reason is string){self.reason=reason;}
-    text() is string{"invalid snapshot: "+reason;}
-}
+enum InvalidSnapshot is Error = (because(reason is string));
 
 test "text normalization is explicit" {test.is(TextSnapshot("a\r\nb\r").bytes(),TextSnapshot("a\nb\n").bytes());}

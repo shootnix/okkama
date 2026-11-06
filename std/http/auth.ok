@@ -19,10 +19,10 @@ object BasicCredentials {
     has username is string;has password is SecretBytes;
 
     BasicCredentials(username is string,password is SecretBytes){
-        confirm username.length()<=1024 && password.size()<=4096 else throw InvalidAuthentication("credential size");
-        let octets=try{AsciiEncoded(username).bytes();}catch e is UnrepresentableAsciiCharacter{throw InvalidAuthentication("ASCII username required");};
+        confirm username.length()<=1024 && password.size()<=4096 else throw InvalidAuthentication.because("credential size");
+        let octets=try{AsciiEncoded(username).bytes();}catch e is UnrepresentableAsciiCharacter{throw InvalidAuthentication.because("ASCII username required");};
         let valid is bool=octets.reduce(true)->valid,octet{valid && octet.int()>=32 && octet.int()<=126 && octet.int()!=58;};
-        confirm valid else throw InvalidAuthentication("username syntax");
+        confirm valid else throw InvalidAuthentication.because("username syntax");
         self.username=username;self.password=password;
     }
     username() is string{username;}
@@ -30,7 +30,7 @@ object BasicCredentials {
     authorization() is Header{
         let password=ExportedSecret(password).bytes();
         let valid is bool=password.reduce(true)->valid,octet{valid && octet.int()>=32 && octet.int()<=126;};
-        confirm valid else throw InvalidAuthentication("ASCII password required");
+        confirm valid else throw InvalidAuthentication.because("ASCII password required");
         let prefix=AsciiEncoded(self.username()+":").bytes();
         let value is @byte=(0..prefix.size()+password.size()).map()->index{if index<prefix.size(){prefix[index];}else{password[index-prefix.size()];}};
         Header(HeaderName("Authorization"),"Basic "+Base64Encoded(value).string());
@@ -47,7 +47,7 @@ object BasicAuthorization does HttpAuthorizing {
 }
 object BearerAuthorization does HttpAuthorizing {
     has token is SecretBytes;
-    BearerAuthorization(token is SecretBytes){confirm token.size()>=1 && token.size()<=8192 else throw InvalidAuthentication("bearer size");self.token=token;}
+    BearerAuthorization(token is SecretBytes){confirm token.size()>=1 && token.size()<=8192 else throw InvalidAuthentication.because("bearer size");self.token=token;}
     header() is Header{
         let octets=ExportedSecret(token).bytes();
         let padding is int=(0..octets.size()).reduce(octets.size())->position,index{if position==octets.size() && octets[index].int()==61{index;}else{position;}};
@@ -57,7 +57,7 @@ object BearerAuthorization does HttpAuthorizing {
                     || code==45 || code==46 || code==95 || code==126 || code==43 || code==47;
             };
         };
-        confirm valid else throw InvalidAuthentication("bearer token syntax");
+        confirm valid else throw InvalidAuthentication.because("bearer token syntax");
         Header(HeaderName("Authorization"),"Bearer "+AsciiDecoded(octets).string());
     }
 }
@@ -75,12 +75,12 @@ object AuthenticationScope {
     has key,path is string;
     AuthenticationScope(origin is Url){
         confirm origin.parts().scheme()=="https" && !origin.parts().query().present() && !origin.parts().fragment().present()
-            else throw InvalidAuthentication("HTTPS scope without query or fragment required");
+            else throw InvalidAuthentication.because("HTTPS scope without query or fragment required");
         HttpEndpointSelection(origin,FixedResolution([]),AllEndpoints());
         key=HttpClientKey(origin).string();let canonical=UrlDotSegments(origin.parts().path()).value();path=if canonical==""{"/";}else{canonical;};
     }
     matches(request is Request) is bool{
-        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidAuthentication("absolute auth target required");
+        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidAuthentication.because("absolute auth target required");
         let url=request.target().url();if HttpClientKey(url).string()!=key{return false;}
         // Avoid credential emission for encoded path separators with differing
         // application routing interpretations.
@@ -96,7 +96,7 @@ object ScopedAuthorization does Exchanging {
     ScopedAuthorization(origin is Exchanging,scope is Url,authorization is HttpAuthorizing){self.origin=origin;self.scope=AuthenticationScope(scope);self.authorization=authorization;}
     async response(request is Request) is ClientResponse{
         if !scope.matches(request){return await origin.response(request);}
-        confirm !request.headers().membership(HeaderName("Authorization")) else throw AuthenticationConflict();
+        confirm !request.headers().membership(HeaderName("Authorization")) else throw AuthenticationConflict.conflict;
         let outgoing=Request(request.method(),request.target(),request.headers().addition(authorization.header()),request.body(),request.version());
         let result=await origin.response(outgoing);
         if result.history().size()==0 && result.request().target().url().string()==request.target().url().string(){
@@ -105,11 +105,8 @@ object ScopedAuthorization does Exchanging {
         result;
     }
 }
-object InvalidAuthentication does Error {
-    has reason is string;InvalidAuthentication(reason is string){self.reason=reason;}
-    reason() is string{reason;}text() is string{"invalid authentication: "+reason;}
-}
-object AuthenticationConflict does Error{AuthenticationConflict();text() is string{"explicit Authorization conflicts with configured credentials";}}
+enum InvalidAuthentication is Error = (because(reason is string));
+enum AuthenticationConflict is Error = (conflict);
 test "authentication scope uses canonical origin and path boundaries" {
     let scope=AuthenticationScope(ParsedUrl("https://example.test/private/").value());
     test.ok(scope.matches(Request(Method("GET"),AbsoluteTarget(ParsedUrl("https://example.test:443/private/a").value()),Headers([]))));

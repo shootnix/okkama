@@ -51,7 +51,7 @@ object User {
     home() is Directory {
         let record is %string:string = self.record();
         confirm !record["home"].empty()
-            else throw MissingUserHome(record["name"]);
+            else throw MissingUserHome.name(record["name"]);
         Directory(path: Path(record["home"]));
     }
 
@@ -62,27 +62,23 @@ object User {
                 account_current_user();
             }
             catch failure is NativeFailure {
-                throw UnavailableAccountInformation(
-                    "current user information is unavailable"
-                );
+                throw UnavailableAccountInformation.because("current user information is unavailable");
             }
         }
         else {
             confirm !selected_name.empty()
-                else throw InvalidAccountName(selected_name);
+                else throw InvalidAccountName.origin(selected_name);
             try {
                 account_user_named(selected_name);
             }
             catch failure is NativeFailure {
                 match failure.code() {
-                    case "not_found" { throw MissingUser(selected_name); }
+                    case "not_found" { throw MissingUser.name(selected_name); }
                     case "invalid_input" {
-                        throw InvalidAccountName(selected_name);
+                        throw InvalidAccountName.origin(selected_name);
                     }
                     else {
-                        throw UnavailableAccountInformation(
-                            "user information is unavailable"
-                        );
+                        throw UnavailableAccountInformation.because("user information is unavailable");
                     }
                 }
             }
@@ -122,20 +118,18 @@ object Group {
     private:
     record() is %string:string {
         confirm !selected_name.empty()
-            else throw InvalidAccountName(selected_name);
+            else throw InvalidAccountName.origin(selected_name);
         try {
             account_group_named(selected_name);
         }
         catch failure is NativeFailure {
             match failure.code() {
-                case "not_found" { throw MissingGroup(selected_name); }
+                case "not_found" { throw MissingGroup.name(selected_name); }
                 case "invalid_input" {
-                    throw InvalidAccountName(selected_name);
+                    throw InvalidAccountName.origin(selected_name);
                 }
                 else {
-                    throw UnavailableAccountInformation(
-                        "group information is unavailable"
-                    );
+                    throw UnavailableAccountInformation.because("group information is unavailable");
                 }
             }
         }
@@ -160,38 +154,36 @@ object GroupUsers does Sequencing<User>, Iterating<User>, Sizing {
     item(index is int) is User {
         let names is @string = self.names();
         confirm index >= 0 && index < names.size()
-            else throw OutOfRange("group-user index is outside the sequence");
+            else throw OutOfRange.because("group-user index is outside the sequence");
         User(name: names[index]);
     }
 
     first() is User {
         let names is @string = self.names();
-        confirm names.size() > 0 else throw EmptySequence();
+        confirm names.size() > 0 else throw EmptySequence.empty;
         User(name: names[0]);
     }
 
     last() is User {
         let names is @string = self.names();
-        confirm names.size() > 0 else throw EmptySequence();
+        confirm names.size() > 0 else throw EmptySequence.empty;
         User(name: names[names.size() - 1]);
     }
 
     private:
     names() is @string {
-        confirm !group_name.empty() else throw InvalidAccountName(group_name);
+        confirm !group_name.empty() else throw InvalidAccountName.origin(group_name);
         try {
             account_group_users(group_name);
         }
         catch failure is NativeFailure {
             match failure.code() {
-                case "not_found" { throw MissingGroup(group_name); }
+                case "not_found" { throw MissingGroup.name(group_name); }
                 case "invalid_input" {
-                    throw InvalidAccountName(group_name);
+                    throw InvalidAccountName.origin(group_name);
                 }
                 else {
-                    throw UnavailableAccountInformation(
-                        "group membership is unavailable"
-                    );
+                    throw UnavailableAccountInformation.because("group membership is unavailable");
                 }
             }
         }
@@ -212,68 +204,22 @@ object GroupUserCursor does Cursor<User> {
     }
 
     item() is User {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         User(name: origin[position]);
     }
 
     successor() is Cursor<User> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         GroupUserCursor(names: origin, position: position + 1);
     }
 }
 
-object MissingUser does Error {
-    has origin is string;
+enum MissingUser is Error = (name(name is string));
 
-    MissingUser(name is string) {
-        origin = name;
-    }
+enum MissingGroup is Error = (name(name is string));
 
-    name() is string { origin; }
+enum MissingUserHome is Error = (name(name is string));
 
-    text() is string { "user was not found: " + origin; }
-}
+enum InvalidAccountName is Error = (origin(origin is string));
 
-object MissingGroup does Error {
-    has origin is string;
-
-    MissingGroup(name is string) {
-        origin = name;
-    }
-
-    name() is string { origin; }
-
-    text() is string { "group was not found: " + origin; }
-}
-
-object MissingUserHome does Error {
-    has origin is string;
-
-    MissingUserHome(name is string) {
-        origin = name;
-    }
-
-    name() is string { origin; }
-
-    text() is string { "user has no home directory: " + origin; }
-}
-
-object InvalidAccountName does Error {
-    has origin is string;
-
-    InvalidAccountName(name is string) {
-        origin = name;
-    }
-
-    text() is string { "invalid account name"; }
-}
-
-object UnavailableAccountInformation does Error {
-    has message is string;
-
-    UnavailableAccountInformation(message is string) {
-        self.message = message;
-    }
-
-    text() is string { message; }
-}
+enum UnavailableAccountInformation is Error = (because(message is string));

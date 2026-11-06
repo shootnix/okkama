@@ -14,7 +14,7 @@ object HpackBudget {
     HpackBudget(){encoded=65536;decoded=65536;fields=128;}
     HpackBudget(encoded is int,decoded is int,fields is int){
         confirm encoded>=0 && encoded<=1048576 && decoded>=0 && decoded<=1048576 && fields>=0 && fields<=1024
-            else throw Http2Fault(Http2FaultScope.connection,11,0,"invalid HPACK budget");self.encoded=encoded;self.decoded=decoded;self.fields=fields;
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "invalid HPACK budget");self.encoded=encoded;self.decoded=decoded;self.fields=fields;
     }
     encoded() is int{encoded;}decoded() is int{decoded;}fields() is int{fields;}
 }
@@ -24,7 +24,7 @@ object HpackDecoder {
     HpackDecoder(limit is int){HpackTableBound(limit);fixed=HpackStaticTable();table=HpackDynamicTable(4096);self.limit=limit;required=if limit<4096{limit;}else{-1;};}
     HpackDecoder(fixed is HpackStaticTable,table is HpackDynamicTable,limit is int,required is int){
         HpackTableBound(limit);confirm required>=-1 && required<=limit && (table.capacity()<=limit || required>=0)
-            else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid HPACK context");
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid HPACK context");
         self.fixed=fixed;self.table=table;self.limit=limit;self.required=required;
     }
     table() is HpackDynamicTable{table;}fixed() is HpackStaticTable{fixed;}
@@ -45,22 +45,22 @@ object HpackBlockInput {
     has context is HpackDecoder;has origin is @byte;has budget is HpackBudget;
     HpackBlockInput(context is HpackDecoder,origin is @byte,budget is HpackBudget){self.context=context;self.origin=origin;self.budget=budget;}
     result() is HpackDecodedBlock{
-        confirm origin.size()<=budget.encoded() else throw Http2Fault(Http2FaultScope.connection,11,0,"encoded HPACK block budget");
+        confirm origin.size()<=budget.encoded() else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "encoded HPACK block budget");
         let table=context.table();let progress=HpackDecodedProgress();let offset=HpackReadOffset(0);
         let required=Atomic(context.required_limit());let updates=Atomic(0);let fixed=context.fixed();
         loop{
             if offset.value()==origin.size(){last;}
             let first=origin[offset.value()].int();
             if (first & 224)==32{
-                confirm progress.count()==0 && updates.value()<2 else throw Http2Fault(Http2FaultScope.connection,9,0,"misplaced HPACK size update");
+                confirm progress.count()==0 && updates.value()<2 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "misplaced HPACK size update");
                 let parsed=ParsedHpackInteger(origin,offset.value(),5);
-                confirm parsed.value()<=context.allowed_limit() else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK size update exceeds setting");
+                confirm parsed.value()<=context.allowed_limit() else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK size update exceeds setting");
                 if required.value()>=0{
-                    confirm parsed.value()<=required.value() else throw Http2Fault(Http2FaultScope.connection,9,0,"missing minimum HPACK size update");required.replace(-1);
+                    confirm parsed.value()<=required.value() else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "missing minimum HPACK size update");required.replace(-1);
                 }
                 table=table.resized(parsed.value());offset=offset.following(parsed.following());updates.replace(updates.value()+1);next;
             }
-            confirm required.value()<0 else throw Http2Fault(Http2FaultScope.connection,9,0,"missing HPACK table reduction");
+            confirm required.value()<0 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "missing HPACK table reduction");
             if (first & 128)!=0{
                 let parsed=ParsedHpackInteger(origin,offset.value(),7);let field=HpackLookup(fixed,table,parsed.value()).field();
                 progress=progress.added(field,budget);offset=offset.following(parsed.following());
@@ -70,7 +70,7 @@ object HpackBlockInput {
                 progress=progress.added(field,budget);offset=offset.following(literal.following());
             }
         }
-        confirm required.value()<0 else throw Http2Fault(Http2FaultScope.connection,9,0,"missing HPACK table reduction");
+        confirm required.value()<0 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "missing HPACK table reduction");
         HpackDecodedBlock(progress.fields(),HpackDecoder(fixed,table,context.allowed_limit(),required.value()));
     }
 }
@@ -83,7 +83,7 @@ object HpackDecodedProgress {
     count() is int{fields.size();}fields() is @HpackField{fields;}
     added(field is HpackField,budget is HpackBudget) is ^HpackDecodedProgress{
         confirm fields.size()<budget.fields() && field.size()<=budget.decoded()-used
-            else throw Http2Fault(Http2FaultScope.connection,11,0,"decompressed HPACK field list budget");
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "decompressed HPACK field list budget");
         let following is @HpackField=(0..fields.size()+1).map()->index{if index<fields.size(){fields[index];}else{field;}};
         ^fields=following;^used=used+field.size();
     }
@@ -108,11 +108,11 @@ object HpackEncoded {
     has origin is Sequencing<HpackField>;has budget is HpackBudget;
     HpackEncoded(origin is Sequencing<HpackField>,budget is HpackBudget){self.origin=origin;self.budget=budget;}
     bytes() is @byte{
-        let count=origin.size();confirm count>=0 && count<=budget.fields() else throw Http2Fault(Http2FaultScope.connection,11,0,"encoded HPACK field count");
+        let count=origin.size();confirm count>=0 && count<=budget.fields() else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "encoded HPACK field count");
         let output=HpackOutput(budget.encoded());let fixed=HpackStaticTable();let used=Atomic(0);
         for (0..count) -> index{
             let field=origin.item(index);
-            confirm field.size()<=budget.decoded()-used.value() else throw Http2Fault(Http2FaultScope.connection,11,0,"encoded HPACK field list budget");used.replace(used.value()+field.size());
+            confirm field.size()<=budget.decoded()-used.value() else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "encoded HPACK field list budget");used.replace(used.value()+field.size());
             let sensitive is bool=HpackSensitive(field).value();
             let exact=if sensitive{0;}else{fixed.exact(field);};
             if exact>0{output.append(HpackInteger(exact,7,128).bytes());}
@@ -135,7 +135,7 @@ object HpackSensitive {
 object HpackOutput {
     has buffer is ByteBuffer;has maximum is int;HpackOutput(maximum is int){buffer=ByteBuffer();self.maximum=maximum;}
     append(bytes is @byte) is void{
-        confirm bytes.size()<=maximum-buffer.content().size() else throw Http2Fault(Http2FaultScope.connection,11,0,"encoded HPACK byte budget");buffer.writing().write(ByteSnapshot(bytes));
+        confirm bytes.size()<=maximum-buffer.content().size() else throw Http2Fault.detailed(Http2FaultScope.connection, 11, 0, "encoded HPACK byte budget");buffer.writing().write(ByteSnapshot(bytes));
     }
     bytes() is @byte{buffer.content().bytes();}
 }

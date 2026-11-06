@@ -14,7 +14,7 @@ role LogDelivering{async deliver(record is LogRecord) is int;}
 role LogDraining{async drain() is void;}
 object LogQueueOptions{
     has capacity is int;has overflow is LogOverflow;
-    LogQueueOptions(capacity is int,overflow is LogOverflow){confirm capacity>0 && capacity<=65536 else throw InvalidLogQueue();self.capacity=capacity;self.overflow=overflow;}
+    LogQueueOptions(capacity is int,overflow is LogOverflow){confirm capacity>0 && capacity<=65536 else throw InvalidLogQueue.invalid;self.capacity=capacity;self.overflow=overflow;}
     capacity() is int{capacity;}overflow() is LogOverflow{overflow;}
 }
 object SynchronousLogDelivery does LogDelivering{
@@ -39,11 +39,11 @@ object LogQueueState{
         accepted=Atomic(BigInt("0"));dropped=Atomic(BigInt("0"));finished=Atomic(false);started=Atomic(false);changed=Atomic(Event());
     }
     write(record is LogRecord) is bool{
-        self.check();confirm !finished.value() else throw ClosedLogQueue();
+        self.check();confirm !finished.value() else throw ClosedLogQueue.closed;
         let items=queued.value();
         if items.size()==options.capacity(){
             self.loss(1);
-            if options.overflow()==LogOverflow.reject{throw LogQueueFull();}
+            if options.overflow()==LogOverflow.reject{throw LogQueueFull.full;}
             if options.overflow()==LogOverflow.drop_newest{return false;}
             queued.replace(items.front().remainder());
         }
@@ -71,8 +71,8 @@ object LogQueueState{
         }
         }catch error is Cancelled{
             if finished.value(){self.completed();return 0;}
-            self.failed(LogQueueCancelled());throw;
-        }catch error is NativeFailure{self.failed(LogDeliveryFailure([error]));throw;}
+            self.failed(LogQueueCancelled.cancelled);throw;
+        }catch error is NativeFailure{self.failed(LogDeliveryFailure.failed(1, error.text()));throw;}
         catch error is Error{self.failed(error);throw;}
         0;
     }
@@ -115,7 +115,7 @@ object QueuedLogs does LogWriting,LogDraining,Closing{
     closed() is bool{state.closed();}close() is void{state.close();}
     destroy{self.close();}
 }
-object InvalidLogQueue does Error{InvalidLogQueue();text() is string{"log queue capacity must be in 1..65536";}}
-object ClosedLogQueue does Error{ClosedLogQueue();text() is string{"log queue is closed";}}
-object LogQueueFull does Error{LogQueueFull();text() is string{"log queue is full";}}
-object LogQueueCancelled does Error{LogQueueCancelled();text() is string{"log delivery worker was cancelled";}}
+enum InvalidLogQueue is Error = (invalid);
+enum ClosedLogQueue is Error = (closed);
+enum LogQueueFull is Error = (full);
+enum LogQueueCancelled is Error = (cancelled);

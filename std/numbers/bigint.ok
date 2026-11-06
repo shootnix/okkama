@@ -38,7 +38,7 @@ object BigInt does Comparing<BigInt> {
     has origin is string;
 
     BigInt(origin is string) {
-        confirm bigint_valid(origin) else throw InvalidBigInt();
+        confirm bigint_valid(origin) else throw InvalidBigInt.invalid;
         self.origin = bigint_canonical(origin);
     }
 
@@ -65,13 +65,7 @@ object BigInt does Comparing<BigInt> {
     }
 }
 
-object InvalidBigInt does Error {
-    InvalidBigInt();
-
-    text() is string {
-        "invalid arbitrary-precision integer";
-    }
-}
+enum InvalidBigInt is Error = (invalid);
 
 object BigDifference {
     has left is BigInt;
@@ -109,7 +103,7 @@ object BigQuotient {
     BigQuotient(:left, :right);
 
     value() is BigInt {
-        confirm right.sign() != 0 else throw BigDivisionByZero();
+        confirm right.sign() != 0 else throw BigDivisionByZero.by_zero;
         BigInt(bigint_quotient(left.string(), right.string()));
     }
 }
@@ -121,16 +115,12 @@ object BigRemainder {
     BigRemainder(:left, :right);
 
     value() is BigInt {
-        confirm right.sign() != 0 else throw BigDivisionByZero();
+        confirm right.sign() != 0 else throw BigDivisionByZero.by_zero;
         BigInt(bigint_remainder(left.string(), right.string()));
     }
 }
 
-object BigDivisionByZero does Error {
-    BigDivisionByZero();
-
-    text() is string { "BigInt division by zero"; }
-}
+enum BigDivisionByZero is Error = (by_zero);
 
 object BigGcd {
     has left is BigInt;
@@ -164,8 +154,8 @@ object BigPower {
         self.exponent = exponent;
         maximum_bits = 1048576;
 
-        confirm self.exponent >= 0 else throw InvalidBigExponent(exponent: self.exponent);
-        confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit(maximum_bits: self.maximum_bits);
+        confirm self.exponent >= 0 else throw InvalidBigExponent.exponent(self.exponent);
+        confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit.maximum_bits(self.maximum_bits);
     }
 
     BigPower(base is BigInt, exponent is int, maximum_bits is int) {
@@ -173,8 +163,8 @@ object BigPower {
         self.exponent = exponent;
         self.maximum_bits = maximum_bits;
 
-        confirm self.exponent >= 0 else throw InvalidBigExponent(exponent: self.exponent);
-        confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit(maximum_bits: self.maximum_bits);
+        confirm self.exponent >= 0 else throw InvalidBigExponent.exponent(self.exponent);
+        confirm self.maximum_bits > 0 else throw InvalidBigPowerLimit.maximum_bits(self.maximum_bits);
     }
 
     value() is BigInt {
@@ -183,36 +173,15 @@ object BigPower {
         }
         catch failure is NativeFailure {
             if failure.code() == "resource_exhausted" {
-                throw BigPowerLimitExceeded(maximum_bits: maximum_bits);
+                throw BigPowerLimitExceeded.maximum_bits(maximum_bits);
             }
             else { throw failure; }
         }
     }
 }
 
-object InvalidBigExponent does Error {
-    has value is int;
+enum InvalidBigExponent is Error = (exponent(exponent is int));
 
-    InvalidBigExponent(exponent is int) { value = exponent; }
-    exponent() is int { value; }
+enum InvalidBigPowerLimit is Error = (maximum_bits(maximum_bits is int));
 
-    text() is string { "BigInt exponent must be non-negative"; }
-}
-
-object InvalidBigPowerLimit does Error {
-    has limit is int;
-
-    InvalidBigPowerLimit(maximum_bits is int) { limit = maximum_bits; }
-    maximum_bits() is int { limit; }
-
-    text() is string { "BigInt power bit limit must be positive"; }
-}
-
-object BigPowerLimitExceeded does Error {
-    has limit is int;
-
-    BigPowerLimitExceeded(maximum_bits is int) { limit = maximum_bits; }
-    maximum_bits() is int { limit; }
-
-    text() is string { "BigInt power exceeds " + limit.string() + " bits"; }
-}
+enum BigPowerLimitExceeded is Error = (maximum_bits(maximum_bits is int));

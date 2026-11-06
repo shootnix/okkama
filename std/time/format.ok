@@ -38,7 +38,7 @@ object FormattedDate {
 
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, false, false);
-        confirm invalid == -1 else throw InvalidTimePattern(pattern, invalid);
+        confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
         time_format_date(
             origin.year(),
             origin.month(),
@@ -64,14 +64,14 @@ object DateFromFormat {
             true,
         );
         confirm pattern_offset == -1
-            else throw InvalidTimePattern(pattern, pattern_offset);
+            else throw InvalidTimePattern.located(pattern, pattern_offset);
         let source_offset is int = time_parse_invalid_offset(
             origin,
             pattern,
             false,
         );
         confirm source_offset == -1
-            else throw InvalidFormattedDate(origin, source_offset);
+            else throw InvalidFormattedDate.located(origin, source_offset);
         let parts is @int = time_parse_parts(origin, pattern, false);
         Date(year: parts[0], month: parts[1], day: parts[2]);
     }
@@ -88,7 +88,7 @@ object FormattedLocalDateTime {
 
     string() is string {
         let invalid is int = time_pattern_invalid_offset(pattern, true, false);
-        confirm invalid == -1 else throw InvalidTimePattern(pattern, invalid);
+        confirm invalid == -1 else throw InvalidTimePattern.located(pattern, invalid);
         let date is Date = origin.date();
         let time is TimeOfDay = origin.time();
         time_format_local(
@@ -120,14 +120,14 @@ object LocalDateTimeFromFormat {
             true,
         );
         confirm pattern_offset == -1
-            else throw InvalidTimePattern(pattern, pattern_offset);
+            else throw InvalidTimePattern.located(pattern, pattern_offset);
         let source_offset is int = time_parse_invalid_offset(
             origin,
             pattern,
             true,
         );
         confirm source_offset == -1
-            else throw InvalidFormattedLocalDateTime(origin, source_offset);
+            else throw InvalidFormattedLocalDateTime.located(origin, source_offset);
         let parts is @int = time_parse_parts(origin, pattern, true);
         LocalDateTime(
             date: Date(year: parts[0], month: parts[1], day: parts[2]),
@@ -141,56 +141,8 @@ object LocalDateTimeFromFormat {
     }
 }
 
-object InvalidTimePattern does Error {
-    has pattern is string;
-    has position is int;
+enum InvalidTimePattern is Error = (located(pattern is string, offset is int));
 
-    InvalidTimePattern(pattern is string, offset is int) {
-        self.pattern = pattern;
-        position = offset;
-    }
+enum InvalidFormattedDate is Error = (located(origin is string, offset is int));
 
-    offset() is int {
-        position;
-    }
-
-    text() is string {
-        "invalid time pattern at offset " + position.string();
-    }
-}
-
-object InvalidFormattedDate does Error {
-    has origin is string;
-    has position is int;
-
-    InvalidFormattedDate(origin is string, offset is int) {
-        self.origin = origin;
-        position = offset;
-    }
-
-    offset() is int {
-        position;
-    }
-
-    text() is string {
-        "date does not match pattern at offset " + position.string();
-    }
-}
-
-object InvalidFormattedLocalDateTime does Error {
-    has origin is string;
-    has position is int;
-
-    InvalidFormattedLocalDateTime(origin is string, offset is int) {
-        self.origin = origin;
-        position = offset;
-    }
-
-    offset() is int {
-        position;
-    }
-
-    text() is string {
-        "local date-time does not match pattern at offset " + position.string();
-    }
-}
+enum InvalidFormattedLocalDateTime is Error = (located(origin is string, offset is int));

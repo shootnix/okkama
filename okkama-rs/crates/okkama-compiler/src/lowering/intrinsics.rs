@@ -44,16 +44,17 @@ pub(super) enum Member {
 
 /// Объекты, которые рантайм создаёт для intrinsic: `Self` — сам объект,
 /// `X<T>` — объект модуля с аргументами receiver, `X` — без аргументов,
+/// `E.case` — error enum модуля, чей первый case `case` рантайм бросает,
 /// `core::ArraySequence` — адаптер `@T` как `Sequencing<T>`.
 fn related(name: &str) -> &'static [&'static str] {
     match name {
-        "okkama.channel.Channel.new_capacity" => &["Self", "InvalidChannelCapacity"],
+        "okkama.channel.Channel.new_capacity" => &["Self", "InvalidChannelCapacity.capacity"],
         "okkama.channel.Channel.sending" => &["Sending<T>"],
         "okkama.channel.Channel.receiving" => &["Receiving<T>"],
         "okkama.channel.Sending.send"
         | "okkama.channel.Receiving.item"
         | "okkama.channel.Sending.close"
-        | "okkama.channel.Receiving.close" => &["ChannelClosed"],
+        | "okkama.channel.Receiving.close" => &["ChannelClosed.closed"],
         "okkama.channel.Sending.new"
         | "okkama.channel.Receiving.new"
         | "okkama.event.Event.new"
@@ -64,20 +65,20 @@ fn related(name: &str) -> &'static [&'static str] {
         | "okkama.scope.FutureGroup.new" => &["Self"],
         "okkama.atomic.Atomic.value"
         | "okkama.atomic.Atomic.replace"
-        | "okkama.atomic.Atomic.compare_and_replace" => &["AtomicClosed"],
+        | "okkama.atomic.Atomic.compare_and_replace" => &["AtomicClosed.closed"],
         "okkama.cancellation.Cancellation.cancelling" => &["CancellationToken"],
-        "okkama.scope.FutureGroup.start" => &["FinishedFutureGroup"],
+        "okkama.scope.FutureGroup.start" => &["FinishedFutureGroup.finished"],
         "okkama.collect.AllFutures.results" => &["core::ArraySequence"],
         "okkama.collect.Raced.result"
         | "okkama.collect.FirstSuccessful.result"
-        | "okkama.collect.FutureCompletions.completion" => &["NoFutures"],
+        | "okkama.collect.FutureCompletions.completion" => &["NoFutures.none"],
         "okkama.scope.FutureScope.result" => &["FutureGroup<T0>"],
         "okkama.lock.Lock.new" => &["Self"],
         "okkama.lock.Lock.guard" => &["LockGuard"],
         "okkama.semaphore.Semaphore.permit" => &["Permit"],
-        "okkama.barrier.Barrier.wait" => &["BrokenBarrier"],
+        "okkama.barrier.Barrier.wait" => &["BrokenBarrier.broken"],
         "okkama.barrier.Barrier.state" => &["BarrierState"],
-        "okkama.timeout.Within.result" | "okkama.timeout.Before.result" => &["TimedOut"],
+        "okkama.timeout.Within.result" | "okkama.timeout.Before.result" => &["TimedOut.elapsed"],
         _ => &[],
     }
 }
@@ -153,6 +154,29 @@ impl Ctx<'_, '_> {
                     })?;
                     let element = args.first().cloned().unwrap_or(Ty::Never);
                     self.object_instance(adapter, vec![element.clone(), element], span)?
+                }
+                other if other.contains('.') && !other.starts_with("core::") => {
+                    // Рантайм создаёт error enum как объект варианта
+                    // `[$tag, payload…]` с тегом 0: case обязан быть первым.
+                    let (name, case) = other.split_once('.').expect("enum case");
+                    let found = match self.reg.modules[module].own.types.get(name).copied() {
+                        Some(TypeRef::Enum(found)) => Some(found),
+                        _ => None,
+                    }
+                    .filter(|found| {
+                        let info = &self.reg.enums[found.0];
+                        info.error && info.params.is_empty() && info.cases.first().is_some_and(|c| c == case)
+                    });
+                    let Some(found) = found else {
+                        return Err(LoweringError::invalid(
+                            span,
+                            format!("internal compiler error: intrinsic error {other} must be the first case of an error enum"),
+                        ));
+                    };
+                    match self.ir_type(&Ty::Variant(found, Vec::new()), span)? {
+                        Type::Object(id) => id,
+                        _ => unreachable!("error enums lower to objects"),
+                    }
                 }
                 other => {
                     // `X<T>` — все аргументы receiver, `X<T0>` — только первый.

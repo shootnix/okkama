@@ -39,7 +39,7 @@ object TcpListeningOptions {
     has queued is int;
     TcpListeningOptions() {reuse=false;dual=false;queued=128;}
     TcpListeningOptions(address_reuse is bool, dual_stack is bool, backlog is int) {
-        confirm backlog>=0 else throw InvalidArgument("TCP backlog must be non-negative: "+backlog.string());
+        confirm backlog>=0 else throw InvalidArgument.because("TCP backlog must be non-negative: "+backlog.string());
         reuse=address_reuse;dual=dual_stack;queued=backlog;
     }
     address_reuse() is bool {reuse;}
@@ -56,8 +56,8 @@ object TcpConnection does Closing {
 }
 object TcpConnecting {
     has remote is IpEndpoint;has options is TcpOptions;
-    TcpConnecting(remote is IpEndpoint){confirm remote.port()>0 else throw InvalidArgument("TCP destination port must be positive");self.remote=remote;options=TcpOptions();}
-    TcpConnecting(remote is IpEndpoint,options is TcpOptions){confirm remote.port()>0 else throw InvalidArgument("TCP destination port must be positive");self.remote=remote;self.options=options;}
+    TcpConnecting(remote is IpEndpoint){confirm remote.port()>0 else throw InvalidArgument.because("TCP destination port must be positive");self.remote=remote;options=TcpOptions();}
+    TcpConnecting(remote is IpEndpoint,options is TcpOptions){confirm remote.port()>0 else throw InvalidArgument.because("TCP destination port must be positive");self.remote=remote;self.options=options;}
     async connection() is TcpConnection {
         let group is FutureGroup<network.SocketState>=FutureGroup();let cleanup=TcpConnectCleanup(group);defer await cleanup.close();
         try {
@@ -91,7 +91,7 @@ object TcpAcceptance does Closing {
     local_endpoint() is IpEndpoint{local;}closed() is bool{network.tcp_listener_closed(state);}
     close() is void{try{network.tcp_listener_close(state);}catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.closing,e);if translated.applicable(){throw translated.value();}throw;}}
     async connection() is TcpConnection {
-        confirm !self.closed() else throw NetworkClosed();
+        confirm !self.closed() else throw NetworkClosed.closed;
         let group is FutureGroup<network.SocketState>=FutureGroup();let cleanup=TcpConnectCleanup(group);defer await cleanup.close();
         try{
             let pending=network.tcp_accept(state,accepted.keep_alive(),accepted.no_delay());group.start(pending);let peer=await pending;

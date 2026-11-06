@@ -89,7 +89,9 @@ def main():
             if spec.get('harness'):
                 shutil.copytree(ROOT / 'conformance/harness/okkama/conformance', work / 'case/conformance')
             spb = work / 'main.spb'
-            built = subprocess.run([a.compiler, 'build', str(work / 'case' / spec['entry']),
+            # Test-mode cases build their test runner (`--tests`).
+            tests = ['--tests'] if spec.get('mode') == 'test' else []
+            built = subprocess.run([a.compiler, 'build', *tests, str(work / 'case' / spec['entry']),
                                     '--target', 'sparrow', '-o', str(spb)], env=env, capture_output=True)
             if built.returncode:
                 totals['build'] += 1
@@ -98,7 +100,7 @@ def main():
             if a.core_stdlib:
                 core_spb = work / 'core.spb'
                 core_env = dict(env, OKKAMA_STDLIB_DIR=str(a.core_stdlib))
-                rebuilt = subprocess.run([a.compiler, 'build', str(work / 'case' / spec['entry']),
+                rebuilt = subprocess.run([a.compiler, 'build', *tests, str(work / 'case' / spec['entry']),
                                           '--target', 'sparrow', '-o', str(core_spb)], env=core_env,
                                          capture_output=True)
                 if rebuilt.returncode:

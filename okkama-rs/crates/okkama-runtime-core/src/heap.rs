@@ -619,6 +619,24 @@ impl ObjectHeap {
         Value::Object(Rc::new(Object::new(declaration, fields)))
     }
 
+    /// Поля Error-объекта, который создаёт рантайм, из значений его payload.
+    /// Error enum опускается в объект `[$tag, $<case>_<имя>: array…]`; рантайм
+    /// создаёт первый case, значения payload — массивы из одного элемента.
+    pub fn raised_fields<'a>(&self, names: impl IntoIterator<Item = &'a str>, values: Vec<Value>) -> Vec<Value> {
+        let mut names = names.into_iter().peekable();
+        if names.peek() != Some(&"$tag") {
+            return values;
+        }
+        names.next();
+        let mut payload = values.into_iter();
+        let mut fields = vec![Value::Int(IntValue::from_i64(0))];
+        for name in names {
+            let elements = if name.starts_with("$0_") { payload.next().into_iter().collect() } else { Vec::new() };
+            fields.push(ArrayHeap.allocate(elements));
+        }
+        fields
+    }
+
     fn object<'a>(&self, value: &'a Value) -> Result<&'a Object, ValueError> {
         match value {
             Value::Object(object) => Ok(object),

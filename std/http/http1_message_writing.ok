@@ -8,7 +8,7 @@ import "http/http1_body_check" take Http1BodyCheck;
 import "http/header" take Headers;
 import "http/method" take Method;
 import "http/body" take BodyOpening,EmptyBody;
-import "net/stream" take AsyncWriting;
+import "io/stream" take AsyncWriting;
 import "async/scope" take FutureScope,Supervising;
 import "net/unix" take UnixPaired;
 import "http/http1_reading" take Http1RequestHeadReading;
@@ -38,7 +38,7 @@ object Http1MessageOutput {
         self.writing(writing.result(),response.body(),plan,head.headers(),limits,false);
     }
     writing(head is Future<AsyncWriting>,body is BodyOpening,plan is Http1BodyPlan,fields is Headers,limits is Http1Limits,request is bool) is Future<AsyncWriting> {
-        confirm plan.kind()!=Http1BodyKind.tunnel && plan.kind()!=Http1BodyKind.upgrade else throw InvalidHttpMessage("upgraded response requires dedicated protocol handling");
+        confirm plan.kind()!=Http1BodyKind.tunnel && plan.kind()!=Http1BodyKind.upgrade else throw InvalidHttpMessage.because("upgraded response requires dedicated protocol handling");
         let operation=Http1MessageWriteOperation(head,body,plan,fields,limits,request);
         let scope is FutureScope<AsyncWriting,AsyncWriting>=FutureScope(action:operation.write);scope.result();
     }

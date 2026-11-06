@@ -47,14 +47,14 @@ object TaxiCommands {
 
     async driver(name is string) is void {
         confirm name.length() > 0 && name.length() <= 100
-            else throw Usage("driver name: 1..100 characters");
+            else throw Usage.usage("driver name: 1..100 characters");
         await target.execution(Statement("INSERT INTO drivers(name) VALUES(?)", [Param(name)]));
     }
 
     async trip(driver is int, day is string, minutes is int, fare is int) is void {
         DateFromIso(day).value();
         confirm driver > 0 && minutes > 0 && minutes <= 1440 && fare >= 0 && fare <= 1000000000
-            else throw Usage("invalid trip coordinates");
+            else throw Usage.usage("invalid trip coordinates");
         await target.execution(
             Statement(
                 "INSERT INTO trips(driver_id,day,minutes,fare_cents) VALUES(?,?,?,?)",
@@ -119,7 +119,7 @@ async main() is int {
             await cli.report(args.text(2, ""));
         }
         else {
-            throw Usage("unknown taxi command");
+            throw Usage.usage("unknown taxi command");
         }
     }
     0;

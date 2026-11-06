@@ -3,7 +3,7 @@ import "http/version" take HttpVersion,UnsupportedHttpVersion;
 // Actual negotiated ALPN, never the advertised protocol list.
 object Http2TlsProtocol {
     has selected is string;Http2TlsProtocol(selected is string){self.selected=selected;}
-    version() is HttpVersion{confirm selected=="h2" else throw UnsupportedHttpVersion();HttpVersion.http_2;}
+    version() is HttpVersion{confirm selected=="h2" else throw UnsupportedHttpVersion.unsupported;HttpVersion.http_2;}
 }
 test "HTTP2 TLS requires exact h2 selection" {
     test.ok(Http2TlsProtocol("h2").version()==HttpVersion.http_2);

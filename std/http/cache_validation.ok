@@ -15,23 +15,23 @@ object CacheValidation {
     has original is Request;has request is Request;has entry is CachedHttpEntry;has tags is @EntityTag;has modified is @string;
     CacheValidation(original is Request,entry is CachedHttpEntry){
         self.original=original;self.entry=entry;let fields=entry.result().response().headers();let etags=fields.values(HeaderName("ETag"));
-        let parsed is @EntityTag=try{confirm etags.size()==1 else throw InvalidCacheRevalidation();let value=ParsedEntityTags(etags.item(0)).value();confirm !value.wildcard() && value.values().size()==1 else throw InvalidCacheRevalidation();[value.values().item(0)];}catch e is Error{let empty is @EntityTag=[];empty;};tags=parsed;
-        let dates=fields.values(HeaderName("Last-Modified"));let dates_checked is @string=try{confirm dates.size()==1 else throw InvalidCacheRevalidation();ParsedHttpDate(dates.item(0),entry.timing().received()).value();[dates.item(0)];}catch e is Error{let empty is @string=[];empty;};modified=dates_checked;
+        let parsed is @EntityTag=try{confirm etags.size()==1 else throw InvalidCacheRevalidation.invalid;let value=ParsedEntityTags(etags.item(0)).value();confirm !value.wildcard() && value.values().size()==1 else throw InvalidCacheRevalidation.invalid;[value.values().item(0)];}catch e is Error{let empty is @EntityTag=[];empty;};tags=parsed;
+        let dates=fields.values(HeaderName("Last-Modified"));let dates_checked is @string=try{confirm dates.size()==1 else throw InvalidCacheRevalidation.invalid;ParsedHttpDate(dates.item(0),entry.timing().received()).value();[dates.item(0)];}catch e is Error{let empty is @string=[];empty;};modified=dates_checked;
         let conditional=if parsed.size()==1{ReplacedHeader(original.headers(),Header(HeaderName("If-None-Match"),parsed[0].string())).result();}else{if dates_checked.size()==1{ReplacedHeader(original.headers(),Header(HeaderName("If-Modified-Since"),dates_checked[0])).result();}else{original.headers();}};
         request=Request(original.method(),original.target(),conditional,original.body(),original.version());
     }
     request() is Request{request;}conditional() is bool{tags.size()==1 || modified.size()==1;}
     refreshed(result is ClientResponse,timing is CacheResponseTiming) is CachedHttpEntry{
-        confirm self.conditional() && result.response().status().code()==304 && result.history().size()==0 && result.request().target().string()==request.target().string() else throw InvalidCacheRevalidation();
-        let updated=result.response().headers();let etags=updated.values(HeaderName("ETag"));confirm etags.size()<=1 else throw InvalidCacheRevalidation();
-        if etags.size()==1{let value=ParsedEntityTags(etags.item(0)).value();confirm !value.wildcard() && value.values().size()==1 && tags.size()==1 else throw InvalidCacheRevalidation();let tag=value.values().item(0);confirm if tag.weak(){tag.weak_matches(tags[0]);}else{tag.strong_matches(tags[0]);} else throw InvalidCacheRevalidation();}
-        else{confirm tags.size()==0 else throw InvalidCacheRevalidation();}
+        confirm self.conditional() && result.response().status().code()==304 && result.history().size()==0 && result.request().target().string()==request.target().string() else throw InvalidCacheRevalidation.invalid;
+        let updated=result.response().headers();let etags=updated.values(HeaderName("ETag"));confirm etags.size()<=1 else throw InvalidCacheRevalidation.invalid;
+        if etags.size()==1{let value=ParsedEntityTags(etags.item(0)).value();confirm !value.wildcard() && value.values().size()==1 && tags.size()==1 else throw InvalidCacheRevalidation.invalid;let tag=value.values().item(0);confirm if tag.weak(){tag.weak_matches(tags[0]);}else{tag.strong_matches(tags[0]);} else throw InvalidCacheRevalidation.invalid;}
+        else{confirm tags.size()==0 else throw InvalidCacheRevalidation.invalid;}
         if tags.size()==0 && modified.size()==1{
-            let dates=updated.values(HeaderName("Last-Modified"));confirm dates.size()<=1 else throw InvalidCacheRevalidation();
-            if dates.size()==1{let changed=try{ParsedHttpDate(dates.item(0),timing.received()).value();}catch e is Error{throw InvalidCacheRevalidation();};let stored=ParsedHttpDate(modified[0],entry.timing().received()).value();confirm changed.order(stored)==Order.equal else throw InvalidCacheRevalidation();}
+            let dates=updated.values(HeaderName("Last-Modified"));confirm dates.size()<=1 else throw InvalidCacheRevalidation.invalid;
+            if dates.size()==1{let changed=try{ParsedHttpDate(dates.item(0),timing.received()).value();}catch e is Error{throw InvalidCacheRevalidation.invalid;};let stored=ParsedHttpDate(modified[0],entry.timing().received()).value();confirm changed.order(stored)==Order.equal else throw InvalidCacheRevalidation.invalid;}
         }
         let old=entry.result().response();
-        if updated.membership(HeaderName("Content-Encoding")){confirm updated.values(HeaderName("Content-Encoding")).size()==old.headers().values(HeaderName("Content-Encoding")).size() && updated.first(HeaderName("Content-Encoding"))==old.headers().first(HeaderName("Content-Encoding")) else throw InvalidCacheRevalidation();}
+        if updated.membership(HeaderName("Content-Encoding")){confirm updated.values(HeaderName("Content-Encoding")).size()==old.headers().values(HeaderName("Content-Encoding")).size() && updated.first(HeaderName("Content-Encoding"))==old.headers().first(HeaderName("Content-Encoding")) else throw InvalidCacheRevalidation.invalid;}
         let fields=Cache304Fields(old.headers(),updated,timing).result();let response=Response(old.status(),fields,old.body(),old.version());
         CachedHttpEntry(original,ClientResponse(original,response,result.details()),timing,entry.bytes(),entry.trailers());
     }
@@ -69,4 +69,4 @@ object CacheRequestFreshness {
     }
 
 }
-object InvalidCacheRevalidation does Error{InvalidCacheRevalidation();text() is string{"HTTP cache revalidation did not identify the stored representation";}}
+enum InvalidCacheRevalidation is Error = (invalid);

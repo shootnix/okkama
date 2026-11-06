@@ -21,6 +21,7 @@ pub(crate) mod native_buffer;
 pub(crate) mod native_crypto;
 pub(crate) mod native_data;
 pub(crate) mod native_db;
+pub(crate) mod native_debug;
 pub(crate) mod native_directory;
 pub(crate) mod native_dns;
 pub(crate) mod native_encoding;
@@ -37,6 +38,7 @@ pub(crate) mod native_multicast;
 pub(crate) mod native_net;
 pub(crate) mod native_network;
 pub(crate) mod native_numbers;
+pub(crate) mod native_origin;
 #[cfg(unix)]
 pub(crate) mod native_process;
 pub(crate) mod native_regex;
@@ -166,7 +168,7 @@ impl From<Error> for ProviderError {
 
 /// Static shape of a value at the boundary (from ABI signatures).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Shape {
+pub(crate) enum Shape {
     Unknown,
     Int,
     Bool,
@@ -201,6 +203,8 @@ pub(crate) struct Heap {
     pub(crate) environment: Option<std::collections::BTreeMap<String, String>>,
     /// Descriptor of the builtin NativeFailure object.
     native_failure: Option<u32>,
+    /// Provider state of the bridged origin natives (`native_origin`).
+    pub(crate) origin: okkama_runtime_core::native::Context,
 }
 
 impl Heap {
@@ -208,6 +212,7 @@ impl Heap {
         let mut heap = Self {
             rt: std::ptr::null_mut(),
             handles: Arena::default(),
+            origin: Default::default(),
             json_nodes: Arena::default(),
             futures: Arena::default(),
             test_failures: None,
@@ -229,6 +234,11 @@ impl Heap {
     fn core(&self) -> &crate::heap::Heap {
         // SAFETY: `rt` is set for the duration of a call (see `call`).
         unsafe { &(*self.rt).heap }
+    }
+    /// The loaded program (types of `any` values).
+    pub(crate) fn program(&self) -> &okkama_sparrow::Program {
+        // SAFETY: as in `core`.
+        unsafe { &(*self.rt).loaded.program }
     }
     fn core_mut(&mut self) -> &mut crate::heap::Heap {
         // SAFETY: as in `core`; the runtime does not hold the host during a call.
@@ -283,7 +293,7 @@ impl Heap {
         }
     }
 
-    fn slot(&self, word: Word, shape: &Shape) -> Slot {
+    pub(crate) fn slot(&self, word: Word, shape: &Shape) -> Slot {
         match *shape {
             Shape::Int => match crate::word::small_value(word) {
                 Some(value) => Slot::small(value),
@@ -566,6 +576,7 @@ enum Provider {
     Crypto,
     Text,
     Core,
+    Origin,
 }
 
 fn provider(native: Native) -> Option<Provider> {
@@ -649,6 +660,8 @@ fn classify(native: Native) -> Option<Provider> {
             | Native::TestingTestContextActive
     ) {
         Provider::Core
+    } else if native_origin::handles(native) {
+        Provider::Origin
     } else {
         return None;
     })
@@ -683,6 +696,7 @@ impl Heap {
             Some(Provider::Buffer) => return self.native_buffer(native, args),
             Some(Provider::Crypto) => return self.native_crypto(native, args),
             Some(Provider::Text) => return self.native_text(native, args),
+            Some(Provider::Origin) => return self.native_origin(native, args),
             Some(Provider::Core) => {}
             None => return Err(Error("unsupported native invocation".into())),
         }

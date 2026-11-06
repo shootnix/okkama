@@ -47,16 +47,13 @@ object MatchingPaths does Iterating<Path> {
         }
         catch failure is NativeFailure {
             if failure.code() == "invalid_input" {
-                throw InvalidGlobPattern(glob, failure.message());
+                throw InvalidGlobPattern.detailed(glob, failure.message());
             }
             else if failure.code() == "not_found" {
-                throw FileSystemFailure(
-                    "invalid_input",
-                    "glob root must be an existing directory",
-                );
+                throw FileSystemFailure.detailed("invalid_input", "glob root must be an existing directory");
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         };
         MatchingPathCursor(paths: paths, position: 0);
@@ -72,28 +69,14 @@ object MatchingPathCursor does Cursor<Path> {
     available() is bool { position < paths.size(); }
 
     item() is Path {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         Path(paths[position]);
     }
 
     successor() is Cursor<Path> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         MatchingPathCursor(paths: paths, position: position + 1);
     }
 }
 
-object InvalidGlobPattern does Error {
-    has origin is string;
-    has message is string;
-
-    InvalidGlobPattern(pattern is string, message is string) {
-        origin = pattern;
-        self.message = message;
-    }
-
-    pattern() is string { origin; }
-
-    text() is string {
-        "invalid glob pattern \"" + origin + "\": " + message;
-    }
-}
+enum InvalidGlobPattern is Error = (detailed(pattern is string, message is string));

@@ -5,15 +5,7 @@ enum DbOperation=(connecting,preparing,executing,fetching,committing,rolling_bac
 
 // Provider-controlled diagnostics only. A caller supplying its own message is
 // responsible for that explicit text; drivers never forward SQL/bindings/DSNs.
-object DbFailure does Error {
-    has kind is DbFailureKind;has operation is DbOperation;has code,message is string;
-    DbFailure(kind is DbFailureKind,operation is DbOperation,code is string,message is string){
-        confirm code!="" && code.length()<=128 && message.length()<=1024 else throw InvalidDbDiagnostic();
-        self.kind=kind;self.operation=operation;self.code=code;self.message=message;
-    }
-    kind() is DbFailureKind{kind;}operation() is DbOperation{operation;}code() is string{code;}
-    text() is string{"database "+DbOperationText(operation).string()+" failed ("+code+"): "+message;}
-}
+enum DbFailure is Error = (detailed(kind is DbFailureKind, operation is DbOperation, code is string, message is string));
 object DbOperationText{
     has origin is DbOperation;DbOperationText(origin is DbOperation){self.origin=origin;}
     string() is string{match origin{
@@ -26,9 +18,9 @@ object DbOperationText{
         else{"unknown";}
     }}
 }
-object InvalidDbDiagnostic does Error{InvalidDbDiagnostic();text() is string{"invalid database diagnostic budget";}}
-object AffectedRowsUnknown does Error{AffectedRowsUnknown();text() is string{"database affected row count is unknown";}}
-object DbClosed does Error{DbClosed();text() is string{"database capability is closed";}}
-object DbBusy does Error{DbBusy();text() is string{"database connection has an active operation or reader";}}
-object TransactionEnded does Error{TransactionEnded();text() is string{"database transaction has ended";}}
-object IndeterminateCommit does Error{IndeterminateCommit();text() is string{"database commit outcome is indeterminate";}}
+enum InvalidDbDiagnostic is Error = (invalid);
+enum AffectedRowsUnknown is Error = (unknown);
+enum DbClosed is Error = (closed);
+enum DbBusy is Error = (busy);
+enum TransactionEnded is Error = (ended);
+enum IndeterminateCommit is Error = (indeterminate);

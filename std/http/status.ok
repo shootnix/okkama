@@ -5,7 +5,7 @@ enum StatusClass = (informational, successful, redirection, client_error, server
 object Status {
     has origin is int;
     Status(code is int) {
-        confirm code>=100 && code<=599 else throw InvalidStatus(code);
+        confirm code>=100 && code<=599 else throw InvalidStatus.code(code);
         origin=code;
     }
     code() is int {origin;}
@@ -88,12 +88,7 @@ object Status {
         }
     }
 }
-object InvalidStatus does Error {
-    has origin is int;
-    InvalidStatus(code is int) {origin=code;}
-    code() is int {origin;}
-    text() is string {"invalid HTTP status code: "+origin.string();}
-}
+enum InvalidStatus is Error = (code(code is int));
 
 test "extension status classification needs no phrase" {
     test.is(Status(599).class(),StatusClass.server_error);

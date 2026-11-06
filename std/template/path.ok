@@ -50,12 +50,12 @@ object TemplatePathFromString {
         self.origin = origin; maximum_segments = 64; maximum_length = 4096;
     }
     TemplatePathFromString(origin is string, maximum_segments is int, maximum_length is int) {
-        confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit();
+        confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit.invalid;
         self.origin = origin; self.maximum_segments = maximum_segments; self.maximum_length = maximum_length;
     }
     value() is TemplatePath {
-        confirm origin.length() <= maximum_length else throw TemplatePathLimitExceeded();
-        confirm origin != "" && origin != "." else throw InvalidTemplatePath("empty or reserved template path");
+        confirm origin.length() <= maximum_length else throw TemplatePathLimitExceeded.exceeded;
+        confirm origin != "" && origin != "." else throw InvalidTemplatePath.because("empty or reserved template path");
         TemplatePath(origin.split("."), maximum_segments, maximum_length);
     }
 }
@@ -66,11 +66,11 @@ object TemplatePathFromString {
 object TemplatePathSnapshot {
     has origin is @string;
     TemplatePathSnapshot(source is Sequencing<string>, maximum_segments is int, maximum_length is int) {
-        confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit();
+        confirm maximum_segments >= 0 && maximum_length >= 0 else throw InvalidTemplatePathLimit.invalid;
         let size = source.size();
-        confirm size >= 0 else throw InvalidTemplatePathSize();
-        confirm size > 0 else throw InvalidTemplatePath("empty template path");
-        confirm size <= maximum_segments else throw TemplatePathLimitExceeded();
+        confirm size >= 0 else throw InvalidTemplatePathSize.invalid;
+        confirm size > 0 else throw InvalidTemplatePath.because("empty template path");
+        confirm size <= maximum_segments else throw TemplatePathLimitExceeded.exceeded;
         let parts = (0..size).reduce(TemplatePathParts(maximum_length)) -> previous, index {
             previous.following(source.item(index));
         };
@@ -83,16 +83,16 @@ object TemplatePathParts {
     has used is int = 0;
     has origin is List<string>;
     TemplatePathParts(maximum is int) {
-        confirm maximum >= 0 else throw InvalidTemplatePathLimit();
+        confirm maximum >= 0 else throw InvalidTemplatePathLimit.invalid;
         self.maximum = maximum;
         let empty is List<string> = EmptyList();
         origin = empty;
     }
     following(segment is string) is ^TemplatePathParts {
-        confirm segment != "" else throw InvalidTemplatePath("empty template path segment");
+        confirm segment != "" else throw InvalidTemplatePath.because("empty template path segment");
         let gap = if origin.size() > 0 {1;} else {0;};
         confirm gap <= maximum - used && segment.length() <= maximum - used - gap
-            else throw TemplatePathLimitExceeded();
+            else throw TemplatePathLimitExceeded.exceeded;
         ^used = used + gap + segment.length();
         ^origin = origin.prefix(segment);
     }
@@ -101,23 +101,10 @@ object TemplatePathParts {
         (0..reversed.size()).map() -> index {reversed[reversed.size()-1-index];};
     }
 }
-object InvalidTemplatePath does Error {
-    has reason is string;
-    InvalidTemplatePath(reason is string) {self.reason = reason;}
-    text() is string {reason;}
-}
-object InvalidTemplatePathSize does Error {
-    InvalidTemplatePathSize();
-    text() is string {"template path source size must be nonnegative";}
-}
-object InvalidTemplatePathLimit does Error {
-    InvalidTemplatePathLimit();
-    text() is string {"template path budgets must be nonnegative";}
-}
-object TemplatePathLimitExceeded does Error {
-    TemplatePathLimitExceeded();
-    text() is string {"template path budget exceeded";}
-}
+enum InvalidTemplatePath is Error = (because(reason is string));
+enum InvalidTemplatePathSize is Error = (invalid);
+enum InvalidTemplatePathLimit is Error = (invalid);
+enum TemplatePathLimitExceeded is Error = (exceeded);
 
 test "template path coordinates and comparison are nominal" {
     let path = TemplatePathFromString("user.name").value();

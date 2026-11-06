@@ -28,7 +28,7 @@ role Entropy {
 object SystemEntropy does Entropy {
     SystemEntropy();
     bytes(size is int) is @byte {
-        confirm size >= 0 && size <= 16777216 else throw InvalidCryptoInput("entropy size must be 0..16777216");
+        confirm size >= 0 && size <= 16777216 else throw InvalidCryptoInput.because("entropy size must be 0..16777216");
         if size == 0 { []; } else { HostOperation("random", [DecimalArgument(size).bytes()]).bytes(); }
     }
 }
@@ -37,7 +37,7 @@ object RandomNonce {
     has entropy is Entropy;
     has size is int;
     RandomNonce(entropy is Entropy, size is int) {
-        confirm size >= 1 && size <= 1024 else throw InvalidCryptoInput("nonce size must be 1..1024");
+        confirm size >= 1 && size <= 1024 else throw InvalidCryptoInput.because("nonce size must be 1..1024");
         self.entropy = entropy;
         self.size = size;
     }
@@ -49,8 +49,8 @@ object CounterNonce {
     has counter is int;
     has size is int;
     CounterNonce(prefix is @byte, counter is int, size is int) {
-        confirm size >= 1 && size <= 1024 && prefix.size() < size else throw InvalidCryptoInput("nonce prefix must be shorter than the nonce");
-        confirm counter >= 0 && counter < (1 << (8 * (size - prefix.size()))) else throw InvalidCryptoInput("nonce counter does not fit");
+        confirm size >= 1 && size <= 1024 && prefix.size() < size else throw InvalidCryptoInput.because("nonce prefix must be shorter than the nonce");
+        confirm counter >= 0 && counter < (1 << (8 * (size - prefix.size()))) else throw InvalidCryptoInput.because("nonce counter does not fit");
         self.prefix = prefix;
         self.counter = counter;
         self.size = size;

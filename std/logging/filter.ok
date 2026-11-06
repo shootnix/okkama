@@ -14,9 +14,9 @@ object LevelOverride{
 object LevelThresholds does LogAllowing{
     has fallback is LogLevel;has overrides is @LevelOverride;
     LevelThresholds(fallback is LogLevel,overrides is Sequencing<LevelOverride>){
-        let size=overrides.size();confirm size>=0 && size<=1024 else throw InvalidLogThreshold();
+        let size=overrides.size();confirm size>=0 && size<=1024 else throw InvalidLogThreshold.invalid;
         let snapshot is @LevelOverride=(0..size).map()->index{overrides.item(index);};
-        for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name().order(snapshot[previous].name())!=Order.equal else throw InvalidLogThreshold();}}
+        for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name().order(snapshot[previous].name())!=Order.equal else throw InvalidLogThreshold.invalid;}}
         self.fallback=fallback;self.overrides=snapshot;
     }
     allowed(name is LogName,level is LogLevel) is bool{
@@ -43,4 +43,4 @@ object EnabledLog{
     EnabledLog(origin is LogAllowing,name is LogName,level is LogLevel){self.origin=origin;self.name=name;self.level=level;}
     value() is bool{origin.allowed(name,level);}
 }
-object InvalidLogThreshold does Error{InvalidLogThreshold();text() is string{"invalid or duplicate log threshold override";}}
+enum InvalidLogThreshold is Error = (invalid);

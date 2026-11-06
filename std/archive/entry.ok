@@ -137,8 +137,8 @@ object ArchiveDevice does ArchiveEntry {
     has major_number, minor_number is int;
     ArchiveDevice(path is ArchivePath, kind is ArchiveEntryKind, metadata is ArchiveMetadata, major is int, minor is int) {
         confirm kind == ArchiveEntryKind.character_device || kind == ArchiveEntryKind.block_device
-            else throw InvalidArchiveDevice("expected character or block kind");
-        confirm major >= 0 && minor >= 0 else throw InvalidArchiveDevice("negative device number");
+            else throw InvalidArchiveDevice.because("expected character or block kind");
+        confirm major >= 0 && minor >= 0 else throw InvalidArchiveDevice.because("negative device number");
         origin = path;
         entry_kind = kind;
         attributes = metadata;
@@ -153,11 +153,7 @@ object ArchiveDevice does ArchiveEntry {
     accept(to is ArchiveEntryVisitor) is void { to.device(self); }
 }
 
-object InvalidArchiveDevice does Error {
-    has reason is string;
-    InvalidArchiveDevice(message is string) { reason = message; }
-    text() is string { "invalid archive device: " + reason; }
-}
+enum InvalidArchiveDevice is Error = (because(reason is string));
 
 test "archive entries preserve the role coordinates and file bytes" {
     let source = ArchiveEntry.fake();

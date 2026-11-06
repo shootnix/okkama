@@ -81,19 +81,19 @@ object EnumerationCursor<T> does Cursor<Indexed<T>> {
     }
 
     item() is Indexed<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         Indexed(index: position, item: origin.item());
     }
 
     successor() is Cursor<Indexed<T>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
 
         let following = origin.successor();
         EnumerationCursor(
             origin: following,
             position: if following.available() {
                 confirm position < 9223372036854775807
-                    else throw EnumerationOverflow(index: position);
+                    else throw EnumerationOverflow.index(position);
                 position + 1;
             }
             else {
@@ -103,18 +103,4 @@ object EnumerationCursor<T> does Cursor<Indexed<T>> {
     }
 }
 
-object EnumerationOverflow does Error {
-    has origin is int;
-
-    EnumerationOverflow(index is int) {
-        origin = index;
-    }
-
-    index() is int {
-        origin;
-    }
-
-    text() is string {
-        "enumeration index is outside the int range";
-    }
-}
+enum EnumerationOverflow is Error = (index(index is int));

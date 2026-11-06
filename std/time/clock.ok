@@ -56,7 +56,7 @@ object MonotonicInstant does Comparing<MonotonicInstant> {
     }
 
     MonotonicInstant(origin is Duration, domain is string) {
-        confirm domain.length()>0 && domain.length()<=128 else throw IncompatibleClock();
+        confirm domain.length()>0 && domain.length()<=128 else throw IncompatibleClock.incompatible;
         self.origin = origin;
         self.domain = domain;
     }
@@ -72,12 +72,12 @@ object MonotonicInstant does Comparing<MonotonicInstant> {
     }
 
     minus(other is MonotonicInstant) is Duration {
-        confirm domain==other.domain() else throw IncompatibleClock();
+        confirm domain==other.domain() else throw IncompatibleClock.incompatible;
         origin.minus(other.reading());
     }
 
     order(other is MonotonicInstant) is Order {
-        confirm domain==other.domain() else throw IncompatibleClock();
+        confirm domain==other.domain() else throw IncompatibleClock.incompatible;
         origin.order(other.reading());
     }
 }
@@ -108,24 +108,11 @@ object SystemClock does Timing {
 
     async wait(duration is Duration) is void {
         confirm duration.seconds() >= 0.rat()
-            else throw InvalidWait("wait duration must not be negative");
+            else throw InvalidWait.because("wait duration must not be negative");
         await sleep_nanoseconds(duration.nanoseconds().string());
     }
 }
 
-object IncompatibleClock does Error {
-    IncompatibleClock();
-    text() is string {"incompatible monotonic clock domains";}
-}
+enum IncompatibleClock is Error = (incompatible);
 
-object InvalidWait does Error {
-    has message is string;
-
-    InvalidWait(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidWait is Error = (because(message is string));

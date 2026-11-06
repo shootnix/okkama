@@ -25,6 +25,15 @@ pub fn supported(native: Native) -> bool {
             | Native::TimeSleepNanoseconds
             | Native::Utf8ValidPrefix
             | Native::Utf8Decode
+            | Native::BytesBytesFind
+            | Native::BytesBytesUtf8Invalid
+            | Native::BytesBytesText
+            | Native::BytesBytesDecimalInvalid
+            | Native::BytesBytesDecimal
+            | Native::BytesBytesEqual
+            | Native::BytesBytesIntegerFits
+            | Native::BytesBytesInteger
+            | Native::BytesBytesJoin
     ) || crate::host::supported(native)
 }
 
@@ -91,12 +100,154 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
                 None => host(runtime, native, arguments),
             }
         }
+        Native::BytesBytesFind
+        | Native::BytesBytesUtf8Invalid
+        | Native::BytesBytesText
+        | Native::BytesBytesDecimalInvalid
+        | Native::BytesBytesDecimal
+        | Native::BytesBytesEqual
+        | Native::BytesBytesIntegerFits
+        | Native::BytesBytesInteger
+        | Native::BytesBytesJoin => bytes(runtime, native, arguments),
         _ if crate::host::supported(native) => host(runtime, native, arguments),
         _ => Err(Refusal::Fatal(format!(
             "native provider {} is not available in sparrow-core yet",
             native.symbol()
         ))),
     }
+}
+
+/// `runtime/bytes`: views of a byte range without copying it (`encoding/bytes`
+/// checks ranges first; out-of-range arguments are refused here too).
+fn bytes(runtime: &mut Runtime, native: Native, arguments: &[Word]) -> Result<(Word, Repr), Refusal> {
+    let refuse = || Refusal::Failure(FailureKind::Program(format!("Native invocation \"{}\" failed", native.symbol())));
+    let source = arguments[0];
+    let length = runtime.heap.byte_view(source).len();
+    if native == Native::BytesBytesFind {
+        let start = runtime.small_or_big(arguments[2]).and_then(|s| usize::try_from(s).ok()).filter(|&s| s <= length);
+        let start = start.ok_or_else(refuse)?;
+        let found = {
+            let (haystack, needle) = (runtime.heap.byte_view(source), runtime.heap.byte_view(arguments[1]));
+            if needle.is_empty() {
+                return Err(refuse());
+            }
+            find(&haystack[start..], &needle).map_or(-1, |at| (start + at) as i64)
+        };
+        return Ok((runtime.heap.int(found), Repr::Int));
+    }
+    if native == Native::BytesBytesJoin {
+        let start = runtime.small_or_big(arguments[1]).and_then(|s| usize::try_from(s).ok()).filter(|&s| s <= length);
+        let start = start.ok_or_else(refuse)?;
+        let joined = {
+            let (head, tail) = (runtime.heap.byte_view(source), runtime.heap.byte_view(arguments[2]));
+            let mut joined = Vec::with_capacity(length - start + tail.len());
+            joined.extend_from_slice(&head[start..]);
+            joined.extend_from_slice(&tail);
+            joined
+        };
+        return Ok((runtime.heap.allocate_bytes(&joined), Repr::Ref));
+    }
+    let bound = |word: Word| runtime.small_or_big(word).and_then(|n| usize::try_from(n).ok());
+    let (Some(start), Some(end)) = (bound(arguments[1]), bound(arguments[2])) else {
+        return Err(refuse());
+    };
+    if start > end || end > length {
+        return Err(refuse());
+    }
+    let int = |runtime: &mut Runtime, n: i64| Ok((runtime.heap.int(n), Repr::Int));
+    match native {
+        Native::BytesBytesUtf8Invalid => {
+            let invalid = {
+                let view = runtime.heap.byte_view(source);
+                std::str::from_utf8(&view[start..end]).err().map_or(-1, |e| e.valid_up_to() as i64)
+            };
+            int(runtime, invalid)
+        }
+        Native::BytesBytesText => {
+            runtime.heap.text_from_byte_range(source, start, end).map(|t| (t, Repr::Ref)).ok_or_else(refuse)
+        }
+        Native::BytesBytesDecimalInvalid | Native::BytesBytesDecimal => {
+            // ASCII decimal, optional leading '-': the offset (within the
+            // range) of the first byte that breaks it, or -1.
+            let decimal = native == Native::BytesBytesDecimal;
+            let (invalid, value) = {
+                let view = runtime.heap.byte_view(source);
+                let digits = &view[start..end];
+                let sign = usize::from(digits.first() == Some(&b'-'));
+                let invalid = match digits[sign..].iter().position(|b| !b.is_ascii_digit()) {
+                    Some(at) => (sign + at) as i64,
+                    None if digits.len() == sign => sign as i64,
+                    None => -1,
+                };
+                // Up to 18 digits fit an i64 without overflow checks; longer
+                // values are BigInts (Err).
+                let value = (decimal && invalid < 0).then(|| {
+                    if digits.len() - sign <= 18 {
+                        let n = digits[sign..].iter().fold(0i64, |n, &b| n * 10 + i64::from(b - b'0'));
+                        Ok(if sign == 1 { -n } else { n })
+                    } else {
+                        Err(num_bigint::BigInt::parse_bytes(digits, 10).expect("ASCII decimal"))
+                    }
+                });
+                (invalid, value)
+            };
+            match value {
+                _ if !decimal => int(runtime, invalid),
+                Some(Ok(n)) => int(runtime, n),
+                Some(Err(n)) => Ok((runtime.heap.big(n), Repr::Int)),
+                None => Err(refuse()),
+            }
+        }
+        Native::BytesBytesEqual => {
+            let equal = {
+                let (view, other) = (runtime.heap.byte_view(source), runtime.heap.byte_view(arguments[3]));
+                view[start..end] == *other
+            };
+            Ok((u64::from(equal), Repr::Raw))
+        }
+        _ => {
+            // Fixed-width integer: two's complement or magnitude, as
+            // `encoding/binary` decodes it; it must fit the signed 64-bit int.
+            let (signed, big) = (arguments[3] != 0, arguments[4] != 0);
+            let value = {
+                let view = runtime.heap.byte_view(source);
+                let digits = &view[start..end];
+                if digits.is_empty() {
+                    None
+                } else {
+                    let n = match (signed, big) {
+                        (true, true) => num_bigint::BigInt::from_signed_bytes_be(digits),
+                        (true, false) => num_bigint::BigInt::from_signed_bytes_le(digits),
+                        (false, true) => num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, digits),
+                        (false, false) => num_bigint::BigInt::from_bytes_le(num_bigint::Sign::Plus, digits),
+                    };
+                    num_traits::ToPrimitive::to_i64(&n)
+                }
+            };
+            if native == Native::BytesBytesIntegerFits {
+                return Ok((u64::from(value.is_some()), Repr::Raw));
+            }
+            int(runtime, value.ok_or_else(refuse)?)
+        }
+    }
+}
+
+/// First occurrence of a non-empty `needle`. Protocol delimiters are a byte
+/// or two: scan for the first byte instead of building a `memmem` searcher.
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.len() > 8 {
+        return memchr::memmem::find(haystack, needle);
+    }
+    let (first, rest) = (needle[0], &needle[1..]);
+    let mut from = 0;
+    while let Some(at) = memchr::memchr(first, &haystack[from..]) {
+        let at = from + at;
+        if haystack[at + 1..].starts_with(rest) {
+            return Some(at);
+        }
+        from = at + 1;
+    }
+    None
 }
 
 fn host(runtime: &mut Runtime, native: Native, arguments: &[Word]) -> Result<(Word, Repr), Refusal> {

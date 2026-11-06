@@ -34,10 +34,10 @@ object ImapSession does Closing {
     has lock is Lock;has states is Channel<ImapSessionState>;has initial is Future<Sending<ImapSessionState>>;
     has idle_control is Lock;has idle_slots is Channel<ImapIdleSlot>;has idle_initial is Future<Sending<ImapIdleSlot>>;
     ImapSession(origin is ImapCommandChannel, capabilities is ImapCapabilities, account is string) {
-        confirm account.length()>0 && account.length()<=4096 else throw InvalidArgument("IMAP account scope must contain 1..4096 characters");
+        confirm account.length()>0 && account.length()<=4096 else throw InvalidArgument.because("IMAP account scope must contain 1..4096 characters");
         confirm capabilities.features().membership(ImapFeature.imap4rev1)
             && !capabilities.features().membership(ImapFeature.utf8_only)
-            else throw UnsupportedOperation("this session requires the IMAP4rev1 modified UTF-7 wire mode");
+            else throw UnsupportedOperation.because("this session requires the IMAP4rev1 modified UTF-7 wire mode");
         self.origin=origin;self.capabilities=capabilities;self.account=account;lock=Lock();
         let channel is Channel<ImapSessionState>=Channel(1);states=channel;initial=channel.sending().send(ImapSessionState());
         idle_control=Lock();let slots is Channel<ImapIdleSlot>=Channel(1);idle_slots=slots;idle_initial=slots.sending().send(ImapIdleSlot());
@@ -58,8 +58,8 @@ object ImapSession does Closing {
     async mailbox(name is ImapMailboxName) is SelectedMailbox {await self.select(name,false);}
     async examine(name is ImapMailboxName) is SelectedMailbox {await self.select(name,true);}
     async select(name is ImapMailboxName, read_only is bool) is SelectedMailbox {
-        confirm !self.closed() else throw ImapChannelClosed();await initial;
-        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        confirm !self.closed() else throw ImapChannelClosed.closed;await initial;
+        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
         let state=await states.receiving().item();state=state.cleared();
         let action=if read_only {ImapMailboxCommand.examine;} else {ImapMailboxCommand.select;};
@@ -70,8 +70,8 @@ object ImapSession does Closing {
         await states.sending().send(state);completed.set();SelectedMailbox(self,token);
     }
     async observation(token is ImapSelectionToken) is ImapMailboxState {
-        confirm !self.closed() else throw ImapChannelClosed();await initial;
-        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        confirm !self.closed() else throw ImapChannelClosed.closed;await initial;
+        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
         let state=await states.receiving().item();
         try {state.require_selection(token);}
@@ -79,24 +79,24 @@ object ImapSession does Closing {
         let result=state.selection().state();await states.sending().send(state);completed.set();result;
     }
     async run(command is ImapCommand, selected is @ImapSelectionToken, validity is @ImapUidValidity, writable is bool) is ImapSessionReply {
-        confirm !self.closed() else throw ImapChannelClosed();await initial;
-        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed();
+        confirm !self.closed() else throw ImapChannelClosed.closed;await initial;
+        let guard=await self.entry();defer guard.close();confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
         let state=await states.receiving().item();
         try {
-            confirm selected.size()<=1 && validity.size()<=1 else throw InvalidState("invalid selected operation context");
+            confirm selected.size()<=1 && validity.size()<=1 else throw InvalidState.because("invalid selected operation context");
             if selected.size()>0 {
                 state.require_selection(selected[0]);
                 let current=state.selection().state();
-                if validity.size()>0 {confirm current.uid_validity().order(validity[0])==Order.equal else throw StaleImapUids();}
-                confirm !writable || !current.read_only() else throw InvalidState("selected mailbox is read-only");
-            } else {confirm !writable && validity.size()==0 else throw InvalidState("operation requires a selected mailbox");}
+                if validity.size()>0 {confirm current.uid_validity().order(validity[0])==Order.equal else throw StaleImapUids.stale;}
+                confirm !writable || !current.read_only() else throw InvalidState.because("selected mailbox is read-only");
+            } else {confirm !writable && validity.size()==0 else throw InvalidState.because("operation requires a selected mailbox");}
             if command.name()=="UID" {
                 let operation=command.uid_operation();let features=capabilities.features();
                 if operation=="MOVE" {confirm features.membership(ImapFeature.move)
-                    else throw UnsupportedOperation("IMAP MOVE is not supported; no implicit copy/delete fallback");}
+                    else throw UnsupportedOperation.because("IMAP MOVE is not supported; no implicit copy/delete fallback");}
                 if operation=="EXPUNGE" {confirm features.membership(ImapFeature.uid_plus)
-                    else throw UnsupportedOperation("targeted IMAP EXPUNGE requires UIDPLUS in this wire mode");}
+                    else throw UnsupportedOperation.because("targeted IMAP EXPUNGE requires UIDPLUS in this wire mode");}
             }
         } catch failure is Error {await states.sending().send(state);completed.set();throw;}
         let result=await origin.request(command).result();let responses=result.responses();
@@ -107,7 +107,7 @@ object ImapSession does Closing {
         ImapSessionReply(result,selections);
     }
     async entry() is LockGuard {
-        confirm !self.closed() else throw ImapChannelClosed();await idle_initial;
+        confirm !self.closed() else throw ImapChannelClosed.closed;await idle_initial;
         let control=await idle_control.guard();defer control.close();
         let complete=Event();let cleanup=ImapSessionCleanup(self,complete);defer cleanup.close();
         let slot=await idle_slots.receiving().item();
@@ -121,9 +121,9 @@ object ImapSession does Closing {
         await lock.guard();
     }
     async activate_idle(token is ImapSelectionToken, events is Sending<MailboxEvent>, stop is Event, finished is Event) is ImapIdleTask {
-        confirm !self.closed() else throw ImapChannelClosed();
+        confirm !self.closed() else throw ImapChannelClosed.closed;
         confirm capabilities.features().membership(ImapFeature.idle)
-            else throw UnsupportedOperation("IMAP IDLE is not advertised");
+            else throw UnsupportedOperation.because("IMAP IDLE is not advertised");
         await idle_initial;let control=await idle_control.guard();defer control.close();
         let complete=Event();let cleanup=ImapSessionCleanup(self,complete);defer cleanup.close();
         let slot=await idle_slots.receiving().item();
@@ -137,10 +137,10 @@ object ImapSession does Closing {
     async idle_run(token is ImapSelectionToken, events is Sending<MailboxEvent>, stop is Event, finished is Event) is int {
         let ending=ImapIdleEnding(events,finished);defer ending.close();
         if stop.ready() {return 0;}
-        confirm !self.closed() else throw ImapChannelClosed();await initial;
+        confirm !self.closed() else throw ImapChannelClosed.closed;await initial;
         let guard=await lock.guard();defer guard.close();
         if stop.ready() {return 0;}
-        confirm !self.closed() else throw ImapChannelClosed();
+        confirm !self.closed() else throw ImapChannelClosed.closed;
         let completed=Event();let cleanup=ImapSessionCleanup(self,completed);defer cleanup.close();
         let state=await states.receiving().item();
         try {state.require_selection(token);}
@@ -188,10 +188,10 @@ object ImapSessionState {
     has serial is BigInt;has selection is @ImapSelectedState;
     ImapSessionState() {serial=BigInt("0");selection=[];}
     selections() is @ImapSelectedState {selection;}
-    selection() is ImapSelectedState {confirm selection.size()==1 else throw InvalidState("no IMAP mailbox selected");selection[0];}
+    selection() is ImapSelectedState {confirm selection.size()==1 else throw InvalidState.because("no IMAP mailbox selected");selection[0];}
     require_selection(token is ImapSelectionToken) is void {
         confirm !token.closed() && selection.size()==1 && selection[0].token().generation().order(token.generation())==Order.equal
-            else throw InvalidState("IMAP selection is no longer active");
+            else throw InvalidState.because("IMAP selection is no longer active");
     }
     cleared() is ^ImapSessionState {
         if selection.size()>0 {selection[0].token().expire();}
@@ -209,7 +209,7 @@ object ImapSessionReply {
     has result is ImapCommandRead;has selection is @ImapSelectedState;
     ImapSessionReply(result is ImapCommandRead, selection is @ImapSelectedState) {self.result=result;self.selection=selection;}
     result() is ImapCommandRead {result;}
-    state() is ImapMailboxState {confirm selection.size()==1 else throw InvalidState("no IMAP mailbox selected");selection[0].state();}
+    state() is ImapMailboxState {confirm selection.size()==1 else throw InvalidState.because("no IMAP mailbox selected");selection[0].state();}
 }
 object ImapSessionCleanup {
     has origin is ImapSession;has completed is Event;
@@ -229,7 +229,7 @@ object ImapSearching {
         let reply=await origin.session().run(command,[origin.context()],[epoch],false);let result=reply.result();result.require_success();
         // Do not relabel identifiers with a new epoch if UIDVALIDITY changed
         // while the server was producing this SEARCH result.
-        confirm reply.state().uid_validity().order(epoch)==Order.equal else throw StaleImapUids();
+        confirm reply.state().uid_validity().order(epoch)==Order.equal else throw StaleImapUids.stale;
         let responses=result.responses();let matches is MimeItems<ImapUidSet>=MimeItems();
         for (0..responses.size()) -> index {
             let response=responses.item(index);
@@ -237,8 +237,8 @@ object ImapSearching {
                 matches=matches.following(ImapSearchResult(response,ImapTag(result.completion().tag()),ImapUidSetLimits()).uids());
             }
         }
-        let values=matches.entries();confirm values.size()==1 else throw InvalidState("UID SEARCH requires exactly one result");
-        confirm reply.state().persistent_uids() else throw UnsupportedOperation("UIDNOTSTICKY cannot produce reusable mailbox UID snapshots");
+        let values=matches.entries();confirm values.size()==1 else throw InvalidState.because("UID SEARCH requires exactly one result");
+        confirm reply.state().persistent_uids() else throw UnsupportedOperation.because("UIDNOTSTICKY cannot produce reusable mailbox UID snapshots");
         MailboxUids(origin.name(),reply.state().uid_validity(),values[0],origin.session().account());
     }
 }
@@ -289,10 +289,10 @@ object MailboxEvent {
         if response.name()=="EXPUNGE" {
             let values=ParsedImapData(response).entries();return ImapSequence(ImapUnsigned(values.item(1).string(),true).value());
         }
-        throw MissingImapDatum("sequence");
+        throw MissingImapDatum.name("sequence");
     }
-    uid() is ImapUid {confirm response.name()=="FETCH" else throw MissingImapDatum("UID");ImapFetch(response).uid();}
-    flags() is MailFlags {confirm response.name()=="FETCH" else throw MissingImapDatum("FLAGS");ImapFetch(response).flags();}
+    uid() is ImapUid {confirm response.name()=="FETCH" else throw MissingImapDatum.name("UID");ImapFetch(response).uid();}
+    flags() is MailFlags {confirm response.name()=="FETCH" else throw MissingImapDatum.name("FLAGS");ImapFetch(response).flags();}
     kind() is MailboxEventKind {
         match response.name() {
             case "EXISTS" {MailboxEventKind.exists;} case "RECENT" {MailboxEventKind.recent;}
@@ -313,12 +313,12 @@ object MailboxEvents {
     async event() is MailboxEvent {
         if self.closed() {
             if begun.ready() {let task=await activation;await task.result();}
-            throw MailboxEventsClosed();
+            throw MailboxEventsClosed.closed;
         }
         begun.set();
         let task=try {await activation;} catch failure is Error {finished.set();events.sending().close();throw;};
         try {await events.receiving().item();}
-        catch failure is ChannelClosed {await task.result();throw MailboxEventsClosed();}
+        catch failure is ChannelClosed {await task.result();throw MailboxEventsClosed.closed;}
     }
     async next() is MailboxEvent {await self.event();}
     async close() is MailboxEvents {
@@ -331,10 +331,7 @@ object MailboxEvents {
         if begun.ready() && !finished.ready() {origin.session().abort();}
     }
 }
-object MailboxEventsClosed does Error {
-    MailboxEventsClosed();
-    text() is string {"IMAP mailbox event stream is closed";}
-}
+enum MailboxEventsClosed is Error = (closed);
 object ImapIdleTask {
     has stop is Event;has started is Event;has pending is Future<int>;has group is FutureGroup<int>;
     ImapIdleTask(origin is ImapSession, token is ImapSelectionToken, events is Sending<MailboxEvent>, stop is Event, finished is Event) {
@@ -350,7 +347,7 @@ object ImapIdleSlot {
     ImapIdleSlot() {values=[];}
     ImapIdleSlot(task is ImapIdleTask) {values=[task];}
     active() is bool {values.size()>0;}
-    task() is ImapIdleTask {confirm self.active() else throw InvalidState("no active IDLE operation");values[0];}
+    task() is ImapIdleTask {confirm self.active() else throw InvalidState.because("no active IDLE operation");values[0];}
 }
 object ImapIdleEnding {
     has events is Sending<MailboxEvent>;has finished is Event;

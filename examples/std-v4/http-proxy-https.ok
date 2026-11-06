@@ -47,7 +47,7 @@ async main() is int {
     let parts=url.parts();let target=Url(UrlParts(parts.scheme(),parts.authority(),parts.path(),parts.query(),UrlFragment()));
     let request=Request(Method("GET"),AbsoluteTarget(target),Headers([Header(HeaderName("Authorization"),"Bearer origin")]),EmptyBody(),HttpVersion.http_1_1);
     if scenario=="name" || scenario=="rejected"{
-        let rejected=try{await client.response(request);false;}catch e is CertificateVerificationFailed{scenario=="name" && e.reason()==CertificateFailure.invalid_name;}catch e is ProxyConnectRejected{scenario=="rejected" && e.status()==407;};confirm rejected;
+        let rejected=try{await client.response(request);false;}catch CertificateVerificationFailed.because(reason) {scenario=="name" && reason==CertificateFailure.invalid_name;}catch ProxyConnectRejected.status(status) {scenario=="rejected" && status==407;};confirm rejected;
     }else{
         let first=await client.response(request);confirm first.response().status().code()==204;
         let result=await client.response(request);confirm result.response().status().code()==200 && result.details().secure();

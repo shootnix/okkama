@@ -59,9 +59,9 @@ object PercentDecoded {
             else {
                 let scalar=origin.slice(index,index+1);
                 if scalar=="%" {
-                    confirm origin.length()-index>=3 else throw InvalidPercentEncoding(index);
+                    confirm origin.length()-index>=3 else throw InvalidPercentEncoding.at(index);
                     let octets=try {HexDecoded(origin.slice(index+1,index+3)).bytes();}
-                        catch failure is InvalidHex {throw InvalidPercentEncoding(index);};
+                        catch failure is InvalidHex {throw InvalidPercentEncoding.at(index);};
                     writer.write(ByteSnapshot(octets));index+3;
                 }
                 else {writer.write(ByteSnapshot(Utf8Encoded(scalar).bytes()));index+1;}
@@ -72,12 +72,7 @@ object PercentDecoded {
     string() is string {Utf8Decoded(self.bytes()).string();}
 }
 
-object InvalidPercentEncoding does Error {
-    has invalid_offset is int;
-    InvalidPercentEncoding(offset is int) {invalid_offset=offset;}
-    offset() is int {invalid_offset;}
-    text() is string {"invalid percent encoding at scalar offset "+invalid_offset.string();}
-}
+enum InvalidPercentEncoding is Error = (at(offset is int));
 
 test "query data does not inject separators" {
     test.is(PercentEncoded("a&b=c+d",UrlComponent.data).string(),"a%26b%3Dc%2Bd");

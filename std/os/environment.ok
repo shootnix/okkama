@@ -45,7 +45,7 @@ object Environment {
             environment_snapshot();
         }
         catch failure is NativeFailure {
-            throw InvalidEnvironmentVariable(failure.message());
+            throw InvalidEnvironmentVariable.because(failure.message());
         };
     }
 
@@ -54,7 +54,7 @@ object Environment {
             environment_normalize(values);
         }
         catch failure is NativeFailure {
-            throw InvalidEnvironmentVariable(failure.message());
+            throw InvalidEnvironmentVariable.because(failure.message());
         };
     }
 
@@ -65,7 +65,7 @@ object Environment {
     variable(name is string) is string {
         let normalized is string = self.normalized(name);
         confirm origin.has(normalized)
-            else throw MissingEnvironmentVariable(name);
+            else throw MissingEnvironmentVariable.name(name);
         origin[normalized];
     }
 
@@ -78,7 +78,7 @@ object Environment {
             environment_add(origin, name, value);
         }
         catch failure is NativeFailure {
-            throw InvalidEnvironmentVariable(failure.message());
+            throw InvalidEnvironmentVariable.because(failure.message());
         };
         Environment(values: revised);
     }
@@ -88,7 +88,7 @@ object Environment {
             environment_diff(origin, name);
         }
         catch failure is NativeFailure {
-            throw InvalidEnvironmentVariable(failure.message());
+            throw InvalidEnvironmentVariable.because(failure.message());
         };
         Environment(values: revised);
     }
@@ -99,7 +99,7 @@ object Environment {
             environment_name(name);
         }
         catch failure is NativeFailure {
-            throw InvalidEnvironmentVariable(failure.message());
+            throw InvalidEnvironmentVariable.because(failure.message());
         }
     }
 }
@@ -122,10 +122,10 @@ object HomeDirectory {
         }
         catch failure is NativeFailure {
             if failure.code() == "not_found" {
-                throw MissingHomeDirectory();
+                throw MissingHomeDirectory.missing;
             }
             else {
-                throw InvalidEnvironmentVariable(failure.message());
+                throw InvalidEnvironmentVariable.because(failure.message());
             }
         };
         Directory(path: Path(path));
@@ -167,17 +167,17 @@ object SearchPath does Sequencing<Path>, Iterating<Path>, Sizing {
 
     item(index is int) is Path {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("search-path index is outside the sequence");
+            else throw OutOfRange.because("search-path index is outside the sequence");
         paths[index];
     }
 
     first() is Path {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         paths[0];
     }
 
     last() is Path {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         paths[self.size() - 1];
     }
 }
@@ -193,48 +193,18 @@ object SearchPathCursor does Cursor<Path> {
     }
 
     item() is Path {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         paths[position];
     }
 
     successor() is Cursor<Path> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         SearchPathCursor(paths: paths, position: position + 1);
     }
 }
 
-object MissingEnvironmentVariable does Error {
-    has origin is string;
+enum MissingEnvironmentVariable is Error = (name(name is string));
 
-    MissingEnvironmentVariable(name is string) {
-        origin = name;
-    }
+enum InvalidEnvironmentVariable is Error = (because(message is string));
 
-    name() is string {
-        origin;
-    }
-
-    text() is string {
-        "environment variable is missing: " + origin;
-    }
-}
-
-object InvalidEnvironmentVariable does Error {
-    has message is string;
-
-    InvalidEnvironmentVariable(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
-
-object MissingHomeDirectory does Error {
-    MissingHomeDirectory();
-
-    text() is string {
-        "home directory is unavailable";
-    }
-}
+enum MissingHomeDirectory is Error = (missing);

@@ -68,6 +68,8 @@ helpers! {
     catch = crate::failures::rt_catch, 4, true;
     created = crate::failures::rt_created, 3, false;
     region_add = crate::failures::rt_region_add, 4, false;
+    builder_push = crate::ops::rt_builder_push, 3, true;
+    int_text = crate::ops::rt_int_text, 2, true;
     future_new = crate::tasks::rt_future_new, 4, true;
     await_ = crate::tasks::rt_await, 3, true;
     complete = crate::tasks::rt_complete, 3, false;
@@ -112,6 +114,7 @@ impl Jit {
             .finish(settings::Flags::new(flags))
             .map_err(|e| Error(format!("JIT target: {e}")))?;
         let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
+        builder.memory_provider(Box::new(crate::code_memory::CodeMemory::new()));
         declare_helpers(&mut builder);
         let mut module = JITModule::new(builder);
         let helpers = import_helpers(&mut module)?;
@@ -1340,6 +1343,66 @@ impl Emitter<'_, '_> {
                 let value = self.builder.block_params(done)[0];
                 self.set(&dst.0, value);
             }
+            I::ValCmp { op: op @ (Cmp::Eq | Cmp::Ne), dst, left, right }
+                if matches!(self.kinds[left.0 as usize], Kind::Int | Kind::Raw | Kind::Byte | Kind::Float) =>
+            {
+                // Scalars compare by word (exact ints: two inline integers);
+                // anything else takes the structural slow path.
+                let int = self.kinds[left.0 as usize] == Kind::Int;
+                let (l, r) = (self.word(left), self.word(right));
+                let condition = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
+                let flag = self.builder.ins().icmp(condition, l, r);
+                let flag = self.builder.ins().uextend(types::I64, flag);
+                if int {
+                    let both = self.builder.ins().band(l, r);
+                    let small = self.builder.ins().band_imm_u(both, 1);
+                    let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                    self.builder.append_block_param(done, types::I64);
+                    self.builder.ins().brif(small, fast, &[], slow, &[]);
+                    self.builder.switch_to_block(fast);
+                    self.builder.ins().jump(done, &[flag.into()]);
+                    self.builder.switch_to_block(slow);
+                    let result = self.exec_generic(pc, instruction);
+                    self.builder.ins().jump(done, &[result.into()]);
+                    self.builder.switch_to_block(done);
+                    let value = self.builder.block_params(done)[0];
+                    self.set(&dst.0, value);
+                } else {
+                    self.set(&dst.0, flag);
+                }
+            }
+            I::BuilderPush { dst, builder, value } => {
+                let (builder, value) = (self.get(builder), self.word(value));
+                let result = self.helper(|h| h.builder_push, &[ctx, builder, value]).expect("result");
+                self.set(&dst.0, result);
+            }
+            I::Convert { dst, source }
+                if matches!(self.register_type(source), Some(Type::Int)) && matches!(self.register_type(&dst.0), Some(Type::Str)) =>
+            {
+                let value = self.get(source);
+                let text = self.helper(|h| h.int_text, &[ctx, value]).expect("result");
+                self.set(&dst.0, text);
+            }
+            I::StrLen { dst, text } => {
+                // ASCII strings know their length in characters: the byte length.
+                let string = self.get(text);
+                let header = self.builder.ins().load(types::I64, MEMORY, string, 0);
+                let ascii = self.builder.ins().band_imm_u(header, heap::ASCII as i64);
+                let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::I64);
+                self.builder.ins().brif(ascii, fast, &[], slow, &[]);
+                self.builder.switch_to_block(fast);
+                let length = self.builder.ins().ushr_imm_u(header, 32);
+                let doubled = self.builder.ins().ishl_imm_u(length, 1);
+                let tagged = self.builder.ins().bor_imm_u(doubled, 1);
+                self.builder.ins().jump(done, &[tagged.into()]);
+                self.builder.switch_to_block(slow);
+                let result = self.exec_generic(pc, instruction);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let value = self.builder.block_params(done)[0];
+                self.set(&dst.0, value);
+            }
             I::EnumCase { dst, ty, case } => {
                 let value = self.iconst(((u64::from(ty.0) << 32) | u64::from(*case)) as i64);
                 self.set_word(&dst.0, value);
@@ -1609,6 +1672,8 @@ fn generic(instruction: &I) -> bool {
             | I::MapBuilderNew { .. }
             | I::MapBuilderPut { .. }
             | I::MapBuilderFinish { .. }
+            | I::WorkerSpawn { .. }
+            | I::WorkerBind { .. }
     )
 }
 

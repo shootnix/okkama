@@ -37,6 +37,7 @@ pub fn drive(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word) -> bool {
         native(runtime, ctx, frame, function, deliver)
     } else {
         match runtime.intrinsics[function] {
+            Some(Intrinsic::Worker) => crate::worker::drive(runtime, frame, deliver),
             Some(intrinsic) => intrinsic_step(runtime, ctx, frame, function, intrinsic, deliver),
             None => {
                 let message = format!(

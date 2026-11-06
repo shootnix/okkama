@@ -51,7 +51,7 @@ object TemplateBindings does TemplateStrings {
         let found = (0..origin.size()).reduce(-1) -> previous,index {
             if origin[index].path().order(path) == Order.equal {index;} else {previous;}
         };
-        confirm found >= 0 else throw MissingTemplateValue(path);
+        confirm found >= 0 else throw MissingTemplateValue.path(path.string());
         origin[found].string();
     }
 }
@@ -60,45 +60,26 @@ object TemplateBindings does TemplateStrings {
 object TemplateBindingSnapshot {
     has origin is @TemplateBinding;
     TemplateBindingSnapshot(source is Sequencing<TemplateBinding>, maximum is int) {
-        confirm maximum >= 0 else throw InvalidTemplateBindingLimit();
+        confirm maximum >= 0 else throw InvalidTemplateBindingLimit.invalid;
         let size = source.size();
-        confirm size >= 0 else throw InvalidTemplateBindingSize();
-        confirm size <= maximum else throw TemplateBindingLimitExceeded();
+        confirm size >= 0 else throw InvalidTemplateBindingSize.invalid;
+        confirm size <= maximum else throw TemplateBindingLimitExceeded.exceeded;
         let snapshot is @TemplateBinding = (0..size).map() -> index {source.item(index);};
         for (0..size) -> index {
             for (0..index) -> previous {
                 confirm snapshot[index].path().order(snapshot[previous].path()) != Order.equal
-                    else throw DuplicateTemplateValue(snapshot[index].path());
+                    else throw DuplicateTemplateValue.path((snapshot[index].path()).string());
             }
         }
         origin = snapshot;
     }
     items() is @TemplateBinding {origin;}
 }
-object MissingTemplateValue does Error {
-    has key is TemplatePath;
-    MissingTemplateValue(path is TemplatePath) {key = path;}
-    path() is TemplatePath {key;}
-    text() is string {"missing template value: " + key.string();}
-}
-object DuplicateTemplateValue does Error {
-    has key is TemplatePath;
-    DuplicateTemplateValue(path is TemplatePath) {key = path;}
-    path() is TemplatePath {key;}
-    text() is string {"duplicate template value: " + key.string();}
-}
-object InvalidTemplateBindingLimit does Error {
-    InvalidTemplateBindingLimit();
-    text() is string {"template binding limit must be nonnegative";}
-}
-object InvalidTemplateBindingSize does Error {
-    InvalidTemplateBindingSize();
-    text() is string {"template binding source size must be nonnegative";}
-}
-object TemplateBindingLimitExceeded does Error {
-    TemplateBindingLimitExceeded();
-    text() is string {"template binding limit exceeded";}
-}
+enum MissingTemplateValue is Error = (path(path is string));
+enum DuplicateTemplateValue is Error = (path(path is string));
+enum InvalidTemplateBindingLimit is Error = (invalid);
+enum InvalidTemplateBindingSize is Error = (invalid);
+enum TemplateBindingLimitExceeded is Error = (exceeded);
 
 test "explicit template strings have exact nominal paths" {
     let data is TemplateStrings = TemplateBindings([
@@ -111,11 +92,11 @@ test "explicit template strings have exact nominal paths" {
 }
 test "template binding errors retain path and budget contracts" {
     test.is(try {TemplateBindings([],0).string(TemplatePath(["missing"]));"";}
-        catch error is MissingTemplateValue {error.path().string();}, "missing");
+        catch MissingTemplateValue.path(path) {path.string();}, "missing");
     test.ok(try {TemplateBindings([], -1);false;} catch error is InvalidTemplateBindingLimit {true;});
     test.ok(try {TemplateBindings([TemplateBinding(TemplatePath(["a"]), "")],0);false;}
         catch error is TemplateBindingLimitExceeded {true;});
     test.is(try {TemplateBindings([
         TemplateBinding(TemplatePath(["x"]),"1"),TemplateBinding(TemplatePath(["x"]),"2")]);"";}
-        catch error is DuplicateTemplateValue {error.path().string();}, "x");
+        catch DuplicateTemplateValue.path(path) {path.string();}, "x");
 }

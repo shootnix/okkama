@@ -39,16 +39,13 @@ object Response {
 object RequestCoordinates {
     has target is RequestTarget;
     RequestCoordinates(method is Method, target is RequestTarget) {
-        confirm method.string().length()<=8192 else throw InvalidHttpMessage("method source limit exceeded");
+        confirm method.string().length()<=8192 else throw InvalidHttpMessage.because("method source limit exceeded");
         let checked=RequestTargetSnapshot(target).value();
-        confirm RequestTargetMethod(method,checked.kind()).valid() else throw InvalidHttpMessage("method does not permit target form");self.target=checked;
+        confirm RequestTargetMethod(method,checked.kind()).valid() else throw InvalidHttpMessage.because("method does not permit target form");self.target=checked;
     }
     target() is RequestTarget{target;}
 }
-object InvalidHttpMessage does Error {
-    has reason is string;InvalidHttpMessage(reason is string){self.reason=reason;}
-    reason() is string{reason;}text() is string{"invalid HTTP message: "+reason;}
-}
+enum InvalidHttpMessage is Error = (because(reason is string));
 test "message metadata does not open its empty body" {
     let response=Response(Status(299),Headers([]));
     test.ok(response.status().code()==299 && response.version()==HttpVersion.http_1_1);

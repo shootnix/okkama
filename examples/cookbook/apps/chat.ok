@@ -16,7 +16,7 @@ import "../support/http" take Page;
 import "../support/chat_room" take ChatRoom,ChatSubscription;
 import "web/routing" take WebRoutes,Get;
 import "web/request" take WebRequest;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/handler" take HandlingResult,WebSocketHandlingResult,WebSocketHandling;
 import "http/message" take Request;
 import "http/request_context" take HttpRequestContext;
@@ -74,7 +74,7 @@ object ChatPages {
     async socket(request is WebRequest) is HandlingResult{
         WebSocketHandlingResult(WebSocketUpgrade(["okkama-chat"],WebSocketLimits(),SameOriginWebSockets(),Duration(5.rat(),DurationUnit.second)),ChatApplication(room));
     }
-    async missing(request is WebRequest) is HandlingResult{Exception(404,"Страница не найдена");}
+    async missing(request is WebRequest) is HandlingResult{Problem(404,"Страница не найдена");}
 }
 object RoomCleanup {
     has room is ChatRoom;has group is FutureGroup<int>;

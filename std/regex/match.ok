@@ -46,7 +46,7 @@ object RegexMatch does RegexMatching {
     capture(index is int) is RegexCapture {
         let count = regex_match_capture_count(state);
         confirm index >= 0 && index <= count
-            else throw MissingRegexCapture(index);
+            else throw MissingRegexCapture.index(index);
         RegexCapture(
             origin: source,
             state: state,
@@ -57,7 +57,7 @@ object RegexMatch does RegexMatching {
 
     group(name is string) is RegexCapture {
         let index = regex_match_capture_index(state, name);
-        confirm index >= 0 else throw MissingRegexGroup(name);
+        confirm index >= 0 else throw MissingRegexGroup.name(name);
         RegexCapture(origin: source, state: state, index: index, name: name);
     }
 
@@ -96,13 +96,13 @@ object RegexCapture {
     matched() is bool { self.span()["start"] >= 0; }
 
     text() is string {
-        confirm self.matched() else throw UnmatchedRegexCapture(position);
+        confirm self.matched() else throw UnmatchedRegexCapture.index(position);
         let span = self.span();
         source.slice(span["start"], span["end"]);
     }
 
     range() is RegexRange {
-        confirm self.matched() else throw UnmatchedRegexCapture(position);
+        confirm self.matched() else throw UnmatchedRegexCapture.index(position);
         let span = self.span();
         RegexRange(start: span["start"], end: span["end"]);
     }
@@ -113,25 +113,8 @@ object RegexCapture {
     }
 }
 
-object MissingRegexCapture does Error {
-    has position is int;
-    MissingRegexCapture(index is int) { position = index; }
-    index() is int { position; }
-    text() is string { "missing regex capture " + position.string(); }
-}
+enum MissingRegexCapture is Error = (index(index is int));
 
-object MissingRegexGroup does Error {
-    has label is string;
-    MissingRegexGroup(name is string) { label = name; }
-    name() is string { label; }
-    text() is string { "missing regex group " + label; }
-}
+enum MissingRegexGroup is Error = (name(name is string));
 
-object UnmatchedRegexCapture does Error {
-    has position is int;
-    UnmatchedRegexCapture(index is int) { position = index; }
-    index() is int { position; }
-    text() is string {
-        "regex capture " + position.string() + " did not participate";
-    }
-}
+enum UnmatchedRegexCapture is Error = (index(index is int));

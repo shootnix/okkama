@@ -62,11 +62,11 @@ object EmptyList<T> does List<T>, Iterating<T>, Sizing {
     }
 
     first() is T {
-        throw EmptyListAccess(operation: "first");
+        throw EmptyListAccess.operation("first");
     }
 
     tail() is List<T> {
-        throw EmptyListAccess(operation: "tail");
+        throw EmptyListAccess.operation("tail");
     }
 
     prefix(value is T) is List<T> {
@@ -116,11 +116,11 @@ object EmptyListCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        throw IterationEnded();
+        throw IterationEnded.ended;
     }
 
     successor() is Cursor<T> {
-        throw IterationEnded();
+        throw IterationEnded.ended;
     }
 }
 
@@ -146,18 +146,4 @@ object LinkedListCursor<T> does Cursor<T> {
     }
 }
 
-object EmptyListAccess does Error {
-    has origin is string;
-
-    EmptyListAccess(operation is string) {
-        origin = operation;
-    }
-
-    operation() is string {
-        origin;
-    }
-
-    text() is string {
-        "cannot call " + origin + " on an empty list";
-    }
-}
+enum EmptyListAccess is Error = (operation(operation is string));

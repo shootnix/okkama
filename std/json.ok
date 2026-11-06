@@ -207,7 +207,7 @@ object Json {
     size() is int {
         let actual = self.kind();
         confirm actual == JsonKind.array_value || actual == JsonKind.object_value
-            else throw WrongJsonKind(self.pointer(), JsonKind.array_value, actual);
+            else throw WrongJsonKind.detailed(self.pointer(), JsonKind.array_value, actual);
         json_node_size(node);
     }
 
@@ -322,10 +322,10 @@ object Json {
     private:
     expect(expected is JsonKind) is void {
         let actual = self.kind();
-        confirm actual == expected else throw WrongJsonKind(self.pointer(), expected, actual);
+        confirm actual == expected else throw WrongJsonKind.detailed(self.pointer(), expected, actual);
     }
 
-    wrong(expected is JsonKind) is WrongJsonKind { WrongJsonKind(self.pointer(), expected, self.kind()); }
+    wrong(expected is JsonKind) is WrongJsonKind { WrongJsonKind.detailed(self.pointer(), expected, self.kind()); }
 
     spelling() is string {
         try { json_node_number(node); }
@@ -403,7 +403,7 @@ object JsonPresenceReader {
         match origin {
             case Presence.some(value) {
                 confirm value.kind() == JsonKind.object_value
-                    else throw WrongJsonKind(value.pointer(), JsonKind.object_value, value.kind());
+                    else throw WrongJsonKind.detailed(value.pointer(), JsonKind.object_value, value.kind());
                 Presence.some(value);
             }
             case Presence.none { Presence.none; }
@@ -592,22 +592,7 @@ object JsonLocation {
     string() is string { if origin == "" { "the document root"; } else { origin; } }
 }
 
-object WrongJsonKind does Error {
-    has location is string;
-    has wanted is JsonKind;
-    has found is JsonKind;
-
-    WrongJsonKind(pointer is string, expected is JsonKind, actual is JsonKind) {
-        location = pointer;
-        wanted = expected;
-        found = actual;
-    }
-
-    pointer() is string { location; }
-    expected() is JsonKind { wanted; }
-    actual() is JsonKind { found; }
-    text() is string { "JSON value at " + JsonLocation(location).string() + " must be " + JsonKindName(wanted).string() + ", found " + JsonKindName(found).string(); }
-}
+enum WrongJsonKind is Error = (detailed(pointer is string, expected is JsonKind, actual is JsonKind));
 
 enum MissingJsonValue is Error = (pointer(location is string));
 enum InvalidJsonNumber is Error = (detailed(location is string, spelling is string, reason is string));
@@ -721,13 +706,13 @@ test "reads check kinds and name the pointer" {
     test.is(doc.text("s") + doc.get("o").text("k"), "xv");
     test.is(doc.boolean("t"), true);
     test.is(doc.get("n").kind() == JsonKind.null_value, true);
-    test.is(try { doc.int("s"); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /s must be number, found string");
+    test.is(try { doc.int("s"); ""; } catch failure is WrongJsonKind { failure.text(); }, "WrongJsonKind.detailed(\"/s\", JsonKind.number_value, JsonKind.string_value)");
     //test.is(try { doc.text("missing"); ""; } catch failure is MissingJsonValue { failure.text(); }, "JSON value at /missing is missing");
-    test.is(try { doc.get("s").text("k"); ""; } catch failure is WrongJsonKind { failure.pointer(); }, "/s");
+    test.is(try { doc.get("s").text("k"); ""; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/s");
     //test.is(try { doc.get("a/b").get("~").at(7); ""; } catch failure is MissingJsonValue { failure.pointer(); }, "/a~1b/~0/7");
     test.is(try { doc.size(); 0; } catch failure is WrongJsonKind { 1; }, 0);
-    test.is(try { doc.get("s").size(); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /s must be array, found string");
-    test.is(try { doc.text(); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at the document root must be string, found object");
+    test.is(try { doc.get("s").size(); ""; } catch failure is WrongJsonKind { failure.text(); }, "WrongJsonKind.detailed(\"/s\", JsonKind.array_value, JsonKind.string_value)");
+    test.is(try { doc.text(); ""; } catch failure is WrongJsonKind { failure.text(); }, "WrongJsonKind.detailed(\"\", JsonKind.string_value, JsonKind.object_value)");
     test.is(doc.names(), ["a/b", "s", "t", "n", "o"]);
     let fields is @string = doc.fields().map() -> field { field.name() + "=" + JsonKindName(field.value().kind()).string(); };
     test.is(fields.join(" "), "a/b=object s=string t=boolean n=null o=object");
@@ -748,7 +733,7 @@ test "presence distinguishes missing null and non-null members" {
     let name = nested.presence("~").value().fold() else panic "expected name";
     test.is(name.text(), "Anton");
     test.is(name.pointer(), "/a~1b/~0");
-    test.is(try { name.presence("field").value(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/a~1b/~0");
+    test.is(try { name.presence("field").value(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/a~1b/~0");
     for [Json(), Json(items: []), Json(false), Json(0)] -> value {
         test.is(try { value.presence("field").value(); false; } catch failure is WrongJsonKind { true; }, true);
     }
@@ -781,7 +766,7 @@ test "optional members read as the given fallback when absent or null" {
             ""; 
         } 
         catch MissingJsonValue.pointer(p) { p; }, "/nick");
-    test.is(try { doc.optional("age").text(""); ""; } catch failure is WrongJsonKind { failure.text(); }, "JSON value at /age must be string, found number");
+    test.is(try { doc.optional("age").text(""); ""; } catch failure is WrongJsonKind { failure.text(); }, "WrongJsonKind.detailed(\"/age\", JsonKind.string_value, JsonKind.number_value)");
 }
 
 test "parsed text is written back exactly" {
@@ -842,18 +827,18 @@ test "typed member readers preserve absence and reject invalid values" {
     test.is(doc.maybe("empty").text() else panic "eager fallback", "");
     test.is(doc.maybe("absent").text() else "guest", "guest");
     test.is(doc.presence("nil").text().fold() else "guest", "guest");
-    test.is(try { doc.maybe("zero").text(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/zero");
+    test.is(try { doc.maybe("zero").text(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/zero");
     test.is(try { doc.maybe("decimal").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/decimal");
     test.is(try { doc.maybe("big").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/big");
-    test.is(try { doc.maybe("flag").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/flag");
-    test.is(try { doc.maybe("items").object(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/items");
-    test.is(try { doc.maybe("object").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/object");
+    test.is(try { doc.maybe("flag").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/flag");
+    test.is(try { doc.maybe("items").object(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/items");
+    test.is(try { doc.maybe("object").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/object");
     test.is(try { Json(0).maybe("name"); false; } catch failure is WrongJsonKind { true; }, true);
-    test.is(try { doc.presence("zero").text(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/zero");
+    test.is(try { doc.presence("zero").text(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/zero");
     test.is(try { doc.presence("decimal").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/decimal");
     test.is(try { doc.presence("big").int(); "no error"; } catch InvalidJsonNumber.detailed(location, _, _) { location }, "/big");
-    test.is(try { doc.presence("flag").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/flag");
-    test.is(try { doc.presence("items").object(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/items");
-    test.is(try { doc.presence("object").list(); "no error"; } catch failure is WrongJsonKind { failure.pointer(); }, "/object");
+    test.is(try { doc.presence("flag").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/flag");
+    test.is(try { doc.presence("items").object(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/items");
+    test.is(try { doc.presence("object").list(); "no error"; } catch WrongJsonKind.detailed(pointer, _, _) { pointer; }, "/object");
     test.is(try { Json(0).presence("name"); false; } catch failure is WrongJsonKind { true; }, true);
 }

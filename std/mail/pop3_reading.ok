@@ -1,6 +1,5 @@
 module mail/pop3_reading v1.0.0;
-
-import "net/stream" take AsyncReading;
+import "io/stream" take AsyncReading;
 import "mail/pop3_reply" take PopReply, PopReplyMode, PopReplyDecoder, PopReplyLimits, PopReplyLimitExceeded;
 import "io/decorators" take InvalidReading;
 import "error" take InvalidArgument;
@@ -40,8 +39,8 @@ object PopReplyRead {
 object PopReplyInput {
     has origin is AsyncReading;has mode is PopReplyMode;has prefix is @byte;has limits is PopReplyLimits;has chunk_bytes is int;
     PopReplyInput(origin is AsyncReading, mode is PopReplyMode, prefix is @byte, limits is PopReplyLimits, chunk_bytes is int) {
-        confirm chunk_bytes>0 else throw InvalidArgument("POP3 read chunk size must be positive");
-        confirm prefix.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded("chunk_bytes");
+        confirm chunk_bytes>0 else throw InvalidArgument.because("POP3 read chunk size must be positive");
+        confirm prefix.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded.kind("chunk_bytes");
         self.origin=origin;self.mode=mode;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;
     }
     async read() is PopReplyRead {
@@ -49,10 +48,10 @@ object PopReplyInput {
         loop {
             last if decoder.complete();
             let remaining=limits.wire_bytes()-decoder.consumed();
-            confirm remaining>0 else throw PopReplyLimitExceeded("wire_bytes");
+            confirm remaining>0 else throw PopReplyLimitExceeded.kind("wire_bytes");
             let requested=if chunk_bytes<remaining {chunk_bytes;} else {remaining;};
             let chunk=await origin.bytes(requested);
-            confirm chunk.size()<=requested else throw InvalidReading("POP3 origin returned more bytes than requested");
+            confirm chunk.size()<=requested else throw InvalidReading.because("POP3 origin returned more bytes than requested");
             if chunk.size()==0 {decoder.finish();}
             decoder=decoder.fed(chunk);
         }

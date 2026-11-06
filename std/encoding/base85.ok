@@ -57,7 +57,7 @@ object Base85Decoded {
     bytes() is @byte {
         let name is string = self.alphabet_name();
         let offset is int = base85_invalid_offset(origin, name);
-        confirm offset == -1 else throw InvalidBase85(offset);
+        confirm offset == -1 else throw InvalidBase85.at(offset);
         base85_decode(origin, name);
     }
 
@@ -68,18 +68,4 @@ object Base85Decoded {
     }
 }
 
-object InvalidBase85 does Error {
-    has invalid_offset is int;
-
-    InvalidBase85(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid Base85 at scalar offset " + invalid_offset.string();
-    }
-}
+enum InvalidBase85 is Error = (at(offset is int));

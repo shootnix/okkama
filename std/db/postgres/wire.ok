@@ -1,6 +1,5 @@
 module db/postgres/wire v1.0.0;
-
-import "net/stream" take AsyncReading, AsyncWriting;
+import "io/stream" take AsyncReading, AsyncWriting;
 import "io/decorators" take ByteSnapshot;
 import "io/buffer" take ByteBuffer;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
@@ -76,7 +75,7 @@ object PgFields {
     remaining() is int { body.size() - position.value(); }
     take(count is int) is @byte {
         let start = position.value();
-        confirm count >= 0 && start + count <= body.size() else throw PgWireFailure("message body is truncated");
+        confirm count >= 0 && start + count <= body.size() else throw PgWireFailure.because("message body is truncated");
         position.replace(start + count);
         body.slice(start, start + count);
     }
@@ -114,7 +113,7 @@ object PgZero {
             if body[at] == 0.byte() { found.replace(at); last; }
             position.replace(at + 1);
         }
-        confirm found.value() >= 0 else throw PgWireFailure("unterminated string in message");
+        confirm found.value() >= 0 else throw PgWireFailure.because("unterminated string in message");
         found.value();
     }
 }
@@ -145,7 +144,7 @@ object PgInput {
         loop {
             if size.value() >= count { last; }
             let chunk = await source.bytes(65536);
-            confirm chunk.size() > 0 else throw PgWireFailure("server closed the connection");
+            confirm chunk.size() > 0 else throw PgWireFailure.because("server closed the connection");
             output.write(ByteSnapshot(chunk));
             size.replace(size.value() + chunk.size());
         }
@@ -172,7 +171,7 @@ object PgInput {
         let data = buffer.value();
         if data.size() - start < 5 { return []; }
         let length = (data[start + 1].int() << 24) | (data[start + 2].int() << 16) | (data[start + 3].int() << 8) | data[start + 4].int();
-        confirm length >= 4 && length <= 1073741824 else throw PgWireFailure("invalid message length");
+        confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
         if data.size() - start < length + 1 { return []; }
         position.replace(start + length + 1);
         [PgMessage(Utf8Decoded([data[start]]).string(), data.slice(start + 5, start + length + 1))];
@@ -184,7 +183,7 @@ object PgInput {
         await self.ensure(5);
         let header = self.take(5);
         let length = (header[1].int() << 24) | (header[2].int() << 16) | (header[3].int() << 8) | header[4].int();
-        confirm length >= 4 && length <= 1073741824 else throw PgWireFailure("invalid message length");
+        confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
         await self.ensure(length - 4);
         PgMessage(Utf8Decoded([header[0]]).string(), self.take(length - 4));
     }
@@ -209,12 +208,7 @@ object PgOutput {
     async send(bytes is @byte) is void { await sink.write(ByteSnapshot(bytes)); }
 }
 
-object PgWireFailure does Error {
-    has reason is string;
-    PgWireFailure(reason is string) { self.reason = reason; }
-    reason() is string { reason; }
-    text() is string { "PostgreSQL protocol failure: " + reason; }
-}
+enum PgWireFailure is Error = (because(reason is string));
 
 test "frames carry big-endian self-inclusive lengths" {
     test.is(PgFrame("Q", PgCString("SELECT 1").bytes()).bytes().slice(0, 5), [81.byte(), 0.byte(), 0.byte(), 0.byte(), 13.byte()]);

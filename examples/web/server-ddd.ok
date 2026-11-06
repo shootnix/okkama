@@ -16,7 +16,7 @@ import "web/app" take WebApplication;
 import "web/routing" take WebRoutes,Scope,Get,Post,Put,ExceptionScope;
 import "web/request" take WebRequest,RequestJson;
 import "web/reply" take JsonReply,Created,NoContent;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/handler" take HandlingResult;
 import "json" take Json, JsonField;
 import "db/sqlite" take SqliteMemory;
@@ -102,8 +102,8 @@ role UserRepository {
 enum InvalidUserId is Error = (invalid_user_id(origin is string));
 enum InvalidUserName is Error = (invalid_user_name(origin is string));
 enum InvalidEmail is Error = (invalid_email(origin is string));
-enum UserNotFound is Error = (user_not_found(id is UserId));
-enum EmailTaken is Error = (email_taken(email is Email));
+enum UserNotFound is Error = (user_not_found(id is string));
+enum EmailTaken is Error = (email_taken(email is string));
 
 // =============================================================================
 // shop/users/application: use cases. They speak domain types, never HTTP.
@@ -137,7 +137,7 @@ object UserService {
     async user(id is UserId) is User { await users.user(id); }
 
     async registered(command is RegisterUser) is User {
-        if await users.email_taken(command.email()) { throw EmailTaken.email_taken(command.email()); }
+        if await users.email_taken(command.email()) { throw EmailTaken.email_taken(command.email().string()); }
         await users.added(command.name(), command.email());
     }
 
@@ -161,7 +161,7 @@ object SqliteUserRepository does UserRepository {
     async user(id is UserId) is User {
         let statement = await Prepared(db, "SELECT id, name, email FROM users WHERE id = ?").statement();
         defer statement.close();
-        let row = (await Query(statement,[Param(id.number())]).maybe()) else throw UserNotFound.user_not_found(id);
+        let row = (await Query(statement,[Param(id.number())]).maybe()) else throw UserNotFound.user_not_found(id.string());
         UserRow(row: row).user();
     }
 
@@ -213,7 +213,7 @@ object MemoryUserRepository does UserRepository {
         let index = if current.size() == 0 { -1; } else {
             for (0..current.size()) -> index { last index if current[index].id().string() == id.string(); -1; }
         };
-        confirm index >= 0 else throw UserNotFound.user_not_found(id);
+        confirm index >= 0 else throw UserNotFound.user_not_found(id.string());
         current[index];
     }
 
@@ -303,11 +303,11 @@ object UserExceptions does ExceptionScope {
 
     async scoped(request is WebRequest, endpoint is async (WebRequest) is HandlingResult) is HandlingResult {
         try { await endpoint(request); }
-        catch failure is InvalidUserId { Exception(400, failure.text()); }
-        catch failure is InvalidUserName { Exception(422, failure.text()); }
-        catch failure is InvalidEmail { Exception(422, failure.text()); }
-        catch failure is UserNotFound { Exception(404, failure.text()); }
-        catch failure is EmailTaken { Exception(409, failure.text()); }
+        catch failure is InvalidUserId { Problem(400, failure.text()); }
+        catch failure is InvalidUserName { Problem(422, failure.text()); }
+        catch failure is InvalidEmail { Problem(422, failure.text()); }
+        catch failure is UserNotFound { Problem(404, failure.text()); }
+        catch failure is EmailTaken { Problem(409, failure.text()); }
     }
 }
 
@@ -330,7 +330,7 @@ object SystemController {
     SystemController();
 
     async health(request is WebRequest) is HandlingResult { NoContent(); }
-    async missing(request is WebRequest) is HandlingResult { Exception(404, "no route for " + request.request().target().string()); }
+    async missing(request is WebRequest) is HandlingResult { Problem(404, "no route for " + request.request().target().string()); }
 }
 
 // =============================================================================

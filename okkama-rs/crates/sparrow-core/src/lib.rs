@@ -21,6 +21,7 @@
 // the context as a raw pointer and are sound for the code that calls them.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+mod code_memory;
 pub mod drivers;
 pub mod failures;
 pub mod heap;
@@ -36,6 +37,8 @@ pub mod runtime;
 mod scalar;
 pub mod tasks;
 pub mod word;
+pub mod worker;
+mod worker_process;
 
 /// Machine stack of the VM thread (R2): deep recursion is bounded by this
 /// reservation; physical memory is committed only as frames are used.
@@ -48,9 +51,26 @@ pub fn run(bytes: Vec<u8>) -> Result<i64, Error> {
 
 /// `run` with the program's command-line arguments.
 pub fn run_with(bytes: Vec<u8>, arguments: Vec<Vec<u8>>) -> Result<i64, Error> {
+    run_configured(bytes, arguments, false, Vec::new())
+}
+
+/// `run_with`, optionally printing runtime event counts to stderr at exit
+/// (`--stats`; also `SPARROW_CORE_STATS=1`). `worker_command` is the
+/// executable and SPB that process workers run (`--worker` goes after the
+/// executable); empty, `spawn` of a synchronous action fails.
+pub fn run_configured(
+    bytes: Vec<u8>,
+    arguments: Vec<Vec<u8>>,
+    stats: bool,
+    worker_command: Vec<std::ffi::OsString>,
+) -> Result<i64, Error> {
     on_vm_thread(move || {
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
         let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
+        runtime.worker_command = worker_command;
+        if stats && runtime.stats.is_none() {
+            runtime.stats = Some(Box::default());
+        }
         if let Some(host) = &mut runtime.host {
             host.arguments = arguments;
         }
@@ -106,6 +126,17 @@ pub fn run_tests(bytes: Vec<u8>, out: Box<dyn std::io::Write + Send>) -> Result<
         writeln!(out, "{}", if passed { "PASS" } else { "FAIL" }).map_err(io)?;
         out.flush().map_err(io)?;
         Ok(passed)
+    })
+}
+
+/// The child side of a process worker: answer the framed `request` for the
+/// program `bytes`; nested spawns run `worker_command`.
+pub fn run_worker(bytes: Vec<u8>, request: Vec<u8>, worker_command: Vec<std::ffi::OsString>) -> Result<Vec<u8>, Error> {
+    on_vm_thread(move || {
+        let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
+        let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
+        runtime.worker_command = worker_command;
+        Ok(worker::respond(&mut runtime, &request, STACK_BYTES))
     })
 }
 

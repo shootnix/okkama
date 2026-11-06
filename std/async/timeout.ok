@@ -57,7 +57,7 @@ object Within<T> {
     }
 
     async result() is T {
-        throw TimedOut();
+        throw TimedOut.elapsed;
     }
 }
 
@@ -69,14 +69,8 @@ object Before<T> {
     Before(:origin, :deadline, :clock);
 
     async result() is T {
-        throw TimedOut();
+        throw TimedOut.elapsed;
     }
 }
 
-object TimedOut does Error {
-    TimedOut();
-
-    text() is string {
-        "future timed out";
-    }
-}
+enum TimedOut is Error = (elapsed);

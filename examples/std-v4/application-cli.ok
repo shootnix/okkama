@@ -22,7 +22,7 @@ async main() is int{
         [Flag(help,["--help","-h"],"true","Show this help")],[]),[]);
     let arguments=Utf8Arguments(ProcessArguments());
     let invocation=try{ParsedCommand(command,arguments).value();}
-        catch failure is CliFailure{Stderr().writeln("argument "+failure.index().string()+": "+failure.text());return 2;};
+        catch CliFailure.detailed(index,_,message){Stderr().writeln("argument "+index.string()+": "+message);return 2;};
     let environment=Environment();
     let session=await OpenedStandardTerminal(TerminalOutputKind.standard_output,ColorPolicy.automatic,environment).session();
     defer session.close();

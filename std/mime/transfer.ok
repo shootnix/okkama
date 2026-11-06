@@ -18,15 +18,15 @@ object TransferEncodedBody does ByteSource {
         self.origin=origin;self.encoding=encoding;maximum=16777216;
     }
     TransferEncodedBody(origin is ByteSource, encoding is TransferEncoding, maximum_bytes is int) {
-        confirm maximum_bytes>=0 else throw InvalidArgument("transfer byte limit must be nonnegative");
+        confirm maximum_bytes>=0 else throw InvalidArgument.because("transfer byte limit must be nonnegative");
         self.origin=origin;self.encoding=encoding;maximum=maximum_bytes;
     }
     bytes() is @byte {
-        let snapshot=origin.bytes();confirm snapshot.size()<=maximum else throw TransferLimitExceeded("input");
+        let snapshot=origin.bytes();confirm snapshot.size()<=maximum else throw TransferLimitExceeded.kind("input");
         let result is @byte=if encoding==TransferEncoding.base64 {MimeBase64Encoded(snapshot).bytes();}
             else {if encoding==TransferEncoding.quoted_printable {QuotedPrintableEncoded(snapshot).bytes();}
                 else {TransferProfile(snapshot,encoding).bytes();}};
-        confirm result.size()<=maximum else throw TransferLimitExceeded("output");result;
+        confirm result.size()<=maximum else throw TransferLimitExceeded.kind("output");result;
     }
 }
 object TransferDecodedBody does ByteSource {
@@ -35,31 +35,21 @@ object TransferDecodedBody does ByteSource {
         self.origin=origin;self.encoding=encoding;maximum=16777216;
     }
     TransferDecodedBody(origin is ByteSource, encoding is TransferEncoding, maximum_bytes is int) {
-        confirm maximum_bytes>=0 else throw InvalidArgument("transfer byte limit must be nonnegative");
+        confirm maximum_bytes>=0 else throw InvalidArgument.because("transfer byte limit must be nonnegative");
         self.origin=origin;self.encoding=encoding;maximum=maximum_bytes;
     }
     bytes() is @byte {
-        let snapshot=origin.bytes();confirm snapshot.size()<=maximum else throw TransferLimitExceeded("input");
+        let snapshot=origin.bytes();confirm snapshot.size()<=maximum else throw TransferLimitExceeded.kind("input");
         let result is @byte=if encoding==TransferEncoding.base64 {MimeBase64Decoded(snapshot).bytes();}
             else {if encoding==TransferEncoding.quoted_printable {
                 try {QuotedPrintableDecoded(snapshot).bytes();}
-                    catch failure is InvalidQuotedPrintable {throw InvalidTransferEncoding(failure.offset(),"invalid quoted-printable");}
+                    catch InvalidQuotedPrintable.at(offset) {throw InvalidTransferEncoding.located(offset, "invalid quoted-printable");}
             } else {TransferProfile(snapshot,encoding).bytes();}};
-        confirm result.size()<=maximum else throw TransferLimitExceeded("output");result;
+        confirm result.size()<=maximum else throw TransferLimitExceeded.kind("output");result;
     }
 }
-object InvalidTransferEncoding does Error {
-    has position is int;has reason is string;
-    InvalidTransferEncoding(offset is int, reason is string) {position=offset;self.reason=reason;}
-    offset() is int {position;}
-    text() is string {"invalid transfer encoding at byte offset "+position.string()+": "+reason;}
-}
-object TransferLimitExceeded does Error {
-    has limit is string;
-    TransferLimitExceeded(kind is string) {limit=kind;}
-    kind() is string {limit;}
-    text() is string {"transfer "+limit+" byte limit exceeded";}
-}
+enum InvalidTransferEncoding is Error = (located(offset is int, reason is string));
+enum TransferLimitExceeded is Error = (kind(kind is string));
 
 object TransferPosition {
     has index is int;
@@ -75,14 +65,14 @@ object TransferProfile {
         let line=TransferPosition(0);
         for (0..origin.size()) -> index {
             let code=origin[index].int();
-            confirm code!=0 else throw InvalidTransferEncoding(index,"NUL outside binary profile");
-            confirm encoding!=TransferEncoding.seven_bit || code<=127 else throw InvalidTransferEncoding(index,"byte outside seven-bit profile");
+            confirm code!=0 else throw InvalidTransferEncoding.located(index, "NUL outside binary profile");
+            confirm encoding!=TransferEncoding.seven_bit || code<=127 else throw InvalidTransferEncoding.located(index, "byte outside seven-bit profile");
             if code==13 {
-                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidTransferEncoding(index,"bare CR");
+                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidTransferEncoding.located(index, "bare CR");
             } else {if code==10 {
-                confirm index>0 && origin[index-1].int()==13 else throw InvalidTransferEncoding(index,"bare LF");
+                confirm index>0 && origin[index-1].int()==13 else throw InvalidTransferEncoding.located(index, "bare LF");
                 line=line.following(index+1);
-            } else {confirm index-line.index()<998 else throw InvalidTransferEncoding(index,"line exceeds 998 bytes");}}
+            } else {confirm index-line.index()<998 else throw InvalidTransferEncoding.located(index, "line exceeds 998 bytes");}}
         }
         origin;
     }
@@ -108,18 +98,18 @@ object MimeBase64Decoded {
         for (0..origin.size()) -> index {
             let code=origin[index].int();
             if code==13 {
-                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidTransferEncoding(index,"bare CR");
+                confirm index+1<origin.size() && origin[index+1].int()==10 else throw InvalidTransferEncoding.located(index, "bare CR");
             } else {if code==10 {
-                confirm index>0 && origin[index-1].int()==13 else throw InvalidTransferEncoding(index,"bare LF");
+                confirm index>0 && origin[index-1].int()==13 else throw InvalidTransferEncoding.located(index, "bare LF");
                 line=line.following(index+1);
             } else {
-                confirm index-line.index()<76 else throw InvalidTransferEncoding(index,"Base64 line exceeds 76 bytes");
-                confirm code<=127 else throw InvalidTransferEncoding(index,"non-ASCII Base64 byte");
+                confirm index-line.index()<76 else throw InvalidTransferEncoding.located(index, "Base64 line exceeds 76 bytes");
+                confirm code<=127 else throw InvalidTransferEncoding.located(index, "non-ASCII Base64 byte");
                 if code!=9 && code!=32 {buffer.writing().write(ByteSnapshot([origin[index]]));}
             }}
         }
         try {Base64Decoded(Utf8Decoded(buffer.content().bytes()).string()).bytes();}
-            catch failure is InvalidBase64 {throw InvalidTransferEncoding(self.source_offset(failure.offset()),"invalid Base64");}
+            catch InvalidBase64.at(offset) {throw InvalidTransferEncoding.located(self.source_offset(offset), "invalid Base64");}
     }
     private:
     source_offset(compact is int) is int {
@@ -140,7 +130,7 @@ test "MIME binary preserves arbitrary bytes" {
 }
 test "seven bit rejects high bytes and empty Base64 stays empty" {
     let offset=try {TransferEncodedBody(ByteSnapshot([255.byte()]),TransferEncoding.seven_bit).bytes();-1;}
-        catch failure is InvalidTransferEncoding {failure.offset();};
+        catch InvalidTransferEncoding.located(offset, _) {offset;};
     test.is(offset,0);
     let empty is @byte=[];
     test.is(TransferEncodedBody(ByteSnapshot(empty),TransferEncoding.base64,0).bytes().size(),0);

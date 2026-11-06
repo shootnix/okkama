@@ -2,8 +2,7 @@ module http/body v1.0.0;
 
 import "http/header" take Headers;
 import "numbers/bigint" take BigInt;
-import "net/stream" take AsyncReading;
-import "io/stream" take Closing, InvalidReadLimit;
+import "io/stream" take AsyncReading, Closing, InvalidReadLimit;
 import "io/decorators" take InvalidReading;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -41,12 +40,12 @@ object EmptyBody does BodyOpening {
 object OneShotBody does BodyOpening {
     has origin is BodyReading;has opened is Atomic<bool>;
     OneShotBody(origin is BodyReading) {
-        confirm !origin.closed() else throw BodyClosed();self.origin=origin;opened=Atomic(false);
+        confirm !origin.closed() else throw BodyClosed.closed;self.origin=origin;opened=Atomic(false);
     }
-    length() is BigInt {throw UnknownBodyLength();}
+    length() is BigInt {throw UnknownBodyLength.unknown;}
     replayable() is bool {false;}
     reading() is BodyReading {
-        confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened();origin;
+        confirm opened.compare_and_replace(false,true) else throw BodyAlreadyOpened.opened;origin;
     }
     destroy {
         try{if !opened.value(){origin.close();}}catch failure is Error{}catch failure is NativeFailure{}
@@ -60,12 +59,12 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
     has stopped,finished is Event;has lock is Lock;
     has pending is Atomic<@Future<@byte>>;
     StreamBodyReading(input is AsyncReading, owner is Closing, trailers is Headers) {
-        confirm !owner.closed() else throw BodyClosed();
+        confirm !owner.closed() else throw BodyClosed.closed;
         self.input=input;self.owner=owner;end=trailers;stopped=Event();finished=Event();lock=Lock();
         let empty is @Future<@byte>=[];pending=Atomic(empty);
     }
     closed() is bool {stopped.ready();}
-    trailers() is Headers {confirm finished.ready() else throw TrailersUnavailable();end;}
+    trailers() is Headers {confirm finished.ready() else throw TrailersUnavailable.unavailable;end;}
     close() is void {
         if !stopped.ready() {
             stopped.set();for pending.value() -> waiting {waiting.cancel();}
@@ -74,16 +73,16 @@ object StreamBodyReading does BodyReading, AsyncReading, Closing {
     }
     abort() is void {try{self.close();}catch failure is Error{}catch failure is NativeFailure{}}
     async bytes(limit is int) is @byte {
-        confirm limit>0 else throw InvalidReadLimit(limit);
-        confirm !self.closed() else throw BodyClosed();
+        confirm limit>0 else throw InvalidReadLimit.limit(limit);
+        confirm !self.closed() else throw BodyClosed.closed;
         let guard=await lock.guard();defer guard.close();
-        confirm !self.closed() else throw BodyClosed();
+        confirm !self.closed() else throw BodyClosed.closed;
         if finished.ready(){return [];}
         let complete=Event();let group is FutureGroup<@byte>=FutureGroup();
         let cleanup=BodyReadCleanup(self,complete,pending,group);defer await cleanup.close();
         let waiting=input.bytes(limit);pending.replace([waiting]);group.start(waiting);
-        let chunk=await waiting;confirm !self.closed() else throw BodyClosed();
-        confirm chunk.size()<=limit else throw InvalidReading("HTTP body source exceeded requested limit");
+        let chunk=await waiting;confirm !self.closed() else throw BodyClosed.closed;
+        confirm chunk.size()<=limit else throw InvalidReading.because("HTTP body source exceeded requested limit");
         if chunk.size()==0 {if !owner.closed(){owner.close();}finished.set();}
         complete.set();chunk;
     }
@@ -95,7 +94,7 @@ object ByteBodyInput does AsyncReading, Closing {
     has origin is @byte;has offset is Atomic<int>;has stopped is Event;
     ByteBodyInput(origin is @byte){self.origin=origin;offset=Atomic(0);stopped=Event();}
     async bytes(limit is int) is @byte {
-        confirm limit>0 else throw InvalidReadLimit(limit);confirm !self.closed() else throw BodyClosed();
+        confirm limit>0 else throw InvalidReadLimit.limit(limit);confirm !self.closed() else throw BodyClosed.closed;
         let start=offset.value();let remaining=origin.size()-start;
         let amount=if limit<remaining{limit;}else{remaining;};
         let chunk is @byte=(start..start+amount).map() -> index {origin[index];};
@@ -120,10 +119,10 @@ object BodyReadCleanup {
         if unfinished {await group.wait();}
     }
 }
-object BodyClosed does Error {BodyClosed();text() is string {"HTTP body is closed";}}
-object BodyAlreadyOpened does Error {BodyAlreadyOpened();text() is string {"HTTP body has already been opened";}}
-object UnknownBodyLength does Error {UnknownBodyLength();text() is string {"HTTP body length is unknown";}}
-object TrailersUnavailable does Error {TrailersUnavailable();text() is string {"HTTP body trailers are unavailable before clean EOF";}}
+enum BodyClosed is Error = (closed);
+enum BodyAlreadyOpened is Error = (opened);
+enum UnknownBodyLength is Error = (unknown);
+enum TrailersUnavailable is Error = (unavailable);
 
 async test "byte body reads are independent and trailers require EOF" {
     let body=ByteBody([7.byte()]);let first=body.reading();let second=body.reading();

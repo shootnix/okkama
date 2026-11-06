@@ -66,17 +66,17 @@ object TemporaryFile does Reading, Writing, Closing {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         };
     }
 
     bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
         try {
             file_state_read(state, limit);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -86,9 +86,9 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_write(state, content);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         };
-        confirm written == content.size() else throw IncompleteWrite(written);
+        confirm written == content.size() else throw IncompleteWrite.after(written);
     }
 
     flush() is void {
@@ -96,7 +96,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_flush(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -107,7 +107,7 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_closed(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -116,17 +116,17 @@ object TemporaryFile does Reading, Writing, Closing {
             file_state_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
     path() is Path {
         try{Path(path_decode(temporary_file_path(state)));}
-        catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}
+        catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}
     }
     preserve(destination is Path) is void {
         try{temporary_file_preserve(state,path_encode(destination.string()));}
-        catch failure is NativeFailure{throw FileSystemFailure(failure.code(),failure.message());}
+        catch failure is NativeFailure{throw FileSystemFailure.detailed(failure.code(), failure.message());}
     }
 }
 
@@ -166,7 +166,7 @@ object TemporaryDirectory does Closing {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         };
     }
 
@@ -175,7 +175,7 @@ object TemporaryDirectory does Closing {
             Path(path_decode(temporary_directory_path(state)));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -186,7 +186,7 @@ object TemporaryDirectory does Closing {
             temporary_directory_closed(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -195,7 +195,7 @@ object TemporaryDirectory does Closing {
             temporary_directory_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }

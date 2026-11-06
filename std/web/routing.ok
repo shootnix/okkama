@@ -5,7 +5,7 @@ import "http/request_context" take HttpRequestContext;
 import "http/message" take Request;
 import "http/method" take Method;
 import "web/request" take WebRequest;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 
 // Route tables built from controller actions. An endpoint is any bound action
 // of type `async (WebRequest) is HandlingResult`, so one controller object can
@@ -153,10 +153,10 @@ object WebRouteTable {
 object WebRejection does RouteRejecting {
     WebRejection();
 
-    malformed(request is Request, reason is string) is HandlingResult { Exception(400, reason); }
+    malformed(request is Request, reason is string) is HandlingResult { Problem(400, reason); }
 
     disallowed(request is Request, allowed is @string) is HandlingResult {
-        Exception(405, "method " + request.method().string() + " is not allowed here").header("Allow", allowed.join(", "));
+        Problem(405, "method " + request.method().string() + " is not allowed here").header("Allow", allowed.join(", "));
     }
 }
 
@@ -166,7 +166,7 @@ object MethodRoute {
     has endpoint is async (WebRequest) is HandlingResult;
 
     MethodRoute(method is string, path is string, endpoint is async (WebRequest) is HandlingResult) {
-        confirm path == "" || path.slice(0, 1) == "/" else throw InvalidWebRoute("route path must be empty or start with /: " + path);
+        confirm path == "" || path.slice(0, 1) == "/" else throw InvalidWebRoute.because("route path must be empty or start with /: " + path);
         self.method = method;
         self.path = path;
         self.endpoint = endpoint;
@@ -174,7 +174,7 @@ object MethodRoute {
 
     routes(prefix is string, scopes is @ExceptionScope) is @Route {
         let pattern = prefix + path;
-        confirm pattern != "" else throw InvalidWebRoute("an empty route path is only valid inside a Scope");
+        confirm pattern != "" else throw InvalidWebRoute.because("an empty route path is only valid inside a Scope");
         [Route(Method(method), RoutePattern(pattern), WebEndpoint(endpoint, scopes))];
     }
 }
@@ -183,7 +183,7 @@ object WebPrefix {
     has origin is string;
     WebPrefix(origin is string) {
         confirm origin.length() > 1 && origin.slice(0, 1) == "/" && origin.slice(origin.length() - 1, origin.length()) != "/"
-            else throw InvalidWebRoute("scope prefix must start with / and not end with it: " + origin);
+            else throw InvalidWebRoute.because("scope prefix must start with / and not end with it: " + origin);
         self.origin = origin;
     }
     string() is string { origin; }
@@ -201,7 +201,7 @@ object WebEndpoint does Handling {
 
     async handling(request is Request, context is HttpRequestContext) is HandlingResult {
         try { await ScopedEndpoint(endpoint, scopes, 0).call(WebRequest(request, context)); }
-        catch failure is Exception { failure; }
+        catch Exception.status(code, detail) { Problem(code, detail); }
     }
 }
 
@@ -251,12 +251,7 @@ object ScopeList {
     }
 }
 
-object InvalidWebRoute does Error {
-    has reason is string;
-    InvalidWebRoute(reason is string) { self.reason = reason; }
-    reason() is string { reason; }
-    text() is string { "invalid web route: " + reason; }
-}
+enum InvalidWebRoute is Error = (because(reason is string));
 
 test "scope prefixes are absolute and have no trailing slash" {
     test.is(WebPrefix("/api").string(), "/api");

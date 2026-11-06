@@ -27,7 +27,7 @@ object RegexParts does Iterating<string> {
     }
 
     RegexParts(origin is string, regex is Regex, limit is int) {
-        confirm limit > 0 else throw InvalidRegexSplitLimit(limit);
+        confirm limit > 0 else throw InvalidRegexSplitLimit.limit(limit);
         source = origin;
         pattern = regex;
         maximum = limit;
@@ -68,7 +68,7 @@ object RegexPartsCursor does Cursor<string> {
     available() is bool { !final; }
 
     item() is string {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if self.separated() {
             source.slice(offset, separators.item().range().start());
         }
@@ -78,7 +78,7 @@ object RegexPartsCursor does Cursor<string> {
     }
 
     successor() is Cursor<string> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if self.separated() {
             RegexPartsCursor(
                 origin: source,
@@ -105,9 +105,4 @@ object RegexPartsCursor does Cursor<string> {
     }
 }
 
-object InvalidRegexSplitLimit does Error {
-    has maximum is int;
-    InvalidRegexSplitLimit(limit is int) { maximum = limit; }
-    limit() is int { maximum; }
-    text() is string { "regex split limit must be positive"; }
-}
+enum InvalidRegexSplitLimit is Error = (limit(limit is int));

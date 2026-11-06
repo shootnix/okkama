@@ -30,7 +30,7 @@ import "io/stdout" take Stdout;
 object PaidShift {
     has employee,day is string;has minutes is int;has rate is BigInt;
     PaidShift(employee is string,day is string,minutes is int,rate is BigInt){
-        confirm employee.length()>0 && employee.length()<=100 && minutes>0 && minutes<=1440 && rate.sign()>=0 && rate.bits()<=128 else throw Usage("invalid work shift");
+        confirm employee.length()>0 && employee.length()<=100 && minutes>0 && minutes<=1440 && rate.sign()>=0 && rate.bits()<=128 else throw Usage.usage("invalid work shift");
         DateFromIso(day).value();self.employee=employee;self.day=day;self.minutes=minutes;self.rate=rate;
     }
     employee() is string{employee;}day() is string{day;}minutes() is int{minutes;}
@@ -45,9 +45,9 @@ object ShiftLedger {
     has shifts is @PaidShift;
     ShiftLedger(text is string){
         let rows=CsvRows(text,CsvDialect(",","\"","\n")).map()->row{row;};
-        confirm rows.size()>0 && rows[0]==["employee","day","minutes","rate_cents"] else throw Usage("expected employee,day,minutes,rate_cents header");
-        let values is @PaidShift=(1..rows.size()).map()->index{let row=rows[index];confirm row.size()==4 else throw Usage("four shift columns required");
-            let minutes=BigInt(row[2]);confirm minutes.sign()>0 && minutes.order(BigInt("1440"))!=Order.greater else throw Usage("minutes must be 1..1440");
+        confirm rows.size()>0 && rows[0]==["employee","day","minutes","rate_cents"] else throw Usage.usage("expected employee,day,minutes,rate_cents header");
+        let values is @PaidShift=(1..rows.size()).map()->index{let row=rows[index];confirm row.size()==4 else throw Usage.usage("four shift columns required");
+            let minutes=BigInt(row[2]);confirm minutes.sign()>0 && minutes.order(BigInt("1440"))!=Order.greater else throw Usage.usage("minutes must be 1..1440");
             PaidShift(row[0],row[1],ParsedInt(minutes.string()).value(),BigInt(row[3]));};shifts=values;
     }
     report(employee is string,day is string) is Json {
@@ -75,7 +75,7 @@ main() is int {
         case "demo","report"{let path=args.text(1,"examples/cookbook/data/shifts.csv");let ledger=ShiftLedger(LocalFiles().text(path));Stdout().writeln((ledger.report(args.text(2,""),args.text(3,""))).pretty(2));}
         case "daily"{let ledger=ShiftLedger(LocalFiles().text(args.text(1)));Stdout().writeln((ledger.daily(args.text(2,""))).pretty(2));}
         case "history"{Stdout().write(LocalFiles().text(args.text(1)));}
-        case "init"{confirm !FileEntry(Path(args.text(1))).existence() else throw Usage("journal already exists");LocalFiles().write(args.text(1),"employee,day,minutes,rate_cents\n");}
+        case "init"{confirm !FileEntry(Path(args.text(1))).existence() else throw Usage.usage("journal already exists");LocalFiles().write(args.text(1),"employee,day,minutes,rate_cents\n");}
         case "add"{
             ShiftLedger(LocalFiles().text(args.text(1)));PaidShift(args.text(2),args.text(3),args.integer(4,0),BigInt(args.text(5)));
             let line=CsvRecord(fields:[args.text(2),args.text(3),args.text(4),args.text(5)]).string();

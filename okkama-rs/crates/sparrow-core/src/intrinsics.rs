@@ -13,6 +13,8 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intrinsic {
+    /// The Future of a process worker (`worker`).
+    Worker,
     Ordering,
     AtomicNew,
     AtomicValue,
@@ -63,6 +65,12 @@ pub enum Intrinsic {
     TimeoutWithin,
     StreamRemaining,
     StreamCompletion,
+    FakeSet,
+    FakeGet,
+    FakeHas,
+    FakeRemove,
+    FakeClear,
+    FakeSize,
     TestOk,
     TestIs,
     TestIsnt,
@@ -73,6 +81,7 @@ impl Intrinsic {
     pub fn resolve(name: &str) -> Option<Self> {
         use Intrinsic::*;
         Some(match name {
+            crate::program::WORKER => Worker,
             "okkama.array.ordering" => Ordering,
             "okkama.atomic.Atomic.new_value" => AtomicNew,
             "okkama.atomic.Atomic.value" => AtomicValue,
@@ -126,6 +135,12 @@ impl Intrinsic {
             "okkama.timeout.Within.result" => TimeoutWithin,
             "okkama.collect.FutureCompletions.remaining_count" => StreamRemaining,
             "okkama.collect.FutureCompletions.completion" => StreamCompletion,
+            "okkama.fake.storage.set" => FakeSet,
+            "okkama.fake.storage.get" => FakeGet,
+            "okkama.fake.storage.has" => FakeHas,
+            "okkama.fake.storage.remove" => FakeRemove,
+            "okkama.fake.storage.clear" => FakeClear,
+            "okkama.fake.storage.size" => FakeSize,
             "okkama.test.ok" => TestOk,
             "okkama.test.is" => TestIs,
             "okkama.test.isnt" => TestIsnt,
@@ -203,8 +218,36 @@ fn related(runtime: &Runtime, function: usize, index: usize) -> u32 {
 
 /// A thrown instance of the `index`th related object.
 pub(crate) fn thrown(runtime: &mut Runtime, function: usize, index: usize, fields: &[Word]) -> FailureKind {
-    let object = runtime.heap.object_new(related(runtime, function, index), fields);
+    let object = raised(runtime, related(runtime, function, index), fields);
     FailureKind::Thrown(object)
+}
+
+/// An error object the runtime raises, from its payload `values`. An error
+/// enum lowers to `[$tag, $<case>_<name>: array…]`; the runtime raises its
+/// first case, whose payload values go into one-element arrays.
+fn raised(runtime: &mut Runtime, descriptor: u32, values: &[Word]) -> Word {
+    let program = &runtime.loaded.program;
+    let fields = &program.objects[descriptor as usize].fields;
+    if fields.first().is_none_or(|(name, _)| name != "$tag") {
+        return runtime.heap.object_new(descriptor, values);
+    }
+    let shapes: Vec<(bool, Repr)> = fields[1..]
+        .iter()
+        .map(|(name, ty)| {
+            let element = match program.ty(*ty) {
+                Some(Type::Array(element)) => Kind::of(program, *element).repr(),
+                _ => Repr::Ref,
+            };
+            (name.starts_with("$0_"), element)
+        })
+        .collect();
+    let mut payload = values.iter();
+    let mut words = vec![runtime.heap.int(0)];
+    for (first, element) in shapes {
+        let elements: Vec<Word> = if first { payload.next().copied().into_iter().collect() } else { Vec::new() };
+        words.push(runtime.heap.allocate_array(element, &elements));
+    }
+    runtime.heap.object_new(descriptor, &words)
 }
 
 fn boolean(value: bool) -> Outcome {
@@ -448,6 +491,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             let remaining = (stream.entries.len() - stream.delivered) as i64;
             Value(runtime.heap.int(remaining), Repr::Int)
         }
+        FakeSet | FakeGet | FakeHas | FakeRemove | FakeClear | FakeSize => fake_storage(runtime, function, intrinsic, args),
         TestOk | TestIs | TestIsnt | TestFail => {
             if runtime.host.as_ref().is_none_or(|h| h.test_failures.is_none()) {
                 return program_failure("The test capability is available only inside a running test");
@@ -477,6 +521,98 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             VOID
         }
         _ => Fatal(format!("intrinsic {intrinsic:?} is async")),
+    }
+}
+
+/// Per-fake storage of test fakes (`fake.storage.*`): typed values by key,
+/// owned by the fake object.
+type FakeMap = std::collections::BTreeMap<crate::ops::Key, (Word, Word, okkama_sparrow::TypeRef, Repr)>;
+
+fn fake_map(runtime: &mut Runtime, receiver: Word) -> Option<&mut FakeMap> {
+    match runtime.states.get_mut(&receiver) {
+        Some(State::FakeStorage(storage)) => Some(storage),
+        _ => None,
+    }
+}
+
+fn fake_storage(runtime: &mut Runtime, function: usize, intrinsic: Intrinsic, args: &[Word]) -> Outcome {
+    use Intrinsic::*;
+    let receiver = args[0];
+    let header = runtime.heap.header_of(receiver);
+    if crate::heap::kind(header) != crate::heap::OBJECT
+        || !runtime.loaded.program.objects[crate::heap::payload(header) as usize].name.ends_with("$fake")
+    {
+        return program_failure("fake storage requires a role fake");
+    }
+    match intrinsic {
+        FakeClear => {
+            if let Some(storage) = fake_map(runtime, receiver) {
+                storage.clear();
+            }
+            return VOID;
+        }
+        FakeSize => {
+            let size = fake_map(runtime, receiver).map_or(0, |s| s.len());
+            return Value(runtime.heap.int(size as i64), Repr::Int);
+        }
+        _ => {}
+    }
+    let (params, result) = {
+        let f = &runtime.loaded.program.functions[function];
+        (f.params.iter().map(|r| r.0 as usize).collect::<Vec<_>>(), f.result)
+    };
+    let registers = &runtime.loaded.program.functions[function].registers;
+    let key_type = registers[params[1]];
+    let key_kind = runtime.loaded.functions[function].kinds[params[1]];
+    let key_ty = runtime.loaded.program.ty(key_type).cloned();
+    let indexed = runtime.key(args[1], key_kind, key_ty.as_ref());
+    if intrinsic == FakeSet {
+        let value_type = runtime.loaded.program.functions[function].registers[params[2]];
+        let repr = runtime.loaded.functions[function].kinds[params[2]].repr();
+        if fake_map(runtime, receiver).is_none() {
+            runtime.state_new(receiver, State::FakeStorage(Default::default()));
+        }
+        fake_map(runtime, receiver).expect("storage").insert(indexed, (args[1], args[2], value_type, repr));
+        return VOID;
+    }
+    let found = fake_map(runtime, receiver).and_then(|s| s.get(&indexed)).copied();
+    if intrinsic == FakeHas {
+        return boolean(found.is_some());
+    }
+    let Some((_, value, stored, repr)) = found else {
+        let shown = show(runtime, args[1], key_type);
+        return program_failure(&format!("Fake storage has no key {shown}"));
+    };
+    if intrinsic == FakeRemove {
+        if let Some(storage) = fake_map(runtime, receiver) {
+            storage.remove(&indexed);
+        }
+        return VOID;
+    }
+    // get: the stored value under the requested type.
+    let expected = result.expect("fake get result");
+    let result_repr = runtime.loaded.functions[function].result.map_or(Repr::Raw, Kind::repr);
+    let program = &runtime.loaded.program;
+    if program.ty(expected) == program.ty(stored) {
+        return Value(value, result_repr);
+    }
+    match program.ty(expected).cloned() {
+        Some(Type::Any) => {
+            let boxed = crate::ops::AnyBox { value, ty: stored, repr };
+            Value(runtime.heap.allocate_payload(Box::new(boxed)), Repr::Ref)
+        }
+        Some(Type::Role(role)) => {
+            let header = runtime.heap.header_of(value);
+            let does = repr == Repr::Ref
+                && crate::heap::kind(header) == crate::heap::OBJECT
+                && program.objects[crate::heap::payload(header) as usize].does.iter().any(|w| w.role == role);
+            if does {
+                Value(value, Repr::Ref)
+            } else {
+                program_failure("Fake storage value does not match the requested type")
+            }
+        }
+        _ => program_failure("Fake storage value does not match the requested type"),
     }
 }
 

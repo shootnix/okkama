@@ -21,12 +21,9 @@ object ImapAssignedUids {
     ImapAssignedUids() {values=[];}
     ImapAssignedUids(value is MailboxUids) {values=[value];}
     known() is bool {values.size()>0;}
-    uids() is MailboxUids {confirm self.known() else throw MissingAssignedImapUids();values[0];}
+    uids() is MailboxUids {confirm self.known() else throw MissingAssignedImapUids.missing;values[0];}
 }
-object MissingAssignedImapUids does Error {
-    MissingAssignedImapUids();
-    text() is string {"server did not supply assigned IMAP UIDs";}
-}
+enum MissingAssignedImapUids is Error = (missing);
 object ImapCopiedUids {
     has sources is ImapUidSet;has assigned is ImapAssignedUids;
     ImapCopiedUids(result is ImapCommandRead, requested is ImapUidSet, destination is ImapMailboxName, capabilities is ImapCapabilities, account is string) {
@@ -35,17 +32,17 @@ object ImapCopiedUids {
             ImapUidPlus(capabilities).require();let arguments=code.arguments();
             confirm arguments.size()==3 && arguments.item(0).kind()==ImapValueKind.atom
                 && arguments.item(1).kind()==ImapValueKind.atom && arguments.item(2).kind()==ImapValueKind.atom
-                else throw InvalidImapData("invalid COPYUID code");
+                else throw InvalidImapData.because("invalid COPYUID code");
             let validity=ImapUidValidity(BigInt(ImapUnsigned(arguments.item(0).string(),true).value().string()));
             let source=ImapUidRanges(arguments.item(1).string(),ImapUidSetLimits());
             let target=ImapUidRanges(arguments.item(2).string(),ImapUidSetLimits());
             let from=source.uids();let to=target.uids();
             confirm from.entries().size()==to.entries().size() && source.expanded_count()==from.entries().size()
-                && target.expanded_count()==to.entries().size() else throw InvalidImapData("COPYUID mapping must be one-to-one");
+                && target.expanded_count()==to.entries().size() else throw InvalidImapData.because("COPYUID mapping must be one-to-one");
             let wanted=requested.entries();let actual=from.entries();
             for (0..actual.size()) -> index {
                 let exists=(0..wanted.size()).reduce(false) -> found,position {found || wanted.item(position).order(actual.item(index))==Order.equal;};
-                confirm exists else throw InvalidImapData("COPYUID source was not requested");
+                confirm exists else throw InvalidImapData.because("COPYUID source was not requested");
             }
             sources=from;assigned=ImapAssignedUids(MailboxUids(destination,validity,to,account));
         } else {sources=ImapUidSet([]);assigned=ImapAssignedUids();}
@@ -58,7 +55,7 @@ object ImapUidPlus {
     ImapUidPlus(origin is ImapCapabilities) {self.origin=origin;}
     require() is void {
         confirm origin.features().membership(ImapFeature.uid_plus)
-            else throw InvalidImapData("UID assignment without UIDPLUS advertisement in this wire mode");
+            else throw InvalidImapData.because("UID assignment without UIDPLUS advertisement in this wire mode");
     }
 }
 object CopiedMail {
@@ -124,7 +121,7 @@ object ImapAppending {
         if !code.present() || code.name()!="APPENDUID" {return ImapAssignedUids();}
         ImapUidPlus(origin.capabilities()).require();let arguments=code.arguments();
         confirm arguments.size()==2 && arguments.item(0).kind()==ImapValueKind.atom && arguments.item(1).kind()==ImapValueKind.atom
-            else throw InvalidImapData("invalid APPENDUID code");
+            else throw InvalidImapData.because("invalid APPENDUID code");
         let validity=ImapUidValidity(BigInt(ImapUnsigned(arguments.item(0).string(),true).value().string()));
         let assigned=ImapUidSet([ImapUid(BigInt(ImapUnsigned(arguments.item(1).string(),true).value().string()))]);
         ImapAssignedUids(MailboxUids(mailbox,validity,assigned,origin.account()));

@@ -53,9 +53,7 @@ object LocalDateTime does Comparing<LocalDateTime> {
             (3652059 - ordinal) * 86400
         ).rat() + rat(86399999999999, 1000000000) - day_seconds;
         confirm duration.seconds() >= earliest && duration.seconds() <= latest
-            else throw InvalidDate(
-                "local date-time arithmetic is outside years 1..9999"
-            );
+            else throw InvalidDate.because("local date-time arithmetic is outside years 1..9999");
 
         let shifted is rat = day_seconds + duration.seconds();
         let truncated_days is int = (shifted / 86400.rat()).int();

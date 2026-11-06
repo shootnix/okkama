@@ -15,8 +15,8 @@ import "time/duration" take Duration,DurationUnit;
 object TcpRaceEndpoints {
     has ordered is @IpEndpoint;
     TcpRaceEndpoints(origins is Sequencing<IpEndpoint>){
-        let count=origins.size();confirm count>=1 && count<=256 else throw InvalidTcpRace("candidate count");
-        let source is @IpEndpoint=(0..count).map()->index{let endpoint=origins.item(index);confirm endpoint.port()>0 else throw InvalidTcpRace("destination port");endpoint;};
+        let count=origins.size();confirm count>=1 && count<=256 else throw InvalidTcpRace.because("candidate count");
+        let source is @IpEndpoint=(0..count).map()->index{let endpoint=origins.item(index);confirm endpoint.port()>0 else throw InvalidTcpRace.because("destination port");endpoint;};
         let family=source[0].address().version();let first=source.filter()->endpoint{endpoint.address().version()==family;};
         let second=source.filter()->endpoint{endpoint.address().version()!=family;};
         let pairs=if first.size()<second.size(){first.size();}else{second.size();};
@@ -32,7 +32,7 @@ object TcpRacing {
     has endpoints is Sequencing<IpEndpoint>;has options is TcpOptions;has delay is Duration;has clock is Timing;
     TcpRacing(origins is Sequencing<IpEndpoint>){endpoints=TcpRaceEndpoints(origins).items();options=TcpOptions();delay=Duration(250.rat(),DurationUnit.millisecond);clock=SystemClock();}
     TcpRacing(origins is Sequencing<IpEndpoint>,options is TcpOptions,delay is Duration,clock is Timing){
-        confirm delay.seconds()>=0.rat() else throw InvalidTcpRace("negative stagger");
+        confirm delay.seconds()>=0.rat() else throw InvalidTcpRace.because("negative stagger");
         endpoints=TcpRaceEndpoints(origins).items();self.options=options;self.delay=delay;self.clock=clock;
     }
     async connection() is TcpConnection {
@@ -117,10 +117,7 @@ object TcpRaceCleanup {
         for attempts -> attempt{await attempt.dispose(keep);}
     }
 }
-object InvalidTcpRace does Error {
-    has reason is string;InvalidTcpRace(reason is string){self.reason=reason;}
-    reason() is string{reason;}text() is string{"invalid TCP race: "+reason;}
-}
+enum InvalidTcpRace is Error = (because(reason is string));
 
 test "TCP racing preserves one family and rejects empty candidates" {
     let endpoint=IpEndpoint(IpAddress("127.0.0.1"),80);

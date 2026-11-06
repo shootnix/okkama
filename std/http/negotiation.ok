@@ -19,9 +19,9 @@ import "locale/match" take BasicLanguageRange, LanguagePrefixes, InvalidLanguage
 object Quality does Comparing<Quality> {
     has thousandths is int;
     Quality(origin is rat) {
-        confirm origin>=0.rat() && origin<=1.rat() else throw InvalidQuality("outside 0..1");
+        confirm origin>=0.rat() && origin<=1.rat() else throw InvalidQuality.because("outside 0..1");
         let scaled=origin*1000.rat();let whole=scaled.int();
-        confirm scaled==whole.rat() else throw InvalidQuality("more than three decimal places");
+        confirm scaled==whole.rat() else throw InvalidQuality.because("more than three decimal places");
         thousandths=whole;
     }
     value() is rat {thousandths.rat()/1000.rat();}
@@ -38,15 +38,15 @@ object Quality does Comparing<Quality> {
 object ParsedQuality {
     has origin is string;ParsedQuality(origin is string){self.origin=origin;}
     value() is Quality {
-        confirm origin.length()>=1 && origin.length()<=5 else throw InvalidQuality("qvalue length");
+        confirm origin.length()>=1 && origin.length()<=5 else throw InvalidQuality.because("qvalue length");
         let prefix=origin.slice(0,1);
-        confirm prefix=="0" || prefix=="1" else throw InvalidQuality("qvalue requires 0 or 1");
+        confirm prefix=="0" || prefix=="1" else throw InvalidQuality.because("qvalue requires 0 or 1");
         let whole=if prefix=="0" {0;}else{1000;};
         if origin.length()==1 {return Quality(whole.rat()/1000.rat());}
-        confirm origin.slice(1,2)=="." else throw InvalidQuality("qvalue decimal point");
+        confirm origin.slice(1,2)=="." else throw InvalidQuality.because("qvalue decimal point");
         let digits=origin.slice(2,origin.length());
         let decimal=Utf8Encoded(digits).bytes().reduce(0) -> value,octet {
-            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidQuality("ASCII qvalue digit required");
+            let code=octet.int();confirm code>=48 && code<=57 else throw InvalidQuality.because("ASCII qvalue digit required");
             value*10+code-48;
         };
         let factors=[1000,100,10,1];
@@ -59,11 +59,11 @@ object ParsedQuality {
 object WeightedValue {
     has token is string;has quality is Quality;
     WeightedValue(value is string) {
-        token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidWeightedValue("HTTP token required");};
+        token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidWeightedValue.because("HTTP token required");};
         quality=Quality(1.rat());
     }
     WeightedValue(value is string, quality is Quality) {
-        token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidWeightedValue("HTTP token required");};
+        token=try {Method(value).string();}catch failure is InvalidMethod {throw InvalidWeightedValue.because("HTTP token required");};
         self.quality=quality;
     }
     value() is string {token;}
@@ -74,7 +74,7 @@ object NegotiationLimits {
     has bytes,entries,available is int;
     NegotiationLimits() {bytes=8192;entries=128;available=128;}
     NegotiationLimits(bytes is int, entries is int, available is int) {
-        confirm bytes>=0 && entries>=0 && available>=0 else throw InvalidArgument("negotiation budgets must be nonnegative");
+        confirm bytes>=0 && entries>=0 && available>=0 else throw InvalidArgument.because("negotiation budgets must be nonnegative");
         self.bytes=bytes;self.entries=entries;self.available=available;
     }
     bytes() is int {bytes;}entries() is int {entries;}available() is int {available;}
@@ -103,13 +103,13 @@ object AcceptedContentCodings {
         let values is @WeightedValue=origin.map() -> entry {WeightedValue(entry.token(),entry.quality());};values;
     }
     string() is string {
-        confirm present else throw MissingNegotiationField();
+        confirm present else throw MissingNegotiationField.missing;
         let parts is @string=origin.map() -> entry {WeightedValue(entry.token(),entry.quality()).string();};parts.join(", ");
     }
     quality(coding is ContentCoding) is Quality {self.match(coding).quality();}
     preference(available is Sequencing<ContentCoding>) is ContentCoding {
-        let count=available.size();confirm count>=0 else throw InvalidArgument("negative coding choice sequence size");
-        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let count=available.size();confirm count>=0 else throw InvalidArgument.because("negative coding choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded.kind("available");
         let choices is @ContentCoding=(0..count).map() -> index {available.item(index);};
         let chosen=CodingChoice();
         for choices -> coding {chosen=chosen.following(coding,self.match(coding));}
@@ -137,8 +137,8 @@ object AcceptedContentCodings {
 object CodingPreference does Comparing<CodingPreference> {
     has token is string;has quality is Quality;has position is int;
     CodingPreference(token is string, quality is Quality, position is int) {
-        confirm position>=0 else throw InvalidArgument("negative client coding position");
-        let checked=try {Method(token).string();}catch failure is InvalidMethod {throw InvalidNegotiation("coding token required");};
+        confirm position>=0 else throw InvalidArgument.because("negative client coding position");
+        let checked=try {Method(token).string();}catch failure is InvalidMethod {throw InvalidNegotiation.because("coding token required");};
         self.token=HttpAsciiLowercase(checked).string();self.quality=quality;self.position=position;
     }
     token() is string {token;}quality() is Quality {quality;}position() is int {position;}
@@ -164,7 +164,7 @@ object CodingIndex {
         let sorted is Sorted<CodingPreference>=Sorted(origin:origin);
         for (0..sorted.size()) -> index {
             if index>0 {confirm sorted.item(index-1).token()!=sorted.item(index).token()
-                else throw InvalidNegotiation("duplicate coding preference");}
+                else throw InvalidNegotiation.because("duplicate coding preference");}
         }
         sorted;
     }
@@ -173,11 +173,11 @@ object CodingField {
     has origin is string;has limits is NegotiationLimits;
     CodingField(origin is string, limits is NegotiationLimits){self.origin=origin;self.limits=limits;}
     values() is @CodingPreference {
-        confirm origin.length()<=limits.bytes() else throw NegotiationLimitExceeded("bytes");
+        confirm origin.length()<=limits.bytes() else throw NegotiationLimitExceeded.kind("bytes");
         let field=try {Header(HeaderName("Accept-Encoding"),origin).value();}
-            catch failure is InvalidHeader {throw InvalidNegotiation("invalid field octets");};
+            catch failure is InvalidHeader {throw InvalidNegotiation.because("invalid field octets");};
         if field=="" {let empty is @CodingPreference=[];return empty;}
-        let parts=field.split(",");confirm parts.size()<=limits.entries() else throw NegotiationLimitExceeded("entries");
+        let parts=field.split(",");confirm parts.size()<=limits.entries() else throw NegotiationLimitExceeded.kind("entries");
         let texts is @string=parts.map() -> part {Header(HeaderName("Accept-Encoding"),part).value();};
         let nonempty is @string=texts.filter() -> part {part!="";};
         let values is @CodingPreference=(0..nonempty.size()).map() -> index {CodingMember(nonempty[index],index).value();};values;
@@ -188,14 +188,14 @@ object CodingMember {
     CodingMember(origin is string, position is int){self.origin=origin;self.position=position;}
     value() is CodingPreference {
         let fields=origin.split(";");confirm fields.size()>=1 && fields.size()<=2
-            else throw InvalidNegotiation("one optional q parameter required");
+            else throw InvalidNegotiation.because("one optional q parameter required");
         let token=Header(HeaderName("Accept-Encoding"),fields[0]).value();
         let quality=if fields.size()==1 {Quality(1.rat());}else{
             let weight=Header(HeaderName("Accept-Encoding"),fields[1]).value();
             confirm weight.length()>=2 && (weight.slice(0,2)=="q=" || weight.slice(0,2)=="Q=")
-                else throw InvalidNegotiation("q parameter assignment required");
+                else throw InvalidNegotiation.because("q parameter assignment required");
             try {ParsedQuality(weight.slice(2,weight.length())).value();}
-            catch failure is InvalidQuality {throw InvalidNegotiation(failure.reason());}
+            catch InvalidQuality.because(reason) {throw InvalidNegotiation.because(reason);}
         };
         CodingPreference(token,quality,position);
     }
@@ -212,15 +212,15 @@ object CodingChoice {
             ^selected=[coding];^quality=preference.quality();^position=preference.position();
         }
     }
-    value() is ContentCoding {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+    value() is ContentCoding {confirm selected.size()==1 else throw NoAcceptableValue.none;selected[0];}
 }
 // Charset spelling is a name, not a codec/provider. Only case is normalized;
 // alias resolution and registry recognition are intentionally separate.
 object CharsetName does Comparing<CharsetName> {
     has origin is string;
     CharsetName(origin is string) {
-        let token=try {Method(origin).string();}catch e is InvalidMethod {throw InvalidNegotiation("charset token required");};
-        confirm token!="*" else throw InvalidNegotiation("wildcard is not a concrete charset");
+        let token=try {Method(origin).string();}catch e is InvalidMethod {throw InvalidNegotiation.because("charset token required");};
+        confirm token!="*" else throw InvalidNegotiation.because("wildcard is not a concrete charset");
         self.origin=HttpAsciiLowercase(token).string();
     }
     string() is string {origin;}
@@ -248,13 +248,13 @@ object AcceptedCharsets {
         let values is @WeightedValue=origin.map() -> entry {WeightedValue(entry.token(),entry.quality());};values;
     }
     string() is string {
-        confirm present else throw MissingNegotiationField();
+        confirm present else throw MissingNegotiationField.missing;
         let parts is @string=origin.map() -> entry {WeightedValue(entry.token(),entry.quality()).string();};parts.join(", ");
     }
     quality(charset is CharsetName) is Quality {self.lookup_match(charset).quality();}
     preference(available is Sequencing<CharsetName>) is CharsetName {
-        let count=available.size();confirm count>=0 else throw InvalidArgument("negative charset choice sequence size");
-        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let count=available.size();confirm count>=0 else throw InvalidArgument.because("negative charset choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded.kind("available");
         let choices is @CharsetName=(0..count).map() -> index {available.item(index);};
         let chosen=CharsetChoice();for choices -> charset {chosen=chosen.following(charset,self.lookup_match(charset));}
         chosen.value();
@@ -280,7 +280,7 @@ object CharsetChoice {
             ^selected=[charset];^quality=preference.quality();^position=preference.position();
         }
     }
-    value() is CharsetName {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+    value() is CharsetName {confirm selected.size()==1 else throw NoAcceptableValue.none;selected[0];}
 }
 object WeightedLanguageRange {
     has range is BasicLanguageRange;has quality is Quality;
@@ -311,13 +311,13 @@ object AcceptedLanguages {
         };values;
     }
     string() is string {
-        confirm present else throw MissingNegotiationField();
+        confirm present else throw MissingNegotiationField.missing;
         let parts is @string=origin.map() -> entry {WeightedValue(entry.token(),entry.quality()).string();};parts.join(", ");
     }
     quality(locale is Locale) is Quality {self.lookup_match(locale).quality();}
     preference(available is Sequencing<Locale>) is Locale {
-        let count=available.size();confirm count>=0 else throw InvalidArgument("negative language choice sequence size");
-        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let count=available.size();confirm count>=0 else throw InvalidArgument.because("negative language choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded.kind("available");
         let choices is @Locale=(0..count).map() -> index {available.item(index);};
         let chosen=LanguageChoice();for choices -> locale {chosen=chosen.following(locale,self.lookup_match(locale));}
         chosen.value();
@@ -341,7 +341,7 @@ object LanguageField {
         let values=CodingField(origin,limits).values();
         for values -> entry {
             try{BasicLanguageRange(entry.token());}
-                catch e is InvalidLanguageRange {throw InvalidNegotiation(e.reason());}
+                catch InvalidLanguageRange.located(_, reason) {throw InvalidNegotiation.because(reason);}
         }
         values;
     }
@@ -349,7 +349,7 @@ object LanguageField {
 object LanguageMatch {
     has origin is WeightedLanguageRange;has position is int;
     LanguageMatch(origin is WeightedLanguageRange, position is int) {
-        confirm position>=0 else throw InvalidArgument("negative language preference position");
+        confirm position>=0 else throw InvalidArgument.because("negative language preference position");
         self.origin=origin;self.position=position;
     }
     quality() is Quality {origin.quality();}
@@ -367,22 +367,12 @@ object LanguageChoice {
             ^selected=[locale];^quality=preference.quality();^specificity=preference.specificity();^position=preference.position();
         }
     }
-    value() is Locale {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+    value() is Locale {confirm selected.size()==1 else throw NoAcceptableValue.none;selected[0];}
 }
-object InvalidNegotiation does Error {
-    has reason is string;InvalidNegotiation(reason is string){self.reason=reason;}
-    reason() is string {reason;}text() is string {"invalid HTTP negotiation: "+reason;}
-}
-object NegotiationLimitExceeded does Error {
-    has kind is string;NegotiationLimitExceeded(kind is string){self.kind=kind;}
-    kind() is string {kind;}text() is string {"HTTP negotiation "+kind+" limit exceeded";}
-}
-object NoAcceptableValue does Error {
-    NoAcceptableValue();text() is string {"no acceptable supplied HTTP value";}
-}
-object MissingNegotiationField does Error {
-    MissingNegotiationField();text() is string {"missing HTTP negotiation field";}
-}
+enum InvalidNegotiation is Error = (because(reason is string));
+enum NegotiationLimitExceeded is Error = (kind(kind is string));
+enum NoAcceptableValue is Error = (none);
+enum MissingNegotiationField is Error = (missing);
 object MediaRange {
     has major,minor is string;has parameters is HttpMediaParameters;
     has quality is Quality;has specificity is MediaSpecificity;
@@ -401,10 +391,10 @@ object MediaRange {
         quality=parsed.quality();specificity=parsed.specificity();
     }
     MediaRange(type is string, subtype is string, parameters is HttpMediaParameters, quality is Quality) {
-        let type_name=try {Method(type).string();}catch failure is InvalidMethod {throw InvalidNegotiation("media type token required");};
-        let subtype_name=try {Method(subtype).string();}catch failure is InvalidMethod {throw InvalidNegotiation("media subtype token required");};
-        confirm type_name!="*" || subtype_name=="*" else throw InvalidNegotiation("invalid media wildcard");
-        confirm !parameters.membership("q") else throw InvalidNegotiation("q is reserved for range quality");
+        let type_name=try {Method(type).string();}catch failure is InvalidMethod {throw InvalidNegotiation.because("media type token required");};
+        let subtype_name=try {Method(subtype).string();}catch failure is InvalidMethod {throw InvalidNegotiation.because("media subtype token required");};
+        confirm type_name!="*" || subtype_name=="*" else throw InvalidNegotiation.because("invalid media wildcard");
+        confirm !parameters.membership("q") else throw InvalidNegotiation.because("q is reserved for range quality");
         let kind=if type_name=="*" {0;}else{if subtype_name=="*" {1;}else{2;}};
         major=HttpAsciiLowercase(type_name).string();minor=HttpAsciiLowercase(subtype_name).string();
         self.parameters=parameters;self.quality=quality;specificity=MediaSpecificity(kind,parameters.entries().size());
@@ -429,19 +419,19 @@ object ParsedMediaRange {
     ParsedMediaRange(origin is string, limits is HttpMediaLimits){self.origin=origin;self.limits=limits;}
     value() is MediaRange {
         let fields=try {HttpMediaScanning(origin,limits).value();}
-            catch failure is InvalidHttpMediaType {throw InvalidNegotiation(failure.reason());}
-            catch failure is HttpMediaLimitExceeded {throw NegotiationLimitExceeded(failure.kind());};
+            catch InvalidHttpMediaType.located(_, reason) {throw InvalidNegotiation.because(reason);}
+            catch HttpMediaLimitExceeded.kind(kind) {throw NegotiationLimitExceeded.kind(kind);};
         let wire=fields.wire_parameters();
         let weights is @string=(0..wire.size()).map() -> index {
             let entry=wire.item(index);
             if entry.parameter().name()=="q" {
-                confirm !entry.quoted() else throw InvalidNegotiation("qvalue must not be quoted");
+                confirm !entry.quoted() else throw InvalidNegotiation.because("qvalue must not be quoted");
                 entry.parameter().value();
             }else{"";}
         };
         let present is @string=weights.filter() -> value {value!="";};
         let quality=if present.size()==0 {Quality(1.rat());}else{
-            try {ParsedQuality(present[0]).value();}catch failure is InvalidQuality {throw InvalidNegotiation(failure.reason());}
+            try {ParsedQuality(present[0]).value();}catch InvalidQuality.because(reason) {throw InvalidNegotiation.because(reason);}
         };
         let parameters is @HttpMediaParameter=(0..wire.size()).map() -> index {wire.item(index).parameter();};
         let kept is @HttpMediaParameter=parameters.filter() -> entry {entry.name()!="q";};
@@ -451,7 +441,7 @@ object ParsedMediaRange {
 object MediaSpecificity does Comparing<MediaSpecificity> {
     has kind,parameters is int;
     MediaSpecificity(kind is int, parameters is int) {
-        confirm kind>=0 && kind<=2 && parameters>=0 else throw InvalidArgument("invalid media specificity");
+        confirm kind>=0 && kind<=2 && parameters>=0 else throw InvalidArgument.because("invalid media specificity");
         self.kind=kind;self.parameters=parameters;
     }
     kind() is int {kind;}parameters() is int {parameters;}
@@ -463,7 +453,7 @@ object MediaNegotiationLimits {
     has bytes,entries,parameters,available is int;
     MediaNegotiationLimits() {bytes=8192;entries=128;parameters=32;available=128;}
     MediaNegotiationLimits(bytes is int, entries is int, parameters is int, available is int) {
-        confirm bytes>=0 && entries>=0 && parameters>=0 && available>=0 else throw InvalidArgument("negative media negotiation budget");
+        confirm bytes>=0 && entries>=0 && parameters>=0 && available>=0 else throw InvalidArgument.because("negative media negotiation budget");
         self.bytes=bytes;self.entries=entries;self.parameters=parameters;self.available=available;
     }
     bytes() is int {bytes;}entries() is int {entries;}parameters() is int {parameters;}available() is int {available;}
@@ -479,13 +469,13 @@ object AcceptedMediaTypes {
     }
     present() is bool {present;}values() is Sequencing<MediaRange> {origin;}
     string() is string {
-        confirm present else throw MissingNegotiationField();
+        confirm present else throw MissingNegotiationField.missing;
         let parts is @string=origin.map() -> range {range.string();};parts.join(", ");
     }
     quality(media is HttpMediaType) is Quality {self.lookup_match(media).quality();}
     preference(available is Sequencing<HttpMediaType>) is HttpMediaType {
-        let count=available.size();confirm count>=0 else throw InvalidArgument("negative media choice sequence size");
-        confirm count<=limits.available() else throw NegotiationLimitExceeded("available");
+        let count=available.size();confirm count>=0 else throw InvalidArgument.because("negative media choice sequence size");
+        confirm count<=limits.available() else throw NegotiationLimitExceeded.kind("available");
         let choices is @HttpMediaType=(0..count).map() -> index {available.item(index);};
         let selected=MediaChoice();for choices -> media {selected=selected.following(media,self.lookup_match(media));}
         selected.value();
@@ -504,10 +494,10 @@ object MediaMatch {
     has selected is @MediaRange;has position is int;
     MediaMatch() {selected=[];position=0;}
     MediaMatch(range is MediaRange, position is int) {
-        confirm position>=0 else throw InvalidArgument("negative media match position");selected=[range];self.position=position;
+        confirm position>=0 else throw InvalidArgument.because("negative media match position");selected=[range];self.position=position;
     }
     following(range is MediaRange, position is int) is ^MediaMatch {
-        confirm position>=0 else throw InvalidArgument("negative media match position");
+        confirm position>=0 else throw InvalidArgument.because("negative media match position");
         if selected.size()==0 || range.specificity().order(selected[0].specificity())==Order.greater {
             ^selected=[range];^position=position;
         }
@@ -527,15 +517,15 @@ object MediaChoice {
             ^selected=[media];^matched=lookup_match;
         }
     }
-    value() is HttpMediaType {confirm selected.size()==1 else throw NoAcceptableValue();selected[0];}
+    value() is HttpMediaType {confirm selected.size()==1 else throw NoAcceptableValue.none;selected[0];}
 }
 object MediaField {
     has origin is string;has limits is MediaNegotiationLimits;
     MediaField(origin is string, limits is MediaNegotiationLimits){self.origin=origin;self.limits=limits;}
     values() is @MediaRange {
-        confirm origin.length()<=limits.bytes() else throw NegotiationLimitExceeded("bytes");
+        confirm origin.length()<=limits.bytes() else throw NegotiationLimitExceeded.kind("bytes");
         let field=try {Header(HeaderName("Accept"),origin).value();}
-            catch failure is InvalidHeader {throw InvalidNegotiation("invalid Accept field octets");};
+            catch failure is InvalidHeader {throw InvalidNegotiation.because("invalid Accept field octets");};
         if field=="" {let empty is @MediaRange=[];return empty;}
         let parts=MediaMembers(field,limits.entries()).values();
         let texts is @string=parts.map() -> part {Header(HeaderName("Accept"),part).value();};
@@ -556,14 +546,14 @@ object MediaMembers {
 object MediaMemberPosition {
     has origin is string;has start,slots,maximum is int;has quoted,escaped is bool;has reversed is List<string>;
     MediaMemberPosition(origin is string, maximum is int) {
-        confirm maximum>=0 else throw InvalidArgument("negative Accept member budget");
-        let count=if origin=="" {0;}else{1;};confirm count<=maximum else throw NegotiationLimitExceeded("entries");
+        confirm maximum>=0 else throw InvalidArgument.because("negative Accept member budget");
+        let count=if origin=="" {0;}else{1;};confirm count<=maximum else throw NegotiationLimitExceeded.kind("entries");
         self.origin=origin;self.maximum=maximum;start=0;slots=count;quoted=false;escaped=false;
         let empty is List<string>=EmptyList();reversed=empty;
     }
     following(index is int, code is int) is ^MediaMemberPosition {
         confirm index>=start && index<origin.length() && code>=0 && code<=255
-            else throw InvalidArgument("invalid Accept scan coordinate");
+            else throw InvalidArgument.because("invalid Accept scan coordinate");
         if escaped {^escaped=false;}
         else {
             if quoted {
@@ -572,28 +562,22 @@ object MediaMemberPosition {
             }else{
                 if code==34 {^quoted=true;}
                 else {if code==44 {
-                    confirm slots<maximum else throw NegotiationLimitExceeded("entries");
+                    confirm slots<maximum else throw NegotiationLimitExceeded.kind("entries");
                     ^reversed=reversed.prefix(origin.slice(start,index));^start=index+1;^slots=slots+1;
                 }}
             }
         }
     }
     values() is @string {
-        confirm !quoted && !escaped else throw InvalidNegotiation("unterminated quoted media parameter");
+        confirm !quoted && !escaped else throw InvalidNegotiation.because("unterminated quoted media parameter");
         if origin=="" {let empty is @string=[];return empty;}
         let all=reversed.prefix(origin.slice(start,origin.length()));
         let backwards is @string=all.map() -> value {value;};
         let values is @string=(0..backwards.size()).map() -> index {backwards[backwards.size()-index-1];};values;
     }
 }
-object InvalidQuality does Error {
-    has reason is string;InvalidQuality(reason is string){self.reason=reason;}
-    reason() is string {reason;}text() is string {"invalid HTTP quality: "+reason;}
-}
-object InvalidWeightedValue does Error {
-    has reason is string;InvalidWeightedValue(reason is string){self.reason=reason;}
-    reason() is string {reason;}text() is string {"invalid weighted HTTP token: "+reason;}
-}
+enum InvalidQuality is Error = (because(reason is string));
+enum InvalidWeightedValue is Error = (because(reason is string));
 
 test "quality is exact and zero refuses a preference" {
     test.is(ParsedQuality("0.010").value().string(),"0.01");

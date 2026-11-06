@@ -11,14 +11,14 @@ import "collections/ordering" take SortedBy,Ranked,LowerBound;
 object BasicLanguageRange {
     has origin is string;has specificity is int;
     BasicLanguageRange(origin is string) {
-        confirm origin.length()<=255 else throw InvalidLanguageRange(255,"range length exceeded");
+        confirm origin.length()<=255 else throw InvalidLanguageRange.located(255, "range length exceeded");
         if origin=="*" {self.origin="*";specificity=0;}else{
             let parts=origin.split("-");
-            confirm parts.size()<=32 else throw InvalidLanguageRange(0,"subtag count exceeded");
+            confirm parts.size()<=32 else throw InvalidLanguageRange.located(0, "subtag count exceeded");
             for (0..parts.size()) -> index {
                 let offset=(0..index).reduce(0) -> width,at {width+parts[at].length()+1;};
                 confirm BasicRangeSubtag(parts[index]).valid(index>0)
-                    else throw InvalidLanguageRange(offset,"basic range subtag required");
+                    else throw InvalidLanguageRange.located(offset, "basic range subtag required");
             }
             self.origin=BasicRangeSubtag(origin).lower();specificity=parts.size();
         }
@@ -58,12 +58,7 @@ object BasicRangeSubtag {
     }
     lower() is string {LocaleSubtag(origin).lower();}
 }
-object InvalidLanguageRange does Error {
-    has offset is int;has reason is string;
-    InvalidLanguageRange(offset is int, reason is string){self.offset=offset;self.reason=reason;}
-    offset() is int {offset;}reason() is string {reason;}
-    text() is string {"invalid basic language range at "+offset.string()+": "+reason;}
-}
+enum InvalidLanguageRange is Error = (located(offset is int, reason is string));
 
 // Snapshot once, then observe pure values. Filtering orders preferences before
 // available positions; duplicate complete tags keep their first occurrence.
@@ -73,7 +68,7 @@ object LocaleSelectionInputs {
     LocaleSelectionInputs(requested is Sequencing<BasicLanguageRange>, available is Sequencing<Locale>) {
         let ranges=requested.size();let candidates=available.size();
         confirm ranges>=0 && ranges<=128 && candidates>=0 && candidates<=512
-            else throw InvalidLocaleSelection("expected at most 128 ranges and 512 candidates");
+            else throw InvalidLocaleSelection.because("expected at most 128 ranges and 512 candidates");
         let preferences is @BasicLanguageRange=(0..ranges).map()->index{requested.item(index);};
         let choices is @Locale=(0..candidates).map()->index{available.item(index);};
         self.requested=preferences;self.available=choices;
@@ -164,7 +159,7 @@ object LookedUpLocale {
         let fallback_position=(0..choices.size()).reduce(-1)->found,index{
             if found>=0{found;}else{if choices[index].string()==fallback.string(){index;}else{-1;}}
         };
-        confirm fallback_position>=0 else throw InvalidLocaleSelection("fallback is absent from available locales");
+        confirm fallback_position>=0 else throw InvalidLocaleSelection.because("fallback is absent from available locales");
         fallback_index=fallback_position;lookup=LocaleAvailableIndex(choices);
     }
     value() is Locale {
@@ -221,7 +216,7 @@ object LocalePositionRange {
     has beginning,ending,best is int;has children is @LocalePositionRange;
     LocalePositionRange(positions is @int,start is int,stop is int){
         confirm start>=0 && start<=stop && stop<=positions.size()
-            else throw InvalidLocaleSelection("invalid prefix index interval");
+            else throw InvalidLocaleSelection.because("invalid prefix index interval");
         beginning=start;ending=stop;
         if stop-start<=1{best=if start<stop{positions[start];}else{-1;};children=[];}else{
             let middle=start+((stop-start)/2).int();
@@ -237,10 +232,7 @@ object LocalePositionRange {
         if left<0{right;}else{if right<0 || left<right{left;}else{right;}}
     }
 }
-object InvalidLocaleSelection does Error {
-    has reason is string;InvalidLocaleSelection(reason is string){self.reason=reason;}
-    text() is string {"invalid locale selection: "+reason;}
-}
+enum InvalidLocaleSelection is Error = (because(reason is string));
 test "basic filtering respects hyphen boundaries and case" {
     test.ok(BasicLanguageRange("EN").matches(Locale("en","US")));
     test.ok(!BasicLanguageRange("en-US").matches(Locale("en","GB")));

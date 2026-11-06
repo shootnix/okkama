@@ -33,9 +33,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MIB = 1024 * 1024
 
-ORDER = ["sparrow", "sparrow-interp", "ir", "jvm", "python", "perl", "ruby"]
+ORDER = ["sparrow-core", "sparrow", "sparrow-interp", "ir", "jvm", "python", "perl", "ruby"]
 
 ENGINE_NAMES = {
+    "sparrow-core": "Sparrow core",
     "sparrow": "Sparrow (JIT)",
     "sparrow-interp": "Sparrow (interpreter)",
     "ir": "Okkama IR",
@@ -291,9 +292,11 @@ def main():
         old = {bench["name"]: bench["engines"] for bench in before["benchmarks"]}
         rows = []
         for bench in report["benchmarks"]:
-            for engine in ("sparrow", "sparrow-interp"):
-                if engine in bench["engines"] and engine in old.get(bench["name"], {}):
-                    was = old[bench["name"]][engine]["real"]
+            # The new core is compared with the Sparrow VM of the earlier report.
+            for engine, before_engine in (("sparrow", "sparrow"), ("sparrow-interp", "sparrow-interp"),
+                                          ("sparrow-core", "sparrow")):
+                if engine in bench["engines"] and before_engine in old.get(bench["name"], {}):
+                    was = old[bench["name"]][before_engine]["real"]
                     now = bench["engines"][engine]["real"]
                     rows.append({"bench": bench["name"], "engine": ENGINE_NAMES[engine],
                                  "before_s": round(was, 4), "after_s": round(now, 4),

@@ -33,7 +33,7 @@ object HkdfSecret {
     has info is @byte;
     has length is int;
     HkdfSecret(hash is KdfHash, input is SecretBytes, salt is @byte, info is @byte, length is int) {
-        confirm length >= 1 else throw InvalidCryptoInput("HKDF output length must be positive");
+        confirm length >= 1 else throw InvalidCryptoInput.because("HKDF output length must be positive");
         self.hash = hash;
         self.input = input;
         self.salt = salt;
@@ -53,8 +53,8 @@ object Pbkdf2Secret {
     has iterations is int;
     has length is int;
     Pbkdf2Secret(hash is KdfHash, password is SecretBytes, salt is @byte, iterations is int, length is int) {
-        confirm iterations >= 1 && iterations <= 4294967295 else throw InvalidCryptoInput("PBKDF2 iterations must be 1..4294967295");
-        confirm length >= 1 && length <= 65536 else throw InvalidCryptoInput("PBKDF2 output length must be 1..65536");
+        confirm iterations >= 1 && iterations <= 4294967295 else throw InvalidCryptoInput.because("PBKDF2 iterations must be 1..4294967295");
+        confirm length >= 1 && length <= 65536 else throw InvalidCryptoInput.because("PBKDF2 output length must be 1..65536");
         self.hash = hash;
         self.password = password;
         self.salt = salt;

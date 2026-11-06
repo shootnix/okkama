@@ -606,4 +606,13 @@ natives! {
     DatabaseSqliteReplyBlobs = 602, "runtime/database@1::sqlite_reply_blobs/1", "(SqliteReplyState) -> @@byte";
     DatabaseSqliteReplyRowBytes = 603, "runtime/database@1::sqlite_reply_row_bytes/1", "(SqliteReplyState) -> int";
     DatabaseSqliteReplyDeferred = 604, "runtime/database@1::sqlite_reply_deferred/1", "(SqliteReplyState) -> @string";
+    BytesBytesFind = 605, "runtime/bytes@1::bytes_find/3", "(@byte, @byte, int) -> int";
+    BytesBytesUtf8Invalid = 606, "runtime/bytes@1::bytes_utf8_invalid/3", "(@byte, int, int) -> int";
+    BytesBytesText = 607, "runtime/bytes@1::bytes_text/3", "(@byte, int, int) -> string";
+    BytesBytesDecimalInvalid = 608, "runtime/bytes@1::bytes_decimal_invalid/3", "(@byte, int, int) -> int";
+    BytesBytesDecimal = 609, "runtime/bytes@1::bytes_decimal/3", "(@byte, int, int) -> int";
+    BytesBytesEqual = 610, "runtime/bytes@1::bytes_equal/4", "(@byte, int, int, @byte) -> bool";
+    BytesBytesIntegerFits = 611, "runtime/bytes@1::bytes_integer_fits/5", "(@byte, int, int, bool, bool) -> bool";
+    BytesBytesInteger = 612, "runtime/bytes@1::bytes_integer/5", "(@byte, int, int, bool, bool) -> int";
+    BytesBytesJoin = 613, "runtime/bytes@1::bytes_join/3", "(@byte, int, @byte) -> @byte";
 }

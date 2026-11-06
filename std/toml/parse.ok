@@ -46,13 +46,11 @@ object ParsedToml {
     }
     ParsedToml(origin is string, maximum_input is int, maximum_depth is int, maximum_nodes is int) {
         confirm maximum_input >= 0 && maximum_depth >= 1 && maximum_depth <= 128 && maximum_nodes >= 1
-            else throw InvalidTomlBudget();
+            else throw InvalidTomlBudget.invalid;
         state = toml_parse_state(origin, maximum_input, maximum_depth, maximum_nodes);
     }
     value() is TomlTable {
-        confirm toml_parse_valid(state) else throw InvalidToml(
-            toml_parse_offset(state), toml_parse_line(state),
-            toml_parse_column(state), toml_parse_message(state));
+        confirm toml_parse_valid(state) else throw InvalidToml.located(toml_parse_offset(state), toml_parse_line(state), toml_parse_column(state), toml_parse_message(state));
         TomlNode(toml_parse_root(state)).table();
     }
 }
@@ -113,26 +111,11 @@ object TomlNode {
     }
 }
 
-object InvalidTomlBudget does Error {
-    InvalidTomlBudget();
-    text() is string { "invalid TOML parser budgets"; }
-}
+enum InvalidTomlBudget is Error = (invalid);
 
 // Source coordinates identify the failed observation. No partial tree escapes.
 // text() supplies a readable diagnostic; message wording is not a stable ABI.
-object InvalidToml does Error {
-    has at is int;
-    has row is int;
-    has col is int;
-    has message is string;
-    InvalidToml(offset is int, line is int, column is int, message is string) {
-        at = offset; row = line; col = column; self.message = message;
-    }
-    offset() is int { at; }
-    line() is int { row; }
-    column() is int { col; }
-    text() is string { message + " at line " + row.string() + ", column " + col.string(); }
-}
+enum InvalidToml is Error = (located(offset is int, line is int, column is int, message is string));
 
 
 
@@ -153,7 +136,7 @@ test "nominal scalar and temporal projection" {
 test "lazy failure repeated observation and configuration errors" {
     let invalid = ParsedToml("x=");
     for 0..2 -> attempt {
-        test.is(try { invalid.value(); -1; } catch error is InvalidToml { error.offset(); }, 2);
+        test.is(try { invalid.value(); -1; } catch InvalidToml.located(offset, _, _, _) { offset; }, 2);
     }
     test.ok(try { ParsedToml("", -1, 1, 1); false; } catch error is InvalidTomlBudget { true; });
 }
@@ -177,11 +160,11 @@ test "header-defined tables cannot be reopened with dotted keys" {
     for ["[[a.b]]\n[a]\nb.y=2", "[a.b.c]\nz=9\n[a]\nb.c.t='bad'"] -> source {
         test.ok(try { ParsedToml(source).value(); false; } catch error is InvalidToml { true; });
     }
-    let invalid = try { ParsedToml("x=@").value(); "";} catch error is InvalidToml {
-        test.is(error.offset(), 2);
-        test.is(error.line(), 1);
-        test.is(error.column(), 3);
-        error.text();
+    let invalid = try { ParsedToml("x=@").value(); "";} catch InvalidToml.located(offset, line, column, message) {
+        test.is(offset, 2);
+        test.is(line, 1);
+        test.is(column, 3);
+        message;
     };
     test.ok(invalid.length() > 0);
 }

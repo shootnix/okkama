@@ -11,7 +11,7 @@ import "support" take DemoServer,DemoClient,ReplySnapshot;
 import "web/routing" take WebRoutes,Get,Post,Scope;
 import "web/request" take WebRequest;
 import "web/reply" take Text,Html,JsonReply;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/handler" take Handling,HandlingResult,ResponseHandling;
 import "http/message" take Request,Response;
 import "http/request_context" take HttpRequestContext;
@@ -20,7 +20,7 @@ import "http/header" take Headers,Header,HeaderName;
 import "http/body" take BodyOpening,ByteBody,OneShotBody,StreamBodyReading;
 import "http/sse" take ServerEvent,EventBody;
 import "http/static" take StaticFiles,StaticPolicy;
-import "net/stream" take AsyncReading;
+import "io/stream" take AsyncReading;
 import "io/stream" take Closing;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot;
@@ -91,7 +91,7 @@ object Features {
         ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"text/event-stream"),Header(HeaderName("Transfer-Encoding"),"chunked")]),EventBody(queue.receiving())));
     }
     async slow(request is WebRequest) is HandlingResult {
-        let ms=ParsedInt(request.path("ms")).value();confirm ms>=0 && ms<=1000 else throw Exception(422,"delay 0..1000 ms");
+        let ms=ParsedInt(request.path("ms")).value();confirm ms>=0 && ms<=1000 else throw Exception.status(422,"delay 0..1000 ms");
         await SystemClock().wait(Duration(ms.rat(),DurationUnit.millisecond));Text(200,"slept "+ms.string());
     }
     async upload(request is WebRequest) is HandlingResult {
@@ -102,7 +102,7 @@ object Features {
         let bytes is @byte=(0..8192).map()->i{(i%256).byte();};
         ResponseHandling(Response(Status(200),Headers([Header(HeaderName("Content-Type"),"application/octet-stream"),Header(HeaderName("Content-Length"),bytes.size().string())]),ByteBody(bytes)));
     }
-    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+    async missing(request is WebRequest) is HandlingResult{Problem(404,"No route");}
 }
 object ObservedHandling does Handling {
     has origin is Handling;has log is Sending<string>;

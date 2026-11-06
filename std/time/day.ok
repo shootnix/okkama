@@ -29,15 +29,13 @@ object TimeOfDay does Comparing<TimeOfDay> {
 
     TimeOfDay(hour is int, minute is int, second is int, nanosecond is int) {
         confirm hour >= 0 && hour <= 23
-            else throw InvalidTimeOfDay("hour must be within 0..23");
+            else throw InvalidTimeOfDay.because("hour must be within 0..23");
         confirm minute >= 0 && minute <= 59
-            else throw InvalidTimeOfDay("minute must be within 0..59");
+            else throw InvalidTimeOfDay.because("minute must be within 0..59");
         confirm second >= 0 && second <= 59
-            else throw InvalidTimeOfDay("second must be within 0..59");
+            else throw InvalidTimeOfDay.because("second must be within 0..59");
         confirm nanosecond >= 0 && nanosecond <= 999999999
-            else throw InvalidTimeOfDay(
-                "nanosecond must be within 0..999999999"
-            );
+            else throw InvalidTimeOfDay.because("nanosecond must be within 0..999999999");
 
         hour_value = hour;
         minute_value = minute;
@@ -81,14 +79,4 @@ object TimeOfDay does Comparing<TimeOfDay> {
     }
 }
 
-object InvalidTimeOfDay does Error {
-    has message is string;
-
-    InvalidTimeOfDay(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidTimeOfDay is Error = (because(message is string));

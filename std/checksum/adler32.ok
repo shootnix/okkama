@@ -27,7 +27,7 @@ object Adler32 does Checksumming {
     Adler32(origin is @byte) { self.origin = origin; initial = 1; }
     Adler32(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 4294967295
-            else throw InvalidChecksumInitial(initial, 4294967295);
+            else throw InvalidChecksumInitial.detailed(initial, 4294967295);
         self.origin = origin;
         self.initial = initial;
     }

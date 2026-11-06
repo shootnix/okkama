@@ -22,7 +22,7 @@ import "io/stream" take Closing;
 object PoolOptions{
     has minimum,maximum is int;has idle,lifetime,acquisition is Duration;
     PoolOptions(minimum is int,maximum is int,idle_timeout is Duration,lifetime is Duration,acquisition_timeout is Duration){
-        confirm minimum>=0 && maximum>0 && maximum<=64 && minimum<=maximum && idle_timeout.seconds()>=0.rat() && lifetime.seconds()>=0.rat() && acquisition_timeout.seconds()>0.rat() else throw InvalidPoolOptions();
+        confirm minimum>=0 && maximum>0 && maximum<=64 && minimum<=maximum && idle_timeout.seconds()>=0.rat() && lifetime.seconds()>=0.rat() && acquisition_timeout.seconds()>0.rat() else throw InvalidPoolOptions.invalid;
         self.minimum=minimum;self.maximum=maximum;idle=idle_timeout;self.lifetime=lifetime;acquisition=acquisition_timeout;
     }
     minimum() is int{minimum;}maximum() is int{maximum;}idle_timeout() is Duration{idle;}lifetime() is Duration{lifetime;}acquisition_timeout() is Duration{acquisition;}
@@ -72,15 +72,15 @@ object DbPoolState{
     }
     closed() is bool{stopped.ready();}
     snapshot() is PoolSnapshot{PoolSnapshot(leases.value().size(),idle.value().size(),waiting.value(),options.maximum());}
-    async stopping() is PooledConnection{await stopped.wait();throw DbClosed();}
+    async stopping() is PooledConnection{await stopped.wait();throw DbClosed.closed;}
     async connection() is PooledConnection{
-        confirm !self.closed() else throw DbClosed();waiting.replace(waiting.value()+1);defer waiting.replace(waiting.value()-1);
+        confirm !self.closed() else throw DbClosed.closed;waiting.replace(waiting.value()+1);defer waiting.replace(waiting.value()-1);
         let group is FutureGroup<PooledConnection>=FutureGroup();let taken=Event();let pending=self.acquire();let cleanup=DbUnclaimedLease(group,pending,taken);defer await cleanup.close();group.start(pending);
         let race is Raced<PooledConnection>=Raced(origins:[pending,self.stopping()]);let deadline=clock.monotonic_instant().plus(options.acquisition_timeout());let bounded is Before<PooledConnection>=Before(origin:race.result(),deadline:deadline,clock:clock);
         let result=await bounded.result();taken.set();result;
     }
     async acquire() is PooledConnection{
-        let permit=await capacity.permit();let published=Event();let cleanup=DbUnusedPermit(permit,published);defer cleanup.close();confirm !self.closed() else throw DbClosed();let guard=await acquisition_lock.guard();defer guard.close();
+        let permit=await capacity.permit();let published=Event();let cleanup=DbUnusedPermit(permit,published);defer cleanup.close();confirm !self.closed() else throw DbClosed.closed;let guard=await acquisition_lock.guard();defer guard.close();
         loop{
             let previous=idle.value();let candidates is @DbPhysical=if previous.size()>0{let rest is @DbIdle=(1..previous.size()).map()->index{previous[index];};idle.replace(rest);[previous[0].physical()];}else{let empty is @DbPhysical=[];empty;};
             let physical=if candidates.size()>0{candidates[0];}else{
@@ -90,7 +90,7 @@ object DbPoolState{
             let owned=Event();let anchor=DbUnpublishedPhysical(self,physical,connection,owned);defer await anchor.close();
             let expired=(options.lifetime().seconds()>0.rat() && clock.monotonic_instant().minus(physical.born()).seconds()>=options.lifetime().seconds()) || (candidates.size()>0 && options.idle_timeout().seconds()>0.rat() && clock.monotonic_instant().minus(previous[0].since()).seconds()>=options.idle_timeout().seconds());
             if expired || connection.closed() || !(await health.healthy(connection)){self.discard(physical,connection);await connection.settled();owned.set();next;}
-            confirm !self.closed() else throw DbClosed();await self.warm();let lease=PooledConnection(self,physical,connection,permit);let old=leases.value();let all is @PooledConnection=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{lease;}};leases.replace(all);owned.set();published.set();return lease;
+            confirm !self.closed() else throw DbClosed.closed;await self.warm();let lease=PooledConnection(self,physical,connection,permit);let old=leases.value();let all is @PooledConnection=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{lease;}};leases.replace(all);owned.set();published.set();return lease;
         }
     }
     async warm() is bool{
@@ -118,15 +118,15 @@ object PooledConnection does DbConnection,DbExecuting,DbPreparing,Closing{
     has owner is DbPoolState;has physical is DbPhysical;has origin is DbConnection;has permit is Permit;has stopped is Event;has readers is Atomic<@RowReading>;has transactions is Atomic<@Transaction>;has preparation is Atomic<@PreparedStatement>;
     PooledConnection(owner is DbPoolState,physical is DbPhysical,origin is DbConnection,permit is Permit){self.owner=owner;self.physical=physical;self.origin=origin;self.permit=permit;stopped=Event();let no_rows is @RowReading=[];readers=Atomic(no_rows);let no_transactions is @Transaction=[];transactions=Atomic(no_transactions);let no_preparation is @PreparedStatement=[];preparation=Atomic(no_preparation);}
     identifier() is int{physical.serial();}closed() is bool{stopped.ready() || owner.closed() || origin.closed();}
-    async execution(statement is Statement) is Execution{confirm !self.closed() else throw DbClosed();await origin.execution(statement);}
-    async rows(statement is Statement) is RowReading{confirm !self.closed() else throw DbClosed();let rows=await origin.rows(statement);readers.replace([rows]);PooledRows(rows,stopped);}
+    async execution(statement is Statement) is Execution{confirm !self.closed() else throw DbClosed.closed;await origin.execution(statement);}
+    async rows(statement is Statement) is RowReading{confirm !self.closed() else throw DbClosed.closed;let rows=await origin.rows(statement);readers.replace([rows]);PooledRows(rows,stopped);}
     async prepared(text is string) is PreparedStatement{
-        confirm !self.closed() else throw DbClosed();let preparing=await physical.preparing();let raw=await preparing.prepared(text);let published=Event();let cleanup=DbUnpublishedPrepared(raw,published);defer cleanup.close();confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;let preparing=await physical.preparing();let raw=await preparing.prepared(text);let published=Event();let cleanup=DbUnpublishedPrepared(raw,published);defer cleanup.close();confirm !self.closed() else throw DbClosed.closed;
         let old is @PreparedStatement=preparation.value().filter()->statement{!statement.closed();};let all is @PreparedStatement=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{raw;}};preparation.replace(all);published.set();PooledPrepared(raw,stopped,readers);
     }
-    async transaction(options is TransactionOptions) is Transaction{confirm !self.closed() else throw DbClosed();let transaction=await origin.transaction(options);transactions.replace([transaction]);PooledTransaction(transaction,stopped,readers);}
+    async transaction(options is TransactionOptions) is Transaction{confirm !self.closed() else throw DbClosed.closed;let transaction=await origin.transaction(options);transactions.replace([transaction]);PooledTransaction(transaction,stopped,readers);}
     async prepared_transaction(options is TransactionOptions) is PooledTransaction{
-        confirm !self.closed() else throw DbClosed();let opening=await physical.transactions();let transaction=await opening.prepared_transaction(options);transactions.replace([transaction]);PooledTransaction(transaction,stopped,readers,transaction);
+        confirm !self.closed() else throw DbClosed.closed;let opening=await physical.transactions();let transaction=await opening.prepared_transaction(options);transactions.replace([transaction]);PooledTransaction(transaction,stopped,readers,transaction);
     }
     close() is void{if !stopped.ready(){stopped.set();for readers.value() -> rows{rows.close();}for preparation.value() -> statement{statement.close();}owner.release(self);}}
     revoke() is void{origin.close();self.close();}
@@ -141,21 +141,21 @@ object PooledRows does RowReading,Closing{
     has origin is RowReading;has lease_closed is Event;
     PooledRows(origin is RowReading,lease_closed is Event){self.origin=origin;self.lease_closed=lease_closed;}
     columns() is Sequencing<Column>{origin.columns();}closed() is bool{lease_closed.ready() || origin.closed();}close() is void{origin.close();}
-    async row() is Row{confirm !self.closed() else throw DbClosed();await origin.row();}destroy{origin.close();}
+    async row() is Row{confirm !self.closed() else throw DbClosed.closed;await origin.row();}destroy{origin.close();}
 }
 object PooledTransaction does Transaction,DbExecuting,DbPreparing{
     has origin is Transaction;has lease_closed is Event;has readers is Atomic<@RowReading>;has preparation is @DbPreparing;
     PooledTransaction(origin is Transaction,lease_closed is Event,readers is Atomic<@RowReading>){self.origin=origin;self.lease_closed=lease_closed;self.readers=readers;preparation=[];}
     PooledTransaction(origin is Transaction,lease_closed is Event,readers is Atomic<@RowReading>,preparation is DbPreparing){self.origin=origin;self.lease_closed=lease_closed;self.readers=readers;self.preparation=[preparation];}
     active() is bool{!lease_closed.ready() && origin.active();}
-    async execution(statement is Statement) is Execution{confirm self.active() else throw TransactionEnded();await origin.execution(statement);}
-    async rows(statement is Statement) is RowReading{confirm self.active() else throw TransactionEnded();let rows=await origin.rows(statement);readers.replace([rows]);PooledRows(rows,lease_closed);}
+    async execution(statement is Statement) is Execution{confirm self.active() else throw TransactionEnded.ended;await origin.execution(statement);}
+    async rows(statement is Statement) is RowReading{confirm self.active() else throw TransactionEnded.ended;let rows=await origin.rows(statement);readers.replace([rows]);PooledRows(rows,lease_closed);}
     async prepared(text is string) is PreparedStatement{
-        confirm self.active() else throw TransactionEnded();confirm preparation.size()==1 else throw DbFailure(DbFailureKind.unsupported,DbOperation.preparing,"DB_TRANSACTION_PREPARATION_UNAVAILABLE","transaction has no preparation capability");
+        confirm self.active() else throw TransactionEnded.ended;confirm preparation.size()==1 else throw DbFailure.detailed(DbFailureKind.unsupported, DbOperation.preparing, "DB_TRANSACTION_PREPARATION_UNAVAILABLE", "transaction has no preparation capability");
         let statement=await preparation[0].prepared(text);PooledPrepared(statement,lease_closed,readers);
     }
-    async commit() is Transaction{confirm !lease_closed.ready() else throw TransactionEnded();await origin.commit();self;}
-    async rollback() is Transaction{confirm !lease_closed.ready() else throw TransactionEnded();await origin.rollback();self;}
+    async commit() is Transaction{confirm !lease_closed.ready() else throw TransactionEnded.ended;await origin.commit();self;}
+    async rollback() is Transaction{confirm !lease_closed.ready() else throw TransactionEnded.ended;await origin.rollback();self;}
 }
 object DbUnusedPermit{has permit is Permit;has published is Event;DbUnusedPermit(permit is Permit,published is Event){self.permit=permit;self.published=published;}close() is void{if !published.ready(){permit.close();}}}
 object DbUnpublishedPhysical{has owner is DbPoolState;has physical is DbPhysical;has connection is DbConnection;has owned is Event;DbUnpublishedPhysical(owner is DbPoolState,physical is DbPhysical,connection is DbConnection,owned is Event){self.owner=owner;self.physical=physical;self.connection=connection;self.owned=owned;}async close() is void{if !owned.ready(){owner.discard(physical,connection);await connection.settled();}}}
@@ -164,13 +164,13 @@ object DbUnclaimedLease{
     DbUnclaimedLease(group is FutureGroup<PooledConnection>,pending is Future<PooledConnection>,taken is Event){self.group=group;self.pending=pending;self.taken=taken;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}if !taken.ready(){let result is @PooledConnection=try{[await pending];}catch e is Cancelled{let empty is @PooledConnection=[];empty;}catch e is Error{let empty is @PooledConnection=[];empty;};for result -> lease{lease.close();}}}
 }
-object InvalidPoolOptions does Error{InvalidPoolOptions();text() is string{"invalid database pool bounds or durations";}}
+enum InvalidPoolOptions is Error = (invalid);
 
 object DbRetirement{
     has owner is DbPoolState;has pending is Future<bool>;has group is FutureGroup<bool>;has finished is Event;
     DbRetirement(owner is DbPoolState,pending is Future<bool>){self.owner=owner;self.pending=pending;group=FutureGroup();finished=Event();}
     start() is void{group.start(self.run());}complete() is bool{finished.ready();}
-    async run() is bool{defer finished.set();try{await pending;}catch e is Error{owner.failed(e);false;}catch e is NativeFailure{owner.failed(DbFailure(DbFailureKind.connection,DbOperation.closing,e.code(),"database pool cleanup failed"));false;}}
+    async run() is bool{defer finished.set();try{await pending;}catch e is Error{owner.failed(e);false;}catch e is NativeFailure{owner.failed(DbFailure.detailed(DbFailureKind.connection, DbOperation.closing, e.code(), "database pool cleanup failed"));false;}}
     async settled() is bool{await group.wait();true;}
 }
 
@@ -185,8 +185,8 @@ object PooledPrepared does PreparedStatement,Closing{
     has origin is PreparedStatement;has lease_closed is Event;has readers is Atomic<@RowReading>;
     PooledPrepared(origin is PreparedStatement,lease_closed is Event,readers is Atomic<@RowReading>){self.origin=origin;self.lease_closed=lease_closed;self.readers=readers;}
     closed() is bool{lease_closed.ready() || origin.closed();}close() is void{origin.close();}
-    async execution(values is Sequencing<DbValue>) is Execution{confirm !self.closed() else throw DbClosed();await origin.execution(values);}
-    async rows(values is Sequencing<DbValue>) is RowReading{confirm !self.closed() else throw DbClosed();let rows=await origin.rows(values);readers.replace([rows]);PooledRows(rows,lease_closed);}
+    async execution(values is Sequencing<DbValue>) is Execution{confirm !self.closed() else throw DbClosed.closed;await origin.execution(values);}
+    async rows(values is Sequencing<DbValue>) is RowReading{confirm !self.closed() else throw DbClosed.closed;let rows=await origin.rows(values);readers.replace([rows]);PooledRows(rows,lease_closed);}
     destroy{origin.close();}
 }
 object DbUnpublishedPrepared{has origin is PreparedStatement;has published is Event;DbUnpublishedPrepared(origin is PreparedStatement,published is Event){self.origin=origin;self.published=published;}close() is void{if !published.ready(){origin.close();}}}

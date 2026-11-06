@@ -17,14 +17,14 @@ import "runtime/collections" take string_map_snapshot;
 import "async/scope" take FutureGroup;
 
 enum RouteSegmentKind=(literal,parameter,wildcard);
-object InvalidRoute does Error{has reason is string;InvalidRoute(reason is string){self.reason=reason;}text() is string{"invalid route: "+reason;}}
+enum InvalidRoute is Error = (because(reason is string));
 // Split raw separators first, then decode once. Encoded slash remains data in
 // one segment, never a second match position. No Unicode/case normalization.
 object RoutedPath {
     has segments is @string;
     RoutedPath(origin is string){
-        confirm origin!="" && origin.length()<=8192 && origin.slice(0,1)=="/" && origin.split("?").size()==1 && origin.split("#").size()==1 else throw InvalidRoute("absolute path without query/fragment required");
-        let raw is @string=if origin=="/"{[];}else{origin.slice(1,origin.length()).split("/");};confirm raw.size()<=128 else throw InvalidRoute("path segment budget");
+        confirm origin!="" && origin.length()<=8192 && origin.slice(0,1)=="/" && origin.split("?").size()==1 && origin.split("#").size()==1 else throw InvalidRoute.because("absolute path without query/fragment required");
+        let raw is @string=if origin=="/"{[];}else{origin.slice(1,origin.length()).split("/");};confirm raw.size()<=128 else throw InvalidRoute.because("path segment budget");
         // Annotated binding supplies the element type when "/" yields no segments.
         let decoded is @string=raw.map()->segment{RouteLiteral(segment).string();};segments=decoded;
     }
@@ -33,15 +33,15 @@ object RoutedPath {
 object RouteLiteral {
     has value is string;
     RouteLiteral(origin is string){
-        let decoded=try{PercentDecoded(origin).string();}catch e is Error{throw InvalidRoute("invalid percent/UTF8 segment");};
-        for Utf8Encoded(decoded).bytes() -> octet{confirm octet.int()>=32 && octet.int()!=127 else throw InvalidRoute("control in decoded segment");}value=decoded;
+        let decoded=try{PercentDecoded(origin).string();}catch e is Error{throw InvalidRoute.because("invalid percent/UTF8 segment");};
+        for Utf8Encoded(decoded).bytes() -> octet{confirm octet.int()>=32 && octet.int()!=127 else throw InvalidRoute.because("control in decoded segment");}value=decoded;
     }
     string() is string{value;}
 }
 object RouteParameterName {
     RouteParameterName(origin is string){
-        let bytes=Utf8Encoded(origin).bytes();confirm bytes.size()>0 && bytes.size()<=32 else throw InvalidRoute("parameter name budget");
-        for (0..bytes.size()) -> index{let code=bytes[index].int();let letter=(code>=65 && code<=90) || (code>=97 && code<=122) || code==95;confirm letter || (index>0 && code>=48 && code<=57) else throw InvalidRoute("ASCII identifier required");}
+        let bytes=Utf8Encoded(origin).bytes();confirm bytes.size()>0 && bytes.size()<=32 else throw InvalidRoute.because("parameter name budget");
+        for (0..bytes.size()) -> index{let code=bytes[index].int();let letter=(code>=65 && code<=90) || (code>=97 && code<=122) || code==95;confirm letter || (index>0 && code>=48 && code<=57) else throw InvalidRoute.because("ASCII identifier required");}
     }
 }
 object RouteSegment {
@@ -49,7 +49,7 @@ object RouteSegment {
     RouteSegment(origin is string,final is bool){
         let first=if origin==""{"";}else{origin.slice(0,1);};
         if first==":" || first=="*"{
-            let name=origin.slice(1,origin.length());RouteParameterName(name);confirm first!="*" || final else throw InvalidRoute("wildcard must be final");
+            let name=origin.slice(1,origin.length());RouteParameterName(name);confirm first!="*" || final else throw InvalidRoute.because("wildcard must be final");
             kind=if first==":"{RouteSegmentKind.parameter;}else{RouteSegmentKind.wildcard;};value=name;
         }else{kind=RouteSegmentKind.literal;value=RouteLiteral(origin).string();}
     }
@@ -58,22 +58,22 @@ object RouteSegment {
 object RoutePattern {
     has origin is string;has parts is @RouteSegment;
     RoutePattern(origin is string){
-        confirm origin!="" && Utf8Encoded(origin).bytes().size()<=8192 && origin.slice(0,1)=="/" && origin.split("?").size()==1 && origin.split("#").size()==1 else throw InvalidRoute("pattern path budget or grammar");
-        let raw is @string=if origin=="/"{[];}else{origin.slice(1,origin.length()).split("/");};confirm raw.size()<=128 else throw InvalidRoute("pattern segment budget");
+        confirm origin!="" && Utf8Encoded(origin).bytes().size()<=8192 && origin.slice(0,1)=="/" && origin.split("?").size()==1 && origin.split("#").size()==1 else throw InvalidRoute.because("pattern path budget or grammar");
+        let raw is @string=if origin=="/"{[];}else{origin.slice(1,origin.length()).split("/");};confirm raw.size()<=128 else throw InvalidRoute.because("pattern segment budget");
         let segments is @RouteSegment=(0..raw.size()).map()->index{RouteSegment(raw[index],index+1==raw.size());};
         // Segment grammar is validated before name uniqueness, as before.
         // Capture names (including the final wildcard) share one namespace.
         let named=segments.filter()->segment{segment.kind()!=RouteSegmentKind.literal;};
         let names is @string=named.map()->segment{segment.value();};let ordered=names.ordering();
         for (0..ordered.size())->index{
-            if index>0{confirm (ordered[index]!=ordered[index-1]) else throw InvalidRoute("duplicate parameter name");}
+            if index>0{confirm (ordered[index]!=ordered[index-1]) else throw InvalidRoute.because("duplicate parameter name");}
         }
         self.origin=origin;parts=segments;
     }
     string() is string{origin;}parts() is @RouteSegment{parts;}
     match(path is string) is RouteMatch{self.matching(RoutedPath(path).segments());}
     matches(path is @string) is bool{
-        confirm path.size()<=128 else throw InvalidRoute("decoded path segment budget");
+        confirm path.size()<=128 else throw InvalidRoute.because("decoded path segment budget");
         let wildcard=parts.size()>0 && parts[parts.size()-1].kind()==RouteSegmentKind.wildcard;
         let fixed=parts.size()-(if wildcard{1;}else{0;});if path.size()<fixed || (!wildcard && path.size()!=fixed){return false;}
         for (0..fixed) -> index{
@@ -83,10 +83,10 @@ object RoutePattern {
     }
     matching(path is @string) is RouteMatch{
         if !self.matches(path){return RouteMatch();}
-        let width=path.reduce(0)->used,segment{confirm segment.length()<=8192-used else throw InvalidRoute("decoded path character budget");used+segment.length();};
+        let width=path.reduce(0)->used,segment{confirm segment.length()<=8192-used else throw InvalidRoute.because("decoded path character budget");used+segment.length();};
         let positions is @int=(0..parts.size()).filter()->index{parts[index].kind()!=RouteSegmentKind.literal;};
         let keys is @string=positions.map()->index{parts[index].value();};let values is @string=positions.map()->index{if parts[index].kind()==RouteSegmentKind.wildcard{path.slice(index,path.size()).join("/");}else{path[index];}};
-        let parameters=try{string_map_snapshot(keys,values,128,8192);}catch e is NativeFailure{throw InvalidRoute("captured parameter budget");};RouteMatch(parameters);
+        let parameters=try{string_map_snapshot(keys,values,128,8192);}catch e is NativeFailure{throw InvalidRoute.because("captured parameter budget");};RouteMatch(parameters);
     }
     // No implicit priority or shadowing: same-method intersections are rejected
     // during graph construction. Different HTTP methods may share any pattern.
@@ -104,7 +104,7 @@ object RoutePattern {
 object RouteMatch {
     has matched is bool;has parameters is %string:string;
     RouteMatch(){matched=false;parameters=[:];}RouteMatch(parameters is %string:string){matched=true;self.parameters=parameters;}
-    matched() is bool{matched;}parameters() is %string:string{confirm matched else throw InvalidRoute("no route match");parameters;}
+    matched() is bool{matched;}parameters() is %string:string{confirm matched else throw InvalidRoute.because("no route match");parameters;}
 }
 object Route {
     has method is Method;has pattern is RoutePattern;has handling is Handling;
@@ -147,7 +147,7 @@ object RouteGroupPosition {
 object CheckedRouteSnapshot {
     has origin is @Route;
     CheckedRouteSnapshot(routes is Sequencing<Route>){
-        let count=routes.size();confirm count>=0 && count<=256 else throw InvalidRoute("route count budget");
+        let count=routes.size();confirm count>=0 && count<=256 else throw InvalidRoute.because("route count budget");
         let snapshot is @Route=(0..count).map()->index{routes.item(index);};origin=snapshot;
     }
     entries() is @Route{
@@ -202,7 +202,7 @@ object RouteConflictPartition {
         }
         if chosen.value()<0{
             for (0..entries.size())->index{for (0..index)->before{
-                confirm !entries[index].pattern().overlaps(entries[before].pattern()) else throw InvalidRoute("same-method patterns overlap");
+                confirm !entries[index].pattern().overlaps(entries[before].pattern()) else throw InvalidRoute.because("same-method patterns overlap");
             }}
             return [];
         }

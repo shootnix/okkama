@@ -1,0 +1,893 @@
+    Checking okkama-runtime-abi v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-runtime-abi)
+    Checking okkama-native v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-native)
+   Compiling okkama-compiler v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-compiler)
+    Checking okkama-sparrow v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-sparrow)
+    Checking okkama-runtime-core v0.3.3 (/Volumes/SamsungSSD/stuff/okkama-new/okkama-rs/crates/okkama-runtime-core)
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates/okkama-sparrow/src/verify.rs:264:51
+    |
+264 | fn edges(pc: usize, instruction: &Instruction) -> Vec<(u32, &[(Register, Register)], Option<Register>)> {
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#type_complexity
+    = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: `okkama-sparrow` (lib test) generated 1 warning (1 duplicate)
+warning: `okkama-sparrow` (lib) generated 1 warning
+warning: float has excessive precision
+   --> crates/okkama-runtime-core/src/float.rs:346:29
+    |
+346 |         assert_eq!(format_g(9.9999999999999999e22, 15), "1e+23");
+    |                             ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#excessive_precision
+    = note: `#[warn(clippy::excessive_precision)]` on by default
+help: consider changing the type or truncating it to
+    |
+346 -         assert_eq!(format_g(9.9999999999999999e22, 15), "1e+23");
+346 +         assert_eq!(format_g(1e23, 15), "1e+23");
+    |
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:84:36
+   |
+84 |             get_version: std::mem::transmute::<*mut c_void, _>(find("u_getVersion")?),
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut u8)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+   = note: `#[warn(clippy::missing_transmute_annotations)]` on by default
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:85:40
+   |
+85 |             unicode_version: std::mem::transmute::<*mut c_void, _>(find("u_getUnicodeVersion")?),
+   |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut u8)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:86:37
+   |
+86 |             cldr_version: std::mem::transmute::<*mut c_void, _>(find("ulocdata_getCLDRVersion")?),
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut u8, *mut i32)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:87:29
+   |
+87 |             open: std::mem::transmute::<*mut c_void, _>(find("ucol_open")?),
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*const i8, *mut i32) -> *mut libc::c_void>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:88:30
+   |
+88 |             close: std::mem::transmute::<*mut c_void, _>(find("ucol_close")?),
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:89:38
+   |
+89 |             set_attribute: std::mem::transmute::<*mut c_void, _>(find("ucol_setAttribute")?),
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32, i32, *mut i32)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:90:33
+   |
+90 |             sort_key: std::mem::transmute::<*mut c_void, _>(find("ucol_getSortKey")?),
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *const u16, i32, *mut u8, i32) -> i32>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:91:36
+   |
+91 |             uca_version: std::mem::transmute::<*mut c_void, _>(find("ucol_getUCAVersion")?),
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *mut u8)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:92:36
+   |
+92 |             legacy_type: std::mem::transmute::<*mut c_void, _>(find("uloc_toLegacyType")?),
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*const i8, *const i8) -> *const i8>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:93:39
+   |
+93 |             keyword_values: std::mem::transmute::<*mut c_void, _>(find("ucol_getKeywordValuesForLocale")?),
+   |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*const i8, *const i8, i8, *mut i32) -> *mut libc::c_void>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:94:29
+   |
+94 |             next: std::mem::transmute::<*mut c_void, _>(find("uenum_next")?),
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *mut i32, *mut i32) -> *const i8>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: transmute used without annotations
+  --> crates/okkama-runtime-core/src/native/collation.rs:95:35
+   |
+95 |             enum_close: std::mem::transmute::<*mut c_void, _>(find("uenum_close")?),
+   |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void)>`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+
+warning: call to `std::mem::forget` with a value that does not implement `Drop`. Forgetting such a type is the same as dropping it
+  --> crates/okkama-runtime-core/src/native/collation.rs:98:5
+   |
+98 |     std::mem::forget(common);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: argument has type `native::collation::Library`
+  --> crates/okkama-runtime-core/src/native/collation.rs:98:22
+   |
+98 |     std::mem::forget(common);
+   |                      ^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#forget_non_drop
+   = note: `#[warn(clippy::forget_non_drop)]` on by default
+
+warning: call to `std::mem::forget` with a value that does not implement `Drop`. Forgetting such a type is the same as dropping it
+  --> crates/okkama-runtime-core/src/native/collation.rs:99:5
+   |
+99 |     std::mem::forget(library);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: argument has type `native::collation::Library`
+  --> crates/okkama-runtime-core/src/native/collation.rs:99:22
+   |
+99 |     std::mem::forget(library);
+   |                      ^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#forget_non_drop
+
+warning: this loop could be written as a `while let` loop
+   --> crates/okkama-runtime-core/src/native/collation.rs:189:9
+    |
+189 | /         loop {
+190 | |             // SAFETY: перечисление ICU открыто.
+191 | |             let Some(value) = c_text(unsafe { (api.next)(values, &mut length, &mut status) }) else {
+192 | |                 break;
+193 | |             };
+194 | |             found |= value == kind;
+195 | |         }
+    | |_________^ help: try: `while let Some(value) = c_text(unsafe { (api.next)(values, &mut length, &mut status) }) { .. }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#while_let_loop
+    = note: `#[warn(clippy::while_let_loop)]` on by default
+
+warning: call to `std::mem::forget` with a value that does not implement `Drop`. Forgetting such a type is the same as dropping it
+   --> crates/okkama-runtime-core/src/native/collation.rs:278:5
+    |
+278 |     std::mem::forget(library);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: argument has type `native::collation::Library`
+   --> crates/okkama-runtime-core/src/native/collation.rs:278:22
+    |
+278 |     std::mem::forget(library);
+    |                      ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#forget_non_drop
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates/okkama-runtime-core/src/native/formats.rs:491:15
+    |
+491 |     compiled: RefCell<Option<Result<Vec<(i64, String)>, TemplateError>>>,
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#type_complexity
+    = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: the following explicit lifetimes could be elided: 'a
+   --> crates/okkama-runtime-core/src/native/fs.rs:941:11
+    |
+941 | fn prefix<'a>(native: Native, prefix: &'a str) -> Result<&'a str, Error> {
+    |           ^^                           ^^                 ^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_lifetimes
+    = note: `#[warn(clippy::needless_lifetimes)]` on by default
+help: elide the lifetimes
+    |
+941 - fn prefix<'a>(native: Native, prefix: &'a str) -> Result<&'a str, Error> {
+941 + fn prefix(native: Native, prefix: &str) -> Result<&str, Error> {
+    |
+
+warning: items after a test module
+   --> crates/okkama-runtime-core/src/native/jre.rs:172:1
+    |
+172 | mod tests {
+    | ^^^^^^^^^
+...
+188 | pub fn parse_double(text: &str) -> Option<f64> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+243 | fn scaled(value: u128, shift: i64) -> f64 {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#items_after_test_module
+    = note: `#[warn(clippy::items_after_test_module)]` on by default
+    = help: move the items to before the test module was defined
+
+warning: this call to `from_str_radix` can be replaced with a call to `str::parse`
+   --> crates/okkama-runtime-core/src/native/math.rs:693:17
+    |
+693 |                 u128::from_str_radix(&seed.to_string(), 10).expect("bounded seed"),
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `seed.to_string().parse::<u128>()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#from_str_radix_10
+    = note: `#[warn(clippy::from_str_radix_10)]` on by default
+
+error: approximate value of `f{32, 64}::consts::TAU` found
+   --> crates/okkama-runtime-core/src/native/math.rs:797:30
+    |
+797 |             const TAU: f64 = 6.283_185_307_179_586;
+    |                              ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#approx_constant
+    = note: `#[deny(clippy::approx_constant)]` on by default
+
+warning: this operation has no effect
+    --> crates/okkama-runtime-core/src/native/network.rs:1535:68
+     |
+1535 |                 let (family, port, address) = decode(native, &args[0 + 1]).map_err(|error| match error {
+     |                                                                    ^^^^^ help: consider reducing it to: `1`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#identity_op
+     = note: `#[warn(clippy::identity_op)]` on by default
+
+warning: this function has too many arguments (8/7)
+   --> crates/okkama-runtime-core/src/native/regex.rs:700:5
+    |
+700 | /     fn add_tagged(
+701 | |         &self,
+702 | |         states: &mut Vec<Tagged>,
+703 | |         seen: &mut [bool],
+...   |
+708 | |         points: &[u32],
+709 | |     ) {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: large size difference between variants
+  --> crates/okkama-runtime-core/src/native/sqlite.rs:95:1
+   |
+95 | / enum Loaded {
+96 | |     Missing,
+   | |     ------- the second-largest variant carries no data at all
+97 | |     Incomplete,
+98 | |     Ready(Api),
+   | |     ---------- the largest variant contains at least 344 bytes
+99 | | }
+   | |_^ the entire enum is at least 352 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#large_enum_variant
+   = note: `#[warn(clippy::large_enum_variant)]` on by default
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+98 -     Ready(Api),
+98 +     Ready(Box<Api>),
+   |
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn() -> i32>`
+...
+133 |             libversion: function!("sqlite3_libversion_number"),
+    |                         -------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*const i8, *mut *mut libc::c_void, i32, *const i8) -> i32>`
+...
+134 |             open: function!("sqlite3_open_v2"),
+    |                   ---------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+135 |             close: function!("sqlite3_close"),
+    |                    -------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i32>`
+...
+136 |             extended_codes: function!("sqlite3_extended_result_codes"),
+    |                             ------------------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+137 |             extended_errcode: function!("sqlite3_extended_errcode"),
+    |                               ------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+138 |             autocommit: function!("sqlite3_get_autocommit"),
+    |                         ----------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *const i8, i32, u32, *mut *mut libc::c_void, *mut *const i8) -> i32>`
+...
+139 |             prepare: function!("sqlite3_prepare_v3"),
+    |                      ------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+140 |             step: function!("sqlite3_step"),
+    |                   ------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+141 |             finalize: function!("sqlite3_finalize"),
+    |                       ----------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+142 |             reset: function!("sqlite3_reset"),
+    |                    -------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+143 |             clear_bindings: function!("sqlite3_clear_bindings"),
+    |                             ----------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+144 |             parameter_count: function!("sqlite3_bind_parameter_count"),
+    |                              ----------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i32>`
+...
+145 |             bind_null: function!("sqlite3_bind_null"),
+    |                        ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32, i64) -> i32>`
+...
+146 |             bind_int64: function!("sqlite3_bind_int64"),
+    |                         ------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32, f64) -> i32>`
+...
+147 |             bind_double: function!("sqlite3_bind_double"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32, *const i8, i32, isize) -> i32>`
+...
+148 |             bind_text: function!("sqlite3_bind_text"),
+    |                        ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32, *const libc::c_void, i32, isize) -> i32>`
+...
+149 |             bind_blob: function!("sqlite3_bind_blob"),
+    |                        ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+150 |             column_count: function!("sqlite3_column_count"),
+    |                           --------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> *const i8>`
+...
+151 |             column_name: function!("sqlite3_column_name"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> *const i8>`
+...
+152 |             column_decltype: function!("sqlite3_column_decltype"),
+    |                              ------------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i32>`
+...
+153 |             column_type: function!("sqlite3_column_type"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i64>`
+...
+154 |             column_int64: function!("sqlite3_column_int64"),
+    |                           --------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> f64>`
+...
+155 |             column_double: function!("sqlite3_column_double"),
+    |                            ---------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> *const u8>`
+...
+156 |             column_text: function!("sqlite3_column_text"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> *const libc::c_void>`
+...
+157 |             column_blob: function!("sqlite3_column_blob"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i32>`
+...
+158 |             column_bytes: function!("sqlite3_column_bytes"),
+    |                           --------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i64>`
+...
+159 |             changes: function!("sqlite3_changes64"),
+    |                      ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, std::option::Option<extern "C" fn(*mut libc::c_void, i32, *const i8, *const i8, *const i8, *const i8) -> i32>, *mut libc::c_void) -> i32>`
+...
+160 |             authorizer: function!("sqlite3_set_authorizer"),
+    |                         ----------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void)>`
+...
+161 |             interrupt: function!("sqlite3_interrupt"),
+    |                        ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*const i8) -> i32>`
+...
+162 |             compile_option: function!("sqlite3_compileoption_used"),
+    |                             --------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32, i32) -> i32>`
+...
+163 |             limit: function!("sqlite3_limit"),
+    |                    -------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i32>`
+...
+164 |             busy_timeout: function!("sqlite3_busy_timeout"),
+    |                           --------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *const i8, *const i8, *const i8, i64, i32, *mut *mut libc::c_void) -> i32>`
+...
+166 |             blob_open: function!("sqlite3_blob_open"),
+    |                        ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+167 |             blob_bytes: function!("sqlite3_blob_bytes"),
+    |                         ------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+168 |             blob_close: function!("sqlite3_blob_close"),
+    |                         ------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void, i32, i32) -> i32>`
+...
+169 |             blob_read: function!("sqlite3_blob_read"),
+    |                        ------------------------------ in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *const libc::c_void, i32, i32) -> i32>`
+...
+170 |             blob_write: function!("sqlite3_blob_write"),
+    |                         ------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, *const i8, *mut libc::c_void, *const i8) -> *mut libc::c_void>`
+...
+171 |             backup_init: function!("sqlite3_backup_init"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void, i32) -> i32>`
+...
+172 |             backup_step: function!("sqlite3_backup_step"),
+    |                          -------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+173 |             backup_finish: function!("sqlite3_backup_finish"),
+    |                            ---------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+174 |             backup_remaining: function!("sqlite3_backup_remaining"),
+    |                               ------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: transmute used without annotations
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:124:57
+    |
+124 |                     Some(address) => unsafe { std::mem::transmute::<*mut c_void, _>(address) },
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider adding missing annotations: `transmute::<*mut libc::c_void, unsafe extern "C" fn(*mut libc::c_void) -> i32>`
+...
+175 |             backup_pagecount: function!("sqlite3_backup_pagecount"),
+    |                               ------------------------------------- in this macro invocation
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#missing_transmute_annotations
+    = note: this warning originates in the macro `function` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:600:30
+    |
+600 |         let outcome = (|| -> Done<(Vec<String>, Vec<String>, Vec<String>, Vec<String>)> {
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#type_complexity
+
+warning: casting raw pointers to the same type and constness is unnecessary (`*const u8` -> `*const u8`)
+   --> crates/okkama-runtime-core/src/native/sqlite.rs:723:42
+    |
+723 | ...                   unsafe { (api.column_text)(cursor.pointer, column) as *const u8 }
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `(api.column_text)(cursor.pointer, column)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#unnecessary_cast
+    = note: `#[warn(clippy::unnecessary_cast)]` on by default
+
+warning: use of `default` to create a unit struct
+   --> crates/okkama-runtime-core/src/native/stdio.rs:165:24
+    |
+165 |         let mut heap = ArrayHeap::default();
+    |                        ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#default_constructed_unit_structs
+    = note: `#[warn(clippy::default_constructed_unit_structs)]` on by default
+help: remove this call to `default`
+    |
+165 -         let mut heap = ArrayHeap::default();
+165 +         let mut heap = ArrayHeap;
+    |
+
+warning: use of `default` to create a unit struct
+   --> crates/okkama-runtime-core/src/native/stdio.rs:203:24
+    |
+203 |         let mut heap = ArrayHeap::default();
+    |                        ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#default_constructed_unit_structs
+help: remove this call to `default`
+    |
+203 -         let mut heap = ArrayHeap::default();
+203 +         let mut heap = ArrayHeap;
+    |
+
+warning: use of `default` to create a unit struct
+   --> crates/okkama-runtime-core/src/native/stdio.rs:259:24
+    |
+259 |         let mut heap = ArrayHeap::default();
+    |                        ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#default_constructed_unit_structs
+help: remove this call to `default`
+    |
+259 -         let mut heap = ArrayHeap::default();
+259 +         let mut heap = ArrayHeap;
+    |
+
+warning: use of `default` to create a unit struct
+   --> crates/okkama-runtime-core/src/native/stdio.rs:305:24
+    |
+305 |         let mut heap = ArrayHeap::default();
+    |                        ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#default_constructed_unit_structs
+help: remove this call to `default`
+    |
+305 -         let mut heap = ArrayHeap::default();
+305 +         let mut heap = ArrayHeap;
+    |
+
+warning: redundant closure
+   --> crates/okkama-runtime-core/src/native/time.rs:636:74
+    |
+636 |             let rat = crate::rat::Rat::new(&numerator, &billion).map_err(|message| Error::Trap(message))?;
+    |                                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the tuple variant itself: `Error::Trap`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#redundant_closure
+    = note: `#[warn(clippy::redundant_closure)]` on by default
+
+warning: the following explicit lifetimes could be elided: 'a
+   --> crates/okkama-runtime-core/src/native/system.rs:158:18
+    |
+158 | fn snapshot_name<'a>(native: Native, text: &'a str) -> Result<&'a str, Error> {
+    |                  ^^                         ^^                 ^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#needless_lifetimes
+help: elide the lifetimes
+    |
+158 - fn snapshot_name<'a>(native: Native, text: &'a str) -> Result<&'a str, Error> {
+158 + fn snapshot_name(native: Native, text: &str) -> Result<&str, Error> {
+    |
+
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates/okkama-runtime-core/src/sched.rs:123:14
+    |
+123 |     pending: RefCell<HashMap<u64, Box<dyn FnOnce(Delivery)>>>,
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#type_complexity
+
+warning: `okkama-runtime-core` (lib) generated 69 warnings (48 duplicates)
+error: could not compile `okkama-runtime-core` (lib) due to 1 previous error; 69 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `okkama-runtime-core` (lib test) generated 75 warnings (21 duplicates)
+error: could not compile `okkama-runtime-core` (lib test) due to 1 previous error; 75 warnings emitted

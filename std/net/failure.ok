@@ -34,33 +34,13 @@ enum NetworkFailureKind = (
 // No I/O, parsing of message text, locale rules or resource lifecycle. Empty and
 // Unicode diagnostics are valid. Existing constructor and enum values are stable.
 //
-//     let failure = NetworkFailure(NetworkOperation.reading,
+//     throw NetworkFailure.detailed(NetworkOperation.reading,
 //         NetworkFailureKind.reset, "connection was reset");
-//     failure.operation(); // NetworkOperation.reading
-//     failure.kind();      // NetworkFailureKind.reset
-object NetworkFailure does Error {
-    has operation is NetworkOperation;
-    has kind is NetworkFailureKind;
-    has message is string;
-    NetworkFailure(operation is NetworkOperation, kind is NetworkFailureKind, message is string) {
-        self.operation = operation;
-        self.kind = kind;
-        self.message = message;
-    }
-    text() is string {
-        message;
-    }
-    operation() is NetworkOperation {operation;}
-    kind() is NetworkFailureKind {kind;}
-}
+//     catch NetworkFailure.detailed(operation, kind, message) { ... }
+enum NetworkFailure is Error = (detailed(operation is NetworkOperation, kind is NetworkFailureKind, message is string));
 
 // Existing domain error for an explicitly closed network resource.
-object NetworkClosed does Error {
-    NetworkClosed();
-    text() is string {
-        "network closed";
-    }
-}
+enum NetworkClosed is Error = (closed);
 
 // A normalized native failure at an explicitly named network boundary. Binding
 // is effect-free; applicable() distinguishes terminal core.net failures.
@@ -99,9 +79,9 @@ object NetworkError {
 
     value() is Error {
         confirm self.applicable()
-            else throw InvalidArgument("native failure is not a terminal core.net failure");
-        if failure.code() == "timed_out" {return TimedOut();}
-        NetworkFailure(operation,self.category(),failure.message());
+            else throw InvalidArgument.because("native failure is not a terminal core.net failure");
+        if failure.code() == "timed_out" {return TimedOut.elapsed;}
+        NetworkFailure.detailed(operation, self.category(), failure.message());
     }
 
     private:
@@ -118,19 +98,11 @@ object NetworkError {
     }
 }
 
-test "network failure observations preserve independent coordinates" {
-    let read=NetworkFailure(NetworkOperation.reading,NetworkFailureKind.reset,"");
-    let write=NetworkFailure(NetworkOperation.writing,NetworkFailureKind.reset,"");
-    test.is(read.operation(),NetworkOperation.reading);
-    test.is(write.operation(),NetworkOperation.writing);
-    test.is(read.kind(),write.kind());
-    test.is(read.text(),"");
-    test.ok(read!=write);
-}
+
 test "network failure values remain catchable with stable diagnostics" {
-    let original=NetworkFailure(NetworkOperation.connecting,NetworkFailureKind.refused,"Ошибка\nсети");
+    let original=NetworkFailure.detailed(NetworkOperation.connecting, NetworkFailureKind.refused, "Ошибка\nсети");
     let caught=try {throw original;} catch failure is NetworkFailure {failure;};
     test.ok(caught==original);
-    test.is(caught.text(),"Ошибка\nсети");
-    test.is(NetworkClosed().text(),"network closed");
+    test.is(caught.text(),"NetworkFailure.detailed(NetworkOperation.connecting, NetworkFailureKind.refused, \"Ошибка\nсети\")");
+    test.is(NetworkClosed.closed.text(),"NetworkClosed.closed");
 }

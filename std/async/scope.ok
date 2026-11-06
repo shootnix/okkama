@@ -78,7 +78,7 @@ object FutureGroup<T> does Supervising<T> {
     FutureGroup() {}
 
     start(origin is Future<T>) is void {
-        throw FinishedFutureGroup();
+        throw FinishedFutureGroup.finished;
     }
 
     active() is int {
@@ -107,10 +107,4 @@ object FutureScope<T, R> {
     }
 }
 
-object FinishedFutureGroup does Error {
-    FinishedFutureGroup();
-
-    text() is string {
-        "future group is already finishing";
-    }
-}
+enum FinishedFutureGroup is Error = (finished);

@@ -6,7 +6,7 @@ import "http/http1_reading" take Http1ResponseHeadReading,Http1HeadRead;
 import "http/http1_head" take Http1ResponseHead,Http1Limits;
 import "http/header" take Header;
 import "http/message" take InvalidHttpMessage;
-import "net/stream" take AsyncReading,AsyncWriting;
+import "io/stream" take AsyncReading,AsyncWriting;
 import "url/value" take Url;
 import "async/scope" take FutureGroup;
 import "http/media_type" take HttpMediaPosition;
@@ -24,8 +24,8 @@ object HttpProxyTunnel {
             let group is FutureGroup<Http1HeadRead<Http1ResponseHead>>=FutureGroup();let cleanup=HttpProxySettlement(group);defer await cleanup.close();
             let pending=Http1ResponseHeadReading(input,[],limits,1).result();group.start(pending);let received=await pending;let status=received.head().status().code();
             if status>=200 && status<300{return true;}
-            if status<200 && status!=101{confirm information.slots()<16 else throw InvalidHttpMessage("proxy informational response limit");information=information.separator(0);next;}
-            throw ProxyConnectRejected(status);
+            if status<200 && status!=101{confirm information.slots()<16 else throw InvalidHttpMessage.because("proxy informational response limit");information=information.separator(0);next;}
+            throw ProxyConnectRejected.status(status);
         }
     }
 }

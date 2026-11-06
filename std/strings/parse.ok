@@ -24,9 +24,9 @@ object ParsedInt {
         radix = 10;
 
         confirm self.source.length() > 0 && self.source != "-"
-            else throw InvalidInteger(self.source);
+            else throw InvalidInteger.source(self.source);
         confirm self.radix == 0 || (self.radix >= 2 && self.radix <= 36)
-            else throw InvalidInteger(self.source);
+            else throw InvalidInteger.source(self.source);
     }
 
     ParsedInt(origin is string, base is int) {
@@ -34,14 +34,14 @@ object ParsedInt {
         radix = base;
 
         confirm self.source.length() > 0 && self.source != "-"
-            else throw InvalidInteger(self.source);
+            else throw InvalidInteger.source(self.source);
         confirm self.radix == 0 || (self.radix >= 2 && self.radix <= 36)
-            else throw InvalidInteger(self.source);
+            else throw InvalidInteger.source(self.source);
     }
 
     value() is int {
         confirm int_parse_valid(source, radix)
-            else throw InvalidInteger(source);
+            else throw InvalidInteger.source(source);
         int_parse(source, radix);
     }
 
@@ -62,8 +62,8 @@ object ParsedInt {
                 ParsedInt(invalid).value();
                 test.fail("invalid integer was accepted: " + invalid);
             }
-            catch error is InvalidInteger {
-                test.is(error.source(), invalid);
+            catch InvalidInteger.source(source) {
+                test.is(source, invalid);
             }
         }
     }
@@ -76,7 +76,7 @@ object ParsedFloat {
         source = origin;
 
         confirm self.source.length() > 0 && self.source != "-"
-            else throw InvalidFloat(self.source);
+            else throw InvalidFloat.source(self.source);
     }
 
     value() is float {
@@ -90,12 +90,12 @@ object ParsedFloat {
                 res.float();
             }
             catch error is InvalidInteger {
-                throw InvalidFloat(source);
+                throw InvalidFloat.source(source);
             }
         }
         else {
             confirm decimal > offset && decimal + 1 < source.length()
-                else throw InvalidFloat(source);
+                else throw InvalidFloat.source(source);
 
             let whole is float = self.digits(offset, decimal);
             let fraction is float = self.digits(decimal + 1, source.length());
@@ -131,8 +131,8 @@ object ParsedFloat {
                 ParsedFloat(invalid).value();
                 test.fail("invalid float was accepted: " + invalid);
             }
-            catch error is InvalidFloat {
-                test.is(error.source(), invalid);
+            catch InvalidFloat.source(source) {
+                test.is(source, invalid);
             }
         }
     }
@@ -142,7 +142,7 @@ object ParsedFloat {
     decimal(offset is int) is int {
         (offset..source.length()).reduce(-1) -> found, index {
             if source.slice(index, index + 1) == "." {
-                confirm found == -1 else throw InvalidFloat(source);
+                confirm found == -1 else throw InvalidFloat.source(source);
                 index;
             }
             else {
@@ -173,7 +173,7 @@ object ParsedFloat {
             case "9" { 9.0; }
 
             else {
-                throw InvalidFloat(source);
+                throw InvalidFloat.source(source);
             }
         }
     }
@@ -186,13 +186,13 @@ object ParsedRat {
         source = origin;
 
         confirm self.source.length() > 0
-            else throw InvalidRational(self.source);
+            else throw InvalidRational.source(self.source);
     }
 
     value() is rat {
         let parts is @string = source.split("/");
         confirm parts.size() == 1 || parts.size() == 2
-            else throw InvalidRational(source);
+            else throw InvalidRational.source(source);
 
         try {
             let numerator is int = ParsedInt(parts[0]).value();
@@ -203,11 +203,11 @@ object ParsedRat {
                 ParsedInt(parts[1]).value();
             };
             confirm denominator > 0
-                else throw InvalidRational(source);
+                else throw InvalidRational.source(source);
             rat(numerator, denominator);
         }
         catch error is InvalidInteger {
-            throw InvalidRational(source);
+            throw InvalidRational.source(source);
         }
     }
 
@@ -223,8 +223,8 @@ object ParsedRat {
                 ParsedRat(invalid).value();
                 test.fail("invalid rational was accepted: " + invalid);
             }
-            catch error is InvalidRational {
-                test.is(error.source(), invalid);
+            catch InvalidRational.source(source) {
+                test.is(source, invalid);
             }
         }
     }
@@ -242,7 +242,7 @@ object ParsedBool {
             case "true" { true; }
             case "false" { false; }
             else {
-                throw InvalidBoolean(source);
+                throw InvalidBoolean.source(source);
             }
         }
     }
@@ -258,8 +258,8 @@ object ParsedBool {
                 ParsedBool(invalid).value();
                 test.fail("invalid boolean was accepted: " + invalid);
             }
-            catch error is InvalidBoolean {
-                test.is(error.source(), invalid);
+            catch InvalidBoolean.source(source) {
+                test.is(source, invalid);
             }
         }
     }
@@ -273,18 +273,18 @@ object ParsedByte {
         source = origin;
         radix = 10;
 
-        confirm self.source.length() > 0 else throw InvalidByte(self.source);
+        confirm self.source.length() > 0 else throw InvalidByte.source(self.source);
         confirm self.radix == 0 || (self.radix >= 2 && self.radix <= 36)
-            else throw InvalidByte(self.source);
+            else throw InvalidByte.source(self.source);
     }
 
     ParsedByte(origin is string, base is int) {
         source = origin;
         radix = base;
 
-        confirm self.source.length() > 0 else throw InvalidByte(self.source);
+        confirm self.source.length() > 0 else throw InvalidByte.source(self.source);
         confirm self.radix == 0 || (self.radix >= 2 && self.radix <= 36)
-            else throw InvalidByte(self.source);
+            else throw InvalidByte.source(self.source);
     }
 
     value() is byte {
@@ -311,13 +311,13 @@ object ParsedByte {
         };
         let start is int = if prefixed { 2; } else { 0; };
         confirm start < source.length()
-            else throw InvalidByte(source);
+            else throw InvalidByte.source(source);
         let integer is int = (start..source.length())
             .reduce(0) -> result, index {
                 let digit is int = self.digit(index, base);
                 let candidate is int = result * base + digit;
                 confirm candidate <= 255
-                    else throw InvalidByte(source);
+                    else throw InvalidByte.source(source);
                 candidate;
             };
 
@@ -339,8 +339,8 @@ object ParsedByte {
                 ParsedByte(invalid).value();
                 test.fail("invalid byte was accepted: " + invalid);
             }
-            catch error is InvalidByte {
-                test.is(error.source(), invalid);
+            catch InvalidByte.source(source) {
+                test.is(source, invalid);
             }
         }
     }
@@ -388,90 +388,20 @@ object ParsedByte {
             case "y", "Y" { 34; }
             case "z", "Z" { 35; }
             else {
-                throw InvalidByte(source);
+                throw InvalidByte.source(source);
             }
         };
-        confirm result < base else throw InvalidByte(source);
+        confirm result < base else throw InvalidByte.source(source);
         result;
     }
 }
 
-object InvalidInteger does Error {
-    has source is string;
+enum InvalidInteger is Error = (source(source is string));
 
-    InvalidInteger(str is string) {
-        self.source = str;
-    }
+enum InvalidFloat is Error = (source(source is string));
 
-    source() is string {
-        source;
-    }
+enum InvalidRational is Error = (source(source is string));
 
-    text() is string {
-        "invalid integer: " + source;
-    }
-}
+enum InvalidBoolean is Error = (source(source is string));
 
-object InvalidFloat does Error {
-    has source is string;
-
-    InvalidFloat(str is string) {
-        self.source = str;
-    }
-
-    source() is string {
-        source;
-    }
-
-    text() is string {
-        "invalid float: " + source;
-    }
-}
-
-object InvalidRational does Error {
-    has source is string;
-
-    InvalidRational(str is string) {
-        self.source = str;
-    }
-
-    source() is string {
-        source;
-    }
-
-    text() is string {
-        "invalid rational: " + source;
-    }
-}
-
-object InvalidBoolean does Error {
-    has source is string;
-
-    InvalidBoolean(str is string) {
-        self.source = str;
-    }
-
-    source() is string {
-        source;
-    }
-
-    text() is string {
-        "invalid boolean: " + source;
-    }
-}
-
-object InvalidByte does Error {
-    has source is string;
-
-    InvalidByte(str is string) {
-        self.source = str;
-    }
-
-    source() is string {
-        source;
-    }
-
-    text() is string {
-        "invalid byte: " + source;
-    }
-}
+enum InvalidByte is Error = (source(source is string));

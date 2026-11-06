@@ -60,7 +60,7 @@ async main() is int {
     c=c.same_int("close during read remains idempotent",closing.count(),1);
     let broken=WaitingRows(true,true);broken.release();
     let failing=QueryRows(broken);
-    c=c.ok("both failures retained",try { await failing.next();false; } catch e is QueryCleanupFailure { e.cause().text()=="read failure" && e.cleanup().text()=="close failure"; });
+    c=c.ok("both failures retained",try { await failing.next();false; } catch QueryCleanupFailure.detailed(cause, cleanup) { cause=="ProbeFailure.probe_failure" && cleanup=="CloseFailure.close_failure"; });
     c=c.same_int("failed close is not retried",broken.count(),1);
     failing.close();
     c=c.same_int("explicit close remains idempotent",broken.count(),1);

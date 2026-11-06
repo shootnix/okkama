@@ -12,9 +12,9 @@ role SqliteBlob{
 object OpenedSqliteBlob{
     has origin is SqliteBlobOpening;has database,table,column is string;has row is BigInt;has writable is bool;
     OpenedSqliteBlob(origin is SqliteBlobOpening,database is string,table is string,column is string,row is BigInt,writable is bool){
-        for [database,table,column] -> name{confirm name!="" && Utf8Encoded(name).bytes().size()<=1024 && name.split(Utf8Decoded([0.byte()]).string()).size()==1 else throw InvalidSqliteBlob();}
+        for [database,table,column] -> name{confirm name!="" && Utf8Encoded(name).bytes().size()<=1024 && name.split(Utf8Decoded([0.byte()]).string()).size()==1 else throw InvalidSqliteBlob.invalid;}
         self.origin=origin;self.database=database;self.table=table;self.column=column;self.row=row;self.writable=writable;
     }
     async blob() is SqliteBlob{await origin.opened_blob(database,table,column,row,writable);}
 }
-object InvalidSqliteBlob does Error{InvalidSqliteBlob();text() is string{"invalid incremental SQLite blob coordinates";}}
+enum InvalidSqliteBlob is Error = (invalid);

@@ -60,10 +60,7 @@ object ExpandedRegexReplacement does ReplacingRegexMatch {
 
     replacement(found is RegexMatching) is string {
         let status = regex_replacement_prepare(state);
-        confirm status["status"] == 0 else throw InvalidRegexReplacement(
-            offset: status["offset"],
-            message: "invalid regex replacement",
-        );
+        confirm status["status"] == 0 else throw InvalidRegexReplacement.located(status["offset"], "invalid regex replacement");
         let tokens is @string = regex_replacement_tokens(state);
         for Accumulated(
             origin: ReplacementTokens(tokens),
@@ -128,11 +125,11 @@ object ReplacementTokenCursor does Cursor<ReplacementToken> {
     }
     available() is bool { position < origin.size(); }
     item() is ReplacementToken {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ReplacementToken(origin[position], origin[position + 1]);
     }
     successor() is Cursor<ReplacementToken> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ReplacementTokenCursor(tokens: origin, position: position + 2);
     }
 }
@@ -164,7 +161,7 @@ object RegexSubstitution {
         replacing is ReplacingRegexMatch,
         limit is int,
     ) {
-        confirm limit > 0 else throw InvalidRegexReplacementLimit(limit);
+        confirm limit > 0 else throw InvalidRegexReplacementLimit.limit(limit);
         source = origin;
         pattern = regex;
         self.replacing = replacing;
@@ -275,22 +272,6 @@ object RegexSubstitutionResult {
     amount() is int { quantity; }
 }
 
-object InvalidRegexReplacement does Error {
-    has source_offset is int;
-    has message is string;
-    InvalidRegexReplacement(offset is int, message is string) {
-        source_offset = offset;
-        self.message = message;
-    }
-    offset() is int { source_offset; }
-    text() is string {
-        message + " at offset " + source_offset.string();
-    }
-}
+enum InvalidRegexReplacement is Error = (located(offset is int, message is string));
 
-object InvalidRegexReplacementLimit does Error {
-    has maximum is int;
-    InvalidRegexReplacementLimit(limit is int) { maximum = limit; }
-    limit() is int { maximum; }
-    text() is string { "regex replacement limit must be positive"; }
-}
+enum InvalidRegexReplacementLimit is Error = (limit(limit is int));

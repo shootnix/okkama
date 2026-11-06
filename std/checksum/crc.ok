@@ -27,7 +27,7 @@ object Crc32 does Checksumming {
     Crc32(origin is @byte) { self.origin = origin; initial = 0; }
     Crc32(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 4294967295
-            else throw InvalidChecksumInitial(initial, 4294967295);
+            else throw InvalidChecksumInitial.detailed(initial, 4294967295);
         self.origin = origin;
         self.initial = initial;
     }
@@ -61,13 +61,13 @@ object Crc16Ccitt does Checksumming {
 
     Crc16Ccitt(initial is int) {
         confirm initial >= 0 && initial <= 65535
-            else throw InvalidChecksumInitial(initial, 65535);
+            else throw InvalidChecksumInitial.detailed(initial, 65535);
         origin = [];
         self.initial = initial;
     }
     Crc16Ccitt(origin is @byte, initial is int) {
         confirm initial >= 0 && initial <= 65535
-            else throw InvalidChecksumInitial(initial, 65535);
+            else throw InvalidChecksumInitial.detailed(initial, 65535);
         self.origin = origin;
         self.initial = initial;
     }

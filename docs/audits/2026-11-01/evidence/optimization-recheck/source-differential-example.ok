@@ -1,0 +1,10 @@
+module audit v1.0.0;
+main() is int {
+ let f = (x is int) is int { (x * 83 + 3873) % 9223372036854775821; };
+ let result = (0..160).reduce(3531870298385439215) -> acc, i {
+  let following = if i % 3 == 0 { f(acc); } else { (acc + i * 3873) % 9223372036854775821; };
+  let xs = [following, i, 3873];
+  xs.reduce(0) -> sum, value { (sum + value) % 9223372036854775821; };
+ };
+ result % 251;
+}

@@ -40,7 +40,7 @@ object DbPage {
         let no_blobs is @@byte=[];blobs=no_blobs;
     }
     DbPage(width is int,kinds is @int,values is @int,floats is @float,texts is @string,blobs is @@byte) {
-        confirm width>=0 && kinds.size()==values.size() else throw InvalidDbValue("inconsistent result page");
+        confirm width>=0 && kinds.size()==values.size() else throw InvalidDbValue.because("inconsistent result page");
         self.width=width;self.kinds=kinds;self.values=values;self.floats=floats;self.texts=texts;self.blobs=blobs;
     }
     width() is int { width; }
@@ -82,34 +82,34 @@ object DbColumnReader {
         try {
             let state=self.cell();
             self.require(DbValueKind.integer);
-            confirm native_db.db_int_valid(state) else throw InvalidDbValue("integer outside int range");
+            confirm native_db.db_int_valid(state) else throw InvalidDbValue.because("integer outside int range");
             native_db.db_int_value(state);
-        } catch failure is Error { throw RowValueFailure(name,"int",self.kind(),failure); }
+        } catch failure is Error { throw RowValueFailure.located(name, "int", self.kind(), failure.text()); }
     }
     integer() is BigInt {
         try { let state=self.cell();self.require(DbValueKind.integer);BigInt(native_db.db_integer_value(state)); }
-        catch failure is Error { throw RowValueFailure(name,"integer",self.kind(),failure); }
+        catch failure is Error { throw RowValueFailure.located(name, "integer", self.kind(), failure.text()); }
     }
     decimal() is Decimal {
         try { let state=self.cell();self.require(DbValueKind.decimal);Decimal(native_db.db_decimal_value(state)); }
-        catch failure is Error { throw RowValueFailure(name,"decimal",self.kind(),failure); }
+        catch failure is Error { throw RowValueFailure.located(name, "decimal", self.kind(), failure.text()); }
     }
     floating() is float {
         try { let state=self.cell();self.require(DbValueKind.floating);native_db.db_floating_value(state); }
-        catch failure is Error { throw RowValueFailure(name,"floating",self.kind(),failure); }
+        catch failure is Error { throw RowValueFailure.located(name, "floating", self.kind(), failure.text()); }
     }
     boolean() is bool {
         try { let state=self.cell();self.require(DbValueKind.boolean);native_db.db_boolean_value(state); }
-        catch failure is Error { throw RowValueFailure(name,"boolean",self.kind(),failure); }
+        catch failure is Error { throw RowValueFailure.located(name, "boolean", self.kind(), failure.text()); }
     }
     flag() is bool {
         try {
             let state=self.cell();
             self.require(DbValueKind.integer);
             let exact=native_db.db_integer_value(state);
-            confirm exact=="0" || exact=="1" else throw InvalidDbValue("flag requires integer 0 or 1");
+            confirm exact=="0" || exact=="1" else throw InvalidDbValue.because("flag requires integer 0 or 1");
             exact=="1";
-        } catch failure is Error { throw RowValueFailure(name,"flag",self.kind(),failure); }
+        } catch failure is Error { throw RowValueFailure.located(name, "flag", self.kind(), failure.text()); }
     }
     text() is string {
         match source {
@@ -119,11 +119,11 @@ object DbColumnReader {
     }
     checked_text() is string {
         try { let state=self.cell();self.require(DbValueKind.text);native_db.db_text_value(state); }
-        catch failure is Error { throw RowValueFailure(name,"text",self.kind(),failure); }
+        catch failure is Error { throw RowValueFailure.located(name, "text", self.kind(), failure.text()); }
     }
     bytes() is @byte {
         try { let state=self.cell();self.require(DbValueKind.bytes);native_db.db_bytes_value(state); }
-        catch failure is Error { throw RowValueFailure(name,"bytes",self.kind(),failure); }
+        catch failure is Error { throw RowValueFailure.located(name, "bytes", self.kind(), failure.text()); }
     }
     private:
     cell() is native_db.DbCellState { match source {
@@ -136,7 +136,7 @@ object DbColumnReader {
         case DbReaderSource.protocol(origin) { origin.kind(); }
         case DbReaderSource.page(page,at) { DbNativeKind(page.kind(at)).value(); }
     } }
-    require(expected is DbValueKind) is void { confirm self.kind()==expected else throw WrongDbValue(expected,self.kind()); }
+    require(expected is DbValueKind) is void { confirm self.kind()==expected else throw WrongDbValue.detailed(expected, self.kind()); }
 }
 
 object DbPresenceReader {
@@ -221,21 +221,4 @@ object DbMaybeReader {
     bytes() is Maybe<@byte> { origin.bytes().fold(); }
 }
 
-object RowValueFailure does Error {
-    has name,wanted is string;
-    has found is DbValueKind;
-    has original is Error;
-
-    RowValueFailure(column is string, expected is string, actual is DbValueKind, cause is Error) {
-        name = column;
-        wanted = expected;
-        found = actual;
-        original = cause;
-    }
-
-    column() is string { name; }
-    expected() is string { wanted; }
-    actual_kind() is DbValueKind { found; }
-    cause() is Error { original; }
-    text() is string { "database column " + name + " cannot be read as " + wanted; }
-}
+enum RowValueFailure is Error = (located(column is string, expected is string, actual_kind is DbValueKind, cause is string));

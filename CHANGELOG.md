@@ -95,6 +95,24 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   outcomes) and its experiments in `experiments/role-typestate/`, run by
   `make experiments` (`EXPERIMENT_ENGINES="ir jvm sparrow"` for every engine).
 
+- `encoding/bytes`: parsing primitives that read byte values in place.
+  `ByteSearch(source, pattern).from(start)` finds a delimiter (-1 if absent);
+  `ByteRange(source, start, end)` reads a range as strict UTF-8 (`text()`, failing
+  with `InvalidUtf8.at(offset)`), an ASCII decimal (`decimal()`, failing with the
+  new `InvalidByteDecimal.at(offset)`), a fixed-width integer of 1 to 8 bytes
+  (`integer(signedness, order)`, as `IntegerFromBytes` reads it), compares it (`equals`) or copies it
+  (`bytes()`). Bounds outside the source fail with `OutOfRange`. Backed by the new
+  `runtime/bytes` natives (sparrow-core only for now). The memcached-style parser
+  on them takes 0.94 ms per 2000-record reply: 3.4× faster than the slice-based
+  version on the new core, 4.8× faster than the same loop in Python (4.5 ms).
+- `io/input`: `ByteInput(source is AsyncReading)` buffers an asynchronous byte stream
+  for protocol parsers: `await ensure(count)` reads until `count` bytes are buffered
+  (false at the end of the stream), `available()`, `peek(at)`, `take(count)`,
+  `skip(count)`, `range(start, end)` (an `encoding/bytes` view of the buffer, no copy)
+  and `await line(terminator, limit)` (`Maybe.none` at the end of the stream, the new
+  `LineTooLong.after(limit)` beyond the limit). Refills append to the unconsumed bytes
+  in one copy (`runtime/bytes` `bytes_join`).
+
 ### Fixed
 
 - **An object successor declared `is ^Role` is rejected with a clear error** instead of
@@ -201,6 +219,12 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   constant-time length and slicing; `slice` no longer copies the whole array;
   decimal integers up to 18 digits parse without BigInt. A memcached-style reply
   parser runs 10× faster than on the previous Sparrow (159 ms vs 1619 ms).
+- `AsyncReading` and `AsyncWriting` moved from `net/stream` to `io/stream`, so byte
+  input does not depend on the network stack: import them from `io/stream`.
+- `async/atomic`: `AtomicClosed` is an error enum, `AtomicClosed.closed`; its text is
+  `AtomicClosed.closed` (was `atomic state is closed`). Errors that the runtime raises
+  for intrinsics may now be error enums (the runtime raises their first case) on every
+  engine, so the remaining `async/*` errors can migrate the same way.
 - Cleanup regions no longer walk the resource graph when they hold nothing; the
   walk marks visited objects in place instead of hashing them. Regions, `Event`,
   enum construction and comparison compile inline; native handles need no Rust
@@ -213,11 +237,46 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 - Database values are captured from their printers without native calls (the
   same one-event protocol and errors), and cleanup regions keep their first
   entries inline: inserts on the DB benchmark take 8.4 ms instead of 19 ms.
+- The new core runs the embedded tests of the standard library like the previous
+  engine (198 modules with identical reports; 8 more pass only on the new core),
+  supports test fakes' storage, and `sparrow-next --stats`. Fixed on the way:
+  map and array literals with more than eight entries failed on the new core.
+- Big integers count their digits towards garbage collection, so programs that
+  produce many large intermediate integers no longer grow without bound.
 - `SPARROW_CORE_STATS=1` makes the new core print counts of its runtime events
   (natives, intrinsics, slow-path instructions, regions, awaits) at exit.
 - `sparrow-next` now runs on the new core. The previous engine's binary is renamed
-  `sparrow-engine` and stays until its removal. Not yet available on the new core:
-  process workers (`--worker`), `--stats` and fake storage.
+  `sparrow-engine` and stays until its removal. Process workers, `--stats` and fake
+  storage work on the new core too.
+- **Large async frames no longer allocate separately**: heap size classes of the new
+  core reach 128 words (were 32), so a call of an async function with more than 24
+  registers takes its frame from a free list instead of a separate allocation per
+  call. The migrated `std/db` crossed that edge in `QueryRows.next` (row scans allocated
+  50% more and inserts ran twice as slow in the full DB benchmark); now both
+  allocate 28 MB instead of 63–95 MB. `--stats` also reports the heap bytes allocated
+  and the mean live heap after collection.
+- `benchmarks/run.py`: the `sparrow-core` configuration (new core), `--okkama`,
+  `--sparrow`, `--sparrow-core` binary paths, and per-run limits of CPU seconds and
+  wall time (`--cpu-seconds`, `--timeout`); `export.py` compares the new core with the
+  Sparrow VM of the earlier report.
+- **The new core runs the natives it had not ported** through the origin runtime's
+  implementations (`okkama-runtime-core`): arguments and results cross as its
+  values by the ABI types, `any` arguments through their program types, and an origin
+  `native object` lives in a core handle. 182 natives (INI, TOML, templates, HTML,
+  X.509, PEM, time zones, Unicode data, random, statistics, UUID, …) and
+  `runtime/debug` (its parts stay core values) now work there; 238 std modules pass
+  their tests on the core (the other two need ICU and a network). Not yet available:
+  TLS and the terminal (async, over core sockets).
+- **Process workers on the new core**: `spawn Worker(...).sync_action(...)` runs the
+  action in a child `sparrow-next --worker FILE.spb`, with the previous engine's
+  OKW1 transfer format, output limit, cancellation (the child's process group is
+  killed and reaped) and failure texts; a child started for a worker refuses to run
+  `main`. Programs, outputs and failures match `sparrow-engine` (Linux, Docker).
+- **Machine code without cross-core barriers**: the new core allocates machine code
+  in one reserved region and no longer follows every lazily compiled function with
+  a `membarrier` IPI on AArch64 Linux (Graviton, Docker on Apple silicon); code runs
+  only on the VM thread that wrote it. Start-up there: 7.9 → 1.4 ms; a program with
+  two workers: 21 → 6 ms (the previous engine: 10 ms).
 
 ### Removed
 
@@ -230,8 +289,29 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   `std` used by `io/stdout` is migrated (`error`: `InvalidArgument.because(reason)`
   and siblings; `io/stream`: `IncompleteWrite.after(written)`,
   `InvalidReadLimit.limit(value)`; `encoding/utf`: `InvalidUtf8.at(offset)` and
-  siblings); the rest of `std` still declares error objects and fails to compile until
-  it is migrated.
+  siblings).
+- **All of `std` uses error enums** (error handling phase 2, std part): about 550
+  error objects became error enums, so every `std` module compiles again. Each keeps its
+  type name; each constructor form is a case named after its meaning
+  (`InvalidDuration.because(reason)`, `InvalidCsv.at(offset)`, `EndOfInput.reached`,
+  `ChannelClosed.closed`, `TimedOut.elapsed`), payloads are the public field names.
+  Code that read fields of a caught error uses patterns
+  (`catch FileSystemFailure.detailed(code, _)`) or `match`. Diagnostics are the
+  generated texts (`EndOfArchive.reached`, `InvalidCsv.at(1)`) instead of hand-written
+  sentences. Fields that error payloads cannot hold travel as text: value objects
+  (`Path`, `HostName`, `TemplatePath`, …) as `.string()`, causes typed as `Error`
+  (`QueryCleanupFailure`, `RowValueFailure`) as `.text()`; `HttpPeerGoneBeforeResponse`
+  keeps its typed cause in three cases (`reset`, `closed`, `truncated`), so the HTTP
+  client still rethrows the original failure. Constructor checks that enums cannot
+  run were dropped (`InvalidCsv` offset, `DbFailure` diagnostic length,
+  `LogDeliveryFailure` destination count, `DatagramTooLarge` size).
+  `http/internal/http2_frame.Http2FaultView` reads the fields of an `Http2Fault`.
+  The 10-app benchmark, examples and conformance cases are migrated with it.
+- `web/exception`: `Exception` is an error enum, `throw Exception.status(404, "user 7
+  not found")`; the reply is the new `Problem(status, detail)` (RFC 9457 body,
+  `.header(name, value)`), which endpoints return and into which the framework turns a
+  thrown `Exception`. Headers go on a returned `Problem`. 422 details of request JSON
+  stay readable sentences (`JSON value at /age must be number, found string`).
 - Action directives and constructor projections, including `#projected`. Use
   `Object(arguments).method()`; stdlib and positive conformance examples are migrated.
   Method signatures state the complete result type, with no implicit unwrapping.

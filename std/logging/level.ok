@@ -10,10 +10,10 @@ object LogLevelFromName{
     has origin is string;
     LogLevelFromName(origin is string){self.origin=origin;}
     value() is LogLevel{
-        confirm origin.length()>0 && origin.length()<=8 else throw InvalidLogLevel(origin);
+        confirm origin.length()>0 && origin.length()<=8 else throw InvalidLogLevel.origin(origin);
         let alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ";let lower="abcdefghijklmnopqrstuvwxyz";
         let parts is @string=(0..origin.length()).map()->index{let char=origin.slice(index,index+1);let split=alphabet.split(char);if split.size()==2{lower.slice(split[0].length(),split[0].length()+1);}else{char;}};
-        match parts.join(""){case "debug"{LogLevel.debug;}case "info"{LogLevel.info;}case "warning"{LogLevel.warning;}case "error"{LogLevel.error;}case "critical"{LogLevel.critical;}else{throw InvalidLogLevel(origin);}}}
+        match parts.join(""){case "debug"{LogLevel.debug;}case "info"{LogLevel.info;}case "warning"{LogLevel.warning;}case "error"{LogLevel.error;}case "critical"{LogLevel.critical;}else{throw InvalidLogLevel.origin(origin);}}}
 }
 object LogLevelOrder{
     has left,right is LogLevel;
@@ -25,11 +25,7 @@ object LogLevelRank{
     LogLevelRank(origin is LogLevel){self.origin=origin;}
     value() is int{match origin{case LogLevel.debug{0;}case LogLevel.info{1;}case LogLevel.warning{2;}case LogLevel.error{3;}case LogLevel.critical{4;}}}
 }
-object InvalidLogLevel does Error{
-    has origin is string;
-    InvalidLogLevel(origin is string){self.origin=origin;}
-    text() is string{"invalid log level: "+origin;}
-}
+enum InvalidLogLevel is Error = (origin(origin is string));
 
 test "logging levels have canonical names and a portable severity order" {
     test.is(LogLevelName(LogLevel.info).string(),"INFO");

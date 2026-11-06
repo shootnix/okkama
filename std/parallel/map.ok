@@ -35,7 +35,7 @@ object ParallelMapped<T,R> {
     has bound is int;
 
     ParallelMapped(origins is Sequencing<T>, action is (T) is R, workers is int) {
-        confirm workers > 0 else throw InvalidWorkerCount(workers);
+        confirm workers > 0 else throw InvalidWorkerCount.workers(workers);
         self.origins = origins;
         self.action = action;
         bound = workers;
@@ -43,7 +43,7 @@ object ParallelMapped<T,R> {
 
     ParallelMapped(origins is Sequencing<T>, action is (T) is R) {
         let workers = system_cpu_count();
-        confirm workers > 0 else throw InvalidWorkerCount(workers);
+        confirm workers > 0 else throw InvalidWorkerCount.workers(workers);
         self.origins = origins;
         self.action = action;
         bound = workers;
@@ -111,15 +111,5 @@ object ParallelMapProgress<R> {
     }
 }
 
-object InvalidWorkerCount does Error {
-    has origin is int;
-    InvalidWorkerCount(workers is int) {origin = workers;}
-    workers() is int {origin;}
-    text() is string {"worker count must be positive: " + origin.string();}
-}
+enum InvalidWorkerCount is Error = (workers(workers is int));
 
-test "worker error preserves the supplied count" {
-    let error = InvalidWorkerCount(-2);
-    test.is(error.workers(), -2);
-    test.is(error.text(), "worker count must be positive: -2");
-}

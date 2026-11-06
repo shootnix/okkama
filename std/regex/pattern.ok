@@ -86,16 +86,10 @@ object Regex {
             panic "regex provider could not prepare pattern";
         };
         if status["status"] == 1 {
-            throw InvalidRegex(
-                offset: status["offset"],
-                message: "invalid regex expression",
-            );
+            throw InvalidRegex.located(status["offset"], "invalid regex expression");
         }
         if status["status"] == 2 {
-            throw RegexLimitExceeded(
-                kind: self.limit_kind(status["kind"]),
-                limit: status["limit"],
-            );
+            throw RegexLimitExceeded.detailed(self.limit_kind(status["kind"]), status["limit"]);
         }
     }
 
@@ -110,37 +104,9 @@ object Regex {
 
 }
 
-object InvalidRegex does Error {
-    has source_offset is int;
-    has message is string;
+enum InvalidRegex is Error = (located(offset is int, message is string));
 
-    InvalidRegex(offset is int, message is string) {
-        source_offset = offset;
-        self.message = message;
-    }
-
-    offset() is int { source_offset; }
-
-    text() is string {
-        message + " at offset " + source_offset.string();
-    }
-}
-
-object RegexLimitExceeded does Error {
-    has limit_kind is RegexLimit;
-    has maximum is int;
-
-    RegexLimitExceeded(kind is RegexLimit, limit is int) {
-        limit_kind = kind;
-        maximum = limit;
-    }
-
-    kind() is RegexLimit { limit_kind; }
-
-    limit() is int { maximum; }
-
-    text() is string { "regex compilation limit exceeded"; }
-}
+enum RegexLimitExceeded is Error = (detailed(kind is RegexLimit, limit is int));
 
 enum RegexQuery = (first, prefix, entire);
 
@@ -150,22 +116,9 @@ object RegexMatchObservation {
     found() is bool{origin.found();}match() is RegexMatching{origin.match();}
 }
 
-object RegexRangeOutsideInput does Error {
-    has selected is RegexRange;
-    has source_length is int;
-    RegexRangeOutsideInput(range is RegexRange, length is int) {
-        selected = range;
-        source_length = length;
-    }
-    range() is RegexRange { selected; }
-    length() is int { source_length; }
-    text() is string { "regex range lies outside its input"; }
-}
+enum RegexRangeOutsideInput is Error = (range(start is int, end is int, length is int));
 
-object NoRegexMatch does Error {
-    NoRegexMatch();
-    text() is string { "no regex match"; }
-}
+enum NoRegexMatch is Error = (none);
 
 object RegexQueryObservation {
     has source is string;has pattern is Regex;has selected is RegexRange;has query is RegexQueryState;
@@ -173,12 +126,12 @@ object RegexQueryObservation {
 
     found() is bool {
         confirm selected.end() <= source.length()
-            else throw RegexRangeOutsideInput(selected, source.length());
+            else throw RegexRangeOutsideInput.range(selected.start(), selected.end(), source.length());
         pattern.group_count();
         regex_query_found(query);
     }
     match() is RegexMatching {
-        confirm self.found() else throw NoRegexMatch();
+        confirm self.found() else throw NoRegexMatch.none;
         RegexMatch(source, regex_query_match(query));
     }
 }

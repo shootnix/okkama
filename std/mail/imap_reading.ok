@@ -1,6 +1,5 @@
 module mail/imap_reading v1.0.0;
-
-import "net/stream" take AsyncReading;
+import "io/stream" take AsyncReading;
 import "mail/imap_response" take ImapResponse, ImapResponseDecoder, ImapResponseLimits, ImapResponseLimitExceeded;
 import "io/decorators" take InvalidReading;
 import "error" take InvalidArgument;
@@ -42,8 +41,8 @@ object ImapResponseRead {
 object ImapResponseInput {
     has origin is AsyncReading;has prefix is @byte;has limits is ImapResponseLimits;has chunk_bytes is int;
     ImapResponseInput(origin is AsyncReading, prefix is @byte, limits is ImapResponseLimits, chunk_bytes is int) {
-        confirm chunk_bytes>0 else throw InvalidArgument("IMAP read chunk size must be positive");
-        confirm prefix.size()<=limits.wire_bytes() else throw ImapResponseLimitExceeded("chunk_bytes");
+        confirm chunk_bytes>0 else throw InvalidArgument.because("IMAP read chunk size must be positive");
+        confirm prefix.size()<=limits.wire_bytes() else throw ImapResponseLimitExceeded.kind("chunk_bytes");
         self.origin=origin;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;
     }
     async read() is ImapResponseRead {
@@ -51,10 +50,10 @@ object ImapResponseInput {
         loop {
             last if decoder.complete();
             let remaining=limits.wire_bytes()-decoder.consumed();
-            confirm remaining>0 else throw ImapResponseLimitExceeded("wire_bytes");
+            confirm remaining>0 else throw ImapResponseLimitExceeded.kind("wire_bytes");
             let requested=if chunk_bytes<remaining {chunk_bytes;} else {remaining;};
             let chunk=await origin.bytes(requested);
-            confirm chunk.size()<=requested else throw InvalidReading("IMAP origin returned more bytes than requested");
+            confirm chunk.size()<=requested else throw InvalidReading.because("IMAP origin returned more bytes than requested");
             if chunk.size()==0 {decoder.finish();}
             decoder=decoder.fed(chunk);
         }

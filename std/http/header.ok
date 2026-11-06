@@ -15,7 +15,7 @@ object HeaderName does Comparing<HeaderName> {
     has spelling,canonical is string;
     HeaderName(origin is string) {
         let checked=try {Method(origin).string();} catch failure is InvalidMethod {
-            throw InvalidHeader(origin,"field name must be an HTTP token");
+            throw InvalidHeader.detailed(origin, "field name must be an HTTP token");
         };
         spelling=checked;canonical=HttpAsciiLowercase(checked).string();
     }
@@ -47,10 +47,10 @@ object HttpFieldValue {
             let stop=if origin.length()-position>65536 {position+65536;} else {origin.length();};
             let piece=origin.slice(position,stop);
             confirm !RegexMatches(piece,non_octet).found()
-                else throw InvalidHeader(name.string(),"field value is not an octet string");
+                else throw InvalidHeader.detailed(name.string(), "field value is not an octet string");
             state=state.following(stop,state.control() || RegexMatches(piece,controls).found());
         }
-        confirm !state.control() else throw InvalidHeader(name.string(),"control in field value");
+        confirm !state.control() else throw InvalidHeader.detailed(name.string(), "control in field value");
         self.trimmed();
     }
     private:
@@ -90,7 +90,7 @@ object HeaderLimits {
     has count,budget is int;
     HeaderLimits(){count=1024;budget=1048576;}
     HeaderLimits(entries is int, bytes is int) {
-        confirm entries>=0 && bytes>=0 else throw InvalidArgument("HTTP header limits must be nonnegative");
+        confirm entries>=0 && bytes>=0 else throw InvalidArgument.because("HTTP header limits must be nonnegative");
         count=entries;budget=bytes;
     }
     entries() is int {count;}
@@ -113,14 +113,14 @@ object Headers {
     }
     first(name is HeaderName) is string {
         for origin -> entry {if entry.name().order(name)==Order.equal {return entry.value();}}
-        throw MissingHeader(name);
+        throw MissingHeader.name(name.string());
     }
     values(name is HeaderName) is Sequencing<string> {
         let matching is @Header=origin.filter() -> entry {entry.name().order(name)==Order.equal;};
         let values is @string=matching.map() -> entry {entry.value();};values;
     }
     addition(entry is Header) is Headers {
-        confirm origin.size()<limits.entries() else throw HeaderLimitExceeded("entries");
+        confirm origin.size()<limits.entries() else throw HeaderLimitExceeded.kind("entries");
         let values is @Header=(0..origin.size()+1).map() -> index {
             if index<origin.size(){origin[index];}else{entry;}
         };Headers(values,limits);
@@ -129,8 +129,8 @@ object Headers {
 object HeadersWithout {
     has origin is Headers;has selected is @string;
     HeadersWithout(origin is Headers, names is Sequencing<HeaderName>) {
-        let count=names.size();confirm count>=0 else throw InvalidArgument("negative header name sequence size");
-        confirm count<=origin.limits().entries() else throw HeaderLimitExceeded("entries");
+        let count=names.size();confirm count>=0 else throw InvalidArgument.because("negative header name sequence size");
+        confirm count<=origin.limits().entries() else throw HeaderLimitExceeded.kind("entries");
         let keys is @string=(0..count).map() -> index {names.item(index).lowercase();};
         selected=keys;self.origin=origin;
     }
@@ -157,26 +157,16 @@ object Http2Headers {
             let entry=source.item(index);let name=entry.name().lowercase();
             confirm name!="connection" && name!="proxy-connection" && name!="keep-alive"
                 && name!="transfer-encoding" && name!="upgrade"
-                else throw InvalidHeader(entry.name().string(),"connection-specific HTTP/2 field");
+                else throw InvalidHeader.detailed(entry.name().string(), "connection-specific HTTP/2 field");
             if name=="te" {confirm request && HttpAsciiLowercase(entry.value()).string()=="trailers"
-                else throw InvalidHeader(entry.name().string(),"HTTP/2 TE requires request trailers");}
+                else throw InvalidHeader.detailed(entry.name().string(), "HTTP/2 TE requires request trailers");}
             Header(HeaderName(name),entry.value());
         };Headers(entries,origin.limits());
     }
 }
-object InvalidHeader does Error {
-    has name,reason is string;
-    InvalidHeader(name is string, reason is string){self.name=name;self.reason=reason;}
-    text() is string {"invalid HTTP header "+name+": "+reason;}
-}
-object MissingHeader does Error {
-    has name is HeaderName;MissingHeader(name is HeaderName){self.name=name;}
-    name() is HeaderName {name;}text() is string {"missing HTTP header: "+name.string();}
-}
-object HeaderLimitExceeded does Error {
-    has kind is string;HeaderLimitExceeded(kind is string){self.kind=kind;}
-    kind() is string {kind;}text() is string {"HTTP header "+kind+" limit exceeded";}
-}
+enum InvalidHeader is Error = (detailed(name is string, reason is string));
+enum MissingHeader is Error = (name(name is string));
+enum HeaderLimitExceeded is Error = (kind(kind is string));
 // Internal representation collaborators; modules do not have private exports.
 object HttpAsciiLowercase {
     has origin is string;HttpAsciiLowercase(origin is string){self.origin=origin;}
@@ -189,12 +179,12 @@ object HttpAsciiLowercase {
 object HeaderSnapshot {
     has origin is @Header;
     HeaderSnapshot(entries is Sequencing<Header>, limits is HeaderLimits) {
-        let count=entries.size();confirm count>=0 else throw InvalidArgument("negative header sequence size");
-        confirm count<=limits.entries() else throw HeaderLimitExceeded("entries");
+        let count=entries.size();confirm count>=0 else throw InvalidArgument.because("negative header sequence size");
+        confirm count<=limits.entries() else throw HeaderLimitExceeded.kind("entries");
         let values is @Header=(0..count).map() -> index {entries.item(index);};
         let used=values.reduce(0) -> total,entry {
             let bytes=entry.name().string().length()+entry.value().length()+4;
-            confirm bytes<=limits.bytes()-total else throw HeaderLimitExceeded("bytes");total+bytes;
+            confirm bytes<=limits.bytes()-total else throw HeaderLimitExceeded.kind("bytes");total+bytes;
         };origin=values;
     }
     entries() is @Header {origin;}

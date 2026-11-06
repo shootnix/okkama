@@ -21,7 +21,7 @@ role CookieContextualizing {context(request is Request) is CookieContext;}
 object FirstPartyCookies does CookieContextualizing {
     FirstPartyCookies();
     context(request is Request) is CookieContext{
-        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidArgument("absolute cookie request required");
+        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidArgument.because("absolute cookie request required");
         CookieContext(request.target().url(),true,request.method());
     }
 }
@@ -31,9 +31,9 @@ object CookieExchanging does Exchanging {
     CookieExchanging(origin is Exchanging,jar is CookieStoring,contexts is CookieContextualizing){self.origin=origin;self.jar=jar;self.contexts=contexts;conflict=CallerCookiePolicy.reject;}
     CookieExchanging(origin is Exchanging,jar is CookieStoring,contexts is CookieContextualizing,conflict is CallerCookiePolicy){self.origin=origin;self.jar=jar;self.contexts=contexts;self.conflict=conflict;}
     async response(request is Request) is ClientResponse{
-        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidArgument("absolute cookie request required");
+        confirm request.target().kind()==RequestTargetKind.absolute else throw InvalidArgument.because("absolute cookie request required");
         let supplied=request.headers().values(HeaderName("Cookie"));
-        confirm supplied.size()<=1 && (supplied.size()==0 || conflict!=CallerCookiePolicy.reject) else throw CallerCookieConflict();
+        confirm supplied.size()<=1 && (supplied.size()==0 || conflict!=CallerCookiePolicy.reject) else throw CallerCookieConflict.conflict;
         let context=contexts.context(request);
         let fields=if supplied.size()==1 && conflict==CallerCookiePolicy.preserve{request.headers();}else{
             let selected=CookieRequestPairs(jar.cookies(request.target().url(),context)).string();
@@ -58,21 +58,18 @@ object CookieExchanging does Exchanging {
 object CookieRequestPairs {
     has text is string;
     CookieRequestPairs(cookies is Sequencing<Cookie>){
-        let count=cookies.size();confirm count>=0 && count<=256 else throw CookieExchangeLimit("cookie count");
+        let count=cookies.size();confirm count>=0 && count<=256 else throw CookieExchangeLimit.because("cookie count");
         let used=Atomic(0);
         let pairs is @string=(0..count).map()->index{
             let pair=cookies.item(index).pair();let size=used.value()+pair.length()+2;
-            confirm size<=65536 else throw CookieExchangeLimit("cookie bytes");used.replace(size);pair;
+            confirm size<=65536 else throw CookieExchangeLimit.because("cookie bytes");used.replace(size);pair;
         };
         text=pairs.join("; ");
     }
     string() is string{text;}
 }
-object CallerCookieConflict does Error{CallerCookieConflict();text() is string{"explicit Cookie requires a conflict policy";}}
-object CookieExchangeLimit does Error {
-    has reason is string;CookieExchangeLimit(reason is string){self.reason=reason;}
-    reason() is string{reason;}text() is string{"cookie exchange limit exceeded: "+reason;}
-}
+enum CallerCookieConflict is Error = (conflict);
+enum CookieExchangeLimit is Error = (because(reason is string));
 test "first-party cookies use the current request site and method" {
     let request=Request(Method("POST"),AbsoluteTarget(ParsedUrl("https://example.com/path").value()),Headers([]));
     let context=FirstPartyCookies().context(request);

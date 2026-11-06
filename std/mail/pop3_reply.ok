@@ -18,7 +18,7 @@ object PopReplyLimits {
     PopReplyLimits() {status_bytes=512;line_bytes=1048576;body_bytes=16777216;wire_bytes=33554432;lines=100000;}
     PopReplyLimits(status_bytes is int, line_bytes is int, body_bytes is int, wire_bytes is int, lines is int) {
         confirm status_bytes>=0 && line_bytes>=0 && body_bytes>=0 && wire_bytes>=0 && lines>=0
-            else throw InvalidArgument("POP3 reply limits must be nonnegative");
+            else throw InvalidArgument.because("POP3 reply limits must be nonnegative");
         self.status_bytes=status_bytes;self.line_bytes=line_bytes;self.body_bytes=body_bytes;self.wire_bytes=wire_bytes;self.lines=lines;
     }
     status_bytes() is int {status_bytes;}
@@ -32,7 +32,7 @@ object PopReply {
     has success is bool;has summary is string;has content is @byte;has count is int;has multiple is bool;
     PopReply(successful is bool, text is string, body is @byte, lines is int, multiline is bool) {
         confirm lines>=0 && (multiline || (body.size()==0 && lines==0)) && (successful || !multiline)
-            else throw InvalidArgument("inconsistent POP3 reply snapshot");
+            else throw InvalidArgument.because("inconsistent POP3 reply snapshot");
         success=successful;summary=text;content=body;count=lines;multiple=multiline;
     }
     successful() is bool {success;}
@@ -46,8 +46,8 @@ object PopReplyDecoder {
     PopReplyDecoder(mode is PopReplyMode) {let bounds=PopReplyLimits();limits=bounds;progress=PopReplyProgress(mode,bounds);tail=[];}
     PopReplyDecoder(mode is PopReplyMode, limits is PopReplyLimits) {self.limits=limits;progress=PopReplyProgress(mode,limits);tail=[];}
     fed(chunk is @byte) is ^PopReplyDecoder {
-        confirm !progress.complete() else throw InvalidState("POP3 reply decoder is complete");
-        confirm chunk.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded("chunk_bytes");
+        confirm !progress.complete() else throw InvalidState.because("POP3 reply decoder is complete");
+        confirm chunk.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded.kind("chunk_bytes");
         let state=progress;let end=MimePosition(chunk.size());
         for (0..chunk.size()) -> index {
             if state.complete() {end=end.following(index);last;}
@@ -58,43 +58,32 @@ object PopReplyDecoder {
     }
     complete() is bool {progress.complete();}
     consumed() is int {progress.consumed();}
-    reply() is PopReply {confirm self.complete() else throw InvalidState("POP3 reply is incomplete");progress.reply();}
+    reply() is PopReply {confirm self.complete() else throw InvalidState.because("POP3 reply is incomplete");progress.reply();}
     finish() is PopReply {
-        confirm self.complete() else throw InvalidPopReply(progress.consumed(),"truncated reply");progress.reply();
+        confirm self.complete() else throw InvalidPopReply.located(progress.consumed(), "truncated reply");progress.reply();
     }
-    remainder() is @byte {confirm self.complete() else throw InvalidState("POP3 reply is incomplete");tail;}
+    remainder() is @byte {confirm self.complete() else throw InvalidState.because("POP3 reply is incomplete");tail;}
 }
 object ParsedPopReply {
     has origin is @byte;has mode is PopReplyMode;has limits is PopReplyLimits;
     ParsedPopReply(origin is @byte, mode is PopReplyMode) {self.origin=origin;self.mode=mode;limits=PopReplyLimits();}
     ParsedPopReply(origin is @byte, mode is PopReplyMode, limits is PopReplyLimits) {self.origin=origin;self.mode=mode;self.limits=limits;}
     reply() is PopReply {
-        confirm origin.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded("wire_bytes");
+        confirm origin.size()<=limits.wire_bytes() else throw PopReplyLimitExceeded.kind("wire_bytes");
         let decoder=PopReplyDecoder(mode,limits);decoder=decoder.fed(origin);let result=decoder.finish();
-        confirm decoder.remainder().size()==0 else throw InvalidPopReply(decoder.consumed(),"trailing bytes after reply");result;
+        confirm decoder.remainder().size()==0 else throw InvalidPopReply.located(decoder.consumed(), "trailing bytes after reply");result;
     }
 }
-object InvalidPopReply does Error {
-    has position is int;has reason is string;
-    InvalidPopReply(offset is int, reason is string) {position=offset;self.reason=reason;}
-    offset() is int {position;}
-    reason() is string {reason;}
-    text() is string {"invalid POP3 reply at byte offset "+position.string()+": "+reason;}
-}
-object PopReplyLimitExceeded does Error {
-    has limit is string;
-    PopReplyLimitExceeded(kind is string) {limit=kind;}
-    kind() is string {limit;}
-    text() is string {"POP3 reply "+limit+" limit exceeded";}
-}
+enum InvalidPopReply is Error = (located(offset is int, reason is string));
+enum PopReplyLimitExceeded is Error = (kind(kind is string));
 object PopStatusLine {
     has success is bool;has summary is string;
     PopStatusLine(origin is string, offset is int) {
         let positive=origin.length()>=3 && origin.slice(0,3)=="+OK";
         let negative=origin.length()>=4 && origin.slice(0,4)=="-ERR";
-        confirm positive || negative else throw InvalidPopReply(offset,"expected +OK or -ERR");
+        confirm positive || negative else throw InvalidPopReply.located(offset, "expected +OK or -ERR");
         let end=if positive {3;} else {4;};
-        confirm origin.length()==end || origin.slice(end,end+1)==" " else throw InvalidPopReply(offset+end,"invalid status separator");
+        confirm origin.length()==end || origin.slice(end,end+1)==" " else throw InvalidPopReply.located(offset+end, "invalid status separator");
         success=positive;summary=if origin.length()==end {"";} else {origin.slice(end+1,origin.length());};
     }
     successful() is bool {success;}
@@ -110,31 +99,31 @@ object PopReplyProgress {
     consumed() is int {used;}
     reply() is PopReply {PopReply(success,summary,Latin1Encoded(content).bytes(),count,success && mode==PopReplyMode.multiline);}
     accepted(octet is byte) is ^PopReplyProgress {
-        confirm !done else throw InvalidState("POP3 reply is complete");
-        confirm used<limits.wire_bytes() else throw PopReplyLimitExceeded("wire_bytes");
+        confirm !done else throw InvalidState.because("POP3 reply is complete");
+        confirm used<limits.wire_bytes() else throw PopReplyLimitExceeded.kind("wire_bytes");
         let line_limit=if status_seen {limits.line_bytes();} else {limits.status_bytes();};
-        confirm pending.length()<line_limit else throw PopReplyLimitExceeded(if status_seen {"line_bytes";} else {"status_bytes";});
+        confirm pending.length()<line_limit else throw PopReplyLimitExceeded.kind(if status_seen {"line_bytes";} else {"status_bytes";});
         let value=octet.int();let cr=pending.length()>0 && pending.slice(pending.length()-1,pending.length())=="\r";
-        if cr {confirm value==10 else throw InvalidPopReply(used,"CR must be followed by LF");}
+        if cr {confirm value==10 else throw InvalidPopReply.located(used, "CR must be followed by LF");}
         if value==10 {
-            confirm cr else throw InvalidPopReply(used,"bare LF");let line=pending.slice(0,pending.length()-1);
+            confirm cr else throw InvalidPopReply.located(used, "bare LF");let line=pending.slice(0,pending.length()-1);
             if !status_seen {
                 let status=PopStatusLine(line,used-pending.length());
                 ^success=status.successful();^summary=status.text();^status_seen=true;
                 ^done=!status.successful() || mode==PopReplyMode.single;
             } else {
                 if line=="." {^done=true;} else {
-                    confirm count<limits.lines() else throw PopReplyLimitExceeded("lines");
+                    confirm count<limits.lines() else throw PopReplyLimitExceeded.kind("lines");
                     let start=if line.length()>0 && line.slice(0,1)=="." {1;} else {0;};
                     let added=line.length()-start+2;
-                    confirm added<=limits.body_bytes()-content.length() else throw PopReplyLimitExceeded("body_bytes");
+                    confirm added<=limits.body_bytes()-content.length() else throw PopReplyLimitExceeded.kind("body_bytes");
                     ^content=content+line.slice(start,line.length())+"\r\n";^count=count+1;
                 }
             }
             ^pending="";
         } else {
             if !status_seen {
-                confirm value==13 || value==9 || (value>=32 && value<=126) else throw InvalidPopReply(used,"invalid ASCII status byte");
+                confirm value==13 || value==9 || (value>=32 && value<=126) else throw InvalidPopReply.located(used, "invalid ASCII status byte");
             }
             ^pending=pending+Latin1Decoded([octet]).string();
         }

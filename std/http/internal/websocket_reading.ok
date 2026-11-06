@@ -1,7 +1,8 @@
 module http/internal/websocket_reading v1.0.0;
 import "http/internal/websocket_frame" take ParsedWebSocketFrameHeader,WebSocketFrame,WebSocketMaskedBytes,WebSocketHeaderPrefix;
 import "http/websocket" take WebSocketFailure,WebSocketClosed;
-import "net/stream" take AsyncReading,StreamReadCleanup;
+import "net/stream" take StreamReadCleanup;
+import "io/stream" take AsyncReading;
 import "async/scope" take FutureGroup;
 import "io/buffer" take ByteBuffer;
 import "io/decorators" take ByteSnapshot,InvalidReading;
@@ -23,8 +24,8 @@ object WebSocketFrameInput {
     async exact(amount is int,between_frames is bool) is @byte{
         let buffer=ByteBuffer();defer buffer.closing().close();
         loop{let remaining=amount-buffer.content().size();last if remaining==0;let limit=if remaining<=65536{remaining;}else{65536;};let chunk=await self.chunk(limit);
-            confirm chunk.size()<=limit else throw InvalidReading("WebSocket source exceeded requested limit");
-            if chunk.size()==0{if between_frames && buffer.content().size()==0{throw WebSocketClosed(1006,"");}throw WebSocketFailure("truncated frame");}
+            confirm chunk.size()<=limit else throw InvalidReading.because("WebSocket source exceeded requested limit");
+            if chunk.size()==0{if between_frames && buffer.content().size()==0{throw WebSocketClosed.detailed(1006, "");}throw WebSocketFailure.because("truncated frame");}
             buffer.writing().write(ByteSnapshot(chunk));
         }buffer.content().bytes();
     }

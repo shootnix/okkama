@@ -15,7 +15,7 @@ import "encoding/hex" take HexEncoded, HexDecoded;
 object X25519PrivateKey {
     has secret is SecretBytes;
     X25519PrivateKey(secret is SecretBytes) {
-        confirm secret.size() == 32 else throw InvalidCryptoInput("X25519 private key must be 32 bytes");
+        confirm secret.size() == 32 else throw InvalidCryptoInput.because("X25519 private key must be 32 bytes");
         self.secret = secret;
     }
     X25519PrivateKey(entropy is Entropy) { secret = SecretBytes(entropy.bytes(32)); }
@@ -28,7 +28,7 @@ object X25519PrivateKey {
 object X25519PublicKey {
     has origin is @byte;
     X25519PublicKey(raw is @byte) {
-        confirm raw.size() == 32 else throw InvalidCryptoInput("X25519 public key must be 32 bytes");
+        confirm raw.size() == 32 else throw InvalidCryptoInput.because("X25519 public key must be 32 bytes");
         origin = raw;
     }
     raw() is @byte { origin; }

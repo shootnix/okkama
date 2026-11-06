@@ -15,11 +15,11 @@ import "encoding/hex" take HexEncoded;
 object Blake2b does Digesting {
     has digest is HostDigest;
     Blake2b(length is int) {
-        confirm length == 16 || length == 20 || length == 28 || length == 32 || length == 48 || length == 64 else throw InvalidBlake2Length(length);
+        confirm length == 16 || length == 20 || length == 28 || length == 32 || length == 48 || length == 64 else throw InvalidBlake2Length.length(length);
         digest = HostDigest("blake2b", [], length);
     }
     Blake2b(length is int, origin is @byte) {
-        confirm length == 16 || length == 20 || length == 28 || length == 32 || length == 48 || length == 64 else throw InvalidBlake2Length(length);
+        confirm length == 16 || length == 20 || length == 28 || length == 32 || length == 48 || length == 64 else throw InvalidBlake2Length.length(length);
         digest = HostDigest("blake2b", [], length).appended(origin);
     }
     bytes() is @byte { digest.bytes(); }
@@ -32,11 +32,11 @@ object Blake2b does Digesting {
 object Blake2s does Digesting {
     has digest is HostDigest;
     Blake2s(length is int) {
-        confirm length == 16 || length == 20 || length == 28 || length == 32 else throw InvalidBlake2Length(length);
+        confirm length == 16 || length == 20 || length == 28 || length == 32 else throw InvalidBlake2Length.length(length);
         digest = HostDigest("blake2s", [], length);
     }
     Blake2s(length is int, origin is @byte) {
-        confirm length == 16 || length == 20 || length == 28 || length == 32 else throw InvalidBlake2Length(length);
+        confirm length == 16 || length == 20 || length == 28 || length == 32 else throw InvalidBlake2Length.length(length);
         digest = HostDigest("blake2s", [], length).appended(origin);
     }
     bytes() is @byte { digest.bytes(); }
@@ -72,19 +72,14 @@ object Blake2sMac does Digesting {
     }
 }
 
-object InvalidBlake2Length does Error {
-    has origin is int;
-    InvalidBlake2Length(length is int) { origin = length; }
-    length() is int { origin; }
-    text() is string { "unsupported BLAKE2 output length " + origin.string(); }
-}
+enum InvalidBlake2Length is Error = (length(length is int));
 
 test "BLAKE2 matches RFC 7693 abc examples" {
     let abc = [97.byte(), 98.byte(), 99.byte()];
     test.is(HexEncoded(Blake2b(64, abc).bytes()).string(), "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923");
     test.is(HexEncoded(Blake2s(32, abc).bytes()).string(), "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982");
     test.ok(Blake2b(32, abc).bytes() != Blake2b(64, abc).bytes().slice(0, 32));
-    test.ok(try { Blake2s(64); false; } catch e is InvalidBlake2Length { e.length() == 64; });
+    test.ok(try { Blake2s(64); false; } catch InvalidBlake2Length.length(length) { length == 64; });
 }
 
 test "keyed BLAKE2 depends on the key" {

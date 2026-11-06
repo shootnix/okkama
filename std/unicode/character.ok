@@ -107,25 +107,9 @@ object UnicodeCharacter {
 
     numeric_value() is float {
         confirm character_is_numeric(origin)
-            else throw NonNumericCharacter(origin);
+            else throw NonNumericCharacter.invalid;
         character_numeric_value(origin);
     }
 }
 
-object NonNumericCharacter does Error {
-    has origin is char;
-
-    NonNumericCharacter(origin is char) {
-        self.origin = origin;
-    }
-
-    text() is string {
-        let name is string = character_name(origin);
-        if name == "" {
-            "character has no numeric value";
-        }
-        else {
-            "character has no numeric value: " + name;
-        }
-    }
-}
+enum NonNumericCharacter is Error = (invalid);

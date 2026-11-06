@@ -44,7 +44,7 @@ object Heap<T: Comparing<T>> does Sizing {
 
     Heap(root is HeapRepresenting<T>, size is int) {
         confirm size == root.size()
-            else throw InvalidArgument("heap representation size is inconsistent");
+            else throw InvalidArgument.because("heap representation size is inconsistent");
         origin = root;
     }
 
@@ -115,11 +115,11 @@ object EmptyHeapTree<T: Comparing<T>> does HeapRepresenting<T> {
     }
 
     top() is T {
-        throw EmptySequence();
+        throw EmptySequence.empty;
     }
 
     remainder() is HeapRepresenting<T> {
-        throw EmptySequence();
+        throw EmptySequence.empty;
     }
 
     combination(other is HeapRepresenting<T>) is HeapRepresenting<T> {

@@ -33,6 +33,25 @@ role Reading {
     bytes(limit is int) is @byte;
 }
 
+// Nominal asynchronous byte input. A positive limit bounds each result; short
+// reads are valid and empty bytes mean permanent orderly EOF. Implementations
+// reject non-positive limits with InvalidReadLimit. Each call returns
+// a lazy Future; repeated await of that Future observes the same read outcome.
+// This role does not imply synchronous Reading, resource ownership or close().
+role AsyncReading {
+    async bytes(limit is int) is @byte;
+}
+
+// Nominal asynchronous all-or-failure output, returning the same capability.
+// ByteSource materialization belongs to the started write; failures propagate.
+// A failed write may already have emitted a prefix: no rollback/replay promise.
+// Await each write explicitly; this role has no flush() or synchronous Writing
+// conformance and is not an operand for the synchronous stream-write operator.
+// Concrete socket halves must separately implement serialization and cleanup.
+role AsyncWriting {
+    async write(source is ByteSource) is AsyncWriting;
+}
+
 role WritingText {
     write(values is ...string) is void;
     writeln(values is ...string) is void;

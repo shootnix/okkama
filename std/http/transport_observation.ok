@@ -1,7 +1,6 @@
 module http/transport_observation v1.0.0;
-import "net/stream" take AsyncReading,AsyncWriting;
 import "net/failure" take NetworkFailure,NetworkFailureKind,NetworkClosed;
-import "io/stream" take ByteSource;
+import "io/stream" take AsyncReading,AsyncWriting,ByteSource;
 import "http/message" take InvalidHttpMessage;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -14,17 +13,15 @@ object HttpResponseObservation {
     reading(origin is AsyncReading) is AsyncReading{HttpObservedReading(origin,self);}
     writing(origin is AsyncWriting) is AsyncWriting{HttpObservedWriting(origin,self);}
 }
-object HttpPeerGoneBeforeResponse does Error{
-    has origin is Error;HttpPeerGoneBeforeResponse(origin is Error){self.origin=origin;}origin() is Error{origin;}text() is string{origin.text();}
-}
+enum HttpPeerGoneBeforeResponse is Error = (reset(cause is NetworkFailure), closed(cause is NetworkClosed), truncated(cause is InvalidHttpMessage));
 object HttpObservedReading does AsyncReading{
     has origin is AsyncReading;has observation is HttpResponseObservation;
     HttpObservedReading(origin is AsyncReading,observation is HttpResponseObservation){self.origin=origin;self.observation=observation;}
     async bytes(limit is int) is @byte{
         let group is FutureGroup<@byte>=FutureGroup();let cleanup=HttpObservationSettlement(group);defer await cleanup.close();
-        try{let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;if bytes.size()>0{observation.receive();}else{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse(InvalidHttpMessage("EOF before complete HTTP1 head"));}}bytes;}
-        catch e is NetworkFailure{if observation.active() && !observation.received() && (e.kind()==NetworkFailureKind.reset || e.kind()==NetworkFailureKind.aborted){throw HttpPeerGoneBeforeResponse(e);}throw;}
-        catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse(e);}throw;}
+        try{let pending=origin.bytes(limit);group.start(pending);let bytes=await pending;if bytes.size()>0{observation.receive();}else{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse.truncated(InvalidHttpMessage.because("EOF before complete HTTP1 head"));}}bytes;}
+        catch e is NetworkFailure{match e{case NetworkFailure.detailed(_,kind,_){if observation.active() && !observation.received() && (kind==NetworkFailureKind.reset || kind==NetworkFailureKind.aborted){throw HttpPeerGoneBeforeResponse.reset(e);}throw;}}}
+        catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse.closed(e);}throw;}
     }
 }
 object HttpObservedWriting does AsyncWriting{
@@ -33,8 +30,8 @@ object HttpObservedWriting does AsyncWriting{
     async write(source is ByteSource) is AsyncWriting{
         let group is FutureGroup<AsyncWriting>=FutureGroup();let cleanup=HttpObservationSettlement(group);defer await cleanup.close();
         try{let pending=origin.write(source);group.start(pending);await pending;self;}
-        catch e is NetworkFailure{if observation.active() && !observation.received() && (e.kind()==NetworkFailureKind.reset || e.kind()==NetworkFailureKind.aborted){throw HttpPeerGoneBeforeResponse(e);}throw;}
-        catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse(e);}throw;}
+        catch e is NetworkFailure{match e{case NetworkFailure.detailed(_,kind,_){if observation.active() && !observation.received() && (kind==NetworkFailureKind.reset || kind==NetworkFailureKind.aborted){throw HttpPeerGoneBeforeResponse.reset(e);}throw;}}}
+        catch e is NetworkClosed{if observation.active() && !observation.received(){throw HttpPeerGoneBeforeResponse.closed(e);}throw;}
     }
 }
 object HttpObservationSettlement<T>{has group is FutureGroup<T>;HttpObservationSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}

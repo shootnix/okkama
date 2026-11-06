@@ -36,11 +36,11 @@ object FixedResolution does Resolving {
         for hosts -> record {if record.host().order(origin.host())==Order.equal {
             let source=record.addresses();let endpoints is @IpEndpoint=(0..source.size()).map()->index{IpEndpoint(source.item(index),origin.port());};return endpoints;
         }}
-        throw UnknownHost(origin.host());
+        throw UnknownHost.host(origin.host().ascii());
     }
     async name(origin is IpAddress) is HostName {
         for names -> record{if record.address().order(origin)==Order.equal{return record.name();}}
-        throw UnknownAddress(origin);
+        throw UnknownAddress.address(origin.string());
     }
 }
 object SystemResolution does Resolving {
@@ -52,9 +52,9 @@ object SystemResolution does Resolving {
             let result is @IpEndpoint=records.map()->record{IpEndpoint(IpAddress(record[0]),origin.port(),record[2]);};result;
         }catch e is NativeFailure {
             if e.domain()=="core.net" {
-                if e.code()=="not_found" {throw UnknownHost(origin.host());}
-                if e.code()=="resource_exhausted" {throw ResolutionLimitExceeded("addresses");}
-                throw DnsFailure(e.message());
+                if e.code()=="not_found" {throw UnknownHost.host(origin.host().ascii());}
+                if e.code()=="resource_exhausted" {throw ResolutionLimitExceeded.kind("addresses");}
+                throw DnsFailure.because(e.message());
             }throw;
         }
     }
@@ -62,9 +62,9 @@ object SystemResolution does Resolving {
         let group is FutureGroup<string>=FutureGroup();let cleanup=DnsNameCleanup(group);defer await cleanup.close();
         try {
             let pending=network.dns_name(origin.string());group.start(pending);let value=await pending;
-            try{HostName(value);}catch e is InvalidHostName{throw DnsFailure("invalid reverse hostname from system resolver");}
+            try{HostName(value);}catch e is InvalidHostName{throw DnsFailure.because("invalid reverse hostname from system resolver");}
         }catch e is NativeFailure {
-            if e.domain()=="core.net" {if e.code()=="not_found"{throw UnknownAddress(origin);}throw DnsFailure(e.message());}throw;
+            if e.domain()=="core.net" {if e.code()=="not_found"{throw UnknownAddress.address(origin.string());}throw DnsFailure.because(e.message());}throw;
         }
     }
 }
@@ -76,21 +76,18 @@ object DnsNameCleanup {
     has group is FutureGroup<string>;DnsNameCleanup(group is FutureGroup<string>){self.group=group;}
     async close() is void{if group.active()>0{group.cancel();await group.wait();}}
 }
-object DnsFailure does Error {
-    has message is string;DnsFailure(message is string){self.message=message;}
-    text() is string{"system DNS failure: "+message;}
-}
+enum DnsFailure is Error = (because(message is string));
 object DnsConfiguration {
     has hosts is @HostAddresses;has names is @AddressName;
     DnsConfiguration(hosts is Sequencing<HostAddresses>,names is Sequencing<AddressName>){
         let forward=hosts.size();let reverse=names.size();
-        confirm forward>=0 && reverse>=0 else throw InvalidArgument("negative DNS configuration size");
-        confirm forward<=256 && reverse<=256 else throw ResolutionLimitExceeded("records");
+        confirm forward>=0 && reverse>=0 else throw InvalidArgument.because("negative DNS configuration size");
+        confirm forward<=256 && reverse<=256 else throw ResolutionLimitExceeded.kind("records");
         let h is @HostAddresses=(0..forward).map()->index{hosts.item(index);};let n is @AddressName=(0..reverse).map()->index{names.item(index);};
         let host_keys is @string=h.map()->record{record.host().ascii();};let address_keys is @string=n.map()->record{record.address().string();};
         let by_host=Sorted(host_keys);let by_address=Sorted(address_keys);
-        for (0..forward) -> index{if index>0{confirm by_host.item(index)!=by_host.item(index-1) else throw InvalidArgument("duplicate canonical DNS host");}}
-        for (0..reverse) -> index{if index>0{confirm by_address.item(index)!=by_address.item(index-1) else throw InvalidArgument("duplicate DNS reverse address");}}
+        for (0..forward) -> index{if index>0{confirm by_host.item(index)!=by_host.item(index-1) else throw InvalidArgument.because("duplicate canonical DNS host");}}
+        for (0..reverse) -> index{if index>0{confirm by_address.item(index)!=by_address.item(index-1) else throw InvalidArgument.because("duplicate DNS reverse address");}}
         self.hosts=h;self.names=n;
     }
     hosts() is @HostAddresses{hosts;}names() is @AddressName{names;}
@@ -98,8 +95,8 @@ object DnsConfiguration {
 object DnsAddressSnapshot {
     has origin is @IpAddress;
     DnsAddressSnapshot(source is Sequencing<IpAddress>){
-        let count=source.size();confirm count>0 else throw InvalidArgument("DNS answer must contain addresses");
-        confirm count<=256 else throw ResolutionLimitExceeded("addresses");
+        let count=source.size();confirm count>0 else throw InvalidArgument.because("DNS answer must contain addresses");
+        confirm count<=256 else throw ResolutionLimitExceeded.kind("addresses");
         let indexed is @DnsIndexedAddress=(0..count).map()->index{DnsIndexedAddress(source.item(index),index);};
         let ordered=Sorted(indexed);
         let positions is @int=(0..count).filter()->index{index==0 || ordered.item(index).address().order(ordered.item(index-1).address())!=Order.equal;};
@@ -115,18 +112,9 @@ object DnsIndexedAddress does Comparing<DnsIndexedAddress> {
     address() is IpAddress{address;}position() is int{position;}
     order(other is DnsIndexedAddress) is Order{address.order(other.address());}
 }
-object UnknownHost does Error {
-    has host is HostName;UnknownHost(host is HostName){self.host=host;}host() is HostName{host;}
-    text() is string{"unknown network host: "+host.ascii();}
-}
-object UnknownAddress does Error {
-    has address is IpAddress;UnknownAddress(address is IpAddress){self.address=address;}address() is IpAddress{address;}
-    text() is string{"no configured reverse name for "+address.string();}
-}
-object ResolutionLimitExceeded does Error {
-    has kind is string;ResolutionLimitExceeded(kind is string){self.kind=kind;}kind() is string{kind;}
-    text() is string{"DNS "+kind+" limit exceeded";}
-}
+enum UnknownHost is Error = (host(name is string));
+enum UnknownAddress is Error = (address(address is string));
+enum ResolutionLimitExceeded is Error = (kind(kind is string));
 async test "fixed lookup preserves requested port without a system resolver" {
     let resolver=FixedResolution([HostAddresses(HostName("example.com"),[IpAddress("192.0.2.1")])]);
     test.is((await resolver.addresses(HostEndpoint(HostName("EXAMPLE.com"),443))).item(0).port(),443);

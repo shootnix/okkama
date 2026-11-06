@@ -1,7 +1,7 @@
 module http/http1_reading v1.0.0;
 import "http/http1_head" take Http1Limits,Http1LimitExceeded,Http1RequestHead,Http1ResponseHead,ParsedHttp1RequestHead,ParsedHttp1ResponseHead;
 import "http/message" take InvalidHttpMessage;
-import "net/stream" take AsyncReading;
+import "io/stream" take AsyncReading;
 import "io/decorators" take ByteSnapshot,InvalidReading;
 import "io/buffer" take ByteBuffer;
 import "encoding/single_byte" take Latin1Decoded;
@@ -53,8 +53,8 @@ object Http1HeadInput<T> {
     has origin is AsyncReading;has prefix is @byte;has limits is Http1Limits;has chunk_bytes is int;
     has decode is (string,@byte,int,Http1Limits) is T;
     Http1HeadInput(origin is AsyncReading,prefix is @byte,limits is Http1Limits,chunk_bytes is int,decode is (string,@byte,int,Http1Limits) is T) {
-        confirm chunk_bytes>0 && chunk_bytes<=65536 else throw InvalidHttpMessage("HTTP1 read chunk must be 1..65536");
-        confirm prefix.size()<=limits.head_bytes()+chunk_bytes else throw Http1LimitExceeded("prefix_bytes");
+        confirm chunk_bytes>0 && chunk_bytes<=65536 else throw InvalidHttpMessage.because("HTTP1 read chunk must be 1..65536");
+        confirm prefix.size()<=limits.head_bytes()+chunk_bytes else throw Http1LimitExceeded.kind("prefix_bytes");
         self.origin=origin;self.prefix=prefix;self.limits=limits;self.chunk_bytes=chunk_bytes;self.decode=decode;
     }
     async read() is T {await self.read_from(Http1ScopedReading(origin));}
@@ -63,16 +63,16 @@ object Http1HeadInput<T> {
         let output=ByteBuffer();defer output.closing().close();let writing=output.writing();
         let state=Http1BoundaryTail();let first=Http1HeadBoundary("",prefix);let consumed=first.after();
         let piece=if consumed<0 {prefix;}else{prefix.slice(0,consumed);};
-        confirm piece.size()<=limits.head_bytes() else throw Http1LimitExceeded("head_bytes");writing.write(ByteSnapshot(piece));
+        confirm piece.size()<=limits.head_bytes() else throw Http1LimitExceeded.kind("head_bytes");writing.write(ByteSnapshot(piece));
         if consumed>=0 {return decode(Latin1Decoded(output.content().bytes()).string(),prefix.slice(consumed,prefix.size()),piece.size(),limits);}
         state=state.following(first.tail());
         loop {
             let used=output.content().size();let remaining=limits.head_bytes()-used;
-            confirm remaining>0 else throw Http1LimitExceeded("head_bytes");
+            confirm remaining>0 else throw Http1LimitExceeded.kind("head_bytes");
             let requested=if chunk_bytes<remaining {chunk_bytes;}else{remaining;};
             let chunk=await input.bytes(requested);
-            confirm chunk.size()<=requested else throw InvalidReading("HTTP1 source exceeded requested bytes");
-            confirm chunk.size()>0 else throw InvalidHttpMessage("EOF before complete HTTP1 head");
+            confirm chunk.size()<=requested else throw InvalidReading.because("HTTP1 source exceeded requested bytes");
+            confirm chunk.size()>0 else throw InvalidHttpMessage.because("EOF before complete HTTP1 head");
             let boundary=Http1HeadBoundary(state.string(),chunk);let after=boundary.after();
             let accepted=if after<0 {chunk;}else{chunk.slice(0,after);};writing.write(ByteSnapshot(accepted));
             if after>=0 {return decode(Latin1Decoded(output.content().bytes()).string(),chunk.slice(after,chunk.size()),used+after,limits);}
@@ -109,7 +109,7 @@ object Http1SupervisedReading does AsyncReading {
 object Http1HeadBoundary {
     has after is int;has tail is string;
     Http1HeadBoundary(prefix is string,chunk is @byte) {
-        confirm prefix.length()<=3 else throw InvalidHttpMessage("HTTP1 delimiter boundary width");
+        confirm prefix.length()<=3 else throw InvalidHttpMessage.because("HTTP1 delimiter boundary width");
         let text=prefix+Latin1Decoded(chunk).string();let pieces=text.split("\r\n\r\n");
         after=if pieces.size()>1 {pieces[0].length()+4-prefix.length();}else{-1;};
         tail=if text.length()<=3 {text;}else{text.slice(text.length()-3,text.length());};

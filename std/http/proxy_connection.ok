@@ -34,7 +34,7 @@ object HttpProxyRouting does HttpConversationRouting {
 object HttpProxyConnecting does HttpConversationConnecting {
     has proxy is ProxyPolicy;has target is Url;has route is HttpEndpointSelection;has tls is TlsClientPolicy;has client is ClientPolicy;has clock is Timing;
     HttpProxyConnecting(proxy is ProxyPolicy,target is Url,resolver is Resolving,tls is TlsClientPolicy,client is ClientPolicy,clock is Timing){
-        HttpClientProtocols(client,tls);if target.parts().scheme()=="http"{confirm client.protocols().membership(HttpVersion.http_1_1) else throw UnsupportedHttpVersion();}
+        HttpClientProtocols(client,tls);if target.parts().scheme()=="http"{confirm client.protocols().membership(HttpVersion.http_1_1) else throw UnsupportedHttpVersion.unsupported;}
         self.proxy=proxy;self.target=target;route=HttpEndpointSelection(proxy.url(),resolver,client.access());self.tls=tls;self.client=client;self.clock=clock;
     }
     async acquisition() is HttpConversationAcquisition{

@@ -2,8 +2,8 @@ module net/unix v1.0.0;
 
 import "fs/path" take Path;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded;
-import "io/stream" take ByteSource, InvalidReadLimit;
-import "net/stream" take AsyncReading, AsyncWriting, ConnectionEndpoints;
+import "io/stream" take AsyncReading, AsyncWriting, ByteSource, InvalidReadLimit;
+import "net/stream" take ConnectionEndpoints;
 import "net/failure" take NetworkError, NetworkOperation, NetworkClosed;
 import "error" take InvalidArgument;
 import "runtime/network";
@@ -22,10 +22,10 @@ object UnixAddress {
         try {network.unix_path_valid(Utf8Encoded(origin.string()).bytes());}
         catch failure is NativeFailure {
             if failure.domain()=="core.net" && failure.code()=="invalid_input" {
-                throw InvalidArgument(failure.message());
+                throw InvalidArgument.because(failure.message());
             }
             if failure.domain()=="core.net" && failure.code()=="unsupported" {
-                throw UnixSocketsUnsupported();
+                throw UnixSocketsUnsupported.unsupported;
             }
             throw;
         }
@@ -35,10 +35,7 @@ object UnixAddress {
     string() is string {origin.string();}
 }
 
-object UnixSocketsUnsupported does Error {
-    UnixSocketsUnsupported();
-    text() is string {"Unix sockets are unsupported by this provider";}
-}
+enum UnixSocketsUnsupported is Error = (unsupported);
 
 // An unnamed endpoint is an observation, never an empty filesystem Path.
 object UnixEndpoint {
@@ -47,7 +44,7 @@ object UnixEndpoint {
     UnixEndpoint(address is UnixAddress) {addresses=[address];}
     named() is bool {addresses.size()>0;}
     address() is UnixAddress {
-        confirm self.named() else throw InvalidArgument("Unix endpoint is unnamed");
+        confirm self.named() else throw InvalidArgument.because("Unix endpoint is unnamed");
         addresses[0];
     }
 }
@@ -61,10 +58,10 @@ object UnixError {
     }
     applicable() is bool {NetworkError(operation,failure).applicable();}
     value() is Error {
-        confirm self.applicable() else throw InvalidArgument("not a terminal Unix failure");
-        if failure.code()=="unsupported" {return UnixSocketsUnsupported();}
-        if failure.code()=="already_closed" {return NetworkClosed();}
-        if failure.code()=="invalid_input" {return InvalidArgument(failure.message());}
+        confirm self.applicable() else throw InvalidArgument.because("not a terminal Unix failure");
+        if failure.code()=="unsupported" {return UnixSocketsUnsupported.unsupported;}
+        if failure.code()=="already_closed" {return NetworkClosed.closed;}
+        if failure.code()=="invalid_input" {return InvalidArgument.because(failure.message());}
         NetworkError(operation,failure).value();
     }
 }
@@ -107,7 +104,7 @@ object UnixConnection {
     destroy {network.close(state);}
 
     async read_bytes(limit is int) is @byte {
-        confirm limit>0 else throw InvalidReadLimit(limit);
+        confirm limit>0 else throw InvalidReadLimit.limit(limit);
         try {await network.stream_read(state,limit);}
         catch failure is NativeFailure {
             let translated=UnixError(NetworkOperation.reading,failure);
@@ -116,7 +113,7 @@ object UnixConnection {
     }
 
     async write_bytes(source is ByteSource) is bool {
-        confirm !self.closed() else throw NetworkClosed();
+        confirm !self.closed() else throw NetworkClosed.closed;
         let payload=source.bytes();
         try {await network.stream_write(state,payload);}
         catch failure is NativeFailure {
@@ -220,5 +217,5 @@ object UnixAcceptance {
 }
 
 test "Unix unsupported diagnostic is stable" {
-    test.is(UnixSocketsUnsupported().text(),"Unix sockets are unsupported by this provider");
+    test.is(UnixSocketsUnsupported.unsupported.text(),"UnixSocketsUnsupported.unsupported");
 }

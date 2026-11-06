@@ -33,32 +33,32 @@ object DbBoolean does DbValue {
 }
 object DbInteger does DbValue {
     has origin is BigInt;
-    DbInteger(value is BigInt){confirm value.string().length()<=4096 else throw DbValueLimit("integer digits");origin=value;}
+    DbInteger(value is BigInt){confirm value.string().length()<=4096 else throw DbValueLimit.because("integer digits");origin=value;}
     kind() is DbValueKind{DbValueKind.integer;}value() is BigInt{origin;}
     print(output is DbValueWriting) is void{output.integer(origin);}
 }
 object DbFloating does DbValue {
     has origin is float;
-    DbFloating(value is float){let text=value.string();confirm text!="NaN" && text!="Inf" && text!="-Inf" && text!="nan" && text!="inf" && text!="-inf" else throw InvalidDbValue("finite floating value required");origin=value;}
+    DbFloating(value is float){let text=value.string();confirm text!="NaN" && text!="Inf" && text!="-Inf" && text!="nan" && text!="inf" && text!="-inf" else throw InvalidDbValue.because("finite floating value required");origin=value;}
     kind() is DbValueKind{DbValueKind.floating;}value() is float{origin;}
     print(output is DbValueWriting) is void{output.floating(origin);}
 }
 object DbDecimal does DbValue {
     has origin is Decimal;
-    DbDecimal(value is Decimal){confirm value.string().length()<=4096 else throw DbValueLimit("decimal digits");origin=value;}
+    DbDecimal(value is Decimal){confirm value.string().length()<=4096 else throw DbValueLimit.because("decimal digits");origin=value;}
     kind() is DbValueKind{DbValueKind.decimal;}value() is Decimal{origin;}
     print(output is DbValueWriting) is void{output.decimal(origin);}
 }
 object DbText does DbValue {
     has origin is string;has width is int;
-    DbText(value is string){confirm value.length()<=8388608 else throw DbValueLimit("text bytes");let size=Utf8Encoded(value).bytes().size();confirm size<=8388608 else throw DbValueLimit("text bytes");origin=value;width=size;}
+    DbText(value is string){confirm value.length()<=8388608 else throw DbValueLimit.because("text bytes");let size=Utf8Encoded(value).bytes().size();confirm size<=8388608 else throw DbValueLimit.because("text bytes");origin=value;width=size;}
     width() is int{width;}
     kind() is DbValueKind{DbValueKind.text;}value() is string{origin;}
     print(output is DbValueWriting) is void{output.text(origin);}
 }
 object DbBytes does DbValue {
     has origin is @byte;
-    DbBytes(value is @byte){confirm value.size()<=8388608 else throw DbValueLimit("binary bytes");origin=value;}
+    DbBytes(value is @byte){confirm value.size()<=8388608 else throw DbValueLimit.because("binary bytes");origin=value;}
     kind() is DbValueKind{DbValueKind.bytes;}value() is @byte{origin;}
     print(output is DbValueWriting) is void{output.bytes(origin);}
 }
@@ -86,10 +86,10 @@ object DbValueCapture does DbValueWriting {
     DbValueCapture(kind is DbValueKind) { self.kind=kind;flags=Atomic(0);let empty is @native_db.DbCellState=[];cell=Atomic(empty); }
     emit(kind is DbValueKind) is void {
         let current=flags.value();
-        confirm current & 8 == 0 else throw InvalidDbValue("printer is sealed");
+        confirm current & 8 == 0 else throw InvalidDbValue.because("printer is sealed");
         if current & 3 != 0 || kind != self.kind {
             flags.replace(current | 6);
-            throw InvalidDbValue("print must emit exactly one event of its declared kind");
+            throw InvalidDbValue.because("print must emit exactly one event of its declared kind");
         }
         flags.replace(current | 3);
     }
@@ -100,11 +100,11 @@ object DbValueCapture does DbValueWriting {
         let valid=current & 13 == 1 && cell.value().size()==0;
         if valid { cell.replace([value]);flags.replace(current & 13); }
         else { if current & 8 == 0 { flags.replace(current | 2); } }
-        confirm valid else throw InvalidDbValue("print omitted or invalidated its value");
+        confirm valid else throw InvalidDbValue.because("print omitted or invalidated its value");
     }
-    complete() is void { confirm self.completed() else throw InvalidDbValue("print omitted or invalidated its value"); }
-    finish() is void { confirm self.completed() else throw InvalidDbValue("print omitted or invalidated its value");flags.replace(flags.value() | 8); }
-    require(kind is DbValueKind) is void { confirm self.kind==kind else throw WrongDbValue(kind,self.kind);self.complete(); }
+    complete() is void { confirm self.completed() else throw InvalidDbValue.because("print omitted or invalidated its value"); }
+    finish() is void { confirm self.completed() else throw InvalidDbValue.because("print omitted or invalidated its value");flags.replace(flags.value() | 8); }
+    require(kind is DbValueKind) is void { confirm self.kind==kind else throw WrongDbValue.detailed(kind, self.kind);self.complete(); }
     state() is native_db.DbCellState { self.complete();cell.value()[0]; }
     completed() is bool { flags.value() & 3 == 1 && cell.value().size()==1; }
     null_value() is void { self.emit(DbValueKind.null_value);self.published(native_db.db_null()); }
@@ -136,13 +136,9 @@ object DbKindCode {
         case DbValueKind.bytes { 6; }
     } }
 }
-object WrongDbValue does Error {
-    has expected,actual is DbValueKind;WrongDbValue(expected is DbValueKind,actual is DbValueKind){self.expected=expected;self.actual=actual;}
-    expected_kind() is DbValueKind{expected;}actual_kind() is DbValueKind{actual;}
-    text() is string{"wrong database value projection";}
-}
-object InvalidDbValue does Error{has reason is string;InvalidDbValue(reason is string){self.reason=reason;}text() is string{"invalid database value: "+reason;}}
-object DbValueLimit does Error{has reason is string;DbValueLimit(reason is string){self.reason=reason;}text() is string{"database value limit: "+reason;}}
+enum WrongDbValue is Error = (detailed(expected_kind is DbValueKind, actual_kind is DbValueKind));
+enum InvalidDbValue is Error = (because(reason is string));
+enum DbValueLimit is Error = (because(reason is string));
 
 test "database NULL remains separate from empty text" {
     test.ok(ObservedDbValue(DbNull()).kind()==DbValueKind.null_value);
@@ -178,7 +174,7 @@ object DbNativeKind {
             case 4 { DbValueKind.decimal; }
             case 5 { DbValueKind.text; }
             case 6 { DbValueKind.bytes; }
-            else { throw InvalidDbValue("unknown native kind"); }
+            else { throw InvalidDbValue.because("unknown native kind"); }
         }
     }
 }

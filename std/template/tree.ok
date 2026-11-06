@@ -23,7 +23,7 @@ object TemplateTree {
         self.source=source;maximum_input=1048576;maximum_tokens=20000;maximum_depth=64;
     }
     TemplateTree(source is string, maximum_input is int, maximum_tokens is int, maximum_depth is int) {
-        confirm maximum_input>=0 && maximum_tokens>=0 && maximum_depth>=0 else throw InvalidTemplateLimits();
+        confirm maximum_input>=0 && maximum_tokens>=0 && maximum_depth>=0 else throw InvalidTemplateLimits.invalid;
         self.source=source;self.maximum_input=maximum_input;self.maximum_tokens=maximum_tokens;self.maximum_depth=maximum_depth;
     }
     nodes() is @TemplateTreeNode {
@@ -42,19 +42,16 @@ object TemplateTreeNode {
     has origin is string;
     has nested is @TemplateTreeNode;
     TemplateTreeNode(kind is TemplateTreeKind, text is string, children is @TemplateTreeNode) {
-        confirm text!="" else throw InvalidTemplateTreeNode();
+        confirm text!="" else throw InvalidTemplateTreeNode.invalid;
         confirm kind==TemplateTreeKind.section || kind==TemplateTreeKind.inverted || children.size()==0
-            else throw InvalidTemplateTreeNode();
+            else throw InvalidTemplateTreeNode.invalid;
         category=kind;origin=text;nested=children;
     }
     kind() is TemplateTreeKind {category;}
     text() is string {origin;}
     children() is @TemplateTreeNode {nested;}
 }
-object InvalidTemplateTreeNode does Error {
-    InvalidTemplateTreeNode();
-    text() is string {"invalid template tree node";}
-}
+enum InvalidTemplateTreeNode is Error = (invalid);
 
 // Internal parser stack. The root frame represents the program, not an emitted
 // section; all subsequent frames correspond to unmatched opening tags.
@@ -115,7 +112,7 @@ object TemplateTreeBuilder {
     private:
     failure(offset is int, message is string) is TemplateFailure {
         let lines=source.slice(0,offset).replace("\r\n","\n").split("\n");
-        TemplateFailure(offset,lines.size(),lines[lines.size()-1].length()+1,message);
+        TemplateFailure.located(offset, lines.size(), lines[lines.size()-1].length()+1, message);
     }
 }
 
@@ -162,9 +159,9 @@ test "structured syntax errors keep original source positions" {
         test.ok(try {TemplateTree(source).nodes();false;} catch e is Error {true;});
     }
     test.is(try {TemplateTree("é\r\n{{#x}}{{/y}}").nodes();[0,0,0];}
-        catch e is TemplateFailure {[e.offset(),e.line(),e.column()];},[9,2,7]);
+        catch TemplateFailure.located(offset, line, column, _) {[offset,line,column];},[9,2,7]);
     test.is(try {TemplateTree("a\n{{#x}}").nodes();[0,0,0];}
-        catch e is TemplateFailure {[e.offset(),e.line(),e.column()];},[2,2,1]);
+        catch TemplateFailure.located(offset, line, column, _) {[offset,line,column];},[2,2,1]);
 }
 test "tree input token and depth limits are explicit" {
     test.is(TemplateTree("",0,0,0).nodes().size(),0);

@@ -108,7 +108,7 @@ object DiffSearching {
             if error.code() == "invalid_data" {
                 throw InvalidDiff.because(error.message());
             }
-            throw UnavailableDiff(error.message());
+            throw UnavailableDiff.because(error.message());
         };
         let values is @DiffEdit = (0..(script.size() / 3).int()).map() -> index {
             let kind = script[index * 3];
@@ -128,17 +128,7 @@ object DiffSearching {
     }
 }
 
-object UnavailableDiff does Error {
-    has reason is string;
-
-    UnavailableDiff(reason is string) {
-        self.reason = reason;
-    }
-
-    text() is string {
-        "unavailable diff: " + reason;
-    }
-}
+enum UnavailableDiff is Error = (because(reason is string));
 
 object DiffScript {
     has left, right is @string;

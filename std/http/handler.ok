@@ -13,14 +13,14 @@ role WebSocketHandling {async handle(connection is WebSocketConnection,request i
 object ResponseHandling does HandlingResult {
     has origin is Response;ResponseHandling(origin is Response){self.origin=origin;}
     kind() is HandlingKind{HandlingKind.response;}response() is Response{origin;}
-    websocket() is WebSocketUpgrade{throw WrongHandlingKind();}application() is WebSocketHandling{throw WrongHandlingKind();}
+    websocket() is WebSocketUpgrade{throw WrongHandlingKind.mismatch;}application() is WebSocketHandling{throw WrongHandlingKind.mismatch;}
 }
 // Protocol approval/policy and application work are separate capabilities. The
 // ordinary HTTP handler returns them; the server owns the upgraded task scope.
 object WebSocketHandlingResult does HandlingResult {
     has origin is WebSocketUpgrade;has application is WebSocketHandling;
     WebSocketHandlingResult(origin is WebSocketUpgrade,application is WebSocketHandling){self.origin=origin;self.application=application;}
-    kind() is HandlingKind{HandlingKind.websocket;}response() is Response{throw WrongHandlingKind();}
+    kind() is HandlingKind{HandlingKind.websocket;}response() is Response{throw WrongHandlingKind.mismatch;}
     websocket() is WebSocketUpgrade{origin;}application() is WebSocketHandling{application;}
 }
-object WrongHandlingKind does Error{WrongHandlingKind();text() is string{"wrong HTTP handling result projection";}}
+enum WrongHandlingKind is Error = (mismatch);

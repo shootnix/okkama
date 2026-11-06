@@ -32,13 +32,13 @@ object Path does Comparing<Path> {
     has path_style is PathStyle;
 
     Path(origin is string) {
-        confirm !origin.empty() else throw InvalidPath("path cannot be empty");
+        confirm !origin.empty() else throw InvalidPath.because("path cannot be empty");
         self.origin = origin;
         path_style = NativePathStyle().value();
     }
 
     Path(origin is string, style is PathStyle) {
-        confirm !origin.empty() else throw InvalidPath("path cannot be empty");
+        confirm !origin.empty() else throw InvalidPath.because("path cannot be empty");
         self.origin = origin;
         path_style = style;
     }
@@ -46,10 +46,10 @@ object Path does Comparing<Path> {
     Path(parts is ...string) {
         let values is @string = parts...;
         confirm values.size() > 0
-            else throw InvalidPath("path join requires at least one part");
+            else throw InvalidPath.because("path join requires at least one part");
         for values -> part {
             confirm !part.empty()
-                else throw InvalidPath("path join rejects empty parts");
+                else throw InvalidPath.because("path join rejects empty parts");
         }
         let style is PathStyle = NativePathStyle().value();
         origin = path_join(values, PathStyleCode(origin: style).value());
@@ -64,7 +64,7 @@ object Path does Comparing<Path> {
     }
 
     child(part is string) is Path {
-        confirm !part.empty() else throw InvalidPath("path part cannot be empty");
+        confirm !part.empty() else throw InvalidPath.because("path part cannot be empty");
         Path(
             path_child(
                 origin,
@@ -115,14 +115,4 @@ object PathStyleCode {
     }
 }
 
-object InvalidPath does Error {
-    has message is string;
-
-    InvalidPath(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidPath is Error = (because(message is string));

@@ -20,8 +20,8 @@ object HttpRequestContext {
 object HttpContextParameters {
     has origin is %string:string;
     HttpContextParameters(origin is %string:string){
-        confirm origin.size()<=128 else throw InvalidArgument("HTTP route parameter count");
-        let used=origin.keys().reduce(0)->used,key{let width=key.length()+origin[key].length();confirm key!="" && key.length()<=256 && width<=8192-used else throw InvalidArgument("HTTP route parameter budget");used+width;};self.origin=origin;
+        confirm origin.size()<=128 else throw InvalidArgument.because("HTTP route parameter count");
+        let used=origin.keys().reduce(0)->used,key{let width=key.length()+origin[key].length();confirm key!="" && key.length()<=256 && width<=8192-used else throw InvalidArgument.because("HTTP route parameter budget");used+width;};self.origin=origin;
     }
     value() is %string:string{origin;}
 }

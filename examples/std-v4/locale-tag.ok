@@ -7,7 +7,7 @@ main() is int {
         Stdout().writeln(locale.string());
     }
     let language=LocaleFromLanguageTag("en").value();
-    let region=try {language.region();} catch error is MissingLocaleSubtag {"absent " + error.kind();};
+    let region=try {language.region();} catch MissingLocaleSubtag.kind(kind) {"absent " + kind;};
     Stdout().writeln(region);
     0;
 }

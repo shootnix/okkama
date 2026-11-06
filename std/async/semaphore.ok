@@ -40,7 +40,7 @@ object Semaphore {
     has amount is int;
 
     Semaphore(permits is int) {
-        confirm permits > 0 else throw InvalidPermitCount(permits: permits);
+        confirm permits > 0 else throw InvalidPermitCount.permits(permits);
         amount = permits;
     }
 
@@ -63,13 +63,4 @@ object Permit does Closing {
     }
 }
 
-object InvalidPermitCount does Error {
-    has amount is int;
-    InvalidPermitCount(permits is int) { amount = permits; }
-
-    permits() is int { amount; }
-
-    text() is string {
-        "semaphore permit count must be positive";
-    }
-}
+enum InvalidPermitCount is Error = (permits(permits is int));

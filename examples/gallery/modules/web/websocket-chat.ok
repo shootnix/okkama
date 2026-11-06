@@ -10,7 +10,7 @@ module gallery/web/websocket_chat v1.0.0;
 import "chat-room" take ChatRoom,ChatSubscription;
 import "web/routing" take WebRoutes,Get;
 import "web/request" take WebRequest;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/handler" take HandlingResult,WebSocketHandling,WebSocketHandlingResult;
 import "http/websocket" take WebSocketConnection,WebSocketLimits,WebSocketClosed,WebSocketMessageKind,TextWebSocketMessage,BinaryWebSocketMessage;
 import "http/websocket_server" take WebSocketUpgrade;
@@ -79,11 +79,11 @@ object SocketRoutes {
     has room is ChatRoom;SocketRoutes(room is ChatRoom){self.room=room;}
     upgrade() is WebSocketUpgrade{WebSocketUpgrade(["gallery-chat"],WebSocketLimits(),SameOriginWebSockets(),Duration(10.rat(),DurationUnit.second));}
     async room(request is WebRequest) is HandlingResult{
-        let name=request.path("name");confirm name.length()>0 && name.length()<=40 else throw Exception(422,"name required");
+        let name=request.path("name");confirm name.length()>0 && name.length()<=40 else throw Exception.status(422,"name required");
         WebSocketHandlingResult(self.upgrade(),ChatSocket(room,name));
     }
     async echo(request is WebRequest) is HandlingResult{WebSocketHandlingResult(self.upgrade(),EchoSocket());}
-    async missing(request is WebRequest) is HandlingResult{Exception(404,"No route");}
+    async missing(request is WebRequest) is HandlingResult{Problem(404,"No route");}
 }
 object SocketClient {
     has port is int;SocketClient(port is int){self.port=port;}

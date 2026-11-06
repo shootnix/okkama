@@ -73,7 +73,7 @@ object Utf8Input does ReadingText, Closing {
         }
         else {
             let size is int = input_state_size(state);
-            confirm size > 0 else throw EndOfInput();
+            confirm size > 0 else throw EndOfInput.reached;
             Utf8Decoded(origin: input_state_take(state, size)).string();
         }
     }
@@ -82,7 +82,7 @@ object Utf8Input does ReadingText, Closing {
         self.open();
         self.fill_text();
         let size is int = input_state_size(state);
-        confirm size > 0 else throw EndOfInput();
+        confirm size > 0 else throw EndOfInput.reached;
         Utf8Decoded(origin: input_state_take(state, size)).string();
     }
 
@@ -97,7 +97,7 @@ object Utf8Input does ReadingText, Closing {
     private:
 
     open() is void {
-        confirm !self.closed() else throw ClosedInput();
+        confirm !self.closed() else throw ClosedInput.closed;
     }
 
     fill_line() is void {
@@ -126,18 +126,6 @@ object Utf8Input does ReadingText, Closing {
     }
 }
 
-object EndOfInput does Error {
-    EndOfInput();
+enum EndOfInput is Error = (reached);
 
-    text() is string {
-        "end of input";
-    }
-}
-
-object ClosedInput does Error {
-    ClosedInput();
-
-    text() is string {
-        "input is closed";
-    }
-}
+enum ClosedInput is Error = (closed);

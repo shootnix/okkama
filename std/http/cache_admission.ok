@@ -27,7 +27,7 @@ object CacheAdmissions {
     booking(request is Request) is CacheAdmissionBooking{
         let key=CacheAdmissionKey(request).value();let current=entries.value();
         for current -> slot{if slot.key()==key{slot.join();return CacheAdmissionBooking(self,slot);}}
-        confirm current.size()<256 else throw CacheAdmissionExceeded();let slot=CacheAdmissionSlot(key);
+        confirm current.size()<256 else throw CacheAdmissionExceeded.exceeded;let slot=CacheAdmissionSlot(key);
         let revised is @CacheAdmissionSlot=(0..current.size()+1).map()->index{if index<current.size(){current[index];}else{slot;}};entries.replace(revised);CacheAdmissionBooking(self,slot);
     }
     released(slot is CacheAdmissionSlot) is void{
@@ -43,7 +43,7 @@ object CacheAdmissionSlot {
     following(revision is int) is @CacheValidatedEntry{if publication.value()>revision{published.value();}else{let empty is @CacheValidatedEntry=[];empty;}}
     retire() is void{published.close();publication.close();}
     key() is string{key;}users() is int{users.value();}
-    join() is void{confirm users.value()<256 else throw CacheAdmissionExceeded();users.replace(users.value()+1);}
+    join() is void{confirm users.value()<256 else throw CacheAdmissionExceeded.exceeded;users.replace(users.value()+1);}
     leave() is void{users.replace(users.value()-1);}
     async guard() is LockGuard{await lock.guard();}
 }
@@ -68,7 +68,7 @@ object CacheAdmissionAnchor {
     CacheAdmissionAnchor(leases is @Closing,retained is Event){self.leases=leases;self.retained=retained;}
     close() is void{if !retained.ready(){for leases -> lease{lease.close();}}}
 }
-object CacheAdmissionExceeded does Error{CacheAdmissionExceeded();text() is string{"HTTP cache admission limit exceeded";}}
+enum CacheAdmissionExceeded is Error = (exceeded);
 
 object CacheValidatedEntry {
     has entry is CachedHttpEntry;has revision is int;CacheValidatedEntry(entry is CachedHttpEntry,revision is int){self.entry=entry;self.revision=revision;}

@@ -28,7 +28,7 @@ their owner's close/defer/destroy contract still applies; Atomic does not acquir
 resource ownership or extend scoped resource lifetimes. Prefer immutable snapshots.
 
 close() is explicit and idempotent, drops the stored value, and affects all aliases.
-All subsequent reads and writes throw AtomicClosed. Dropping an alias does not
+All subsequent reads and writes throw AtomicClosed.closed. Dropping an alias does not
 close the cell; no OS resource or waiter requires implicit destroy. No null/empty
 sentinel can be read. The cell's identity is stable; object fields remain immutable.
 
@@ -44,7 +44,4 @@ object Atomic<T> does Closing {
     closed() is bool { panic "Atomic.closed is a VM intrinsic"; }
     close() is void { panic "Atomic.close is a VM intrinsic"; }
 }
-object AtomicClosed does Error {
-    AtomicClosed();
-    text() is string { "atomic state is closed"; }
-}
+enum AtomicClosed is Error = (closed);

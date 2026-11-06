@@ -16,8 +16,8 @@ object HostDigest {
         handle = try {
             digest_create(algorithm, key, width);
         } catch failure is NativeFailure {
-            if failure.code() == "invalid_input" { throw InvalidCryptoInput(failure.message()); }
-            throw CryptoUnavailable(failure.message());
+            if failure.code() == "invalid_input" { throw InvalidCryptoInput.because(failure.message()); }
+            throw CryptoUnavailable.because(failure.message());
         };
         self.width = width;
     }
@@ -35,8 +35,8 @@ object HostDigest {
         try {
             digest_bytes(handle, width);
         } catch failure is NativeFailure {
-            if failure.code() == "invalid_input" { throw InvalidCryptoInput(failure.message()); }
-            throw CryptoUnavailable(failure.message());
+            if failure.code() == "invalid_input" { throw InvalidCryptoInput.because(failure.message()); }
+            throw CryptoUnavailable.because(failure.message());
         }
     }
 }

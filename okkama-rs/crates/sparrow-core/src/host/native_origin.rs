@@ -1,0 +1,128 @@
+//! Synchronous natives that no core provider implements yet, run by the
+//! origin runtime's implementations (`okkama-runtime-core`). Arguments and
+//! results cross as its values, converted by the ABI types of the native; an
+//! origin `native object` stays an origin value inside a core handle.
+//!
+//! `any` arguments convert through their program types (`native_debug`).
+//! Async natives are not bridged, and neither are TLS (it runs over core
+//! sockets) and the terminal (its state comes from async natives).
+use crate::host::*;
+use okkama_runtime_abi::{Native, Type};
+use okkama_runtime_core::heap::{ArrayHeap, Map, MapKey};
+use okkama_runtime_core::{IntValue, Value};
+use std::rc::Rc;
+
+pub(crate) fn handles(native: Native) -> bool {
+    !native.signature().is_async && !matches!(native.module(), "runtime/tls_transport" | "runtime/application")
+}
+
+impl Heap {
+    pub(crate) fn native_origin(&mut self, native: Native, args: &[Slot]) -> Result<Outcome, Error> {
+        if native.module() == "runtime/debug" {
+            if self.origin.objects.is_empty() {
+                self.origin_names();
+            }
+            // Parts stay core values (see `native_debug`).
+            if matches!(native, Native::DebugDataKeys | Native::DebugDataItems) {
+                return self.debug_parts(native == Native::DebugDataKeys, args[0]).map(Outcome::Value);
+            }
+        }
+        let values = args
+            .iter()
+            .zip(native.parameters())
+            .map(|(&slot, ty)| self.to_origin(slot, ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut context = std::mem::take(&mut self.origin);
+        let result = okkama_runtime_core::native::execute(native, &values, &mut ArrayHeap, &mut context);
+        self.origin = context;
+        use okkama_runtime_core::native::Error as Origin;
+        match result {
+            Ok(value) => self.from_origin(value, native.result()).map(Outcome::Value),
+            Err(Origin::Failure(failure)) => {
+                let payload = self.native_failure_new(failure)?;
+                self.failure_new(FailureKind::Native(payload)).map(Outcome::Failure)
+            }
+            Err(Origin::InvalidState(message) | Origin::Trap(message) | Origin::Unsupported(message)) => {
+                Err(Error(message))
+            }
+        }
+    }
+
+    pub(crate) fn to_origin(&self, slot: Slot, ty: &Type) -> Result<Value, Error> {
+        Ok(match ty {
+            Type::Int => Value::Int(match self.integer(slot)? {
+                Integer::Small(n) => IntValue::from_i64(n),
+                Integer::Big(n) => IntValue::parse(&n.to_string()).ok_or_else(|| Error("integer".into()))?,
+            }),
+            Type::Float => Value::Float(f64::from_bits(slot.bits)),
+            Type::Bool => Value::Bool(slot.bits != 0),
+            Type::Byte => Value::Byte(slot.bits as u8),
+            Type::Char => Value::Char(char::from_u32(slot.bits as u32).ok_or_else(|| Error("char".into()))?),
+            Type::Str => Value::Str(Rc::from(self.text(slot)?)),
+            Type::Array(element) if **element == Type::Byte => {
+                ArrayHeap.allocate(self.byte_slice(slot)?.iter().map(|&b| Value::Byte(b)).collect())
+            }
+            Type::Array(element) => {
+                let items = self.elements(slot)?;
+                ArrayHeap.allocate(items.into_iter().map(|s| self.to_origin(s, element)).collect::<Result<_, _>>()?)
+            }
+            Type::Map(key, item) => {
+                let mut entries = std::collections::BTreeMap::new();
+                for (k, v) in self.map_entries(slot)? {
+                    let k = self.to_origin(k, key)?;
+                    let key = MapKey::from_value(&k).map_err(|e| Error(e.message))?;
+                    entries.insert(key, self.to_origin(v, item)?);
+                }
+                Value::Map(Rc::new(Map(entries)))
+            }
+            Type::Handle(_) if slot.kind() != HANDLE => return Err(Error("expected a native object".into())),
+            Type::Handle(_) => match self.handles.get(slot.bits)? {
+                Handle::Origin(value) => value.clone(),
+                _ => return Err(Error("expected an origin native object".into())),
+            },
+            Type::Any => self.any_to_origin(slot)?,
+            Type::Rat | Type::Void => return Err(Error("native argument type is not bridged".into())),
+        })
+    }
+
+    fn from_origin(&mut self, value: Value, ty: &Type) -> Result<Slot, Error> {
+        Ok(match (ty, value) {
+            (Type::Void, _) => Slot::boolean(true),
+            (Type::Int, Value::Int(n)) => match n.to_i64() {
+                Some(n) => Slot::small(n),
+                None => self.allocate(n.to_string().parse().map_err(|_| Error("integer".into()))?)?,
+            },
+            (Type::Float, Value::Float(f)) => Slot { tag: FLOAT, bits: f.to_bits() },
+            (Type::Bool, Value::Bool(b)) => Slot::boolean(b),
+            (Type::Byte, Value::Byte(b)) => Slot { tag: BYTE, bits: u64::from(b) },
+            (Type::Char, Value::Char(c)) => Slot { tag: CHAR, bits: u64::from(u32::from(c)) },
+            (Type::Str, Value::Str(s)) => self.allocate_text(s.to_string())?,
+            (Type::Array(element), value @ Value::Array(_)) if **element == Type::Byte => {
+                let bytes: Vec<u8> = ArrayHeap
+                    .elements(&value)
+                    .map_err(|e| Error(e.message))?
+                    .iter()
+                    .map(|v| match v {
+                        Value::Byte(b) => Ok(*b),
+                        _ => Err(Error("expected byte".into())),
+                    })
+                    .collect::<Result<_, _>>()?;
+                self.allocate_bytes(&bytes)?
+            }
+            (Type::Array(element), value @ Value::Array(_)) => {
+                let items = ArrayHeap.elements(&value).map_err(|e| Error(e.message))?.to_vec();
+                let slots = items.into_iter().map(|v| self.from_origin(v, element)).collect::<Result<Vec<_>, _>>()?;
+                self.allocate_array(slots)?
+            }
+            (Type::Map(key, item), Value::Map(map)) => {
+                let mut entries = Vec::with_capacity(map.0.len());
+                for (k, v) in &map.0 {
+                    entries.push((self.from_origin(k.to_value(), key)?, self.from_origin(v.clone(), item)?));
+                }
+                self.map_new(entries.into_iter())?
+            }
+            (Type::Handle(_), value) => Slot { tag: HANDLE, bits: self.handles.allocate(Handle::Origin(value))? },
+            (ty, value) => return Err(Error(format!("native result {value:?} does not match {ty:?}"))),
+        })
+    }
+}

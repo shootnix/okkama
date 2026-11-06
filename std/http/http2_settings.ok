@@ -10,7 +10,7 @@ object Http2Settings {
     Http2Settings(header_table is int,initial_window is int,frame_size is int,streams is int){
         confirm header_table>=0 && header_table<=1048576 && initial_window>=0 && initial_window<=2147483647
             && frame_size>=16384 && frame_size<=16777215 && streams>=0 && streams<=65535
-            else throw InvalidHttp2Settings();
+            else throw InvalidHttp2Settings.invalid;
         self.header_table=header_table;self.initial_window=initial_window;self.frame_size=frame_size;self.streams=streams;
     }
     header_table() is int{header_table;}initial_window() is int{initial_window;}frame_size() is int{frame_size;}streams() is int{streams;}
@@ -35,7 +35,7 @@ object Http2Setting {
         (0..6).map()->index{if index<2{key[index];}else{data[index-2];}};
     }
 }
-object InvalidHttp2Settings does Error{InvalidHttp2Settings();text() is string{"invalid local HTTP2 settings";}}
+enum InvalidHttp2Settings is Error = (invalid);
 test "zero stream/window/table caps remain explicit" {
     let settings=Http2Settings(0,0,16384,0);test.ok(settings.streams()==0 && settings.initial_window()==0);
     test.ok(Http2SettingsWire(settings,true).bytes().size()==30);

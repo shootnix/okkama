@@ -7,7 +7,7 @@ import "numbers/bigint" take BigInt, BigSum, BigDifference, BigProduct, BigQuoti
 object BigRational does Comparing<BigRational> {
     has upper, lower is BigInt;
     BigRational(numerator is BigInt, denominator is BigInt) {
-        confirm denominator.sign() != 0 else throw ZeroBigRationalDenominator();
+        confirm denominator.sign() != 0 else throw ZeroBigRationalDenominator.zero;
         let common = BigGcd(left: numerator, right: denominator).value();
         let divisor = if denominator.sign() < 0 {
             BigDifference(left: BigInt("0"), right: common).value();
@@ -60,17 +60,11 @@ object BigRationalQuotient {
     has left, right is BigRational;
     BigRationalQuotient(:left, :right);
     value() is BigRational {
-        confirm right.numerator().sign() != 0 else throw BigRationalDivisionByZero();
+        confirm right.numerator().sign() != 0 else throw BigRationalDivisionByZero.by_zero;
         BigRational(numerator: BigProduct(left: left.numerator(), right: right.denominator()).value(),
             denominator: BigProduct(left: left.denominator(), right: right.numerator()).value());
     }
 }
 
-object ZeroBigRationalDenominator does Error {
-    ZeroBigRationalDenominator();
-    text() is string { "BigRational denominator must not be zero"; }
-}
-object BigRationalDivisionByZero does Error {
-    BigRationalDivisionByZero();
-    text() is string { "BigRational division by zero"; }
-}
+enum ZeroBigRationalDenominator is Error = (zero);
+enum BigRationalDivisionByZero is Error = (by_zero);

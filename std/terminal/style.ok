@@ -24,7 +24,7 @@ object NamedColor does TerminalColor{
 }
 object IndexedColor does TerminalColor{
     has value is int;
-    IndexedColor(value is int){confirm value>=0 && value<=255 else throw InvalidTerminalStyle();self.value=value;}
+    IndexedColor(value is int){confirm value>=0 && value<=255 else throw InvalidTerminalStyle.invalid;self.value=value;}
     value() is int{value;}
     code(depth is TerminalColorDepth,background is bool) is string{
         if depth==TerminalColorDepth.basic{
@@ -97,9 +97,9 @@ object TextStyle{
     has foreground,background is TerminalColor;
     has attributes is @TextAttribute;
     TextStyle(foreground is TerminalColor,background is TerminalColor,attributes is Sequencing<TextAttribute>){
-        let size=attributes.size();confirm size>=0 && size<=6 else throw InvalidTerminalStyle();
+        let size=attributes.size();confirm size>=0 && size<=6 else throw InvalidTerminalStyle.invalid;
         let snapshot is @TextAttribute=(0..size).map()->index{attributes.item(index);};
-        for (0..size)->index{for (0..index)->previous{confirm (snapshot[index]!=snapshot[previous]) else throw InvalidTerminalStyle();}}
+        for (0..size)->index{for (0..index)->previous{confirm (snapshot[index]!=snapshot[previous]) else throw InvalidTerminalStyle.invalid;}}
         self.foreground=foreground;self.background=background;self.attributes=snapshot;
     }
     foreground() is TerminalColor{foreground;}
@@ -124,4 +124,4 @@ object StyledText{
         }
     }
 }
-object InvalidTerminalStyle does Error{InvalidTerminalStyle();text() is string{"invalid terminal color or text attributes";}}
+enum InvalidTerminalStyle is Error = (invalid);

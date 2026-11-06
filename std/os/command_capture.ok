@@ -59,7 +59,7 @@ object CommandCapture {
     }
 
     async completion() is CompletedCommand {
-        confirm limit > 0 else throw InvalidCaptureLimit(limit);
+        confirm limit > 0 else throw InvalidCaptureLimit.limit(limit);
 
         try {
             process_state_start(
@@ -76,16 +76,10 @@ object CommandCapture {
             );
             let overflow is int = captured_process_overflow(captured);
             if overflow == 1 {
-                throw CaptureLimitExceeded(
-                    stream: CapturedStream.output,
-                    limit: limit,
-                );
+                throw CaptureLimitExceeded.detailed(CapturedStream.output, limit);
             }
             if overflow == 2 {
-                throw CaptureLimitExceeded(
-                    stream: CapturedStream.errors,
-                    limit: limit,
-                );
+                throw CaptureLimitExceeded.detailed(CapturedStream.errors, limit);
             }
             let status is %string:int = captured_process_status(captured);
             CompletedCommand(
@@ -98,7 +92,7 @@ object CommandCapture {
             );
         }
         catch failure is NativeFailure {
-            throw ProcessFailure(failure.code(), failure.message());
+            throw ProcessFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -136,32 +130,6 @@ object CompletedCommand {
     errors() is @byte { captured_errors; }
 }
 
-object InvalidCaptureLimit does Error {
-    has origin is int;
+enum InvalidCaptureLimit is Error = (limit(limit is int));
 
-    InvalidCaptureLimit(limit is int) {
-        origin = limit;
-    }
-
-    limit() is int { origin; }
-
-    text() is string {
-        "capture limit must be positive, got " + origin.string();
-    }
-}
-
-object CaptureLimitExceeded does Error {
-    has captured_stream is CapturedStream;
-    has capture_limit is int;
-
-    CaptureLimitExceeded(stream is CapturedStream, limit is int) {
-        captured_stream = stream;
-        capture_limit = limit;
-    }
-
-    stream() is CapturedStream { captured_stream; }
-
-    limit() is int { capture_limit; }
-
-    text() is string { "command capture limit exceeded"; }
-}
+enum CaptureLimitExceeded is Error = (detailed(stream is CapturedStream, limit is int));

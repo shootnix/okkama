@@ -113,7 +113,7 @@ object PlistDate does PlistValue {
 object PlistUid does PlistValue {
     has origin is BigInt;
     PlistUid(value is BigInt) {
-        confirm value.sign() >= 0 else throw InvalidPlistUid();
+        confirm value.sign() >= 0 else throw InvalidPlistUid.invalid;
         origin = value;
     }
     kind() is PlistKind { PlistKind.uid_value; }
@@ -158,7 +158,7 @@ object PlistDictionary does PlistValue {
     }
     value(name is string) is PlistValue {
         for origin -> member { if member.name() == name { return member.value(); } }
-        throw MissingPlistMember(name);
+        throw MissingPlistMember.name(name);
     }
     print(to is PlistWriting) is void { to.members(origin); }
 }
@@ -168,10 +168,10 @@ object PlistDictionary does PlistValue {
 object PlistArraySnapshot {
     has origin is @PlistValue;
     PlistArraySnapshot(source is Sequencing<PlistValue>, maximum is int) {
-        confirm maximum >= 0 else throw InvalidPlistContainerLimit();
+        confirm maximum >= 0 else throw InvalidPlistContainerLimit.invalid;
         let size = source.size();
-        confirm size >= 0 else throw InvalidPlistContainerSize();
-        confirm size <= maximum else throw PlistContainerLimitExceeded();
+        confirm size >= 0 else throw InvalidPlistContainerSize.invalid;
+        confirm size <= maximum else throw PlistContainerLimitExceeded.exceeded;
         let values is @PlistValue = (0..size).map() -> index {
             let value is PlistValue = source.item(index);
             value;
@@ -184,15 +184,15 @@ object PlistArraySnapshot {
 object PlistDictionarySnapshot {
     has origin is @PlistMember;
     PlistDictionarySnapshot(source is Sequencing<PlistMember>, maximum is int) {
-        confirm maximum >= 0 else throw InvalidPlistContainerLimit();
+        confirm maximum >= 0 else throw InvalidPlistContainerLimit.invalid;
         let size = source.size();
-        confirm size >= 0 else throw InvalidPlistContainerSize();
-        confirm size <= maximum else throw PlistContainerLimitExceeded();
+        confirm size >= 0 else throw InvalidPlistContainerSize.invalid;
+        confirm size <= maximum else throw PlistContainerLimitExceeded.exceeded;
         let values is @PlistMember = (0..size).map() -> index { source.item(index); };
         for (0..size) -> index {
             for (0..index) -> previous {
                 confirm values[previous].name() != values[index].name()
-                    else throw DuplicatePlistMember(values[index].name());
+                    else throw DuplicatePlistMember.name(values[index].name());
             }
         }
         origin = values;
@@ -200,34 +200,12 @@ object PlistDictionarySnapshot {
     items() is @PlistMember { origin; }
 }
 
-object InvalidPlistUid does Error {
-    InvalidPlistUid();
-    text() is string { "plist UID must not be negative"; }
-}
-object MissingPlistMember does Error {
-    has origin is string;
-    MissingPlistMember(name is string) { origin = name; }
-    name() is string { origin; }
-    text() is string { "missing plist member: " + origin; }
-}
-object DuplicatePlistMember does Error {
-    has origin is string;
-    DuplicatePlistMember(name is string) { origin = name; }
-    name() is string { origin; }
-    text() is string { "duplicate plist member: " + origin; }
-}
-object InvalidPlistContainerLimit does Error {
-    InvalidPlistContainerLimit();
-    text() is string { "plist container limit must not be negative"; }
-}
-object InvalidPlistContainerSize does Error {
-    InvalidPlistContainerSize();
-    text() is string { "plist source size must not be negative"; }
-}
-object PlistContainerLimitExceeded does Error {
-    PlistContainerLimitExceeded();
-    text() is string { "plist container limit exceeded"; }
-}
+enum InvalidPlistUid is Error = (invalid);
+enum MissingPlistMember is Error = (name(name is string));
+enum DuplicatePlistMember is Error = (name(name is string));
+enum InvalidPlistContainerLimit is Error = (invalid);
+enum InvalidPlistContainerSize is Error = (invalid);
+enum PlistContainerLimitExceeded is Error = (exceeded);
 
 test "plist scalar payloads keep their own nominal kinds" {
     test.ok(PlistBoolean(true).value());
@@ -245,9 +223,9 @@ test "plist containers preserve order and exact member names" {
     test.ok(PlistArray([value]).values().item(0).kind() == PlistKind.dictionary_value);
 }
 test "plist missing duplicate and cardinality failures are typed" {
-    test.is(try { PlistDictionary([]).value("lost"); "bad"; } catch error is MissingPlistMember { error.name(); }, "lost");
+    test.is(try { PlistDictionary([]).value("lost"); "bad"; } catch MissingPlistMember.name(name) { name; }, "lost");
     test.is(try { PlistDictionary([PlistMember("x", PlistString("")), PlistMember("x", PlistString(""))]); "bad"; }
-        catch error is DuplicatePlistMember { error.name(); }, "x");
+        catch DuplicatePlistMember.name(name) { name; }, "x");
     test.is(PlistArray([], 0).values().size(), 0);
     test.ok(try { PlistArray([], -1); false; } catch error is InvalidPlistContainerLimit { true; });
     test.ok(try { PlistDictionary([PlistMember("x", PlistBoolean(true))], 0); false; }

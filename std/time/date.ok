@@ -30,9 +30,9 @@ object Date does Comparing<Date> {
 
     Date(year is int, month is int, day is int) {
         confirm year >= 1 && year <= 9999
-            else throw InvalidDate("date year must be within 1..9999");
+            else throw InvalidDate.because("date year must be within 1..9999");
         confirm month >= 1 && month <= 12
-            else throw InvalidDate("date month must be within 1..12");
+            else throw InvalidDate.because("date month must be within 1..12");
 
         let leap is bool = year % 4 == 0
             && (year % 100 != 0 || year % 400 == 0);
@@ -42,7 +42,7 @@ object Date does Comparing<Date> {
             else { 31; }
         };
         confirm day >= 1 && day <= maximum
-            else throw InvalidDate("date day is outside the selected month");
+            else throw InvalidDate.because("date day is outside the selected month");
 
         year_value = year;
         month_value = month;
@@ -100,7 +100,7 @@ object ShiftedDate {
     value() is Date {
         let ordinal is int = DateOrdinal(origin: origin).value();
         confirm days >= 1 - ordinal && days <= 3652059 - ordinal
-            else throw InvalidDate("shifted date is outside years 1..9999");
+            else throw InvalidDate.because("shifted date is outside years 1..9999");
         OrdinalDate(origin: ordinal + days).value();
     }
 }
@@ -161,7 +161,7 @@ object OrdinalDate {
 
     value() is Date {
         confirm origin >= 1 && origin <= 3652059
-            else throw InvalidDate("date ordinal is outside years 1..9999");
+            else throw InvalidDate.because("date ordinal is outside years 1..9999");
 
         let shifted is int = origin + 305;
         let era is int = (shifted / 146097).int();
@@ -194,14 +194,4 @@ object OrdinalDate {
     }
 }
 
-object InvalidDate does Error {
-    has message is string;
-
-    InvalidDate(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidDate is Error = (because(message is string));

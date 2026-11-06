@@ -30,7 +30,7 @@ object QueryParameters {
     }
     first(name is string) is string {
         for origin -> entry {if entry.name()==name {return entry.value();}}
-        throw MissingQueryParameter(name);
+        throw MissingQueryParameter.name(name);
     }
     values(name is string) is Sequencing<string> {
         let matches is @QueryParameter=origin.filter() -> entry {entry.name()==name;};
@@ -49,33 +49,17 @@ object ParsedQueryParameters {
     has maximum_parameters, maximum_bytes is int;
     ParsedQueryParameters(origin is UrlQuery) {self.origin=origin;maximum_parameters=10000;maximum_bytes=1048576;}
     ParsedQueryParameters(origin is UrlQuery, maximum_parameters is int, maximum_bytes is int) {
-        confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument("query limits must be nonnegative");
+        confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument.because("query limits must be nonnegative");
         self.origin=origin;self.maximum_parameters=maximum_parameters;self.maximum_bytes=maximum_bytes;
     }
     value() is QueryParameters {
-        confirm origin.string().length()<=maximum_bytes else throw QueryLimitExceeded("bytes");
+        confirm origin.string().length()<=maximum_bytes else throw QueryLimitExceeded.kind("bytes");
         ParameterParsing(Utf8Encoded(origin.string()).bytes(),false,maximum_parameters,maximum_bytes).parameters();
     }
 }
-object MissingQueryParameter does Error {
-    has key is string;
-    MissingQueryParameter(name is string) {key=name;}
-    name() is string {key;}
-    text() is string {"missing query parameter: "+key;}
-}
-object InvalidQueryEncoding does Error {
-    has position is int;
-    has reason is string;
-    InvalidQueryEncoding(offset is int, reason is string) {position=offset;self.reason=reason;}
-    offset() is int {position;}
-    text() is string {"invalid query encoding at byte offset "+position.string()+": "+reason;}
-}
-object QueryLimitExceeded does Error {
-    has limit is string;
-    QueryLimitExceeded(kind is string) {limit=kind;}
-    kind() is string {limit;}
-    text() is string {"query "+limit+" limit exceeded";}
-}
+enum MissingQueryParameter is Error = (name(name is string));
+enum InvalidQueryEncoding is Error = (located(offset is int, reason is string));
+enum QueryLimitExceeded is Error = (kind(kind is string));
 
 // Importable collaborators shared with form parsing; no mutable parser state
 // escapes. Snapshot sources are observed exactly once in index order.
@@ -83,13 +67,13 @@ object ParameterSnapshot {
     has origin is Sequencing<QueryParameter>;
     has maximum is int;
     ParameterSnapshot(origin is Sequencing<QueryParameter>, maximum is int) {
-        confirm maximum>=0 else throw InvalidArgument("query limit must be nonnegative");
+        confirm maximum>=0 else throw InvalidArgument.because("query limit must be nonnegative");
         self.origin=origin;self.maximum=maximum;
     }
     entries() is @QueryParameter {
         let size=origin.size();
-        confirm size>=0 else throw InvalidArgument("query source size must be nonnegative");
-        confirm size<=maximum else throw QueryLimitExceeded("parameters");
+        confirm size>=0 else throw InvalidArgument.because("query source size must be nonnegative");
+        confirm size<=maximum else throw QueryLimitExceeded.kind("parameters");
         let entries is @QueryParameter=(0..size).map() -> index {origin.item(index);};entries;
     }
 }
@@ -98,12 +82,12 @@ object ParameterParsing {
     has form is bool;
     has maximum_parameters, maximum_bytes is int;
     ParameterParsing(origin is @byte, form is bool, maximum_parameters is int, maximum_bytes is int) {
-        confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument("query limits must be nonnegative");
+        confirm maximum_parameters>=0 && maximum_bytes>=0 else throw InvalidArgument.because("query limits must be nonnegative");
         self.origin=origin;self.form=form;self.maximum_parameters=maximum_parameters;self.maximum_bytes=maximum_bytes;
     }
     parameters() is QueryParameters {
         let size=origin.size();
-        confirm size<=maximum_bytes else throw QueryLimitExceeded("bytes");
+        confirm size<=maximum_bytes else throw QueryLimitExceeded.kind("bytes");
         let parts=ParameterParts();
         if size>0 {
             let stops=(0..size+1).filter() -> index {index==size || origin[index]==byte(38);};
@@ -111,7 +95,7 @@ object ParameterParsing {
                 let start=parts.start();
                 if form && start==end {parts=parts.skipping(end+1);}
                 else {
-                    confirm parts.size()<maximum_parameters else throw QueryLimitExceeded("parameters");
+                    confirm parts.size()<maximum_parameters else throw QueryLimitExceeded.kind("parameters");
                     let equals=(start..end).reduce(-1) -> found,index {
                         if found<0 && origin[index]==byte(61) {index;} else {found;}
                     };
@@ -162,10 +146,10 @@ object ParameterText {
             writer.write(ByteSnapshot([octet]));cursor=cursor.following(width);
         }
         try {Utf8Decoded(output.content().bytes()).string();}
-        catch failure is InvalidUtf8 {
+        catch InvalidUtf8.at(offset) {
             let cursor=ParameterPosition();
             loop {
-                if cursor.decoded()==failure.offset() {throw InvalidQueryEncoding(offset+cursor.source(),"invalid UTF-8");}
+                if cursor.decoded()==offset {throw InvalidQueryEncoding.located(offset+cursor.source(), "invalid UTF-8");}
                 cursor=cursor.following(self.width(cursor.source()));
             }
         }
@@ -173,9 +157,9 @@ object ParameterText {
     private:
     width(index is int) is int {
         if origin[index]!=byte(37) {return 1;}
-        confirm origin.size()-index>=3 else throw InvalidQueryEncoding(offset+index,"incomplete percent escape");
+        confirm origin.size()-index>=3 else throw InvalidQueryEncoding.located(offset+index, "incomplete percent escape");
         confirm self.digit(origin[index+1])>=0 && self.digit(origin[index+2])>=0
-            else throw InvalidQueryEncoding(offset+index,"invalid percent escape");
+            else throw InvalidQueryEncoding.located(offset+index, "invalid percent escape");
         3;
     }
     digit(octet is byte) is int {

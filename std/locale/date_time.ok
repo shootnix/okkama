@@ -23,10 +23,7 @@ object DateTimeStyle {
     DateTimeStyle(date is DateStyle,time is TimeStyle){self.date=date;self.time=time;}
     date() is DateStyle{date;}time() is TimeStyle{time;}
 }
-object InvalidLocalizedDateTime does Error {
-    has reason is string;InvalidLocalizedDateTime(reason is string){self.reason=reason;}
-    text() is string{"invalid localized date/time: "+reason;}
-}
+enum InvalidLocalizedDateTime is Error = (because(reason is string));
 object DateStyleIndex {
     has value is int;DateStyleIndex(style is DateStyle){value=match style{case DateStyle.full{0;}case DateStyle.long{1;}case DateStyle.medium{2;}else{3;}};}
     value() is int{value;}
@@ -39,17 +36,17 @@ object GregorianLocaleData {
     has table is CldrGregorian;has numbers is NumberLocaleData;has fields,rules,tags is @string;
     GregorianLocaleData(locale is Locale){
         let extensions=LocaleExtensions(locale).unicode();
-        for (0..extensions.size())->index{let keyword=extensions.item(index);if keyword.key()=="ca"{let values=keyword.values();confirm values.size()==1 && values.item(0)=="gregory" else throw InvalidLocalizedDateTime("only the Gregorian calendar is supported");}}
+        for (0..extensions.size())->index{let keyword=extensions.item(index);if keyword.key()=="ca"{let values=keyword.values();confirm values.size()==1 && values.item(0)=="gregory" else throw InvalidLocalizedDateTime.because("only the Gregorian calendar is supported");}}
         let table=CldrGregorian();let chain=LocaleFallbacks(locale);let tags is @string=(0..chain.size()).map()->index{chain.item(index).string();};
         let profile=tags.reduce(-1)->chosen,tag{if chosen>=0{chosen;}else{table.profile(tag);}};
-        confirm profile>=0 else throw InvalidLocalizedDateTime("missing pinned Gregorian root");
-        let fields=table.fields(profile);confirm fields.size()==179 else throw InvalidLocalizedDateTime("Gregorian profile shape");
+        confirm profile>=0 else throw InvalidLocalizedDateTime.because("missing pinned Gregorian root");
+        let fields=table.fields(profile);confirm fields.size()==179 else throw InvalidLocalizedDateTime.because("Gregorian profile shape");
         let periods=CldrDayPeriods();let empty_rules is @string=[];let rules is @string=tags.reduce(empty_rules)->chosen,tag{if chosen.size()>0{chosen;}else{periods.rules(tag);}};
         // Supplemental rule sets inherit a language rule independently of the
         // calendar parent chain (zh-Hant calendar data can inherit from und).
         let language=locale.base_tag().split("-")[0];
         self.table=table;self.fields=fields;self.rules=if rules.size()>0{rules;}else{periods.rules(language);};self.tags=tags;
-        numbers=try{NumberLocaleData(locale);}catch error is InvalidLocalizedNumber{throw InvalidLocalizedDateTime("unsupported numbering system");};
+        numbers=try{NumberLocaleData(locale);}catch error is InvalidLocalizedNumber{throw InvalidLocalizedDateTime.because("unsupported numbering system");};
     }
     tags() is @string{tags;}numbers() is NumberLocaleData{numbers;}
     date(style is DateStyle) is string{table.program(ParsedInt(fields[167+DateStyleIndex(style).value()]).value());}
@@ -79,15 +76,15 @@ object GregorianLocaleData {
 }
 object GregorianProgram {
     has values is @string;
-    GregorianProgram(origin is string){let values=origin.split("|");confirm values.size()>0 && values.size()%3==0 && values.size()<=384 else throw InvalidLocalizedDateTime("compiled pattern shape");self.values=values;}
+    GregorianProgram(origin is string){let values=origin.split("|");confirm values.size()>0 && values.size()%3==0 && values.size()<=384 else throw InvalidLocalizedDateTime.because("compiled pattern shape");self.values=values;}
     size() is int{(values.size()/3).int();}kind(index is int) is string{values[index*3];}width(index is int) is int{ParsedInt(values[index*3+1]).value();}literal(index is int) is string{values[index*3+2];}
 }
 // Freeze one explicit zone observation for consistent local fields and naming.
 object LocalizedZoneObservation {
     has name is string;has offset is Duration;has daylight is bool;has instant is Instant;
     LocalizedZoneObservation(zone is TimeZone,instant is Instant){
-        let name=zone.name();confirm name.length()>0 && name.length()<=255 else throw InvalidLocalizedDateTime("timezone name length");
-        let offset=zone.offset(instant);confirm offset.seconds().denominator()=="1" && offset.seconds()>(-86400).rat() && offset.seconds()<86400.rat() else throw InvalidLocalizedDateTime("timezone offset must contain whole seconds within a day");
+        let name=zone.name();confirm name.length()>0 && name.length()<=255 else throw InvalidLocalizedDateTime.because("timezone name length");
+        let offset=zone.offset(instant);confirm offset.seconds().denominator()=="1" && offset.seconds()>(-86400).rat() && offset.seconds()<86400.rat() else throw InvalidLocalizedDateTime.because("timezone offset must contain whole seconds within a day");
         self.name=name;self.offset=offset;daylight=zone.daylight_saving(instant);self.instant=instant;
     }
     local() is LocalDateTime{ZonedDateTime(instant,FixedZone(name,offset)).local_datetime();}
@@ -123,12 +120,12 @@ object LocalizedGmtOffset {
     LocalizedGmtOffset(offset is Duration,data is GregorianLocaleData,table is CldrZoneNames,wide is bool){
         self.offset=offset;self.data=data;self.wide=wide;let rows is @@string=data.tags().map()->tag{table.gmt(tag);};
         let fields is @string=(0..3).map()->index{rows.reduce("")->chosen,row{if chosen!=""{chosen;}else{if row.size()==3{row[index];}else{"";}}};};
-        confirm fields[0]!="" && fields[1].split("{0}").size()==2 && fields[2]!="" else throw InvalidLocalizedDateTime("GMT pattern shape");self.fields=fields;
+        confirm fields[0]!="" && fields[1].split("{0}").size()==2 && fields[2]!="" else throw InvalidLocalizedDateTime.because("GMT pattern shape");self.fields=fields;
     }
     string() is string{
         let seconds=offset.seconds().int();if seconds==0{return fields[2];}let negative=seconds<0;let absolute=if negative{-seconds;}else{seconds;};
         let hour=(absolute/3600).int();let minute=((absolute%3600)/60).int();let second=absolute%60;
-        let formats=fields[0].split(";");confirm formats.size()==2 else throw InvalidLocalizedDateTime("GMT hour pattern shape");let source=formats[if negative{1;}else{0;}];
+        let formats=fields[0].split(";");confirm formats.size()==2 else throw InvalidLocalizedDateTime.because("GMT hour pattern shape");let source=formats[if negative{1;}else{0;}];
         let pattern=if wide{source;}else{source.replace("HH","H");};
         let split=pattern.split("m");let hour_text=split[0];let with_hour=hour_text.replace("HH",data.number(hour,2)).replace("H",data.number(hour,1));
         let separator=pattern.split("H").last().split("m")[0];
@@ -143,11 +140,11 @@ object GregorianPrinting {
     GregorianPrinting(dates is @Date,times is @TimeOfDay,zones is @LocalizedZoneObservation,data is GregorianLocaleData){self.dates=dates;self.times=times;self.zones=zones;self.data=data;}
     string(source is string) is string{
         let program=GregorianProgram(source);let parts is @string=(0..program.size()).map()->index{let kind=program.kind(index);if kind=="literal"{program.literal(index);}else{self.field(kind,program.width(index));}};
-        let length=parts.reduce(0)->total,part{total+part.length();};confirm length<=8192 else throw InvalidLocalizedDateTime("output exceeds 8192 scalars");parts.join("");
+        let length=parts.reduce(0)->total,part{total+part.length();};confirm length<=8192 else throw InvalidLocalizedDateTime.because("output exceeds 8192 scalars");parts.join("");
     }
     private:
-    date() is Date{confirm dates.size()==1 else throw InvalidLocalizedDateTime("date field requested from wall time");dates[0];}
-    time() is TimeOfDay{confirm times.size()==1 else throw InvalidLocalizedDateTime("time field requested from date");times[0];}
+    date() is Date{confirm dates.size()==1 else throw InvalidLocalizedDateTime.because("date field requested from wall time");dates[0];}
+    time() is TimeOfDay{confirm times.size()==1 else throw InvalidLocalizedDateTime.because("time field requested from date");times[0];}
     field(kind is string,width is int) is string{
         match kind{
             case "G"{data.era(width);}
@@ -161,8 +158,8 @@ object GregorianPrinting {
             case "m"{data.number(self.time().minute(),width);}
             case "s"{data.number(self.time().second(),width);}
             case "a","B"{data.period(self.time(),width,kind=="B");}
-            case "z"{confirm zones.size()==1 else throw InvalidLocalizedDateTime("timezone field requested from wall value");LocalizedZoneName(zones[0],data,width>=4).string();}
-            else{throw InvalidLocalizedDateTime("unsupported compiled field: "+kind);}
+            case "z"{confirm zones.size()==1 else throw InvalidLocalizedDateTime.because("timezone field requested from wall value");LocalizedZoneName(zones[0],data,width>=4).string();}
+            else{throw InvalidLocalizedDateTime.because("unsupported compiled field: "+kind);}
         }
     }
 }
@@ -170,8 +167,8 @@ object GregorianCombined {
     has date,time,pattern is string;
     GregorianCombined(date is string,time is string,pattern is string){self.date=date;self.time=time;self.pattern=pattern;}
     string() is string{
-        let split=pattern.split("{0}");confirm split.size()==2 && pattern.split("{1}").size()==2 else throw InvalidLocalizedDateTime("date/time combination shape");
-        let text=split[0].replace("{1}",date)+time+split[1].replace("{1}",date);confirm text.length()<=8192 else throw InvalidLocalizedDateTime("combined output budget");text;
+        let split=pattern.split("{0}");confirm split.size()==2 && pattern.split("{1}").size()==2 else throw InvalidLocalizedDateTime.because("date/time combination shape");
+        let text=split[0].replace("{1}",date)+time+split[1].replace("{1}",date);confirm text.length()<=8192 else throw InvalidLocalizedDateTime.because("combined output budget");text;
     }
 }
 // Wall coordinates and policies are immutable, so their derived representation

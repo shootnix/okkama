@@ -3,7 +3,7 @@ import "http/internal/websocket_frame" take WebSocketFrame;
 import "http/websocket" take WebSocketMessage,WebSocketMessageKind,WebSocketLimits,WebSocketFailure,WebSocketClosed;
 import "encoding/utf" take Utf8Encoded;
 import "random/source" take Randomizing;
-import "net/stream" take AsyncWriting;
+import "io/stream" take AsyncWriting;
 import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
@@ -23,13 +23,13 @@ object WebSocketOutput {
     }
     message(value is WebSocketMessage) is WebSocketOutputTicket{
         let text=value.kind()==WebSocketMessageKind.text;let payload=if text{Utf8Encoded(value.text()).bytes();}else{value.bytes();};
-        confirm payload.size()<=message_maximum else throw WebSocketFailure("outgoing message byte limit");WebSocketOutputTicket(self,if text{1;}else{2;},payload);
+        confirm payload.size()<=message_maximum else throw WebSocketFailure.because("outgoing message byte limit");WebSocketOutputTicket(self,if text{1;}else{2;},payload);
     }
-    control(opcode is int,payload is @byte) is WebSocketOutputTicket{confirm opcode==8 || opcode==9 || opcode==10 else throw WebSocketFailure("outgoing control opcode");WebSocketFrame(opcode,true,payload);WebSocketOutputTicket(self,opcode,payload);}
+    control(opcode is int,payload is @byte) is WebSocketOutputTicket{confirm opcode==8 || opcode==9 || opcode==10 else throw WebSocketFailure.because("outgoing control opcode");WebSocketFrame(opcode,true,payload);WebSocketOutputTicket(self,opcode,payload);}
     async submit(ticket is WebSocketOutputTicket) is bool{
         loop{
-            confirm !stopped.ready() else throw WebSocketClosed(1006,"");if ticket.cancelled(){throw WebSocketOutputCancelled();}
-            confirm !quiescing.ready() || ticket.opcode()==8 || ticket.opcode()==10 else throw WebSocketClosed(1000,"");
+            confirm !stopped.ready() else throw WebSocketClosed.detailed(1006, "");if ticket.cancelled(){throw WebSocketOutputCancelled.cancelled;}
+            confirm !quiescing.ready() || ticket.opcode()==8 || ticket.opcode()==10 else throw WebSocketClosed.detailed(1000, "");
             if jobs.value().size()+current.value().size()<maximum{
                 let old=jobs.value();let following is @WebSocketOutputTicket=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{ticket;}};jobs.replace(following);changed.value().set();return true;
             }
@@ -60,7 +60,7 @@ object WebSocketOutput {
         }
     }
     async run() is bool{
-        confirm !started.ready() else throw InvalidState("WebSocket writer is single-use");started.set();defer self.abort();
+        confirm !started.ready() else throw InvalidState.because("WebSocket writer is single-use");started.set();defer self.abort();
         loop{
             let available=self.take();if available.size()==0{if stopped.ready(){return true;}let signal=Event();changed.replace(signal);await signal.wait();next;}
             let ticket=available[0];if !ticket.cancelled(){let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=self.emit(ticket);group.start(pending);await pending;ticket.completed();}self.release();
@@ -73,11 +73,11 @@ object WebSocketOutputTicket {
     opcode() is int{opcode;}payload() is @byte{payload;}cancelled() is bool{cancellation.ready();}
     cancel() is void{if !finished.ready(){cancellation.set();finished.set();}}
     completed() is void{finished.set();}failed() is void{if !finished.ready(){stopped.set();finished.set();}}
-    async waiting() is bool{defer self.cancel();if self.cancelled(){throw WebSocketOutputCancelled();}let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let submitting=owner.submit(self);group.start(submitting);await submitting;await finished.wait();confirm !stopped.ready() else throw WebSocketClosed(1006,"");if self.cancelled(){throw WebSocketOutputCancelled();}true;}
+    async waiting() is bool{defer self.cancel();if self.cancelled(){throw WebSocketOutputCancelled.cancelled;}let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let submitting=owner.submit(self);group.start(submitting);await submitting;await finished.wait();confirm !stopped.ready() else throw WebSocketClosed.detailed(1006, "");if self.cancelled(){throw WebSocketOutputCancelled.cancelled;}true;}
     async result() is bool{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
     private:
     operation() is Future<bool>{let known=waiting.value();if known.size()>0{known[0];}else{let task=self.waiting();waiting.replace([task]);task;}}
 }
 object WebSocketOutputSettlement<T>{has group is FutureGroup<T>;WebSocketOutputSettlement(group is FutureGroup<T>){self.group=group;}async close() is void{if group.active()>0{group.cancel();await group.wait();}}}
 
-object WebSocketOutputCancelled does Error{WebSocketOutputCancelled();text() is string{"WebSocket output ticket cancelled";}}
+enum WebSocketOutputCancelled is Error = (cancelled);

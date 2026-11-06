@@ -15,7 +15,7 @@ object EnvironmentSettings does SettingReading{
     has origin is Settings;
     EnvironmentSettings(environment is Environment,names is Sequencing<EnvironmentBinding>,source is SettingSource){
         let size=names.size();
-        confirm size>=0 && size<=4096 else throw SettingLimitExceeded();
+        confirm size>=0 && size<=4096 else throw SettingLimitExceeded.exceeded;
         let mapping is @EnvironmentBinding=(0..size).map()->index{names.item(index);};
         let keys is @SettingKey=mapping.map()->binding{binding.key();};
         SettingKeyIndex(keys).valid();

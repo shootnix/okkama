@@ -10,7 +10,7 @@ object PublicSuffixList {
     suffix(origin is HostName) is HostName {HostName(public_suffix_name(origin.ascii()));}
     registrable(origin is HostName) is HostName {
         let domain=try{registrable_name(origin.ascii());}catch failure is NativeFailure {
-            if failure.domain()=="core.public_suffix" && failure.code()=="not_found" {throw MissingRegistrableDomain(origin);}
+            if failure.domain()=="core.public_suffix" && failure.code()=="not_found" {throw MissingRegistrableDomain.host(origin.ascii());}
             throw;
         };
         HostName(domain);
@@ -19,11 +19,7 @@ object PublicSuffixList {
         let present=try{self.registrable(origin);false;}catch failure is MissingRegistrableDomain{true;};present;
     }
 }
-object MissingRegistrableDomain does Error {
-    has origin is HostName;MissingRegistrableDomain(origin is HostName){self.origin=origin;}
-    host() is HostName {origin;}
-    text() is string {"public suffix has no registrable domain: "+origin.ascii();}
-}
+enum MissingRegistrableDomain is Error = (host(name is string));
 test "private boundaries and wildcard exceptions are explicit pinned policy" {
     let rules=PublicSuffixList();
     test.is(rules.suffix(HostName("a.github.io")).ascii(),"github.io");

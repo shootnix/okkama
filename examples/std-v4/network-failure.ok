@@ -14,8 +14,12 @@ main() is int {
             throw;
         }
     } catch failure is NetworkFailure {
-        confirm failure.operation()==NetworkOperation.binding
-            && failure.kind()==NetworkFailureKind.unsupported else panic "wrong classification";
+        match failure {
+            case NetworkFailure.detailed(operation,kind,_) {
+                confirm operation==NetworkOperation.binding
+                    && kind==NetworkFailureKind.unsupported else panic "wrong classification";
+            }
+        }
         failure.text();
     };
     Stdout().writeln(result);

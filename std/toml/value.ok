@@ -134,16 +134,16 @@ object TomlArray does TomlValue {
     has origin is @TomlValue;
     TomlArray(values is Sequencing<TomlValue>) {
         let size = values.size();
-        confirm size >= 0 else throw InvalidTomlSize();
-        confirm size <= 10000 else throw TomlLimitExceeded();
+        confirm size >= 0 else throw InvalidTomlSize.invalid;
+        confirm size <= 10000 else throw TomlLimitExceeded.exceeded;
         let snapshot is @TomlValue = (0..size).map() -> index { values.item(index); };
         origin = snapshot;
     }
     TomlArray(values is Sequencing<TomlValue>, maximum_items is int) {
-        confirm maximum_items >= 0 else throw InvalidTomlLimit();
+        confirm maximum_items >= 0 else throw InvalidTomlLimit.invalid;
         let size = values.size();
-        confirm size >= 0 else throw InvalidTomlSize();
-        confirm size <= maximum_items else throw TomlLimitExceeded();
+        confirm size >= 0 else throw InvalidTomlSize.invalid;
+        confirm size <= maximum_items else throw TomlLimitExceeded.exceeded;
         let snapshot is @TomlValue = (0..size).map() -> index { values.item(index); };
         origin = snapshot;
     }
@@ -155,28 +155,28 @@ object TomlTable does TomlValue {
     has origin is @TomlMember;
     TomlTable(members is Sequencing<TomlMember>) {
         let size = members.size();
-        confirm size >= 0 else throw InvalidTomlSize();
-        confirm size <= 1024 else throw TomlLimitExceeded();
+        confirm size >= 0 else throw InvalidTomlSize.invalid;
+        confirm size <= 1024 else throw TomlLimitExceeded.exceeded;
         let snapshot is @TomlMember = (0..size).map() -> index { members.item(index); };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
             for (0..index) -> previous {
                 confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateTomlMember(snapshot[index].name());
+                    else throw DuplicateTomlMember.name(snapshot[index].name());
             }
         }
     }
     TomlTable(members is Sequencing<TomlMember>, maximum_members is int) {
-        confirm maximum_members >= 0 else throw InvalidTomlLimit();
+        confirm maximum_members >= 0 else throw InvalidTomlLimit.invalid;
         let size = members.size();
-        confirm size >= 0 else throw InvalidTomlSize();
-        confirm size <= maximum_members else throw TomlLimitExceeded();
+        confirm size >= 0 else throw InvalidTomlSize.invalid;
+        confirm size <= maximum_members else throw TomlLimitExceeded.exceeded;
         let snapshot is @TomlMember = (0..size).map() -> index { members.item(index); };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
             for (0..index) -> previous {
                 confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateTomlMember(snapshot[index].name());
+                    else throw DuplicateTomlMember.name(snapshot[index].name());
             }
         }
     }
@@ -184,7 +184,7 @@ object TomlTable does TomlValue {
     membership(name is string) is bool { self.index(name) >= 0; }
     value(name is string) is TomlValue {
         let index = self.index(name);
-        confirm index >= 0 else throw MissingTomlMember(name);
+        confirm index >= 0 else throw MissingTomlMember.name(name);
         origin[index].value();
     }
     accept(to is TomlVisitor) is void { to.members(origin); }
@@ -198,30 +198,11 @@ object TomlTable does TomlValue {
 
 }
 
-object MissingTomlMember does Error {
-    has key is string;
-    MissingTomlMember(name is string) { key = name; }
-    name() is string { key; }
-    text() is string { "missing TOML member: " + key; }
-}
-object DuplicateTomlMember does Error {
-    has key is string;
-    DuplicateTomlMember(name is string) { key = name; }
-    name() is string { key; }
-    text() is string { "duplicate TOML member: " + key; }
-}
-object InvalidTomlLimit does Error {
-    InvalidTomlLimit();
-    text() is string { "TOML container limit must be nonnegative"; }
-}
-object InvalidTomlSize does Error {
-    InvalidTomlSize();
-    text() is string { "TOML source size must be nonnegative"; }
-}
-object TomlLimitExceeded does Error {
-    TomlLimitExceeded();
-    text() is string { "TOML container limit exceeded"; }
-}
+enum MissingTomlMember is Error = (name(name is string));
+enum DuplicateTomlMember is Error = (name(name is string));
+enum InvalidTomlLimit is Error = (invalid);
+enum InvalidTomlSize is Error = (invalid);
+enum TomlLimitExceeded is Error = (exceeded);
 
 // Syntax-level Gregorian dates include year 0000, unlike time/date.Date.
 // Coordinates are validated at construction; rendering is independent of locale.
@@ -229,14 +210,14 @@ object TomlLocalDate does TomlValue {
     has yyyy, mm, dd is int;
     TomlLocalDate(year is int, month is int, day is int) {
         confirm year >= 0 && year <= 9999 && month >= 1 && month <= 12
-            else throw InvalidTomlDate();
+            else throw InvalidTomlDate.invalid;
         let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
         let maximum = match month {
             case 2 { if leap {29;} else {28;} }
             case 4,6,9,11 {30;}
             else {31;}
         };
-        confirm day >= 1 && day <= maximum else throw InvalidTomlDate();
+        confirm day >= 1 && day <= maximum else throw InvalidTomlDate.invalid;
         yyyy = year;
         mm = month;
         dd = day;
@@ -263,7 +244,7 @@ object TomlLocalTime does TomlValue {
     TomlLocalTime(hour is int, minute is int, second is int, nanosecond is int) {
         confirm hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
             && second >= 0 && second <= 60 && nanosecond >= 0 && nanosecond <= 999999999
-            else throw InvalidTomlTime();
+            else throw InvalidTomlTime.invalid;
         hh = hour;
         mm = minute;
         ss = second;
@@ -309,13 +290,13 @@ object TomlOffset {
     has amount is int;
     has certain is bool;
     TomlOffset(minutes is int) {
-        confirm minutes > -1440 && minutes < 1440 else throw InvalidTomlOffset();
+        confirm minutes > -1440 && minutes < 1440 else throw InvalidTomlOffset.invalid;
         amount = minutes;
         certain = true;
     }
     TomlOffset(minutes is int, known is bool) {
         confirm minutes > -1440 && minutes < 1440 && (known || minutes == 0)
-            else throw InvalidTomlOffset();
+            else throw InvalidTomlOffset.invalid;
         amount = minutes;
         certain = known;
     }
@@ -348,18 +329,9 @@ object TomlOffsetDateTime does TomlValue {
     accept(to is TomlVisitor) is void { to.offset_datetime(self); }
 }
 
-object InvalidTomlDate does Error {
-    InvalidTomlDate();
-    text() is string { "invalid TOML date coordinates"; }
-}
-object InvalidTomlTime does Error {
-    InvalidTomlTime();
-    text() is string { "invalid TOML time coordinates"; }
-}
-object InvalidTomlOffset does Error {
-    InvalidTomlOffset();
-    text() is string { "invalid TOML offset coordinates"; }
-}
+enum InvalidTomlDate is Error = (invalid);
+enum InvalidTomlTime is Error = (invalid);
+enum InvalidTomlOffset is Error = (invalid);
 
 test "typed scalar dispatch" {
     let to = TomlVisitor.fake();
@@ -389,23 +361,23 @@ test "ordered literal table names and typed lookup" {
     table.accept(TomlVisitor.fake());
     test.is(TomlTable([], 0).members().size(), 0);
     try { table.value("missing"); test.fail("missing name accepted"); }
-    catch error is MissingTomlMember { test.is(error.name(), "missing"); test.is(error.text(), "missing TOML member: missing"); }
+    catch MissingTomlMember.name(name) { test.is(name, "missing"); }
 }
 
 test "duplicate keys reject and distinct Unicode names survive" {
     try { TomlTable([TomlMember("x", TomlBoolean(true)), TomlMember("x", TomlBoolean(false))]); test.fail("duplicate accepted"); }
-    catch error is DuplicateTomlMember { test.is(error.name(), "x"); test.is(error.text(), "duplicate TOML member: x"); }
+    catch DuplicateTomlMember.name(name) { test.is(name, "x"); }
     let table = TomlTable([TomlMember("A", TomlBoolean(true)), TomlMember("a", TomlBoolean(false)), TomlMember("é", TomlBoolean(true)), TomlMember("é", TomlBoolean(false))]);
     test.is(table.members().size(), 4);
 }
 
 test "container budgets reject before traversal" {
     try { TomlArray([], -1); test.fail("negative array limit accepted"); }
-    catch error is InvalidTomlLimit { test.is(error.text(), "TOML container limit must be nonnegative"); }
+    catch error is InvalidTomlLimit { test.is(error.text(), "InvalidTomlLimit.invalid"); }
     try { TomlTable([], -1); test.fail("negative table limit accepted"); }
     catch error is InvalidTomlLimit { test.ok(true); }
     try { TomlArray([TomlBoolean(true)], 0); test.fail("array limit ignored"); }
-    catch error is TomlLimitExceeded { test.is(error.text(), "TOML container limit exceeded"); }
+    catch error is TomlLimitExceeded { test.is(error.text(), "TomlLimitExceeded.exceeded"); }
     try { TomlTable([TomlMember("x", TomlBoolean(true))], 0); test.fail("table limit ignored"); }
     catch error is TomlLimitExceeded { test.ok(true); }
 }
@@ -446,16 +418,16 @@ test "invalid temporal coordinates fail at construction" {
     for [[-1,1,1], [10000,1,1], [2024,0,1], [2024,13,1], [2024,1,0],
         [2024,1,32], [1900,2,29], [2023,2,29], [2024,4,31]] -> args {
         try { TomlLocalDate(args[0],args[1],args[2]); test.fail("bad date accepted"); }
-        catch error is InvalidTomlDate { test.is(error.text(), "invalid TOML date coordinates"); }
+        catch error is InvalidTomlDate { test.is(error.text(), "InvalidTomlDate.invalid"); }
     }
     for [[-1,0,0,0], [24,0,0,0], [0,-1,0,0], [0,60,0,0], [0,0,-1,0],
         [0,0,61,0], [0,0,0,-1], [0,0,0,1000000000]] -> args {
         try { TomlLocalTime(args[0],args[1],args[2],args[3]); test.fail("bad time accepted"); }
-        catch error is InvalidTomlTime { test.is(error.text(), "invalid TOML time coordinates"); }
+        catch error is InvalidTomlTime { test.is(error.text(), "InvalidTomlTime.invalid"); }
     }
     for [-1440,1440] -> amount {
         try { TomlOffset(amount); test.fail("bad offset accepted"); }
-        catch error is InvalidTomlOffset { test.is(error.text(), "invalid TOML offset coordinates"); }
+        catch error is InvalidTomlOffset { test.is(error.text(), "InvalidTomlOffset.invalid"); }
     }
     try { TomlOffset(1,false); test.fail("unknown nonzero offset accepted"); }
     catch error is InvalidTomlOffset { test.ok(true); }

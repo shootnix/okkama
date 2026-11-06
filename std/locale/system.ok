@@ -10,8 +10,8 @@ role PreferredLanguageReading {platform_owned() is bool;tags() is Sequencing<str
 object FixedLanguagePreferences does PreferredLanguageReading {
     has values is @string;has owned is bool;
     FixedLanguagePreferences(origin is Sequencing<string>,platform_owned is bool){
-        let size=origin.size();confirm size>=0 && size<=64 else throw InvalidPreferredLocales("tag count");
-        let snapshot is @string=(0..size).map()->index{let text=origin.item(index);confirm text.length()<=255 else throw InvalidPreferredLocales("tag length");text;};
+        let size=origin.size();confirm size>=0 && size<=64 else throw InvalidPreferredLocales.because("tag count");
+        let snapshot is @string=(0..size).map()->index{let text=origin.item(index);confirm text.length()<=255 else throw InvalidPreferredLocales.because("tag length");text;};
         values=snapshot;owned=platform_owned;
     }
     platform_owned() is bool{owned;}tags() is Sequencing<string>{values;}
@@ -19,8 +19,8 @@ object FixedLanguagePreferences does PreferredLanguageReading {
 object SystemLanguagePreferences does PreferredLanguageReading {
     has origin is FixedLanguagePreferences;
     SystemLanguagePreferences(){
-        let platform=try{system_platform();}catch error is NativeFailure{throw PreferredLocaleUnavailable(error.message());};let owned=platform=="macos" || platform=="windows";
-        let tags is @string=if owned{try{preferred_language_tags();}catch error is NativeFailure{throw PreferredLocaleUnavailable(error.message());}}else{[];};
+        let platform=try{system_platform();}catch error is NativeFailure{throw PreferredLocaleUnavailable.because(error.message());};let owned=platform=="macos" || platform=="windows";
+        let tags is @string=if owned{try{preferred_language_tags();}catch error is NativeFailure{throw PreferredLocaleUnavailable.because(error.message());}}else{[];};
         origin=FixedLanguagePreferences(tags,owned);
     }
     platform_owned() is bool{origin.platform_owned();}tags() is Sequencing<string>{origin.tags();}
@@ -38,8 +38,8 @@ object PreferredLocalePolicy {
     values() is @Locale{
         if preferences.platform_owned(){return self.parsed(FixedLanguagePreferences(preferences.tags(),true).tags(),false);}
         if environment.membership("LANGUAGE"){
-            let text=environment.variable("LANGUAGE");confirm text.length()<=4096 else throw InvalidPreferredLocales("LANGUAGE length");
-            let fields=text.split(":");confirm fields.size()<=64 else throw InvalidPreferredLocales("LANGUAGE count");
+            let text=environment.variable("LANGUAGE");confirm text.length()<=4096 else throw InvalidPreferredLocales.because("LANGUAGE length");
+            let fields=text.split(":");confirm fields.size()<=64 else throw InvalidPreferredLocales.because("LANGUAGE count");
             let values=self.parse(fields,true);if values.size()>0{return values;}
         }
         for ["LC_ALL","LC_MESSAGES","LANG"]->name {
@@ -50,8 +50,8 @@ object PreferredLocalePolicy {
     private:
     parsed(source is Sequencing<string>,posix is bool) is @Locale{let values=self.parse(source,posix);if values.size()==0{[Locale("und")];}else{values;}}
     parse(source is Sequencing<string>,posix is bool) is @Locale{
-        let size=source.size();confirm size>=0 && size<=64 else throw InvalidPreferredLocales("preference count");
-        let entries is @string=(0..size).map()->index{let text=source.item(index);confirm text.length()<=255 else throw InvalidPreferredLocales("preference length");text;};
+        let size=source.size();confirm size>=0 && size<=64 else throw InvalidPreferredLocales.because("preference count");
+        let entries is @string=(0..size).map()->index{let text=source.item(index);confirm text.length()<=255 else throw InvalidPreferredLocales.because("preference length");text;};
         let spellings is @string=entries.map()->text{
             try{let tag=if posix{PosixLanguageTag(text).string();}else{text;};LocaleFromLanguageTag(tag).value().string();}catch error is InvalidLocale{"";}
         };
@@ -62,10 +62,10 @@ object PreferredLocalePolicy {
 object PosixLanguageTag {
     has origin is string;PosixLanguageTag(origin is string){self.origin=origin;}
     string() is string{
-        let modifier=origin.split("@");confirm modifier.size()<=2 else throw InvalidLocale(0,"invalid POSIX modifier");
-        if modifier.size()==2{confirm PosixLocaleSuffix(modifier[1]).valid() else throw InvalidLocale(0,"invalid POSIX modifier");}
-        let charset=modifier[0].split(".");confirm charset.size()<=2 else throw InvalidLocale(0,"invalid POSIX charset");
-        if charset.size()==2{confirm PosixLocaleSuffix(charset[1]).valid() else throw InvalidLocale(0,"invalid POSIX charset");}
+        let modifier=origin.split("@");confirm modifier.size()<=2 else throw InvalidLocale.located(0, "invalid POSIX modifier");
+        if modifier.size()==2{confirm PosixLocaleSuffix(modifier[1]).valid() else throw InvalidLocale.located(0, "invalid POSIX modifier");}
+        let charset=modifier[0].split(".");confirm charset.size()<=2 else throw InvalidLocale.located(0, "invalid POSIX charset");
+        if charset.size()==2{confirm PosixLocaleSuffix(charset[1]).valid() else throw InvalidLocale.located(0, "invalid POSIX charset");}
         let base=charset[0];if base=="C" || base=="POSIX"{"und";}else{base.split("_").join("-");}
     }
 }
@@ -76,11 +76,7 @@ object PosixLocaleSuffix {
         origin.length()>0 && valid;
     }
 }
-object InvalidPreferredLocales does Error {
-    has reason is string;InvalidPreferredLocales(reason is string){self.reason=reason;}text() is string{"invalid preferred locales: "+reason;}
-}
-object PreferredLocaleUnavailable does Error {
-    has reason is string;PreferredLocaleUnavailable(reason is string){self.reason=reason;}text() is string{"platform language snapshot unavailable: "+reason;}
-}
+enum InvalidPreferredLocales is Error = (because(reason is string));
+enum PreferredLocaleUnavailable is Error = (because(reason is string));
 
 test "POSIX language preferences normalize without changing environment" {let env=Environment(["LANG":"en_US.UTF-8"]);test.is(PreferredLocales(env,FixedLanguagePreferences([],false)).first().string(),"en-US");test.is(env.variable("LANG"),"en_US.UTF-8");}

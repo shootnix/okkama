@@ -12,7 +12,7 @@ object Http1TlsProtocol {
     has selected is string;
     Http1TlsProtocol(selected is string){self.selected=selected;}
     version() is HttpVersion {
-        confirm selected=="" || selected=="http/1.1" else throw UnsupportedHttpVersion();
+        confirm selected=="" || selected=="http/1.1" else throw UnsupportedHttpVersion.unsupported;
         HttpVersion.http_1_1;
     }
 }
@@ -23,12 +23,12 @@ object Http1TlsProtocol {
 object Http1TlsSession does Closing {
     has origin is Http1Session;
     Http1TlsSession(connection is TlsConnection){
-        confirm !connection.closed() else throw Http1SessionClosed();
+        confirm !connection.closed() else throw Http1SessionClosed.closed;
         Http1TlsProtocol(connection.details().protocol()).version();
         origin=Http1Session(connection.input(),connection.output(),connection);
     }
     Http1TlsSession(connection is TlsConnection,limits is Http1Limits){
-        confirm !connection.closed() else throw Http1SessionClosed();
+        confirm !connection.closed() else throw Http1SessionClosed.closed;
         Http1TlsProtocol(connection.details().protocol()).version();
         origin=Http1Session(connection.input(),connection.output(),connection,limits);
     }

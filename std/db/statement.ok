@@ -11,7 +11,7 @@ object DbLimits {
     has values,bytes,sql_bytes is int;
     DbLimits(){values=1024;bytes=8388608;sql_bytes=1048576;}
     DbLimits(values is int,bytes is int,sql_bytes is int){
-        confirm values>=0 && values<=1024 && bytes>=0 && bytes<=8388608 && sql_bytes>=0 && sql_bytes<=1048576 else throw DbBoundaryLimit("invalid limits");
+        confirm values>=0 && values<=1024 && bytes>=0 && bytes<=8388608 && sql_bytes>=0 && sql_bytes<=1048576 else throw DbBoundaryLimit.kind("invalid limits");
         self.values=values;self.bytes=bytes;self.sql_bytes=sql_bytes;
     }
     values() is int{values;}bytes() is int{bytes;}sql_bytes() is int{sql_bytes;}
@@ -19,10 +19,10 @@ object DbLimits {
 object DbValueSnapshot {
     has origin is @DbValue;has cells is @native_db.DbCellState;
     DbValueSnapshot(values is Sequencing<DbValue>,limits is DbLimits){
-        let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("value count");
+        let count=values.size();confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit.kind("value count");
         let used=Atomic(0);let snapshot is @ObservedDbValue=(0..count).map()->index{
             let value=ObservedDbValue(values.item(index));let width=value.width();
-            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");used.replace(used.value()+width);value;
+            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit.kind("value bytes");used.replace(used.value()+width);value;
         };origin=snapshot.map()->value{value.value();};cells=snapshot.map()->value{value.state();};
     }
     values() is @DbValue{origin;}
@@ -39,25 +39,25 @@ object Statement {
 object DbSqlText {
     has origin is string;
     DbSqlText(origin is string,limits is DbLimits){
-        confirm origin.length()<=limits.sql_bytes() && Utf8Encoded(origin).bytes().size()<=limits.sql_bytes() else throw DbBoundaryLimit("SQL bytes");
+        confirm origin.length()<=limits.sql_bytes() && Utf8Encoded(origin).bytes().size()<=limits.sql_bytes() else throw DbBoundaryLimit.kind("SQL bytes");
         let stripped=origin.replace(" ","").replace("\t","").replace("\r","").replace("\n","");
-        confirm stripped!="" && origin.split(Utf8Decoded([0.byte()]).string()).size()==1 else throw InvalidStatement();self.origin=origin;
+        confirm stripped!="" && origin.split(Utf8Decoded([0.byte()]).string()).size()==1 else throw InvalidStatement.invalid;self.origin=origin;
     }
     string() is string{origin;}
 }
 object Execution {
     has count is Maybe<BigInt>;
     Execution(){count=Maybe.none;}
-    Execution(affected is BigInt){confirm affected.sign()>=0 else throw InvalidExecution();count=Maybe.some(affected);}
+    Execution(affected is BigInt){confirm affected.sign()>=0 else throw InvalidExecution.invalid;count=Maybe.some(affected);}
     affected() is Maybe<BigInt>{count;}
     // Compatibility observations; new callers can use affected() with else/match.
     affected_known() is bool{count ?? .some(_): true !! .none: false;}
-    affected_rows() is BigInt{count else throw AffectedRowsUnknown();}
+    affected_rows() is BigInt{count else throw AffectedRowsUnknown.unknown;}
 }
 
-object DbBoundaryLimit does Error{has kind is string;DbBoundaryLimit(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"database boundary limit: "+kind;}}
-object InvalidStatement does Error{InvalidStatement();text() is string{"database SQL must be nonempty and contain no NUL";}}
-object InvalidExecution does Error{InvalidExecution();text() is string{"database affected row count must be nonnegative";}}
+enum DbBoundaryLimit is Error = (kind(kind is string));
+enum InvalidStatement is Error = (invalid);
+enum InvalidExecution is Error = (invalid);
 
 test "statement parameters remain distinct from SQL text" {
     test.is(Statement("SELECT ?").text(),"SELECT ?");test.ok(!Execution().affected_known());

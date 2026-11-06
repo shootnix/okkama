@@ -33,7 +33,7 @@ object BoundedLogJson{
     // Compact text of at most 34 levels and 1 MiB.
     string() is string{
         let text=origin.string();
-        confirm Utf8Encoded(text).bytes().size()<=1048576 else throw LogLineLimit();
+        confirm Utf8Encoded(text).bytes().size()<=1048576 else throw LogLineLimit.exceeded;
         ParsedJson(text,34).root();
         text;
     }
@@ -43,9 +43,9 @@ object BoundedLogJson{
 object PhysicalLogLine{
     has origin is string;PhysicalLogLine(origin is string){self.origin=origin;}
     string() is string{
-        confirm origin.length()<=1048576 else throw LogLineLimit();
+        confirm origin.length()<=1048576 else throw LogLineLimit.exceeded;
         if unicode_character.display_invalid_index(origin)<0{
-            confirm Utf8Encoded(origin).bytes().size()<=1048576 else throw LogLineLimit();
+            confirm Utf8Encoded(origin).bytes().size()<=1048576 else throw LogLineLimit.exceeded;
             return origin;
         }
         let digits="0123456789abcdef";
@@ -58,7 +58,7 @@ object PhysicalLogLine{
             }else if bytes.size()==3 && first==226 && bytes[1].int()==128 && (bytes[2].int()==168 || bytes[2].int()==169){if bytes[2].int()==168{"\\u2028";}else{"\\u2029";}}
             else{char;}
         };
-        let result=parts.join("");confirm Utf8Encoded(result).bytes().size()<=1048576 else throw LogLineLimit();result;
+        let result=parts.join("");confirm Utf8Encoded(result).bytes().size()<=1048576 else throw LogLineLimit.exceeded;result;
     }
 }
-object LogLineLimit does Error{LogLineLimit();text() is string{"formatted log record exceeds 1 MiB";}}
+enum LogLineLimit is Error = (exceeded);

@@ -292,12 +292,12 @@ object SetWithCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if origin.available() { origin.item(); } else { value; }
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if origin.available() {
             SetWithCursor(origin: origin.successor(), value: value, emitted: emitted);
         }
@@ -318,12 +318,12 @@ object ConcatenatedSetCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if left.available() { left.item(); } else { right.item(); }
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         if left.available() {
             ConcatenatedSetCursor(left: left.successor(), right: right);
         }

@@ -56,8 +56,8 @@ async main() is int {
         let s = channel.sending();
         await s.send(1);
         0;
-    } catch e is InvalidChannelCapacity {
-        e.capacity();
+    } catch InvalidChannelCapacity.capacity(capacity) {
+        capacity;
     };
     out.writeln(r.string());
     0;

@@ -72,8 +72,8 @@ object BufferReading does Reading {
     }
 
     bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
-        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         buffer_state_read(state, limit);
     }
 }
@@ -86,14 +86,14 @@ object BufferWriting does Writing {
     }
 
     write(source is ByteSource) is void {
-        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         let value is @byte = source.bytes();
         let written is int = buffer_state_append(state, value);
-        confirm written == value.size() else throw IncompleteWrite(written);
+        confirm written == value.size() else throw IncompleteWrite.after(written);
     }
 
     flush() is void {
-        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
     }
 }
 
@@ -121,20 +121,14 @@ object BufferContent does Sizing {
     }
 
     bytes() is @byte {
-        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         buffer_state_bytes(state);
     }
 
     size() is int {
-        confirm !buffer_state_closed(state) else throw ClosedBuffer();
+        confirm !buffer_state_closed(state) else throw ClosedBuffer.closed;
         buffer_state_size(state);
     }
 }
 
-object ClosedBuffer does Error {
-    ClosedBuffer();
-
-    text() is string {
-        "buffer is closed";
-    }
-}
+enum ClosedBuffer is Error = (closed);

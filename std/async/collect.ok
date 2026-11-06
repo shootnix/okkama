@@ -94,7 +94,7 @@ object Raced<T> {
     Raced(:origins);
 
     async result() is T {
-        throw NoFutures();
+        throw NoFutures.none;
     }
 }
 
@@ -104,7 +104,7 @@ object FirstSuccessful<T> {
     FirstSuccessful(:origins);
 
     async result() is T {
-        throw NoFutures();
+        throw NoFutures.none;
     }
 }
 
@@ -118,14 +118,8 @@ object FutureCompletions<T> {
     }
 
     async completion() is Future<T> {
-        throw NoFutures();
+        throw NoFutures.none;
     }
 }
 
-object NoFutures does Error {
-    NoFutures();
-
-    text() is string {
-        "no futures remain";
-    }
-}
+enum NoFutures is Error = (none);

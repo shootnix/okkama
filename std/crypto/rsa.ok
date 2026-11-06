@@ -36,11 +36,11 @@ object RsaPrivateKey {
     has key is SecretBytes;
     RsaPrivateKey(pkcs8 is SecretBytes) {
         let algorithm = HostOperation("pkcs8-algorithm", [pkcs8.export_bytes()]).bytes();
-        confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1" else throw InvalidCryptoInput("PKCS#8 key is not an RSA key");
+        confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1" else throw InvalidCryptoInput.because("PKCS#8 key is not an RSA key");
         key = pkcs8;
     }
     RsaPrivateKey(bits is int, entropy is Entropy) {
-        confirm bits == 2048 || bits == 3072 || bits == 4096 else throw InvalidCryptoInput("RSA modulus must be 2048, 3072 or 4096 bits");
+        confirm bits == 2048 || bits == 3072 || bits == 4096 else throw InvalidCryptoInput.because("RSA modulus must be 2048, 3072 or 4096 bits");
         key = SecretBytes(HostOperation("rsa-generate", [DecimalArgument(bits).bytes(), entropy.bytes(32)]).bytes());
     }
     pkcs8() is SecretBytes { SecretBytes(key.export_bytes()); }
@@ -51,7 +51,7 @@ object RsaPublicKey does PublicKey {
     has origin is @byte;
     RsaPublicKey(spki is @byte) {
         let algorithm = HostOperation("spki-algorithm", [spki]).bytes();
-        confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1" else throw InvalidCryptoInput("SubjectPublicKeyInfo is not an RSA key");
+        confirm Utf8Decoded(algorithm).string() == "1.2.840.113549.1.1.1" else throw InvalidCryptoInput.because("SubjectPublicKeyInfo is not an RSA key");
         origin = spki;
     }
     bytes() is @byte { origin; }

@@ -75,7 +75,7 @@ object FileEvent {
     kind() is FileEventKind { classification; }
 
     previous_path() is Path {
-        confirm !previous.empty() else throw MissingPreviousPath(origin);
+        confirm !previous.empty() else throw MissingPreviousPath.path(origin.string());
         Path(previous);
     }
 }
@@ -88,7 +88,7 @@ object FileWatch does Closing {
             file_watch_create(path_encode(path.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         };
     }
 
@@ -97,7 +97,7 @@ object FileWatch does Closing {
             await file_watch_event(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         };
         let name is string = details["kind"];
         let kind is FileEventKind = match name {
@@ -106,10 +106,7 @@ object FileWatch does Closing {
             case "removed" { FileEventKind.removed; }
             case "renamed" { FileEventKind.renamed; }
             else {
-                throw FileSystemFailure(
-                    "invalid_data",
-                    "runtime returned an unknown file-event kind",
-                );
+                throw FileSystemFailure.detailed("invalid_data", "runtime returned an unknown file-event kind");
             }
         };
         if kind == FileEventKind.renamed {
@@ -129,7 +126,7 @@ object FileWatch does Closing {
             file_watch_closed(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -138,21 +135,9 @@ object FileWatch does Closing {
             file_watch_close(state);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
 
-object MissingPreviousPath does Error {
-    has origin is Path;
-
-    MissingPreviousPath(path is Path) {
-        origin = path;
-    }
-
-    path() is Path { origin; }
-
-    text() is string {
-        "file event has no previous path: " + origin.string();
-    }
-}
+enum MissingPreviousPath is Error = (path(path is string));

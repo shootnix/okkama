@@ -29,9 +29,9 @@ object Certificate {
     Certificate(origin is @byte){
         try{facts=x509.certificate_facts(origin);}catch e is NativeFailure{
             if e.domain()=="core.x509"{
-                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}
-                if e.code()=="unsupported"{throw CertificateBackendUnavailable();}
-                if e.code()=="invalid_data"{throw InvalidCertificate("invalid DER certificate");}
+                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}
+                if e.code()=="unsupported"{throw CertificateBackendUnavailable.unavailable;}
+                if e.code()=="invalid_data"{throw InvalidCertificate.because("invalid DER certificate");}
             }throw;
         }self.origin=origin;
     }
@@ -54,8 +54,8 @@ object Certificate {
             CertificateNames(dns_values,ip_values);
         }catch e is NativeFailure{
             if e.domain()=="core.x509"{
-                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}
-                if e.code()=="invalid_data"{throw InvalidCertificate("invalid subjectAltName");}
+                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}
+                if e.code()=="invalid_data"{throw InvalidCertificate.because("invalid subjectAltName");}
             }throw;
         }
     }
@@ -68,7 +68,7 @@ object Certificate {
     extensions_extension(identifier is string) is CertificateExtension{
         let wanted=CertificateObjectIdentifier(identifier).value();let records=x509.certificate_extensions(facts);
         for records -> record{if record[0]==wanted{return CertificateExtension(record[0],record[1]=="1",HexDecoded(record[2]).bytes());}}
-        throw MissingCertificateExtension(wanted);
+        throw MissingCertificateExtension.identifier(wanted);
     }
 
     extensions_critical() is Sequencing<string>{
@@ -80,7 +80,7 @@ object Certificate {
         try{
             let value=x509.certificate_constraints(facts);let authority=value[0]=="1";
             if value[1]==""{CertificateConstraints(authority);}else{CertificateConstraints(authority,ParsedInt(value[1]).value());}
-        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}if e.code()=="invalid_data"{throw InvalidCertificate("invalid basicConstraints");}}throw;}
+        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}if e.code()=="invalid_data"{throw InvalidCertificate.because("invalid basicConstraints");}}throw;}
     }
 
     extensions_key_usages() is Set<CertificateKeyUsage>{
@@ -88,13 +88,13 @@ object Certificate {
             let all is @CertificateKeyUsage=[CertificateKeyUsage.digital_signature,CertificateKeyUsage.content_commitment,CertificateKeyUsage.key_encipherment,CertificateKeyUsage.data_encipherment,
                 CertificateKeyUsage.key_agreement,CertificateKeyUsage.key_cert_sign,CertificateKeyUsage.crl_sign,CertificateKeyUsage.encipher_only,CertificateKeyUsage.decipher_only];
             let bits=x509.certificate_key_usages(facts);let values is @CertificateKeyUsage=bits.map()->bit{all[bit];};OrderedSet(values);
-        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}if e.code()=="invalid_data"{throw InvalidCertificate("invalid keyUsage");}}throw;}
+        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}if e.code()=="invalid_data"{throw InvalidCertificate.because("invalid keyUsage");}}throw;}
     }
 
     extensions_purposes() is Set<CertificatePurpose>{
         try{
             let identifiers=x509.certificate_purposes(facts);let values is @CertificatePurpose=identifiers.map()->identifier{CertificatePurpose(identifier);};OrderedSet(values);
-        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}if e.code()=="invalid_data"{throw InvalidCertificate("invalid extendedKeyUsage");}}throw;}
+        }catch e is NativeFailure{if e.domain()=="core.x509"{if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}if e.code()=="invalid_data"{throw InvalidCertificate.because("invalid extendedKeyUsage");}}throw;}
     }
 }
 object CertificateName {
@@ -107,9 +107,9 @@ object CertificateName {
             };DistinguishedName(result);
         }catch e is NativeFailure{
             if e.domain()=="core.x509"{
-                if e.code()=="unsupported"{throw UnsupportedCertificateName();}
-                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded();}
-                if e.code()=="invalid_data"{throw InvalidCertificate("invalid encoded certificate name");}
+                if e.code()=="unsupported"{throw UnsupportedCertificateName.unsupported;}
+                if e.code()=="resource_exhausted"{throw CertificateLimitExceeded.exceeded;}
+                if e.code()=="invalid_data"{throw InvalidCertificate.because("invalid encoded certificate name");}
             }throw;
         }
     }
@@ -137,11 +137,11 @@ object CertificateNames {
 object CertificateChain {
     has origin is @Certificate;
     CertificateChain(certificates is Sequencing<Certificate>){
-        let count=certificates.size();confirm count>0 else throw InvalidCertificate("empty or invalid certificate chain size");
-        confirm count<=32 else throw CertificateLimitExceeded();
+        let count=certificates.size();confirm count>0 else throw InvalidCertificate.because("empty or invalid certificate chain size");
+        confirm count<=32 else throw CertificateLimitExceeded.exceeded;
         let values is @Certificate=(0..count).map()->index{certificates.item(index);};
         let bytes=values.reduce(0)->sum,certificate{sum+certificate.der().size();};
-        confirm bytes<=8388608 else throw CertificateLimitExceeded();origin=values;
+        confirm bytes<=8388608 else throw CertificateLimitExceeded.exceeded;origin=values;
     }
     certificates() is Sequencing<Certificate>{origin;}
 }
@@ -170,19 +170,16 @@ object CertificateExtensions {
 }
 object CertificateObjectIdentifier {
     has origin is string;CertificateObjectIdentifier(origin is string){self.origin=origin;}
-    value() is string{try{NameAttribute(origin,"").identifier();}catch e is InvalidDistinguishedName{throw InvalidCertificate("invalid certificate object identifier");}}
+    value() is string{try{NameAttribute(origin,"").identifier();}catch e is InvalidDistinguishedName{throw InvalidCertificate.because("invalid certificate object identifier");}}
 }
-object MissingCertificateExtension does Error{
-    has identifier is string;MissingCertificateExtension(identifier is string){self.identifier=identifier;}
-    identifier() is string{identifier;}text() is string{"certificate extension is absent: "+identifier;}
-}
+enum MissingCertificateExtension is Error = (identifier(identifier is string));
 test "unknown purpose OIDs remain exact metadata" {
     test.is(CertificatePurpose("1.2.3.4").identifier(),"1.2.3.4");
     test.ok(try{CertificatePurpose("1.40");false;}catch e is InvalidCertificate{true;});
 }
-object CertificateLimitExceeded does Error{CertificateLimitExceeded();text() is string{"certificate parsing limit exceeded";}}
-object CertificateBackendUnavailable does Error{CertificateBackendUnavailable();text() is string{"certificate backend is unavailable";}}
-object UnsupportedCertificateName does Error{UnsupportedCertificateName();text() is string{"certificate name encoding is unsupported";}}
+enum CertificateLimitExceeded is Error = (exceeded);
+enum CertificateBackendUnavailable is Error = (unavailable);
+enum UnsupportedCertificateName is Error = (unsupported);
 test "empty DER is rejected before certificate publication" {
     test.ok(try{ParsedCertificate([]).value();false;}catch e is InvalidCertificate{true;});
 }

@@ -23,7 +23,7 @@ enum NumberSpecial=(not_a_number,positive_infinity,negative_infinity);
 object NumberPrecision {
     has minimum_integer,minimum_fraction,maximum_fraction is int;has rounding is Rounding;
     NumberPrecision(minimum_integer is int,minimum_fraction is int,maximum_fraction is int,rounding is Rounding){
-        confirm minimum_integer>=1 && minimum_integer<=1024 && minimum_fraction>=0 && minimum_fraction<=maximum_fraction && maximum_fraction<=1024 else throw InvalidNumberFormat("integer 1..1024, fraction 0..1024 and minimum <= maximum required");
+        confirm minimum_integer>=1 && minimum_integer<=1024 && minimum_fraction>=0 && minimum_fraction<=maximum_fraction && maximum_fraction<=1024 else throw InvalidNumberFormat.because("integer 1..1024, fraction 0..1024 and minimum <= maximum required");
         self.minimum_integer=minimum_integer;self.minimum_fraction=minimum_fraction;self.maximum_fraction=maximum_fraction;self.rounding=rounding;
     }
     minimum_integer() is int{minimum_integer;}minimum_fraction() is int{minimum_fraction;}maximum_fraction() is int{maximum_fraction;}rounding() is Rounding{rounding;}
@@ -33,12 +33,8 @@ object NumberFormat {
     NumberFormat(notation is NumberNotation,grouping is NumberGrouping,sign is NumberSign,precision is NumberPrecision){self.notation=notation;self.grouping=grouping;self.sign=sign;self.precision=precision;}
     notation() is NumberNotation{notation;}grouping() is NumberGrouping{grouping;}sign() is NumberSign{sign;}precision() is NumberPrecision{precision;}
 }
-object InvalidNumberFormat does Error {
-    has reason is string;InvalidNumberFormat(reason is string){self.reason=reason;}text() is string{"invalid number format: "+reason;}
-}
-object InvalidLocalizedNumber does Error {
-    has reason is string;InvalidLocalizedNumber(reason is string){self.reason=reason;}text() is string{"invalid localized number: "+reason;}
-}
+enum InvalidNumberFormat is Error = (because(reason is string));
+enum InvalidLocalizedNumber is Error = (because(reason is string));
 object NumberDataRow {
     has values,names,ids is @string;
     NumberDataRow(values is @string){self.values=values;names=if values.size()==7{values[5].split(",");}else{[];};ids=if values.size()==7{values[6].split(",");}else{[];};}
@@ -50,7 +46,7 @@ object NumberDataRow {
 }
 object NumberPattern {
     has values is @string;
-    NumberPattern(values is @string){confirm values.size()==8 else throw InvalidLocalizedNumber("number pattern shape");self.values=values;}
+    NumberPattern(values is @string){confirm values.size()==8 else throw InvalidLocalizedNumber.because("number pattern shape");self.values=values;}
     prefix(negative is bool) is string{values[if negative{2;}else{0;}];}
     suffix(negative is bool) is string{values[if negative{3;}else{1;}];}
     primary() is int{ParsedInt(values[4]).value();}secondary() is int{ParsedInt(values[5]).value();}
@@ -75,17 +71,17 @@ object NumberLocaleData does NumberRenderingData {
         let table=CldrNumbers();let chain=LocaleFallbacks(locale);
         let candidates is @NumberDataRow=(0..chain.size()).map()->index{NumberDataRow(table.row(chain.item(index).string()));};
         let rows is @NumberDataRow=candidates.filter()->row{row.available();};
-        confirm rows.size()>0 else throw InvalidLocalizedNumber("missing pinned root data");let first=rows[0];
+        confirm rows.size()>0 else throw InvalidLocalizedNumber.because("missing pinned root data");let first=rows[0];
         let preferences=LocaleExtensions(locale).unicode();
         let requested=(0..preferences.size()).reduce(first.default_system())->system,index{
             let keyword=preferences.item(index);if keyword.key()=="nu"{
-                let values=keyword.values();confirm values.size()==1 else throw InvalidLocalizedNumber("nu requires one numbering system");
+                let values=keyword.values();confirm values.size()==1 else throw InvalidLocalizedNumber.because("nu requires one numbering system");
                 let selected=values.item(0);if selected=="native" || selected=="traditio" || selected=="finance"{first.special_system(selected);}else{selected;}
             }else{system;}
         };
-        let digits=table.digits(requested);confirm digits.length()==10 else throw InvalidLocalizedNumber("unsupported numeric numbering system: "+requested);
+        let digits=table.digits(requested);confirm digits.length()==10 else throw InvalidLocalizedNumber.because("unsupported numeric numbering system: "+requested);
         let id=(0..rows.size()).reduce(-1)->chosen,index{if chosen>=0{chosen;}else{rows[index].id(requested);}};
-        confirm id>=0 else throw InvalidLocalizedNumber("missing numbering-system symbols");
+        confirm id>=0 else throw InvalidLocalizedNumber.because("missing numbering-system symbols");
         let local=first.id(requested);let profile=if local>=0{local;}else{first.id(first.default_system());};
         self.table=table;self.symbols=table.profile(id);self.patterns=table.profile(profile);self.profile=profile;self.digits=digits;self.system=requested;minimum_grouping=first.minimum_grouping();
     }
@@ -102,7 +98,7 @@ object NumberLocaleData does NumberRenderingData {
 }
 object NumberMagnitude {
     has coefficient is BigInt;has exponent is rat;has negative is bool;
-    NumberMagnitude(coefficient is BigInt,exponent is rat,negative is bool){confirm coefficient.sign()>=0 && coefficient.string().length()<=1024 && exponent.denominator()=="1" else throw InvalidLocalizedNumber("nonnegative coefficient up to 1024 digits and integral exponent required");self.coefficient=coefficient;self.exponent=exponent;self.negative=negative;}
+    NumberMagnitude(coefficient is BigInt,exponent is rat,negative is bool){confirm coefficient.sign()>=0 && coefficient.string().length()<=1024 && exponent.denominator()=="1" else throw InvalidLocalizedNumber.because("nonnegative coefficient up to 1024 digits and integral exponent required");self.coefficient=coefficient;self.exponent=exponent;self.negative=negative;}
     coefficient() is BigInt{coefficient;}exponent() is rat{exponent;}negative() is bool{negative;}
     magnitude() is rat{if coefficient.sign()==0{0.rat();}else{exponent+(coefficient.string().length()-1).rat();}}
     scaled(power is rat) is NumberMagnitude{NumberMagnitude(coefficient,exponent-power,negative);}
@@ -123,7 +119,7 @@ object NumberQuantized {
         let absolute=origin.coefficient();let shift=origin.exponent()+precision.maximum_fraction().rat();
         let coefficient=if absolute.sign()==0{BigInt("0");}else{
             if shift>=0.rat(){
-                confirm shift<=2048.rat() && absolute.string().length().rat()+shift<=2048.rat() else throw InvalidLocalizedNumber("integer/output digit budget");
+                confirm shift<=2048.rat() && absolute.string().length().rat()+shift<=2048.rat() else throw InvalidLocalizedNumber.because("integer/output digit budget");
                 BigProduct(left:absolute,right:BigPower(base:BigInt("10"),exponent:shift.int(),maximum_bits:8192).value()).value();
             }else{
                 if shift<(-1025).rat(){
@@ -137,7 +133,7 @@ object NumberQuantized {
                 }
             }
         };
-        confirm coefficient.string().length()-precision.maximum_fraction()<=1024 else throw InvalidLocalizedNumber("integer exceeds 1024 digits");
+        confirm coefficient.string().length()-precision.maximum_fraction()<=1024 else throw InvalidLocalizedNumber.because("integer exceeds 1024 digits");
         self.coefficient=coefficient;scale=precision.maximum_fraction();negative=origin.negative();
     }
     coefficient() is BigInt{coefficient;}negative() is bool{negative;}zero() is bool{coefficient.sign()==0;}
@@ -150,7 +146,7 @@ object NumberQuantized {
     magnitude() is NumberMagnitude{DecimalNumberMagnitude(Decimal(coefficient.string()+"e"+(-scale).string()),0,negative).value();}
 }
 object NumberZeroes {
-    has count is int;NumberZeroes(count is int){confirm count>=0 && count<=2048 else throw InvalidLocalizedNumber("zero padding budget");self.count=count;}
+    has count is int;NumberZeroes(count is int){confirm count>=0 && count<=2048 else throw InvalidLocalizedNumber.because("zero padding budget");self.count=count;}
     string() is string{let zeros is @string=(0..count).map()->index{"0";};zeros.join("");}
 }
 object NumberRounding {
@@ -217,7 +213,7 @@ object NumberPrinting {
         let signed_frame=pattern.prefix(true).split("{minus}").size()>1 || pattern.suffix(true).split("{minus}").size()>1;
         let negative_frame=minus || (plus && signed_frame);
         let text=(if plus && !signed_frame{data.symbol(2);}else{"";})+data.template(pattern.prefix(negative_frame),plus,per_mille)+rendered.text()+data.template(pattern.suffix(negative_frame),plus,per_mille);
-        confirm text.length()<=8192 else throw InvalidLocalizedNumber("output exceeds 8192 scalars");NumberRendered(text,value);
+        confirm text.length()<=8192 else throw InvalidLocalizedNumber.because("output exceeds 8192 scalars");NumberRendered(text,value);
     }
     private:
     standard(value is NumberMagnitude,pattern is NumberPattern) is NumberRendered{
@@ -251,7 +247,7 @@ object NumberPrinting {
         if base_text==""{return self.standard(origin,data.pattern(0));}
         let base=NumberPattern(base_text.split("|"));
         let power=bucket-base.zeros()+1;let number=NumberQuantized(origin.scaled(power.rat()),format.precision());
-        let spelling=number.ascii(format.precision().minimum_fraction());confirm spelling.length()<=1024 else throw InvalidLocalizedNumber("compact plural operand exceeds 1024 scalars");
+        let spelling=number.ascii(format.precision().minimum_fraction());confirm spelling.length()<=1024 else throw InvalidLocalizedNumber.because("compact plural operand exceeds 1024 scalars");
         let exact=number.magnitude();let category=if exact.coefficient().string()=="1" && exact.exponent()==0.rat() && entries.has(bucket.string()+":1"){"1";}else{
             match PluralCategoryOf(PluralNumber(spelling),locale,PluralKind.cardinal).value(){case PluralCategory.zero{"zero";}case PluralCategory.one{"one";}case PluralCategory.two{"two";}case PluralCategory.few{"few";}case PluralCategory.many{"many";}else{"other";}}
         };
@@ -278,7 +274,7 @@ object LocalizedInteger {
 object LocalizedBigInteger {
     has origin is BigInt;has locale is Locale;has format is NumberFormat;
     LocalizedBigInteger(origin is BigInt,locale is Locale,format is NumberFormat){self.origin=origin;self.locale=locale;self.format=format;}
-    string() is string{confirm origin.string().length()<=1025 else throw InvalidLocalizedNumber("integer input limit");LocalizedDecimal(Decimal(origin.string()),locale,format).string();}
+    string() is string{confirm origin.string().length()<=1025 else throw InvalidLocalizedNumber.because("integer input limit");LocalizedDecimal(Decimal(origin.string()),locale,format).string();}
 }
 object LocalizedFloat {
     has origin is float;has locale is Locale;has format is NumberFormat;
@@ -315,7 +311,7 @@ object NumberAffixReading {
             }
         }
         let ordinary=self.middle(data.template(pattern.prefix(false),false,false),data.template(pattern.suffix(false),false,false));
-        confirm ordinary.size()!=0 else throw InvalidLocalizedNumber("number affixes/sign do not match locale");NumberSignedText(ordinary[0],false);
+        confirm ordinary.size()!=0 else throw InvalidLocalizedNumber.because("number affixes/sign do not match locale");NumberSignedText(ordinary[0],false);
     }
     private:
     middle(prefix is string,suffix is string) is @string{
@@ -328,10 +324,10 @@ object NumberDigitReading {
     has origin is string;has data is NumberRenderingData;
     NumberDigitReading(origin is string,data is NumberRenderingData){self.origin=origin;self.data=data;}
     string() is string {
-        confirm origin.length()>0 && origin.length()<=1024 else throw InvalidLocalizedNumber("digit sequence must be 1..1024 scalars");
+        confirm origin.length()>0 && origin.length()<=1024 else throw InvalidLocalizedNumber.because("digit sequence must be 1..1024 scalars");
         let digits=data.digits();let pieces is @string=(0..origin.length()).map()->index{
             let character=origin.slice(index,index+1);let found=digits.split(character);
-            confirm found.size()==2 else throw InvalidLocalizedNumber("mixed or invalid digit system");"0123456789".slice(found[0].length(),found[0].length()+1);
+            confirm found.size()==2 else throw InvalidLocalizedNumber.because("mixed or invalid digit system");"0123456789".slice(found[0].length(),found[0].length()+1);
         };pieces.join("");
     }
 }
@@ -339,16 +335,16 @@ object NumberIntegerReading {
     has origin is string;has data is NumberRenderingData;has grouping is NumberGrouping;
     NumberIntegerReading(origin is string,data is NumberRenderingData,grouping is NumberGrouping){self.origin=origin;self.data=data;self.grouping=grouping;}
     string() is string {
-        let parts=origin.split(data.symbol(1));confirm parts.size()<=1024 else throw InvalidLocalizedNumber("group count");
+        let parts=origin.split(data.symbol(1));confirm parts.size()<=1024 else throw InvalidLocalizedNumber.because("group count");
         let groups is @string=parts.map()->part{NumberDigitReading(part,data).string();};
-        let count=groups.reduce(0)->count,part{count+part.length();};confirm count<=1024 else throw InvalidLocalizedNumber("integer digit count");
+        let count=groups.reduce(0)->count,part{count+part.length();};confirm count<=1024 else throw InvalidLocalizedNumber.because("integer digit count");
         if groups.size()>1{
             let pattern=data.pattern(0);let primary=pattern.primary();let secondary=pattern.secondary();
-            confirm grouping!=NumberGrouping.never && primary>0 && secondary>0 else throw InvalidLocalizedNumber("grouping is disabled");
-            confirm groups.last().length()==primary && groups[0].length()<=secondary else throw InvalidLocalizedNumber("misplaced grouping separator");
-            for (1..groups.size()-1)->index{confirm groups[index].length()==secondary else throw InvalidLocalizedNumber("misplaced grouping separator");}
+            confirm grouping!=NumberGrouping.never && primary>0 && secondary>0 else throw InvalidLocalizedNumber.because("grouping is disabled");
+            confirm groups.last().length()==primary && groups[0].length()<=secondary else throw InvalidLocalizedNumber.because("misplaced grouping separator");
+            for (1..groups.size()-1)->index{confirm groups[index].length()==secondary else throw InvalidLocalizedNumber.because("misplaced grouping separator");}
             let minimum=if grouping==NumberGrouping.minimum_two{2;}else{if grouping==NumberGrouping.always{1;}else{data.minimum_grouping();}};
-            confirm count-primary>=minimum else throw InvalidLocalizedNumber("grouping below locale threshold");
+            confirm count-primary>=minimum else throw InvalidLocalizedNumber.because("grouping below locale threshold");
         }
         groups.join("");
     }
@@ -359,24 +355,24 @@ object NumberReading {
     has origin is string;has locale is Locale;has format is NumberFormat;
     NumberReading(origin is string,locale is Locale,format is NumberFormat){self.origin=origin;self.locale=locale;self.format=format;}
     value() is Decimal {
-        confirm origin.length()>0 && origin.length()<=4096 else throw InvalidLocalizedNumber("input must be 1..4096 scalars");
-        let notation=format.notation();confirm notation!=NumberNotation.compact_short && notation!=NumberNotation.compact_long else throw InvalidLocalizedNumber("compact notation has no unambiguous inverse");
+        confirm origin.length()>0 && origin.length()<=4096 else throw InvalidLocalizedNumber.because("input must be 1..4096 scalars");
+        let notation=format.notation();confirm notation!=NumberNotation.compact_short && notation!=NumberNotation.compact_long else throw InvalidLocalizedNumber.because("compact notation has no unambiguous inverse");
         let data=NumberLocaleData(locale);let scientific=notation==NumberNotation.scientific || notation==NumberNotation.engineering;
         let signed=NumberAffixReading(origin,data,data.pattern(if scientific{1;}else{0;}),format.sign()).value();
         let source=signed.text();let exponent_parts=if scientific{source.split(data.symbol(6));}else{[source];};
-        confirm exponent_parts.size()==(if scientific{2;}else{1;}) else throw InvalidLocalizedNumber("exponent separator");
-        let decimal_parts=exponent_parts[0].split(data.symbol(0));confirm decimal_parts.size()<=2 else throw InvalidLocalizedNumber("duplicate decimal separator");
+        confirm exponent_parts.size()==(if scientific{2;}else{1;}) else throw InvalidLocalizedNumber.because("exponent separator");
+        let decimal_parts=exponent_parts[0].split(data.symbol(0));confirm decimal_parts.size()<=2 else throw InvalidLocalizedNumber.because("duplicate decimal separator");
         let whole=NumberIntegerReading(decimal_parts[0],data,if scientific{NumberGrouping.never;}else{format.grouping();}).string();
         let fraction=if decimal_parts.size()==2{NumberDigitReading(decimal_parts[1],data).string();}else{"";};
-        let precision=format.precision();confirm whole.length()>=precision.minimum_integer() && fraction.length()>=precision.minimum_fraction() && fraction.length()<=precision.maximum_fraction() else throw InvalidLocalizedNumber("input precision does not match format");
+        let precision=format.precision();confirm whole.length()>=precision.minimum_integer() && fraction.length()>=precision.minimum_fraction() && fraction.length()<=precision.maximum_fraction() else throw InvalidLocalizedNumber.because("input precision does not match format");
         let exponent=if scientific{
             let frame=NumberAffixReading(exponent_parts[1],data,NumberPattern(["","","{minus}","","0","0","0","0"]),NumberSign.automatic).value();
             let digits=NumberDigitReading(frame.text(),data).string();let exponent=BigInt((if frame.negative(){"-";}else{"";})+digits);
-            if notation==NumberNotation.engineering{confirm BigRemainder(left:exponent,right:BigInt("3")).value().sign()==0 else throw InvalidLocalizedNumber("engineering exponent must be a multiple of three");}
+            if notation==NumberNotation.engineering{confirm BigRemainder(left:exponent,right:BigInt("3")).value().sign()==0 else throw InvalidLocalizedNumber.because("engineering exponent must be a multiple of three");}
             "e"+exponent.string();
         }else{"";};
         let text=(if signed.negative(){"-";}else{"";})+whole+(if fraction==""{"";}else{"."+fraction;})+exponent;
-        try{Decimal(text);}catch error is InvalidDecimal{throw InvalidLocalizedNumber("decimal exponent outside supported range");}
+        try{Decimal(text);}catch error is InvalidDecimal{throw InvalidLocalizedNumber.because("decimal exponent outside supported range");}
     }
 }
 object LocalizedDecimalFromString {

@@ -559,7 +559,130 @@ insert_transaction 0.7 / 19.2 (Python / core; origin — 20–114). Чтение
   колонка по номеру, лёгкий горячий путь `SqliteRows.row()`.
 - Цель roadmap: SQL/DB не хуже 1.5× Python.
 
+**5e (2026-11-06): тесты std, недопереносённое, бенчмарки.**
+
+- `tools/new-runtime/std-compare.py`: встроенные тесты каждого модуля std
+  (`okkama build --tests`), прогон в клетке на `sparrow-engine` и на ядре,
+  побайтная сверка отчёта. Старый std: 198 модулей совпадают, 0 расхождений;
+  8 проходят только на ядре (`db/postgres`, `http/*`, `locale/date_time`,
+  `testing/check`); 33 используют нативы, которых нет ни в одном из движков.
+  Найдено и исправлено: общий медленный путь `rt_exec` принимал не больше 8
+  операндов — литерал словаря на 5+ пар падал (`locale`, `i18n`, HTTP).
+- `core-compare.py`: test-mode кейсы собирались без `--tests` и проходили
+  «вслепую» (оба движка отвечали «нет тестов»); исправлено, 118/118 на L04,
+  L05, L07.
+- `okkama.fake.storage.*` (хранилище фейков тестового режима) перенесены.
+- `--stats` у `sparrow-next` печатает счётчики событий ядра.
+- 04-bigint: цифры BigInt лежат вне страниц кучи и не учитывались в пороге
+  сборки — мусорные большие числа копились (упор в лимит памяти клетки);
+  теперь учитываются: 0.84 → 0.51 с (origin 0.47).
+- инлайн-пути JIT: `val.cmp` скаляров, `str.len` ASCII-строк; прямые helpers
+  `builder.push` и `int → string` (без BigInt для малых чисел);
+  `ops::equal` не заводит множество посещённых для скаляров.
+  06-collections: 0.41 → 0.23 с (origin 0.36).
+
+Бенчмарки (под клеткой, медианы 3, с ~0.12 с запуска клетки), origin / core:
+01 0.27/0.22, 02 0.45/0.18, 03 0.27/0.17, 04 0.49/0.56, 05 0.23/0.24 (в 10×
+масштабе 1.00/0.76), 06 0.37/0.24, 07 0.37/0.16, 08 0.53/0.24, 09 1.06/0.37,
+10 1.13/0.63, tree 1.31/0.25, asyncs 12.28/0.51.
+
+**5f (2026-11-06): `encoding/bytes` — разбор байтов без копий.**
+
+- Нативы `runtime/bytes@1` (ABI 605–612): `bytes_find`,
+  `bytes_utf8_invalid`/`bytes_text`, `bytes_decimal_invalid`/`bytes_decimal`,
+  `bytes_equal`, `bytes_integer_fits`/`bytes_integer`. Читают диапазон
+  `start..end` прямо из упакованного массива (`Heap::byte_view`); текст —
+  одна копия (`Heap::text_from_byte_range`). Пока только в ядре: старые
+  движки уходят на этапе 6.
+- Поиск: для иголок до 8 байт — `memchr` по первому байту и сравнение
+  хвоста (построение `memmem`-искателя на каждый вызов стоило ~15% и
+  аллокацию); длиннее — `memmem`. Десятичное: до 18 цифр — в i64 без
+  аллокаций, длиннее — BigInt.
+- std: `std/runtime/bytes.ok`, `std/encoding/bytes.ok` (`ByteSearch`,
+  `ByteRange`, `InvalidByteDecimal`), 5 тестов — проходят на ядре.
+- memcached-разбор (2000 записей): срезы + Atomic на ядре 3.2 мс/раунд →
+  `encoding/bytes` 0.94 мс; Python (`bytes.find`/срезы/`int`) 4.5 мс.
+  На запись — 9 вызовов нативов; дальше упирается в саму границу native
+  (~50 нс с окружающим кодом), следующий шаг при нужде — интринсики JIT.
+
+**5g (2026-11-06): `io/input`, ошибки интринсиков как error enum.**
+
+- `ByteInput` (`std/io/input.ok`): буфер `Atomic<@byte>` + позиция; дочитка —
+  `runtime/bytes` `bytes_join` (ABI 613: несъеденный хвост + новый кусок, одна
+  копия), строки — `ByteSearch` с повтором только хвоста длиной терминатора.
+  3 async-теста на поддельном читателе (`ChunkReading`) — проходят на ядре.
+- `AsyncReading`/`AsyncWriting` перенесены в `io/stream` (решение пользователя):
+  иначе `io/input` тянул бы немигрированную цепочку `net/stream` (16 модулей).
+  Импорт поправлен в 35 потребителях; реэкспорта в языке нет.
+- Ошибки, которые бросают интринсики, могут быть error enum: в таблице
+  `related` компилятора — `"AtomicClosed.closed"`, case обязан быть первым
+  (рантайм создаёт объект варианта с `$tag = 0`). Формат SPB/OIR не менялся:
+  `thrown` в ядре, sparrow-vm (origin), IR-интерпретаторе
+  (`ObjectHeap::raised_fields`) и план `AtomicClosed` в sparrow-engine
+  собирают `[$tag, payload первого case в массивах из одного элемента, пустые]`.
+  `async/atomic` мигрирован (`enum AtomicClosed is Error = (closed);`), вывод
+  четырёх движков на закрытом `Atomic` совпадает.
+- memcached-разбор потоком (куски по 4 КиБ, `line` + `ensure`/`skip`):
+  3.2 мс/раунд на ядре против 10.7 мс у Python `asyncio.StreamReader`
+  (`readuntil`/`readexactly`). Прямой разбор массива — 0.94 мс: разница —
+  future на каждый `line`/`ensure`, копия заголовка и `Atomic` разбора.
+- Сверки (репозиторный компилятор и std): conformance 343/343 совпадают,
+  3 unsupported (нативы, которых нет в ядре), 334 кейса не собираются —
+  немигрированные модули std. std-тесты затронутых префиксов: расхождений 0.
+
+**5h (2026-11-06): process workers, память машинного кода.**
+
+- `worker.rs`: OKW1 (формат `sparrow-engine`), но типизированный — слова
+  ядра без тегов, значения кодируются и проверяются по типам параметров и
+  результата функции-входа; обход — рабочими стеками. `worker.spawn` и
+  `worker.bind` — общий путь `rt_exec` (spawn запускает драйвер сразу);
+  Future воркера — кадр синтетической async-функции-интринсика
+  `sparrow.worker.process` (по одной на тип результата, добавляет
+  `Loaded::new`), драйвер опрашивает `worker_process::Request` (перенесён из
+  sparrow-engine как есть) с waker кадра и держит кадр в `io.requests`.
+  Привязка `worker.bind` — `State::WorkerBinding` на копии замыкания.
+  Ребёнок: `sparrow-next --worker FILE.spb`, запрос из stdin,
+  `Runtime::run_function_with`; `SPARROW_INTERNAL_WORKER` без `--worker` —
+  отказ.
+- Проверка в Docker (`rust:latest`, arm64, сеть выключена, лимиты CPU/памяти/
+  процессов): `L08.spawn.worker-process` и свои сценарии (все переносимые
+  типы, вложенные контейнеры, BigInt, вывод ребёнка, ошибка ребёнка,
+  привязанное действие, брошенный воркер) — stdout, коды и тексты ошибок
+  совпадают с `sparrow-engine`; после выхода процессов не остаётся.
+  `L08.spawn.worker-rejects-objects` компилятор отвергает статически.
+  Тесты `worker_process` (13/13 тестов крейта) — в контейнере.
+- Найдено попутно: на AArch64 Linux cranelift-jit после каждого
+  `finalize_definitions` делает `membarrier(PRIVATE_EXPEDITED_SYNC_CORE)`
+  (IPI всем ядрам; первый вызов ещё и регистрирует процесс — ~4 мс) и
+  отдельный mmap на каждую функцию. `code_memory.rs`: свой
+  `JITMemoryProvider` — одна резервация на вид памяти, выделение подряд,
+  при финализации `clear_cache` диапазона и `mprotect`, без барьера (код
+  исполняет только поток VM). Старт в Docker: 7.9 → 1.4 мс (engine 1.0);
+  программа с двумя воркерами: 21 → 6 мс (engine 9.8).
+
 ### Этап 6. Удаление старого ядра
+
+Условие: нативы. Ядро взяло набор провайдеров `sparrow-engine`, а тот
+переносил нативы из origin (`okkama-runtime-core`/`sparrow-runtime`) не
+до конца: из 613 символов ABI в ядре нет 199 — ini 17, application 16,
+toml 16, html 12, tls_transport 12, x509 11, template 10, csv_state 8,
+debug 8, pem 8, random_distribution 8, statistics 8, unicode_character 8,
+uuid 8, random 7, time_zone 7, io_decorators 6, time_format 5 и мелочь
+(account, layout, system, collections, crypto, collation, diff, format,
+hpack, locale, math_aggregate, unicode_normalization, url_text). В
+`sparrow-engine` нет тех же (и ещё 9). Пока их нет, 33 модуля std падают
+на ядре (на IR-интерпретаторе их тесты проходят). Перенести из origin до
+удаления старых движков и до переключения рантайма по умолчанию.
+
+Сделано (2026-11-07): `host/native_origin.rs` — мост к реализациям origin
+(`okkama_runtime_core::native::execute`): аргументы и результаты по типам
+ABI, `any` — по типу программы (`host/native_debug.rs`), объекты provider —
+`Handle::Origin`. Закрыто 182 натива и `runtime/debug` (`data_keys`/
+`data_items` — в ядре, части остаются словами ядра). Не перенесены: TLS и
+терминал (async, поверх сокетов ядра). Форматы (ini, toml, template, html,
+csv, …) — кандидаты на переписывание на Okkama; криптография (tls, x509,
+crypto, pem, хеши) остаётся нативной (решение пользователя).
+
 
 - `sparrow-engine` удаляется, `sparrow-proto` — тоже; документация и
   roadmap обновляются.

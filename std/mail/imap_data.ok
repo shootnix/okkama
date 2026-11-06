@@ -18,7 +18,7 @@ object ImapDataLimits {
     has tokens, depth is int;
     ImapDataLimits() {tokens=8192;depth=64;}
     ImapDataLimits(tokens is int, depth is int) {
-        confirm tokens>=0 && depth>=0 else throw InvalidArgument("IMAP data limits must be nonnegative");
+        confirm tokens>=0 && depth>=0 else throw InvalidArgument.because("IMAP data limits must be nonnegative");
         self.tokens=tokens;self.depth=depth;
     }
     tokens() is int {tokens;}
@@ -28,13 +28,13 @@ object ImapValue {
     has kind is ImapValueKind;has content is @byte;has entries is @ImapValue;
     ImapValue(kind is ImapValueKind, content is @byte, entries is @ImapValue) {
         confirm (kind==ImapValueKind.list && content.size()==0) || (kind!=ImapValueKind.list && entries.size()==0)
-            else throw InvalidArgument("IMAP value cannot contain both bytes and list entries");
+            else throw InvalidArgument.because("IMAP value cannot contain both bytes and list entries");
         self.kind=kind;self.content=content;self.entries=entries;
     }
     kind() is ImapValueKind {kind;}
-    bytes() is @byte {confirm kind!=ImapValueKind.list else throw InvalidState("IMAP list has no scalar bytes");content;}
+    bytes() is @byte {confirm kind!=ImapValueKind.list else throw InvalidState.because("IMAP list has no scalar bytes");content;}
     string() is string {Utf8Decoded(self.bytes()).string();}
-    entries() is Sequencing<ImapValue> {confirm kind==ImapValueKind.list else throw InvalidState("IMAP scalar is not a list");entries;}
+    entries() is Sequencing<ImapValue> {confirm kind==ImapValueKind.list else throw InvalidState.because("IMAP scalar is not a list");entries;}
     absent() is bool {kind==ImapValueKind.atom && ImapDataUpper(self.string()).string()=="NIL";}
 }
 object ParsedImapData {
@@ -43,18 +43,8 @@ object ParsedImapData {
     ParsedImapData(origin is ImapResponse, limits is ImapDataLimits) {entries=ImapDataParsing(origin,limits).entries();}
     entries() is Sequencing<ImapValue> {entries;}
 }
-object InvalidImapData does Error {
-    has reason is string;
-    InvalidImapData(reason is string) {self.reason=reason;}
-    reason() is string {reason;}
-    text() is string {"invalid IMAP data: "+reason;}
-}
-object ImapDataLimitExceeded does Error {
-    has limit is string;
-    ImapDataLimitExceeded(kind is string) {limit=kind;}
-    kind() is string {limit;}
-    text() is string {"IMAP data "+limit+" limit exceeded";}
-}
+enum InvalidImapData is Error = (because(reason is string));
+enum ImapDataLimitExceeded is Error = (kind(kind is string));
 object ImapDataToken {
     has kind is ImapTokenKind;has bytes is @byte;
     ImapDataToken(kind is ImapTokenKind, bytes is @byte) {self.kind=kind;self.bytes=bytes;}
@@ -65,7 +55,7 @@ object ImapDataTokens {
     has entries is MimeItems<ImapDataToken>;has count is int;has limits is ImapDataLimits;
     ImapDataTokens(limits is ImapDataLimits) {let empty is MimeItems<ImapDataToken>=MimeItems();entries=empty;count=0;self.limits=limits;}
     following(token is ImapDataToken) is ^ImapDataTokens {
-        confirm count<limits.tokens() else throw ImapDataLimitExceeded("tokens");
+        confirm count<limits.tokens() else throw ImapDataLimitExceeded.kind("tokens");
         let appended=entries.following(token);^entries=appended;^count=count+1;
     }
     entries() is @ImapDataToken {entries.entries();}
@@ -74,26 +64,26 @@ object ImapDataParsing {
     has origin is ImapResponse;has limits is ImapDataLimits;
     ImapDataParsing(origin is ImapResponse, limits is ImapDataLimits) {self.origin=origin;self.limits=limits;}
     entries() is @ImapValue {
-        confirm origin.kind()==ImapResponseKind.untagged else throw InvalidImapData("data requires an untagged response");
+        confirm origin.kind()==ImapResponseKind.untagged else throw InvalidImapData.because("data requires an untagged response");
         let name=origin.name();
         confirm name!="OK" && name!="NO" && name!="BAD" && name!="BYE" && name!="PREAUTH"
-            else throw InvalidImapData("status text is not structured data");
+            else throw InvalidImapData.because("status text is not structured data");
         let tokens=ImapDataTokens(limits);let parts=origin.parts();
         for (0..parts.size()) -> index {
             let part=parts.item(index);
             if part.kind()==ImapResponsePartKind.text {
                 let text=Utf8Decoded(part.bytes()).string();
-                confirm text.length()>=2 else throw InvalidImapData("missing syntax CRLF");
+                confirm text.length()>=2 else throw InvalidImapData.because("missing syntax CRLF");
                 if index>0 && parts.item(index-1).kind()!=ImapResponsePartKind.text && text.length()>2 {
                     confirm text.slice(0,1)==" " || text.slice(0,1)==")"
-                        else throw InvalidImapData("literal requires a following separator");
+                        else throw InvalidImapData.because("literal requires a following separator");
                 }
                 let end=MimePosition(text.length()-2);
                 if index+1<parts.size() && parts.item(index+1).kind()!=ImapResponsePartKind.text {
                     // The framing layer already validated the terminal literal marker.
                     let start=MimePosition(end.index());
                     loop {last if start.index()==0 || text.slice(start.index()-1,start.index())=="{";start=start.following(start.index()-1);}
-                    confirm start.index()>0 else throw InvalidImapData("literal payload without marker");
+                    confirm start.index()>0 else throw InvalidImapData.because("literal payload without marker");
                     end=end.following(start.index()-1);
                     if end.index()>0 && text.slice(end.index()-1,end.index())=="~" {end=end.following(end.index()-1);}
                 }
@@ -109,7 +99,7 @@ object ImapDataParsing {
             values=values.following(parsed.value());position=position.following(parsed.after());}
         let result=values.entries();
         confirm result.size()>=2 && result[0].kind()==ImapValueKind.atom && result[0].string()=="*"
-            else throw InvalidImapData("missing untagged data prefix");
+            else throw InvalidImapData.because("missing untagged data prefix");
         result;
     }
 }
@@ -128,34 +118,34 @@ object ImapDataLexing {
             if char=="\"" {
                 let buffer=ByteBuffer();defer buffer.closing().close();at=at.following(start+1);
                 loop {
-                    confirm at.index()<origin.length() else throw InvalidImapData("unterminated quoted value");
+                    confirm at.index()<origin.length() else throw InvalidImapData.because("unterminated quoted value");
                     let raw=origin.slice(at.index(),at.index()+1);at=at.following(at.index()+1);
                     last if raw=="\"";
                     let current=if raw=="\\" {
-                        confirm at.index()<origin.length() else throw InvalidImapData("unterminated escape");
+                        confirm at.index()<origin.length() else throw InvalidImapData.because("unterminated escape");
                         let escaped=origin.slice(at.index(),at.index()+1);
-                        confirm escaped=="\"" || escaped=="\\" else throw InvalidImapData("invalid quoted escape");
+                        confirm escaped=="\"" || escaped=="\\" else throw InvalidImapData.because("invalid quoted escape");
                         at=at.following(at.index()+1);escaped;
                     } else {raw;};
                     buffer.writing().write(ByteSnapshot(Utf8Encoded(current).bytes()));
                 }
                 confirm at.index()==origin.length() || origin.slice(at.index(),at.index()+1)==" "
-                    || origin.slice(at.index(),at.index()+1)==")" else throw InvalidImapData("quoted value requires a following separator");
+                    || origin.slice(at.index(),at.index()+1)==")" else throw InvalidImapData.because("quoted value requires a following separator");
                 tokens=tokens.following(ImapDataToken(ImapTokenKind.quoted,buffer.content().bytes()));next;
             }
             let brackets=MimePosition(0);
             loop {
                 last if at.index()==origin.length();let current=origin.slice(at.index(),at.index()+1);
                 last if brackets.index()==0 && (current==" " || current=="(" || current==")");
-                confirm current!="\"" && current!="{" && current!="}" && current!="\t" else throw InvalidImapData("invalid data atom");
+                confirm current!="\"" && current!="{" && current!="}" && current!="\t" else throw InvalidImapData.because("invalid data atom");
                 if current=="[" {brackets=brackets.following(brackets.index()+1);}
                 if current=="]" {
-                    confirm brackets.index()>0 else throw InvalidImapData("unmatched section bracket");
+                    confirm brackets.index()>0 else throw InvalidImapData.because("unmatched section bracket");
                     brackets=brackets.following(brackets.index()-1);
                 }
                 at=at.following(at.index()+1);
             }
-            confirm brackets.index()==0 else throw InvalidImapData("unterminated section bracket");
+            confirm brackets.index()==0 else throw InvalidImapData.because("unterminated section bracket");
             tokens=tokens.following(ImapDataToken(ImapTokenKind.atom,Utf8Encoded(origin.slice(start,at.index())).bytes()));
         }
         tokens;
@@ -165,14 +155,14 @@ object ImapDataTree {
     has tokens is @ImapDataToken;has limits is ImapDataLimits;
     ImapDataTree(tokens is @ImapDataToken, limits is ImapDataLimits) {self.tokens=tokens;self.limits=limits;}
     item(at is int, depth is int) is ImapParsedValue {
-        confirm at<tokens.size() else throw InvalidImapData("missing data value");
+        confirm at<tokens.size() else throw InvalidImapData.because("missing data value");
         let token=tokens[at];
-        confirm token.kind()!=ImapTokenKind.closing else throw InvalidImapData("unexpected closing parenthesis");
+        confirm token.kind()!=ImapTokenKind.closing else throw InvalidImapData.because("unexpected closing parenthesis");
         if token.kind()==ImapTokenKind.opening {
-            confirm depth<limits.depth() else throw ImapDataLimitExceeded("depth");
+            confirm depth<limits.depth() else throw ImapDataLimitExceeded.kind("depth");
             let values is MimeItems<ImapValue>=MimeItems();let position=MimePosition(at+1);
             loop {
-                confirm position.index()<tokens.size() else throw InvalidImapData("unterminated data list");
+                confirm position.index()<tokens.size() else throw InvalidImapData.because("unterminated data list");
                 last if tokens[position.index()].kind()==ImapTokenKind.closing;
                 let parsed=self.item(position.index(),depth+1);values=values.following(parsed.value());position=position.following(parsed.after());
             }
@@ -181,7 +171,7 @@ object ImapDataTree {
         let kind=match token.kind() {
             case ImapTokenKind.atom {ImapValueKind.atom;} case ImapTokenKind.quoted {ImapValueKind.quoted;}
             case ImapTokenKind.literal {ImapValueKind.literal;} case ImapTokenKind.literal8 {ImapValueKind.literal8;}
-            else {throw InvalidImapData("invalid scalar token");}
+            else {throw InvalidImapData.because("invalid scalar token");}
         };
         ImapParsedValue(ImapValue(kind,token.bytes(),[]),at+1);
     }

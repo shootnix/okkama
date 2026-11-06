@@ -32,7 +32,7 @@ object AsciiEncoded {
     bytes() is @byte {
         let offset is int = ascii_representable_prefix(origin);
         confirm offset == origin.length()
-            else throw UnrepresentableAsciiCharacter(offset);
+            else throw UnrepresentableAsciiCharacter.at(offset);
         ascii_encode(origin);
     }
 }
@@ -46,7 +46,7 @@ object AsciiDecoded {
 
     string() is string {
         let offset is int = ascii_valid_prefix(origin);
-        confirm offset == origin.size() else throw InvalidAsciiByte(offset);
+        confirm offset == origin.size() else throw InvalidAsciiByte.at(offset);
         ascii_decode(origin);
     }
 }
@@ -61,7 +61,7 @@ object Latin1Encoded {
     bytes() is @byte {
         let offset is int = latin1_representable_prefix(origin);
         confirm offset == origin.length()
-            else throw UnrepresentableLatin1Character(offset);
+            else throw UnrepresentableLatin1Character.at(offset);
         latin1_encode(origin);
     }
 }
@@ -78,52 +78,8 @@ object Latin1Decoded {
     }
 }
 
-object UnrepresentableAsciiCharacter does Error {
-    has invalid_offset is int;
+enum UnrepresentableAsciiCharacter is Error = (at(offset is int));
 
-    UnrepresentableAsciiCharacter(offset is int) {
-        invalid_offset = offset;
-    }
+enum UnrepresentableLatin1Character is Error = (at(offset is int));
 
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "character is not representable in ASCII at scalar offset "
-            + invalid_offset.string();
-    }
-}
-
-object UnrepresentableLatin1Character does Error {
-    has invalid_offset is int;
-
-    UnrepresentableLatin1Character(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "character is not representable in Latin-1 at scalar offset "
-            + invalid_offset.string();
-    }
-}
-
-object InvalidAsciiByte does Error {
-    has invalid_offset is int;
-
-    InvalidAsciiByte(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid ASCII byte at byte offset " + invalid_offset.string();
-    }
-}
+enum InvalidAsciiByte is Error = (at(offset is int));

@@ -59,7 +59,7 @@ object Directory does DirectoryLocating {
                 false;
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -69,7 +69,7 @@ object Directory does DirectoryLocating {
             mkdir(path_encode(origin.string()), 493);
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -79,10 +79,10 @@ object Directory does DirectoryLocating {
         }
         catch failure is NativeFailure {
             if failure.code() == "not_empty" {
-                throw DirectoryNotEmpty(origin);
+                throw DirectoryNotEmpty.path(origin.string());
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         }
     }
@@ -95,7 +95,7 @@ object Directory does DirectoryLocating {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -118,7 +118,7 @@ object DirectoryEntry {
             FileStatFromMap(origin: lstat(path_encode(origin.string()))).value();
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -141,7 +141,7 @@ object DirectoryEntries does Iterating<DirectoryEntry> {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -156,12 +156,12 @@ object DirectoryEntryCursor does Cursor<DirectoryEntry> {
     available() is bool { position < names.size(); }
 
     item() is DirectoryEntry {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         DirectoryEntry(path: parent.child(names[position]));
     }
 
     successor() is Cursor<DirectoryEntry> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         DirectoryEntryCursor(
             parent: parent,
             names: names,
@@ -245,9 +245,9 @@ object ExhaustedDescendantCursor does Cursor<DirectoryEntry> {
 
     available() is bool { false; }
 
-    item() is DirectoryEntry { throw IterationEnded(); }
+    item() is DirectoryEntry { throw IterationEnded.ended; }
 
-    successor() is Cursor<DirectoryEntry> { throw IterationEnded(); }
+    successor() is Cursor<DirectoryEntry> { throw IterationEnded.ended; }
 }
 
 object DirectoryTree {
@@ -263,21 +263,9 @@ object DirectoryTree {
             directory_remove_tree(path_encode(removed.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
 
-object DirectoryNotEmpty does Error {
-    has origin is Path;
-
-    DirectoryNotEmpty(path is Path) {
-        origin = path;
-    }
-
-    path() is Path { origin; }
-
-    text() is string {
-        "directory is not empty: " + origin.string();
-    }
-}
+enum DirectoryNotEmpty is Error = (path(path is string));

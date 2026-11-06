@@ -10,6 +10,6 @@ main() is int {
     c = c.same_text("first value", (ParsedQueryParameters(UrlQuery("a=1&b=2&a=3")).value()).first("b"), "2");
     c = c.same_bool("absent name", (ParsedQueryParameters(UrlQuery("a=1")).value()).membership("c"), false);
     c = c.same_text("percent decoding", (ParsedQueryParameters(UrlQuery("q=a%20b")).value()).first("q"), "a b");
-    c = c.same_text("missing parameter", try { let probe = (ParsedQueryParameters(UrlQuery("a=1")).value()).first("c"); "no error"; } catch e is MissingQueryParameter { e.name(); }, "c");
+    c = c.same_text("missing parameter", try { let probe = (ParsedQueryParameters(UrlQuery("a=1")).value()).first("c"); "no error"; } catch MissingQueryParameter.name(name) { name; }, "c");
     c.done();
 }

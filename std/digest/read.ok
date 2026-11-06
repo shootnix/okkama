@@ -1,8 +1,7 @@
 module digest/read v1.0.0;
 
 import "digest/state" take Digesting;
-import "io/stream" take Reading;
-import "net/stream" take AsyncReading;
+import "io/stream" take AsyncReading,Reading;
 import "error" take InvalidArgument;
 import "io/buffer" take ByteBuffer;
 
@@ -27,7 +26,7 @@ object ReadDigest {
     }
 
     ReadDigest(origin is Reading, digest is Digesting, chunk is int) {
-        confirm chunk > 0 else throw InvalidArgument("digest read chunk must be positive");
+        confirm chunk > 0 else throw InvalidArgument.because("digest read chunk must be positive");
         self.origin = origin;
         self.digest = digest;
         self.chunk = chunk;
@@ -53,7 +52,7 @@ object AsyncReadDigest {
     }
 
     AsyncReadDigest(origin is AsyncReading, digest is Digesting, chunk is int) {
-        confirm chunk > 0 else throw InvalidArgument("digest read chunk must be positive");
+        confirm chunk > 0 else throw InvalidArgument.because("digest read chunk must be positive");
         self.origin = origin;
         self.digest = digest;
         self.chunk = chunk;

@@ -40,19 +40,9 @@ object Datagram does ByteSource {
 // its effective limit; this immutable diagnostic only retains a non-negative
 // attempted count. It holds no payload or socket and remains usable after close.
 //
-//     let failure=DatagramTooLarge(65508);
-//     failure.size(); // 65508
-//
-// Zero is a valid diagnostic count; a negative count is an InvalidArgument.
-object DatagramTooLarge does Error {
-    has amount is int;
-    DatagramTooLarge(size is int) {
-        confirm size>=0 else throw InvalidArgument("UDP payload size must be non-negative");
-        amount=size;
-    }
-    size() is int {amount;}
-    text() is string {"UDP datagram too large: "+amount.string()+" bytes";}
-}
+//     throw DatagramTooLarge.size(65508);
+//     catch DatagramTooLarge.size(size) { ... } // 65508
+enum DatagramTooLarge is Error = (size(size is int));
 
 // Immutable UDP binding requests. Defaults disable address reuse, broadcast
 // and dual stack. The flags are independent; constructor validation does not
@@ -109,7 +99,7 @@ object UdpBinding {
 // packet, retaining a bounded prefix and explicit truncation. Empty is not EOF.
 // Each Future consumes once; repeat awaits observe the same captured packet.
 // Non-positive limits fail before I/O. One receive may wait at a time; overlap
-// reports NetworkFailure(resource_exhausted). Cancel removes readiness without
+// reports NetworkFailure with kind resource_exhausted. Cancel removes readiness without
 // consuming a later packet. Close wakes pending receives with NetworkClosed.
 // The native receive buffer is 65536 bytes; IPv6 jumbograms are excluded.
 // send(target,source) samples the ByteSource once on first await and submits one
@@ -144,8 +134,8 @@ object UdpSocket {
     local_endpoint() is IpEndpoint {endpoint;}
     closed() is bool {network.closed(state);}
     async send(target is IpEndpoint, source is ByteSource) is int {
-        confirm target.port()>0 else throw InvalidArgument("UDP destination port must be positive");
-        confirm !self.closed() else throw NetworkClosed();
+        confirm target.port()>0 else throw InvalidArgument.because("UDP destination port must be positive");
+        confirm !self.closed() else throw NetworkClosed.closed;
         let payload=source.bytes();
         let family=if target.address().version()==IpVersion.v4 {1;} else {2;};
         try {
@@ -153,10 +143,10 @@ object UdpSocket {
             await network.udp_send(state,address,target.zone(),payload);
         } catch failure is NativeFailure {
             if failure.domain()=="core.net" && failure.code()=="message_too_large" {
-                throw DatagramTooLarge(payload.size());
+                throw DatagramTooLarge.size(payload.size());
             }
             if failure.domain()=="core.net" && failure.code()=="already_closed" {
-                throw NetworkClosed();
+                throw NetworkClosed.closed;
             }
             let translated=NetworkError(NetworkOperation.writing,failure);
             if translated.applicable() {throw translated.value();}
@@ -164,7 +154,7 @@ object UdpSocket {
         }
     }
     async datagram(limit is int) is Datagram {
-        confirm limit>0 else throw InvalidArgument("UDP receive limit must be positive");
+        confirm limit>0 else throw InvalidArgument.because("UDP receive limit must be positive");
         try {
             let packet=await network.udp_receive(state,limit);
             let peer=network.packet_source(packet);
@@ -172,7 +162,7 @@ object UdpSocket {
                 network.packet_bytes(packet),network.packet_truncated(packet));
         } catch failure is NativeFailure {
             if failure.domain()=="core.net" && failure.code()=="already_closed" {
-                throw NetworkClosed();
+                throw NetworkClosed.closed;
             }
             let translated=NetworkError(NetworkOperation.reading,failure);
             if translated.applicable() {throw translated.value();}
@@ -216,7 +206,7 @@ object UdpConnecting {
         self.local=local;self.remote=remote;self.options=options;
     }
     async connection() is UdpConnection {
-        confirm remote.port()>0 else throw InvalidArgument("UDP destination port must be positive");
+        confirm remote.port()>0 else throw InvalidArgument.because("UDP destination port must be positive");
         let local_family=if local.address().version()==IpVersion.v4 {1;} else {2;};
         let remote_family=if remote.address().version()==IpVersion.v4 {1;} else {2;};
         let state=try {
@@ -263,28 +253,28 @@ object UdpConnection {
     closed() is bool {owner.closed();}
     close() is void {owner.close();}
     async send(source is ByteSource) is int {
-        confirm !self.closed() else throw NetworkClosed();
+        confirm !self.closed() else throw NetworkClosed.closed;
         let payload=source.bytes();
         try {await network.udp_connected_send(state,payload);}
         catch failure is NativeFailure {
             if failure.domain()=="core.net" && failure.code()=="message_too_large" {
-                throw DatagramTooLarge(payload.size());
+                throw DatagramTooLarge.size(payload.size());
             }
-            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed();}
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed.closed;}
             let translated=NetworkError(NetworkOperation.writing,failure);
             if translated.applicable() {throw translated.value();}
             throw;
         }
     }
     async datagram(limit is int) is Datagram {
-        confirm limit>0 else throw InvalidArgument("UDP receive limit must be positive");
+        confirm limit>0 else throw InvalidArgument.because("UDP receive limit must be positive");
         try {
             let packet=await network.udp_connected_receive(state,limit);
             let peer=network.packet_source(packet);
             Datagram(IpEndpoint(IpAddress(peer[0]),ParsedInt(peer[1]).value(),peer[2]),
                 network.packet_bytes(packet),network.packet_truncated(packet));
         } catch failure is NativeFailure {
-            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed();}
+            if failure.domain()=="core.net" && failure.code()=="already_closed" {throw NetworkClosed.closed;}
             let translated=NetworkError(NetworkOperation.reading,failure);
             if translated.applicable() {throw translated.value();}
             throw;
@@ -317,15 +307,6 @@ test "UDP binding construction accepts requests without acquiring sockets" {
     let endpoint=IpEndpoint(IpAddress("127.0.0.1"),0);
     let request=UdpBinding(endpoint,UdpOptions(false,false,true));
     test.ok(request==UdpBinding(endpoint,UdpOptions(false,false,true)));
-}
-
-test "oversized UDP payload diagnostic preserves byte count" {
-    let failure=DatagramTooLarge(65508);
-    test.is(failure.size(),65508);
-    test.is(failure.text(),"UDP datagram too large: 65508 bytes");
-    let rejected=try {DatagramTooLarge(-1);false;}
-        catch error is InvalidArgument {true;};
-    test.ok(rejected);
 }
 
 test "receive creation is lazy and cancellation leaves its owner open" {

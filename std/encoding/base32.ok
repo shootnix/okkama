@@ -39,23 +39,9 @@ object Base32Decoded {
 
     bytes() is @byte {
         let offset is int = base32_invalid_offset(origin);
-        confirm offset == -1 else throw InvalidBase32(offset);
+        confirm offset == -1 else throw InvalidBase32.at(offset);
         base32_decode(origin);
     }
 }
 
-object InvalidBase32 does Error {
-    has invalid_offset is int;
-
-    InvalidBase32(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid Base32 at scalar offset " + invalid_offset.string();
-    }
-}
+enum InvalidBase32 is Error = (at(offset is int));

@@ -20,7 +20,7 @@ import "../support/http" take LocalWeb,Page;
 import "web/routing" take WebRoutes,Get;
 import "web/request" take WebRequest;
 import "web/reply" take Html;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/handler" take HandlingResult;
 import "html/entities" take EscapedHtml;
 object Documentation {
@@ -31,18 +31,18 @@ object Documentation {
     async language(request is WebRequest) is HandlingResult{self.document(request,"Язык Okkama","docs/OkkamaBook-RU.md","/language");}
     async stdlib(request is WebRequest) is HandlingResult{self.document(request,"Стандартная библиотека","docs/Okkama-Stdlib-RU.md","/stdlib");}
     async cookbook(request is WebRequest) is HandlingResult{self.document(request,"Учебные приложения","examples/cookbook/README.md","/cookbook");}
-    async missing(request is WebRequest) is HandlingResult{Exception(404,"Документ не найден");}
+    async missing(request is WebRequest) is HandlingResult{Problem(404,"Документ не найден");}
     private:
     // Читаем UTF-8 текстовым API; в ответ отправляем страницу, а не всю книгу.
     document(request is WebRequest,title is string,path is string,route is string) is Html{
         let number=try{ParsedInt(request.query("page","0")).value();}
-            catch error is Error{throw Exception(400,"Некорректный номер страницы");};
-        confirm number>=0 && number<=1000 else throw Exception(400,"Некорректный номер страницы");
+            catch error is Error{throw Exception.status(400,"Некорректный номер страницы");};
+        confirm number>=0 && number<=1000 else throw Exception.status(400,"Некорректный номер страницы");
         let source=Path(path);
-        confirm FileEntry(source).stat().size()<=2097152 else throw Exception(413,"Документ слишком велик");
+        confirm FileEntry(source).stat().size()<=2097152 else throw Exception.status(413,"Документ слишком велик");
         let file=File(mode:FileMode.reading,path:source);defer file.close();
         let text=file.text().content();let start=number*8192;
-        confirm start<text.length() || (number==0 && text.length()==0) else throw Exception(404,"Страница не найдена");
+        confirm start<text.length() || (number==0 && text.length()==0) else throw Exception.status(404,"Страница не найдена");
         let end=if start+8192<text.length(){start+8192;}else{text.length();};
         let previous=if number>0{" · <a href="+route+"?page="+(number-1).string()+">Назад</a>";}else{"";};
         let following=if end<text.length(){" · <a href="+route+"?page="+(number+1).string()+">Далее</a>";}else{"";};

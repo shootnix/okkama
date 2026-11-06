@@ -15,8 +15,8 @@ object HpackField {
 }
 object HpackOctetText {
     has origin is string;HpackOctetText(origin is string){
-        confirm origin.length()<=1048576 else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK octet string bound");
-        try{Latin1Encoded(origin).bytes();}catch failure is UnrepresentableLatin1Character{throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK requires octet strings");}
+        confirm origin.length()<=1048576 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK octet string bound");
+        try{Latin1Encoded(origin).bytes();}catch failure is UnrepresentableLatin1Character{throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK requires octet strings");}
         self.origin=origin;
     }
     value() is string{origin;}
@@ -25,7 +25,7 @@ object HpackStaticTable {
     has entries is @HpackField;HpackStaticTable(){let fixed=HpackStaticEntries();let names=fixed.names();let values=fixed.values();let rows is @HpackField=(0..61).map()->index{HpackField(names[index],values[index]);};entries=rows;}
     size() is int{61;}
     field(index is int) is HpackField{
-        confirm index>=1 && index<=61 else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid static index");entries[index-1];
+        confirm index>=1 && index<=61 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid static index");entries[index-1];
     }
     named(name is string) is int{
         for (0..61) -> index{if entries[index].name()==name{return index+1;}}0;
@@ -39,7 +39,7 @@ object HpackDynamicTable {
     HpackDynamicTable(capacity is int){HpackTableBound(capacity);entries=[];self.capacity=capacity;used=0;}
     size() is int{entries.size();}capacity() is int{capacity;}used() is int{used;}
     field(index is int) is HpackField{
-        confirm index>=1 && index<=entries.size() else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid dynamic index");entries[index-1];
+        confirm index>=1 && index<=entries.size() else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid dynamic index");entries[index-1];
     }
     resized(capacity is int) is ^HpackDynamicTable{
         HpackTableBound(capacity);let retained=HpackKept(entries,capacity);
@@ -56,7 +56,7 @@ object HpackDynamicTable {
     }
 }
 object HpackTableBound {
-    HpackTableBound(value is int){confirm value>=0 && value<=1048576 else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK table bound");}
+    HpackTableBound(value is int){confirm value>=0 && value<=1048576 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK table bound");}
 }
 object HpackKept {
     has entries is @HpackField;has used is int;
@@ -70,7 +70,7 @@ object HpackKept {
 object HpackLookup {
     has field is HpackField;
     HpackLookup(fixed is HpackStaticTable,dynamic is HpackDynamicTable,index is int){
-        confirm index>0 else throw Http2Fault(Http2FaultScope.connection,9,0,"zero HPACK index");
+        confirm index>0 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "zero HPACK index");
         field=if index<=61{fixed.field(index);}else{dynamic.field(index-61);};
     }
     field() is HpackField{field;}

@@ -18,7 +18,7 @@ object IpClassification {
     has origin is @byte;
     IpClassification(origin is @byte) {
         confirm origin.size()==4 || origin.size()==16
-            else throw InvalidArgument("IP classification needs 4 or 16 bytes");
+            else throw InvalidArgument.because("IP classification needs 4 or 16 bytes");
         self.origin=origin;
     }
     flags() is int {
@@ -182,7 +182,7 @@ object PackedIpPrefix {
     PackedIpPrefix(origin is @byte, prefix is string, bits is int) {
         let decoded=HexDecoded(prefix).bytes();
         confirm origin.size()==decoded.size() && bits>=0 && bits<=origin.size()*8
-            else throw InvalidArgument("invalid packed IP prefix");
+            else throw InvalidArgument.because("invalid packed IP prefix");
         self.origin=origin;
         pattern=decoded;
         self.bits=bits;

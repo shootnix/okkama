@@ -31,9 +31,9 @@ object SyslogSeverity{
 object SyslogHeaderName{
     has origin is string;
     SyslogHeaderName(origin is string,maximum is int){
-        confirm origin.length()<=maximum else throw InvalidSyslogOptions();
+        confirm origin.length()<=maximum else throw InvalidSyslogOptions.invalid;
         let bytes=Utf8Encoded(origin).bytes();let valid=bytes.reduce(true)->allowed,byte{allowed && byte.int()>=33 && byte.int()<=126;};
-        confirm bytes.size()<=maximum && valid else throw InvalidSyslogOptions();
+        confirm bytes.size()<=maximum && valid else throw InvalidSyslogOptions.invalid;
         self.origin=if origin==""{"-";}else{origin;};
     }
     string() is string{origin;}
@@ -41,7 +41,7 @@ object SyslogHeaderName{
 object SyslogOptions{
     has facility is SyslogFacility;has host,application is string;has maximum is int;
     SyslogOptions(facility is SyslogFacility,host is string,application is string,maximum_payload is int){
-        confirm maximum_payload>0 && maximum_payload<=65507 else throw InvalidSyslogOptions();
+        confirm maximum_payload>0 && maximum_payload<=65507 else throw InvalidSyslogOptions.invalid;
         self.facility=facility;self.host=SyslogHeaderName(host,255).string();self.application=SyslogHeaderName(application,48).string();maximum=maximum_payload;
     }
     facility() is SyslogFacility{facility;}host() is string{host;}application() is string{application;}maximum_payload() is int{maximum;}
@@ -59,7 +59,7 @@ object SyslogMessage does ByteSource{
         let process=if record.context().process()==0{"-";}else{record.context().process().string();};
         let header=Utf8Encoded("<"+priority.string()+">1 "+timestamp+" "+options.host()+" "+options.application()+" "+process+" - - ").bytes();
         let message=Utf8Encoded(JsonLogLine(record).string()).bytes();let bom is @byte=[239.byte(),187.byte(),191.byte()];
-        let size=header.size()+bom.size()+message.size();confirm size<=options.maximum_payload() else throw DatagramTooLarge(size);
+        let size=header.size()+bom.size()+message.size();confirm size<=options.maximum_payload() else throw DatagramTooLarge.size(size);
         origin=(0..size).map()->index{if index<header.size(){header[index];}else if index<header.size()+3{bom[index-header.size()];}else{message[index-header.size()-3];}};
     }
     bytes() is @byte{origin;}
@@ -69,7 +69,7 @@ object UdpSyslogDelivery does LogDelivering{
     UdpSyslogDelivery(origin is UdpConnection,options is SyslogOptions){self.origin=origin;self.options=options;}
     async deliver(record is LogRecord) is int{
         let packet=SyslogMessage(record,options);let count=await origin.send(packet);
-        confirm count==packet.bytes().size() else throw IncompleteWrite(count);count;
+        confirm count==packet.bytes().size() else throw IncompleteWrite.after(count);count;
     }
 }
 object SyslogLogs does LogWriting,LogDraining,Closing{
@@ -82,4 +82,4 @@ object SyslogLogs does LogWriting,LogDraining,Closing{
     closed() is bool{queue.closed();}close() is void{queue.close();}
     destroy{self.close();}
 }
-object InvalidSyslogOptions does Error{InvalidSyslogOptions();text() is string{"invalid syslog header or UDP payload limit";}}
+enum InvalidSyslogOptions is Error = (invalid);

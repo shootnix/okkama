@@ -33,7 +33,7 @@ enum SqliteJournal=(default_mode,delete_mode,wal,memory);
 object SqliteOptions {
     has read_only,create,foreign_keys is bool;has busy is Duration;has journal is SqliteJournal;
     SqliteOptions(){read_only=false;create=true;foreign_keys=true;busy=Duration(0.rat(),DurationUnit.second);journal=SqliteJournal.default_mode;}
-    SqliteOptions(read_only is bool,create is bool,foreign_keys is bool,busy_timeout is Duration,journal is SqliteJournal){confirm !(read_only && create) && busy_timeout.seconds()>=0.rat() && busy_timeout.seconds()<=60.rat() && (busy_timeout.seconds()*1000.rat()).denominator()=="1" else throw InvalidSqliteOptions();self.read_only=read_only;self.create=create;self.foreign_keys=foreign_keys;busy=busy_timeout;self.journal=journal;}
+    SqliteOptions(read_only is bool,create is bool,foreign_keys is bool,busy_timeout is Duration,journal is SqliteJournal){confirm !(read_only && create) && busy_timeout.seconds()>=0.rat() && busy_timeout.seconds()<=60.rat() && (busy_timeout.seconds()*1000.rat()).denominator()=="1" else throw InvalidSqliteOptions.invalid;self.read_only=read_only;self.create=create;self.foreign_keys=foreign_keys;busy=busy_timeout;self.journal=journal;}
     read_only() is bool{read_only;}creation() is bool{create;}foreign_keys() is bool{foreign_keys;}busy_timeout() is Duration{busy;}journal() is SqliteJournal{journal;}
 }
 object SqliteDatabase {
@@ -61,8 +61,8 @@ object SqliteOpening {
     has path is @byte;has memory is bool;has options is SqliteOptions;
     SqliteOpening(path is @byte,memory is bool,options is SqliteOptions){self.path=path;self.memory=memory;self.options=options;}
     async connection() is SqliteConnection{
-        confirm !(memory && options.read_only()) else throw InvalidSqliteOptions();
-        let journal=match options.journal(){case SqliteJournal.default_mode{if memory{"memory";}else{"delete";}}case SqliteJournal.delete_mode{"delete";}case SqliteJournal.wal{"wal";}case SqliteJournal.memory{"memory";}else{throw InvalidSqliteOptions();}};
+        confirm !(memory && options.read_only()) else throw InvalidSqliteOptions.invalid;
+        let journal=match options.journal(){case SqliteJournal.default_mode{if memory{"memory";}else{"delete";}}case SqliteJournal.delete_mode{"delete";}case SqliteJournal.wal{"wal";}case SqliteJournal.memory{"memory";}else{throw InvalidSqliteOptions.invalid;}};
         let state=try{sqlite.sqlite_create(path,options.read_only(),options.creation(),options.foreign_keys(),(options.busy_timeout().seconds()*1000.rat()).int(),journal,memory);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.connecting).value();};
         let published=Event();let anchor=SqliteUnpublished(state,published);defer await anchor.close();
         let group is FutureGroup<sqlite.SqliteReplyState>=FutureGroup();let cleanup=SqliteTaskCleanup(group,state);defer await cleanup.close();
@@ -105,25 +105,25 @@ object SqliteSession does Closing {
     async settled() is bool{try{await sqlite.sqlite_settled(state);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.closing).value();}}
     async execution(statement is Statement) is Execution{await self.execution_for(statement,0);}
     async execution_for(statement is Statement,token is int) is Execution{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed.closed;self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let frame=await self.reply(sqlite.sqlite_execution_cells(state,statement.text(),statement.cells()),DbOperation.executing);defer frame.close();frame.execution();
     }
     async rows(statement is Statement) is RowReading{await self.rows_for(statement,0);}
     async rows_for(statement is Statement,token is int) is RowReading{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed.closed;self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let frame=await self.reply(sqlite.sqlite_rows_cells(state,statement.text(),statement.cells()),DbOperation.preparing);defer frame.close();let id=frame.identifier();let shape=self.shaped(frame);reader.replace(id);let rows=SqliteRows(self,id,shape,token);rows.primed(frame);rows;
     }
     async prepare(text is string) is PreparedStatement{await self.prepare_for(text,0);}
     async prepare_for(text is string,token is int) is PreparedStatement{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let frame=await self.reply(sqlite.sqlite_prepare(state,Utf8Encoded(Statement(text).text()).bytes()),DbOperation.preparing);defer frame.close();let id=frame.identifier();if token>0{let old=transaction_prepared.value();let all is @int=(0..old.size()+1).map()->index{if index<old.size(){old[index];}else{id;}};transaction_prepared.replace(all);}SqlitePrepared(self,id,token);
     }
     async prepared_execution(id is int,values is Sequencing<DbValue>,token is int) is Execution{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(values);
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;let bindings=SqliteBindings(values);
         let frame=await self.reply(sqlite.sqlite_prepared_execution_cells(state,id,bindings.cells()),DbOperation.executing);defer frame.close();frame.execution();
     }
     async prepared_rows(id is int,values is Sequencing<DbValue>,source_closed is Event,token is int) is RowReading{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(values);
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;let bindings=SqliteBindings(values);
         let frame=await self.reply(sqlite.sqlite_prepared_rows_cells(state,id,bindings.cells()),DbOperation.preparing);defer frame.close();let cursor=frame.identifier();reader.replace(cursor);reader_prepared.replace(id);let rows=SqliteRows(self,cursor,self.shaped(frame),source_closed,token);rows.primed(frame);rows;
     }
     // Columns and row schema of a result, reused while a session repeats the
@@ -149,44 +149,44 @@ object SqliteSession does Closing {
     }
     async barrier() is void{try{await sqlite.sqlite_settled(state);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.closing).value();}}
     async open_blob(database is string,table is string,column is string,row is BigInt,writable is bool,token is int) is SqliteBlob{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let frame=await self.reply(sqlite.sqlite_blob_open(state,database,table,column,row.string(),writable),DbOperation.opening_blob);defer frame.close();let id=frame.identifier();blob.replace(id);SqliteBlobHandle(self,id,frame.size(),writable,token);
     }
     blob_active(id is int,token is int) is bool{!self.closed() && blob.value()==id && (if token==0{transaction.value()==0;}else{self.active(token);});}
     blob_close(id is int) is void{if blob.value()==id{blob.replace(0);if !self.closed(){sqlite.sqlite_blob_close(state,id);}}}
     async blob_bytes(id is int,offset is BigInt,limit is int,token is int) is @byte{
-        let guard=await lock.guard();defer guard.close();confirm self.blob_active(id,token) else throw DbClosed();let frame=await self.reply(sqlite.sqlite_blob_read(state,id,offset.string(),limit),DbOperation.reading_blob);defer frame.close();frame.bytes();
+        let guard=await lock.guard();defer guard.close();confirm self.blob_active(id,token) else throw DbClosed.closed;let frame=await self.reply(sqlite.sqlite_blob_read(state,id,offset.string(),limit),DbOperation.reading_blob);defer frame.close();frame.bytes();
     }
     async blob_write(id is int,offset is BigInt,source is @byte,token is int) is bool{
-        let guard=await lock.guard();defer guard.close();confirm self.blob_active(id,token) else throw DbClosed();let frame=await self.reply(sqlite.sqlite_blob_write(state,id,offset.string(),source),DbOperation.writing_blob);defer frame.close();true;
+        let guard=await lock.guard();defer guard.close();confirm self.blob_active(id,token) else throw DbClosed.closed;let frame=await self.reply(sqlite.sqlite_blob_write(state,id,offset.string(),source),DbOperation.writing_blob);defer frame.close();true;
     }
     async script(source is string,token is int) is Sequencing<Execution>{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let frame=await self.reply(sqlite.sqlite_script(state,Utf8Encoded(source).bytes()),DbOperation.script);defer frame.close();frame.executions();
     }
     async backup(target is Path,pages is int,clock is Timing,timeout is Duration) is BackupReport{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(0);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let deadline=clock.monotonic_instant().plus(timeout);
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(0);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;let deadline=clock.monotonic_instant().plus(timeout);
         let opening is Before<sqlite.SqliteReplyState>=Before(origin:sqlite.sqlite_backup_open(state,path_encode(target.string())),deadline:deadline,clock:clock);let opened=await self.reply(opening.result(),DbOperation.backing_up);defer opened.close();let id=opened.identifier();let cleanup=SqliteBackupCleanup(self,id);defer cleanup.close();
         loop{
-            confirm clock.monotonic_instant().order(deadline)==Order.less else throw TimedOut();let request is Before<sqlite.SqliteReplyState>=Before(origin:sqlite.sqlite_backup_step(state,id,pages),deadline:deadline,clock:clock);let frame=await self.reply(request.result(),DbOperation.backing_up);defer frame.close();
+            confirm clock.monotonic_instant().order(deadline)==Order.less else throw TimedOut.elapsed;let request is Before<sqlite.SqliteReplyState>=Before(origin:sqlite.sqlite_backup_step(state,id,pages),deadline:deadline,clock:clock);let frame=await self.reply(request.result(),DbOperation.backing_up);defer frame.close();
             if frame.done(){return BackupReport(frame.copies(),frame.total());}await clock.wait(Duration(if frame.busy(){5.rat();}else{0.rat();},DurationUnit.millisecond));
         }
     }
     backup_close(id is int) is void{if !self.closed(){sqlite.sqlite_backup_close(state,id);}}
     permit(token is int) is void{
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         if transaction.value()>0 && sqlite.sqlite_autocommit(state){transaction.replace(0);}
-        if token>0 && transaction.value()!=token{throw TransactionEnded();}
-        confirm transaction.value()==token else throw DbBusy();
+        if token>0 && transaction.value()!=token{throw TransactionEnded.ended;}
+        confirm transaction.value()==token else throw DbBusy.busy;
     }
     active(token is int) is bool{!self.closed() && transaction.value()==token && !sqlite.sqlite_autocommit(state);}
     async begin(options is TransactionOptions,mode is SqliteTransactionMode) is SqliteTransaction{
-        confirm !self.closed() else throw DbClosed();
+        confirm !self.closed() else throw DbClosed.closed;
         confirm (options.isolation()==Isolation.default_level || options.isolation()==Isolation.serializable) && !options.deferrable() && (!options.read_only() || read_only)
-            else throw DbFailure(DbFailureKind.unsupported,DbOperation.executing,"SQLITE_TRANSACTION_OPTIONS","SQLite cannot enforce requested transaction options");
-        let guard=await lock.guard();defer guard.close();self.permit(0);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+            else throw DbFailure.detailed(DbFailureKind.unsupported, DbOperation.executing, "SQLITE_TRANSACTION_OPTIONS", "SQLite cannot enforce requested transaction options");
+        let guard=await lock.guard();defer guard.close();self.permit(0);confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let published=Event();let token=Atomic(0);let rollback=SqliteBeginCleanup(self,token,published);defer rollback.close();
-        let name=match mode{case SqliteTransactionMode.deferred{"DEFERRED";}case SqliteTransactionMode.immediate{"IMMEDIATE";}case SqliteTransactionMode.exclusive{"EXCLUSIVE";}else{throw InvalidSqliteOptions();}};
+        let name=match mode{case SqliteTransactionMode.deferred{"DEFERRED";}case SqliteTransactionMode.immediate{"IMMEDIATE";}case SqliteTransactionMode.exclusive{"EXCLUSIVE";}else{throw InvalidSqliteOptions.invalid;}};
         await self.control("BEGIN "+name,DbOperation.executing);let id=serial.value()+1;serial.replace(id);transaction.replace(id);token.replace(id);
         published.set();SqliteTransaction(self,id);
     }
@@ -196,12 +196,12 @@ object SqliteSession does Closing {
     }
 
     async finish(token is int,commit is bool,outcome is Atomic<int>) is bool{
-        confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);
-        if !commit{if reader.value()>0{self.release(reader.value());}if blob.value()>0{self.blob_close(blob.value());}}confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
+        confirm !self.closed() else throw DbClosed.closed;let guard=await lock.guard();defer guard.close();self.permit(token);
+        if !commit{if reader.value()>0{self.release(reader.value());}if blob.value()>0{self.blob_close(blob.value());}}confirm reader.value()==0 && blob.value()==0 else throw DbBusy.busy;
         let confirmed=Event();let cleanup=SqliteFinishCleanup(self,token,commit,outcome,confirmed);defer cleanup.close();
         if !commit{await self.settled();}
         try{if commit || !sqlite.sqlite_autocommit(state){await self.control(if commit{"COMMIT";}else{"ROLLBACK";},if commit{DbOperation.committing;}else{DbOperation.rolling_back;});}}
-        catch e is DbFailure{if commit && (e.kind()==DbFailureKind.connection || e.kind()==DbFailureKind.timeout || e.kind()==DbFailureKind.cancelled){throw IndeterminateCommit();}confirmed.set();throw;}
+        catch DbFailure.detailed(kind, _, _, _) {if commit && (kind==DbFailureKind.connection || kind==DbFailureKind.timeout || kind==DbFailureKind.cancelled){throw IndeterminateCommit.indeterminate;}confirmed.set();throw;}
         confirmed.set();transaction.replace(0);self.end_prepared();true;
     }
     abandon(token is int) is void{
@@ -210,7 +210,7 @@ object SqliteSession does Closing {
     release(id is int) is void{if reader.value()==id{reader.replace(0);reader_prepared.replace(0);if fetch_id.value()==id{for fetches.value() -> pending{pending.cancel();}}if !self.closed(){sqlite.sqlite_release(state,id);}}}
     clear_fetch(id is int) is void{if fetch_id.value()==id{fetches.replace([]);fetch_id.replace(0);}}
     async batch(id is int,maximum is int) is SqliteFrame{
-        confirm !self.closed() && reader.value()==id else throw DbClosed();
+        confirm !self.closed() && reader.value()==id else throw DbClosed.closed;
         let waiting=sqlite.sqlite_fetch(state,id,maximum);fetch_id.replace(id);fetches.replace([waiting]);defer self.clear_fetch(id);
         await self.reply(waiting,DbOperation.fetching);
     }
@@ -236,10 +236,10 @@ object SqliteRows does RowReading,Closing {
         else{let rows=frame.rows(schema);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}}
     }
     async row() is Row{
-        confirm !self.closed() else throw DbClosed();confirm busy.compare_and_replace(false,true) else throw DbBusy();defer busy.replace(false);
+        confirm !self.closed() else throw DbClosed.closed;confirm busy.compare_and_replace(false,true) else throw DbBusy.busy;defer busy.replace(false);
         let deferred=failure.value();
-        if deferred.size()>0{let clean is @string=[];failure.replace(clean);self.close();throw DbFailure(SqliteFailureKind(deferred[0]).value(),DbOperation.fetching,deferred[1],"SQLite operation rejected");}
-        if position.value()==batch.value().size(){if eof.ready(){throw RowsEnded();}let complete=Event();let cleanup=SqliteRowsCleanup(self,complete);defer cleanup.close();let frame=await owner.batch(id,if position.value()==0{8;}else{64;});defer frame.close();confirm !self.closed() else throw DbClosed();let rows=frame.rows(schema);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}complete.set();if rows.size()==0{throw RowsEnded();}}
+        if deferred.size()>0{let clean is @string=[];failure.replace(clean);self.close();throw DbFailure.detailed(SqliteFailureKind(deferred[0]).value(), DbOperation.fetching, deferred[1], "SQLite operation rejected");}
+        if position.value()==batch.value().size(){if eof.ready(){throw RowsEnded.ended;}let complete=Event();let cleanup=SqliteRowsCleanup(self,complete);defer cleanup.close();let frame=await owner.batch(id,if position.value()==0{8;}else{64;});defer frame.close();confirm !self.closed() else throw DbClosed.closed;let rows=frame.rows(schema);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}complete.set();if rows.size()==0{throw RowsEnded.ended;}}
         let row=batch.value()[position.value()];position.replace(position.value()+1);if eof.ready() && position.value()==batch.value().size(){owner.release(id);}row;
     }
     destroy{self.close();}
@@ -249,11 +249,11 @@ object SqliteBindings {
     has cells is @native_db.DbCellState;
     SqliteBindings(values is Sequencing<DbValue>){
         let limits=DbLimits();let count=values.size();
-        confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit("value count");
+        confirm count>=0 && count<=limits.values() else throw DbBoundaryLimit.kind("value count");
         let used=Atomic(0);
         let cells is @native_db.DbCellState=(0..count).map()->index{
             let value=ObservedDbValue(values.item(index));let width=value.width();
-            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit("value bytes");
+            confirm width<=limits.bytes()-used.value() else throw DbBoundaryLimit.kind("value bytes");
             used.replace(used.value()+width);value.state();
         };self.cells=cells;
     }
@@ -264,13 +264,13 @@ object SqliteBindings {
 object SqliteBoundValue {
     has kind is int;has bytes is @byte;
     SqliteBoundValue(value is ObservedDbValue){
-        kind=match value.kind(){case DbValueKind.null_value{0;}case DbValueKind.boolean{1;}case DbValueKind.integer{2;}case DbValueKind.floating{3;}case DbValueKind.decimal{4;}case DbValueKind.text{5;}case DbValueKind.bytes{6;}else{throw InvalidSqliteOptions();}};
-        bytes=match value.kind(){case DbValueKind.null_value{[];}case DbValueKind.boolean{Utf8Encoded(if value.boolean(){"1";}else{"0";}).bytes();}case DbValueKind.integer{Utf8Encoded(value.integer().string()).bytes();}case DbValueKind.floating{Utf8Encoded(value.floating().string()).bytes();}case DbValueKind.decimal{Utf8Encoded(value.decimal().string()).bytes();}case DbValueKind.text{Utf8Encoded(value.text()).bytes();}case DbValueKind.bytes{value.bytes();}else{throw InvalidSqliteOptions();}};
+        kind=match value.kind(){case DbValueKind.null_value{0;}case DbValueKind.boolean{1;}case DbValueKind.integer{2;}case DbValueKind.floating{3;}case DbValueKind.decimal{4;}case DbValueKind.text{5;}case DbValueKind.bytes{6;}else{throw InvalidSqliteOptions.invalid;}};
+        bytes=match value.kind(){case DbValueKind.null_value{[];}case DbValueKind.boolean{Utf8Encoded(if value.boolean(){"1";}else{"0";}).bytes();}case DbValueKind.integer{Utf8Encoded(value.integer().string()).bytes();}case DbValueKind.floating{Utf8Encoded(value.floating().string()).bytes();}case DbValueKind.decimal{Utf8Encoded(value.decimal().string()).bytes();}case DbValueKind.text{Utf8Encoded(value.text()).bytes();}case DbValueKind.bytes{value.bytes();}else{throw InvalidSqliteOptions.invalid;}};
     }kind() is int{kind;}bytes() is @byte{bytes;}
 }
 object SqliteFrame {
     has state is sqlite.SqliteReplyState;has stopped is Event;
-    SqliteFrame(state is sqlite.SqliteReplyState,operation is DbOperation){self.state=state;stopped=Event();if !sqlite.sqlite_reply_ok(state){let fields=sqlite.sqlite_reply_info(state);sqlite.sqlite_reply_close(state);self.stopped.set();throw DbFailure(SqliteFailureKind(fields["kind"]).value(),operation,fields["code"],"SQLite operation rejected");}}
+    SqliteFrame(state is sqlite.SqliteReplyState,operation is DbOperation){self.state=state;stopped=Event();if !sqlite.sqlite_reply_ok(state){let fields=sqlite.sqlite_reply_info(state);sqlite.sqlite_reply_close(state);self.stopped.set();throw DbFailure.detailed(SqliteFailureKind(fields["kind"]).value(), operation, fields["code"], "SQLite operation rejected");}}
     close() is void{if !stopped.ready(){stopped.set();sqlite.sqlite_reply_close(state);}}destroy{self.close();}
     size() is int{ParsedInt(sqlite.sqlite_reply_info(state)["size"]).value();}bytes() is @byte{sqlite.sqlite_reply_blob_bytes(state);}
     done() is bool{sqlite.sqlite_reply_info(state)["done"]=="1";}busy() is bool{sqlite.sqlite_reply_info(state)["busy"]=="1";}copies() is BigInt{BigInt(sqlite.sqlite_reply_info(state)["copies"]);}total() is BigInt{BigInt(sqlite.sqlite_reply_info(state)["total"]);}
@@ -286,7 +286,7 @@ object SqliteFrame {
         let count=sqlite.sqlite_reply_count(state);
         if count==0 { let empty is @Row=[];empty; }
         else {
-            confirm sqlite.sqlite_reply_row_bytes(state)<=DbLimits().bytes() else throw DbBoundaryLimit("value bytes");
+            confirm sqlite.sqlite_reply_row_bytes(state)<=DbLimits().bytes() else throw DbBoundaryLimit.kind("value bytes");
             let page=DbPage(schema.size(),sqlite.sqlite_reply_kinds(state),sqlite.sqlite_reply_values(state),
                 sqlite.sqlite_reply_floats(state),sqlite.sqlite_reply_texts(state),sqlite.sqlite_reply_blobs(state));
             let rows is @Row=(0..count).map()->index { Row(DbRowData(schema,page,index)); };
@@ -295,8 +295,8 @@ object SqliteFrame {
     }
 }
 object SqliteFailureKind{has origin is string;SqliteFailureKind(origin is string){self.origin=origin;}value() is DbFailureKind{match origin{case "connection"{DbFailureKind.connection;}case "constraint"{DbFailureKind.constraint;}case "syntax"{DbFailureKind.syntax;}case "data"{DbFailureKind.data;}case "permission"{DbFailureKind.permission;}case "busy"{DbFailureKind.busy;}case "cancelled"{DbFailureKind.cancelled;}case "resource"{DbFailureKind.resource;}case "unsupported"{DbFailureKind.unsupported;}else{DbFailureKind.unexpected;}}}}
-object SqliteNativeError{has origin is NativeFailure;has operation is DbOperation;SqliteNativeError(origin is NativeFailure,operation is DbOperation){self.origin=origin;self.operation=operation;}value() is DbFailure{let kind=match origin.code(){case "unsupported"{DbFailureKind.unsupported;}case "invalid_input"{DbFailureKind.data;}case "resource_exhausted"{DbFailureKind.resource;}case "timed_out"{DbFailureKind.timeout;}else{DbFailureKind.connection;}};DbFailure(kind,operation,origin.code(),"SQLite worker failed");}}
-object InvalidSqliteOptions does Error{InvalidSqliteOptions();text() is string{"invalid SQLite options";}}
+object SqliteNativeError{has origin is NativeFailure;has operation is DbOperation;SqliteNativeError(origin is NativeFailure,operation is DbOperation){self.origin=origin;self.operation=operation;}value() is DbFailure{let kind=match origin.code(){case "unsupported"{DbFailureKind.unsupported;}case "invalid_input"{DbFailureKind.data;}case "resource_exhausted"{DbFailureKind.resource;}case "timed_out"{DbFailureKind.timeout;}else{DbFailureKind.connection;}};DbFailure.detailed(kind, operation, origin.code(), "SQLite worker failed");}}
+enum InvalidSqliteOptions is Error = (invalid);
 
 enum SqliteTransactionMode=(deferred,immediate,exclusive);
 object SqliteOrigin {
@@ -313,17 +313,17 @@ object SqliteTransaction does Transaction,DbExecuting,DbPreparing,SqliteBlobOpen
     has owner is SqliteSession;has token is int;has outcome is Atomic<int>;
     SqliteTransaction(owner is SqliteSession,token is int){self.owner=owner;self.token=token;outcome=Atomic(0);}
     active() is bool{outcome.value()==0 && owner.active(token);}
-    async execution(origin is Statement) is Execution{confirm self.active() else throw TransactionEnded();await owner.execution_for(origin,token);}
-    async rows(origin is Statement) is RowReading{confirm self.active() else throw TransactionEnded();await owner.rows_for(origin,token);}
-    async opened_blob(database is string,table is string,column is string,row is BigInt,writable is bool) is SqliteBlob{confirm self.active() else throw TransactionEnded();await owner.open_blob(database,table,column,row,writable,token);}
-    async script(source is string) is Sequencing<Execution>{confirm self.active() else throw TransactionEnded();await owner.script(source,token);}
-    async prepared(text is string) is PreparedStatement{confirm self.active() else throw TransactionEnded();await owner.prepare_for(text,token);}
+    async execution(origin is Statement) is Execution{confirm self.active() else throw TransactionEnded.ended;await owner.execution_for(origin,token);}
+    async rows(origin is Statement) is RowReading{confirm self.active() else throw TransactionEnded.ended;await owner.rows_for(origin,token);}
+    async opened_blob(database is string,table is string,column is string,row is BigInt,writable is bool) is SqliteBlob{confirm self.active() else throw TransactionEnded.ended;await owner.open_blob(database,table,column,row,writable,token);}
+    async script(source is string) is Sequencing<Execution>{confirm self.active() else throw TransactionEnded.ended;await owner.script(source,token);}
+    async prepared(text is string) is PreparedStatement{confirm self.active() else throw TransactionEnded.ended;await owner.prepare_for(text,token);}
     async commit() is Transaction{
-        if outcome.value()==3{throw IndeterminateCommit();}if outcome.value()==1{return self;}confirm self.active() else throw TransactionEnded();
+        if outcome.value()==3{throw IndeterminateCommit.indeterminate;}if outcome.value()==1{return self;}confirm self.active() else throw TransactionEnded.ended;
         await owner.finish(token,true,outcome);
         outcome.replace(1);self;
     }
-    async rollback() is Transaction{if outcome.value()==2{return self;}confirm self.active() else throw TransactionEnded();await owner.finish(token,false,outcome);outcome.replace(2);self;}
+    async rollback() is Transaction{if outcome.value()==2{return self;}confirm self.active() else throw TransactionEnded.ended;await owner.finish(token,false,outcome);outcome.replace(2);self;}
     destroy{if outcome.value()==0{owner.abandon(token);}}
 }
 
@@ -332,8 +332,8 @@ object SqlitePrepared does PreparedStatement,Closing {
     SqlitePrepared(owner is SqliteSession,id is int,token is int){self.owner=owner;self.id=id;self.token=token;stopped=Event();}
     closed() is bool{stopped.ready() || owner.prepared_closed(token);}
     close() is void{if !stopped.ready(){stopped.set();owner.unprepare(id);}}
-    async execution(values is Sequencing<DbValue>) is Execution{confirm !self.closed() else throw DbClosed();await owner.prepared_execution(id,values,token);}
-    async rows(values is Sequencing<DbValue>) is RowReading{confirm !self.closed() else throw DbClosed();await owner.prepared_rows(id,values,stopped,token);}
+    async execution(values is Sequencing<DbValue>) is Execution{confirm !self.closed() else throw DbClosed.closed;await owner.prepared_execution(id,values,token);}
+    async rows(values is Sequencing<DbValue>) is RowReading{confirm !self.closed() else throw DbClosed.closed;await owner.prepared_rows(id,values,stopped,token);}
     destroy{self.close();}
 }
 
@@ -342,9 +342,9 @@ object SqliteBlobHandle does SqliteBlob,Closing{
     SqliteBlobHandle(owner is SqliteSession,id is int,size is int,writable is bool,token is int){self.owner=owner;self.id=id;self.size=size;self.writable=writable;self.token=token;stopped=Event();}
     size() is int{size;}closed() is bool{stopped.ready() || !owner.blob_active(id,token);}
     close() is void{if !stopped.ready(){stopped.set();owner.blob_close(id);}}
-    bounds(offset is BigInt,limit is int) is void{confirm offset.order(BigInt("0"))!=Order.less && offset.order(BigInt(size.string()))!=Order.greater && limit>=0 && limit<=65536 && BigSum(left:offset,right:BigInt(limit.string())).value().order(BigInt(size.string()))!=Order.greater else throw InvalidSqliteBlob();}
-    async bytes(offset is BigInt,limit is int) is @byte{confirm !self.closed() else throw DbClosed();confirm limit>0 else throw InvalidSqliteBlob();self.bounds(offset,limit);await owner.blob_bytes(id,offset,limit,token);}
-    async write(offset is BigInt,source is @byte) is SqliteBlob{confirm !self.closed() else throw DbClosed();confirm writable else throw DbFailure(DbFailureKind.permission,DbOperation.writing_blob,"SQLITE_BLOB_READ_ONLY","SQLite blob is read-only");self.bounds(offset,source.size());await owner.blob_write(id,offset,source,token);self;}
+    bounds(offset is BigInt,limit is int) is void{confirm offset.order(BigInt("0"))!=Order.less && offset.order(BigInt(size.string()))!=Order.greater && limit>=0 && limit<=65536 && BigSum(left:offset,right:BigInt(limit.string())).value().order(BigInt(size.string()))!=Order.greater else throw InvalidSqliteBlob.invalid;}
+    async bytes(offset is BigInt,limit is int) is @byte{confirm !self.closed() else throw DbClosed.closed;confirm limit>0 else throw InvalidSqliteBlob.invalid;self.bounds(offset,limit);await owner.blob_bytes(id,offset,limit,token);}
+    async write(offset is BigInt,source is @byte) is SqliteBlob{confirm !self.closed() else throw DbClosed.closed;confirm writable else throw DbFailure.detailed(DbFailureKind.permission, DbOperation.writing_blob, "SQLITE_BLOB_READ_ONLY", "SQLite blob is read-only");self.bounds(offset,source.size());await owner.blob_write(id,offset,source,token);self;}
     destroy{self.close();}
 }
 object SqliteBackupCleanup{has owner is SqliteSession;has id is int;SqliteBackupCleanup(owner is SqliteSession,id is int){self.owner=owner;self.id=id;}close() is void{owner.backup_close(id);}}

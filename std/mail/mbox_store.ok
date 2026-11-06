@@ -65,8 +65,8 @@ object MboxSession does Closing {
     // lease merely because another successor outlives that particular version.
     add(record is MboxRecord) is ^MboxSession {
         self.current();let records=view.records();let count=records.size();
-        confirm count<origin.limits().messages() else throw MboxLimitExceeded("messages");
-        confirm serial<9223372036854775807 else throw MboxLimitExceeded("identifiers");
+        confirm count<origin.limits().messages() else throw MboxLimitExceeded.kind("messages");
+        confirm serial<9223372036854775807 else throw MboxLimitExceeded.kind("identifiers");
         let added is @MboxRecord=(0..count+1).map() -> index {if index<count {records.item(index);} else {record;}};
         let before=view.identifiers();let identifiers is @string=(0..count+1).map() -> index {
             if index<count {before[index];} else {nonce+"."+serial.string();}
@@ -79,7 +79,7 @@ object MboxSession does Closing {
     remove(identifier is string) is ^MboxSession {
         self.current();let before=view.identifiers();
         let kept=(0..before.size()).filter() -> index {before[index]!=identifier;};
-        confirm kept.size()<before.size() else throw MissingStoredMail(identifier);
+        confirm kept.size()<before.size() else throw MissingStoredMail.identifier(identifier);
         let records=view.records();let retained is @MboxRecord=kept.map() -> index {records.item(index);};
         let identifiers is @string=kept.map() -> index {before[index];};
         let wire=MboxArchive(retained,origin.limits()).bytes();
@@ -90,33 +90,24 @@ object MboxSession does Closing {
     private:
     current() is void {
         lease.check();let present=MboxFileBytes(origin.path(),origin.limits().wire_bytes()).bytes();
-        confirm present==view.bytes() else throw MboxConflict();
+        confirm present==view.bytes() else throw MboxConflict.conflict;
     }
 }
-object MboxConflict does Error {
-    MboxConflict();
-    text() is string {"mbox content differs from this session snapshot";}
-}
-object CommittedMboxFailure does Error {
-    has code, reason is string;
-    CommittedMboxFailure(code is string, reason is string) {self.code=code;self.reason=reason;}
-    code() is string {code;}
-    reason() is string {reason;}
-    text() is string {"mbox replacement committed; session closed after cleanup failure: "+reason;}
-}
+enum MboxConflict is Error = (conflict);
+enum CommittedMboxFailure is Error = (detailed(code is string, reason is string));
 object MboxLease does Closing {
     has owner is File;has guard is FileLock;
     MboxLease(path is Path) {
         let coordinate=Path(path.string()+".okkama-mbox.lock",path.style());
         try {
-            confirm DirectoryEntry(coordinate).kind()==FileKind.file else throw InvalidMailbox(0,"mbox lock is not a regular file");
-        } catch failure is FileSystemFailure {if failure.code()!="not_found" {throw failure;}}
+            confirm DirectoryEntry(coordinate).kind()==FileKind.file else throw InvalidMailbox.located(0, "mbox lock is not a regular file");
+        } catch failure is FileSystemFailure {match failure {case FileSystemFailure.detailed(code, _) {if code!="not_found" {throw failure;}}}}
         let file=File(mode:FileMode.reading_and_appending,path:coordinate,binary:true);
         let lock=try {FileLock(file,FileLockMode.exclusive,FileLockWaiting.immediate);}
             catch failure is Error {try {file.close();} catch cleanup is Error {} throw failure;};
         owner=file;guard=lock;
     }
-    check() is void {confirm !self.closed() else throw InvalidState("mbox session is closed");}
+    check() is void {confirm !self.closed() else throw InvalidState.because("mbox session is closed");}
     closed() is bool {guard.closed();}
     close() is void {
         try {guard.close();} catch failure is Error {try {owner.close();} catch cleanup is Error {} throw failure;}
@@ -128,13 +119,13 @@ object MboxFileBytes {
     has path is Path;has maximum is int;
     MboxFileBytes(path is Path, maximum is int) {self.path=path;self.maximum=maximum;}
     bytes() is @byte {
-        confirm DirectoryEntry(path).kind()==FileKind.file else throw InvalidMailbox(0,"mbox is not a regular file");
+        confirm DirectoryEntry(path).kind()==FileKind.file else throw InvalidMailbox.located(0, "mbox is not a regular file");
         let file=File(mode:FileMode.reading,path:path,binary:true);defer file.close();
         let buffer=ByteBuffer();defer buffer.closing().close();let reader=file.binary();
         loop {
             let remaining=maximum-buffer.content().size();let amount=if remaining<65536 {remaining+1;} else {65536;};
             let bytes=reader.bytes(amount);last if bytes.size()==0;
-            confirm bytes.size()<=remaining else throw MboxLimitExceeded("wire_bytes");
+            confirm bytes.size()<=remaining else throw MboxLimitExceeded.kind("wire_bytes");
             buffer.writing().write(ByteSnapshot(bytes));
         }
         buffer.content().bytes();
@@ -143,8 +134,8 @@ object MboxFileBytes {
 object MboxSnapshot {
     has wire is @byte;has records is @MboxRecord;has identifiers is @string;has messages is @StoredMail;
     MboxSnapshot(wire is @byte, records is Sequencing<MboxRecord>, identifiers is @string, limits is MboxLimits) {
-        let count=records.size();confirm count==identifiers.size() else throw InvalidArgument("mbox identity count mismatch");
-        confirm count<=limits.messages() else throw MboxLimitExceeded("messages");
+        let count=records.size();confirm count==identifiers.size() else throw InvalidArgument.because("mbox identity count mismatch");
+        confirm count<=limits.messages() else throw MboxLimitExceeded.kind("messages");
         let values is @MboxRecord=(0..count).map() -> index {records.item(index);};
         let empty is @MailFlag=[];let flags=MailFlags(empty);
         let saved is @StoredMail=(0..count).map() -> index {StoredMail(identifiers[index],values[index].message(),flags,limits.mime());};
@@ -164,9 +155,9 @@ object MboxReplacement {
             temporary.write(ByteSnapshot(wire));temporary.flush();
             FileEntry(TemporaryFilePath(temporary).value()).move(path);
         } catch failure is Error {try {temporary.close();} catch cleanup is Error {} throw failure;}
-        try {temporary.close();} catch failure is FileSystemFailure {
+        try {temporary.close();} catch FileSystemFailure.detailed(code, message) {
             try {lease.close();} catch cleanup is Error {}
-            throw CommittedMboxFailure(failure.code(),failure.text());
+            throw CommittedMboxFailure.detailed(code, message);
         }
     }
 }

@@ -21,13 +21,13 @@ role Rotating{
 }
 object SizeRotating does Rotating{
     has limit is BigInt;
-    SizeRotating(limit is BigInt){confirm limit.sign()>0 else throw InvalidLogRotation("size limit must be positive");self.limit=limit;}
+    SizeRotating(limit is BigInt){confirm limit.sign()>0 else throw InvalidLogRotation.because("size limit must be positive");self.limit=limit;}
     needed(size is BigInt,opened is Instant,now is Instant) is bool{size.order(limit)!=Order.less;}
     suffix(now is Instant,index is int) is string{index.string();}
 }
 object IntervalRotating does Rotating{
     has interval is Duration;has zone is TimeZone;
-    IntervalRotating(interval is Duration,zone is TimeZone){confirm interval.seconds()>0.rat() else throw InvalidLogRotation("interval must be positive");self.interval=interval;self.zone=zone;}
+    IntervalRotating(interval is Duration,zone is TimeZone){confirm interval.seconds()>0.rat() else throw InvalidLogRotation.because("interval must be positive");self.interval=interval;self.zone=zone;}
     needed(size is BigInt,opened is Instant,now is Instant) is bool{now.minus(opened).seconds()>=interval.seconds();}
     suffix(now is Instant,index is int) is string{Rfc3339(now,zone.offset(now)).string().split(":").join("-")+"-"+index.string();}
 }
@@ -52,7 +52,7 @@ object LogArchiveCatalog{
                 let valid=try{let generation=BigInt(parts[0]);generation.sign()>0 && generation.string()==parts[0] && parts.size()>1;}catch e is InvalidBigInt{false;};
                 if valid{
                     let entry=path.parent().child(text);let kind=try{fs.lstat(fs.path_encode(entry.string()))["kind"];}catch failure is NativeFailure{throw FileError(failure:failure).value();};
-                    confirm kind==1 else throw InvalidLogRotation("archive namespace contains a non-regular file");old.prefix(LogArchive(entry,BigInt(parts[0])));
+                    confirm kind==1 else throw InvalidLogRotation.because("archive namespace contains a non-regular file");old.prefix(LogArchive(entry,BigInt(parts[0])));
                 }else{old;}
             }else{old;}
         };
@@ -75,12 +75,12 @@ object RotatingLogFile does Writing,Closing{
     has path is Path;has file is LogFileState;has rotation is Rotating;has backups is int;has clock is Timing;
     has opened is Atomic<@Instant>;has failures is Atomic<@Error>;
     RotatingLogFile(path is Path,options is FileLogOptions,rotation is Rotating,backups is int,clock is Timing){
-        confirm backups>=0 && backups<=4096 else throw InvalidLogRotation("backup count must be in 0..4096");
+        confirm backups>=0 && backups<=4096 else throw InvalidLogRotation.because("backup count must be in 0..4096");
         self.path=path;file=LogFileState(path,options);self.rotation=rotation;self.backups=backups;self.clock=clock;
         let times is @Instant=[];opened=Atomic(times);let errors is @Error=[];failures=Atomic(errors);
     }
     write(source is ByteSource) is void{
-        confirm !file.closed() else throw ClosedLogFile();if failures.value().size()>0{throw failures.value()[0];}
+        confirm !file.closed() else throw ClosedLogFile.closed;if failures.value().size()>0{throw failures.value()[0];}
         let bytes=ByteSnapshot(source.bytes());let now=clock.instant();
         try{
             let size=self.size();if opened.value().size()==0{opened.replace([now]);}
@@ -96,13 +96,13 @@ object RotatingLogFile does Writing,Closing{
     size() is BigInt{
         try{
             let metadata=fs.lstat(fs.path_encode(path.string()));
-            confirm metadata["kind"]==1 else throw InvalidLogRotation("active log must be a regular file");BigInt(metadata["size"].string());
+            confirm metadata["kind"]==1 else throw InvalidLogRotation.because("active log must be a regular file");BigInt(metadata["size"].string());
         }catch failure is NativeFailure{if failure.code()=="not_found"{BigInt("0");}else{throw FileError(failure:failure).value();}}
     }
     rotate(now is Instant) is void{
         let catalog=LogArchiveCatalog(path);let records=catalog.records();let generation=catalog.next(records);
         let suffix=rotation.suffix(now,records.size()+1);
-        confirm suffix.length()>0 && suffix.length()<=128 && suffix!="." && suffix!=".." && suffix.split("/").size()==1 && suffix.split("\\").size()==1 && suffix.split(":").size()==1 else throw InvalidLogRotation("invalid archive suffix");
+        confirm suffix.length()>0 && suffix.length()<=128 && suffix!="." && suffix!=".." && suffix.split("/").size()==1 && suffix.split("\\").size()==1 && suffix.split(":").size()==1 else throw InvalidLogRotation.because("invalid archive suffix");
         let target=Path(path.string()+".archive."+generation.string()+"."+suffix,path.style());
         file.release();
         try{if backups==0{fs.unlink(fs.path_encode(path.string()));}else{fs.rename(fs.path_encode(path.string()),fs.path_encode(target.string()));}}catch failure is NativeFailure{throw FileError(failure:failure).value();}
@@ -110,7 +110,4 @@ object RotatingLogFile does Writing,Closing{
         file.reopen();opened.replace([now]);
     }
 }
-object InvalidLogRotation does Error{
-    has reason is string;InvalidLogRotation(reason is string){self.reason=reason;}
-    text() is string{reason;}
-}
+enum InvalidLogRotation is Error = (because(reason is string));

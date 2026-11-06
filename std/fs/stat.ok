@@ -66,7 +66,7 @@ object FileTimes {
     change() is Instant { EpochInstant(seconds: changed).value(); }
 
     creation() is Instant {
-        confirm created >= 0 else throw MissingCreationTime();
+        confirm created >= 0 else throw MissingCreationTime.missing;
         EpochInstant(seconds: created).value();
     }
 }
@@ -106,7 +106,7 @@ object PermissionMode {
 
     PermissionMode(bits is int) {
         confirm bits >= 0 && bits <= 4095
-            else throw InvalidPermissionMode(bits);
+            else throw InvalidPermissionMode.bits(bits);
         self.bits = bits;
     }
 
@@ -185,23 +185,9 @@ object FileKindFromCode {
     }
 }
 
-object MissingCreationTime does Error {
-    MissingCreationTime();
+enum MissingCreationTime is Error = (missing);
 
-    text() is string { "filesystem does not expose a creation time"; }
-}
-
-object InvalidPermissionMode does Error {
-    has bits is int;
-
-    InvalidPermissionMode(bits is int) {
-        self.bits = bits;
-    }
-
-    text() is string {
-        "invalid permission mode " + bits.string();
-    }
-}
+enum InvalidPermissionMode is Error = (bits(bits is int));
 
 test "permission observations retain integer bit groups" {
     let mode = PermissionMode(416); // 0640

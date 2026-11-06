@@ -31,4 +31,4 @@ object AsyncThrowing<R> does AsyncChecking {
     }
 }
 
-test "exact error matcher does not require runtime type reflection" {test.ok(ErrorTextMatching("invalid check: sample").match(InvalidCheck("sample")));}
+test "exact error matcher does not require runtime type reflection" {test.ok(ErrorTextMatching("InvalidCheck.because(\"sample\")").match(InvalidCheck.because("sample")));}

@@ -37,25 +37,11 @@ object HexDecoded {
 
     bytes() is @byte {
         let offset is int = hex_valid_prefix(origin);
-        confirm offset == origin.length() else throw InvalidHex(offset);
+        confirm offset == origin.length() else throw InvalidHex.at(offset);
         confirm origin.length() % 2 == 0
-            else throw InvalidHex(origin.length());
+            else throw InvalidHex.at(origin.length());
         hex_decode(origin);
     }
 }
 
-object InvalidHex does Error {
-    has invalid_offset is int;
-
-    InvalidHex(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid hexadecimal at scalar offset " + invalid_offset.string();
-    }
-}
+enum InvalidHex is Error = (at(offset is int));

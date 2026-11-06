@@ -31,7 +31,7 @@ object Storage {
             storage_usage(origin.string());
         }
         catch failure is NativeFailure {
-            throw StorageFailure(failure.code(), failure.message());
+            throw StorageFailure.detailed(failure.code(), failure.message());
         };
         StorageUsage(
             capacity: BigInt(origin: snapshot["capacity"]),
@@ -50,34 +50,18 @@ object StorageUsage {
 
         confirm self.total_capacity.sign() >= 0 && self.available_capacity.sign() >= 0
             && self.available_capacity.order(self.total_capacity) != Order.greater
-            else throw InvalidStorageUsage();
+            else throw InvalidStorageUsage.invalid;
     }
 
     capacity() is BigInt { total_capacity; }
     used() is BigInt { BigDifference(left: total_capacity, right: available_capacity).value(); }
     available() is BigInt { available_capacity; }
     fits(amount is BigInt) is bool {
-        confirm amount.sign() >= 0 else throw InvalidStorageUsage();
+        confirm amount.sign() >= 0 else throw InvalidStorageUsage.invalid;
         amount.order(available_capacity) != Order.greater;
     }
 }
 
-object InvalidStorageUsage does Error {
-    InvalidStorageUsage();
+enum InvalidStorageUsage is Error = (invalid);
 
-    text() is string { "storage usage values must be non-negative"; }
-}
-
-object StorageFailure does Error {
-    has failure_code is string;
-    has message is string;
-
-    StorageFailure(code is string, message is string) {
-        failure_code = code;
-        self.message = message;
-    }
-
-    code() is string { failure_code; }
-
-    text() is string { message; }
-}
+enum StorageFailure is Error = (detailed(code is string, message is string));

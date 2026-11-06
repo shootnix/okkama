@@ -30,7 +30,7 @@ object ScramExchange {
     has nonce is string;
 
     ScramExchange(user is string, password is SecretBytes, nonce is string) {
-        confirm nonce.length() >= 18 && nonce.split(",").size() == 1 else throw ScramFailure("client nonce must be 18+ printable characters without commas");
+        confirm nonce.length() >= 18 && nonce.split(",").size() == 1 else throw ScramFailure.because("client nonce must be 18+ printable characters without commas");
         self.user = user;
         self.password = password;
         self.nonce = nonce;
@@ -52,7 +52,7 @@ object ScramExchange {
 
     server_verified(server_first is string, server_final is string) is bool {
         let parsed = ScramServerFirst(server_first, nonce);
-        confirm server_final.length() > 2 && server_final.slice(0, 2) == "v=" else throw ScramFailure("server final message has no verifier");
+        confirm server_final.length() > 2 && server_final.slice(0, 2) == "v=" else throw ScramFailure.because("server final message has no verifier");
         let without = "c=biws,r=" + parsed.nonce();
         let message = Utf8Encoded(self.bare() + "," + server_first + "," + without).bytes();
         let expected = Hmac(HmacHash.sha256, SecretBytes(ScramKeys(password, parsed).server()), message).bytes();
@@ -70,18 +70,18 @@ object ScramServerFirst {
     }
     attribute(name is string) is string {
         let matches is @string = origin.split(",").filter() -> part { part.length() >= 2 && part.slice(0, 2) == name + "="; };
-        confirm matches.size() == 1 else throw ScramFailure("server first message lacks " + name);
+        confirm matches.size() == 1 else throw ScramFailure.because("server first message lacks " + name);
         matches[0].slice(2, matches[0].length());
     }
     nonce() is string {
         let value = self.attribute("r");
-        confirm value.length() > client.length() && value.slice(0, client.length()) == client else throw ScramFailure("server nonce does not extend the client nonce");
+        confirm value.length() > client.length() && value.slice(0, client.length()) == client else throw ScramFailure.because("server nonce does not extend the client nonce");
         value;
     }
     salt() is @byte { Base64Decoded(self.attribute("s")).bytes(); }
     iterations() is int {
         let count = ParsedInt(self.attribute("i")).value();
-        confirm count >= 4096 else throw ScramFailure("SCRAM iteration count is below 4096");
+        confirm count >= 4096 else throw ScramFailure.because("SCRAM iteration count is below 4096");
         count;
     }
 }
@@ -104,7 +104,7 @@ object Md5Password {
     has password is SecretBytes;
     has salt is @byte;
     Md5Password(user is string, password is SecretBytes, salt is @byte) {
-        confirm salt.size() == 4 else throw ScramFailure("MD5 salt must be 4 bytes");
+        confirm salt.size() == 4 else throw ScramFailure.because("MD5 salt must be 4 bytes");
         self.user = user;
         self.password = password;
         self.salt = salt;
@@ -115,12 +115,7 @@ object Md5Password {
     }
 }
 
-object ScramFailure does Error {
-    has reason is string;
-    ScramFailure(reason is string) { self.reason = reason; }
-    reason() is string { reason; }
-    text() is string { "SCRAM authentication failed: " + reason; }
-}
+enum ScramFailure is Error = (because(reason is string));
 
 test "SCRAM-SHA-256 matches RFC 7677 section 3" {
     let exchange = ScramExchange("user", SecretBytes(Utf8Encoded("pencil").bytes()), "rOprNGfwEbeRWgbNEkqO");

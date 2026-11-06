@@ -17,7 +17,7 @@ object LocaleDataKey {
     has origin is string;
     LocaleDataKey(tag is string){origin=if tag=="root" {"root";} else {LocaleFromLanguageTag(tag).value().string();};}
     string() is string {origin;}
-    locale() is Locale {confirm origin!="root" else throw MissingDataLocale();LocaleFromLanguageTag(origin).value();}
+    locale() is Locale {confirm origin!="root" else throw MissingDataLocale.missing;LocaleFromLanguageTag(origin).value();}
 }
 object LocaleFallbacks does Sequencing<LocaleDataKey> {
     has origin is @LocaleDataKey;
@@ -32,7 +32,7 @@ object LocaleFallbacks does Sequencing<LocaleDataKey> {
 object LocaleDataChain {
     has parents is CldrParents;LocaleDataChain(parents is CldrParents){self.parents=parents;}
     values(tag is string, depth is int) is @string {
-        confirm depth<=32 else throw InvalidLocaleData("parent chain exceeded");
+        confirm depth<=32 else throw InvalidLocaleData.because("parent chain exceeded");
         if tag=="root" {return ["root"];}
         let explicit=parents.parent(tag);let parts=tag.split("-");
         let parent=if explicit!="" {explicit;} else {
@@ -42,9 +42,7 @@ object LocaleDataChain {
         let chain is @string=(0..rest.size()+1).map()->index{if index==0 {tag;} else {rest[index-1];}};chain;
     }
 }
-object MissingDataLocale does Error {MissingDataLocale();text() is string {"CLDR root has no language tag";}}
-object InvalidLocaleData does Error {
-    has reason is string;InvalidLocaleData(reason is string){self.reason=reason;}text() is string {"invalid locale data: "+reason;}
-}
+enum MissingDataLocale is Error = (missing);
+enum InvalidLocaleData is Error = (because(reason is string));
 
 test "data fallback finishes at its own root coordinate" {let chain=LocaleFallbacks(Locale("en","AU"));test.is(chain.item(1).string(),"en-001");test.is(chain.last().string(),"root");}

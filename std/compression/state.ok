@@ -37,7 +37,7 @@ role Compressing {
     fake {
         write(origin is @byte) is void {
             confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
-                else throw InvalidState("codec is not writable");
+                else throw InvalidState.because("codec is not writable");
             let before is @byte = if fake.storage.has("pending") {
                 fake.storage.get("pending");
             } else { []; };
@@ -48,7 +48,7 @@ role Compressing {
         }
         output() is Reading {
             confirm !self.closed() && !fake.storage.has("failed")
-                else throw InvalidState("codec output is unavailable");
+                else throw InvalidState.because("codec output is unavailable");
             let ready is @byte = if fake.storage.has("ready") {
                 fake.storage.get("ready");
             } else { []; };
@@ -58,7 +58,7 @@ role Compressing {
         }
         finish() is void {
             confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
-                else throw InvalidState("codec cannot finish");
+                else throw InvalidState.because("codec cannot finish");
             let pending is @byte = if fake.storage.has("pending") {
                 fake.storage.get("pending");
             } else { []; };
@@ -68,7 +68,7 @@ role Compressing {
         }
         finished() is bool {
             confirm !self.closed() && !fake.storage.has("failed")
-                else throw InvalidState("codec completion is unavailable");
+                else throw InvalidState.because("codec completion is unavailable");
             fake.storage.has("done");
         }
         close() is void {
@@ -91,7 +91,7 @@ role Decompressing {
     fake {
         write(origin is @byte) is void {
             confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
-                else throw InvalidState("codec is not writable");
+                else throw InvalidState.because("codec is not writable");
             let budget is DecompressionBudget = if fake.storage.has("budget") {
                 fake.storage.get("budget");
             } else { DecompressionBudget(8); };
@@ -112,7 +112,7 @@ role Decompressing {
         }
         output() is Reading {
             confirm !self.closed() && !fake.storage.has("failed")
-                else throw InvalidState("codec output is unavailable");
+                else throw InvalidState.because("codec output is unavailable");
             let ready is @byte = if fake.storage.has("ready") {
                 fake.storage.get("ready");
             } else { []; };
@@ -122,12 +122,12 @@ role Decompressing {
         }
         finish() is void {
             confirm !self.closed() && !fake.storage.has("failed") && !fake.storage.has("done")
-                else throw InvalidState("codec cannot finish");
+                else throw InvalidState.because("codec cannot finish");
             fake.storage.set("done", true);
         }
         finished() is bool {
             confirm !self.closed() && !fake.storage.has("failed")
-                else throw InvalidState("codec completion is unavailable");
+                else throw InvalidState.because("codec completion is unavailable");
             fake.storage.has("done");
         }
         close() is void {
@@ -136,7 +136,7 @@ role Decompressing {
         }
         closed() is bool { fake.storage.has("closed"); }
         remainder() is @byte {
-            confirm self.finished() else throw InvalidState("codec has not finished");
+            confirm self.finished() else throw InvalidState.because("codec has not finished");
             [];
         }
     }
@@ -150,8 +150,8 @@ object CompressionOutput does Reading, Closing {
     has buffer is ByteBuffer;
     CompressionOutput(origin is @byte) { buffer = ByteBuffer(origin); }
     bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
-        confirm !self.closed() else throw InvalidState("compression output is closed");
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        confirm !self.closed() else throw InvalidState.because("compression output is closed");
         buffer.reading().bytes(limit);
     }
     closed() is bool { buffer.closing().closed(); }
@@ -168,31 +168,21 @@ object DecompressionBudget {
     has maximum is int;
     has available is int;
     DecompressionBudget(maximum is int) {
-        confirm maximum > 0 else throw InvalidCompressionLimit(maximum);
+        confirm maximum > 0 else throw InvalidCompressionLimit.maximum(maximum);
         self.maximum = maximum;
         available = maximum;
     }
     remaining() is int { available; }
     spent(amount is int) is ^DecompressionBudget {
-        confirm amount >= 0 else throw InvalidArgument("decompression output size must not be negative");
-        confirm amount <= available else throw CompressionLimitExceeded(maximum);
+        confirm amount >= 0 else throw InvalidArgument.because("decompression output size must not be negative");
+        confirm amount <= available else throw CompressionLimitExceeded.maximum(maximum);
         ^available = available - amount;
     }
 }
 
 // Stable diagnostics; retain the configured maximum without leaking host text.
-object CompressionLimitExceeded does Error {
-    has limit is int;
-    CompressionLimitExceeded(maximum is int) { limit = maximum; }
-    maximum() is int { limit; }
-    text() is string { "decompression output exceeds " + limit.string() + " bytes"; }
-}
-object InvalidCompressionLimit does Error {
-    has limit is int;
-    InvalidCompressionLimit(maximum is int) { limit = maximum; }
-    maximum() is int { limit; }
-    text() is string { "decompression limit must be positive, got " + limit.string(); }
-}
+enum CompressionLimitExceeded is Error = (maximum(maximum is int));
+enum InvalidCompressionLimit is Error = (maximum(maximum is int));
 
 test "compression output is finite consuming and independently closable" {
     let output=CompressionOutput([byte(0),byte(255)]);
@@ -208,7 +198,7 @@ test "decompression budget is cumulative checked and immutable" {
     let initial=DecompressionBudget(8);let first=initial.spent(3);let exhausted=first.spent(5);
     test.is(initial.remaining(),8);test.is(first.remaining(),5);test.is(exhausted.remaining(),0);
     test.is(exhausted.spent(0).remaining(),0);
-    test.is(try {let rejected=exhausted.spent(1); [rejected];-1;} catch e is CompressionLimitExceeded {e.maximum();},8);
+    test.is(try {let rejected=exhausted.spent(1); [rejected];-1;} catch CompressionLimitExceeded.maximum(maximum) {maximum;},8);
     test.ok(try {DecompressionBudget(0);false;} catch e is InvalidCompressionLimit {true;});
 }
 test "compression fake delays output without confusing batch EOF" {
@@ -222,7 +212,7 @@ test "decompression fake output does not replenish cumulative budget" {
     let codec=Decompressing.fake();
     codec.write([byte(1),byte(2),byte(3),byte(4)]);let first=codec.output();
     codec.write([byte(5),byte(6),byte(7),byte(8)]);let second=codec.output();
-    test.is(try {codec.write([byte(9)]);-1;} catch e is CompressionLimitExceeded {e.maximum();},8);
+    test.is(try {codec.write([byte(9)]);-1;} catch CompressionLimitExceeded.maximum(maximum) {maximum;},8);
     test.ok(try {codec.output();false;} catch e is Error {true;});
     codec.close();codec.close();test.ok(codec.closed());
     test.is(first.bytes(8).size(),4);test.is(second.bytes(8).size(),4);

@@ -19,7 +19,7 @@ object Decimal does Comparing<Decimal> {
     has origin is string;
 
     Decimal(origin is string) {
-        confirm decimal_valid(origin) else throw InvalidDecimal(origin);
+        confirm decimal_valid(origin) else throw InvalidDecimal.origin(origin);
         self.origin = decimal_canonical(origin);
     }
 
@@ -46,10 +46,4 @@ object Decimal does Comparing<Decimal> {
     }
 }
 
-object InvalidDecimal does Error {
-    has origin is string;
-
-    InvalidDecimal(origin is string) { self.origin = origin; }
-
-    text() is string { "invalid decimal \"" + origin + "\""; }
-}
+enum InvalidDecimal is Error = (origin(origin is string));

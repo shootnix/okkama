@@ -33,7 +33,7 @@ object Uuid does Comparing<Uuid> {
 
     Uuid(origin is string) {
         confirm uuid_valid(origin)
-            else throw InvalidUuid("invalid canonical UUID text");
+            else throw InvalidUuid.because("invalid canonical UUID text");
         self.origin = uuid_bytes(origin);
     }
 
@@ -72,19 +72,9 @@ object UuidFromBytes {
 
     value() is Uuid {
         confirm origin.size() == 16
-            else throw InvalidUuid("UUID binary value must contain sixteen bytes");
+            else throw InvalidUuid.because("UUID binary value must contain sixteen bytes");
         Uuid(origin: uuid_string(origin));
     }
 }
 
-object InvalidUuid does Error {
-    has message is string;
-
-    InvalidUuid(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidUuid is Error = (because(message is string));

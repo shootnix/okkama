@@ -66,7 +66,7 @@ object Base64Decoded {
     bytes() is @byte {
         let name is string = self.alphabet_name();
         let offset is int = base64_invalid_offset(origin, name);
-        confirm offset == -1 else throw InvalidBase64(offset);
+        confirm offset == -1 else throw InvalidBase64.at(offset);
         base64_decode(origin, name);
     }
 
@@ -77,18 +77,4 @@ object Base64Decoded {
     }
 }
 
-object InvalidBase64 does Error {
-    has invalid_offset is int;
-
-    InvalidBase64(offset is int) {
-        invalid_offset = offset;
-    }
-
-    offset() is int {
-        invalid_offset;
-    }
-
-    text() is string {
-        "invalid Base64 at scalar offset " + invalid_offset.string();
-    }
-}
+enum InvalidBase64 is Error = (at(offset is int));

@@ -19,10 +19,10 @@ import "async/atomic" take Atomic;
 import "async/scope" take FutureGroup;
 import "io/decorators" take InvalidReading;
 
-object InvalidRobots does Error{has reason is string;InvalidRobots(reason is string){self.reason=reason;}text() is string{"invalid robots input: "+reason;}}
-object RobotsLimitExceeded does Error{has kind is string;RobotsLimitExceeded(kind is string){self.kind=kind;}kind() is string{kind;}text() is string{"robots limit: "+kind;}}
-object MissingCrawlDelay does Error{MissingCrawlDelay();text() is string{"crawl delay absent";}}
-object RobotsFetchFailed does Error{has code is int;RobotsFetchFailed(code is int){self.code=code;}status() is int{code;}text() is string{"robots fetch status: "+code.string();}}
+enum InvalidRobots is Error = (because(reason is string));
+enum RobotsLimitExceeded is Error = (kind(kind is string));
+enum MissingCrawlDelay is Error = (missing);
+enum RobotsFetchFailed is Error = (status(status is int));
 object RobotsTrim {
     has origin is string;RobotsTrim(origin is string){self.origin=origin;}
     string() is string{let start=Atomic(0);let ending=Atomic(origin.length());loop{let at=start.value();if at==ending.value(){last;}let scalar=origin.slice(at,at+1);if scalar!=" " && scalar!="\t"{last;}start.replace(at+1);}loop{let at=ending.value();if at==start.value(){last;}let scalar=origin.slice(at-1,at);if scalar!=" " && scalar!="\t"{last;}ending.replace(at-1);}origin.slice(start.value(),ending.value());}
@@ -38,25 +38,25 @@ object RobotsRecord {
     RobotsRecord(name is string,value is string,group is int,patterns is @RobotsPattern,delays is @Duration){
         self.name=name;self.value=value;self.group=group;pattern=patterns;parsed_delay=delays;
     }
-    pattern() is RobotsPattern{confirm pattern.size()==1 else throw InvalidRobots("record is not a rule");pattern[0];}
-    delay() is Duration{confirm parsed_delay.size()==1 else throw InvalidRobots("record has no compiled delay");parsed_delay[0];}
+    pattern() is RobotsPattern{confirm pattern.size()==1 else throw InvalidRobots.because("record is not a rule");pattern[0];}
+    delay() is Duration{confirm parsed_delay.size()==1 else throw InvalidRobots.because("record has no compiled delay");parsed_delay[0];}
     name() is string{name;}value() is string{value;}group() is int{group;}
 }
 object RobotsPolicy {
     has agents,delays is @RobotsRecord;has rules is @RobotsRule;has rule_groups,delay_groups is @int;has maps is @Url;
     RobotsPolicy(origin is string){
-        confirm Utf8Encoded(origin).bytes().size()<=524288 else throw RobotsLimitExceeded("bytes");let text=if origin!="" && origin.slice(0,1)=="﻿"{origin.slice(1,origin.length());}else{origin;};let lines=text.replace("\r\n","\n").replace("\r","\n").split("\n");confirm lines.size()<=16384 else throw RobotsLimitExceeded("lines");
+        confirm Utf8Encoded(origin).bytes().size()<=524288 else throw RobotsLimitExceeded.kind("bytes");let text=if origin!="" && origin.slice(0,1)=="﻿"{origin.slice(1,origin.length());}else{origin;};let lines=text.replace("\r\n","\n").replace("\r","\n").split("\n");confirm lines.size()<=16384 else throw RobotsLimitExceeded.kind("lines");
         let empty is List<RobotsRecord>=EmptyList();let records=Atomic(empty);let no_maps is List<Url>=EmptyList();let sitemaps=Atomic(no_maps);let group=Atomic(-1);let has_rules=Atomic(false);
         for lines -> raw{
-            confirm Utf8Encoded(raw).bytes().size()<=8192 else throw RobotsLimitExceeded("line_bytes");let line=RobotsTrim(raw.split("#")[0]).string();let fields=line.split(":");if fields.size()<2{next;}let name=try{HttpAsciiLowercase(RobotsTrim(fields[0]).string()).string();}catch e is Error{"";};let value=RobotsTrim(line.slice(fields[0].length()+1,line.length())).string();
-            if name=="sitemap"{let found is @Url=try{let url=ParsedUrl(value).value();let parts=url.parts();confirm (parts.scheme()=="http" || parts.scheme()=="https") && parts.authority().present() && !parts.fragment().present() else throw InvalidRobots("sitemap URL");[url];}catch e is Error{[];};for found -> url{confirm sitemaps.value().size()<256 else throw RobotsLimitExceeded("sitemaps");sitemaps.replace(sitemaps.value().prefix(url));}next;}
-            if name=="user-agent"{let token=try{RobotsAgent(value).string();}catch e is InvalidRobots{"";};if token==""{next;}if group.value()<0 || has_rules.value(){group.replace(group.value()+1);has_rules.replace(false);}confirm group.value()<256 else throw RobotsLimitExceeded("groups");confirm records.value().size()<4096 else throw RobotsLimitExceeded("records");records.replace(records.value().prefix(RobotsRecord(name,token,group.value())));next;}
+            confirm Utf8Encoded(raw).bytes().size()<=8192 else throw RobotsLimitExceeded.kind("line_bytes");let line=RobotsTrim(raw.split("#")[0]).string();let fields=line.split(":");if fields.size()<2{next;}let name=try{HttpAsciiLowercase(RobotsTrim(fields[0]).string()).string();}catch e is Error{"";};let value=RobotsTrim(line.slice(fields[0].length()+1,line.length())).string();
+            if name=="sitemap"{let found is @Url=try{let url=ParsedUrl(value).value();let parts=url.parts();confirm (parts.scheme()=="http" || parts.scheme()=="https") && parts.authority().present() && !parts.fragment().present() else throw InvalidRobots.because("sitemap URL");[url];}catch e is Error{[];};for found -> url{confirm sitemaps.value().size()<256 else throw RobotsLimitExceeded.kind("sitemaps");sitemaps.replace(sitemaps.value().prefix(url));}next;}
+            if name=="user-agent"{let token=try{RobotsAgent(value).string();}catch e is InvalidRobots{"";};if token==""{next;}if group.value()<0 || has_rules.value(){group.replace(group.value()+1);has_rules.replace(false);}confirm group.value()<256 else throw RobotsLimitExceeded.kind("groups");confirm records.value().size()<4096 else throw RobotsLimitExceeded.kind("records");records.replace(records.value().prefix(RobotsRecord(name,token,group.value())));next;}
             if group.value()<0{next;}
-            if name=="allow" || name=="disallow"{has_rules.replace(true);if value==""{next;}let patterns is @RobotsPattern=try{[RobotsPattern(value)];}catch e is InvalidRobots{[];};for patterns -> checked{confirm records.value().size()<4096 else throw RobotsLimitExceeded("records");records.replace(records.value().prefix(RobotsRecord(name,value,group.value(),checked)));}}
+            if name=="allow" || name=="disallow"{has_rules.replace(true);if value==""{next;}let patterns is @RobotsPattern=try{[RobotsPattern(value)];}catch e is InvalidRobots{[];};for patterns -> checked{confirm records.value().size()<4096 else throw RobotsLimitExceeded.kind("records");records.replace(records.value().prefix(RobotsRecord(name,value,group.value(),checked)));}}
             if name=="crawl-delay"{
                 let parsed is @Duration=try{[RobotsDelay(value).duration()];}catch e is Error{[];};
                 for parsed->checked{
-                    confirm records.value().size()<4096 else throw RobotsLimitExceeded("records");
+                    confirm records.value().size()<4096 else throw RobotsLimitExceeded.kind("records");
                     records.replace(records.value().prefix(RobotsRecord(name,value,group.value(),[],[checked])));
                 }
             }
@@ -64,15 +64,15 @@ object RobotsPolicy {
         let backward is @RobotsRecord=records.value().map()->entry{entry;};let entries is @RobotsRecord=(0..backward.size()).map()->index{backward[backward.size()-index-1];};agents=entries.filter()->entry{entry.name()=="user-agent";};let rule_entries=entries.filter()->entry{entry.name()=="allow" || entry.name()=="disallow";};let compiled is @RobotsRule=rule_entries.map()->entry{RobotsRule(entry);};rules=compiled;let groups is @int=compiled.map()->rule{rule.group();};rule_groups=groups;let delay_records=entries.filter()->entry{entry.name()=="crawl-delay";};delays=delay_records;let delay_ids is @int=delay_records.map()->entry{entry.group();};delay_groups=delay_ids;let reverse_maps is @Url=sitemaps.value().map()->url{url;};let ordered_maps is @Url=(0..reverse_maps.size()).map()->index{reverse_maps[reverse_maps.size()-index-1];};maps=ordered_maps;
     }
     selected(agent is string) is @int{
-        confirm agent!="" && agent.length()<=256 else throw InvalidRobots("agent identification");
-        let lower=try{HttpAsciiLowercase(agent).string();}catch e is Error{throw InvalidRobots("ASCII agent required");};
+        confirm agent!="" && agent.length()<=256 else throw InvalidRobots.because("agent identification");
+        let lower=try{HttpAsciiLowercase(agent).string();}catch e is Error{throw InvalidRobots.because("ASCII agent required");};
         let scores is @int=agents.map()->entry{RobotsAgentMatch(entry.value(),lower).score();};
         let best=scores.reduce(-1)->old,score{if score>old{score;}else{old;}};
         let positions=(0..agents.size()).filter()->index{scores[index]==best && best>=0;};
         let ids is @int=positions.map()->index{agents[index].group();};ids;
     }
     allowed(agent is string,url is Url) is bool{
-        let parts=url.parts();confirm parts.scheme()=="http" || parts.scheme()=="https" else throw InvalidRobots("HTTP URL required");let path=if parts.path()==""{"/";}else{parts.path();};if path=="/robots.txt"{return true;}
+        let parts=url.parts();confirm parts.scheme()=="http" || parts.scheme()=="https" else throw InvalidRobots.because("HTTP URL required");let path=if parts.path()==""{"/";}else{parts.path();};if path=="/robots.txt"{return true;}
         let target=(path+if parts.query().present(){"?"+parts.query().string();}else{"";}).replace("*","%2A").replace("$","%24");let ids=self.selected(agent);let score=Atomic(-1);let permitted=Atomic(true);
         // Parsing emits groups monotonically, so their cached ids are already
         // ordered. Sorting selected ids restores source order and permits each
@@ -99,13 +99,13 @@ object RobotsPolicy {
                 if value>seconds.value(){seconds.replace(value);}
             }
         }
-        confirm found.value() else throw MissingCrawlDelay();
+        confirm found.value() else throw MissingCrawlDelay.missing;
         Duration(seconds.value(),DurationUnit.second);
     }
     sitemaps() is Sequencing<Url>{maps;}
 }
 object RobotsAgent {
-    has value is string;RobotsAgent(origin is string){confirm origin!="" && origin.length()<=128 else throw InvalidRobots("agent token");if origin!="*"{for Utf8Encoded(origin).bytes() -> octet{let code=octet.int();confirm (code>=65 && code<=90) || (code>=97 && code<=122) || code==45 || code==95 else throw InvalidRobots("agent token grammar");}}value=HttpAsciiLowercase(origin).string();}string() is string{value;}
+    has value is string;RobotsAgent(origin is string){confirm origin!="" && origin.length()<=128 else throw InvalidRobots.because("agent token");if origin!="*"{for Utf8Encoded(origin).bytes() -> octet{let code=octet.int();confirm (code>=65 && code<=90) || (code>=97 && code<=122) || code==45 || code==95 else throw InvalidRobots.because("agent token grammar");}}value=HttpAsciiLowercase(origin).string();}string() is string{value;}
 }
 object RobotsAgentMatch{has token,agent is string;RobotsAgentMatch(token is string,agent is string){self.token=token;self.agent=agent;}score() is int{if token=="*"{0;}else{if agent.split(token).size()>1{token.length();}else{-1;}}}}
 object RobotsRule {
@@ -117,10 +117,10 @@ object RobotsRule {
 object RobotsPattern {
     has value is string;has anchored,wildcard is bool;has weight is int;
     RobotsPattern(origin is string){
-        confirm origin!="" && origin.length()<=8192 && origin.slice(0,1)=="/" else throw InvalidRobots("path pattern");
+        confirm origin!="" && origin.length()<=8192 && origin.slice(0,1)=="/" else throw InvalidRobots.because("path pattern");
         let terminal=origin.slice(origin.length()-1,origin.length())=="$";
         let body=if terminal{origin.slice(0,origin.length()-1);}else{origin;};
-        let compiled=try{UrlComponentText(body.replace("$","%24"),UrlComponent.query).string();}catch e is Error{throw InvalidRobots("path encoding");};
+        let compiled=try{UrlComponentText(body.replace("$","%24"),UrlComponent.query).string();}catch e is Error{throw InvalidRobots.because("path encoding");};
         value=compiled;anchored=terminal;wildcard=compiled.split("*").size()>1;weight=compiled.replace("*","").length();
     }
     string() is string{value+if anchored{"$";}else{"";};}specificity() is int{weight;}
@@ -129,21 +129,21 @@ object RobotsPattern {
         // Escaped %2A remains literal; only compiled '*' enters the old matcher.
         if !wildcard{return if anchored{target==value;}else{target.length()>=value.length() && target.slice(0,value.length())==value;};}
         try{string_star_match(value,target,anchored,262144);}catch e is NativeFailure{
-            if e.domain()=="core.collections" && e.code()=="resource_exhausted"{throw RobotsLimitExceeded("match_steps");}
+            if e.domain()=="core.collections" && e.code()=="resource_exhausted"{throw RobotsLimitExceeded.kind("match_steps");}
             throw;
         }
     }
 }
 object RobotsDelay {
-    has seconds is rat;RobotsDelay(origin is string){confirm origin!="" && origin.length()<=16 else throw InvalidRobots("delay spelling");let parts=origin.split(".");confirm parts.size()<=2 && parts[0]!="" else throw InvalidRobots("delay decimal");let denominator=Atomic(1);if parts.size()==2{confirm parts[1]!="" && parts[1].length()<=9 else throw InvalidRobots("delay precision");for (0..parts[1].length()) -> index{denominator.replace(denominator.value()*10);}}let digits=parts.join("");for (0..digits.length()) -> index{confirm "0123456789".split(digits.slice(index,index+1)).size()==2 else throw InvalidRobots("delay digits");}seconds=rat(ParsedInt(digits).value(),denominator.value());confirm self.seconds<=86400.rat() else throw InvalidRobots("delay cap");}duration() is Duration{Duration(seconds,DurationUnit.second);}
+    has seconds is rat;RobotsDelay(origin is string){confirm origin!="" && origin.length()<=16 else throw InvalidRobots.because("delay spelling");let parts=origin.split(".");confirm parts.size()<=2 && parts[0]!="" else throw InvalidRobots.because("delay decimal");let denominator=Atomic(1);if parts.size()==2{confirm parts[1]!="" && parts[1].length()<=9 else throw InvalidRobots.because("delay precision");for (0..parts[1].length()) -> index{denominator.replace(denominator.value()*10);}}let digits=parts.join("");for (0..digits.length()) -> index{confirm "0123456789".split(digits.slice(index,index+1)).size()==2 else throw InvalidRobots.because("delay digits");}seconds=rat(ParsedInt(digits).value(),denominator.value());confirm self.seconds<=86400.rat() else throw InvalidRobots.because("delay cap");}duration() is Duration{Duration(seconds,DurationUnit.second);}
 }
 object FetchedRobots {
     has origin is Exchanging;has destination is Url;has agent is string;has pending is Atomic<@Future<RobotsPolicy>>;
-    FetchedRobots(origin is Exchanging,site is Url,agent is string){let parts=site.parts();confirm (parts.scheme()=="http" || parts.scheme()=="https") && parts.authority().present() else throw InvalidRobots("HTTP site required");Header(HeaderName("User-Agent"),agent);self.origin=origin;destination=Url(UrlParts(parts.scheme(),parts.authority(),"/robots.txt",UrlQuery(),UrlFragment()));self.agent=agent;let empty is @Future<RobotsPolicy>=[];pending=Atomic(empty);}
+    FetchedRobots(origin is Exchanging,site is Url,agent is string){let parts=site.parts();confirm (parts.scheme()=="http" || parts.scheme()=="https") && parts.authority().present() else throw InvalidRobots.because("HTTP site required");Header(HeaderName("User-Agent"),agent);self.origin=origin;destination=Url(UrlParts(parts.scheme(),parts.authority(),"/robots.txt",UrlQuery(),UrlFragment()));self.agent=agent;let empty is @Future<RobotsPolicy>=[];pending=Atomic(empty);}
     async policy() is RobotsPolicy{let group is FutureGroup<RobotsPolicy>=FutureGroup();let cleanup=RobotsSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
     async fetch() is RobotsPolicy{
-        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=RobotsSettlement(group);defer await cleanup.close();let request=Request(Method("GET"),AbsoluteTarget(destination),Headers([Header(HeaderName("User-Agent"),agent),Header(HeaderName("Accept"),"text/plain")]));let waiting=origin.response(request);group.start(waiting);let exchange=await waiting;let response=exchange.response();let input=response.body().reading();defer input.close();let code=response.status().code();if code>=400 && code<500{return RobotsPolicy("");}if code>=500{return RobotsPolicy("User-agent: *\nDisallow: /\n");}confirm code>=200 && code<300 else throw RobotsFetchFailed(code);
-        let text=Atomic("");loop{let remaining=524288-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let reads is FutureGroup<@byte>=FutureGroup();let cleanup=RobotsSettlement(reads);defer await cleanup.close();let pending=input.bytes(limit);reads.start(pending);let bytes=await pending;confirm bytes.size()<=limit else throw InvalidReading("robots input exceeded requested limit");confirm bytes.size()<=remaining else throw RobotsLimitExceeded("bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());}let decoded=try{Utf8Decoded(Latin1Encoded(text.value()).bytes()).string();}catch e is Error{throw InvalidRobots("UTF8 body required");};RobotsPolicy(decoded);
+        let group is FutureGroup<ClientResponse>=FutureGroup();let cleanup=RobotsSettlement(group);defer await cleanup.close();let request=Request(Method("GET"),AbsoluteTarget(destination),Headers([Header(HeaderName("User-Agent"),agent),Header(HeaderName("Accept"),"text/plain")]));let waiting=origin.response(request);group.start(waiting);let exchange=await waiting;let response=exchange.response();let input=response.body().reading();defer input.close();let code=response.status().code();if code>=400 && code<500{return RobotsPolicy("");}if code>=500{return RobotsPolicy("User-agent: *\nDisallow: /\n");}confirm code>=200 && code<300 else throw RobotsFetchFailed.status(code);
+        let text=Atomic("");loop{let remaining=524288-text.value().length();let limit=if remaining>=8192{8192;}else{remaining+1;};let reads is FutureGroup<@byte>=FutureGroup();let cleanup=RobotsSettlement(reads);defer await cleanup.close();let pending=input.bytes(limit);reads.start(pending);let bytes=await pending;confirm bytes.size()<=limit else throw InvalidReading.because("robots input exceeded requested limit");confirm bytes.size()<=remaining else throw RobotsLimitExceeded.kind("bytes");if bytes.size()==0{last;}text.replace(text.value()+Latin1Decoded(bytes).string());}let decoded=try{Utf8Decoded(Latin1Encoded(text.value()).bytes()).string();}catch e is Error{throw InvalidRobots.because("UTF8 body required");};RobotsPolicy(decoded);
     }
     private:
     operation() is Future<RobotsPolicy>{let known=pending.value();if known.size()>0{known[0];}else{let task=self.fetch();pending.replace([task]);task;}}

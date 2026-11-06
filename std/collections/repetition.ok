@@ -74,7 +74,7 @@ object Repeated<T> does Sequencing<T>, Iterating<T>, Sizing {
 
     Repeated(value is T, count is int) {
         confirm count >= 0
-            else throw InvalidArgument("repeat count cannot be negative");
+            else throw InvalidArgument.because("repeat count cannot be negative");
         origin = value;
         amount = count;
     }
@@ -89,17 +89,17 @@ object Repeated<T> does Sequencing<T>, Iterating<T>, Sizing {
 
     item(index is int) is T {
         confirm index >= 0 && index < amount
-            else throw OutOfRange("repeat index is outside the sequence");
+            else throw OutOfRange.because("repeat index is outside the sequence");
         origin;
     }
 
     first() is T {
-        confirm amount > 0 else throw EmptySequence();
+        confirm amount > 0 else throw EmptySequence.empty;
         origin;
     }
 
     last() is T {
-        confirm amount > 0 else throw EmptySequence();
+        confirm amount > 0 else throw EmptySequence.empty;
         origin;
     }
 }
@@ -111,9 +111,9 @@ object RepeatedCursor<T> does Cursor<T> {
 
     RepeatedCursor(value is T, position is int, count is int) {
         confirm count >= 0
-            else throw InvalidArgument("repeat count cannot be negative");
+            else throw InvalidArgument.because("repeat count cannot be negative");
         confirm position >= 0 && position <= count
-            else throw InvalidArgument("repeat cursor position is invalid");
+            else throw InvalidArgument.because("repeat cursor position is invalid");
         origin = value;
         self.position = position;
         amount = count;
@@ -124,12 +124,12 @@ object RepeatedCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin;
     }
 
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         RepeatedCursor(
             value: origin,
             position: position + 1,
@@ -159,9 +159,9 @@ object CycledCursor<T> does Cursor<T> {
 
     CycledCursor(origin is Sequencing<T>, position is int) {
         confirm origin.size() > 0
-            else throw InvalidArgument("cannot create an active cursor for an empty cycle");
+            else throw InvalidArgument.because("cannot create an active cursor for an empty cycle");
         confirm position >= 0 && position < origin.size()
-            else throw InvalidArgument("cycle cursor position is invalid");
+            else throw InvalidArgument.because("cycle cursor position is invalid");
         self.origin = origin;
         self.position = position;
     }
@@ -192,7 +192,7 @@ object EmptyCycleCursor<T> does Cursor<T> {
 
     EmptyCycleCursor(origin is Sequencing<T>) {
         confirm origin.size() == 0
-            else throw InvalidArgument("cannot create an empty cursor for a non-empty cycle");
+            else throw InvalidArgument.because("cannot create an empty cursor for a non-empty cycle");
         self.origin = origin;
     }
 
@@ -201,10 +201,10 @@ object EmptyCycleCursor<T> does Cursor<T> {
     }
 
     item() is T {
-        throw IterationEnded();
+        throw IterationEnded.ended;
     }
 
     successor() is Cursor<T> {
-        throw IterationEnded();
+        throw IterationEnded.ended;
     }
 }

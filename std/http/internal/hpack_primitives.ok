@@ -11,9 +11,9 @@ object HpackInteger {
     has value,prefix,pattern is int;
     HpackInteger(value is int,prefix is int,pattern is int){
         confirm value>=0 && value<=4294967295 && prefix>=1 && prefix<=8
-            && pattern>=0 && pattern<=255 else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid HPACK integer");
+            && pattern>=0 && pattern<=255 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid HPACK integer");
         let mask=(1 << prefix)-1;
-        confirm (pattern & mask)==0 else throw Http2Fault(Http2FaultScope.connection,9,0,"overlapping HPACK prefix");
+        confirm (pattern & mask)==0 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "overlapping HPACK prefix");
         self.value=value;self.prefix=prefix;self.pattern=pattern;
     }
     bytes() is @byte{
@@ -28,7 +28,7 @@ object HpackInteger {
             }
             output.writing().write(ByteSnapshot([(chunk | 128).byte()]));remaining.replace(remaining.value() >> 7);
         }
-        throw Http2Fault(Http2FaultScope.connection,9,0,"oversized HPACK integer");
+        throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "oversized HPACK integer");
     }
 }
 object ParsedHpackInteger {
@@ -47,23 +47,23 @@ object HpackIntegerInput {
     HpackIntegerInput(origin is @byte,offset is int,prefix is int){self.origin=origin;self.offset=offset;self.prefix=prefix;}
     result() is HpackNumber{
         confirm offset>=0 && offset<origin.size() && prefix>=1 && prefix<=8
-            else throw Http2Fault(Http2FaultScope.connection,9,0,"missing HPACK integer");
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "missing HPACK integer");
         let maximum=(1 << prefix)-1;let initial=origin[offset].int() & maximum;
         if initial<maximum{return HpackNumber(initial,offset+1);}
         let value=Atomic(initial);
         for (0..5) -> step{
             let index=offset+1+step;
-            confirm index<origin.size() else throw Http2Fault(Http2FaultScope.connection,9,0,"truncated HPACK integer");
+            confirm index<origin.size() else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "truncated HPACK integer");
             let octet=origin[index].int();let amount=(octet & 127)*(1 << (7*step));
-            confirm amount<=4294967295-value.value() else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK integer overflow");
+            confirm amount<=4294967295-value.value() else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK integer overflow");
             value.replace(value.value()+amount);
             if octet<128{return HpackNumber(value.value(),index+1);}
         }
-        throw Http2Fault(Http2FaultScope.connection,9,0,"oversized HPACK integer");
+        throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "oversized HPACK integer");
     }
 }
 object HpackString {
-    has origin is @byte;HpackString(origin is @byte){confirm origin.size()<=1048576 else throw Http2Fault(Http2FaultScope.connection,9,0,"HPACK string budget");self.origin=origin;}
+    has origin is @byte;HpackString(origin is @byte){confirm origin.size()<=1048576 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "HPACK string budget");self.origin=origin;}
     bytes() is @byte{
         let prefix=HpackInteger(origin.size(),7,0).bytes();
         HttpWireBytes([prefix,origin],prefix.size()+origin.size()).bytes();
@@ -72,11 +72,11 @@ object HpackString {
 object ParsedHpackString {
     has data is @byte;has following is int;
     ParsedHpackString(origin is @byte,offset is int,maximum is int){
-        confirm maximum>=0 && maximum<=1048576 else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid HPACK string budget");
+        confirm maximum>=0 && maximum<=1048576 else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid HPACK string budget");
         let length=ParsedHpackInteger(origin,offset,7);let start=length.following();let count=length.value();
-        confirm count<=1048576 && count<=origin.size()-start else throw Http2Fault(Http2FaultScope.connection,9,0,"truncated or oversized HPACK string");
+        confirm count<=1048576 && count<=origin.size()-start else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "truncated or oversized HPACK string");
         let huffman=(origin[offset].int() & 128)!=0;
-        confirm huffman || count<=maximum else throw Http2Fault(Http2FaultScope.connection,9,0,"decoded HPACK string budget");
+        confirm huffman || count<=maximum else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "decoded HPACK string budget");
         let encoded=origin.slice(start,start+count);
         data=if huffman{HpackHuffman(encoded,maximum).bytes();}else{encoded;};following=start+count;
     }
@@ -86,11 +86,11 @@ object HpackHuffman {
     has origin is @byte;has maximum is int;
     HpackHuffman(origin is @byte,maximum is int){
         confirm origin.size()<=1048576 && maximum>=0 && maximum<=1048576
-            else throw Http2Fault(Http2FaultScope.connection,9,0,"invalid Huffman budget");self.origin=origin;self.maximum=maximum;
+            else throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid Huffman budget");self.origin=origin;self.maximum=maximum;
     }
     bytes() is @byte{
         let result is @byte=try{huffman_decode(origin,maximum);}
-            catch failure is NativeFailure{throw Http2Fault(Http2FaultScope.connection,9,0,"invalid or oversized HPACK Huffman string");};
+            catch failure is NativeFailure{throw Http2Fault.detailed(Http2FaultScope.connection, 9, 0, "invalid or oversized HPACK Huffman string");};
         result;
     }
 }

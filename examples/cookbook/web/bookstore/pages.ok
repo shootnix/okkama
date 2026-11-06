@@ -8,7 +8,7 @@ import "../../support/http" take Page;
 import "model" take BookShelf;
 import "web/request" take WebRequest;
 import "web/reply" take JsonReply;
-import "web/exception" take Exception;
+import "web/exception" take Exception, Problem;
 import "http/handler" take HandlingResult;
 import "html/entities" take EscapedHtml;
 
@@ -23,5 +23,5 @@ object StorePages {
     async books(request is WebRequest) is HandlingResult{JsonReply(200,await shelf.books());}
     async orders(request is WebRequest) is HandlingResult{JsonReply(200,await shelf.orders());}
     async buy(request is WebRequest) is HandlingResult{let body=await request.json(16384);JsonReply(201,await shelf.purchase(body.int("book"),body.int("quantity")));}
-    async missing(request is WebRequest) is HandlingResult{Exception(404,"Страница не найдена");}
+    async missing(request is WebRequest) is HandlingResult{Problem(404,"Страница не найдена");}
 }

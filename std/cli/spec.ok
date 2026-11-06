@@ -14,7 +14,7 @@ object OptionValue{
     has stored_name is string;
     has stored_repeated is bool;
     OptionValue(name is string,repeated is bool){
-        confirm name!="" else throw InvalidCommandSyntax("empty placeholder");
+        confirm name!="" else throw InvalidCommandSyntax.because("empty placeholder");
         stored_name=name;
         stored_repeated=repeated;
     }
@@ -29,7 +29,7 @@ object Option{
     Option(key is SettingKey,names is Sequencing<string>,value is OptionValue,help is string){
         stored_key=key;
         let size=names.size();
-        confirm size>0 && size<=32 else throw InvalidCommandSyntax("option must have 1..32 aliases");
+        confirm size>0 && size<=32 else throw InvalidCommandSyntax.because("option must have 1..32 aliases");
         let snapshot is @string=(0..size).map()->index{let name=names.item(index);CliOptionName(name);name;};
         stored_names=snapshot;
         stored_value=value;
@@ -48,7 +48,7 @@ object Flag{
     Flag(key is SettingKey,names is Sequencing<string>,present is string,help is string){
         stored_key=key;
         let size=names.size();
-        confirm size>0 && size<=32 else throw InvalidCommandSyntax("option must have 1..32 aliases");
+        confirm size>0 && size<=32 else throw InvalidCommandSyntax.because("option must have 1..32 aliases");
         let snapshot is @string=(0..size).map()->index{let name=names.item(index);CliOptionName(name);name;};
         stored_names=snapshot;
         stored_present=present;
@@ -66,7 +66,7 @@ object Operand{
     has stored_help is string;
     Operand(key is SettingKey,name is string,cardinality is OperandCardinality,help is string){
         stored_key=key;
-        confirm name!="" else throw InvalidCommandSyntax("empty placeholder");
+        confirm name!="" else throw InvalidCommandSyntax.because("empty placeholder");
         stored_name=name;
         stored_cardinality=cardinality;
         stored_help=help;
@@ -80,17 +80,17 @@ object CliOptionName{
     CliOptionName(name is string){
         let bytes=Utf8Encoded(name).bytes();
         confirm bytes.size()>=2 && bytes.size()<=128 && bytes[0].int()==45
-            else throw InvalidCommandSyntax("option name must start with a dash");
+            else throw InvalidCommandSyntax.because("option name must start with a dash");
         if bytes[1].int()==45{
-            confirm bytes.size()>2 else throw InvalidCommandSyntax("-- is reserved");
+            confirm bytes.size()>2 else throw InvalidCommandSyntax.because("-- is reserved");
             for (2..bytes.size())->index{
                 let code=bytes[index].int();
                 confirm (code>=97 && code<=122) || (code>=48 && code<=57) || (index>2 && code==45)
-                    else throw InvalidCommandSyntax("invalid long option name");
+                    else throw InvalidCommandSyntax.because("invalid long option name");
             }
         }else{
             confirm bytes.size()==2 && bytes[1].int()>=33 && bytes[1].int()<=126
-                else throw InvalidCommandSyntax("short name must be one visible ASCII character");
+                else throw InvalidCommandSyntax.because("short name must be one visible ASCII character");
         }
     }
 }
@@ -102,7 +102,7 @@ object CommandSyntax{
     CommandSyntax(options is Sequencing<Option>,flags is Sequencing<Flag>,operands is Sequencing<Operand>){
         let option_count=options.size();let flag_count=flags.size();let operand_count=operands.size();
         confirm option_count>=0 && flag_count>=0 && operand_count>=0 && option_count+flag_count+operand_count<=1024
-            else throw InvalidCommandSyntax("syntax declaration budget");
+            else throw InvalidCommandSyntax.because("syntax declaration budget");
         let options_copy is @Option=(0..option_count).map()->index{options.item(index);};
         let flags_copy is @Flag=(0..flag_count).map()->index{flags.item(index);};
         let operands_copy is @Operand=(0..operand_count).map()->index{operands.item(index);};
@@ -151,14 +151,14 @@ object CliSyntaxValidation{
             }else{old;}
         };
         for (0..declarations)->index{
-            confirm index!=lookup.duplicate_index() else throw InvalidCommandSyntax("duplicate option name");
-            confirm index!=conflict.index() else throw InvalidCommandSyntax(conflict.reason());
+            confirm index!=lookup.duplicate_index() else throw InvalidCommandSyntax.because("duplicate option name");
+            confirm index!=conflict.index() else throw InvalidCommandSyntax.because(conflict.reason());
         }
         let declared=SettingKeyIndex(keys);
         let operand_keys is @SettingKey=operands.map()->operand{operand.key();};
         let operand_index=SettingKeyIndex(operand_keys);
         let prefix=(0..operands.size()).reduce(CliOperandPrefix(operands.size(),operands.size()))->prior,index{
-            confirm declared.position(operand_keys[index])<0 else throw InvalidCommandSyntax("operand key is already declared");
+            confirm declared.position(operand_keys[index])<0 else throw InvalidCommandSyntax.because("operand key is already declared");
             let duplicate=operand_index.position(operand_keys[index]);
             let same=if duplicate<index{duplicate;}else{operands.size();};
             let repeated=prior.repeated();let optional=prior.optional();
@@ -166,11 +166,11 @@ object CliSyntaxValidation{
             // The first previous operand decides; checks at that position keep
             // their legacy order: duplicate, repeated, required-after-optional.
             confirm !(same<index && same<=repeated && (!required || same<=optional))
-                else throw InvalidCommandSyntax("duplicate operand key");
+                else throw InvalidCommandSyntax.because("duplicate operand key");
             confirm !(repeated<index && (!required || repeated<=optional))
-                else throw InvalidCommandSyntax("repeated operand must be last");
+                else throw InvalidCommandSyntax.because("repeated operand must be last");
             confirm !(required && optional<index)
-                else throw InvalidCommandSyntax("required operand follows optional operand");
+                else throw InvalidCommandSyntax.because("required operand follows optional operand");
             CliOperandPrefix(
                 if repeated>index && operands[index].cardinality()==OperandCardinality.repeated{index;}else{repeated;},
                 if optional>index && !required{index;}else{optional;},
@@ -242,23 +242,23 @@ object CliCommand{
     has syntax is CommandSyntax;
     has children is @CliCommand;
     CliCommand(name is string,summary is string,syntax is CommandSyntax,children is Sequencing<CliCommand>){
-        confirm name!="" && name.length()<=128 else throw InvalidCommandSyntax("invalid command name");
-        confirm name.slice(0,1)!="-" else throw InvalidCommandSyntax("command name starts with a dash");
+        confirm name!="" && name.length()<=128 else throw InvalidCommandSyntax.because("invalid command name");
+        confirm name.slice(0,1)!="-" else throw InvalidCommandSyntax.because("command name starts with a dash");
         for Utf8Encoded(name).bytes()->octet{
             confirm octet.int()>32 && octet.int()!=127
-                else throw InvalidCommandSyntax("command names exclude whitespace, controls and dashes");
+                else throw InvalidCommandSyntax.because("command names exclude whitespace, controls and dashes");
         }
         let size=children.size();
-        confirm size>=0 && size<=1024 else throw InvalidCommandSyntax("child command budget");
-        confirm size==0 || syntax.operands().size()==0 else throw InvalidCommandSyntax("branch commands cannot have operands");
+        confirm size>=0 && size<=1024 else throw InvalidCommandSyntax.because("child command budget");
+        confirm size==0 || syntax.operands().size()==0 else throw InvalidCommandSyntax.because("branch commands cannot have operands");
         let snapshot is @CliCommand=(0..size).map()->index{children.item(index);};
         // Uniqueness sorts only cached names; the published children keep order.
         let names is @string=snapshot.map()->child{child.name();};let ordered=names.ordering();
         for (0..ordered.size())->index{
-            if index>0{confirm (ordered[index-1]!=ordered[index]) else throw InvalidCommandSyntax("duplicate child command");}
+            if index>0{confirm (ordered[index-1]!=ordered[index]) else throw InvalidCommandSyntax.because("duplicate child command");}
         }
         self.name=name;self.summary=summary;self.syntax=syntax;self.children=snapshot;
-        confirm CliTreeBudget(snapshot,31).size()<=4095 else throw InvalidCommandSyntax("command tree exceeds 4096 nodes");
+        confirm CliTreeBudget(snapshot,31).size()<=4095 else throw InvalidCommandSyntax.because("command tree exceeds 4096 nodes");
     }
     name() is string{name;}
     summary() is string{summary;}
@@ -268,17 +268,13 @@ object CliCommand{
 object CliTreeBudget{
     has count is int;
     CliTreeBudget(children is Sequencing<CliCommand>,remaining is int){
-        confirm remaining>=0 || children.size()==0 else throw InvalidCommandSyntax("command tree exceeds 32 levels");
+        confirm remaining>=0 || children.size()==0 else throw InvalidCommandSyntax.because("command tree exceeds 32 levels");
         count=children.reduce(0)->used,child{
             let added=1+CliTreeBudget(child.children(),remaining-1).size();
-            confirm added<=4096-used else throw InvalidCommandSyntax("command tree exceeds 4096 nodes");
+            confirm added<=4096-used else throw InvalidCommandSyntax.because("command tree exceeds 4096 nodes");
             used+added;
         };
     }
     size() is int{count;}
 }
-object InvalidCommandSyntax does Error{
-    has reason is string;
-    InvalidCommandSyntax(reason is string){self.reason=reason;}
-    text() is string{reason;}
-}
+enum InvalidCommandSyntax is Error = (because(reason is string));

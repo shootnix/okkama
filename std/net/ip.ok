@@ -37,17 +37,17 @@ object IpAddress does Comparing<IpAddress> {
 
     IpAddress(origin is string) {
         confirm origin.length()>0 && origin.length()<=45
-            else throw InvalidIpAddress(origin);
+            else throw InvalidIpAddress.origin(origin);
         let valid=(0..origin.length()).reduce(true) -> valid,index {
             valid && "0123456789abcdefABCDEF:.".split(origin.slice(index,index+1)).size()==2;
         };
-        confirm valid else throw InvalidIpAddress(origin);
+        confirm valid else throw InvalidIpAddress.origin(origin);
         let ipv6=origin.split(":").size()>1;
         let number=if ipv6 {2;} else {1;};
         let encoded=try {ip_parse(number,origin,0);}
             catch failure is NativeFailure {
                 if failure.domain()=="core.net" && failure.code()=="invalid_input" {
-                    throw InvalidIpAddress(origin);
+                    throw InvalidIpAddress.origin(origin);
                 }
                 throw;
             };
@@ -86,11 +86,7 @@ object IpAddress does Comparing<IpAddress> {
     }
 }
 
-object InvalidIpAddress does Error {
-    has origin is string;
-    InvalidIpAddress(origin is string) {self.origin=origin;}
-    text() is string {"invalid IP address: " + origin;}
-}
+enum InvalidIpAddress is Error = (origin(origin is string));
 
 // Inclusive CIDR interval. Host bits are masked at construction; the original
 // IpAddress stays unchanged. broadcast() means the final address for both IP
@@ -103,7 +99,7 @@ object IpNetwork {
     IpNetwork(address is IpAddress, prefix is int) {
         let width=address.bytes().size()*8;
         confirm prefix>=0 && prefix<=width
-            else throw InvalidIpPrefix(prefix,address.version());
+            else throw InvalidIpPrefix.detailed(prefix, address.version());
         let masked=IpNetworkBytes(address.bytes(),prefix,false).bytes();
         base=IpAddress(PackedIpText(masked).string());
         length=prefix;
@@ -137,16 +133,7 @@ object IpInterface {
     string() is string {host.string()+"/"+subnet.prefix().string();}
 }
 
-object InvalidIpPrefix does Error {
-    has origin is int;
-    has family is IpVersion;
-    InvalidIpPrefix(prefix is int, version is IpVersion) {origin=prefix;family=version;}
-    prefix() is int {origin;}
-    text() is string {
-        let maximum=if family==IpVersion.v4 {32;} else {128;};
-        "IP prefix must be in 0.."+maximum.string()+": "+origin.string();
-    }
-}
+enum InvalidIpPrefix is Error = (detailed(prefix is int, family is IpVersion));
 
 // Lazy inclusive traversal of a CIDR network, including network/final addresses.
 // cursor() is independent and immutable; successor() never changes its receiver.
@@ -164,7 +151,7 @@ object IpAddressCursor does Cursor<IpAddress> {
     has current, limit is IpAddress;
     IpAddressCursor(current is IpAddress, limit is IpAddress) {
         confirm current.version()==limit.version() && current.order(limit)!=Order.greater
-            else throw InvalidArgument("invalid IP cursor interval");
+            else throw InvalidArgument.because("invalid IP cursor interval");
         self.current=current;self.limit=limit;
     }
     available() is bool {true;}
@@ -187,8 +174,8 @@ object IpAddressCursor does Cursor<IpAddress> {
 object ExhaustedIpAddressCursor does Cursor<IpAddress> {
     ExhaustedIpAddressCursor();
     available() is bool {false;}
-    item() is IpAddress {throw IterationEnded();}
-    successor() is Cursor<IpAddress> {throw IterationEnded();}
+    item() is IpAddress {throw IterationEnded.ended;}
+    successor() is Cursor<IpAddress> {throw IterationEnded.ended;}
 }
 
 // Implementation representation of the lower/upper packed CIDR endpoint.
@@ -198,7 +185,7 @@ object IpNetworkBytes {
     has upper is bool;
     IpNetworkBytes(origin is @byte, prefix is int, upper is bool) {
         confirm (origin.size()==4 || origin.size()==16) && prefix>=0 && prefix<=origin.size()*8
-            else throw InvalidArgument("invalid packed IP network");
+            else throw InvalidArgument.because("invalid packed IP network");
         self.origin=origin;self.prefix=prefix;self.upper=upper;
     }
     bytes() is @byte {
@@ -220,7 +207,7 @@ object PackedIpText {
     has origin is @byte;
     PackedIpText(origin is @byte) {
         confirm origin.size()==4 || origin.size()==16
-            else throw InvalidArgument("IP text needs 4 or 16 bytes");
+            else throw InvalidArgument.because("IP text needs 4 or 16 bytes");
         self.origin=origin;
     }
     string() is string {

@@ -34,7 +34,7 @@ object Minimum<T: Comparing<T>> {
 
     value() is T {
         let cursor = origin.cursor();
-        confirm cursor.available() else throw EmptySequence();
+        confirm cursor.available() else throw EmptySequence.empty;
         CursorItems(cursor: cursor.successor()).reduce(cursor.item()) -> minimum, item {
             if item.order(minimum) == Order.less { item; } else { minimum; }
         };
@@ -50,7 +50,7 @@ object Maximum<T: Comparing<T>> {
 
     value() is T {
         let cursor = origin.cursor();
-        confirm cursor.available() else throw EmptySequence();
+        confirm cursor.available() else throw EmptySequence.empty;
         CursorItems(cursor: cursor.successor()).reduce(cursor.item()) -> maximum, item {
             if item.order(maximum) == Order.greater { item; } else { maximum; }
         };
@@ -165,7 +165,7 @@ object Distance {
     }
 
     value() is float {
-        confirm left.size() == right.size() else throw UnequalSizes();
+        confirm left.size() == right.size() else throw UnequalSizes.unequal;
         (0..left.size()).reduce(ScaledSquares(scale: 0.0, squares: 1.0)) -> state, index {
             state.addition(left.item(index) - right.item(index));
         }.value();

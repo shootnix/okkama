@@ -41,7 +41,7 @@ object Zone does TimeZone {
     has origin is string;
 
     Zone(name is string) {
-        confirm timezone_known(name) else throw UnknownTimeZone(name);
+        confirm timezone_known(name) else throw UnknownTimeZone.name(name);
         origin = name;
     }
 
@@ -76,7 +76,7 @@ object Zone does TimeZone {
             time.minute(),
             time.second(),
             time.nanosecond(),
-        ) > 0 else throw MissingLocalTime(origin, local);
+        ) > 0 else throw MissingLocalTime.zone(origin);
         Instant(origin: Duration(
             value: timezone_local_instant(
                 origin,
@@ -100,11 +100,11 @@ object FixedZone does TimeZone {
 
     FixedZone(name is string, offset is Duration) {
         confirm name.length() > 0
-            else throw InvalidTimeZone("fixed time-zone name must not be empty");
+            else throw InvalidTimeZone.because("fixed time-zone name must not be empty");
         confirm offset.seconds().denominator() == "1"
-            else throw InvalidTimeZone("time-zone offset must contain whole seconds");
+            else throw InvalidTimeZone.because("time-zone offset must contain whole seconds");
         confirm offset.seconds() > -86400.rat() && offset.seconds() < 86400.rat()
-            else throw InvalidTimeZone("time-zone offset must be within one day");
+            else throw InvalidTimeZone.because("time-zone offset must be within one day");
         zone_name = name;
         zone_offset = offset;
     }
@@ -204,40 +204,8 @@ object TimeZoneDatabaseVersion {
     }
 }
 
-object UnknownTimeZone does Error {
-    has name is string;
+enum UnknownTimeZone is Error = (name(name is string));
 
-    UnknownTimeZone(name is string) {
-        self.name = name;
-    }
+enum InvalidTimeZone is Error = (because(message is string));
 
-    text() is string {
-        "unknown bundled time zone: " + name;
-    }
-}
-
-object InvalidTimeZone does Error {
-    has message is string;
-
-    InvalidTimeZone(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
-
-object MissingLocalTime does Error {
-    has zone_name is string;
-    has local is LocalDateTime;
-
-    MissingLocalTime(zone is string, local is LocalDateTime) {
-        zone_name = zone;
-        self.local = local;
-    }
-
-    text() is string {
-        "local time does not exist in zone " + zone_name;
-    }
-}
+enum MissingLocalTime is Error = (zone(name is string));

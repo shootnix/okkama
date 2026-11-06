@@ -4,7 +4,7 @@ import "config/key" take SettingKey,InvalidSettingKey;
 import "compare" take Comparing,Order;
 object LogName does Comparing<LogName>{
     has key is SettingKey;
-    LogName(segments is Sequencing<string>){key=try{SettingKey(segments);}catch e is InvalidSettingKey{throw InvalidLogName(e.text());};}
+    LogName(segments is Sequencing<string>){key=try{SettingKey(segments);}catch e is InvalidSettingKey{throw InvalidLogName.because(e.text());};}
     segments() is Sequencing<string>{key.segments();}
     string() is string{key.string();}
     order(other is LogName) is Order{key.order(SettingKey(other.segments()));}
@@ -18,8 +18,4 @@ object ChildLogName{
         LogName(parts);
     }
 }
-object InvalidLogName does Error{
-    has reason is string;
-    InvalidLogName(reason is string){self.reason=reason;}
-    text() is string{reason;}
-}
+enum InvalidLogName is Error = (because(reason is string));

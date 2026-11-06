@@ -14,7 +14,7 @@ object Joined {
     }
     Joined(separator is string, values is Iterating<string>, maximum_items is int,
         maximum_length is int) {
-        confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits();
+        confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
         snapshot = values.reduce(JoinedParts(separator, maximum_items, maximum_length)) -> parts, value {
             parts.following(value);
         };
@@ -29,7 +29,7 @@ object JoinedParts {
     has used is int = 0;
     has values is List<string>;
     JoinedParts(separator is string, maximum_items is int, maximum_length is int) {
-        confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits();
+        confirm maximum_items >= 0 && maximum_length >= 0 else throw InvalidJoinLimits.invalid;
         self.separator = separator;
         self.maximum_items = maximum_items;
         self.maximum_length = maximum_length;
@@ -37,11 +37,11 @@ object JoinedParts {
         values = empty;
     }
     following(value is string) is ^JoinedParts {
-        confirm values.size() < maximum_items else throw JoinLimitExceeded(JoinLimit.items);
+        confirm values.size() < maximum_items else throw JoinLimitExceeded.kind(JoinLimit.items);
         let gap = if values.size() > 0 { separator.length(); } else { 0; };
-        confirm gap <= maximum_length - used else throw JoinLimitExceeded(JoinLimit.length);
+        confirm gap <= maximum_length - used else throw JoinLimitExceeded.kind(JoinLimit.length);
         confirm value.length() <= maximum_length - used - gap
-            else throw JoinLimitExceeded(JoinLimit.length);
+            else throw JoinLimitExceeded.kind(JoinLimit.length);
         ^used = used + gap + value.length();
         ^values = values.prefix(value);
     }
@@ -55,18 +55,5 @@ object JoinedParts {
 }
 
 enum JoinLimit = (items, length);
-object InvalidJoinLimits does Error {
-    InvalidJoinLimits();
-    text() is string { "join limits must be nonnegative"; }
-}
-object JoinLimitExceeded does Error {
-    has limit is JoinLimit;
-    JoinLimitExceeded(limit is JoinLimit) { self.limit = limit; }
-    kind() is JoinLimit { limit; }
-    text() is string {
-        match limit {
-            case JoinLimit.items { "joined item limit exceeded"; }
-            case JoinLimit.length { "joined length limit exceeded"; }
-        }
-    }
-}
+enum InvalidJoinLimits is Error = (invalid);
+enum JoinLimitExceeded is Error = (kind(kind is JoinLimit));

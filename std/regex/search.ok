@@ -99,7 +99,7 @@ object RegexMatches does Iterating<RegexMatching> {
 
     cursor() is Cursor<RegexMatching> {
         confirm selected.end() <= source.length()
-            else throw RegexRangeOutsideInput(selected, source.length());
+            else throw RegexRangeOutsideInput.range(selected.start(), selected.end(), source.length());
         RegexMatchCursor(
             origin: source,
             regex: pattern,
@@ -143,12 +143,12 @@ object RegexMatchCursor does Cursor<RegexMatching> {
     available() is bool { !exhausted && observation.found(); }
 
     item() is RegexMatching {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         observation.match();
     }
 
     successor() is Cursor<RegexMatching> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let range = observation.match().range();
         let empty = range.start() == range.end();
         RegexMatchCursor(

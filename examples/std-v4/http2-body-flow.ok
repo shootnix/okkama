@@ -81,7 +81,7 @@ object Responses does Http2ReceivingEvents {
     local_settings(settings is Http2Settings) is void{self.record("ack");}
     goaway(frame is Http2GoAway) is void{panic "unexpected GOAWAY";}
     stream_fault(fault is Http2Fault) is bool{flow.failed(fault);}
-    ended() is void{self.record("end");flow.stop(Http2Fault(Http2FaultScope.connection,1,0,"peer EOF"));sender.stop();output.finish();}
+    ended() is void{self.record("end");flow.stop(Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "peer EOF"));sender.stop();output.finish();}
 }
 async main() is int{
     let listener=await TcpListening(IpEndpoint(IpAddress("127.0.0.1"),0)).acceptance();defer listener.close();
@@ -90,7 +90,7 @@ async main() is int{
     let settings=await Http2ClientPreface(connection.input(),connection.output(),local).result();
     let output=Http2ConnectionOutput(connection.output(),8,65536);let log is @string=[];let entries=Atomic(log);
     let sender=Http2DataScheduler(output,settings,8);defer sender.stop();sender.open(1);sender.open(3);
-    let flow=Http2ReceiveFlow(output,8);defer flow.stop(Http2Fault(Http2FaultScope.connection,1,0,"example scope exit"));
+    let flow=Http2ReceiveFlow(output,8);defer flow.stop(Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "example scope exit"));
     // Keep actual buffer owners directly in this scope; the flow registry borrows.
     let incoming1=Http2BodyBuffer(1,4,100,flow,[BigInt("1")],false);let incoming3=Http2BodyBuffer(3,4,100,flow,[BigInt("2")],false);flow.open(1,incoming1);flow.open(3,incoming3);
     let heads=Event();let reader=Http2ConnectionInput(connection.input(),Responses(output,entries,flow,sender,heads),output,local,settings);

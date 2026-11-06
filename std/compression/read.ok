@@ -64,7 +64,7 @@ object CompressionReading does Reading, Closing {
     has status is ByteBuffer;
 
     CompressionReading(flow is CompressionFlow, chunk_size is int) {
-        confirm chunk_size > 0 else throw InvalidArgument("compression read chunk size must be positive");
+        confirm chunk_size > 0 else throw InvalidArgument.because("compression read chunk size must be positive");
         self.flow = flow;
         self.chunk_size = chunk_size;
         cache = ByteBuffer();
@@ -72,11 +72,11 @@ object CompressionReading does Reading, Closing {
     }
 
     bytes(limit is int) is @byte {
-        confirm limit > 0 else throw InvalidReadLimit(limit);
-        confirm !self.closed() else throw InvalidState("compression reading is closed");
+        confirm limit > 0 else throw InvalidReadLimit.limit(limit);
+        confirm !self.closed() else throw InvalidState.because("compression reading is closed");
         let phase = status.content().bytes();
         confirm phase.size() == 0 || phase[0] != byte(2)
-            else throw InvalidState("compression reading has failed");
+            else throw InvalidState.because("compression reading has failed");
         if cache.content().size() > 0 { return cache.reading().bytes(limit); }
         if phase.size() > 0 { return []; }
         try { self.fill(); }
@@ -98,17 +98,17 @@ object CompressionReading does Reading, Closing {
             let portion = flow.output();
             loop {
                 let bytes = portion.bytes(chunk_size);
-                confirm bytes.size() <= chunk_size else throw InvalidState("codec batch exceeded read limit");
+                confirm bytes.size() <= chunk_size else throw InvalidState.because("codec batch exceeded read limit");
                 if bytes.size() == 0 { last; }
                 cache.writing() <- bytes;
             }
             if flow.finished() { status.writing() <- [byte(1)]; return; }
             if cache.content().size() > 0 { return; }
             let bytes = flow.input(chunk_size);
-            confirm bytes.size() <= chunk_size else throw InvalidState("compression source exceeded read limit");
+            confirm bytes.size() <= chunk_size else throw InvalidState.because("compression source exceeded read limit");
             if bytes.size() == 0 {
                 flow.finish();
-                confirm flow.finished() else throw InvalidState("codec finish did not complete the stream");
+                confirm flow.finished() else throw InvalidState.because("codec finish did not complete the stream");
             } else { flow.write(bytes); }
         }
     }
@@ -127,7 +127,7 @@ role CompressionFlow {
     finished() is bool;
     fake {
         input(limit is int) is @byte {
-            confirm limit > 0 else throw InvalidReadLimit(limit);
+            confirm limit > 0 else throw InvalidReadLimit.limit(limit);
             let position is int = if fake.storage.has("position") {
                 fake.storage.get("position");
             } else {0;};
@@ -138,7 +138,7 @@ role CompressionFlow {
             result;
         }
         write(origin is @byte) is void {
-            confirm !self.finished() else throw InvalidState("flow has finished");
+            confirm !self.finished() else throw InvalidState.because("flow has finished");
             let before is @byte = if fake.storage.has("queued") {
                 fake.storage.get("queued");
             } else {[];};
@@ -157,7 +157,7 @@ role CompressionFlow {
             CompressionOutput(result);
         }
         finish() is void {
-            confirm !self.finished() else throw InvalidState("flow has finished");
+            confirm !self.finished() else throw InvalidState.because("flow has finished");
             fake.storage.set("done",true);
         }
         finished() is bool {fake.storage.has("done");}

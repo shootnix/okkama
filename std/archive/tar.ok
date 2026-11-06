@@ -87,17 +87,8 @@ object TarWriting does WritingArchive, Closing {
     destroy { self.close(); }
 }
 
-object InvalidTar does Error {
-    has reason is string;
-    InvalidTar(message is string) { reason = message; }
-    text() is string { "invalid tar: " + reason; }
-}
-object DuplicateArchivePath does Error {
-    has origin is ArchivePath;
-    DuplicateArchivePath(path is ArchivePath) { origin = path; }
-    path() is ArchivePath { origin; }
-    text() is string { "duplicate archive path: " + origin.string(); }
-}
+enum InvalidTar is Error = (because(reason is string));
+enum DuplicateArchivePath is Error = (path(path is string));
 
 // Internal typed dispatch over archive variants. Owns no resources: its writer
 // and NUL-delimited path store belong to TarWriting. NUL cannot occur in a path,
@@ -113,7 +104,7 @@ object TarMemberWriting does ArchiveEntryVisitor {
         let nul = Utf8Decoded([byte(0)]).string();
         let previous = Utf8Decoded(names.content().bytes()).string().split(nul);
         for previous -> name {
-            confirm name != entry.path().string() else throw DuplicateArchivePath(entry.path());
+            confirm name != entry.path().string() else throw DuplicateArchivePath.path(entry.path().string());
         }
         entry.accept(self);
         names.writing() <- entry.path().string() <- [byte(0)];
@@ -153,7 +144,7 @@ object TarMemberHeader {
     }
     bytes() is @byte {
         confirm major >= 0 && major <= 2097151 && minor >= 0 && minor <= 2097151
-            else throw InvalidTar("device number exceeds USTAR field");
+            else throw InvalidTar.because("device number exceeds USTAR field");
         let metadata = entry.metadata();
         let mode = try {
             let permission = metadata.mode();
@@ -176,12 +167,12 @@ object TarMemberHeader {
         // Header strings and PAX values never silently stop at embedded NUL.
         for [owner.user(), owner.group(), metadata.comment()] -> text {
             confirm Utf8Encoded(text).bytes().reduce(true) -> valid, b { valid && b != byte(0); }
-                else throw InvalidTar("NUL in metadata");
+                else throw InvalidTar.because("NUL in metadata");
         }
         if format == TarFormat.ustar {
             confirm ordinary_path && ordinary_link && ordinary_user && ordinary_group
                 && ordinary_uid && ordinary_gid && ordinary_time && ordinary_size && metadata.comment() == ""
-                else throw InvalidTar("entry is not representable in USTAR");
+                else throw InvalidTar.because("entry is not representable in USTAR");
         }
         let extensions = ByteBuffer(); defer extensions.closing().close();
         if !ordinary_path { extensions.writing() <- TarPaxRecord("path", path).bytes(); }
@@ -274,7 +265,7 @@ object TarAsciiField {
         origin.length() <= width && ascii;
     }
     bytes() is @byte {
-        confirm self.fits() else throw InvalidTar("string exceeds USTAR field");
+        confirm self.fits() else throw InvalidTar.because("string exceeds USTAR field");
         let text = Utf8Encoded(origin).bytes();
         let result is @byte = (0..width).map() -> index {
             if index < text.size() { text[index]; } else { byte(0); }
@@ -288,8 +279,8 @@ object TarAsciiField {
 object TarOctal {
     has number, width is int;
     TarOctal(number is int, width is int) {
-        confirm width >= 2 && width <= 12 else throw InvalidTar("invalid octal width");
-        confirm number >= 0 && (number >> (3 * (width-1))) == 0 else throw InvalidTar("number exceeds USTAR field");
+        confirm width >= 2 && width <= 12 else throw InvalidTar.because("invalid octal width");
+        confirm number >= 0 && (number >> (3 * (width-1))) == 0 else throw InvalidTar.because("number exceeds USTAR field");
         self.number = number; self.width = width;
     }
     bytes() is @byte {
@@ -304,7 +295,7 @@ object TarOctal {
 object TarZeroes {
     has size is int;
     TarZeroes(size is int) {
-        confirm size >= 0 else throw InvalidTar("negative padding"); self.size = size;
+        confirm size >= 0 else throw InvalidTar.because("negative padding"); self.size = size;
     }
     bytes() is @byte { let result is @byte = (0..size).map() -> ignored { byte(0); }; result; }
 }
@@ -396,7 +387,7 @@ object ParsedTar {
         maximum_metadata = 1048576; maximum_extensions = 4096;
     }
     ParsedTar(origin is @byte, limits is ArchiveLimits, maximum_metadata is int, maximum_extensions is int) {
-        confirm maximum_metadata > 0 && maximum_extensions > 0 else throw InvalidArgument("TAR metadata limits must be positive");
+        confirm maximum_metadata > 0 && maximum_extensions > 0 else throw InvalidArgument.because("TAR metadata limits must be positive");
         self.origin = origin; self.limits = limits;
         self.maximum_metadata = maximum_metadata; self.maximum_extensions = maximum_extensions;
     }
@@ -437,19 +428,19 @@ object TarParseProgress {
         TarEntrySequence(forward);
     }
     following(origin is @byte) is ^TarParseProgress {
-        confirm origin.size()-at >= 512 else throw InvalidTar("truncated header or missing EOF");
+        confirm origin.size()-at >= 512 else throw InvalidTar.because("truncated header or missing EOF");
         let raw = origin.slice(at,at+512);
         let zero = raw.reduce(true) -> valid, b { valid && b == byte(0); };
         if zero {
-            confirm !pending else throw InvalidTar("orphan local extension");
-            confirm origin.size()-at >= 1024 && (origin.size()-at)%512 == 0 else throw InvalidTar("incomplete EOF blocks");
+            confirm !pending else throw InvalidTar.because("orphan local extension");
+            confirm origin.size()-at >= 1024 && (origin.size()-at)%512 == 0 else throw InvalidTar.because("incomplete EOF blocks");
             // Scan bounded blocks rather than copying the whole trailing input.
             let tail=TarReadOffset(at+512);
             loop {
                 if tail.at()==origin.size() {last;}
                 let block=origin.slice(tail.at(),tail.at()+512);
                 confirm block.reduce(true) -> valid,b {valid && b==byte(0);}
-                    else throw InvalidTar("nonzero data after EOF");
+                    else throw InvalidTar.because("nonzero data after EOF");
                 tail=tail.following(tail.at()+512);
             }
             ^done = true;
@@ -458,11 +449,11 @@ object TarParseProgress {
             let header = TarInputHeader(raw);
             let flag = header.flag();
             if flag == "x" || flag == "g" || flag == "L" || flag == "K" {
-                confirm extensions_left > 0 else throw ArchiveLimitExceeded("tar_extensions", maximum_extensions);
+                confirm extensions_left > 0 else throw ArchiveLimitExceeded.detailed("tar_extensions", maximum_extensions);
                 let length = header.number(124,12);
-                confirm length.sign() >= 0 else throw InvalidTar("negative extension size");
+                confirm length.sign() >= 0 else throw InvalidTar.because("negative extension size");
                 confirm length.order(BigInt(metadata_left.string())) != Order.greater
-                    else throw ArchiveLimitExceeded("tar_metadata", maximum_metadata);
+                    else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
                 let size = ParsedInt(length.string()).value();
                 let end = TarBodySpan(origin,at+512,size).end();
                 let payload = origin.slice(at+512,at+512+size);
@@ -481,7 +472,7 @@ object TarParseProgress {
             else {
                 let member = TarInputMember(header,local,global,limits);
                 let admitted = budget.entered(member.path().string(),member.size());
-                for names -> name { confirm name != member.path().string() else throw DuplicateArchivePath(member.path()); }
+                for names -> name { confirm name != member.path().string() else throw DuplicateArchivePath.path(member.path().string()); }
                 let spent = admitted.expanded(member.size());
                 let end = TarBodySpan(origin,at+512,member.size()).end();
                 let entry = member.entry(origin.slice(at+512,at+512+member.size()));
@@ -501,12 +492,12 @@ object TarBodySpan {
     TarBodySpan(origin is @byte, start is int, size is int) { self.origin=origin;self.start=start;self.size=size; }
     end() is int {
         confirm start >= 0 && start <= origin.size() && size >= 0 && size <= origin.size()-start
-            else throw InvalidTar("truncated entry data");
+            else throw InvalidTar.because("truncated entry data");
         let pad = (512-size%512)%512;
-        confirm pad <= origin.size()-start-size else throw InvalidTar("missing entry padding");
+        confirm pad <= origin.size()-start-size else throw InvalidTar.because("missing entry padding");
         let padding=origin.slice(start+size,start+size+pad);
         confirm padding.reduce(true) -> valid,b {valid && b==byte(0);}
-            else throw InvalidTar("nonzero entry padding");
+            else throw InvalidTar.because("nonzero entry padding");
         start+size+pad;
     }
 }
@@ -516,15 +507,15 @@ object TarBodySpan {
 object TarInputHeader {
     has origin is @byte;
     TarInputHeader(origin is @byte) {
-        confirm origin.size() == 512 else throw InvalidTar("header width");
+        confirm origin.size() == 512 else throw InvalidTar.because("header width");
         let sum = (0..512).reduce(0) -> result, i {
             result + if i >= 148 && i < 156 { 32; } else { origin[i].int(); };
         };
-        confirm TarNumericField(origin.slice(148,156)).integer().string() == sum.string() else throw InvalidTar("header checksum mismatch");
+        confirm TarNumericField(origin.slice(148,156)).integer().string() == sum.string() else throw InvalidTar.because("header checksum mismatch");
         let magic = origin.slice(257,265);
         confirm magic == [byte(117),byte(115),byte(116),byte(97),byte(114),byte(0),byte(48),byte(48)]
             || magic == [byte(117),byte(115),byte(116),byte(97),byte(114),byte(32),byte(32),byte(0)]
-            else throw InvalidTar("unsupported TAR header format");
+            else throw InvalidTar.because("unsupported TAR header format");
         self.origin = origin;
     }
     flag() is string { if origin[156] == byte(0) { "0"; } else { TarUtf8(origin.slice(156,157)).string(); } }
@@ -548,7 +539,7 @@ object TarNumericField {
     has origin is @byte;
     TarNumericField(origin is @byte) { self.origin=origin; }
     integer() is BigInt {
-        confirm origin.size() > 0 else throw InvalidTar("empty numeric field");
+        confirm origin.size() > 0 else throw InvalidTar.because("empty numeric field");
         if (origin[0].int() & 128) != 0 {
             let result = (1..origin.size()).reduce(BigInt((origin[0].int() & 127).string())) -> value, i {
                 BigSum(left:BigProduct(left:value,right:BigInt("256")).value(),right:BigInt(origin[i].int().string())).value();
@@ -563,7 +554,7 @@ object TarNumericField {
             else {
                 (digits[0]..digits[digits.size()-1]+1).reduce(BigInt("0")) -> value, i {
                     let code = origin[i].int();
-                    confirm code >= 48 && code <= 55 else throw InvalidTar("invalid octal field");
+                    confirm code >= 48 && code <= 55 else throw InvalidTar.because("invalid octal field");
                     BigSum(left:BigProduct(left:value,right:BigInt("8")).value(),right:BigInt((code-48).string())).value();
                 };
             }
@@ -604,22 +595,22 @@ object TarPaxPayload {
         loop {
             if position.at() == origin.size() { last; }
             let at=position.at(); let space=self.space(at);
-            confirm space-at <= origin.size().string().length() else throw InvalidTar("PAX length overflow");
+            confirm space-at <= origin.size().string().length() else throw InvalidTar.because("PAX length overflow");
             let digits=TarUtf8(origin.slice(at,space)).string();
-            confirm TarDecimalDigits(digits).valid() else throw InvalidTar("invalid PAX length");
+            confirm TarDecimalDigits(digits).valid() else throw InvalidTar.because("invalid PAX length");
             let length=ParsedInt(digits).value();
-            confirm length >= 5 && length <= origin.size()-at && space < at+length-2 else throw InvalidTar("invalid PAX span");
-            confirm origin[at+length-1] == byte(10) else throw InvalidTar("PAX record lacks newline");
+            confirm length >= 5 && length <= origin.size()-at && space < at+length-2 else throw InvalidTar.because("invalid PAX span");
+            confirm origin[at+length-1] == byte(10) else throw InvalidTar.because("PAX record lacks newline");
             let record=TarUtf8(origin.slice(space+1,at+length-1)).string();
             let parts=record.split("=");
-            confirm parts.size() >= 2 && parts[0] != "" else throw InvalidTar("invalid PAX key");
+            confirm parts.size() >= 2 && parts[0] != "" else throw InvalidTar.because("invalid PAX key");
             let key=parts[0]; let text=record.slice(key.length()+1,record.length());
             let nul=Utf8Decoded([byte(0)]).string();
-            confirm key.split(nul).size()==1 && key.split("\n").size()==1 && text.split(nul).size()==1 else throw InvalidTar("NUL or newline in PAX key/value");
+            confirm key.split(nul).size()==1 && key.split("\n").size()==1 && text.split(nul).size()==1 else throw InvalidTar.because("NUL or newline in PAX key/value");
             confirm !(key.length()>=10 && key.slice(0,10)=="GNU.sparse") && key!="SCHILY.realsize" && key!="SCHILY.filetype"
-                else throw InvalidTar("sparse or alternate file representation is unsupported");
+                else throw InvalidTar.because("sparse or alternate file representation is unsupported");
             confirm key!="hdrcharset" || text=="" || text=="UTF-8" || text=="ISO-IR 10646 2000 UTF-8"
-                else throw InvalidTar("non-UTF-8 PAX names are unsupported");
+                else throw InvalidTar.because("non-UTF-8 PAX names are unsupported");
             attributes=attributes.following(key,text);
             position=position.following(at+length);
         }
@@ -628,16 +619,16 @@ object TarPaxPayload {
     private:
     space(at is int) is int {
         for (at..origin.size()) -> i { if origin[i]==byte(32) { return i; } }
-        throw InvalidTar("PAX length lacks space");
+        throw InvalidTar.because("PAX length lacks space");
     }
 }
 object TarGnuName {
     has origin is @byte;
     TarGnuName(origin is @byte) { self.origin=origin; }
     string() is string {
-        confirm origin.size()>0 && origin[origin.size()-1]==byte(0) else throw InvalidTar("GNU name lacks NUL");
+        confirm origin.size()>0 && origin[origin.size()-1]==byte(0) else throw InvalidTar.because("GNU name lacks NUL");
         let body=origin.slice(0,origin.size()-1);
-        confirm body.reduce(true) -> valid,b {valid && b!=byte(0);} else throw InvalidTar("embedded NUL in GNU name");
+        confirm body.reduce(true) -> valid,b {valid && b!=byte(0);} else throw InvalidTar.because("embedded NUL in GNU name");
         TarUtf8(body).string();
     }
 }
@@ -645,7 +636,7 @@ object TarUtf8 {
     has origin is @byte;
     TarUtf8(origin is @byte) {self.origin=origin;}
     string() is string {
-        try { Utf8Decoded(origin).string(); } catch error is InvalidUtf8 { throw InvalidTar("invalid UTF-8"); }
+        try { Utf8Decoded(origin).string(); } catch error is InvalidUtf8 { throw InvalidTar.because("invalid UTF-8"); }
     }
 }
 object TarDecimalDigits {
@@ -668,7 +659,7 @@ object TarInputMember {
     TarInputMember(header is TarInputHeader, local is TarAttributes, global is TarAttributes, limits is ArchiveLimits) {
         let kind=header.flag();
         confirm kind=="0" || kind=="1" || kind=="2" || kind=="3" || kind=="4" || kind=="5" || kind=="6"
-            else throw InvalidTar("unsupported entry type");
+            else throw InvalidTar.because("unsupported entry type");
         flag=kind;
         let path=local.lookup("path",global.lookup("path",""));
         let name=if path!="" {path;} else {header.name();};
@@ -676,10 +667,10 @@ object TarInputMember {
         origin=limits.path(normalized);
         let size_text=local.lookup("size",global.lookup("size",""));
         let length=if size_text=="" {header.number(124,12);} else {TarDecimalNumber(size_text).integer();};
-        confirm length.sign()>=0 else throw InvalidTar("negative member size");
-        confirm length.order(BigInt(limits.entry_size().string()))!=Order.greater else throw ArchiveLimitExceeded("entry_size",limits.entry_size());
+        confirm length.sign()>=0 else throw InvalidTar.because("negative member size");
+        confirm length.order(BigInt(limits.entry_size().string()))!=Order.greater else throw ArchiveLimitExceeded.detailed("entry_size", limits.entry_size());
         let amount=ParsedInt(length.string()).value();
-        confirm kind=="0" || amount==0 else throw InvalidTar("non-file member has data");
+        confirm kind=="0" || amount==0 else throw InvalidTar.because("non-file member has data");
         size=amount;
         let link=local.lookup("linkpath",global.lookup("linkpath",""));
         let effective_link=if link!="" {link;} else {header.text(157,100);};
@@ -688,7 +679,7 @@ object TarInputMember {
         let gid=local.lookup("gid",global.lookup("gid",""));
         let user_id=if uid!="" {TarDecimalNumber(uid).integer();} else {header.number(108,8);};
         let group_id=if gid!="" {TarDecimalNumber(gid).integer();} else {header.number(116,8);};
-        confirm user_id.sign()>=0 && group_id.sign()>=0 else throw InvalidTar("negative ownership identity");
+        confirm user_id.sign()>=0 && group_id.sign()>=0 else throw InvalidTar.because("negative ownership identity");
         let user=local.lookup("uname",global.lookup("uname",""));
         let group=local.lookup("gname",global.lookup("gname",""));
         let owner=ArchiveOwnership(if user!="" {user;} else {header.text(265,32);},
@@ -697,7 +688,7 @@ object TarInputMember {
         let time=local.lookup("mtime",global.lookup("mtime",""));
         let time_text=if time!="" {time;} else {header.number(136,12).string();};
         let modified=try {ArchiveModificationFromEpoch(TarPaxTime(time_text).seconds()).value();}
-            catch error is Error {throw InvalidTar("invalid modification time");};
+            catch error is Error {throw InvalidTar.because("invalid modification time");};
         attributes=ArchiveMetadata(PermissionMode(mode),modified,owner,local.lookup("comment",global.lookup("comment","")));
         if kind=="3" || kind=="4" {
             major=TarCheckedInt(header.number(329,8),9223372036854775807).value();
@@ -722,7 +713,7 @@ object TarDecimalNumber {
     has origin is string;
     TarDecimalNumber(origin is string) {self.origin=origin;}
     integer() is BigInt {
-        confirm TarDecimalDigits(origin).valid() else throw InvalidTar("invalid nonnegative decimal");
+        confirm TarDecimalDigits(origin).valid() else throw InvalidTar.because("invalid nonnegative decimal");
         BigInt(origin);
     }
 }
@@ -731,7 +722,7 @@ object TarCheckedInt {
     has maximum is int;
     TarCheckedInt(origin is BigInt, maximum is int) {self.origin=origin;self.maximum=maximum;}
     value() is int {
-        confirm origin.sign()>=0 && origin.order(BigInt(maximum.string()))!=Order.greater else throw InvalidTar("numeric field out of range");
+        confirm origin.sign()>=0 && origin.order(BigInt(maximum.string()))!=Order.greater else throw InvalidTar.because("numeric field out of range");
         ParsedInt(origin.string()).value();
     }
 }
@@ -739,16 +730,16 @@ object TarPaxTime {
     has origin is string;
     TarPaxTime(origin is string) {self.origin=origin;}
     seconds() is rat {
-        confirm origin.length()>0 else throw InvalidTar("empty timestamp");
+        confirm origin.length()>0 else throw InvalidTar.because("empty timestamp");
         let negative=origin.slice(0,1)=="-";
         let magnitude=if negative {origin.slice(1,origin.length());} else {origin;};
         let parts=magnitude.split(".");
-        confirm parts.size()<=2 && TarDecimalDigits(parts[0]).valid() else throw InvalidTar("invalid timestamp");
+        confirm parts.size()<=2 && TarDecimalDigits(parts[0]).valid() else throw InvalidTar.because("invalid timestamp");
         let whole=TarCheckedInt(BigInt(parts[0]),253402300800).value();
         let fraction=if parts.size()==2 {parts[1];} else {"0";};
-        confirm TarDecimalDigits(fraction).valid() else throw InvalidTar("invalid timestamp fraction");
+        confirm TarDecimalDigits(fraction).valid() else throw InvalidTar.because("invalid timestamp fraction");
         let width=if fraction.length()<9 {fraction.length();} else {9;};
-        for (width..fraction.length()) -> i {confirm fraction.slice(i,i+1)=="0" else throw InvalidTar("sub-nanosecond timestamp");}
+        for (width..fraction.length()) -> i {confirm fraction.slice(i,i+1)=="0" else throw InvalidTar.because("sub-nanosecond timestamp");}
         let scale=(0..width).reduce(1) -> value,ignored {value*10;};
         let result=whole.rat()+rat(ParsedInt(fraction.slice(0,width)).value(),scale);
         if negative {-result;} else {result;}
@@ -762,10 +753,10 @@ object TarEntrySequence does Sequencing<ArchiveEntry>, Iterating<ArchiveEntry> {
     TarEntrySequence(origin is @ArchiveEntry) {self.origin=origin;}
     size() is int {origin.size();}
     item(index is int) is ArchiveEntry {
-        confirm index>=0 && index<origin.size() else throw OutOfRange("archive entry index");origin[index];
+        confirm index>=0 && index<origin.size() else throw OutOfRange.because("archive entry index");origin[index];
     }
-    first() is ArchiveEntry {confirm origin.size()>0 else throw EmptySequence();origin[0];}
-    last() is ArchiveEntry {confirm origin.size()>0 else throw EmptySequence();origin[origin.size()-1];}
+    first() is ArchiveEntry {confirm origin.size()>0 else throw EmptySequence.empty;origin[0];}
+    last() is ArchiveEntry {confirm origin.size()>0 else throw EmptySequence.empty;origin[origin.size()-1];}
     cursor() is Cursor<ArchiveEntry> {TarEntryCursor(self,0);}
 }
 object TarEntryCursor does Cursor<ArchiveEntry> {
@@ -773,8 +764,8 @@ object TarEntryCursor does Cursor<ArchiveEntry> {
     has position is int;
     TarEntryCursor(origin is TarEntrySequence, position is int) {self.origin=origin;self.position=position;}
     available() is bool {position<origin.size();}
-    item() is ArchiveEntry {confirm self.available() else throw IterationEnded();origin.item(position);}
-    successor() is Cursor<ArchiveEntry> {confirm self.available() else throw IterationEnded();TarEntryCursor(origin,position+1);}
+    item() is ArchiveEntry {confirm self.available() else throw IterationEnded.ended;origin.item(position);}
+    successor() is Cursor<ArchiveEntry> {confirm self.available() else throw IterationEnded.ended;TarEntryCursor(origin,position+1);}
 }
 
 test "TAR input numeric fields reject malformed octal" {
@@ -826,18 +817,18 @@ object TarReading does ReadingArchive, Closing {
         input = TarStreamInput(origin,limits,maximum_metadata,maximum_extensions); status = ByteBuffer();
     }
     entry() is ArchiveEntry {
-        confirm !self.finished() else throw EndOfArchive();
+        confirm !self.finished() else throw EndOfArchive.reached;
         // Empty internal result means validated EOF. Keeping it distinct from an
         // exception prevents a byte-source EndOfArchive being treated as success.
         let result = try {input.next_entry();}
             catch error is Error {status.writing() <- [byte(2)];throw error;};
-        if result.size()==0 {status.writing() <- [byte(1)];throw EndOfArchive();}
+        if result.size()==0 {status.writing() <- [byte(1)];throw EndOfArchive.reached;}
         result[0];
     }
     finished() is bool {
-        confirm !self.closed() else throw InvalidState("TAR reading is closed");
+        confirm !self.closed() else throw InvalidState.because("TAR reading is closed");
         let phase=status.content().bytes();
-        confirm phase.size()==0 || phase[0]!=byte(2) else throw InvalidState("TAR reading has failed");
+        confirm phase.size()==0 || phase[0]!=byte(2) else throw InvalidState.because("TAR reading has failed");
         phase.size()>0;
     }
     close() is void {input.close();status.closing().close();}
@@ -856,7 +847,7 @@ object TarStreamInput {
     has seed is TarStreamCounts;
     has counters, names, globals is ByteBuffer;
     TarStreamInput(origin is Reading, limits is ArchiveLimits, maximum_metadata is int, maximum_extensions is int) {
-        confirm maximum_metadata>0 && maximum_extensions>0 else throw InvalidArgument("TAR metadata limits must be positive");
+        confirm maximum_metadata>0 && maximum_extensions>0 else throw InvalidArgument.because("TAR metadata limits must be positive");
         source=TarExactReading(origin);self.limits=limits;
         let initial=TarStreamCounts(limits.entries(),limits.entry_size(),limits.total_size(),maximum_metadata,maximum_extensions);
         seed=initial;counters=ByteBuffer(initial.bytes());names=ByteBuffer();globals=ByteBuffer();
@@ -870,13 +861,13 @@ object TarStreamInput {
             let raw=source.bytes(512,false);
             let zero=raw.reduce(true) -> valid,b {valid && b==byte(0);};
             if zero {
-                confirm !local.present() else throw InvalidTar("orphan local extension");
+                confirm !local.present() else throw InvalidTar.because("orphan local extension");
                 let second=source.bytes(512,false);
-                confirm second.reduce(true) -> valid,b {valid && b==byte(0);} else throw InvalidTar("nonzero data after EOF");
+                confirm second.reduce(true) -> valid,b {valid && b==byte(0);} else throw InvalidTar.because("nonzero data after EOF");
                 loop {
                     let trailer=source.bytes(512,true);
                     if trailer.size()==0 {return [];}
-                    confirm trailer.reduce(true) -> valid,b {valid && b==byte(0);} else throw InvalidTar("nonzero data after EOF");
+                    confirm trailer.reduce(true) -> valid,b {valid && b==byte(0);} else throw InvalidTar.because("nonzero data after EOF");
                 }
             }
             let header=TarInputHeader(raw);let flag=header.flag();
@@ -896,7 +887,7 @@ object TarStreamInput {
                 counts=counts.admitted(member.size()); // Before payload I/O.
                 let nul=Utf8Decoded([byte(0)]).string();
                 let previous=Utf8Decoded(names.content().bytes()).string().split(nul);
-                for previous -> name {confirm name!=member.path().string() else throw DuplicateArchivePath(member.path());}
+                for previous -> name {confirm name!=member.path().string() else throw DuplicateArchivePath.path(member.path().string());}
                 let payload=source.bytes(member.size(),false);
                 self.padding(member.size());
                 let entry=member.entry(payload);
@@ -912,7 +903,7 @@ object TarStreamInput {
     private:
     padding(size is int) is void {
         let bytes=source.bytes((512-size%512)%512,false);
-        confirm bytes.reduce(true) -> valid,b {valid && b==byte(0);} else throw InvalidTar("nonzero entry padding");
+        confirm bytes.reduce(true) -> valid,b {valid && b==byte(0);} else throw InvalidTar.because("nonzero entry padding");
     }
 }
 
@@ -923,17 +914,17 @@ object TarExactReading {
     has origin is Reading;
     TarExactReading(origin is Reading) {self.origin=origin;}
     bytes(size is int, allow_end is bool) is @byte {
-        confirm size>=0 else throw InvalidArgument("negative TAR read size");
+        confirm size>=0 else throw InvalidArgument.because("negative TAR read size");
         let buffer=ByteBuffer();defer buffer.closing().close();
         loop {
             let remaining=size-buffer.content().size();
             if remaining==0 {return buffer.content().bytes();}
             let request=if remaining<8192 {remaining;} else {8192;};
             let chunk=origin.bytes(request);
-            confirm chunk.size()<=request else throw InvalidTar("byte source exceeded read limit");
+            confirm chunk.size()<=request else throw InvalidTar.because("byte source exceeded read limit");
             if chunk.size()==0 {
                 if allow_end && buffer.content().size()==0 {return [];}
-                throw InvalidTar("truncated TAR input");
+                throw InvalidTar.because("truncated TAR input");
             }
             buffer.writing() <- chunk;
         }
@@ -951,7 +942,7 @@ object TarStreamLocal {
     extended(payload is @byte, flag is string) is ^TarStreamLocal {
         if flag=="x" {^values=TarPaxPayload(payload).applied(values);}
         else {
-            confirm flag=="L" || flag=="K" else throw InvalidTar("invalid local extension kind");
+            confirm flag=="L" || flag=="K" else throw InvalidTar.because("invalid local extension kind");
             let key=if flag=="L" {"path";} else {"linkpath";};
             let changed=values.following(key,TarGnuName(payload).string());^values=changed;
         }
@@ -967,27 +958,27 @@ object TarStreamCounts {
     has maximum_entries, maximum_entry, maximum_total, maximum_metadata, maximum_extensions is int;
     has entries_left, total_left, metadata_left, extensions_left is int;
     TarStreamCounts(entries is int, entry_size is int, total is int, metadata is int, extensions is int) {
-        confirm entries>0 && entry_size>0 && total>0 && metadata>0 && extensions>0 else throw InvalidArgument("TAR counts must be positive");
+        confirm entries>0 && entry_size>0 && total>0 && metadata>0 && extensions>0 else throw InvalidArgument.because("TAR counts must be positive");
         maximum_entries=entries;maximum_entry=entry_size;maximum_total=total;maximum_metadata=metadata;maximum_extensions=extensions;
         entries_left=entries;total_left=total;metadata_left=metadata;extensions_left=extensions;
     }
     admitted(size is int) is ^TarStreamCounts {
-        confirm size>=0 else throw InvalidArgument("negative TAR member size");
-        confirm entries_left>0 else throw ArchiveLimitExceeded("entries",maximum_entries);
-        confirm size<=maximum_entry else throw ArchiveLimitExceeded("entry_size",maximum_entry);
-        confirm size<=total_left else throw ArchiveLimitExceeded("total_size",maximum_total);
+        confirm size>=0 else throw InvalidArgument.because("negative TAR member size");
+        confirm entries_left>0 else throw ArchiveLimitExceeded.detailed("entries", maximum_entries);
+        confirm size<=maximum_entry else throw ArchiveLimitExceeded.detailed("entry_size", maximum_entry);
+        confirm size<=total_left else throw ArchiveLimitExceeded.detailed("total_size", maximum_total);
         ^entries_left=entries_left-1;^total_left=total_left-size;
     }
     extension_size(length is BigInt) is int {
-        confirm extensions_left>0 else throw ArchiveLimitExceeded("tar_extensions",maximum_extensions);
-        confirm length.sign()>=0 else throw InvalidTar("negative extension size");
-        confirm length.order(BigInt(metadata_left.string()))!=Order.greater else throw ArchiveLimitExceeded("tar_metadata",maximum_metadata);
+        confirm extensions_left>0 else throw ArchiveLimitExceeded.detailed("tar_extensions", maximum_extensions);
+        confirm length.sign()>=0 else throw InvalidTar.because("negative extension size");
+        confirm length.order(BigInt(metadata_left.string()))!=Order.greater else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
         ParsedInt(length.string()).value();
     }
     extended(size is int) is ^TarStreamCounts {
-        confirm size>=0 else throw InvalidArgument("negative TAR extension size");
-        confirm extensions_left>0 else throw ArchiveLimitExceeded("tar_extensions",maximum_extensions);
-        confirm size<=metadata_left else throw ArchiveLimitExceeded("tar_metadata",maximum_metadata);
+        confirm size>=0 else throw InvalidArgument.because("negative TAR extension size");
+        confirm extensions_left>0 else throw ArchiveLimitExceeded.detailed("tar_extensions", maximum_extensions);
+        confirm size<=metadata_left else throw ArchiveLimitExceeded.detailed("tar_metadata", maximum_metadata);
         ^metadata_left=metadata_left-size;^extensions_left=extensions_left-1;
     }
     bytes() is @byte {
@@ -998,10 +989,10 @@ object TarStreamCounts {
         buffer.content().bytes();
     }
     restored(origin is @byte) is ^TarStreamCounts {
-        confirm origin.size()==32 else throw InvalidTar("invalid internal counter width");
+        confirm origin.size()==32 else throw InvalidTar.because("invalid internal counter width");
         let values=(0..4).map() -> index {IntegerFromBytes(origin.slice(index*8,index*8+8),Signedness.unsigned,ByteOrder.big).value();};
         confirm values[0]<=maximum_entries && values[1]<=maximum_total && values[2]<=maximum_metadata && values[3]<=maximum_extensions
-            else throw InvalidTar("invalid internal counter bounds");
+            else throw InvalidTar.because("invalid internal counter bounds");
         ^entries_left=values[0];^total_left=values[1];^metadata_left=values[2];^extensions_left=values[3];
     }
 }

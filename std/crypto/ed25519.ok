@@ -18,7 +18,7 @@ import "encoding/hex" take HexEncoded, HexDecoded;
 object Ed25519PrivateKey does SigningKey {
     has seed is SecretBytes;
     Ed25519PrivateKey(seed is SecretBytes) {
-        confirm seed.size() == 32 else throw InvalidCryptoInput("Ed25519 seed must be 32 bytes");
+        confirm seed.size() == 32 else throw InvalidCryptoInput.because("Ed25519 seed must be 32 bytes");
         self.seed = seed;
     }
     Ed25519PrivateKey(entropy is Entropy) { seed = SecretBytes(entropy.bytes(32)); }
@@ -30,7 +30,7 @@ object Ed25519PrivateKey does SigningKey {
 object Ed25519PublicKey does PublicKey, VerifyingKey {
     has raw is @byte;
     Ed25519PublicKey(raw is @byte) {
-        confirm raw.size() == 32 else throw InvalidCryptoInput("Ed25519 public key must be 32 bytes");
+        confirm raw.size() == 32 else throw InvalidCryptoInput.because("Ed25519 public key must be 32 bytes");
         self.raw = raw;
     }
     raw() is @byte { raw; }

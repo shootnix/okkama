@@ -27,19 +27,7 @@ role Checksumming {
 
 // Constructor validation failure shared by bounded checksum algorithms.
 // initial()/maximum() preserve the rejected seed and inclusive upper bound.
-object InvalidChecksumInitial does Error {
-    has seed is int;
-    has limit is int;
-    InvalidChecksumInitial(initial is int, maximum is int) {
-        seed = initial;
-        limit = maximum;
-    }
-    initial() is int { seed; }
-    maximum() is int { limit; }
-    text() is string {
-        "checksum initial value must be in 0.." + limit.string() + ": " + seed.string();
-    }
-}
+enum InvalidChecksumInitial is Error = (detailed(initial is int, maximum is int));
 
 test "checksum fake appends and branches without changing old states" {
     let origin = Checksumming.fake();
@@ -60,9 +48,3 @@ test "empty chunks and independent checksum fakes retain their values" {
     test.is(Checksumming.fake().value(), 0);
 }
 
-test "invalid checksum initial value preserves its diagnostic" {
-    let error = InvalidChecksumInitial(-1, 65535);
-    test.is(error.initial(), -1);
-    test.is(error.maximum(), 65535);
-    test.is(error.text(), "checksum initial value must be in 0..65535: -1");
-}

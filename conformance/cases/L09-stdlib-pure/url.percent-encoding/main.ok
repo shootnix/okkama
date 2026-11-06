@@ -9,6 +9,6 @@ main() is int {
     c = c.same_text("space and utf8", PercentEncoded("a b/ü", UrlComponent.data).string(), "a%20b%2F%C3%BC");
     c = c.same_text("unreserved kept", PercentEncoded("AZaz09-._~", UrlComponent.data).string(), "AZaz09-._~");
     c = c.same_text("decode once", PercentDecoded("%252F").string(), "%2F");
-    c = c.same_text("invalid escape", try { let probe = PercentDecoded("%zz").string(); "no error"; } catch e is InvalidPercentEncoding { "offset " + e.offset().string(); }, "offset 0");
+    c = c.same_text("invalid escape", try { let probe = PercentDecoded("%zz").string(); "no error"; } catch InvalidPercentEncoding.at(offset) { "offset " + offset.string(); }, "offset 0");
     c.done();
 }

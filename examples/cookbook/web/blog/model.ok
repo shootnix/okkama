@@ -17,7 +17,7 @@ import "web/exception" take Exception;
 
 object Draft {
     has title,body is string;
-    Draft(title is string,body is string){confirm title.length()>0 && title.length()<=150 && body.length()>0 && body.length()<=20000 else throw Exception(422,"Заголовок: 1..150, текст: 1..20000 символов");self.title=title;self.body=body;}
+    Draft(title is string,body is string){confirm title.length()>0 && title.length()<=150 && body.length()>0 && body.length()<=20000 else throw Exception.status(422,"Заголовок: 1..150, текст: 1..20000 символов");self.title=title;self.body=body;}
     title() is string{title;}body() is string{body;}
 }
 object BlogPosts {
@@ -31,7 +31,7 @@ object BlogPosts {
     }
     async get(id is int) is Json{
         let c=await SqliteDatabase(Path(path),SqliteOptions()).connection();defer await c.settled();defer c.close();
-        let row=(await Query(c,Statement("SELECT id,title,body,created_at FROM posts WHERE id=?",[Param(id)])).maybe()) else throw Exception(404,"Запись не найдена");
+        let row=(await Query(c,Statement("SELECT id,title,body,created_at FROM posts WHERE id=?",[Param(id)])).maybe()) else throw Exception.status(404,"Запись не найдена");
         SqlJson(row).value();
     }
     async publish(draft is Draft) is void{

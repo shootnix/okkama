@@ -68,29 +68,29 @@ object IniSection does IniContent {
     IniSection(name is string, entries is Sequencing<IniEntry>) {
         label = name;
         let size = entries.size();
-        confirm size >= 0 else throw InvalidIniSize();
-        confirm size <= 1024 else throw IniLimitExceeded();
+        confirm size >= 0 else throw InvalidIniSize.invalid;
+        confirm size <= 1024 else throw IniLimitExceeded.exceeded;
         let snapshot is @IniEntry = (0..size).map() -> index { entries.item(index); };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
             for (0..index) -> previous {
                 confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniEntry(name, snapshot[index].name());
+                    else throw DuplicateIniEntry.detailed(name, snapshot[index].name());
             }
         }
     }
     IniSection(name is string, entries is Sequencing<IniEntry>, maximum_entries is int) {
-        confirm maximum_entries >= 0 else throw InvalidIniLimit();
+        confirm maximum_entries >= 0 else throw InvalidIniLimit.invalid;
         label = name;
         let size = entries.size();
-        confirm size >= 0 else throw InvalidIniSize();
-        confirm size <= maximum_entries else throw IniLimitExceeded();
+        confirm size >= 0 else throw InvalidIniSize.invalid;
+        confirm size <= maximum_entries else throw IniLimitExceeded.exceeded;
         let snapshot is @IniEntry = (0..size).map() -> index { entries.item(index); };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
             for (0..index) -> previous {
                 confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniEntry(name, snapshot[index].name());
+                    else throw DuplicateIniEntry.detailed(name, snapshot[index].name());
             }
         }
     }
@@ -99,7 +99,7 @@ object IniSection does IniContent {
     membership(name is string) is bool { self.index(name) >= 0; }
     value(name is string) is string {
         let at = self.index(name);
-        confirm at >= 0 else throw MissingIniEntry(label, name);
+        confirm at >= 0 else throw MissingIniEntry.detailed(label, name);
         origin[at].value();
     }
     print(to is IniWriting) is void {
@@ -118,28 +118,28 @@ object IniDocument does IniContent {
     has origin is @IniSection;
     IniDocument(sections is Sequencing<IniSection>) {
         let size = sections.size();
-        confirm size >= 0 else throw InvalidIniSize();
-        confirm size <= 128 else throw IniLimitExceeded();
+        confirm size >= 0 else throw InvalidIniSize.invalid;
+        confirm size <= 128 else throw IniLimitExceeded.exceeded;
         let snapshot is @IniSection = (0..size).map() -> index { sections.item(index); };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
             for (0..index) -> previous {
                 confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniSection(snapshot[index].name());
+                    else throw DuplicateIniSection.name(snapshot[index].name());
             }
         }
     }
     IniDocument(sections is Sequencing<IniSection>, maximum_sections is int) {
-        confirm maximum_sections >= 0 else throw InvalidIniLimit();
+        confirm maximum_sections >= 0 else throw InvalidIniLimit.invalid;
         let size = sections.size();
-        confirm size >= 0 else throw InvalidIniSize();
-        confirm size <= maximum_sections else throw IniLimitExceeded();
+        confirm size >= 0 else throw InvalidIniSize.invalid;
+        confirm size <= maximum_sections else throw IniLimitExceeded.exceeded;
         let snapshot is @IniSection = (0..size).map() -> index { sections.item(index); };
         origin = snapshot;
         for (0..snapshot.size()) -> index {
             for (0..index) -> previous {
                 confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniSection(snapshot[index].name());
+                    else throw DuplicateIniSection.name(snapshot[index].name());
             }
         }
     }
@@ -148,7 +148,7 @@ object IniDocument does IniContent {
         let at = (0..origin.size()).reduce(-1) -> found, index {
             if origin[index].name() == name { index; } else { found; }
         };
-        confirm at >= 0 else throw MissingIniSection(name);
+        confirm at >= 0 else throw MissingIniSection.name(name);
         origin[at];
     }
     print(to is IniWriting) is void {
@@ -169,12 +169,11 @@ object ParsedIni does IniContent {
     ParsedIni(origin is string) { state = ini_parse_state(origin, 1048576, 128, 10000); }
     ParsedIni(origin is string, maximum_input is int, maximum_sections is int, maximum_entries is int) {
         confirm maximum_input >= 0 && maximum_sections >= 0 && maximum_entries >= 0
-            else throw InvalidIniLimit();
+            else throw InvalidIniLimit.invalid;
         state = ini_parse_state(origin, maximum_input, maximum_sections, maximum_entries);
     }
     value() is IniDocument {
-        confirm ini_parse_valid(state) else throw InvalidIni(
-            ini_parse_line(state), ini_parse_column(state), ini_parse_message(state));
+        confirm ini_parse_valid(state) else throw InvalidIni.located(ini_parse_line(state), ini_parse_column(state), ini_parse_message(state));
         let sections is @IniSection = (0..ini_section_count(state)).map() -> section {
             let entries is @IniEntry = (0..ini_entry_count(state, section)).map() -> entry {
                 IniEntry(ini_entry_name(state, section, entry), ini_entry_value(state, section, entry));
@@ -198,7 +197,7 @@ object IniString {
     has maximum is int;
     IniString(origin is IniContent) { self.origin = origin; maximum = 1048576; }
     IniString(origin is IniContent, maximum_output is int) {
-        confirm maximum_output >= 0 else throw InvalidIniLimit();
+        confirm maximum_output >= 0 else throw InvalidIniLimit.invalid;
         self.origin = origin;
         maximum = maximum_output;
     }
@@ -220,73 +219,24 @@ object IniTextEmission does IniWriting {
     valid() is void {
         match ini_write_status(state) {
             case 0 {}
-            case 2 { throw DuplicateIniSection(ini_write_name(state)); }
-            case 3 { throw DuplicateIniEntry(ini_write_parent(state), ini_write_name(state)); }
-            case 4 { throw IniOutputLimitExceeded(); }
-            else { throw InvalidIniEmission(); }
+            case 2 { throw DuplicateIniSection.name(ini_write_name(state)); }
+            case 3 { throw DuplicateIniEntry.detailed(ini_write_parent(state), ini_write_name(state)); }
+            case 4 { throw IniOutputLimitExceeded.exceeded; }
+            else { throw InvalidIniEmission.invalid; }
         }
     }
 }
-object InvalidIni does Error {
-    has row is int;
-    has position is int;
-    has message is string;
-    InvalidIni(line is int, column is int, message is string) {
-        row = line; position = column; self.message = message;
-    }
-    line() is int { row; }
-    column() is int { position; }
-    text() is string { message; }
-}
-object InvalidIniEmission does Error {
-    InvalidIniEmission();
-    text() is string { "invalid INI emission"; }
-}
-object IniOutputLimitExceeded does Error {
-    IniOutputLimitExceeded();
-    text() is string { "INI output limit exceeded"; }
-}
+enum InvalidIni is Error = (located(line is int, column is int, message is string));
+enum InvalidIniEmission is Error = (invalid);
+enum IniOutputLimitExceeded is Error = (exceeded);
 
-object MissingIniSection does Error {
-    has key is string;
-    MissingIniSection(name is string) { key = name; }
-    name() is string { key; }
-    text() is string { "missing INI section: " + key; }
-}
-object DuplicateIniSection does Error {
-    has key is string;
-    DuplicateIniSection(name is string) { key = name; }
-    name() is string { key; }
-    text() is string { "duplicate INI section: " + key; }
-}
-object MissingIniEntry does Error {
-    has parent is string;
-    has key is string;
-    MissingIniEntry(section is string, name is string) { parent = section; key = name; }
-    section() is string { parent; }
-    name() is string { key; }
-    text() is string { "missing INI entry in " + parent + ": " + key; }
-}
-object DuplicateIniEntry does Error {
-    has parent is string;
-    has key is string;
-    DuplicateIniEntry(section is string, name is string) { parent = section; key = name; }
-    section() is string { parent; }
-    name() is string { key; }
-    text() is string { "duplicate INI entry in " + parent + ": " + key; }
-}
-object InvalidIniLimit does Error {
-    InvalidIniLimit();
-    text() is string { "INI container limit must be nonnegative"; }
-}
-object InvalidIniSize does Error {
-    InvalidIniSize();
-    text() is string { "INI source size must be nonnegative"; }
-}
-object IniLimitExceeded does Error {
-    IniLimitExceeded();
-    text() is string { "INI container limit exceeded"; }
-}
+enum MissingIniSection is Error = (name(name is string));
+enum DuplicateIniSection is Error = (name(name is string));
+enum MissingIniEntry is Error = (detailed(section is string, name is string));
+enum DuplicateIniEntry is Error = (detailed(section is string, name is string));
+enum InvalidIniLimit is Error = (invalid);
+enum InvalidIniSize is Error = (invalid);
+enum IniLimitExceeded is Error = (exceeded);
 
 
 test "INI ordered section and binding coordinates" {
@@ -311,10 +261,10 @@ test "INI literal names have no normalization or ambient default" {
     test.is(section.value("a"), "2");
 }
 test "INI missing and duplicate coordinates remain typed" {
-    test.is(try {IniDocument([]).section("lost"); "";} catch error is MissingIniSection {error.name();}, "lost");
-    test.is(try {IniSection("s", []).value("lost"); "";} catch error is MissingIniEntry {error.section()+":"+error.name();}, "s:lost");
-    test.is(try {IniDocument([IniSection("", []), IniSection("", [])]); "bad";} catch error is DuplicateIniSection {error.name();}, "");
-    test.is(try {IniSection("s", [IniEntry("k", "1"), IniEntry("k", "2")]); "";} catch error is DuplicateIniEntry {error.section()+":"+error.name();}, "s:k");
+    test.is(try {IniDocument([]).section("lost"); "";} catch MissingIniSection.name(name) {name;}, "lost");
+    test.is(try {IniSection("s", []).value("lost"); "";} catch MissingIniEntry.detailed(section, name) {section+":"+name;}, "s:lost");
+    test.is(try {IniDocument([IniSection("", []), IniSection("", [])]); "bad";} catch DuplicateIniSection.name(name) {name;}, "");
+    test.is(try {IniSection("s", [IniEntry("k", "1"), IniEntry("k", "2")]); "";} catch DuplicateIniEntry.detailed(section, name) {section+":"+name;}, "s:k");
 }
 test "INI container budgets and empty emission" {
     test.is(IniDocument([], 0).sections().size(), 0);

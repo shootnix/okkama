@@ -70,8 +70,8 @@ async main() is int {
     let oversold = try {
         await connection.execution(Statement("UPDATE stock SET quantity = quantity - $1 WHERE sku = $2", [Param(2), Param("B-2")]));
         "accepted";
-    } catch failure is DbFailure {
-        if failure.kind() == DbFailureKind.constraint { "refused by " + failure.code(); } else { throw; }
+    } catch DbFailure.detailed(kind, _, code, _) {
+        if kind == DbFailureKind.constraint { "refused by " + code; } else { throw; }
     };
     output.writeln("selling two desks: " + oversold);
 

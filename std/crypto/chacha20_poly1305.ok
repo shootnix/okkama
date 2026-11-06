@@ -11,7 +11,7 @@ import "encoding/hex" take HexEncoded, HexDecoded;
 object ChaCha20Poly1305 does Sealing {
     has key is SecretBytes;
     ChaCha20Poly1305(key is SecretBytes) {
-        confirm key.size() == 32 else throw InvalidCryptoInput("ChaCha20-Poly1305 key must be 32 bytes");
+        confirm key.size() == 32 else throw InvalidCryptoInput.because("ChaCha20-Poly1305 key must be 32 bytes");
         self.key = key;
     }
     nonce_size() is int { 12; }
@@ -27,7 +27,7 @@ object ChaCha20Poly1305 does Sealing {
 object XChaCha20Poly1305 does Sealing {
     has key is SecretBytes;
     XChaCha20Poly1305(key is SecretBytes) {
-        confirm key.size() == 32 else throw InvalidCryptoInput("XChaCha20-Poly1305 key must be 32 bytes");
+        confirm key.size() == 32 else throw InvalidCryptoInput.because("XChaCha20-Poly1305 key must be 32 bytes");
         self.key = key;
     }
     nonce_size() is int { 24; }

@@ -1,5 +1,5 @@
 module http/internal/http2_input v1.0.0;
-import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope;
+import "http/internal/http2_frame" take Http2Frame,Http2FrameHeader,Http2Fault,Http2FaultScope,Http2FaultView;
 import "http/internal/http2_reading" take Http2FrameReading,EndOfHttp2Frames;
 import "http/internal/http2_headers" take Http2HeaderBlock,Http2HeaderBlockReading;
 import "http/internal/hpack" take HpackDecoder,HpackBudget;
@@ -7,7 +7,7 @@ import "http/internal/http2_settings" take Http2PeerSettings;
 import "http/http2_settings" take Http2Settings;
 import "http/internal/http2_flow" take Http2DataPayload,Http2WindowIncrement;
 import "http/internal/http2_controls" take Http2Reset,Http2ResetFrame,Http2PingReply,Http2GoAway,Http2GoAwayProgress;
-import "net/stream" take AsyncReading;
+import "io/stream" take AsyncReading;
 import "encoding/binary" take IntegerFromBytes,Signedness;
 import "encoding/utf" take ByteOrder;
 import "async/atomic" take Atomic;
@@ -59,7 +59,7 @@ object Http2ConnectionInput {
         acknowledged=Event();started=Event();goaway=Atomic(Http2GoAwayProgress());self.budget=budget;self.from_server=from_server;barriers=[barrier];boundaries=[boundary];
     }
     async run() is bool{
-        confirm !started.ready() else throw InvalidState("HTTP2 wire reader is single-use");started.set();
+        confirm !started.ready() else throw InvalidState.because("HTTP2 wire reader is single-use");started.set();
         let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2InputSettlement(group);defer await cleanup.close();
         let pending=self.read_loop();group.start(pending);await pending;
     }
@@ -72,20 +72,20 @@ object Http2ConnectionInput {
             let available is @Http2Frame=try{[await pending];}
                 catch failure is EndOfHttp2Frames{eof.set();receiver.ended();let empty is @Http2Frame=[];empty;}
                 catch failure is Http2Fault{
-                    if failure.scope()==Http2FaultScope.connection{throw;}
+                    if Http2FaultView(failure).scope()==Http2FaultScope.connection{throw;}
                     self.stream_fault(failure);let empty is @Http2Frame=[];empty;
                 };
             if available.size()==0{for boundaries -> boundary{boundary.dispatched();}if eof.ready(){return true;}next;}
             let work is FutureGroup<bool>=FutureGroup();let work_cleanup=Http2InputSettlement(work);defer await work_cleanup.close();
             let dispatched=self.dispatch(available[0]);work.start(dispatched);
             try{await dispatched;}catch failure is Http2Fault{
-                if failure.scope()==Http2FaultScope.connection{throw;}self.stream_fault(failure);
+                if Http2FaultView(failure).scope()==Http2FaultScope.connection{throw;}self.stream_fault(failure);
             }
             for boundaries -> boundary{boundary.dispatched();}
         }
     }
     stream_fault(failure is Http2Fault) is void{
-        if receiver.stream_fault(failure){controls.frame(Http2ResetFrame(failure.stream(),failure.code()).frame());}
+        if receiver.stream_fault(failure){controls.frame(Http2ResetFrame(Http2FaultView(failure).stream(),Http2FaultView(failure).code()).frame());}
     }
     async dispatch(frame is Http2Frame) is bool{
         let kind=frame.header().kind().int();
@@ -103,7 +103,7 @@ object Http2ConnectionInput {
         if kind==7{let progress=Http2GoAway(frame);goaway.replace(goaway.value().received(progress));receiver.goaway(progress);return true;}
         if kind==4{
             if (frame.header().flags().int() & 1)!=0{
-                confirm !acknowledged.ready() else throw Http2Fault(Http2FaultScope.connection,1,0,"unexpected settings acknowledgment");
+                confirm !acknowledged.ready() else throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "unexpected settings acknowledgment");
                 decoder.replace(decoder.value().allowed(local.header_table()));receiver.local_settings(local);acknowledged.set();return true;
             }
             let payload=frame.payload();
@@ -115,7 +115,7 @@ object Http2ConnectionInput {
             }
             controls.frame(Http2Frame(Http2FrameHeader(4.byte(),1.byte(),0,0),[]));return true;
         }
-        if kind==9{throw Http2Fault(Http2FaultScope.connection,1,0,"unexpected standalone CONTINUATION");}
+        if kind==9{throw Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "unexpected standalone CONTINUATION");}
         // Valid deprecated PRIORITY and unknown extension frames are ignored.
         // PUSH_PROMISE was already rejected by the structural frame reader.
         true;

@@ -28,14 +28,7 @@ object UrlFragment {
     present() is bool {supplied;}
     string() is string {text;}
 }
-object InvalidUrl does Error {
-    has position is int;
-    has reason is string;
-    InvalidUrl(offset is int, reason is string) {position=offset;self.reason=reason;}
-    offset() is int {position;}
-    reason() is string {reason;}
-    text() is string {"invalid URL at scalar offset "+position.string()+": "+reason;}
-}
+enum InvalidUrl is Error = (located(offset is int, reason is string));
 
 // Importable implementation collaborator, not a complete URL parser.
 object UrlComponentText {
@@ -44,7 +37,7 @@ object UrlComponentText {
     UrlComponentText(origin is string, component is UrlComponent) {
         confirm component==UrlComponent.query || component==UrlComponent.fragment
             || component==UrlComponent.path || component==UrlComponent.userinfo
-            else throw InvalidArgument("unsupported URL component canonicalization");
+            else throw InvalidArgument.because("unsupported URL component canonicalization");
         self.origin=origin;self.component=component;
     }
     string() is string {
@@ -55,9 +48,9 @@ object UrlComponentText {
             else {
                 let scalar=origin.slice(index,index+1);
                 if scalar=="%" {
-                    confirm origin.length()-index>=3 else throw InvalidUrl(index,"incomplete percent escape");
+                    confirm origin.length()-index>=3 else throw InvalidUrl.located(index, "incomplete percent escape");
                     let value=try {PercentDecoded(origin.slice(index,index+3)).bytes()[0].int();}
-                        catch failure is InvalidPercentEncoding {throw InvalidUrl(index,"invalid percent escape");};
+                        catch failure is InvalidPercentEncoding {throw InvalidUrl.located(index, "invalid percent escape");};
                     let unreserved=(value>=65 && value<=90) || (value>=97 && value<=122)
                         || (value>=48 && value<=57) || value==45 || value==46 || value==95 || value==126;
                     let text=if unreserved {Utf8Decoded([value.byte()]).string();}
@@ -68,10 +61,10 @@ object UrlComponentText {
                     let bytes=Utf8Encoded(scalar).bytes();
                     let encoded=PercentEncoded(scalar,component).string();
                     if bytes.size()==1 {
-                        confirm encoded==scalar else throw InvalidUrl(index,"character is not allowed in component");
+                        confirm encoded==scalar else throw InvalidUrl.located(index, "character is not allowed in component");
                     } else {
                         let code=IntegerFromBytes(Utf32Encoded(scalar,ByteOrder.big).bytes(),Signedness.unsigned,ByteOrder.big).value();
-                        confirm self.unicode_allowed(code) else throw InvalidUrl(index,"character is not allowed in IRI component");
+                        confirm self.unicode_allowed(code) else throw InvalidUrl.located(index, "character is not allowed in IRI component");
                     }
                     writer.write(ByteSnapshot(Utf8Encoded(encoded).bytes()));index+1;
                 }
@@ -100,36 +93,36 @@ role UrlHost {
 object NamedUrlHost does UrlHost {
     has origin is HostName;NamedUrlHost(origin is HostName){self.origin=origin;}
     kind() is UrlHostKind {UrlHostKind.name;}name() is HostName {origin;}
-    address() is IpAddress {throw UrlHostIsNotAddress();}
+    address() is IpAddress {throw UrlHostIsNotAddress.not_address;}
     string() is string {origin.ascii();}
 }
 object AddressUrlHost does UrlHost {
     has origin is IpAddress;AddressUrlHost(origin is IpAddress){self.origin=origin;}
     kind() is UrlHostKind {UrlHostKind.address;}address() is IpAddress {origin;}
-    name() is HostName {throw UrlHostIsNotName();}
+    name() is HostName {throw UrlHostIsNotName.not_name;}
     string() is string {if origin.version()==IpVersion.v6 {"["+origin.string()+"]";}else{origin.string();}}
 }
 object EmptyUrlHost does UrlHost {
     EmptyUrlHost();kind() is UrlHostKind {UrlHostKind.empty;}
-    name() is HostName {throw UrlHostIsNotName();}address() is IpAddress {throw UrlHostIsNotAddress();}
+    name() is HostName {throw UrlHostIsNotName.not_name;}address() is IpAddress {throw UrlHostIsNotAddress.not_address;}
     string() is string {"";}
 }
 object FutureUrlHost does UrlHost {
     has origin is string;
     FutureUrlHost(origin is string) {
-        confirm origin.length()>=4 && origin.length()<=1024 else throw InvalidUrl(0,"invalid IPvFuture width");
-        confirm origin.slice(0,1)=="v" || origin.slice(0,1)=="V" else throw InvalidUrl(0,"IPvFuture prefix required");
-        let parts=origin.split(".");confirm parts.size()>=2 else throw InvalidUrl(0,"IPvFuture version separator required");
+        confirm origin.length()>=4 && origin.length()<=1024 else throw InvalidUrl.located(0, "invalid IPvFuture width");
+        confirm origin.slice(0,1)=="v" || origin.slice(0,1)=="V" else throw InvalidUrl.located(0, "IPvFuture prefix required");
+        let parts=origin.split(".");confirm parts.size()>=2 else throw InvalidUrl.located(0, "IPvFuture version separator required");
         let version=parts[0].slice(1,parts[0].length());
-        confirm UrlAsciiText(version).characters("0123456789abcdefABCDEF") else throw InvalidUrl(1,"IPvFuture hexadecimal version required");
+        confirm UrlAsciiText(version).characters("0123456789abcdefABCDEF") else throw InvalidUrl.located(1, "IPvFuture hexadecimal version required");
         let text is @string=(1..parts.size()).map() -> index {parts[index];};
         let address=text.join(".");
         confirm UrlAsciiText(address).characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~!$&'()*+,;=:")
-            else throw InvalidUrl(parts[0].length()+1,"IPvFuture address required");
+            else throw InvalidUrl.located(parts[0].length()+1, "IPvFuture address required");
         self.origin=UrlAsciiText(origin).lower();
     }
-    kind() is UrlHostKind {UrlHostKind.future;}name() is HostName {throw UrlHostIsNotName();}
-    address() is IpAddress {throw UrlHostIsNotAddress();}string() is string {"["+origin+"]";}
+    kind() is UrlHostKind {UrlHostKind.future;}name() is HostName {throw UrlHostIsNotName.not_name;}
+    address() is IpAddress {throw UrlHostIsNotAddress.not_address;}string() is string {"["+origin+"]";}
 }
 object UrlUserInfo {
     has supplied is bool;has origin is string;
@@ -143,18 +136,18 @@ object UrlPort {
     has supplied is bool;has values is @int;
     UrlPort(){supplied=false;values=[];}
     UrlPort(origin is string) {
-        confirm origin.length()<=8192 else throw InvalidUrl(0,"port source limit exceeded");
+        confirm origin.length()<=8192 else throw InvalidUrl.located(0, "port source limit exceeded");
         supplied=true;
         if origin=="" {values=[];}else{
             let number=Utf8Encoded(origin).bytes().reduce(0) -> value,octet {
-                let code=octet.int();confirm code>=48 && code<=57 else throw InvalidUrl(0,"ASCII decimal port required");
-                let number=value*10+code-48;confirm number<=65535 else throw InvalidUrl(0,"port exceeds 65535");number;
+                let code=octet.int();confirm code>=48 && code<=57 else throw InvalidUrl.located(0, "ASCII decimal port required");
+                let number=value*10+code-48;confirm number<=65535 else throw InvalidUrl.located(0, "port exceeds 65535");number;
             };
             values=[number];
         }
     }
     present() is bool {supplied;}
-    value() is int {confirm values.size()==1 else throw MissingUrlPort();values[0];}
+    value() is int {confirm values.size()==1 else throw MissingUrlPort.missing;values[0];}
     string() is string {if values.size()==1 {values[0].string();}else{"";}}
 }
 object UrlAuthority {
@@ -162,17 +155,17 @@ object UrlAuthority {
     UrlAuthority(){hosts=[];userinfo=UrlUserInfo();port=UrlPort();}
     UrlAuthority(host is UrlHost){hosts=[UrlHostSnapshot(host).value()];userinfo=UrlUserInfo();port=UrlPort();}
     UrlAuthority(host is UrlHost, port is int) {
-        confirm port>=0 && port<=65535 else throw InvalidUrl(0,"port outside 0..65535");
+        confirm port>=0 && port<=65535 else throw InvalidUrl.located(0, "port outside 0..65535");
         hosts=[UrlHostSnapshot(host).value()];userinfo=UrlUserInfo();self.port=UrlPort(port.string());
     }
     UrlAuthority(host is UrlHost, userinfo is UrlUserInfo, port is UrlPort) {
         hosts=[UrlHostSnapshot(host).value()];self.userinfo=userinfo;self.port=port;
     }
     present() is bool {hosts.size()==1;}
-    host() is UrlHost {confirm self.present() else throw MissingUrlAuthority();hosts[0];}
-    userinfo() is UrlUserInfo {confirm self.present() else throw MissingUrlAuthority();userinfo;}
-    port() is int {confirm self.present() else throw MissingUrlAuthority();port.value();}
-    port_marker() is UrlPort {confirm self.present() else throw MissingUrlAuthority();port;}
+    host() is UrlHost {confirm self.present() else throw MissingUrlAuthority.missing;hosts[0];}
+    userinfo() is UrlUserInfo {confirm self.present() else throw MissingUrlAuthority.missing;userinfo;}
+    port() is int {confirm self.present() else throw MissingUrlAuthority.missing;port.value();}
+    port_marker() is UrlPort {confirm self.present() else throw MissingUrlAuthority.missing;port;}
     string() is string {
         if !self.present() {return "";}
         (if userinfo.present(){userinfo.string()+"@";}else{"";})+hosts[0].string()
@@ -189,43 +182,43 @@ object UrlHostSnapshot {
             if kind==UrlHostKind.address {AddressUrlHost(origin.address());}else{
                 if kind==UrlHostKind.empty {EmptyUrlHost();}else{
                     confirm wire.length()>=2 && wire.slice(0,1)=="[" && wire.slice(wire.length()-1,wire.length())=="]"
-                        else throw InvalidUrl(0,"IPvFuture host requires brackets");
+                        else throw InvalidUrl.located(0, "IPvFuture host requires brackets");
                     FutureUrlHost(wire.slice(1,wire.length()-1));
                 }
             }
         };
-        confirm host.string()==wire else throw InvalidUrl(0,"host coordinates and canonical wire spelling disagree");host;
+        confirm host.string()==wire else throw InvalidUrl.located(0, "host coordinates and canonical wire spelling disagree");host;
     }
 }
 object ParsedUrlAuthority {
     has origin is string;ParsedUrlAuthority(origin is string){self.origin=origin;}
     value() is UrlAuthority {
-        confirm origin.length()<=8192 else throw InvalidUrl(8192,"authority source limit exceeded");
-        let parts=origin.split("@");confirm parts.size()<=2 else throw InvalidUrl(0,"multiple userinfo separators");
+        confirm origin.length()<=8192 else throw InvalidUrl.located(8192, "authority source limit exceeded");
+        let parts=origin.split("@");confirm parts.size()<=2 else throw InvalidUrl.located(0, "multiple userinfo separators");
         let userinfo=if parts.size()==2 {UrlUserInfo(parts[0]);}else{UrlUserInfo();};
         let host_port=parts[parts.size()-1];
         if host_port=="" {return UrlAuthority(EmptyUrlHost(),userinfo,UrlPort());}
         if host_port.slice(0,1)=="[" {
-            let brackets=host_port.split("]");confirm brackets.size()==2 else throw InvalidUrl(0,"IP literal closing bracket required");
+            let brackets=host_port.split("]");confirm brackets.size()==2 else throw InvalidUrl.located(0, "IP literal closing bracket required");
             let raw=brackets[0].slice(1,brackets[0].length());let tail=brackets[1];
-            confirm tail=="" || tail.slice(0,1)==":" else throw InvalidUrl(brackets[0].length()+1,"invalid IP literal suffix");
+            confirm tail=="" || tail.slice(0,1)==":" else throw InvalidUrl.located(brackets[0].length()+1, "invalid IP literal suffix");
             let port=if tail=="" {UrlPort();}else{UrlPort(tail.slice(1,tail.length()));};
             let host is UrlHost=if raw.length()>0 && (raw.slice(0,1)=="v" || raw.slice(0,1)=="V") {
                 FutureUrlHost(raw);
             }else{
-                let address=try{IpAddress(raw);}catch failure is InvalidIpAddress {throw InvalidUrl(1,"invalid IPv6 literal");};
-                confirm address.version()==IpVersion.v6 else throw InvalidUrl(1,"bracketed literal must be IPv6");AddressUrlHost(address);
+                let address=try{IpAddress(raw);}catch failure is InvalidIpAddress {throw InvalidUrl.located(1, "invalid IPv6 literal");};
+                confirm address.version()==IpVersion.v6 else throw InvalidUrl.located(1, "bracketed literal must be IPv6");AddressUrlHost(address);
             };
             return UrlAuthority(host,userinfo,port);
         }
-        let fields=host_port.split(":");confirm fields.size()<=2 else throw InvalidUrl(0,"IPv6 literal requires brackets");
+        let fields=host_port.split(":");confirm fields.size()<=2 else throw InvalidUrl.located(0, "IPv6 literal requires brackets");
         let decoded=try{PercentDecoded(fields[0]).string();}
-            catch failure is InvalidPercentEncoding {throw InvalidUrl(failure.offset(),"invalid host escape");}
-            catch failure is InvalidUtf8 {throw InvalidUrl(0,"host escape requires valid UTF-8");};
+            catch InvalidPercentEncoding.at(offset) {throw InvalidUrl.located(offset, "invalid host escape");}
+            catch failure is InvalidUtf8 {throw InvalidUrl.located(0, "host escape requires valid UTF-8");};
         let port=if fields.size()==2 {UrlPort(fields[1]);}else{UrlPort();};
         let host is UrlHost=if decoded=="" {EmptyUrlHost();}else{
             try{AddressUrlHost(IpAddress(decoded));}catch failure is InvalidIpAddress {
-                let name=try{HostName(decoded);}catch failure is InvalidHostName {throw InvalidUrl(0,"invalid registered host name");};
+                let name=try{HostName(decoded);}catch failure is InvalidHostName {throw InvalidUrl.located(0, "invalid registered host name");};
                 NamedUrlHost(name);
             }
         };
@@ -244,30 +237,30 @@ object UrlAsciiText {
         };text.join("");
     }
 }
-object MissingUrlAuthority does Error {MissingUrlAuthority();text() is string {"URL has no authority";}}
-object MissingUrlPort does Error {MissingUrlPort();text() is string {"URL has no assigned numeric port";}}
-object UrlHostIsNotName does Error {UrlHostIsNotName();text() is string {"URL host is not a registered name";}}
-object UrlHostIsNotAddress does Error {UrlHostIsNotAddress();text() is string {"URL host is not a numeric address";}}
+enum MissingUrlAuthority is Error = (missing);
+enum MissingUrlPort is Error = (missing);
+enum UrlHostIsNotName is Error = (not_name);
+enum UrlHostIsNotAddress is Error = (not_address);
 
 object UrlParts {
     has scheme,path is string;has authority is UrlAuthority;
     has query is UrlQuery;has fragment is UrlFragment;
     UrlParts(scheme is string, authority is UrlAuthority, path is string, query is UrlQuery, fragment is UrlFragment) {
-        confirm path.length()<=8192 else throw InvalidUrl(8192,"path source limit exceeded");
+        confirm path.length()<=8192 else throw InvalidUrl.located(8192, "path source limit exceeded");
         let protocol=UrlSchemeText(scheme).string();let canonical=UrlComponentText(path,UrlComponent.path).string();
-        confirm canonical.split("/").size()<=1024 else throw InvalidUrl(0,"path segment limit exceeded");
+        confirm canonical.split("/").size()<=1024 else throw InvalidUrl.located(0, "path segment limit exceeded");
         if authority.present() {
-            confirm canonical=="" || canonical.slice(0,1)=="/" else throw InvalidUrl(0,"authority requires an empty or absolute path");
+            confirm canonical=="" || canonical.slice(0,1)=="/" else throw InvalidUrl.located(0, "authority requires an empty or absolute path");
         }else{
-            confirm canonical.length()<2 || canonical.slice(0,2)!="//" else throw InvalidUrl(0,"path cannot introduce an undeclared authority");
+            confirm canonical.length()<2 || canonical.slice(0,2)!="//" else throw InvalidUrl.located(0, "path cannot introduce an undeclared authority");
             if protocol=="" && canonical!="" && canonical.slice(0,1)!="/" {
-                confirm canonical.split("/")[0].split(":").size()==1 else throw InvalidUrl(0,"relative first segment cannot contain colon");
+                confirm canonical.split("/")[0].split(":").size()==1 else throw InvalidUrl.located(0, "relative first segment cannot contain colon");
             }
         }
         self.scheme=protocol;self.authority=authority;self.path=canonical;self.query=query;self.fragment=fragment;
         let complete=(if protocol=="" {"";}else{protocol+":";})+(if authority.present(){"//"+authority.string();}else{"";})+canonical
             +(if query.present(){"?"+query.string();}else{"";})+(if fragment.present(){"#"+fragment.string();}else{"";});
-        confirm complete.length()<=8192 else throw InvalidUrl(8192,"canonical URL output limit exceeded");
+        confirm complete.length()<=8192 else throw InvalidUrl.located(8192, "canonical URL output limit exceeded");
     }
     scheme() is string {scheme;}authority() is UrlAuthority {authority;}path() is string {path;}
     query() is UrlQuery {query;}fragment() is UrlFragment {fragment;}
@@ -278,7 +271,7 @@ object UrlParts {
 }
 object Url {
     has origin is UrlParts;
-    Url(origin is UrlParts){confirm origin.scheme()!="" else throw InvalidUrl(0,"absolute URL requires scheme");self.origin=origin;}
+    Url(origin is UrlParts){confirm origin.scheme()!="" else throw InvalidUrl.located(0, "absolute URL requires scheme");self.origin=origin;}
     parts() is UrlParts {origin;}string() is string {origin.string();}
     url(reference is UrlReference) is Url {UrlResolution(self,reference).value();}
 }
@@ -293,37 +286,37 @@ object ParsedUrl {
 object ParsedUrlReference {
     has origin is string;ParsedUrlReference(origin is string){self.origin=origin;}
     value() is UrlReference {
-        confirm origin.length()<=8192 else throw InvalidUrl(8192,"URL source limit exceeded");
-        let fragments=origin.split("#");confirm fragments.size()<=2 else throw InvalidUrl(fragments[0].length()+1,"multiple fragment separators");
+        confirm origin.length()<=8192 else throw InvalidUrl.located(8192, "URL source limit exceeded");
+        let fragments=origin.split("#");confirm fragments.size()<=2 else throw InvalidUrl.located(fragments[0].length()+1, "multiple fragment separators");
         let fragment=if fragments.size()==2 {
-            try{UrlFragment(fragments[1]);}catch failure is InvalidUrl {throw InvalidUrl(fragments[0].length()+1+failure.offset(),failure.reason());}
+            try{UrlFragment(fragments[1]);}catch InvalidUrl.located(offset, reason) {throw InvalidUrl.located(fragments[0].length()+1+offset, reason);}
         }else{UrlFragment();};
         let body=fragments[0];let queries=body.split("?");
         let query=if queries.size()>1 {
             try{UrlQuery(body.slice(queries[0].length()+1,body.length()));}
-                catch failure is InvalidUrl {throw InvalidUrl(queries[0].length()+1+failure.offset(),failure.reason());}
+                catch InvalidUrl.located(offset, reason) {throw InvalidUrl.located(queries[0].length()+1+offset, reason);}
         }else{UrlQuery();};
         let hierarchical=queries[0];let colons=hierarchical.split(":");
         let has_scheme=colons.size()>1 && colons[0].split("/").size()==1;
         let scheme=if has_scheme {
-            confirm colons[0]!="" else throw InvalidUrl(0,"empty scheme");UrlSchemeText(colons[0]).string();
+            confirm colons[0]!="" else throw InvalidUrl.located(0, "empty scheme");UrlSchemeText(colons[0]).string();
         }else{"";};
         let path_authority=if has_scheme {hierarchical.slice(colons[0].length()+1,hierarchical.length());}else{hierarchical;};
         let prefix=if has_scheme {colons[0].length()+1;}else{0;};
         if path_authority.length()>=2 && path_authority.slice(0,2)=="//" {
             let after=path_authority.slice(2,path_authority.length());let segments=after.split("/");
             let authority=try{ParsedUrlAuthority(segments[0]).value();}
-                catch failure is InvalidUrl {throw InvalidUrl(prefix+2+failure.offset(),failure.reason());};
+                catch InvalidUrl.located(offset, reason) {throw InvalidUrl.located(prefix+2+offset, reason);};
             let path=after.slice(segments[0].length(),after.length());
             let parts=try{UrlParts(scheme,authority,path,query,fragment);}
-                catch failure is InvalidUrl {
-                    let offset=prefix+2+segments[0].length()+failure.offset();
-                    throw InvalidUrl(if offset>origin.length() {origin.length();}else{offset;},failure.reason());
+                catch InvalidUrl.located(offset, reason) {
+                    let offset=prefix+2+segments[0].length()+offset;
+                    throw InvalidUrl.located(if offset>origin.length() {origin.length();}else{offset;}, reason);
                 };
             return UrlReference(parts);
         }
         let parts=try{UrlParts(scheme,UrlAuthority(),path_authority,query,fragment);}
-            catch failure is InvalidUrl {throw InvalidUrl(prefix+failure.offset(),failure.reason());};
+            catch InvalidUrl.located(offset, reason) {throw InvalidUrl.located(prefix+offset, reason);};
         UrlReference(parts);
     }
 }
@@ -333,7 +326,7 @@ object UrlSchemeText {
         if origin=="" {return "";}
         confirm origin.length()<=8192 && UrlAsciiText(origin.slice(0,1)).characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
             && UrlAsciiText(origin).characters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
-            else throw InvalidUrl(0,"invalid URL scheme");
+            else throw InvalidUrl.located(0, "invalid URL scheme");
         UrlAsciiText(origin).lower();
     }
 }
@@ -342,9 +335,9 @@ object UrlSchemeText {
 object UrlDotSegments {
     has origin is string;UrlDotSegments(origin is string){self.origin=origin;}
     value() is string {
-        confirm origin.length()<=8192 else throw InvalidUrl(8192,"dot path source limit exceeded");
+        confirm origin.length()<=8192 else throw InvalidUrl.located(8192, "dot path source limit exceeded");
         let path=try{url_dot_segments(origin);}catch failure is NativeFailure {
-            if failure.domain()=="core.url_text" && failure.code()=="invalid_input" {throw InvalidUrl(0,"invalid bounded dot path");}
+            if failure.domain()=="core.url_text" && failure.code()=="invalid_input" {throw InvalidUrl.located(0, "invalid bounded dot path");}
             throw;
         };path;
     }

@@ -78,11 +78,11 @@ object CursorStepCursor<T> does Cursor<CursorStep<T>> {
     CursorStepCursor(:origin);
     available() is bool { origin.available(); }
     item() is CursorStep<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         CursorStep(current: origin, following: origin.successor());
     }
     successor() is Cursor<CursorStep<T>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         CursorStepCursor(origin: origin.successor());
     }
 }
@@ -134,8 +134,8 @@ object EmptyMappedCursor<A,B> does Cursor<B> {
     has mapping is (A) is B;
     EmptyMappedCursor(:origin, :mapping);
     available() is bool { false; }
-    item() is B { throw IterationEnded(); }
-    successor() is Cursor<B> { throw IterationEnded(); }
+    item() is B { throw IterationEnded.ended; }
+    successor() is Cursor<B> { throw IterationEnded.ended; }
 }
 
 object Filtered<T> does Iterating<T> {
@@ -182,15 +182,15 @@ object EmptyFilteredCursor<T> does Cursor<T> {
     has condition is (T) is bool;
     EmptyFilteredCursor(:origin, :condition);
     available() is bool { false; }
-    item() is T { throw IterationEnded(); }
-    successor() is Cursor<T> { throw IterationEnded(); }
+    item() is T { throw IterationEnded.ended; }
+    successor() is Cursor<T> { throw IterationEnded.ended; }
 }
 
 object Taken<T> does Iterating<T> {
     has origin is Iterating<T>;
     has amount is int;
     Taken(origin is Iterating<T>, count is int) {
-        confirm count >= 0 else throw InvalidArgument("take count cannot be negative");
+        confirm count >= 0 else throw InvalidArgument.because("take count cannot be negative");
         self.origin = origin;
         amount = count;
     }
@@ -203,17 +203,17 @@ object TakenCursor<T> does Cursor<T> {
     has origin is Cursor<T>;
     has remaining is int;
     TakenCursor(origin is Cursor<T>, remaining is int) {
-        confirm remaining >= 0 else throw InvalidArgument("remaining take count cannot be negative");
+        confirm remaining >= 0 else throw InvalidArgument.because("remaining take count cannot be negative");
         self.origin = origin;
         self.remaining = remaining;
     }
     available() is bool { remaining > 0 && origin.available(); }
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin.item();
     }
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         TakenCursor(origin: origin.successor(), remaining: remaining - 1);
     }
 }
@@ -222,7 +222,7 @@ object Dropped<T> does Iterating<T> {
     has origin is Iterating<T>;
     has amount is int;
     Dropped(origin is Iterating<T>, count is int) {
-        confirm count >= 0 else throw InvalidArgument("drop count cannot be negative");
+        confirm count >= 0 else throw InvalidArgument.because("drop count cannot be negative");
         self.origin = origin;
         amount = count;
     }
@@ -235,7 +235,7 @@ object DroppedCursorSearch<T> {
     has origin is Cursor<T>;
     has amount is int;
     DroppedCursorSearch(origin is Cursor<T>, count is int) {
-        confirm count >= 0 else throw InvalidArgument("drop count cannot be negative");
+        confirm count >= 0 else throw InvalidArgument.because("drop count cannot be negative");
         self.origin = origin;
         amount = count;
     }
@@ -290,8 +290,8 @@ object EmptyTakenWhileCursor<T> does Cursor<T> {
     has condition is (T) is bool;
     EmptyTakenWhileCursor(:origin, :condition);
     available() is bool { false; }
-    item() is T { throw IterationEnded(); }
-    successor() is Cursor<T> { throw IterationEnded(); }
+    item() is T { throw IterationEnded.ended; }
+    successor() is Cursor<T> { throw IterationEnded.ended; }
 }
 
 object DroppedWhile<T> does Iterating<T> {
@@ -323,7 +323,7 @@ object Chunked<T> does Iterating<@T> {
     has origin is Iterating<T>;
     has amount is int;
     Chunked(origin is Iterating<T>, size is int) {
-        confirm size > 0 else throw InvalidArgument("chunk size must be positive");
+        confirm size > 0 else throw InvalidArgument.because("chunk size must be positive");
         self.origin = origin;
         amount = size;
     }
@@ -336,19 +336,19 @@ object ChunkedCursor<T> does Cursor<@T> {
     has origin is Cursor<T>;
     has amount is int;
     ChunkedCursor(origin is Cursor<T>, size is int) {
-        confirm size > 0 else throw InvalidArgument("chunk size must be positive");
+        confirm size > 0 else throw InvalidArgument.because("chunk size must be positive");
         self.origin = origin;
         amount = size;
     }
     available() is bool { origin.available(); }
     item() is @T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         Taken(origin: CursorItems(cursor: origin), count: amount).map() -> value {
             value;
         };
     }
     successor() is Cursor<@T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ChunkedCursor(
             origin: Dropped(
                 origin: CursorItems(cursor: origin),
@@ -378,12 +378,12 @@ object PairwiseCursor<T> does Cursor<Pair<T,T>> {
         origin.available() && origin.successor().available();
     }
     item() is Pair<T,T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let following = origin.successor();
         Pair(first: origin.item(), second: following.item());
     }
     successor() is Cursor<Pair<T,T>> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         PairwiseCursor(origin: origin.successor());
     }
 }
@@ -426,8 +426,8 @@ object ExhaustedAccumulatedCursor<R> does Cursor<R> {
     has origin is R;
     ExhaustedAccumulatedCursor(value is R) { origin = value; }
     available() is bool { false; }
-    item() is R { throw IterationEnded(); }
-    successor() is Cursor<R> { throw IterationEnded(); }
+    item() is R { throw IterationEnded.ended; }
+    successor() is Cursor<R> { throw IterationEnded.ended; }
 }
 
 object Reduced<T,R> {
@@ -451,15 +451,15 @@ object Reversed<T> does Sequencing<T>, Iterating<T>, Sizing {
     size() is int { origin.size(); }
     item(index is int) is T {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("reverse index is outside the sequence");
+            else throw OutOfRange.because("reverse index is outside the sequence");
         origin.item(self.size() - 1 - index);
     }
     first() is T {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         origin.last();
     }
     last() is T {
-        confirm self.size() > 0 else throw EmptySequence();
+        confirm self.size() > 0 else throw EmptySequence.empty;
         origin.first();
     }
 }
@@ -469,17 +469,17 @@ object ReversedCursor<T> does Cursor<T> {
     has position is int;
     ReversedCursor(origin is Sequencing<T>, position is int) {
         confirm position >= -1 && position < origin.size()
-            else throw InvalidArgument("reverse cursor position is invalid");
+            else throw InvalidArgument.because("reverse cursor position is invalid");
         self.origin = origin;
         self.position = position;
     }
     available() is bool { position >= 0; }
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin.item(position);
     }
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         ReversedCursor(origin: origin, position: position - 1);
     }
 }
@@ -490,9 +490,9 @@ object Sliced<T> does Iterating<T> {
     has stop is int;
     has step is int;
     Sliced(origin is Iterating<T>, start is int, stop is int, step is int) {
-        confirm start >= 0 else throw InvalidArgument("slice start cannot be negative");
-        confirm stop >= 0 else throw InvalidArgument("slice stop cannot be negative");
-        confirm step > 0 else throw InvalidArgument("slice step must be positive");
+        confirm start >= 0 else throw InvalidArgument.because("slice start cannot be negative");
+        confirm stop >= 0 else throw InvalidArgument.because("slice stop cannot be negative");
+        confirm step > 0 else throw InvalidArgument.because("slice step must be positive");
         self.origin = origin;
         self.start = start;
         self.stop = stop;
@@ -514,9 +514,9 @@ object SlicedCursor<T> does Cursor<T> {
     has stop is int;
     has step is int;
     SlicedCursor(origin is Cursor<T>, position is int, stop is int, step is int) {
-        confirm position >= 0 else throw InvalidArgument("slice cursor position cannot be negative");
-        confirm stop >= 0 else throw InvalidArgument("slice stop cannot be negative");
-        confirm step > 0 else throw InvalidArgument("slice step must be positive");
+        confirm position >= 0 else throw InvalidArgument.because("slice cursor position cannot be negative");
+        confirm stop >= 0 else throw InvalidArgument.because("slice stop cannot be negative");
+        confirm step > 0 else throw InvalidArgument.because("slice step must be positive");
         self.origin = origin;
         self.position = position;
         self.stop = stop;
@@ -524,11 +524,11 @@ object SlicedCursor<T> does Cursor<T> {
     }
     available() is bool { position < stop && origin.available(); }
     item() is T {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         origin.item();
     }
     successor() is Cursor<T> {
-        confirm self.available() else throw IterationEnded();
+        confirm self.available() else throw IterationEnded.ended;
         let distance = stop - position;
         SlicedCursor(
             origin: Dropped(

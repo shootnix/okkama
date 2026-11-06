@@ -11,7 +11,7 @@ object XmlText does XmlNode {
 object XmlComment does XmlNode {
     has origin is string;
     XmlComment(value is string){
-        XmlCharacters(value);confirm value.length()<=65536 && value.split("--").size()==1 && (value=="" || value.slice(value.length()-1,value.length())!="-") else throw InvalidXml(0,"invalid XML comment");origin=value;
+        XmlCharacters(value);confirm value.length()<=65536 && value.split("--").size()==1 && (value=="" || value.slice(value.length()-1,value.length())!="-") else throw InvalidXml.located(0, "invalid XML comment");origin=value;
     }
     value() is string{origin;}xml() is string{"<!--"+origin+"-->";}depth() is int{0;}
 }
@@ -19,7 +19,7 @@ object XmlProcessingInstruction does XmlNode {
     has target,data is string;
     XmlProcessingInstruction(target is string,data is string){
         XmlNCName(target);XmlCharacters(data);
-        confirm target.replace("X","x").replace("M","m").replace("L","l")!="xml" && data.length()<=65536 && data.split("?>").size()==1 else throw InvalidXml(0,"invalid processing instruction");
+        confirm target.replace("X","x").replace("M","m").replace("L","l")!="xml" && data.length()<=65536 && data.split("?>").size()==1 else throw InvalidXml.located(0, "invalid processing instruction");
         self.target=target;self.data=data;
     }
     target() is string{target;}data() is string{data;}
@@ -28,7 +28,7 @@ object XmlProcessingInstruction does XmlNode {
 object XmlAttribute {
     has name is XmlName;has value,fragment is string;
     XmlAttribute(name is XmlName,value is string){
-        confirm (name.namespace()=="" || name.prefix()!="") && !(name.namespace()=="" && name.local_name()=="xmlns") else throw InvalidXml(0,"attribute namespace requires an explicit prefix");
+        confirm (name.namespace()=="" || name.prefix()!="") && !(name.namespace()=="" && name.local_name()=="xmlns") else throw InvalidXml.located(0, "attribute namespace requires an explicit prefix");
         self.name=name;self.value=value;fragment=name.lexical()+"=\""+EscapedXml(value,true).string()+"\"";
     }
     name() is XmlName{name;}value() is string{value;}xml() is string{fragment;}
@@ -49,7 +49,7 @@ object XmlElement does XmlNode {
 object XmlChildren {
     has values is @XmlNode;
     XmlChildren(source is Sequencing<XmlNode>){
-        let size=source.size();confirm size>=0 && size<=8192 else throw InvalidXml(0,"XML child count exceeds 8192");
+        let size=source.size();confirm size>=0 && size<=8192 else throw InvalidXml.located(0, "XML child count exceeds 8192");
         let snapshot is @XmlNode=(0..size).map()->index{source.item(index);};values=snapshot;
     }
     values() is @XmlNode{values;}
@@ -57,17 +57,17 @@ object XmlChildren {
 object XmlAttributes {
     has values is @XmlAttribute;
     XmlAttributes(element is XmlName,source is Sequencing<XmlAttribute>){
-        let size=source.size();confirm size>=0 && size<=256 else throw InvalidXml(0,"XML attribute count exceeds 256");
+        let size=source.size();confirm size>=0 && size<=256 else throw InvalidXml.located(0, "XML attribute count exceeds 256");
         let snapshot is @XmlAttribute=(0..size).map()->index{source.item(index);};
         let total=snapshot.reduce(0)->length,attribute{length+attribute.xml().length();};
-        confirm total<=33554432 else throw InvalidXml(0,"aggregate XML attributes exceed 32 Mi scalars");
+        confirm total<=33554432 else throw InvalidXml.located(0, "aggregate XML attributes exceed 32 Mi scalars");
         for (0..size)->index{
             let name=snapshot[index].name();
-            confirm name.prefix()=="" || name.prefix()!=element.prefix() || name.namespace()==element.namespace() else throw InvalidXml(0,"conflicting element prefix");
+            confirm name.prefix()=="" || name.prefix()!=element.prefix() || name.namespace()==element.namespace() else throw InvalidXml.located(0, "conflicting element prefix");
             for (0..index)->prior{
                 let before=snapshot[prior].name();
-                confirm name.local_name()!=before.local_name() || name.namespace()!=before.namespace() else throw InvalidXml(0,"duplicate expanded attribute name");
-                confirm name.prefix()=="" || name.prefix()!=before.prefix() || name.namespace()==before.namespace() else throw InvalidXml(0,"conflicting attribute prefix");
+                confirm name.local_name()!=before.local_name() || name.namespace()!=before.namespace() else throw InvalidXml.located(0, "duplicate expanded attribute name");
+                confirm name.prefix()=="" || name.prefix()!=before.prefix() || name.namespace()==before.namespace() else throw InvalidXml.located(0, "conflicting attribute prefix");
             }
         }
         values=snapshot;
@@ -77,7 +77,7 @@ object XmlAttributes {
 object XmlElementContent {
     has fragment is string;has depth is int;
     XmlElementContent(name is XmlName,attributes is @XmlAttribute,children is @XmlNode){
-        let maximum=children.reduce(0)->value,child{let depth=child.depth();confirm depth>=0 && depth<64 else throw InvalidXml(0,"XML depth exceeds 64");if depth>value{depth;}else{value;}};
+        let maximum=children.reduce(0)->value,child{let depth=child.depth();confirm depth>=0 && depth<64 else throw InvalidXml.located(0, "XML depth exceeds 64");if depth>value{depth;}else{value;}};
         depth=maximum+1;
         let namespace=" xmlns=\""+EscapedXml(if name.prefix()==""{name.namespace();}else{"";},true).string()+"\""
             +(if name.prefix()=="" || name.prefix()=="xml"{"";}else{" xmlns:"+name.prefix()+"=\""+EscapedXml(name.namespace(),true).string()+"\"";});
@@ -88,12 +88,12 @@ object XmlElementContent {
             else{" xmlns:"+current.prefix()+"=\""+EscapedXml(current.namespace(),true).string()+"\"";}
         };
         let pairs is @string=attributes.map()->attribute{" "+attribute.xml();};
-        let parts is @string=children.map()->child{let text=child.xml();confirm text.length()<=33554432 else throw InvalidXml(0,"XML child output limit");text;};
+        let parts is @string=children.map()->child{let text=child.xml();confirm text.length()<=33554432 else throw InvalidXml.located(0, "XML child output limit");text;};
         let content_length=parts.reduce(0)->length,text{length+text.length();};
         let declarations_length=declarations.reduce(0)->length,text{length+text.length();};
         let attributes_length=pairs.reduce(0)->length,text{length+text.length();};
         let total=content_length+namespace.length()+declarations_length+attributes_length+name.lexical().length()*2+5;
-        confirm total<=33554432 else throw InvalidXml(0,"XML element exceeds 32 Mi scalars");
+        confirm total<=33554432 else throw InvalidXml.located(0, "XML element exceeds 32 Mi scalars");
         let opening="<"+name.lexical()+namespace+declarations.join("")+pairs.join("");
         fragment=if children.size()==0{opening+"/>";}else{opening+">"+parts.join("")+"</"+name.lexical()+">";};
     }
@@ -102,7 +102,7 @@ object XmlElementContent {
 object XmlDocument {
     has root is XmlElement;has fragment is string;
     XmlDocument(root is XmlElement){
-        confirm root.xml().length()+38<=33554432 else throw InvalidXml(0,"XML document exceeds 32 Mi scalars");
+        confirm root.xml().length()+38<=33554432 else throw InvalidXml.located(0, "XML document exceeds 32 Mi scalars");
         self.root=root;fragment="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"+root.xml();
     }
     root() is XmlElement{root;}xml() is string{fragment;}

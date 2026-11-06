@@ -34,18 +34,12 @@ object Rfc3339 {
 
     Rfc3339(origin is Instant, offset is Duration) {
         confirm offset.seconds().denominator() == "1"
-            else throw InvalidRfc3339Offset(
-                "RFC 3339 offset must contain whole seconds"
-            );
+            else throw InvalidRfc3339Offset.because("RFC 3339 offset must contain whole seconds");
         let seconds is int = offset.seconds().int();
         confirm seconds % 60 == 0
-            else throw InvalidRfc3339Offset(
-                "RFC 3339 offset must contain whole minutes"
-            );
+            else throw InvalidRfc3339Offset.because("RFC 3339 offset must contain whole minutes");
         confirm seconds > -86400 && seconds < 86400
-            else throw InvalidRfc3339Offset(
-                "RFC 3339 offset magnitude must be below 24 hours"
-            );
+            else throw InvalidRfc3339Offset.because("RFC 3339 offset magnitude must be below 24 hours");
         self.origin = origin;
         self.offset = offset;
     }
@@ -85,14 +79,14 @@ object InstantFromRfc3339 {
 
     value() is Instant {
         let length is int = origin.length();
-        confirm length >= 20 else throw InvalidRfc3339(origin);
+        confirm length >= 20 else throw InvalidRfc3339.origin(origin);
 
         let utc is bool = origin.slice(length - 1, length) == "Z";
         let numeric is bool = length >= 25
             && (origin.slice(length - 6, length - 5) == "+"
                 || origin.slice(length - 6, length - 5) == "-")
             && origin.slice(length - 3, length - 2) == ":";
-        confirm utc || numeric else throw InvalidRfc3339(origin);
+        confirm utc || numeric else throw InvalidRfc3339.origin(origin);
 
         let local_source is string = if utc {
             origin.slice(0, length - 1);
@@ -104,7 +98,7 @@ object InstantFromRfc3339 {
             LocalDateTimeFromIso(origin: local_source).value();
         }
         catch error is InvalidIsoLocalDateTime {
-            throw InvalidRfc3339(origin);
+            throw InvalidRfc3339.origin(origin);
         };
 
         let offset is Duration = if utc {
@@ -119,7 +113,7 @@ object InstantFromRfc3339 {
                     origin.slice(length - 2, length)
                 ).value();
                 confirm hour <= 23 && minute <= 59
-                    else throw InvalidRfc3339(origin);
+                    else throw InvalidRfc3339.origin(origin);
                 let sign is int = if origin.slice(length - 6, length - 5) == "-" {
                     -1;
                 }
@@ -132,7 +126,7 @@ object InstantFromRfc3339 {
                 );
             }
             catch error is InvalidInteger {
-                throw InvalidRfc3339(origin);
+                throw InvalidRfc3339.origin(origin);
             }
         };
 
@@ -144,26 +138,6 @@ object InstantFromRfc3339 {
     }
 }
 
-object InvalidRfc3339 does Error {
-    has origin is string;
+enum InvalidRfc3339 is Error = (origin(origin is string));
 
-    InvalidRfc3339(origin is string) {
-        self.origin = origin;
-    }
-
-    text() is string {
-        "invalid RFC 3339 timestamp: " + origin;
-    }
-}
-
-object InvalidRfc3339Offset does Error {
-    has message is string;
-
-    InvalidRfc3339Offset(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidRfc3339Offset is Error = (because(message is string));

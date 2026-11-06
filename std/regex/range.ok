@@ -23,8 +23,8 @@ object RegexRange {
     has limit is int;
 
     RegexRange(start is int, end is int) {
-        confirm start >= 0 else throw InvalidRegexRange(start, end);
-        confirm end >= start else throw InvalidRegexRange(start, end);
+        confirm start >= 0 else throw InvalidRegexRange.detailed(start, end);
+        confirm end >= start else throw InvalidRegexRange.detailed(start, end);
         first = start;
         limit = end;
     }
@@ -36,20 +36,4 @@ object RegexRange {
     length() is int { limit - first; }
 }
 
-object InvalidRegexRange does Error {
-    has first is int;
-    has limit is int;
-
-    InvalidRegexRange(start is int, end is int) {
-        first = start;
-        limit = end;
-    }
-
-    start() is int { first; }
-
-    end() is int { limit; }
-
-    text() is string {
-        "invalid regex range [" + first.string() + ", " + limit.string() + ")";
-    }
-}
+enum InvalidRegexRange is Error = (detailed(start is int, end is int));

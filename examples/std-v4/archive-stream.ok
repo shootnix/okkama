@@ -16,7 +16,7 @@ main() is int {
     let metadata = ArchiveMetadata(ArchiveModificationFromEpoch(0.rat()).value(), "");
     let reader = ArchiveReading(() is ArchiveEntry {
         let bytes = input.reading().bytes(1);
-        if bytes.size() == 0 { throw EndOfArchive(); }
+        if bytes.size() == 0 { throw EndOfArchive.reached; }
         ArchiveFile(ArchivePath("member-" + bytes[0].int().string()), metadata, bytes);
     });
     let writer = ArchiveWriting((entry is ArchiveEntry) is void {

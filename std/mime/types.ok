@@ -20,11 +20,11 @@ role MediaIdentifying {
 object MediaTypeExtension {
     has suffix is string;has value is MediaType;
     MediaTypeExtension(extension is string, type is MediaType) {
-        confirm extension.length()>0 && extension.length()<=255 else throw InvalidMediaExtension(extension);
-        for extension.split(".") -> part {confirm part!="" else throw InvalidMediaExtension(extension);}
+        confirm extension.length()>0 && extension.length()<=255 else throw InvalidMediaExtension.extension(extension);
+        for extension.split(".") -> part {confirm part!="" else throw InvalidMediaExtension.extension(extension);}
         for (0..extension.length()) -> index {
             confirm "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_+-.".split(extension.slice(index,index+1)).size()==2
-                else throw InvalidMediaExtension(extension);
+                else throw InvalidMediaExtension.extension(extension);
         }
         suffix=MediaAsciiLower(extension).string();value=type;
     }
@@ -52,8 +52,8 @@ object MappedMediaTypes does MediaIdentifying {
             }
         }
         let other=fallback.extensions(type);let size=other.size();
-        confirm size>=0 else throw InvalidArgument("media extension source size must be nonnegative");
-        confirm size<=maximum else throw MediaTypeLimitExceeded("entries");
+        confirm size>=0 else throw InvalidArgument.because("media extension source size must be nonnegative");
+        confirm size<=maximum else throw MediaTypeLimitExceeded.kind("entries");
         for (0..size) -> position {
             let extension=MediaTypeExtension(other.item(position),type).extension();let index=MediaMatch(entries,"x."+extension).index();
             let shadowed=index>=0 && MediaTypeKey(entries[index].type()).string()!=MediaTypeKey(type).string();
@@ -87,41 +87,21 @@ object MediaTypeFileLimits {
     has maximum_files, maximum_bytes, maximum_entries is int;
     MediaTypeFileLimits() {maximum_files=16;maximum_bytes=1048576;maximum_entries=10000;}
     MediaTypeFileLimits(files is int, bytes is int, entries is int) {
-        confirm files>=0 && bytes>=0 && entries>=0 else throw InvalidArgument("media table limits must be nonnegative");
+        confirm files>=0 && bytes>=0 && entries>=0 else throw InvalidArgument.because("media table limits must be nonnegative");
         maximum_files=files;maximum_bytes=bytes;maximum_entries=entries;
     }
     files() is int {maximum_files;}
     bytes() is int {maximum_bytes;}
     entries() is int {maximum_entries;}
 }
-object UnknownMediaType does Error {
-    has origin is Path;
-    UnknownMediaType(path is Path) {origin=path;}
-    path() is Path {origin;}
-    text() is string {"unknown media type for path: "+origin.string();}
-}
-object InvalidMediaExtension does Error {
-    has suffix is string;
-    InvalidMediaExtension(extension is string) {suffix=extension;}
-    extension() is string {suffix;}
-    text() is string {"invalid media extension: "+suffix;}
-}
-object InvalidMediaTypeDatabase does Error {
-    has number is int;has reason is string;
-    InvalidMediaTypeDatabase(line is int, reason is string) {number=line;self.reason=reason;}
-    line() is int {number;}
-    text() is string {"invalid media type database at line "+number.string()+": "+reason;}
-}
-object MediaTypeLimitExceeded does Error {
-    has limit is string;
-    MediaTypeLimitExceeded(kind is string) {limit=kind;}
-    kind() is string {limit;}
-    text() is string {"media type "+limit+" limit exceeded";}
-}
+enum UnknownMediaType is Error = (path(path is string));
+enum InvalidMediaExtension is Error = (extension(extension is string));
+enum InvalidMediaTypeDatabase is Error = (located(line is int, reason is string));
+enum MediaTypeLimitExceeded is Error = (kind(kind is string));
 
 object EmptyMediaTypes does MediaIdentifying {
     EmptyMediaTypes() {}
-    type(path is Path) is MediaType {throw UnknownMediaType(path);}
+    type(path is Path) is MediaType {throw UnknownMediaType.path(path.string());}
     extensions(type is MediaType) is Sequencing<string> {let empty is @string=[];empty;}
 }
 object MediaAsciiLower {
@@ -171,9 +151,9 @@ object MediaTypeKey {
 object MediaMappingSnapshot {
     has values is @MediaTypeExtension;
     MediaMappingSnapshot(entries is Sequencing<MediaTypeExtension>, maximum is int) {
-        confirm maximum>=0 else throw InvalidArgument("media entry limit must be nonnegative");
-        let size=entries.size();confirm size>=0 else throw InvalidArgument("media entry source size must be nonnegative");
-        confirm size<=maximum else throw MediaTypeLimitExceeded("entries");
+        confirm maximum>=0 else throw InvalidArgument.because("media entry limit must be nonnegative");
+        let size=entries.size();confirm size>=0 else throw InvalidArgument.because("media entry source size must be nonnegative");
+        confirm size<=maximum else throw MediaTypeLimitExceeded.kind("entries");
         let snapshot is @MediaTypeExtension=(0..size).map() -> index {entries.item(index);};values=snapshot;
     }
     entries() is @MediaTypeExtension {values;}
@@ -183,7 +163,7 @@ object MediaAliases {
     MediaAliases(maximum is int) {let empty is List<string>=EmptyList();reversed=empty;self.maximum=maximum;}
     membership(value is string) is bool {reversed.reduce(false) -> found,entry {found || entry==value;};}
     addition(value is string) is ^MediaAliases {
-        confirm reversed.size()<maximum else throw MediaTypeLimitExceeded("entries");^reversed=reversed.prefix(value);
+        confirm reversed.size()<maximum else throw MediaTypeLimitExceeded.kind("entries");^reversed=reversed.prefix(value);
     }
     entries() is @string {
         let reverse is @string=reversed.map() -> entry {entry;};
@@ -193,8 +173,8 @@ object MediaAliases {
 object SystemMediaSnapshot {
     has values is @MediaTypeExtension;
     SystemMediaSnapshot(files is Sequencing<Path>, limits is MediaTypeFileLimits) {
-        let size=files.size();confirm size>=0 else throw InvalidArgument("media file source size must be nonnegative");
-        confirm size<=limits.files() else throw MediaTypeLimitExceeded("files");
+        let size=files.size();confirm size>=0 else throw InvalidArgument.because("media file source size must be nonnegative");
+        confirm size<=limits.files() else throw MediaTypeLimitExceeded.kind("files");
         let paths is @Path=(0..size).map() -> index {files.item(index);};
         let count=MimePosition(0);let output is MimeItems<MediaTypeExtension>=MimeItems();
         for paths -> path {
@@ -216,11 +196,11 @@ object OptionalMediaFile {
             loop {
                 let remaining=maximum-buffer.content().size();let amount=if remaining<65536 {remaining+1;} else {65536;};
                 let bytes=reader.bytes(amount);last if bytes.size()==0;
-                confirm bytes.size()<=remaining else throw MediaTypeLimitExceeded("bytes");buffer.writing().write(ByteSnapshot(bytes));
+                confirm bytes.size()<=remaining else throw MediaTypeLimitExceeded.kind("bytes");buffer.writing().write(ByteSnapshot(bytes));
             }
             buffer.content().bytes();
         } catch failure is FileSystemFailure {
-            if failure.code()=="not_found" {[];} else {throw failure;}
+            match failure {case FileSystemFailure.detailed(code, _) {if code=="not_found" {[];} else {throw failure;}}}
         }
     }
 }
@@ -229,21 +209,21 @@ object MediaDatabaseEntries {
     MediaDatabaseEntries(origin is @byte, maximum is int) {self.origin=origin;self.maximum=maximum;}
     entries() is @MediaTypeExtension {
         let text=try {Utf8Decoded(origin).string();}
-            catch failure is InvalidUtf8 {throw InvalidMediaTypeDatabase(0,"invalid UTF-8 input");};
+            catch failure is InvalidUtf8 {throw InvalidMediaTypeDatabase.located(0, "invalid UTF-8 input");};
         let lines=text.split("\n");let output is MimeItems<MediaTypeExtension>=MimeItems();
         for (0..lines.size()) -> index {
             let raw=lines[index];let line=if index+1<lines.size() && raw.length()>0 && raw.slice(raw.length()-1,raw.length())=="\r"
                 {raw.slice(0,raw.length()-1);} else {raw;};
-            confirm line.split("\r").size()==1 else throw InvalidMediaTypeDatabase(index+1,"bare CR");
+            confirm line.split("\r").size()==1 else throw InvalidMediaTypeDatabase.located(index+1, "bare CR");
             let content=line.split("#")[0];let fields is @string=content.replace("\t"," ").split(" ").filter() -> field {field!="";};
             if fields.size()>0 {
                 let type=try {MediaType(fields[0]);}
-                    catch failure is InvalidMediaType {throw InvalidMediaTypeDatabase(index+1,"invalid media type");};
-                confirm type.parameters().entries().size()==0 else throw InvalidMediaTypeDatabase(index+1,"parameters are not supported");
+                    catch failure is InvalidMediaType {throw InvalidMediaTypeDatabase.located(index+1, "invalid media type");};
+                confirm type.parameters().entries().size()==0 else throw InvalidMediaTypeDatabase.located(index+1, "parameters are not supported");
                 for (1..fields.size()) -> position {
-                    confirm output.size()<maximum else throw MediaTypeLimitExceeded("entries");
+                    confirm output.size()<maximum else throw MediaTypeLimitExceeded.kind("entries");
                     let entry=try {MediaTypeExtension(fields[position],type);}
-                        catch failure is InvalidMediaExtension {throw InvalidMediaTypeDatabase(index+1,"invalid extension");};
+                        catch failure is InvalidMediaExtension {throw InvalidMediaTypeDatabase.located(index+1, "invalid extension");};
                     output=output.following(entry);
                 }
             }

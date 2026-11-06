@@ -18,14 +18,14 @@ object LogStyle{
 object LogStyles{
     has origin is @LogStyle;
     LogStyles(styles is Sequencing<LogStyle>){
-        confirm styles.size()>=0 && styles.size()<=5 else throw InvalidLogStyles();
+        confirm styles.size()>=0 && styles.size()<=5 else throw InvalidLogStyles.invalid;
         let snapshot is @LogStyle=(0..styles.size()).map()->index{styles.item(index);};
-        for (0..snapshot.size())->index{for (0..index)->previous{confirm snapshot[index].level()!=snapshot[previous].level() else throw InvalidLogStyles();}}
+        for (0..snapshot.size())->index{for (0..index)->previous{confirm snapshot[index].level()!=snapshot[previous].level() else throw InvalidLogStyles.invalid;}}
         origin=snapshot;
     }
     style(level is LogLevel) is TextStyle{origin.reduce(TextStyle(DefaultColor(),DefaultColor(),[]))->old,entry{if entry.level()==level{entry.style();}else{old;}};}
 }
-object InvalidLogStyles does Error{InvalidLogStyles();text() is string{"duplicate level style or more than five styles";}}
+enum InvalidLogStyles is Error = (invalid);
 object TextStreamLogs does LogWriting{
     has origin is Writing;has zone is TimeZone;
     TextStreamLogs(origin is Writing,zone is TimeZone){self.origin=origin;self.zone=zone;}

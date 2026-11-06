@@ -51,7 +51,7 @@ object PcgRandom does Randomizing {
     }
 
     integer(start is int, stop is int) is int {
-        confirm start < stop else throw InvalidRandomRange(start, stop);
+        confirm start < stop else throw InvalidRandomRange.detailed(start, stop);
         pcg_integer(state, start, stop);
     }
 
@@ -61,7 +61,7 @@ object PcgRandom does Randomizing {
 
     bytes(size is int) is @byte {
         confirm size >= 0 && size <= 16777216
-            else throw InvalidRandomSize(size, 16777216);
+            else throw InvalidRandomSize.detailed(size, 16777216);
         pcg_bytes(state, size);
     }
 }
@@ -70,7 +70,7 @@ object SecureRandom does Randomizing {
     SecureRandom();
 
     integer(start is int, stop is int) is int {
-        confirm start < stop else throw InvalidRandomRange(start, stop);
+        confirm start < stop else throw InvalidRandomRange.detailed(start, stop);
         SecureInteger(start: start, stop: stop).value();
     }
 
@@ -80,7 +80,7 @@ object SecureRandom does Randomizing {
 
     bytes(size is int) is @byte {
         confirm size >= 0 && size <= 16777216
-            else throw InvalidRandomSize(size, 16777216);
+            else throw InvalidRandomSize.detailed(size, 16777216);
         SecureBytes(size: size).bytes();
     }
 }
@@ -120,54 +120,18 @@ object SecureBytes {
             try {
                 let result is @byte = secure_random(amount);
                 confirm result.size() == amount
-                    else throw UnavailableRandom();
+                    else throw UnavailableRandom.unavailable;
                 result;
             }
             catch failure is NativeFailure {
-                throw UnavailableRandom();
+                throw UnavailableRandom.unavailable;
             }
         }
     }
 }
 
-object InvalidRandomRange does Error {
-    has beginning is int;
-    has ending is int;
+enum InvalidRandomRange is Error = (detailed(start is int, stop is int));
 
-    InvalidRandomRange(start is int, stop is int) {
-        beginning = start;
-        ending = stop;
-    }
+enum InvalidRandomSize is Error = (detailed(requested is int, maximum is int));
 
-    start() is int { beginning; }
-    stop() is int { ending; }
-
-    text() is string {
-        "random range must satisfy start < stop";
-    }
-}
-
-object InvalidRandomSize does Error {
-    has amount is int;
-    has limit is int;
-
-    InvalidRandomSize(requested is int, maximum is int) {
-        amount = requested;
-        limit = maximum;
-    }
-
-    requested() is int { amount; }
-    maximum() is int { limit; }
-
-    text() is string {
-        "random byte size must be between zero and " + limit.string();
-    }
-}
-
-object UnavailableRandom does Error {
-    UnavailableRandom();
-
-    text() is string {
-        "secure random source is unavailable";
-    }
-}
+enum UnavailableRandom is Error = (unavailable);

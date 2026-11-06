@@ -57,6 +57,46 @@ pub struct Loaded {
     pub functions: Vec<FunctionInfo>,
     /// Descriptor of `async.event::Event`, if the program has it.
     event: Option<usize>,
+    /// Worker Future functions by result type (see [`WORKER`]).
+    workers: Vec<(Option<TypeRef>, usize)>,
+}
+
+/// Intrinsic name of the synthetic async functions whose frames are the
+/// Futures of `worker.spawn`, one per result type (`worker` drives them).
+pub const WORKER: &str = "sparrow.worker.process";
+
+/// Append a worker Future function for every result type `worker.spawn`
+/// produces in `program`.
+fn add_workers(program: &mut Program) -> Vec<(Option<TypeRef>, usize)> {
+    let mut results = Vec::new();
+    for function in &program.functions {
+        for instruction in &function.code {
+            if let okkama_sparrow::Instruction::WorkerSpawn { dst, .. } = instruction {
+                if let Some(Type::Future(result)) = program.ty(function.registers[dst.0.0 as usize]) {
+                    if !results.contains(result) {
+                        results.push(*result);
+                    }
+                }
+            }
+        }
+    }
+    results
+        .into_iter()
+        .map(|result| {
+            program.functions.push(okkama_sparrow::Function {
+                symbol: format!("$worker#{}", program.functions.len()),
+                is_async: true,
+                native: None,
+                intrinsic: Some(okkama_sparrow::Intrinsic { name: WORKER.into(), objects: Vec::new(), helpers: Vec::new() }),
+                registers: Vec::new(),
+                params: Vec::new(),
+                result,
+                code: Vec::new(),
+                handlers: Vec::new(),
+            });
+            (result, program.functions.len() - 1)
+        })
+        .collect()
 }
 
 /// An async native or intrinsic function: its Future is a frame run by a Rust
@@ -66,7 +106,8 @@ pub fn is_driver(function: &okkama_sparrow::Function) -> bool {
 }
 
 impl Loaded {
-    pub fn new(program: Program) -> Self {
+    pub fn new(mut program: Program) -> Self {
+        let workers = add_workers(&mut program);
         let functions = program
             .functions
             .iter()
@@ -80,7 +121,12 @@ impl Loaded {
             .objects
             .iter()
             .position(|o| o.name == "async.event::Event" && o.fields.len() == 1 && o.fields[0].0 == "initial");
-        Self { program, functions, event }
+        Self { program, functions, event, workers }
+    }
+
+    /// The worker Future function for results of type `result`.
+    pub fn worker(&self, result: Option<TypeRef>) -> Option<usize> {
+        self.workers.iter().find(|(r, _)| *r == result).map(|&(_, function)| function)
     }
 
     /// Is `descriptor` the `async.event::Event` object (`initial` only)?

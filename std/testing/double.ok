@@ -17,7 +17,7 @@ object RecordedCalls<T> {
     has state is backend.TestState;
     RecordedCalls(){CheckContext().verify();state=backend.test_state_open(65536);let empty is List<Recorded<T>>=EmptyList();cell=Atomic(empty);}
     record(value is T) is void {
-        CheckContext().verify();let old=cell.value();confirm old.size()<65536 else throw InvalidTestDouble("recorder capacity");
+        CheckContext().verify();let old=cell.value();confirm old.size()<65536 else throw InvalidTestDouble.because("recorder capacity");
         let index=backend.test_state_next(state);cell.replace(old.prefix(Recorded(BigInt(index.string()),value)));
     }
     size() is int {CheckContext().verify();backend.test_state_size(state);}
@@ -31,20 +31,18 @@ object RecordedCalls<T> {
 object Stub<T> {
     has origin is @T;has position is backend.TestState;
     Stub(values is Sequencing<T>){
-        CheckContext().verify();let size=values.size();confirm size>=0 && size<=65536 else throw InvalidTestDouble("stub capacity");
+        CheckContext().verify();let size=values.size();confirm size>=0 && size<=65536 else throw InvalidTestDouble.because("stub capacity");
         let snapshot is @T=(0..size).map()->index{values.item(index);};origin=snapshot;position=backend.test_state_open(size);
     }
     size() is int {CheckContext().verify();backend.test_state_size(position);origin.size();}
     remaining() is int {CheckContext().verify();origin.size()-backend.test_state_size(position);}
     next() is T {
-        CheckContext().verify();let at=try{backend.test_state_next(position);}catch error is NativeFailure{if error.code()=="resource_exhausted"{throw StubExhausted();}throw error;};origin[at];
+        CheckContext().verify();let at=try{backend.test_state_next(position);}catch error is NativeFailure{if error.code()=="resource_exhausted"{throw StubExhausted.exhausted;}throw error;};origin[at];
     }
     close() is void {CheckContext().verify();backend.test_state_close(position);}
     destroy {self.close();}
 }
-object StubExhausted does Error {StubExhausted();text() is string {"test stub is exhausted";}}
-object InvalidTestDouble does Error {
-    has reason is string;InvalidTestDouble(reason is string){self.reason=reason;}text() is string {"invalid test double: "+reason;}
-}
+enum StubExhausted is Error = (exhausted);
+enum InvalidTestDouble is Error = (because(reason is string));
 
 test "recording snapshots remain immutable" {let calls is RecordedCalls<int>=RecordedCalls();defer calls.close();let before=calls.records();calls.record(7);test.is(before.size(),0);test.is(calls.records().first().value(),7);}

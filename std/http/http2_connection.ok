@@ -32,11 +32,11 @@ object Http2Connecting {
     has route is HttpEndpointSelection;has policy is TlsClientPolicy;
     has limits is HttpLimits;has clock is Timing;has local is Http2Settings;
     Http2Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy){
-        for policy.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion();}
+        for policy.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion.unsupported;}
         self.route=route;self.policy=policy;limits=HttpLimits();clock=SystemClock();local=Http2Settings();
     }
     Http2Connecting(route is HttpEndpointSelection,policy is TlsClientPolicy,local is Http2Settings,limits is HttpLimits,clock is Timing){
-        for policy.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion();}
+        for policy.protocols() -> protocol{confirm protocol=="h2" else throw UnsupportedHttpVersion.unsupported;}
         self.route=route;self.policy=policy;self.limits=limits;self.clock=clock;self.local=local;
     }
     async session() is Http2Session {

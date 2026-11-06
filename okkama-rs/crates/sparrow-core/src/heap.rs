@@ -36,8 +36,10 @@ pub const VISITED: u64 = 1 << 12;
 /// A string whose bytes are all ASCII: lengths and slices are byte offsets.
 pub const ASCII: u64 = 1 << 13;
 const PAGE_WORDS: usize = 64 * 1024 / 8;
-/// Cell sizes in words, header included.
-pub const CLASSES: [usize; 12] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32];
+/// Cell sizes in words, header included. Async frames are seven words plus
+/// one per register: classes up to 128 words keep frames of large functions
+/// on free lists instead of separate allocations.
+pub const CLASSES: [usize; 18] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128];
 /// Collections start once this much has been allocated, at least.
 const COLLECTION_FLOOR: usize = 1 << 20;
 
@@ -90,6 +92,10 @@ pub enum Integer<'a> {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HeapStats {
     pub collections: usize,
+    /// Bytes allocated since the start, and the live bytes after each
+    /// collection added up (their mean is the typical live heap).
+    pub allocated_bytes: usize,
+    pub live_sum: usize,
     pub live_bytes: usize,
     pub pages: usize,
     pub large: usize,
@@ -106,6 +112,8 @@ pub struct Heap {
     threshold: usize,
     live: usize,
     collections: usize,
+    allocated_before: usize,
+    live_sum: usize,
     worklist: Vec<Word>,
     /// Objects whose death must be reported (resource identities).
     watched: crate::word::FastSet<Word>,
@@ -124,6 +132,8 @@ impl Heap {
             threshold: COLLECTION_FLOOR,
             live: 0,
             collections: 0,
+            allocated_before: 0,
+            live_sum: 0,
             worklist: Vec::new(),
             watched: crate::word::FastSet::default(),
             released: Vec::new(),
@@ -146,6 +156,8 @@ impl Heap {
     pub fn stats(&self) -> HeapStats {
         HeapStats {
             collections: self.collections,
+            allocated_bytes: self.allocated_before + self.allocated,
+            live_sum: self.live_sum,
             live_bytes: self.live,
             pages: self.pages.len(),
             large: self.large.len(),
@@ -332,6 +344,20 @@ impl Heap {
         std::borrow::Cow::Owned(self.elements(array).iter().map(|&w| w as u8).collect())
     }
 
+    /// A string of bytes `start..end` of any `@byte` value, if they are UTF-8: one copy.
+    pub fn text_from_byte_range(&mut self, array: Word, start: usize, end: usize) -> Option<Word> {
+        if !self.is_bytes(array) {
+            let bytes = self.byte_view(array)[start..end].to_vec();
+            return std::str::from_utf8(&bytes).ok().map(|text| self.allocate_text(text));
+        }
+        let bytes = &self.bytes(array)[start..end];
+        std::str::from_utf8(bytes).ok()?;
+        let (pointer, length) = (bytes.as_ptr(), bytes.len());
+        // SAFETY: as in `text_from_bytes`.
+        let text = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(pointer, length)) };
+        Some(self.allocate_text(text))
+    }
+
     /// A string with the bytes of byte array `array`, if they are UTF-8: one copy.
     pub fn text_from_bytes(&mut self, array: Word) -> Option<Word> {
         let bytes = self.bytes(array);
@@ -361,6 +387,9 @@ impl Heap {
         if let Some(word) = n.to_i64().and_then(word::small) {
             return word;
         }
+        // The digits live outside the heap pages; count them so that garbage
+        // big integers trigger collections by their real size.
+        self.allocated += (n.bits() / 8) as usize + 32;
         let object = self.allocate(2);
         // SAFETY: two fresh words; the box is dropped by the sweep.
         unsafe {
@@ -522,6 +551,8 @@ impl Heap {
             }
         });
         self.live = live;
+        self.live_sum += live;
+        self.allocated_before += self.allocated;
         self.allocated = 0;
         self.threshold = live.max(COLLECTION_FLOOR);
         self.collections += 1;

@@ -50,18 +50,18 @@ object SymbolicLink {
                 false;
             }
             else {
-                throw FileSystemFailure(failure.code(), failure.message());
+                throw FileSystemFailure.detailed(failure.code(), failure.message());
             }
         }
     }
 
     target() is Path {
-        confirm self.existence() else throw NotSymbolicLink(origin);
+        confirm self.existence() else throw NotSymbolicLink.path(origin.string());
         try {
             Path(path_decode(readlink(path_encode(origin.string()))));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
@@ -73,17 +73,17 @@ object SymbolicLink {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 
     remove() is void {
-        confirm self.existence() else throw NotSymbolicLink(origin);
+        confirm self.existence() else throw NotSymbolicLink.path(origin.string());
         try {
             unlink(path_encode(origin.string()));
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
@@ -100,9 +100,9 @@ object HardLink {
             lstat(path_encode(source_path.string()))["kind"];
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         };
-        confirm kind == 1 else throw InvalidHardLinkSource(source_path);
+        confirm kind == 1 else throw InvalidHardLinkSource.path(source_path.string());
         try {
             link(
                 path_encode(source_path.string()),
@@ -110,35 +110,11 @@ object HardLink {
             );
         }
         catch failure is NativeFailure {
-            throw FileSystemFailure(failure.code(), failure.message());
+            throw FileSystemFailure.detailed(failure.code(), failure.message());
         }
     }
 }
 
-object NotSymbolicLink does Error {
-    has origin is Path;
+enum NotSymbolicLink is Error = (path(path is string));
 
-    NotSymbolicLink(path is Path) {
-        origin = path;
-    }
-
-    path() is Path { origin; }
-
-    text() is string {
-        "path is not a symbolic link: " + origin.string();
-    }
-}
-
-object InvalidHardLinkSource does Error {
-    has origin is Path;
-
-    InvalidHardLinkSource(path is Path) {
-        origin = path;
-    }
-
-    path() is Path { origin; }
-
-    text() is string {
-        "hard-link source is not a regular file: " + origin.string();
-    }
-}
+enum InvalidHardLinkSource is Error = (path(path is string));

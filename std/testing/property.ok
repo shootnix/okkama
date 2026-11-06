@@ -13,14 +13,12 @@ object PropertyObservation {
     PropertyObservation(passed is bool,typed_error is bool,description is string){self.passed=passed;self.typed_error=typed_error;self.description=description;}
     passed() is bool{passed;}typed_error() is bool{typed_error;}description() is string{description;}
 }
-object InvalidProperty does Error {
-    has reason is string;InvalidProperty(reason is string){self.reason=reason;}text() is string{"invalid property: "+reason;}
-}
+enum InvalidProperty is Error = (because(reason is string));
 
 object Property<T> does Checking {
     has origin is Generation<T>;has seed,cases,maximum_size,shrink_limit is int;has condition is (T) is bool;
     Property(origin is Generation<T>,seed is int,cases is int,maximum_size is int,shrink_limit is int,condition is (T) is bool) {
-        confirm cases>0 && cases<=10000 && maximum_size>=0 && maximum_size<=65536 && shrink_limit>=0 && shrink_limit<=128 else throw InvalidProperty("cases 1..10000, size 0..65536, shrink 0..128 required");
+        confirm cases>0 && cases<=10000 && maximum_size>=0 && maximum_size<=65536 && shrink_limit>=0 && shrink_limit<=128 else throw InvalidProperty.because("cases 1..10000, size 0..65536, shrink 0..128 required");
         self.origin=origin;self.seed=seed;self.cases=cases;self.maximum_size=maximum_size;self.shrink_limit=shrink_limit;self.condition=condition;
     }
     check() is void {
@@ -42,7 +40,7 @@ object Property<T> does Checking {
     }
     shrink(origin is Generated<T>,remaining is int) is Generated<T> {
         if remaining==0{return origin;}let source=origin.reductions();let size=source.size();
-        confirm size>=0 && size<=4096 else throw InvalidGeneration("reduction count");
+        confirm size>=0 && size<=4096 else throw InvalidGeneration.because("reduction count");
         let count=if size<remaining{size;}else{remaining;};
         for (0..count)->index {
             let candidate=source.item(index);let result=self.observe(candidate.value());
@@ -56,7 +54,7 @@ object Property<T> does Checking {
 object AsyncProperty<T> does AsyncChecking {
     has origin is Generation<T>;has seed,cases,maximum_size,shrink_limit is int;has condition is async (T) is bool;
     AsyncProperty(origin is Generation<T>,seed is int,cases is int,maximum_size is int,shrink_limit is int,condition is async (T) is bool) {
-        confirm cases>0 && cases<=10000 && maximum_size>=0 && maximum_size<=65536 && shrink_limit>=0 && shrink_limit<=128 else throw InvalidProperty("cases 1..10000, size 0..65536, shrink 0..128 required");
+        confirm cases>0 && cases<=10000 && maximum_size>=0 && maximum_size<=65536 && shrink_limit>=0 && shrink_limit<=128 else throw InvalidProperty.because("cases 1..10000, size 0..65536, shrink 0..128 required");
         self.origin=origin;self.seed=seed;self.cases=cases;self.maximum_size=maximum_size;self.shrink_limit=shrink_limit;self.condition=condition;
     }
     async check() is void {
@@ -82,7 +80,7 @@ object AsyncProperty<T> does AsyncChecking {
         let observe=(value is T) is Future<PropertyObservation> {self.observe(value);};
         let shrink=(value is Generated<T>,remaining is int) is Future<Generated<T>> {self.shrink(value,remaining);};
         if remaining==0{return origin;}let source=origin.reductions();let size=source.size();
-        confirm size>=0 && size<=4096 else throw InvalidGeneration("reduction count");
+        confirm size>=0 && size<=4096 else throw InvalidGeneration.because("reduction count");
         let count=if size<remaining{size;}else{remaining;};
         for (0..count)->index {
             let candidate=source.item(index);let result=await observe(candidate.value());

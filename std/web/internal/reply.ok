@@ -21,7 +21,7 @@ object ReplyHeaders {
     added(name is string, value is string) is ReplyHeaders {
         let lowered = HttpAsciiLowercase(name).string();
         confirm lowered != "content-type" && lowered != "content-length" && lowered != "transfer-encoding"
-            else throw InvalidReply(name + " is owned by the reply itself");
+            else throw InvalidReply.because(name + " is owned by the reply itself");
         let header = Header(HeaderName(name), value);
         let following is @Header = (0..origin.size() + 1).map() -> index {
             if index < origin.size() { origin[index]; } else { header; }
@@ -89,18 +89,13 @@ object BodyStatus {
     has code is int;
     BodyStatus(status is int) {
         confirm status >= 200 && status <= 599 && status != 204 && status != 205 && status != 304
-            else throw InvalidReply("status " + status.string() + " cannot carry a body");
+            else throw InvalidReply.because("status " + status.string() + " cannot carry a body");
         code = status;
     }
     code() is int { code; }
 }
 
-object InvalidReply does Error {
-    has reason is string;
-    InvalidReply(reason is string) { self.reason = reason; }
-    reason() is string { reason; }
-    text() is string { "invalid web reply: " + reason; }
-}
+enum InvalidReply is Error = (because(reason is string));
 
 test "framing headers are owned by the reply" {
     let rejected = try { ReplyHeaders().added("content-length", "1"); false; } catch failure is InvalidReply { true; };

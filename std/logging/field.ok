@@ -7,19 +7,19 @@ import "encoding/utf" take Utf8Encoded;
 object LogFields{
     has origin is Json;
     LogFields(members is Sequencing<JsonField>){
-        let size=members.size();confirm size>=0 && size<=256 else throw InvalidLogField("field count exceeds 256");
-        let snapshot is @JsonField=(0..size).map()->index{let item=members.item(index);confirm item.name()!="" && item.name().length()<=4096 else throw InvalidLogField("invalid field name");item;};
-        for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name()!=snapshot[previous].name() else throw InvalidLogField("duplicate field name");}}
+        let size=members.size();confirm size>=0 && size<=256 else throw InvalidLogField.because("field count exceeds 256");
+        let snapshot is @JsonField=(0..size).map()->index{let item=members.item(index);confirm item.name()!="" && item.name().length()<=4096 else throw InvalidLogField.because("invalid field name");item;};
+        for (0..size)->index{for (0..index)->previous{confirm snapshot[index].name()!=snapshot[previous].name() else throw InvalidLogField.because("duplicate field name");}}
         let fields=Json(snapshot);
         if size>0{
             let text=fields.string();
-            confirm Utf8Encoded(text).bytes().size()<=1048576 else throw InvalidLogField("fields exceed 1 MiB");
+            confirm Utf8Encoded(text).bytes().size()<=1048576 else throw InvalidLogField.because("fields exceed 1 MiB");
             ParsedJson(text,32).root();
         }
         origin=fields;
     }
     membership(name is string) is bool{origin.has(name);}
-    value(name is string) is Json{confirm self.membership(name) else throw MissingLogField(name);origin.get(name);}
+    value(name is string) is Json{confirm self.membership(name) else throw MissingLogField.name(name);origin.get(name);}
     values() is Json{origin;}
     members() is @JsonField{origin.fields();}
 }
@@ -38,11 +38,5 @@ object CombinedLogFields{
         LogFields(merged);
     }
 }
-object MissingLogField does Error{
-    has origin is string;MissingLogField(name is string){origin=name;}
-    name() is string{origin;}text() is string{"missing log field: "+origin;}
-}
-object InvalidLogField does Error{
-    has reason is string;InvalidLogField(reason is string){self.reason=reason;}
-    text() is string{reason;}
-}
+enum MissingLogField is Error = (name(name is string));
+enum InvalidLogField is Error = (because(reason is string));

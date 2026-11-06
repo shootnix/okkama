@@ -30,6 +30,8 @@ pub(crate) enum Handle {
         size: i64,
         closed: bool,
     },
+    /// A `native object` of a bridged origin provider (`native_origin`).
+    Origin(okkama_runtime_core::Value),
 }
 impl Handle {
     /// Exhaustive on purpose: adding a provider requires an explicit decision
@@ -51,7 +53,8 @@ impl Handle {
             | Self::Secret(_)
             | Self::Buffer(_)
             | Self::Digest(_)
-            | Self::TestState { .. } => {}
+            | Self::TestState { .. }
+            | Self::Origin(_) => {}
             #[cfg(unix)]
             Self::Process(_) | Self::Rooted(_) | Self::Watch(_) => {}
         }

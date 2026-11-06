@@ -43,7 +43,7 @@ object Barrier {
     has amount is int;
 
     Barrier(parties is int) {
-        confirm parties > 0 else throw InvalidPartyCount(parties: parties);
+        confirm parties > 0 else throw InvalidPartyCount.parties(parties);
         amount = parties;
     }
 
@@ -71,21 +71,6 @@ object BarrierState {
     broken() is bool { panic "BarrierState.broken is a VM intrinsic"; }
 }
 
-object InvalidPartyCount does Error {
-    has amount is int;
-    InvalidPartyCount(parties is int) { amount = parties; }
+enum InvalidPartyCount is Error = (parties(parties is int));
 
-    parties() is int { amount; }
-
-    text() is string {
-        "barrier party count must be positive";
-    }
-}
-
-object BrokenBarrier does Error {
-    BrokenBarrier();
-
-    text() is string {
-        "barrier is broken";
-    }
-}
+enum BrokenBarrier is Error = (broken);

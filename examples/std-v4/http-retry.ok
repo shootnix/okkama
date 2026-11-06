@@ -25,7 +25,7 @@ import "error" take InvalidState;
 object NonReplayableEmpty does BodyOpening{
     has opened is Atomic<bool>;NonReplayableEmpty(){opened=Atomic(false);}
     length() is BigInt{BigInt("0");}replayable() is bool{false;}
-    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw InvalidState("fixture body opened twice");EmptyBody().reading();}
+    reading() is BodyReading{confirm opened.compare_and_replace(false,true) else throw InvalidState.because("fixture body opened twice");EmptyBody().reading();}
 }
 async main() is int{
     let environment=Environment();let scenario=environment.variable("OKKAMA_RETRY_CASE");let url=ParsedUrl(environment.variable("OKKAMA_HTTP_URL")).value();

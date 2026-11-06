@@ -27,21 +27,21 @@ object LogFileState does Writing,Closing{
         let empty is @fs.FileHandle=[];handles=Atomic(empty);finished=Atomic(false);
     }
     write(source is ByteSource) is void{
-        confirm !self.closed() else throw ClosedLogFile();
+        confirm !self.closed() else throw ClosedLogFile.closed;
         let bytes=source.bytes();let handle=self.handle();
         try{
             let written=fs.write(handle,bytes);
-            confirm written==bytes.size() else throw IncompleteWrite(written);
+            confirm written==bytes.size() else throw IncompleteWrite.after(written);
             if options.flush_each(){fs.flush(handle);}
             if options.sync_each(){fs.sync(handle);}
         }catch failure is NativeFailure{throw FileError(failure:failure).value();}
     }
     flush() is void{
-        confirm !self.closed() else throw ClosedLogFile();
+        confirm !self.closed() else throw ClosedLogFile.closed;
         if handles.value().size()>0{try{fs.flush(handles.value()[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
     }
     reopen() is void{
-        confirm !self.closed() else throw ClosedLogFile();
+        confirm !self.closed() else throw ClosedLogFile.closed;
         let replacement=self.open();let previous=handles.value();handles.replace([replacement]);
         if previous.size()>0{try{fs.close(previous[0]);}catch failure is NativeFailure{throw FileError(failure:failure).value();}}
     }
@@ -55,7 +55,7 @@ object LogFileState does Writing,Closing{
     private:
     handle() is fs.FileHandle{if handles.value().size()==0{let opened=self.open();handles.replace([opened]);}handles.value()[0];}
     open() is fs.FileHandle{
-        confirm !self.closed() else throw ClosedLogFile();
+        confirm !self.closed() else throw ClosedLogFile.closed;
         let mode=options.permissions();let bits=LogPermissionBits(mode.owner()).value()*64+LogPermissionBits(mode.group()).value()*8+LogPermissionBits(mode.others()).value()+mode.special()*512;
         try{fs.open(fs.path_encode(path.string()),22,bits);}catch failure is NativeFailure{throw FileError(failure:failure).value();}
     }
@@ -68,4 +68,4 @@ object LogFile does Writing,Closing{
     closed() is bool{state.closed();}close() is void{state.close();}
     destroy{self.close();}
 }
-object ClosedLogFile does Error{ClosedLogFile();text() is string{"log file is closed";}}
+enum ClosedLogFile is Error = (closed);

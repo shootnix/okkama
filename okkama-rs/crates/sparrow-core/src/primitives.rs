@@ -33,6 +33,10 @@ pub enum State {
     Channel(Rc<RefCell<Channel>>),
     Group(Group),
     Stream(Box<Stream>),
+    /// `fake.storage` of a role fake: key → (key word, value word, its type, repr).
+    FakeStorage(std::collections::BTreeMap<crate::ops::Key, (Word, Word, okkama_sparrow::TypeRef, Repr)>),
+    /// A bound action (`worker.bind`): its worker entry and receiver fields.
+    WorkerBinding { entry: Word, fields: Vec<(Word, Repr)> },
 }
 
 /// `FutureCompletions`: settled inputs handed to `completion()` requests in
@@ -115,6 +119,16 @@ impl State {
                 let channel = channel.borrow();
                 channel.messages.iter().for_each(|&w| visit(w, channel.repr));
                 channel.senders.iter().chain(&channel.receivers).for_each(|&w| visit(w, Repr::Ref));
+            }
+            Self::WorkerBinding { entry, fields } => {
+                visit(*entry, Repr::Ref);
+                fields.iter().for_each(|&(w, repr)| visit(w, repr));
+            }
+            Self::FakeStorage(storage) => {
+                for &(key, value, _, repr) in storage.values() {
+                    visit(key, Repr::Ref);
+                    visit(value, repr);
+                }
             }
             Self::Stream(stream) => {
                 stream.entries.iter().chain(&stream.waiters).chain(&stream.aborted).for_each(|&w| visit(w, Repr::Ref))

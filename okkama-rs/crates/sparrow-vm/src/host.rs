@@ -37,6 +37,8 @@ impl Host for VmHost {
     }
 
     fn thrown(&self, declaration: usize, fields: Vec<Value>) -> Rc<Failure> {
+        let names = self.0.program.objects[declaration].fields.iter().map(|(name, _)| name.as_str());
+        let fields = ObjectHeap.raised_fields(names, fields);
         let Value::Object(object) = self.make(declaration, fields) else {
             unreachable!("allocate makes objects")
         };

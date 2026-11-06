@@ -31,6 +31,6 @@ async main() is int{
         case "orders"{Stdout().writeln((await shelf.orders()).pretty(2));}
         case "buy"{Stdout().writeln((await shelf.purchase(args.integer(2,0),args.integer(3,0))).pretty(2));}
         case "serve"{let pages=StorePages(shelf);await LocalWeb().serve(WebRoutes([Get("/",pages.index),Get("/api/books",pages.books),Get("/api/orders",pages.orders),Post("/api/orders",pages.buy)],pages.missing),args.integer(2,8081));}
-        else{throw Usage("unknown bookstore command");}
+        else{throw Usage.usage("unknown bookstore command");}
     }0;
 }

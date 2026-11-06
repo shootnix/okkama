@@ -36,7 +36,7 @@ async main() is int{
     let a=await first;let b=await second;
     let ra=a.response().body().reading();defer ra.close();
     let waiting=ra.bytes(8);let reads is FutureGroup<@byte>=FutureGroup();reads.start(waiting);await armed.wait();fire.set();
-    confirm try{await waiting;false;}catch e is HttpTimeout{e.phase()=="body_idle";};
+    confirm try{await waiting;false;}catch HttpTimeout.phase(phase) {phase=="body_idle";};
     confirm try{await reads.wait();false;}catch e is HttpTimeout{true;};
     let rb=b.response().body().reading();defer rb.close();confirm await rb.bytes(8)==[66.byte()];confirm (await rb.bytes(8)).size()==0;
     let third=await client.response(request);confirm third.response().status().code()==204;
