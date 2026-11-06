@@ -3,6 +3,7 @@ import "runtime/db" as native_db;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 import "encoding/utf" take Utf8Encoded;
+import "async/atomic" take Atomic;
 
 enum DbValueKind=(null_value,boolean,integer,floating,decimal,text,bytes);
 
@@ -76,22 +77,36 @@ object ObservedDbValue {
     state() is native_db.DbCellState { state; }
 
 }
+// The print protocol: exactly one event of the declared kind, its value, then
+// the capture is sealed. Flags: 1 started, 2 faulted, 4 poisoned, 8 sealed.
 object DbValueCapture does DbValueWriting {
     has kind is DbValueKind;
-    has capture is native_db.DbCaptureState;
-    DbValueCapture(kind is DbValueKind) { self.kind=kind;capture=native_db.db_capture(DbKindCode(kind).value()); }
+    has flags is Atomic<int>;
+    has cell is Atomic<@native_db.DbCellState>;
+    DbValueCapture(kind is DbValueKind) { self.kind=kind;flags=Atomic(0);let empty is @native_db.DbCellState=[];cell=Atomic(empty); }
     emit(kind is DbValueKind) is void {
-        let status=native_db.db_capture_emit(capture,DbKindCode(kind).value());
-        confirm status!=1 else throw InvalidDbValue("printer is sealed");
-        confirm status==0 else throw InvalidDbValue("print must emit exactly one event of its declared kind");
+        let current=flags.value();
+        confirm current & 8 == 0 else throw InvalidDbValue("printer is sealed");
+        if current & 3 != 0 || kind != self.kind {
+            flags.replace(current | 6);
+            throw InvalidDbValue("print must emit exactly one event of its declared kind");
+        }
+        flags.replace(current | 3);
     }
-    published(cell is native_db.DbCellState) is void {
-        confirm native_db.db_capture_publish(capture,cell) else throw InvalidDbValue("print omitted or invalidated its value");
+    // Writers publish a cell of the kind they emitted, so an accepted cell has
+    // the declared kind.
+    published(value is native_db.DbCellState) is void {
+        let current=flags.value();
+        let valid=current & 13 == 1 && cell.value().size()==0;
+        if valid { cell.replace([value]);flags.replace(current & 13); }
+        else { if current & 8 == 0 { flags.replace(current | 2); } }
+        confirm valid else throw InvalidDbValue("print omitted or invalidated its value");
     }
-    complete() is void { confirm native_db.db_capture_complete(capture,false) else throw InvalidDbValue("print omitted or invalidated its value"); }
-    finish() is void { confirm native_db.db_capture_complete(capture,true) else throw InvalidDbValue("print omitted or invalidated its value"); }
+    complete() is void { confirm self.completed() else throw InvalidDbValue("print omitted or invalidated its value"); }
+    finish() is void { confirm self.completed() else throw InvalidDbValue("print omitted or invalidated its value");flags.replace(flags.value() | 8); }
     require(kind is DbValueKind) is void { confirm self.kind==kind else throw WrongDbValue(kind,self.kind);self.complete(); }
-    state() is native_db.DbCellState { self.complete();native_db.db_capture_value(capture); }
+    state() is native_db.DbCellState { self.complete();cell.value()[0]; }
+    completed() is bool { flags.value() & 3 == 1 && cell.value().size()==1; }
     null_value() is void { self.emit(DbValueKind.null_value);self.published(native_db.db_null()); }
     boolean(value is bool) is void { self.emit(DbValueKind.boolean);self.published(native_db.db_boolean(DbBoolean(value).value())); }
     boolean_value() is bool { self.require(DbValueKind.boolean);native_db.db_boolean_value(self.state()); }

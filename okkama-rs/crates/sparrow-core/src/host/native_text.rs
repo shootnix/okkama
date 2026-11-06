@@ -34,28 +34,12 @@ fn failed(native: Native) -> Error {
     Error(format!("Native invocation \"{}\" failed", native.symbol()))
 }
 impl Heap {
+    /// The bytes of a byte array (one copy; the array is packed in the core heap).
     pub(crate) fn native_bytes(&self, value: Slot) -> Result<Vec<u8>, Error> {
-        self.elements(value)?
-            .iter()
-            .map(|value| {
-                if value.kind() == BYTE {
-                    Ok(value.bits as u8)
-                } else {
-                    Err(Error("expected byte element".into()))
-                }
-            })
-            .collect()
+        Ok(self.byte_slice(value)?.to_vec())
     }
     pub(crate) fn native_byte_array(&mut self, bytes: Vec<u8>) -> Result<Slot, Error> {
-        self.allocate_array(
-            bytes
-                .into_iter()
-                .map(|byte| Slot {
-                    tag: BYTE,
-                    bits: byte as u64,
-                })
-                .collect(),
-        )
+        self.allocate_bytes(&bytes)
     }
     pub(crate) fn native_text(&mut self, native: Native, args: &[Slot]) -> Result<Outcome, Error> {
         use Native::*;

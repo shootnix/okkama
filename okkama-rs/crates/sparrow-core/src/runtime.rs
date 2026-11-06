@@ -105,6 +105,8 @@ pub struct Runtime {
     /// Native provider state; taken out while a provider runs.
     pub(crate) host: Option<Box<crate::host::Heap>>,
     pub io: crate::io::Io,
+    /// Event counts by name when `SPARROW_CORE_STATS` is set (diagnostics).
+    pub stats: Option<Box<std::collections::HashMap<String, u64>>>,
 }
 
 /// Frame pointer of the calling function's own frame record.
@@ -152,6 +154,7 @@ impl Runtime {
             intrinsics,
             host: Some(Box::new(crate::host::Heap::new(&loaded.program))),
             io: crate::io::Io::default(),
+            stats: std::env::var_os("SPARROW_CORE_STATS").map(|_| Box::default()),
             heap,
             jit: crate::jit::Jit::new()?,
             code: vec![0; functions].into_boxed_slice(),
@@ -169,6 +172,7 @@ impl Runtime {
         if !self.heap.needs_collection() {
             return;
         }
+        self.count(|_| "gc collection".into());
         let jit = &self.jit;
         let constants = &self.constants;
         let roots = &self.roots;
@@ -205,6 +209,25 @@ impl Runtime {
         if let Some(host) = &mut self.host {
             host.released(&released);
         }
+    }
+
+    /// Count an event (only when statistics are on).
+    #[inline]
+    pub fn count(&mut self, event: impl FnOnce(&Runtime) -> String) {
+        if self.stats.is_some() {
+            let key = event(self);
+            if let Some(stats) = &mut self.stats {
+                *stats.entry(key).or_default() += 1;
+            }
+        }
+    }
+
+    /// The statistics report, most frequent first.
+    pub fn stats_report(&self) -> Option<String> {
+        let stats = self.stats.as_ref()?;
+        let mut entries: Vec<_> = stats.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        Some(entries.iter().map(|(k, v)| format!("{v:>12} {k}\n")).collect())
     }
 
     pub fn failure_new(&mut self, kind: FailureKind) -> Word {
@@ -260,6 +283,7 @@ pub(crate) fn fatal(ctx: &mut Ctx, runtime: &mut Runtime, message: String) -> Wo
 pub extern "C" fn rt_allocate(ctx: *mut Ctx, words: u64) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
+    runtime.count(|_| "allocation slow path".into());
     runtime.safepoint(frame, ctx, &[]);
     runtime.heap.allocate(words as usize)
 }
@@ -335,14 +359,21 @@ pub extern "C" fn rt_concat(ctx: *mut Ctx, left: Word, right: Word) -> Word {
     word
 }
 
+/// `rt_array` representation argument for a packed byte array.
+pub const ARRAY_BYTES: u64 = 3;
+
 /// Array from `count` words at `elements` (a stack slot of the caller).
 #[inline(never)]
 pub extern "C" fn rt_array(ctx: *mut Ctx, repr: u64, elements: *const Word, count: u64) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
     let elements = unsafe { std::slice::from_raw_parts(elements, count as usize) };
-    let repr = Repr::from_bits(repr);
-    let word = runtime.heap.allocate_array(repr, elements);
+    let word = if repr == ARRAY_BYTES {
+        let bytes: Vec<u8> = elements.iter().map(|&w| w as u8).collect();
+        runtime.heap.allocate_bytes(&bytes)
+    } else {
+        runtime.heap.allocate_array(Repr::from_bits(repr), elements)
+    };
     runtime.safepoint(frame, ctx, &[(word, Repr::Ref)]);
     word
 }
@@ -387,6 +418,7 @@ pub extern "C" fn rt_native(ctx: *mut Ctx, function: u64, arguments: *const Word
     let (ctx, runtime) = unsafe { runtime(ctx) };
     // SAFETY: the caller's argument slot outlives the call; natives do not collect.
     let arguments = unsafe { std::slice::from_raw_parts(arguments, count as usize) };
+    runtime.count(|r| format!("native {}", r.loaded.program.functions[function as usize].symbol));
     match crate::natives::call(runtime, function as usize, arguments) {
         Ok((word, repr)) => {
             runtime.safepoint(frame, ctx, &[(word, repr)]);
@@ -515,6 +547,7 @@ pub extern "C" fn rt_closure(ctx: *mut Ctx, function: u64, captures: *const Word
 #[inline(never)]
 pub extern "C" fn rt_call_closure(ctx: *mut Ctx, closure: Word, arguments: *const Word, count: u64) -> Word {
     let (ctx_ref, runtime) = unsafe { runtime(ctx) };
+    runtime.count(|_| "closure call".into());
     let function = heap::payload(runtime.heap.header_of(closure)) as usize;
     let params = runtime.loaded.program.functions[function].params.len();
     let captured = params - count as usize;

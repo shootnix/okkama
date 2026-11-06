@@ -10,6 +10,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Wake, Waker};
 
+/// How long the scheduler spins for a pending native reply before sleeping.
+const SPIN_MICROS: u64 = 50;
+
 #[derive(Debug, Default)]
 struct Shared {
     woken: Mutex<Vec<Word>>,
@@ -75,7 +78,23 @@ impl Runtime {
         if self.io.requests.is_empty() && earliest.is_none() {
             return false;
         }
+        // Native replies (SQLite workers) usually arrive within microseconds:
+        // spin briefly before paying for a sleep and a wake-up.
+        if !self.io.requests.is_empty() {
+            let spin = std::time::Instant::now();
+            let mut turns = 0u32;
+            while !self.io.shared.pending.load(Ordering::Acquire) {
+                std::hint::spin_loop();
+                turns += 1;
+                // Reading the clock costs more than a turn; look every 64.
+                if turns % 64 == 0 && spin.elapsed() >= std::time::Duration::from_micros(SPIN_MICROS) {
+                    break;
+                }
+            }
+        }
         if !self.io.shared.pending.load(Ordering::Acquire) {
+            self.count(|_| "scheduler idle wait".into());
+            let started = std::time::Instant::now();
             let shared = self.io.shared.clone();
             self.io.tokio().block_on(async move {
                 match earliest {
@@ -88,6 +107,9 @@ impl Runtime {
                     None => shared.notify.notified().await,
                 }
             });
+            if let Some(stats) = &mut self.stats {
+                *stats.entry("scheduler idle wait, microseconds".into()).or_default() += started.elapsed().as_micros() as u64;
+            }
         }
         self.poll_io();
         let now = std::time::Instant::now();

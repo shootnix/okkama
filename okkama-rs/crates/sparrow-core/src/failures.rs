@@ -34,13 +34,20 @@ pub struct Resources {
     pub flags: Vec<bool>,
     serial: u64,
     identities: HashMap<Word, Identity>,
+    /// Work list and visited set of `resource_graph`, reused.
+    scratch: (Vec<(Word, Repr)>, Vec<Word>),
 }
 
+/// Entries of a region beyond its inline slots.
 #[derive(Debug, Default)]
 pub struct RegionValue {
     entries: Vec<Word>,
-    known: HashSet<Word>,
 }
+
+/// A region is an array `[overflow, slot × REGION_SLOTS]`: identities fill the
+/// slots in order, then the overflow `RegionValue`; an empty first slot means
+/// an empty region (machine code checks just that word).
+pub const REGION_SLOTS: usize = 4;
 impl Payload for RegionValue {
     fn trace(&self, visit: &mut dyn FnMut(Word, Repr)) {
         for &entry in &self.entries {
@@ -133,21 +140,33 @@ impl Runtime {
     }
 
     /// Free or `via`-owned identities reachable from `roots`, oldest first.
-    fn resource_graph(&self, roots: &[Word], via: Option<Word>) -> Vec<Word> {
+    fn resource_graph(&mut self, roots: &[Word], via: Option<Word>) -> Vec<Word> {
         if !self.resources.enabled {
             return Vec::new();
         }
-        let mut pending: Vec<(Word, Repr)> = roots.iter().map(|&w| (w, Repr::Ref)).collect();
-        let mut seen = HashSet::default();
+        // Scratch storage reused across calls (regions close on every scope
+        // exit); visited objects carry a header mark until the walk ends.
+        let (mut pending, mut seen) = std::mem::take(&mut self.resources.scratch);
+        pending.clear();
+        seen.clear();
+        pending.extend(roots.iter().map(|&w| (w, Repr::Ref)));
         let mut found = Vec::new();
         while let Some((word, repr)) = pending.pop() {
             let Some(object) = repr.pointer(word) else {
                 continue;
             };
-            if !seen.insert(object) {
+            let header = self.heap.header_of(object);
+            // Leaves cannot reach an identity: skip them before the visited set.
+            match heap::kind(header) {
+                heap::OBJECT if !self.resources.flags[heap::payload(header) as usize] => continue,
+                heap::ARRAY if header & heap::PACKED != 0 || Repr::from_bits((header >> 9) & 3) != Repr::Ref => continue,
+                heap::OBJECT | heap::ARRAY | heap::CLOSURE | heap::PAYLOAD => {}
+                _ => continue,
+            }
+            if !self.heap.visit(object) {
                 continue;
             }
-            let header = self.heap.header_of(object);
+            seen.push(object);
             match heap::kind(header) {
                 heap::OBJECT => {
                     let descriptor = heap::payload(header) as usize;
@@ -168,7 +187,8 @@ impl Runtime {
                 }
                 heap::ARRAY => {
                     let repr = Repr::from_bits((header >> 9) & 3);
-                    pending.extend(self.heap.elements(object).iter().rev().map(|&e| (e, repr)));
+                    let elements = self.heap.elements(object);
+                    pending.extend(elements.iter().rev().map(|&e| (e, repr)));
                 }
                 heap::CLOSURE => {
                     let layout = &self.heap.layouts.closures[heap::payload(header) as usize];
@@ -186,34 +206,99 @@ impl Runtime {
                 _ => {}
             }
         }
+        for &object in &seen {
+            self.heap.unvisit(object);
+        }
+        self.resources.scratch = (pending, seen);
         found.sort_unstable_by_key(|o| self.resources.identities[o].serial);
         found
     }
 
+    /// Can `value` reach a free identity? False is certain (the common case:
+    /// a leaf, an object without identity, or one owned elsewhere).
+    fn may_reach_free(&self, value: Word) -> bool {
+        if !self.resources.enabled || value == UNBOUND || value & 1 == 1 {
+            return false;
+        }
+        let header = self.heap.header_of(value);
+        match heap::kind(header) {
+            heap::OBJECT => {
+                self.resources.flags[heap::payload(header) as usize]
+                    && self.resources.identities.get(&value).is_some_and(|i| i.owner == Owner::Free)
+            }
+            heap::ARRAY => header & heap::PACKED == 0 && Repr::from_bits((header >> 9) & 3) == Repr::Ref,
+            heap::CLOSURE | heap::PAYLOAD => true,
+            _ => false,
+        }
+    }
+
+    fn region_len(&self, region: Word) -> usize {
+        let inline = (1..=REGION_SLOTS).take_while(|&i| self.heap.field(region, i) != UNBOUND).count();
+        if inline < REGION_SLOTS {
+            return inline;
+        }
+        match self.heap.field(region, 0) {
+            UNBOUND => inline,
+            overflow => inline + self.heap.payload::<RegionValue>(overflow).expect("region").entries.len(),
+        }
+    }
+
+    fn region_get(&self, region: Word, index: usize) -> Word {
+        if index < REGION_SLOTS {
+            return self.heap.field(region, index + 1);
+        }
+        let overflow = self.heap.field(region, 0);
+        self.heap.payload::<RegionValue>(overflow).expect("region").entries[index - REGION_SLOTS]
+    }
+
+    fn region_push(&mut self, region: Word, object: Word) {
+        let length = self.region_len(region);
+        if (0..length).any(|i| self.region_get(region, i) == object) {
+            return;
+        }
+        if length < REGION_SLOTS {
+            self.heap.set_field(region, length + 1, object);
+            return;
+        }
+        if self.heap.field(region, 0) == UNBOUND {
+            let overflow = self.heap.allocate_payload(Box::new(RegionValue::default()));
+            self.heap.set_field(region, 0, overflow);
+        }
+        let overflow = self.heap.field(region, 0);
+        self.heap.payload_mut::<RegionValue>(overflow).expect("region").entries.push(object);
+    }
+
+    fn region_clear(&mut self, region: Word) {
+        for slot in 1..=REGION_SLOTS {
+            self.heap.set_field(region, slot, UNBOUND);
+        }
+        let overflow = self.heap.field(region, 0);
+        if overflow != UNBOUND {
+            self.heap.payload_mut::<RegionValue>(overflow).expect("region").entries.clear();
+        }
+    }
+
     fn region_add(&mut self, region: Word, value: Word, own: bool) {
+        if !self.may_reach_free(value) {
+            return;
+        }
         for object in self.resource_graph(&[value], None) {
             if own {
                 self.resources.identities.get_mut(&object).expect("identity").owner = Owner::Region(region);
             }
-            let entries = self.heap.payload_mut::<RegionValue>(region).expect("region");
-            if entries.known.insert(object) {
-                entries.entries.push(object);
-            }
+            self.region_push(region, object);
         }
     }
 
     fn region_transfer(&mut self, from: Word, to: Word, value: Word) {
-        if self.heap.payload::<RegionValue>(from).expect("region").entries.is_empty() {
+        if self.region_len(from) == 0 {
             return;
         }
         for object in self.resource_graph(&[value], Some(from)) {
             let identity = self.resources.identities.get_mut(&object).expect("identity");
             if identity.owner == Owner::Region(from) {
                 identity.owner = Owner::Region(to);
-                let entries = self.heap.payload_mut::<RegionValue>(to).expect("region");
-                if entries.known.insert(object) {
-                    entries.entries.push(object);
-                }
+                self.region_push(to, object);
             }
         }
     }
@@ -265,13 +350,16 @@ impl Runtime {
     /// Close `region`, keeping `keep` (and its graph) alive, running destroys.
     /// Returns the primary failure (the given one, a destroy's, or none).
     fn region_close(&mut self, ctx: *mut Ctx, region: Word, keep: &[Word], mut primary: Option<Word>) -> Option<Word> {
-        let kept: HashSet<Word> = self.resource_graph(keep, Some(region)).into_iter().collect();
+        if self.region_len(region) == 0 {
+            return primary;
+        }
+        let kept = if keep.is_empty() { Vec::new() } else { self.resource_graph(keep, Some(region)) };
         // The region and the primary failure stay alive while destroys run.
         self.roots.push((region, Repr::Ref));
-        let mut index = self.heap.payload::<RegionValue>(region).expect("region").entries.len();
+        let mut index = self.region_len(region);
         while index > 0 {
             index -= 1;
-            let object = self.heap.payload::<RegionValue>(region).expect("region").entries[index];
+            let object = self.region_get(region, index);
             let Some(identity) = self.resources.identities.get_mut(&object) else { continue };
             if kept.contains(&object) {
                 if identity.owner == Owner::Region(region) {
@@ -313,9 +401,7 @@ impl Runtime {
             }
         }
         self.roots.pop();
-        let entries = self.heap.payload_mut::<RegionValue>(region).expect("region");
-        entries.entries.clear();
-        entries.known.clear();
+        self.region_clear(region);
         primary
     }
 
@@ -436,10 +522,19 @@ unsafe fn parts<'a>(ctx: *mut Ctx) -> (&'a mut Ctx, &'a mut Runtime) {
     (ctx, runtime)
 }
 
+/// `region.adopt` (own) and `region.track` of `value`.
+#[inline(never)]
+pub extern "C" fn rt_region_add(ctx: *mut Ctx, region: Word, value: Word, own: u64) {
+    let (_, runtime) = unsafe { parts(ctx) };
+    runtime.count(|_| "region add".into());
+    runtime.region_add(region, value, own != 0);
+}
+
 /// Resource identity of a new object with a destroy-reaching descriptor.
 #[inline(never)]
 pub extern "C" fn rt_created(ctx: *mut Ctx, descriptor: u64, object: Word) {
     let (_, runtime) = unsafe { parts(ctx) };
+    runtime.count(|r| format!("resource {}", r.loaded.program.objects[descriptor as usize].name));
     runtime.created(descriptor as usize, object);
 }
 
@@ -452,6 +547,7 @@ pub extern "C" fn rt_failure_op(ctx_ptr: *mut Ctx, function: u64, pc: u64, uses:
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I =
         unsafe { &*(&runtime.loaded.program.functions[function as usize].code[pc as usize] as *const I) };
+    runtime.count(|r| format!("region {} in {}", instruction.mnemonic(), r.loaded.program.functions[function as usize].symbol));
     // Uses in visit order; a region may keep many registers, so spill past 16.
     let mut inline = [okkama_sparrow::Register(u32::MAX); 16];
     let mut spilled = Vec::new();
@@ -473,7 +569,7 @@ pub extern "C" fn rt_failure_op(ctx_ptr: *mut Ctx, function: u64, pc: u64, uses:
     let words = unsafe { std::slice::from_raw_parts(uses, count) };
     let value = |register: &okkama_sparrow::Register| words[registers.iter().position(|r| r == register).expect("used register")];
     let result = match instruction {
-        I::RegionEnter { .. } => runtime.heap.allocate_payload(Box::new(RegionValue::default())),
+        I::RegionEnter { .. } => runtime.heap.allocate_array(Repr::Ref, &[UNBOUND; 1 + REGION_SLOTS]),
         I::RegionAdopt { region, value: v } | I::RegionTrack { region, value: v } => {
             runtime.region_add(value(region), value(v), matches!(instruction, I::RegionAdopt { .. }));
             UNBOUND

@@ -60,7 +60,6 @@ pub(crate) use crate::Error;
 pub(crate) use handle::Handle;
 pub(crate) use native_io::{CancelHook, Output};
 
-use crate::heap::Payload;
 use crate::runtime::Runtime;
 use crate::word::{Repr, Word};
 use arena::Arena;
@@ -180,17 +179,6 @@ enum Shape {
     Map(usize, usize),
 }
 
-/// The core object that stands for a handle (its id is in `Heap::ids`).
-#[derive(Debug)]
-struct HandleRef;
-impl Payload for HandleRef {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct Heap {
@@ -306,7 +294,8 @@ impl Heap {
             Shape::Char => Slot { bits: word, tag: CHAR },
             Shape::Float => Slot { bits: word, tag: FLOAT },
             Shape::Str => Slot { bits: word, tag: STR },
-            Shape::Handle => Slot { bits: self.ids.get(&word).copied().unwrap_or(u64::MAX), tag: HANDLE },
+            // A handle cell holds its id (see `handle_object`).
+            Shape::Handle => Slot { bits: if word == crate::word::UNBOUND { u64::MAX } else { self.core().field(word, 0) }, tag: HANDLE },
             Shape::Array(element) => Slot { bits: word, tag: ARRAY | ((element as u64) << 8) },
             Shape::Map(..) => {
                 let index = self.shape_index.get(shape).copied().unwrap_or(0);
@@ -329,7 +318,10 @@ impl Heap {
         if let Some(&object) = self.objects.get(&id) {
             return object;
         }
-        let object = self.core_mut().allocate_payload(Box::new(HandleRef));
+        // A plain cell `[header, id]`: no Rust allocation; watched so the
+        // handle is dropped with it (the id is also kept in `ids`, because a
+        // released cell's words are reused).
+        let object = self.core_mut().allocate_array(Repr::Raw, &[id]);
         self.core_mut().watch(object);
         self.objects.insert(id, object);
         self.ids.insert(object, id);
@@ -402,7 +394,22 @@ impl Heap {
         let shape = self.shapes.get((value.tag >> 8) as usize).cloned().unwrap_or(Shape::Unknown);
         Ok(self.core().elements(value.bits).iter().map(|&w| self.slot(w, &shape)).collect())
     }
+    /// The bytes of a `@byte` slot, borrowed from the core heap.
+    pub fn byte_slice(&self, value: Slot) -> Result<std::borrow::Cow<'_, [u8]>, Error> {
+        if value.kind() != ARRAY {
+            return Err(Error("expected byte array".into()));
+        }
+        Ok(self.core().byte_view(value.bits))
+    }
+    pub fn allocate_bytes(&mut self, bytes: &[u8]) -> Result<Slot, Error> {
+        let index = self.intern(Shape::Byte) as u64;
+        Ok(Slot { bits: self.core_mut().allocate_bytes(bytes), tag: ARRAY | (index << 8) })
+    }
     pub fn allocate_array(&mut self, elements: Vec<Slot>) -> Result<Slot, Error> {
+        if elements.first().is_some_and(|s| s.kind() == BYTE) {
+            let bytes: Vec<u8> = elements.iter().map(|s| s.bits as u8).collect();
+            return self.allocate_bytes(&bytes);
+        }
         let (repr, shape) = match elements.first().map(|s| s.kind()) {
             Some(SMALL | BIG) => (Repr::Int, Shape::Int),
             Some(BOOL) => (Repr::Raw, Shape::Bool),

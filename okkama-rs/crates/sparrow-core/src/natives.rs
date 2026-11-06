@@ -23,6 +23,8 @@ pub fn supported(native: Native) -> bool {
             | Native::NumberTextIntParse
             | Native::NumberTextIntParseValid
             | Native::TimeSleepNanoseconds
+            | Native::Utf8ValidPrefix
+            | Native::Utf8Decode
     ) || crate::host::supported(native)
 }
 
@@ -33,11 +35,11 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
         .ok_or_else(|| Refusal::Failure(FailureKind::Program("unknown native provider symbol".into())))?;
     match native {
         Native::Utf8Encode => {
-            let bytes: Vec<Word> = runtime.heap.text(arguments[0]).bytes().map(Word::from).collect();
-            Ok((runtime.heap.allocate_array(Repr::Raw, &bytes), Repr::Ref))
+            let bytes = runtime.heap.text(arguments[0]).as_bytes().to_vec();
+            Ok((runtime.heap.allocate_bytes(&bytes), Repr::Ref))
         }
         Native::StdoutWrite | Native::StderrWrite => {
-            let bytes: Vec<u8> = runtime.heap.elements(arguments[0]).iter().map(|&b| b as u8).collect();
+            let bytes = runtime.heap.byte_view(arguments[0]).into_owned();
             let written = if native == Native::StdoutWrite {
                 std::io::Write::write_all(&mut std::io::stdout().lock(), &bytes)
             } else {
@@ -50,27 +52,70 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
         }
         Native::NumberTextIntParse | Native::NumberTextIntParseValid => {
             let radix = runtime.small_or_big(arguments[1]);
-            let parsed = radix.and_then(|radix| int_parse(runtime.heap.text(arguments[0]), radix));
+            let text = runtime.heap.text(arguments[0]);
+            // Decimal integers of up to 18 digits need no BigInt.
+            if radix == Some(10) {
+                if let Some(value) = small_decimal(text) {
+                    return Ok(if native == Native::NumberTextIntParseValid {
+                        (1, Repr::Raw)
+                    } else {
+                        (runtime.heap.int(value), Repr::Int)
+                    });
+                }
+            }
+            let parsed = radix.and_then(|radix| int_parse(text, radix));
             if native == Native::NumberTextIntParseValid {
                 return Ok((u64::from(parsed.is_some()), Repr::Raw));
             }
             match parsed {
                 Some(value) => Ok((runtime.heap.big(value), Repr::Int)),
-                None => Err(Refusal::Fatal(
-                    "typed native failures arrive with the native provider port (stage 4)".into(),
-                )),
+                // The typed failure comes from the provider.
+                None => host(runtime, native, arguments),
             }
         }
-        _ if crate::host::supported(native) => match crate::host::call(runtime, native, arguments) {
-            crate::host::Result2::Value(word, repr) => Ok((word, repr)),
-            crate::host::Result2::Raise(failure) => Err(Refusal::Raise(failure)),
-            crate::host::Result2::Refused(message) => Err(Refusal::Failure(FailureKind::Program(message))),
-        },
+        Native::Utf8ValidPrefix | Native::Utf8Decode => {
+            let array = arguments[0];
+            if !runtime.heap.is_bytes(array) {
+                return host(runtime, native, arguments);
+            }
+            let bytes = runtime.heap.bytes(array);
+            let valid = std::str::from_utf8(bytes).map_or_else(|e| e.valid_up_to(), |_| bytes.len());
+            if native == Native::Utf8ValidPrefix {
+                return Ok((runtime.heap.int(valid as i64), Repr::Int));
+            }
+            if valid != bytes.len() {
+                return host(runtime, native, arguments);
+            }
+            match runtime.heap.text_from_bytes(array) {
+                Some(text) => Ok((text, Repr::Ref)),
+                None => host(runtime, native, arguments),
+            }
+        }
+        _ if crate::host::supported(native) => host(runtime, native, arguments),
         _ => Err(Refusal::Fatal(format!(
             "native provider {} is not available in sparrow-core yet",
             native.symbol()
         ))),
     }
+}
+
+fn host(runtime: &mut Runtime, native: Native, arguments: &[Word]) -> Result<(Word, Repr), Refusal> {
+    match crate::host::call(runtime, native, arguments) {
+        crate::host::Result2::Value(word, repr) => Ok((word, repr)),
+        crate::host::Result2::Raise(failure) => Err(Refusal::Raise(failure)),
+        crate::host::Result2::Refused(message) => Err(Refusal::Failure(FailureKind::Program(message))),
+    }
+}
+
+/// A decimal integer of at most 18 digits (optional `-`), exactly as
+/// `int_parse` with radix 10 reads it.
+fn small_decimal(text: &str) -> Option<i64> {
+    let (negative, digits) = text.strip_prefix('-').map_or((false, text), |d| (true, d));
+    if digits.is_empty() || digits.len() > 18 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let value = digits.bytes().fold(0i64, |n, b| n * 10 + i64::from(b - b'0'));
+    Some(if negative { -value } else { value })
 }
 
 /// Integer text in `radix` (2..=36), or with a 0b/0o/0x prefix when radix is 0.

@@ -11,8 +11,10 @@ pub enum Kind {
     Int,
     /// F64 value; stored as raw bits.
     Float,
-    /// bool, byte, char.
+    /// bool, char, payload-less enums.
     Raw,
+    /// byte: raw bits in registers; arrays of bytes are packed (see `heap`).
+    Byte,
     /// Heap object pointer.
     Ref,
 }
@@ -23,14 +25,15 @@ impl Kind {
             Some(Type::Int) => Self::Int,
             Some(Type::Float) => Self::Float,
             // Payload-less enums are `(enum << 32) | case`.
-            Some(Type::Bool | Type::Byte | Type::Char | Type::Enum(_)) => Self::Raw,
+            Some(Type::Byte) => Self::Byte,
+            Some(Type::Bool | Type::Char | Type::Enum(_)) => Self::Raw,
             _ => Self::Ref,
         }
     }
     pub fn repr(self) -> Repr {
         match self {
             Self::Int => Repr::Int,
-            Self::Float | Self::Raw => Repr::Raw,
+            Self::Float | Self::Raw | Self::Byte => Repr::Raw,
             Self::Ref => Repr::Ref,
         }
     }
@@ -52,6 +55,8 @@ pub struct FunctionInfo {
 pub struct Loaded {
     pub program: Program,
     pub functions: Vec<FunctionInfo>,
+    /// Descriptor of `async.event::Event`, if the program has it.
+    event: Option<usize>,
 }
 
 /// An async native or intrinsic function: its Future is a frame run by a Rust
@@ -71,7 +76,30 @@ impl Loaded {
                 driver: is_driver(f),
             })
             .collect();
-        Self { program, functions }
+        let event = program
+            .objects
+            .iter()
+            .position(|o| o.name == "async.event::Event" && o.fields.len() == 1 && o.fields[0].0 == "initial");
+        Self { program, functions, event }
+    }
+
+    /// Is `descriptor` the `async.event::Event` object (`initial` only)?
+    pub fn is_event(&self, descriptor: usize) -> bool {
+        self.event == Some(descriptor)
+    }
+
+    /// The value kind of an `Atomic<T>` descriptor (from its constructor).
+    pub fn atomic_value(&self, descriptor: usize) -> Option<Kind> {
+        let p = &self.program;
+        if !p.objects[descriptor].name.starts_with("async.atomic::Atomic<") {
+            return None;
+        }
+        p.functions.iter().zip(&self.functions).find_map(|(f, info)| {
+            let intrinsic = f.intrinsic.as_ref()?;
+            (intrinsic.name == "okkama.atomic.Atomic.new_value"
+                && intrinsic.objects.first().is_some_and(|o| o.0 as usize == descriptor))
+            .then(|| info.kinds[f.params[0].0 as usize])
+        })
     }
 
     /// Field representations for the collector. Async frames keep every
@@ -82,7 +110,14 @@ impl Loaded {
             objects: p
                 .objects
                 .iter()
-                .map(|o| o.fields.iter().map(|(_, t)| Kind::of(p, *t).repr()).collect())
+                .enumerate()
+                .map(|(descriptor, o)| match self.atomic_value(descriptor) {
+                    // An Atomic cell: its value, then the closed flag (see `intrinsics`).
+                    Some(kind) => vec![kind.repr(), Repr::Raw],
+                    // An Event: `initial`, then the set flag and its waiters (`primitives`).
+                    None if self.is_event(descriptor) => vec![Repr::Raw, Repr::Raw, Repr::Ref],
+                    None => o.fields.iter().map(|(_, t)| Kind::of(p, *t).repr()).collect(),
+                })
                 .collect(),
             // A closure object has one word per parameter of its function:
             // captures fill a prefix, the rest stay unbound.

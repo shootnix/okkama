@@ -60,6 +60,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--compiler', default='okkama')
     p.add_argument('--stdlib', type=Path, required=True)
+    p.add_argument('--core-stdlib', type=Path,
+                   help='stdlib for the sparrow-core build (default: --stdlib); '
+                        'for std changes that need the new core')
     p.add_argument('--origin', type=Path, default=ROOT / 'sparrow-origin')
     p.add_argument('--next', type=Path, required=True)
     p.add_argument('--core', type=Path, required=True)
@@ -91,8 +94,19 @@ def main():
             if built.returncode:
                 totals['build'] += 1
                 continue
+            core_spb = spb
+            if a.core_stdlib:
+                core_spb = work / 'core.spb'
+                core_env = dict(env, OKKAMA_STDLIB_DIR=str(a.core_stdlib))
+                rebuilt = subprocess.run([a.compiler, 'build', str(work / 'case' / spec['entry']),
+                                          '--target', 'sparrow', '-o', str(core_spb)], env=core_env,
+                                         capture_output=True)
+                if rebuilt.returncode:
+                    totals['fail'] += 1
+                    print(f"FAIL {spec['id']}: core stdlib build: {rebuilt.stderr.decode(errors='replace')[:160]!r}", flush=True)
+                    continue
             origin = run(a.origin, spb, work, env, spec)
-            core = run(a.core, spb, work, env, spec)
+            core = run(a.core, core_spb, work, env, spec)
             if 'sparrow-core yet' in core[2] or 'not supported by sparrow-core' in core[2] or 'asynchronous' in core[2]:
                 totals['unsupported'] += 1
                 print(f"UNSUPPORTED {spec['id']}: {message(core[2])[:110]}", flush=True)

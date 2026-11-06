@@ -166,6 +166,9 @@ struct Data {
     total: Option<i64>,
     bytes: Option<Vec<u8>>,
     executions: Option<Vec<Option<String>>>,
+    /// A failure of the first page fetched with `rows`, raised by the first
+    /// row read (kind, code).
+    deferred: Option<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -187,6 +190,12 @@ enum Stop {
 }
 
 type Done<T> = Result<T, Stop>;
+
+/// Send the first page with a program's `rows` reply (one worker round trip per
+/// query instead of two). Off: then reading a cursor's first row is a fetch and
+/// a cancellation point, which conformance `L11.sqlite.throughput-lifetime`
+/// relies on; `std/db` accepts either reply.
+const PREFETCH_FIRST_PAGE: bool = false;
 
 // ---- engine ----
 
@@ -646,6 +655,31 @@ impl Engine {
                 })
             }
         }
+    }
+
+    /// A program's `rows` request: the cursor and its first page together, so
+    /// a query costs one worker round trip instead of two. A failure of that
+    /// first step is reported by the first row read, as a separate fetch would.
+    fn rows_with_page(&mut self, opened: Done<Data>) -> Done<Data> {
+        let mut data = opened?;
+        if !PREFETCH_FIRST_PAGE {
+            return Ok(data);
+        }
+        match self.fetch(data.id.unwrap_or(0), 8) {
+            Ok(page) => {
+                data.rows = page.rows;
+                data.eof = page.eof;
+                data.autocommit = page.autocommit;
+            }
+            Err(Stop::Sqlite { kind, code, autocommit }) => {
+                data.autocommit = Some(autocommit);
+                data.deferred = Some((kind.to_owned(), code));
+            }
+            Err(Stop::Unexpected) => {
+                data.deferred = Some(("unexpected".to_owned(), "SQLITE_WORKER_FAILURE".to_owned()));
+            }
+        }
+        Ok(data)
     }
 
     fn verify(&self, cursor: &mut Statement) -> Done<()> {
@@ -1280,7 +1314,10 @@ fn spawn_worker(connection: &mut Connection) -> std::io::Result<()> {
         .name("okkama-sqlite".into())
         .spawn(move || {
             let mut engine = Engine::new(options, shared);
-            while let Ok(job) = queue.recv() {
+            // Requests of a session come in bursts (a query is two of them):
+            // spin briefly for the next one before the channel puts this
+            // thread to sleep, whose wake-up costs more than the work.
+            while let Some(job) = next_job(&queue) {
                 job(&mut engine);
             }
             drop(engine);
@@ -1291,6 +1328,25 @@ fn spawn_worker(connection: &mut Connection) -> std::io::Result<()> {
         exited,
     });
     Ok(())
+}
+
+fn next_job<T>(queue: &mpsc::Receiver<T>) -> Option<T> {
+    let spin = std::time::Instant::now();
+    let mut turns = 0u32;
+    loop {
+        match queue.try_recv() {
+            Ok(job) => return Some(job),
+            Err(mpsc::TryRecvError::Disconnected) => return None,
+            Err(mpsc::TryRecvError::Empty) => {
+                std::hint::spin_loop();
+                turns += 1;
+                // Reading the clock costs more than a turn; look every 64.
+                if turns % 64 == 0 && spin.elapsed() >= std::time::Duration::from_micros(50) {
+                    return queue.recv().ok();
+                }
+            }
+        }
+    }
 }
 
 fn perform(engine: &mut Engine, operation: Operation) -> (bool, Data) {
@@ -1831,7 +1887,10 @@ impl Heap {
                     .sqlite_params(n, a[2], a[3])
                     .map_err(ProviderError::Native)?;
                 let operation: Operation = if rows {
-                    Box::new(move |engine| engine.rows_sql(&sql, &params))
+                    Box::new(move |engine| {
+                        let opened = engine.rows_sql(&sql, &params);
+                        engine.rows_with_page(opened)
+                    })
                 } else {
                     Box::new(move |engine| engine.execution(&sql, &params, false))
                 };
@@ -1870,7 +1929,8 @@ impl Heap {
                     Box::new(move |engine| {
                         let statement = engine.take_prepared(id)?;
                         if rows {
-                            engine.rows(statement, &params)
+                            let opened = engine.rows(statement, &params);
+                            engine.rows_with_page(opened)
                         } else {
                             engine.execute(statement, &params)
                         }
@@ -1886,7 +1946,10 @@ impl Heap {
                     }
                     Box::new(move |engine| {
                         if rows {
-                            engine.rows_sql(&sql, &params)
+                            {
+                                let opened = engine.rows_sql(&sql, &params);
+                                engine.rows_with_page(opened)
+                            }
                         } else {
                             engine.execution(&sql, &params, false)
                         }
@@ -1926,7 +1989,8 @@ impl Heap {
                 let operation: Operation = Box::new(move |engine| {
                     let statement = engine.take_prepared(id)?;
                     if rows {
-                        engine.rows(statement, &params)
+                        let opened = engine.rows(statement, &params);
+                        engine.rows_with_page(opened)
                     } else {
                         engine.execute(statement, &params)
                     }
@@ -2147,6 +2211,115 @@ impl Heap {
                 let count = reply.data.borrow().rows.as_ref().map_or(0, Vec::len);
                 Ok(Slot::small(count as i64))
             }
+            // A result page as flat columns (row-major): kinds, then per cell an
+            // integer value or the ordinal of the cell in its typed array.
+            DatabaseSqliteReplyKinds
+            | DatabaseSqliteReplyValues
+            | DatabaseSqliteReplyFloats
+            | DatabaseSqliteReplyTexts
+            | DatabaseSqliteReplyBlobs
+            | DatabaseSqliteReplyRowBytes => {
+                let reply = self.sqlite_reply(n, a[0])?;
+                let data = reply.data.borrow();
+                let rows: &[Vec<Cell>] = if reply.ok { data.rows.as_deref().unwrap_or(&[]) } else { &[] };
+                let cells = rows.iter().flatten();
+                let value = match n {
+                    DatabaseSqliteReplyKinds => {
+                        let kinds = cells
+                            .map(|cell| {
+                                Slot::small(match cell {
+                                    Cell::Null => 0,
+                                    Cell::Integer(_) => 2,
+                                    Cell::Floating(_) => 3,
+                                    Cell::Text(_) => 5,
+                                    Cell::Bytes(_) => 6,
+                                })
+                            })
+                            .collect();
+                        self.allocate_array(kinds)?
+                    }
+                    DatabaseSqliteReplyValues => {
+                        let (mut floats, mut texts, mut blobs) = (0, 0, 0);
+                        let values = cells
+                            .map(|cell| {
+                                let ordinal = |n: &mut i64| {
+                                    *n += 1;
+                                    *n - 1
+                                };
+                                Slot::small(match cell {
+                                    Cell::Null => 0,
+                                    Cell::Integer(v) => *v,
+                                    Cell::Floating(_) => ordinal(&mut floats),
+                                    Cell::Text(_) => ordinal(&mut texts),
+                                    Cell::Bytes(_) => ordinal(&mut blobs),
+                                })
+                            })
+                            .collect();
+                        self.allocate_array(values)?
+                    }
+                    DatabaseSqliteReplyFloats => {
+                        let floats = cells
+                            .filter_map(|cell| match cell {
+                                Cell::Floating(v) => Some(Slot { tag: FLOAT, bits: v.to_bits() }),
+                                _ => None,
+                            })
+                            .collect();
+                        self.allocate_array(floats)?
+                    }
+                    DatabaseSqliteReplyTexts => {
+                        let texts: Vec<String> = cells
+                            .filter_map(|cell| match cell {
+                                Cell::Text(v) => Some(v.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        drop(data);
+                        let slots = texts.into_iter().map(|t| self.allocate_text(t)).collect::<Result<_, _>>()?;
+                        return Ok(self.allocate_array(slots)?);
+                    }
+                    DatabaseSqliteReplyBlobs => {
+                        let blobs: Vec<Vec<u8>> = cells
+                            .filter_map(|cell| match cell {
+                                Cell::Bytes(v) => Some(v.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        drop(data);
+                        let slots = blobs.into_iter().map(|b| self.native_byte_array(b)).collect::<Result<_, _>>()?;
+                        return Ok(self.allocate_array(slots)?);
+                    }
+                    _ => {
+                        // The widest row in the bytes `db_cells_bytes` counts.
+                        let widest = rows
+                            .iter()
+                            .map(|row| {
+                                row.iter()
+                                    .map(|cell| match cell {
+                                        Cell::Null => 0,
+                                        Cell::Integer(v) => v.to_string().len(),
+                                        Cell::Floating(v) => float_width(*v),
+                                        Cell::Text(v) => v.len(),
+                                        Cell::Bytes(v) => v.len(),
+                                    })
+                                    .sum::<usize>()
+                            })
+                            .max()
+                            .unwrap_or(0);
+                        Slot::small(widest as i64)
+                    }
+                };
+                Ok(value)
+            }
+            // [kind, code] of a failed first page, or empty (see `rows_with_page`).
+            DatabaseSqliteReplyDeferred => {
+                let reply = self.sqlite_reply(n, a[0])?;
+                let deferred = reply.data.borrow().deferred.clone();
+                let slots = match deferred {
+                    Some((kind, code)) => vec![self.allocate_text(kind)?, self.allocate_text(code)?],
+                    None => Vec::new(),
+                };
+                Ok(self.allocate_array(slots)?)
+            }
             DatabaseSqliteReplyAffectedKnown => {
                 let reply = self.sqlite_reply(n, a[0])?;
                 let known = matches!(reply.data.borrow().affected, Some(Some(_)));
@@ -2192,6 +2365,8 @@ impl Heap {
                         ("busy", flag(data.busy)),
                         ("copies", data.copies.unwrap_or(0).to_string()),
                         ("total", data.total.unwrap_or(0).to_string()),
+                        ("deferred_kind", data.deferred.as_ref().map_or_else(String::new, |d| d.0.clone())),
+                        ("deferred_code", data.deferred.as_ref().map_or_else(String::new, |d| d.1.clone())),
                     ]
                 };
                 let mut slots = Vec::with_capacity(entries.len());

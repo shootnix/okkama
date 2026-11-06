@@ -599,4 +599,11 @@ natives! {
     DatabaseSqliteReplyCount = 595, "runtime/database@1::sqlite_reply_count/1", "(SqliteReplyState) -> int";
     DatabaseSqliteReplyAffectedKnown = 596, "runtime/database@1::sqlite_reply_affected_known/1", "(SqliteReplyState) -> bool";
     DatabaseSqliteReplyAffected = 597, "runtime/database@1::sqlite_reply_affected/1", "(SqliteReplyState) -> string";
+    DatabaseSqliteReplyKinds = 598, "runtime/database@1::sqlite_reply_kinds/1", "(SqliteReplyState) -> @int";
+    DatabaseSqliteReplyValues = 599, "runtime/database@1::sqlite_reply_values/1", "(SqliteReplyState) -> @int";
+    DatabaseSqliteReplyFloats = 600, "runtime/database@1::sqlite_reply_floats/1", "(SqliteReplyState) -> @float";
+    DatabaseSqliteReplyTexts = 601, "runtime/database@1::sqlite_reply_texts/1", "(SqliteReplyState) -> @string";
+    DatabaseSqliteReplyBlobs = 602, "runtime/database@1::sqlite_reply_blobs/1", "(SqliteReplyState) -> @@byte";
+    DatabaseSqliteReplyRowBytes = 603, "runtime/database@1::sqlite_reply_row_bytes/1", "(SqliteReplyState) -> int";
+    DatabaseSqliteReplyDeferred = 604, "runtime/database@1::sqlite_reply_deferred/1", "(SqliteReplyState) -> @string";
 }

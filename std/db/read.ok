@@ -24,15 +24,61 @@ object RowReader {
     bytes(name is string) is @byte { DbColumnReader(name, origin.value(name)).bytes(); }
 }
 
+// A page of rows fetched by a native driver, as plain values: rows read their
+// cells by offset without a native call or an object per cell. Kinds use the
+// native cell codes; a value is the integer of an integer cell, else the
+// ordinal of the cell in its typed array. Width 0: no page (generic rows).
+object DbPage {
+    has width is int;
+    has kinds,values is @int;
+    has floats is @float;
+    has texts is @string;
+    has blobs is @@byte;
+    DbPage() {
+        width=0;let empty is @int=[];kinds=empty;values=empty;
+        let no_floats is @float=[];floats=no_floats;let no_texts is @string=[];texts=no_texts;
+        let no_blobs is @@byte=[];blobs=no_blobs;
+    }
+    DbPage(width is int,kinds is @int,values is @int,floats is @float,texts is @string,blobs is @@byte) {
+        confirm width>=0 && kinds.size()==values.size() else throw InvalidDbValue("inconsistent result page");
+        self.width=width;self.kinds=kinds;self.values=values;self.floats=floats;self.texts=texts;self.blobs=blobs;
+    }
+    width() is int { width; }
+    kind(at is int) is int { kinds[at]; }
+    integer(at is int) is int { values[at]; }
+    text(at is int) is string { texts[values[at]]; }
+    // An owned native cell for the less common projections.
+    cell(at is int) is native_db.DbCellState {
+        match kinds[at] {
+            case 0 { native_db.db_null(); }
+            case 2 { native_db.db_integer(values[at].string()); }
+            case 3 { native_db.db_floating(floats[values[at]]); }
+            case 5 { native_db.db_text(texts[values[at]]); }
+            else { native_db.db_bytes(blobs[values[at]]); }
+        }
+    }
+}
+
 // A selected, validated row value. Errors retain the column and their cause.
-enum DbReaderSource = (cell(state is native_db.DbCellState), protocol(origin is DbValue));
+enum DbReaderSource = (cell(state is native_db.DbCellState), protocol(origin is DbValue), page(page is DbPage, at is int));
 object DbColumnReader {
     has name is string;
     has source is DbReaderSource;
     DbColumnReader(name is string, origin is DbValue) { self.name=name;source=DbReaderSource.protocol(origin); }
     DbColumnReader(name is string, state is native_db.DbCellState) { self.name=name;source=DbReaderSource.cell(state); }
-    value() is DbValue { match source { case DbReaderSource.protocol(origin) { origin; } case DbReaderSource.cell(state) { DbNativeValue(state); } } }
+    DbColumnReader(name is string, page is DbPage, at is int) { self.name=name;source=DbReaderSource.page(page,at); }
+    value() is DbValue { match source {
+        case DbReaderSource.protocol(origin) { origin; }
+        case DbReaderSource.cell(state) { DbNativeValue(state); }
+        case DbReaderSource.page(page,at) { DbNativeValue(page.cell(at)); }
+    } }
     int() is int {
+        match source {
+            case DbReaderSource.page(page,at) { if page.kind(at)==2 { page.integer(at); } else { self.checked_int(); } }
+            else { self.checked_int(); }
+        }
+    }
+    checked_int() is int {
         try {
             let state=self.cell();
             self.require(DbValueKind.integer);
@@ -66,6 +112,12 @@ object DbColumnReader {
         } catch failure is Error { throw RowValueFailure(name,"flag",self.kind(),failure); }
     }
     text() is string {
+        match source {
+            case DbReaderSource.page(page,at) { if page.kind(at)==5 { page.text(at); } else { self.checked_text(); } }
+            else { self.checked_text(); }
+        }
+    }
+    checked_text() is string {
         try { let state=self.cell();self.require(DbValueKind.text);native_db.db_text_value(state); }
         catch failure is Error { throw RowValueFailure(name,"text",self.kind(),failure); }
     }
@@ -77,10 +129,12 @@ object DbColumnReader {
     cell() is native_db.DbCellState { match source {
         case DbReaderSource.cell(state) { state; }
         case DbReaderSource.protocol(origin) { ObservedDbValue(origin).state(); }
+        case DbReaderSource.page(page,at) { page.cell(at); }
     } }
     kind() is DbValueKind { match source {
         case DbReaderSource.cell(state) { DbNativeKind(native_db.db_kind(state)).value(); }
         case DbReaderSource.protocol(origin) { origin.kind(); }
+        case DbReaderSource.page(page,at) { DbNativeKind(page.kind(at)).value(); }
     } }
     require(expected is DbValueKind) is void { confirm self.kind()==expected else throw WrongDbValue(expected,self.kind()); }
 }

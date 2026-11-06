@@ -182,6 +182,39 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
 
 ### Changed
 
+- **SQLite rows without per-value native calls.** A fetched batch reaches `std/db`
+  as one page of plain values (cell kinds, integers, floats, texts, bytes) instead
+  of a native cell object per value; `Row.int`, `Row.text` and `Row.maybe` read the
+  page directly. On the DB benchmark the new core with this `std/db` reads a row
+  2–2.5× faster than the previous Sparrow (projection 6.6 ms vs 16 ms, streaming
+  scan 50–56 ms vs 95 ms). Rows built by hand (`Row(columns, values)`) and other
+  drivers keep native cells. New natives: `sqlite_reply_kinds`, `_values`,
+  `_floats`, `_texts`, `_blobs`, `_row_bytes`.
+- Native calls on the new core cost about 40 ns of boundary overhead (natives are
+  resolved once per function, providers by table, handles hashed cheaply).
+- **Fast byte and text processing on the new core** — the base for protocol drivers
+  and parsers written in Okkama (the PostgreSQL client, future network modules):
+  `@byte` arrays are stored one byte per element (they took eight), element reads
+  compile to single-byte loads, and UTF-8 encoding/decoding copies once; `Atomic`
+  is a heap cell whose `value`/`replace` compile inline; integer `&`, `|`, `^`, `~`,
+  negation, shifts and `byte()` conversion have inline paths; ASCII strings have
+  constant-time length and slicing; `slice` no longer copies the whole array;
+  decimal integers up to 18 digits parse without BigInt. A memcached-style reply
+  parser runs 10× faster than on the previous Sparrow (159 ms vs 1619 ms).
+- Cleanup regions no longer walk the resource graph when they hold nothing; the
+  walk marks visited objects in place instead of hashing them. Regions, `Event`,
+  enum construction and comparison compile inline; native handles need no Rust
+  allocation; the scheduler and SQLite workers spin briefly before sleeping on a
+  reply. The SQLite driver awaits replies without a task group per request and
+  reuses result columns while a session repeats a query shape. On the DB
+  benchmark the new core is 3–6× faster than the previous Sparrow; against
+  Python's `sqlite3` it reads rows within 1.5–2.6× and runs point queries about
+  12× slower (they still cross to a worker thread).
+- Database values are captured from their printers without native calls (the
+  same one-event protocol and errors), and cleanup regions keep their first
+  entries inline: inserts on the DB benchmark take 8.4 ms instead of 19 ms.
+- `SPARROW_CORE_STATS=1` makes the new core print counts of its runtime events
+  (natives, intrinsics, slow-path instructions, regions, awaits) at exit.
 - `sparrow-next` now runs on the new core. The previous engine's binary is renamed
   `sparrow-engine` and stays until its removal. Not yet available on the new core:
   process workers (`--worker`), `--stats` and fake storage.

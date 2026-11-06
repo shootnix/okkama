@@ -15,6 +15,7 @@ import "compare" take Order;
 import "db/transaction" take Transaction,TransactionOptions,Isolation;
 import "db/statement" take Statement,Execution,DbLimits,DbBoundaryLimit;
 import "db/row" take Row,Column,RowReading,RowsEnded,DbRowSchema,DbRowData;
+import "db/read" take DbPage;
 import "db/value" take DbValue,DbValueKind,ObservedDbValue,DbNativeValue,DbNull,DbInteger,DbFloating,DbText,DbBytes;
 import "db/error" take DbFailure,DbFailureKind,DbOperation,DbClosed,DbBusy,TransactionEnded,IndeterminateCommit;
 import "collections/sequence" take Sequencing;
@@ -98,8 +99,8 @@ object SqliteConnection does DbConnection,DbExecuting,DbPreparing,DbPreparedOpen
     async transaction(options is TransactionOptions,mode is SqliteTransactionMode) is SqliteTransaction{await origin.begin(options,mode);}
 }
 object SqliteSession does Closing {
-    has state is sqlite.SqliteState;has lock is Lock;has reader,reader_prepared,transaction,serial,blob is Atomic<int>;has read_only is bool;has transaction_prepared is Atomic<@int>;has fetches is Atomic<@Future<sqlite.SqliteReplyState>>;has fetch_id is Atomic<int>;
-    SqliteSession(state is sqlite.SqliteState,read_only is bool){self.state=state;self.read_only=read_only;lock=Lock();reader=Atomic(0);reader_prepared=Atomic(0);transaction=Atomic(0);serial=Atomic(0);blob=Atomic(0);let no_prepared is @int=[];transaction_prepared=Atomic(no_prepared);let no_fetches is @Future<sqlite.SqliteReplyState>=[];fetches=Atomic(no_fetches);fetch_id=Atomic(0);}
+    has state is sqlite.SqliteState;has lock is Lock;has reader,reader_prepared,transaction,serial,blob is Atomic<int>;has read_only is bool;has transaction_prepared is Atomic<@int>;has fetches is Atomic<@Future<sqlite.SqliteReplyState>>;has fetch_id is Atomic<int>;has shape is Atomic<@SqliteShape>;
+    SqliteSession(state is sqlite.SqliteState,read_only is bool){let no_shape is @SqliteShape=[];shape=Atomic(no_shape);self.state=state;self.read_only=read_only;lock=Lock();reader=Atomic(0);reader_prepared=Atomic(0);transaction=Atomic(0);serial=Atomic(0);blob=Atomic(0);let no_prepared is @int=[];transaction_prepared=Atomic(no_prepared);let no_fetches is @Future<sqlite.SqliteReplyState>=[];fetches=Atomic(no_fetches);fetch_id=Atomic(0);}
     closed() is bool{sqlite.sqlite_closed(state);}close() is void{sqlite.sqlite_close(state);}
     async settled() is bool{try{await sqlite.sqlite_settled(state);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.closing).value();}}
     async execution(statement is Statement) is Execution{await self.execution_for(statement,0);}
@@ -110,7 +111,7 @@ object SqliteSession does Closing {
     async rows(statement is Statement) is RowReading{await self.rows_for(statement,0);}
     async rows_for(statement is Statement,token is int) is RowReading{
         confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();confirm !self.closed() else throw DbClosed();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
-        let frame=await self.reply(sqlite.sqlite_rows_cells(state,statement.text(),statement.cells()),DbOperation.preparing);defer frame.close();let id=frame.identifier();let columns=frame.columns();reader.replace(id);SqliteRows(self,id,columns,token);
+        let frame=await self.reply(sqlite.sqlite_rows_cells(state,statement.text(),statement.cells()),DbOperation.preparing);defer frame.close();let id=frame.identifier();let shape=self.shaped(frame);reader.replace(id);let rows=SqliteRows(self,id,shape,token);rows.primed(frame);rows;
     }
     async prepare(text is string) is PreparedStatement{await self.prepare_for(text,0);}
     async prepare_for(text is string,token is int) is PreparedStatement{
@@ -123,14 +124,30 @@ object SqliteSession does Closing {
     }
     async prepared_rows(id is int,values is Sequencing<DbValue>,source_closed is Event,token is int) is RowReading{
         confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();let bindings=SqliteBindings(values);
-        let frame=await self.reply(sqlite.sqlite_prepared_rows_cells(state,id,bindings.cells()),DbOperation.preparing);defer frame.close();let cursor=frame.identifier();reader.replace(cursor);reader_prepared.replace(id);SqliteRows(self,cursor,frame.columns(),source_closed,token);
+        let frame=await self.reply(sqlite.sqlite_prepared_rows_cells(state,id,bindings.cells()),DbOperation.preparing);defer frame.close();let cursor=frame.identifier();reader.replace(cursor);reader_prepared.replace(id);let rows=SqliteRows(self,cursor,self.shaped(frame),source_closed,token);rows.primed(frame);rows;
+    }
+    // Columns and row schema of a result, reused while a session repeats the
+    // same result shape (names and declared types).
+    shaped(frame is SqliteFrame) is SqliteShape{
+        let names=frame.names();let declarations=frame.declarations();let cached=shape.value();
+        if cached.size()==1 && cached[0].matches(names,declarations){cached[0];}
+        else{
+            let columns is @Column=(0..names.size()).map()->index{Column(index,names[index],declarations[index]);};
+            let made=SqliteShape(names,declarations,columns,DbRowSchema(columns,DbLimits()));shape.replace([made]);made;
+        }
     }
     unprepare(id is int) is void{let kept is @int=transaction_prepared.value().filter()->entry{entry!=id;};transaction_prepared.replace(kept);if reader_prepared.value()==id && reader.value()>0{self.release(reader.value());}if !self.closed(){sqlite.sqlite_unprepare(state,id);}}
     end_prepared() is void{let ids=transaction_prepared.value();transaction_prepared.replace([]);for ids -> id{self.unprepare(id);}}
     prepared_closed(token is int) is bool{self.closed() || (token>0 && !self.active(token));}
+    // A cancelled or failed request has settled (a cancellation reaches the
+    // native request, which withdraws it) before the worker barrier runs.
     async reply(waiting is Future<sqlite.SqliteReplyState>,operation is DbOperation) is SqliteFrame{
-        let completed=Event();let group is FutureGroup<sqlite.SqliteReplyState>=FutureGroup();let cleanup=SqliteTaskCleanup(group,state,completed);defer await cleanup.close();group.start(waiting);let reply=try{await waiting;}catch e is NativeFailure{throw SqliteNativeError(e,operation).value();};completed.set();SqliteFrame(reply,operation);
+        let reply=try{await waiting;}
+            catch e is NativeFailure{await self.barrier();throw SqliteNativeError(e,operation).value();}
+            catch e is Cancelled{await self.barrier();throw;};
+        SqliteFrame(reply,operation);
     }
+    async barrier() is void{try{await sqlite.sqlite_settled(state);}catch e is NativeFailure{throw SqliteNativeError(e,DbOperation.closing).value();}}
     async open_blob(database is string,table is string,column is string,row is BigInt,writable is bool,token is int) is SqliteBlob{
         confirm !self.closed() else throw DbClosed();let guard=await lock.guard();defer guard.close();self.permit(token);confirm reader.value()==0 && blob.value()==0 else throw DbBusy();
         let frame=await self.reply(sqlite.sqlite_blob_open(state,database,table,column,row.string(),writable),DbOperation.opening_blob);defer frame.close();let id=frame.identifier();blob.replace(id);SqliteBlobHandle(self,id,frame.size(),writable,token);
@@ -198,16 +215,30 @@ object SqliteSession does Closing {
         await self.reply(waiting,DbOperation.fetching);
     }
 }
+object SqliteShape {
+    has names,declarations is @string;has columns is @Column;has schema is DbRowSchema;
+    SqliteShape(names is @string,declarations is @string,columns is @Column,schema is DbRowSchema){self.names=names;self.declarations=declarations;self.columns=columns;self.schema=schema;}
+    columns() is @Column{columns;}schema() is DbRowSchema{schema;}
+    matches(names is @string,declarations is @string) is bool{self.names==names && self.declarations==declarations;}
+}
 object SqliteRows does RowReading,Closing {
     has schema is DbRowSchema;
-    has owner is SqliteSession;has id,token is int;has columns is @Column;has batch is Atomic<@Row>;has position is Atomic<int>;has eof,stopped,source_closed is Event;has busy is Atomic<bool>;
-    SqliteRows(owner is SqliteSession,id is int,columns is @Column){self.owner=owner;self.id=id;token=0;self.columns=columns;schema=DbRowSchema(columns,DbLimits());let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();source_closed=Event();busy=Atomic(false);}
-    SqliteRows(owner is SqliteSession,id is int,columns is @Column,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=columns;schema=DbRowSchema(columns,DbLimits());source_closed=Event();let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);}
-    SqliteRows(owner is SqliteSession,id is int,columns is @Column,source_closed is Event,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=columns;schema=DbRowSchema(columns,DbLimits());self.source_closed=source_closed;let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);}
+    has owner is SqliteSession;has id,token is int;has columns is @Column;has batch is Atomic<@Row>;has position is Atomic<int>;has eof,stopped,source_closed is Event;has busy is Atomic<bool>;has failure is Atomic<@string>;
+    SqliteRows(owner is SqliteSession,id is int,shape is SqliteShape){self.owner=owner;self.id=id;token=0;self.columns=shape.columns();schema=shape.schema();let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();source_closed=Event();busy=Atomic(false);let clean is @string=[];failure=Atomic(clean);}
+    SqliteRows(owner is SqliteSession,id is int,shape is SqliteShape,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=shape.columns();schema=shape.schema();source_closed=Event();let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);let clean is @string=[];failure=Atomic(clean);}
+    SqliteRows(owner is SqliteSession,id is int,shape is SqliteShape,source_closed is Event,token is int){self.owner=owner;self.id=id;self.token=token;self.columns=shape.columns();schema=shape.schema();self.source_closed=source_closed;let empty is @Row=[];batch=Atomic(empty);position=Atomic(0);eof=Event();stopped=Event();busy=Atomic(false);let clean is @string=[];failure=Atomic(clean);}
     columns() is Sequencing<Column>{columns;}closed() is bool{stopped.ready() || source_closed.ready() || owner.prepared_closed(token);}
     close() is void{if !stopped.ready(){stopped.set();batch.replace([]);owner.release(id);}}
+    // The first page and EOF arrive with the cursor (one worker round trip).
+    primed(frame is SqliteFrame) is void{
+        let deferred=frame.deferred();
+        if deferred.size()>0{failure.replace(deferred);}
+        else{let rows=frame.rows(schema);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}}
+    }
     async row() is Row{
         confirm !self.closed() else throw DbClosed();confirm busy.compare_and_replace(false,true) else throw DbBusy();defer busy.replace(false);
+        let deferred=failure.value();
+        if deferred.size()>0{let clean is @string=[];failure.replace(clean);self.close();throw DbFailure(SqliteFailureKind(deferred[0]).value(),DbOperation.fetching,deferred[1],"SQLite operation rejected");}
         if position.value()==batch.value().size(){if eof.ready(){throw RowsEnded();}let complete=Event();let cleanup=SqliteRowsCleanup(self,complete);defer cleanup.close();let frame=await owner.batch(id,if position.value()==0{8;}else{64;});defer frame.close();confirm !self.closed() else throw DbClosed();let rows=frame.rows(schema);batch.replace(rows);position.replace(0);if frame.ended(){eof.set();}complete.set();if rows.size()==0{throw RowsEnded();}}
         let row=batch.value()[position.value()];position.replace(position.value()+1);if eof.ready() && position.value()==batch.value().size(){owner.release(id);}row;
     }
@@ -245,12 +276,22 @@ object SqliteFrame {
     done() is bool{sqlite.sqlite_reply_info(state)["done"]=="1";}busy() is bool{sqlite.sqlite_reply_info(state)["busy"]=="1";}copies() is BigInt{BigInt(sqlite.sqlite_reply_info(state)["copies"]);}total() is BigInt{BigInt(sqlite.sqlite_reply_info(state)["total"]);}
     executions() is @Execution{let values is @Execution=sqlite.sqlite_reply_executions(state).map()->value{if value=="unknown"{Execution();}else{Execution(BigInt(value));}};values;}
     identifier() is int{sqlite.sqlite_reply_id(state);}ended() is bool{sqlite.sqlite_reply_eof(state);}
+    // A failure of the first page fetched with the cursor: [kind, code], or empty.
+    deferred() is @string{sqlite.sqlite_reply_deferred(state);}
     execution() is Execution{if sqlite.sqlite_reply_affected_known(state){Execution(BigInt(sqlite.sqlite_reply_affected(state)));}else{Execution();}}
+    names() is @string{sqlite.sqlite_reply_names(state);}declarations() is @string{sqlite.sqlite_reply_declarations(state);}
     columns() is @Column{let names=sqlite.sqlite_reply_names(state);let declarations=sqlite.sqlite_reply_declarations(state);let columns is @Column=(0..names.size()).map()->index{Column(index,names[index],declarations[index]);};columns;}
+    // One page per reply: flat columns, no native cell per value.
     rows(schema is DbRowSchema) is @Row {
         let count=sqlite.sqlite_reply_count(state);
-        let rows is @Row=(0..count).map()->index { Row(DbRowData(schema,sqlite.sqlite_reply_cells(state,index))); };
-        rows;
+        if count==0 { let empty is @Row=[];empty; }
+        else {
+            confirm sqlite.sqlite_reply_row_bytes(state)<=DbLimits().bytes() else throw DbBoundaryLimit("value bytes");
+            let page=DbPage(schema.size(),sqlite.sqlite_reply_kinds(state),sqlite.sqlite_reply_values(state),
+                sqlite.sqlite_reply_floats(state),sqlite.sqlite_reply_texts(state),sqlite.sqlite_reply_blobs(state));
+            let rows is @Row=(0..count).map()->index { Row(DbRowData(schema,page,index)); };
+            rows;
+        }
     }
 }
 object SqliteFailureKind{has origin is string;SqliteFailureKind(origin is string){self.origin=origin;}value() is DbFailureKind{match origin{case "connection"{DbFailureKind.connection;}case "constraint"{DbFailureKind.constraint;}case "syntax"{DbFailureKind.syntax;}case "data"{DbFailureKind.data;}case "permission"{DbFailureKind.permission;}case "busy"{DbFailureKind.busy;}case "cancelled"{DbFailureKind.cancelled;}case "resource"{DbFailureKind.resource;}case "unsupported"{DbFailureKind.unsupported;}else{DbFailureKind.unexpected;}}}}

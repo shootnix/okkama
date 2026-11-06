@@ -154,7 +154,7 @@ impl Runtime {
         match (kind, ty) {
             (Kind::Int, _) => Key::Int(self.big_value(word)),
             (Kind::Float, _) => Key::Float(f64::from_bits(word)),
-            (Kind::Raw, _) => Key::Raw(word),
+            (Kind::Raw | Kind::Byte, _) => Key::Raw(word),
             (_, Some(Type::Str)) => Key::Str(Rc::from(self.heap.text(word))),
             _ => Key::Raw(word),
         }
@@ -265,6 +265,20 @@ fn slice_bounds(runtime: &Runtime, length: usize, start: Word, end: Word) -> Res
 
 // ---- structural equality ----
 
+/// A new array for register `dst` of `function`: byte arrays (`@byte`) are
+/// packed, whatever produced the words.
+pub(crate) fn new_array(runtime: &mut Runtime, function: usize, dst: okkama_sparrow::Register, repr: Repr, items: &[Word]) -> Word {
+    let program = &runtime.loaded.program;
+    let ty = program.functions[function].registers[dst.0 as usize];
+    if let Some(Type::Array(element)) = program.ty(ty) {
+        if Kind::of(program, *element) == Kind::Byte {
+            let bytes: Vec<u8> = items.iter().map(|&w| w as u8).collect();
+            return runtime.heap.allocate_bytes(&bytes);
+        }
+    }
+    runtime.heap.allocate_array(repr, items)
+}
+
 pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> Result<bool, String> {
     let program = &runtime.loaded.program;
     let mut pending = vec![(left, right, ty)];
@@ -278,7 +292,7 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                 }
                 continue;
             }
-            Kind::Float | Kind::Raw => {
+            Kind::Float | Kind::Raw | Kind::Byte => {
                 if a != b {
                     return Ok(false);
                 }
@@ -318,13 +332,18 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                     return Ok(false);
                 }
             }
+            Some(Type::Array(_)) if runtime.heap.is_bytes(a) && runtime.heap.is_bytes(b) => {
+                if runtime.heap.bytes(a) != runtime.heap.bytes(b) {
+                    return Ok(false);
+                }
+            }
             Some(Type::Array(element)) => {
                 let (x, y) = (runtime.heap.elements(a), runtime.heap.elements(b));
                 if x.len() != y.len() {
                     return Ok(false);
                 }
                 if a != b && seen.insert((a, b)) {
-                    pending.extend(x.iter().zip(y).rev().map(|(&x, &y)| (x, y, *element)));
+                    pending.extend(x.iter().zip(y.iter()).rev().map(|(&x, &y)| (x, y, *element)));
                 }
             }
             Some(Type::Map(_, value)) => {
@@ -360,7 +379,7 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                     for (index, (_, field)) in fields.iter().enumerate().rev() {
                         let (x, y) = (runtime.heap.field(a, index), runtime.heap.field(b, index));
                         let unbound = |w: Word| match runtime.kind_of(*field) {
-                            Kind::Float | Kind::Raw => w == word::UNBOUND_RAW,
+                            Kind::Float | Kind::Raw | Kind::Byte => w == word::UNBOUND_RAW,
                             _ => w == UNBOUND,
                         };
                         if unbound(x) || unbound(y) {
@@ -396,6 +415,7 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
     // SAFETY: the loaded program is never mutated while machine code runs, so
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
+    runtime.count(|_| format!("exec {}", instruction.mnemonic()));
     let mut registers = [okkama_sparrow::Register(u32::MAX); 8];
     let mut count = 0;
     instruction.visit(&mut |access| {
@@ -549,8 +569,9 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             }
         }
         I::StrUtf8 { text, .. } => {
-            let bytes: Vec<Word> = runtime.heap.text(value(text)).bytes().map(Word::from).collect();
-            Ok(runtime.heap.allocate_array(Repr::Raw, &bytes))
+            // SAFETY of the copy: the text is a live heap string.
+            let bytes = runtime.heap.text(value(text)).as_bytes().to_vec();
+            Ok(runtime.heap.allocate_bytes(&bytes))
         }
         I::StrReplaceFirst { text, pattern, replacement, .. } => {
             let replaced = runtime
@@ -654,31 +675,54 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             Ok(compare_flag(*op, order))
         }
         I::StrLen { text, .. } => {
-            let length = runtime.heap.text(value(text)).chars().count();
+            let text = value(text);
+            let length = if runtime.heap.is_ascii_text(text) {
+                runtime.heap.text(text).len()
+            } else {
+                runtime.heap.text(text).chars().count()
+            };
             Ok(runtime.heap.int(length as i64))
         }
         I::StrSlice { text, start, end, .. } => {
-            let source = runtime.heap.text(value(text)).to_owned();
-            let range = slice_bounds(runtime, source.chars().count(), value(start), value(end))?;
-            let boundary = |n| {
-                source
-                    .char_indices()
-                    .map(|(i, _)| i)
-                    .chain(std::iter::once(source.len()))
-                    .nth(n)
-                    .expect("validated code point boundary")
+            let text = value(text);
+            // ASCII strings index by byte; others map code points to bytes once.
+            let (first, last) = if runtime.heap.is_ascii_text(text) {
+                let range = slice_bounds(runtime, runtime.heap.text(text).len(), value(start), value(end))?;
+                (range.start, range.end)
+            } else {
+                let count = runtime.heap.text(text).chars().count();
+                let range = slice_bounds(runtime, count, value(start), value(end))?;
+                let source = runtime.heap.text(text);
+                let mut offsets = source.char_indices().map(|(i, _)| i).chain(std::iter::once(source.len()));
+                let first = offsets.nth(range.start).expect("validated code point boundary");
+                let last = if range.end == range.start {
+                    first
+                } else {
+                    offsets.nth(range.end - range.start - 1).expect("validated code point boundary")
+                };
+                (first, last)
             };
-            Ok(runtime.text_new(&source[boundary(range.start)..boundary(range.end)]))
+            Ok(runtime.heap.substring(text, first, last))
         }
         I::StrSplit { text, separator, .. } => {
-            let source = runtime.heap.text(value(text)).to_owned();
-            let separator = runtime.heap.text(value(separator)).to_owned();
-            let parts: Vec<String> = if separator.is_empty() {
-                source.chars().map(String::from).collect()
-            } else {
-                source.split(separator.as_str()).map(String::from).collect()
+            let (text, separator) = (value(text), value(separator));
+            // Byte ranges of the parts, then one copy per part.
+            let ranges: Vec<(usize, usize)> = {
+                let (source, separator) = (runtime.heap.text(text), runtime.heap.text(separator));
+                if separator.is_empty() {
+                    source.char_indices().map(|(i, c)| (i, i + c.len_utf8())).collect()
+                } else {
+                    let mut ranges = Vec::new();
+                    let mut start = 0;
+                    for (at, matched) in source.match_indices(separator) {
+                        ranges.push((start, at));
+                        start = at + matched.len();
+                    }
+                    ranges.push((start, source.len()));
+                    ranges
+                }
             };
-            let words: Vec<Word> = parts.iter().map(|part| runtime.text_new(part)).collect();
+            let words: Vec<Word> = ranges.into_iter().map(|(a, b)| runtime.heap.substring(text, a, b)).collect();
             Ok(runtime.heap.allocate_array(Repr::Ref, &words))
         }
         I::StrReplace { text, pattern, replacement, .. } => {
@@ -708,7 +752,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let equal = equal(runtime, value(left), value(right), ty)?;
             Ok(bool_word(if matches!(op, Cmp::Ne) { !equal } else { equal }))
         }
-        I::Undef { dst } => Ok(if kinds[dst.0 .0 as usize] == Kind::Float || kinds[dst.0 .0 as usize] == Kind::Raw {
+        I::Undef { dst } => Ok(if matches!(kinds[dst.0 .0 as usize], Kind::Float | Kind::Raw | Kind::Byte) {
             word::UNBOUND_RAW
         } else {
             UNBOUND
@@ -721,10 +765,16 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         }
         I::ArraySlice { array, start, end, .. } => {
             let array = value(array);
+            let length = crate::heap::payload(runtime.heap.header_of(array)) as usize;
+            let range = slice_bounds(runtime, length, value(start), value(end))?;
+            // Copy only the range.
+            if runtime.heap.is_bytes(array) {
+                let bytes = runtime.heap.bytes(array)[range].to_vec();
+                return Ok(runtime.heap.allocate_bytes(&bytes));
+            }
             let repr = element_repr(runtime, array);
-            let elements = runtime.heap.elements(array).to_vec();
-            let range = slice_bounds(runtime, elements.len(), value(start), value(end))?;
-            Ok(runtime.heap.allocate_array(repr, &elements[range]))
+            let items: Vec<Word> = runtime.heap.elements(array)[range].to_vec();
+            Ok(runtime.heap.allocate_array(repr, &items))
         }
         I::ArrayJoin { array, separator, .. } => {
             let separator = runtime.heap.text(value(separator)).to_owned();
@@ -770,10 +820,10 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             runtime.heap.payload_mut::<Builder>(builder).expect("builder").items.extend(items);
             Ok(builder)
         }
-        I::BuilderFinish { builder, .. } => {
+        I::BuilderFinish { dst, builder } => {
             let builder = runtime.heap.payload_mut::<Builder>(value(builder)).expect("builder");
             let (repr, items) = (builder.repr, std::mem::take(&mut builder.items));
-            Ok(runtime.heap.allocate_array(repr, &items))
+            Ok(new_array(runtime, function, dst.0, repr, &items))
         }
         I::MapNew { dst, entries } => {
             let mut map = map_for(runtime, function, dst.0)?;
@@ -816,12 +866,12 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             }
             found.ok_or_else(|| format!("Map key not found: {}", key_text(runtime, key_word, key_kind, key_type.as_ref())))
         }
-        I::MapKeys { map, .. } | I::MapValues { map, .. } => {
+        I::MapKeys { dst, map } | I::MapValues { dst, map } => {
             let map = runtime.heap.payload::<MapValue>(value(map)).expect("map");
             let keys = matches!(instruction, I::MapKeys { .. });
             let repr = if keys { map.key } else { map.value };
             let items: Vec<Word> = map.entries.values().map(|(k, v)| if keys { *k } else { *v }).collect();
-            Ok(runtime.heap.allocate_array(repr, &items))
+            Ok(new_array(runtime, function, dst.0, repr, &items))
         }
         _ => Err(format!("{} has no runtime path in sparrow-core yet", instruction.mnemonic())),
     }
@@ -877,7 +927,7 @@ fn key_text(runtime: &Runtime, word: Word, kind: Kind, ty: Option<&Type>) -> Str
         (_, Some(Type::Str)) => format!("\"{}\"", runtime.heap.text(word)),
         (_, Some(Type::Char)) => format!("\"{}\"", char::from_u32(word as u32).unwrap_or('?')),
         (Kind::Float, _) => crate::scalar::float_text(f64::from_bits(word)),
-        (Kind::Raw, _) => word.to_string(),
+        (Kind::Raw | Kind::Byte, _) => word.to_string(),
         _ => runtime.big_value(word).to_string(),
     }
 }

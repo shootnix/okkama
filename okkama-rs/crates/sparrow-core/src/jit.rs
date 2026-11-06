@@ -10,6 +10,7 @@
 
 use crate::Error;
 use crate::heap::{self, Heap};
+use crate::intrinsics::Intrinsic;
 use crate::program::Kind;
 use crate::runtime::{self, Ctx, FAILED, OK, Runtime};
 use crate::word::{self, Repr, Word};
@@ -66,6 +67,7 @@ helpers! {
     failure_op = crate::failures::rt_failure_op, 4, true;
     catch = crate::failures::rt_catch, 4, true;
     created = crate::failures::rt_created, 3, false;
+    region_add = crate::failures::rt_region_add, 4, false;
     future_new = crate::tasks::rt_future_new, 4, true;
     await_ = crate::tasks::rt_await, 3, true;
     complete = crate::tasks::rt_complete, 3, false;
@@ -794,7 +796,8 @@ impl Emitter<'_, '_> {
             }
             I::ArrayNew { dst, elements } => {
                 let repr = match self.register_type(&dst.0) {
-                    Some(Type::Array(element)) => Kind::of(program, *element).repr(),
+                    Some(Type::Array(element)) if Kind::of(program, *element) == Kind::Byte => runtime::ARRAY_BYTES,
+                    Some(Type::Array(element)) => Kind::of(program, *element).repr() as u64,
                     _ => return Err(unsupported()),
                 };
                 let address = self.spill(elements);
@@ -812,6 +815,7 @@ impl Emitter<'_, '_> {
                 self.set(&dst.0, tagged);
             }
             I::ArrayGet { dst, array, index } => {
+                let array_register = *array;
                 let (array, index) = (self.get(array), self.get(index));
                 let header = self.builder.ins().load(types::I64, MEMORY, array, 0);
                 let length = self.builder.ins().ushr_imm_u(header, 32);
@@ -830,9 +834,7 @@ impl Emitter<'_, '_> {
                 self.check(pc);
                 self.builder.ins().jump(load, &[]);
                 self.builder.switch_to_block(load);
-                let offset = self.builder.ins().ishl_imm_u(position, 3);
-                let address = self.builder.ins().iadd(array, offset);
-                let value = self.builder.ins().load(types::I64, MEMORY, address, 8);
+                let value = self.element(array, position, self.bytes_array(array_register));
                 self.set_word(&dst.0, value);
             }
             I::ObjNew { dst, object, fields } => {
@@ -942,6 +944,8 @@ impl Emitter<'_, '_> {
                     let future = self.helper(|h| h.future_new, &[ctx, index, address, count]).expect("result");
                     self.check(pc);
                     future
+                } else if let Some(atomic) = atomic_access(callee) {
+                    self.atomic(pc, function.0, atomic, args)
                 } else if callee.native.is_some() || callee.intrinsic.is_some() {
                     let address = self.spill(args);
                     let index = self.iconst(i64::from(function.0));
@@ -1080,6 +1084,7 @@ impl Emitter<'_, '_> {
                 }
             }
             I::ArrayLookup { array, index, value, found, missing } => {
+                let array_register = *array;
                 let (array, index) = (self.get(array), self.get(index));
                 let header = self.builder.ins().load(types::I64, MEMORY, array, 0);
                 let length = self.builder.ins().ushr_imm_u(header, 32);
@@ -1092,9 +1097,7 @@ impl Emitter<'_, '_> {
                 let miss = self.builder.create_block();
                 self.builder.ins().brif(valid, hit, &[], miss, &[]);
                 self.builder.switch_to_block(hit);
-                let offset = self.builder.ins().ishl_imm_u(position, 3);
-                let address = self.builder.ins().iadd(array, offset);
-                let item = self.builder.ins().load(types::I64, MEMORY, address, 8);
+                let item = self.element(array, position, self.bytes_array(array_register));
                 // Edge moves read the old registers; the found value is written last.
                 self.jump_then(found, value.0, item);
                 self.builder.switch_to_block(miss);
@@ -1158,6 +1161,35 @@ impl Emitter<'_, '_> {
                 self.jump(next);
                 return Ok(true);
             }
+            I::RegionEnter { dst } => {
+                // `[overflow, slots…]`, all unbound (see `failures::REGION_SLOTS`).
+                let length = 1 + crate::failures::REGION_SLOTS;
+                let cell = self.allocate(1 + length);
+                let header = self.iconst(heap::header(heap::ARRAY, Repr::Ref, length as u32) as i64);
+                self.builder.ins().store(MEMORY, header, cell, 0);
+                let unbound = self.iconst(0);
+                for index in 0..length {
+                    self.builder.ins().store(MEMORY, unbound, cell, (8 + index * 8) as i32);
+                }
+                self.set(&dst.0, cell);
+            }
+            I::RegionAdopt { region, value } | I::RegionTrack { region, value } => {
+                let (region, value) = (self.get(region), self.word(value));
+                let own = self.iconst(i64::from(matches!(instruction, I::RegionAdopt { .. })));
+                self.helper(|h| h.region_add, &[ctx, region, value, own]);
+            }
+            I::RegionLeave { region, .. } => {
+                // A region that tracked nothing closes without a call.
+                let cell = self.get(region);
+                let entries = self.builder.ins().load(types::I64, MEMORY, cell, 16);
+                let (close, done) = (self.builder.create_block(), self.builder.create_block());
+                self.builder.ins().brif(entries, close, &[], done, &[]);
+                self.builder.switch_to_block(close);
+                let instruction = instruction.clone();
+                self.failure_generic(pc, &instruction);
+                self.builder.ins().jump(done, &[]);
+                self.builder.switch_to_block(done);
+            }
             other if failure_or_region(other) => {
                 let mut uses = Vec::new();
                 let mut def = None;
@@ -1180,19 +1212,180 @@ impl Emitter<'_, '_> {
                     self.set_word(&def, result);
                 }
             }
+            I::IntAnd { dst, left, right }
+            | I::IntOr { dst, left, right }
+            | I::IntXor { dst, left, right }
+            | I::IntShl { dst, left, right }
+            | I::IntShr { dst, left, right } => {
+                // Two inline integers stay inline; the rest goes the exact way.
+                let (l, r) = (self.get(left), self.get(right));
+                let both = self.builder.ins().band(l, r);
+                let small = self.builder.ins().band_imm_u(both, 1);
+                let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::I64);
+                self.builder.ins().brif(small, fast, &[], slow, &[]);
+                self.builder.switch_to_block(fast);
+                match instruction {
+                    I::IntAnd { .. } => {
+                        let value = self.builder.ins().band(l, r);
+                        self.builder.ins().jump(done, &[value.into()]);
+                    }
+                    I::IntOr { .. } => {
+                        let value = self.builder.ins().bor(l, r);
+                        self.builder.ins().jump(done, &[value.into()]);
+                    }
+                    I::IntXor { .. } => {
+                        let x = self.builder.ins().bxor(l, r);
+                        let value = self.builder.ins().bor_imm_u(x, 1);
+                        self.builder.ins().jump(done, &[value.into()]);
+                    }
+                    _ => {
+                        let left_shift = matches!(instruction, I::IntShl { .. });
+                        let v = self.builder.ins().sshr_imm_u(l, 1);
+                        let n = self.builder.ins().sshr_imm_u(r, 1);
+                        let in_range = self.builder.ins().icmp_imm_u(IntCC::UnsignedLessThan, n, 62);
+                        let commit = self.builder.create_block();
+                        self.builder.ins().brif(in_range, commit, &[], slow, &[]);
+                        self.builder.switch_to_block(commit);
+                        if left_shift {
+                            // No bit may be lost: shifting back gives the value,
+                            // and the result still fits an inline integer.
+                            let shifted = self.builder.ins().ishl(v, n);
+                            let tagged = self.builder.ins().ishl_imm_u(shifted, 1);
+                            let tagged = self.builder.ins().bor_imm_u(tagged, 1);
+                            let back = self.builder.ins().sshr(shifted, n);
+                            let same = self.builder.ins().icmp(IntCC::Equal, back, v);
+                            let untagged = self.builder.ins().sshr_imm_u(tagged, 1);
+                            let fits = self.builder.ins().icmp(IntCC::Equal, untagged, shifted);
+                            let ok = self.builder.ins().band(same, fits);
+                            let exact = self.builder.create_block();
+                            self.builder.ins().brif(ok, exact, &[], slow, &[]);
+                            self.builder.switch_to_block(exact);
+                            self.builder.ins().jump(done, &[tagged.into()]);
+                        } else {
+                            let shifted = self.builder.ins().sshr(v, n);
+                            let tagged = self.builder.ins().ishl_imm_u(shifted, 1);
+                            let tagged = self.builder.ins().bor_imm_u(tagged, 1);
+                            self.builder.ins().jump(done, &[tagged.into()]);
+                        }
+                    }
+                }
+                self.builder.switch_to_block(slow);
+                let result = self.exec_generic(pc, instruction);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let value = self.builder.block_params(done)[0];
+                self.set(&dst.0, value);
+            }
+            I::IntNot { dst, operand } | I::IntNeg { dst, operand } => {
+                let v = self.get(operand);
+                let small = self.builder.ins().band_imm_u(v, 1);
+                let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::I64);
+                self.builder.ins().brif(small, fast, &[], slow, &[]);
+                self.builder.switch_to_block(fast);
+                if matches!(instruction, I::IntNot { .. }) {
+                    // !(2v+1) | 1 == 2(!v)+1
+                    let x = self.builder.ins().bnot(v);
+                    let value = self.builder.ins().bor_imm_u(x, 1);
+                    self.builder.ins().jump(done, &[value.into()]);
+                } else {
+                    // 2(-v)+1 == 2 - (2v+1)
+                    let two = self.iconst(2);
+                    let (value, overflow) = self.builder.ins().ssub_overflow(two, v);
+                    let commit = self.builder.create_block();
+                    self.builder.ins().brif(overflow, slow, &[], commit, &[]);
+                    self.builder.switch_to_block(commit);
+                    self.builder.ins().jump(done, &[value.into()]);
+                }
+                self.builder.switch_to_block(slow);
+                let result = self.exec_generic(pc, instruction);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let value = self.builder.block_params(done)[0];
+                self.set(&dst.0, value);
+            }
+            I::StrCmp { op: op @ (Cmp::Eq | Cmp::Ne), dst, left, right } => {
+                // The same string, or strings of different byte lengths, decide
+                // equality inline; the rest compares bytes in the slow path.
+                let (l, r) = (self.get(left), self.get(right));
+                let equal = u64::from(*op == Cmp::Eq) as i64;
+                let (decided, compare, slow, done) = (
+                    self.builder.create_block(),
+                    self.builder.create_block(),
+                    self.builder.create_block(),
+                    self.builder.create_block(),
+                );
+                self.builder.append_block_param(decided, types::I64);
+                self.builder.append_block_param(done, types::I64);
+                let same = self.builder.ins().icmp(IntCC::Equal, l, r);
+                let yes = self.iconst(equal);
+                self.builder.ins().brif(same, decided, &[yes.into()], compare, &[]);
+                self.builder.switch_to_block(compare);
+                let (hl, hr) = (
+                    self.builder.ins().load(types::I64, MEMORY, l, 0),
+                    self.builder.ins().load(types::I64, MEMORY, r, 0),
+                );
+                let (nl, nr) = (self.builder.ins().ushr_imm_u(hl, 32), self.builder.ins().ushr_imm_u(hr, 32));
+                let differ = self.builder.ins().icmp(IntCC::NotEqual, nl, nr);
+                let no = self.iconst(1 - equal);
+                self.builder.ins().brif(differ, decided, &[no.into()], slow, &[]);
+                self.builder.switch_to_block(decided);
+                let flag = self.builder.block_params(decided)[0];
+                self.builder.ins().jump(done, &[flag.into()]);
+                self.builder.switch_to_block(slow);
+                let result = self.exec_generic(pc, instruction);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let value = self.builder.block_params(done)[0];
+                self.set(&dst.0, value);
+            }
+            I::EnumCase { dst, ty, case } => {
+                let value = self.iconst(((u64::from(ty.0) << 32) | u64::from(*case)) as i64);
+                self.set_word(&dst.0, value);
+            }
+            I::EnumCmp { op, dst, left, right } => {
+                // Enum words compare as unsigned integers (see `ops`).
+                let (l, r) = (self.word(left), self.word(right));
+                let condition = match op {
+                    Cmp::Eq => IntCC::Equal,
+                    Cmp::Ne => IntCC::NotEqual,
+                    Cmp::Lt => IntCC::UnsignedLessThan,
+                    Cmp::Le => IntCC::UnsignedLessThanOrEqual,
+                    Cmp::Gt => IntCC::UnsignedGreaterThan,
+                    Cmp::Ge => IntCC::UnsignedGreaterThanOrEqual,
+                };
+                let flag = self.builder.ins().icmp(condition, l, r);
+                let flag = self.builder.ins().uextend(types::I64, flag);
+                self.set(&dst.0, flag);
+            }
+            I::ByteFrom { dst, source, .. } if self.kinds[source.0 as usize] == Kind::Int => {
+                let v = self.get(source);
+                let n = self.builder.ins().sshr_imm_u(v, 1);
+                let small = self.builder.ins().band_imm_u(v, 1);
+                let in_range = self.builder.ins().icmp_imm_u(IntCC::UnsignedLessThanOrEqual, n, 255);
+                let in_range = self.builder.ins().uextend(types::I64, in_range);
+                let ok = self.builder.ins().band(small, in_range);
+                let (fast, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::I64);
+                self.builder.ins().brif(ok, fast, &[], slow, &[]);
+                self.builder.switch_to_block(fast);
+                self.builder.ins().jump(done, &[n.into()]);
+                self.builder.switch_to_block(slow);
+                let result = self.exec_generic(pc, instruction);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                let value = self.builder.block_params(done)[0];
+                self.set(&dst.0, value);
+            }
             other if generic(other) => {
-                let mut uses = Vec::new();
                 let mut def = None;
-                other.visit(&mut |access| match access {
-                    okkama_sparrow::Access::Use(register) => uses.push(register),
-                    okkama_sparrow::Access::Def(register) => def = Some(register),
-                    _ => {}
+                other.visit(&mut |access| {
+                    if let okkama_sparrow::Access::Def(register) = access {
+                        def = Some(register);
+                    }
                 });
-                let address = self.spill(&uses);
-                let function = self.iconst(self.function as i64);
-                let at = self.iconst(pc as i64);
-                let result = self.helper(|h| h.exec, &[ctx, function, at, address]).expect("result");
-                self.check(pc);
+                let result = self.exec_generic(pc, other);
                 if let Some(def) = def {
                     self.set_word(&def, result);
                 }
@@ -1200,6 +1393,98 @@ impl Emitter<'_, '_> {
             _ => return Err(unsupported()),
         }
         Ok(false)
+    }
+
+    /// Is `register` statically a byte array (packed, one byte per element)?
+    fn bytes_array(&self, register: okkama_sparrow::Register) -> bool {
+        matches!(self.register_type(&register), Some(Type::Array(element)) if Kind::of(&self.loaded.program, *element) == Kind::Byte)
+    }
+
+    /// Element `position` (in bounds) of an array: a word, or a byte of a packed array.
+    fn element(&mut self, array: Value, position: Value, bytes: bool) -> Value {
+        if bytes {
+            let address = self.builder.ins().iadd(array, position);
+            return self.builder.ins().uload8(types::I64, MEMORY, address, 8);
+        }
+        let offset = self.builder.ins().ishl_imm_u(position, 3);
+        let address = self.builder.ins().iadd(array, offset);
+        self.builder.ins().load(types::I64, MEMORY, address, 8)
+    }
+
+    /// Inline access to an Atomic cell (`[header, value, closed]`; a closed
+    /// cell takes the intrinsic call, which throws AtomicClosed) and to the
+    /// set flag of an Event cell (`[header, initial, set, waiters]`).
+    fn atomic(&mut self, pc: usize, function: u32, access: Intrinsic, args: &[okkama_sparrow::Register]) -> Value {
+        let cell = self.get(&args[0]);
+        let ctx = self.ctx();
+        match access {
+            Intrinsic::AtomicClosed | Intrinsic::EventReady => self.builder.ins().load(types::I64, MEMORY, cell, 16),
+            Intrinsic::AtomicClose => {
+                let one = self.iconst(1);
+                self.builder.ins().store(MEMORY, one, cell, 16);
+                let unbound = self.iconst(0);
+                self.builder.ins().store(MEMORY, unbound, cell, 8);
+                self.iconst(0)
+            }
+            _ => {
+                let closed = self.builder.ins().load(types::I64, MEMORY, cell, 16);
+                let (open, slow, done) = (self.builder.create_block(), self.builder.create_block(), self.builder.create_block());
+                self.builder.append_block_param(done, types::I64);
+                self.builder.ins().brif(closed, slow, &[], open, &[]);
+                self.builder.switch_to_block(open);
+                let result = if access == Intrinsic::AtomicValue {
+                    self.builder.ins().load(types::I64, MEMORY, cell, 8)
+                } else {
+                    let value = self.word(&args[1]);
+                    self.builder.ins().store(MEMORY, value, cell, 8);
+                    self.iconst(0)
+                };
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(slow);
+                let address = self.spill(args);
+                let index = self.iconst(i64::from(function));
+                let count = self.iconst(args.len() as i64);
+                let result = self.helper(|h| h.intrinsic, &[ctx, index, address, count]).expect("result");
+                self.check(pc);
+                self.builder.ins().jump(done, &[result.into()]);
+                self.builder.switch_to_block(done);
+                self.builder.block_params(done)[0]
+            }
+        }
+    }
+
+    /// Run a failure or region instruction through `rt_failure_op`; its result.
+    fn failure_generic(&mut self, pc: usize, instruction: &I) -> Value {
+        let mut uses = Vec::new();
+        instruction.visit(&mut |access| {
+            if let okkama_sparrow::Access::Use(register) = access {
+                uses.push(register);
+            }
+        });
+        let ctx = self.ctx();
+        let address = self.spill(&uses);
+        let function = self.iconst(self.function as i64);
+        let at = self.iconst(pc as i64);
+        let result = self.helper(|h| h.failure_op, &[ctx, function, at, address]).expect("result");
+        self.check(pc);
+        result
+    }
+
+    /// Run `instruction` through the shared slow path (`rt_exec`); its result word.
+    fn exec_generic(&mut self, pc: usize, instruction: &I) -> Value {
+        let mut uses = Vec::new();
+        instruction.visit(&mut |access| {
+            if let okkama_sparrow::Access::Use(register) = access {
+                uses.push(register);
+            }
+        });
+        let ctx = self.ctx();
+        let address = self.spill(&uses);
+        let function = self.iconst(self.function as i64);
+        let at = self.iconst(pc as i64);
+        let result = self.helper(|h| h.exec, &[ctx, function, at, address]).expect("result");
+        self.check(pc);
+        result
     }
 
     /// Give a new object a resource identity when its type can reach a destroy.
@@ -1242,6 +1527,20 @@ fn failure_or_region(instruction: &I) -> bool {
 }
 
 /// Instructions executed by `ops::rt_exec`.
+/// Atomic operations compiled inline (see `Emitter::atomic`).
+fn atomic_access(callee: &okkama_sparrow::Function) -> Option<Intrinsic> {
+    let intrinsic = Intrinsic::resolve(&callee.intrinsic.as_ref()?.name)?;
+    matches!(
+        intrinsic,
+        Intrinsic::AtomicValue
+            | Intrinsic::AtomicReplace
+            | Intrinsic::AtomicClosed
+            | Intrinsic::AtomicClose
+            | Intrinsic::EventReady
+    )
+    .then_some(intrinsic)
+}
+
 fn generic(instruction: &I) -> bool {
     matches!(
         instruction,

@@ -9,7 +9,7 @@
 //! waiter that is no longer parked is being cancelled and is skipped.
 use crate::runtime::Runtime;
 use crate::tasks::{self, RESULT, RESUME};
-use crate::word::{Repr, Word};
+use crate::word::{Repr, UNBOUND, Word};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -22,7 +22,6 @@ pub const REFUSED: u64 = 3;
 
 #[derive(Debug)]
 pub enum State {
-    Atomic { value: Option<Word>, repr: Repr },
     /// Event, and Cancellation with its tokens.
     Event(Rc<RefCell<Event>>),
     /// Lock (one permit) and Semaphore.
@@ -53,6 +52,14 @@ pub struct Stream {
     pub aborting: bool,
     pub aborted: Option<Word>,
     pub abort_done: bool,
+}
+
+/// An Event object (a cell: `[initial, set, waiters]`) or the shared event of
+/// a Cancellation and its tokens.
+#[derive(Debug)]
+pub enum EventRef {
+    Cell(Word),
+    Shared(Rc<RefCell<Event>>),
 }
 
 #[derive(Debug, Default)]
@@ -99,7 +106,6 @@ pub struct Group {
 impl State {
     pub fn trace(&self, visit: &mut dyn FnMut(Word, Repr)) {
         match self {
-            Self::Atomic { value: Some(value), repr } => visit(*value, *repr),
             Self::Event(event) => event.borrow().waiters.iter().for_each(|&w| visit(w, Repr::Ref)),
             Self::Pool(pool) | Self::Grant { pool, .. } => {
                 pool.borrow().queue.iter().for_each(|&w| visit(w, Repr::Ref))
@@ -145,21 +151,84 @@ impl Runtime {
         true
     }
 
-    pub fn event_of(&self, object: Word) -> Option<Rc<RefCell<Event>>> {
+    /// The event behind an Event, Cancellation or token object.
+    pub fn event_of(&self, object: Word) -> Option<EventRef> {
+        let header = self.heap.header_of(object);
+        if crate::heap::kind(header) == crate::heap::OBJECT
+            && self.loaded.is_event(crate::heap::payload(header) as usize)
+        {
+            return Some(EventRef::Cell(object));
+        }
         match self.states.get(&object) {
-            Some(State::Event(event)) => Some(event.clone()),
+            Some(State::Event(event)) => Some(EventRef::Shared(event.clone())),
             _ => None,
         }
     }
 
-    pub fn event_set(&mut self, event: &Rc<RefCell<Event>>) {
-        let waiters = {
-            let mut event = event.borrow_mut();
-            if event.set {
-                return;
+    pub fn event_ready(&self, event: &EventRef) -> bool {
+        match event {
+            EventRef::Cell(object) => self.heap.field(*object, 1) != 0,
+            EventRef::Shared(event) => event.borrow().set,
+        }
+    }
+
+    pub fn event_wait(&mut self, event: &EventRef, frame: Word) {
+        match event {
+            EventRef::Cell(object) => {
+                let list = match self.heap.field(*object, 2) {
+                    UNBOUND => {
+                        let list = self.heap.allocate_payload(Box::new(tasks::Waiters::default()));
+                        self.heap.set_field(*object, 2, list);
+                        list
+                    }
+                    list => list,
+                };
+                let waiters = &mut self.heap.payload_mut::<tasks::Waiters>(list).expect("waiters").0;
+                if !waiters.contains(&frame) {
+                    waiters.push(frame);
+                }
             }
-            event.set = true;
-            std::mem::take(&mut event.waiters)
+            EventRef::Shared(event) => {
+                let mut event = event.borrow_mut();
+                if !event.waiters.contains(&frame) {
+                    event.waiters.push(frame);
+                }
+            }
+        }
+    }
+
+    pub fn event_unwait(&mut self, event: &EventRef, frame: Word) {
+        match event {
+            EventRef::Cell(object) => {
+                let list = self.heap.field(*object, 2);
+                if list != UNBOUND {
+                    self.heap.payload_mut::<tasks::Waiters>(list).expect("waiters").0.retain(|&w| w != frame);
+                }
+            }
+            EventRef::Shared(event) => event.borrow_mut().waiters.retain(|&w| w != frame),
+        }
+    }
+
+    pub fn event_set(&mut self, event: &EventRef) {
+        let waiters = match event {
+            EventRef::Cell(object) => {
+                if self.heap.field(*object, 1) != 0 {
+                    return;
+                }
+                self.heap.set_field(*object, 1, 1);
+                match self.heap.field(*object, 2) {
+                    UNBOUND => Vec::new(),
+                    list => std::mem::take(&mut self.heap.payload_mut::<tasks::Waiters>(list).expect("waiters").0),
+                }
+            }
+            EventRef::Shared(event) => {
+                let mut event = event.borrow_mut();
+                if event.set {
+                    return;
+                }
+                event.set = true;
+                std::mem::take(&mut event.waiters)
+            }
         };
         for waiter in waiters {
             self.complete_wait(waiter, COMPLETED, None);

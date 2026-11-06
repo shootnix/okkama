@@ -162,6 +162,7 @@ pub extern "C" fn rt_intrinsic(ctx: *mut Ctx, function: u64, arguments: *const W
     let count = (count as usize).min(words.len());
     words[..count].copy_from_slice(unsafe { std::slice::from_raw_parts(arguments, count) });
     let function = function as usize;
+    runtime.count(|r| format!("intrinsic {}", r.loaded.program.functions[function].symbol));
     let outcome = match runtime.intrinsics[function] {
         Some(Intrinsic::Ordering) => {
             let result = ordering(ctx, runtime, function, words[0]);
@@ -206,11 +207,6 @@ pub(crate) fn thrown(runtime: &mut Runtime, function: usize, index: usize, field
     FailureKind::Thrown(object)
 }
 
-fn param_kind(runtime: &Runtime, function: usize, index: usize) -> Kind {
-    let f = &runtime.loaded.program.functions[function];
-    runtime.loaded.functions[function].kinds[f.params[index].0 as usize]
-}
-
 fn boolean(value: bool) -> Outcome {
     Value(Word::from(value), Repr::Raw)
 }
@@ -219,35 +215,28 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
     use Intrinsic::*;
     let new = |runtime: &mut Runtime, fields: &[Word]| runtime.heap.object_new(related(runtime, function, 0), fields);
     match intrinsic {
-        AtomicNew => {
-            let object = new(runtime, &[]);
-            let repr = param_kind(runtime, function, 0).repr();
-            runtime.state_new(object, State::Atomic { value: Some(args[0]), repr });
-            Value(object, Repr::Ref)
+        // An Atomic is a heap cell: word 1 its value, word 2 closed (0 open, 1
+        // closed). Machine code reads and writes it inline (see `jit`); here
+        // are the calls through roles and the closed and equality cases.
+        AtomicNew => Value(new(runtime, &[args[0], 0]), Repr::Ref),
+        AtomicClosed => boolean(runtime.heap.field(args[0], 1) != 0),
+        AtomicClose => {
+            runtime.heap.set_field(args[0], 1, 1);
+            runtime.heap.set_field(args[0], 0, UNBOUND);
+            VOID
         }
-        AtomicValue | AtomicReplace | AtomicCompareReplace | AtomicClosed | AtomicClose => {
-            let Some(State::Atomic { value, .. }) = runtime.states.get_mut(&args[0]) else {
-                return program_failure("Invalid atomic state");
-            };
-            let current = *value;
-            match intrinsic {
-                AtomicClosed => return boolean(current.is_none()),
-                AtomicClose => {
-                    *value = None;
-                    return VOID;
-                }
-                _ => {}
-            }
-            let Some(current) = current else {
+        AtomicValue | AtomicReplace | AtomicCompareReplace => {
+            if runtime.heap.field(args[0], 1) != 0 {
                 return Fail(thrown(runtime, function, 0, &[]));
-            };
+            }
+            let current = runtime.heap.field(args[0], 0);
             match intrinsic {
                 AtomicValue => {
                     let repr = runtime.loaded.functions[function].result.map_or(Repr::Raw, Kind::repr);
                     Value(current, repr)
                 }
                 AtomicReplace => {
-                    *value = Some(args[1]);
+                    runtime.heap.set_field(args[0], 0, args[1]);
                     VOID
                 }
                 _ => {
@@ -258,9 +247,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
                         Err(message) => return Fatal(message),
                     };
                     if equal {
-                        if let Some(State::Atomic { value, .. }) = runtime.states.get_mut(&args[0]) {
-                            *value = Some(args[2]);
-                        }
+                        runtime.heap.set_field(args[0], 0, args[2]);
                     }
                     boolean(equal)
                 }
@@ -274,6 +261,9 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
         TokenNew => Value(new(runtime, &[]), Repr::Ref),
         Cancelling => {
             let Some(event) = runtime.event_of(args[0]) else {
+                return program_failure("Invalid cancellation capability");
+            };
+            let crate::primitives::EventRef::Shared(event) = event else {
                 return program_failure("Invalid cancellation capability");
             };
             let token = new(runtime, &[]);
@@ -291,7 +281,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             let Some(event) = runtime.event_of(args[0]) else {
                 return program_failure(if intrinsic == EventReady { "Invalid async event" } else { "Invalid cancellation capability" });
             };
-            let set = event.borrow().set;
+            let set = runtime.event_ready(&event);
             match intrinsic {
                 TokenCheck if set => Fail(FailureKind::Cancelled),
                 TokenCheck => VOID,
@@ -300,8 +290,8 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
         }
         EventNew | EventNewReady => {
             let ready = intrinsic == EventNewReady && args[0] != 0;
-            let object = new(runtime, &[Word::from(ready)]);
-            runtime.state_new(object, State::Event(Rc::new(RefCell::new(primitives::Event { set: ready, waiters: Vec::new() }))));
+            // An Event is a cell: `initial`, the set flag, its waiters.
+            let object = new(runtime, &[Word::from(ready), Word::from(ready), UNBOUND]);
             Value(object, Repr::Ref)
         }
         LockNew => {
@@ -674,6 +664,10 @@ fn ordering(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, source: Word)
             Some(Type::Str) => runtime.heap.text(a).cmp(runtime.heap.text(b)),
             _ => a.cmp(&b),
         });
+        if kind == Kind::Byte {
+            let bytes: Vec<u8> = items.iter().map(|&w| w as u8).collect();
+            return runtime.heap.allocate_bytes(&bytes);
+        }
         return runtime.heap.allocate_array(repr, &items);
     }
     let Some((role, slot, greater)) = comparing(runtime, element) else {

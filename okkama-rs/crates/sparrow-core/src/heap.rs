@@ -28,6 +28,13 @@ pub const CLOSURE: u8 = 6;
 pub const FRAME: u8 = 7;
 
 const MARK: u64 = 1 << 8;
+/// An array of bytes stored one per byte (`@byte`), not one per word.
+pub const PACKED: u64 = 1 << 11;
+/// Temporary mark of graph walks outside collection (`resource_graph`); always
+/// cleared before the walk returns.
+pub const VISITED: u64 = 1 << 12;
+/// A string whose bytes are all ASCII: lengths and slices are byte offsets.
+pub const ASCII: u64 = 1 << 13;
 const PAGE_WORDS: usize = 64 * 1024 / 8;
 /// Cell sizes in words, header included.
 pub const CLASSES: [usize; 12] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32];
@@ -218,6 +225,20 @@ impl Heap {
     pub fn set_field(&mut self, object: Word, index: usize, value: Word) {
         unsafe { *((object + 8 + index as Word * 8) as *mut u64) = value }
     }
+    /// Set the walk mark of `object`; false when it was already set.
+    pub fn visit(&mut self, object: Word) -> bool {
+        // SAFETY: `object` is a live heap object.
+        unsafe {
+            let header = &mut *(object as *mut u64);
+            let first = *header & VISITED == 0;
+            *header |= VISITED;
+            first
+        }
+    }
+    pub fn unvisit(&mut self, object: Word) {
+        // SAFETY: as in `visit`.
+        unsafe { *(object as *mut u64) &= !VISITED }
+    }
     pub fn header_of(&self, object: Word) -> u64 {
         unsafe { *(object as *const u64) }
     }
@@ -230,11 +251,26 @@ impl Heap {
         let string = self.allocate(words);
         // SAFETY: room for the header and `bytes` bytes.
         unsafe {
-            *(string as *mut u64) = header(STRING, Repr::Raw, bytes as u32);
+            *(string as *mut u64) =
+                header(STRING, Repr::Raw, bytes as u32) | if text.is_ascii() { ASCII } else { 0 };
             std::ptr::copy_nonoverlapping(text.as_ptr(), (string + 8) as *mut u8, bytes);
         }
         string
     }
+    pub fn is_ascii_text(&self, string: Word) -> bool {
+        self.header_of(string) & ASCII != 0
+    }
+
+    /// A new string of bytes `start..end` of `string` (char boundaries).
+    pub fn substring(&mut self, string: Word, start: usize, end: usize) -> Word {
+        let part = &self.text(string)[start..end];
+        let (pointer, length) = (part.as_ptr(), part.len());
+        // SAFETY: the source string stays where it is while the copy is
+        // allocated (allocation neither moves nor collects).
+        let part = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(pointer, length)) };
+        self.allocate_text(part)
+    }
+
     pub fn text(&self, string: Word) -> &str {
         let length = payload(self.header_of(string)) as usize;
         // SAFETY: strings are written once from valid UTF-8 and never mutated.
@@ -261,10 +297,58 @@ impl Heap {
         }
         array
     }
-    pub fn elements(&self, array: Word) -> &[Word] {
-        let length = payload(self.header_of(array)) as usize;
+    /// The elements as words; a byte array is widened (prefer [`Heap::bytes`]).
+    pub fn elements(&self, array: Word) -> std::borrow::Cow<'_, [Word]> {
+        let header = self.header_of(array);
+        let length = payload(header) as usize;
+        if header & PACKED != 0 {
+            return std::borrow::Cow::Owned(self.bytes(array).iter().map(|&b| Word::from(b)).collect());
+        }
         // SAFETY: arrays are immutable after construction.
-        unsafe { std::slice::from_raw_parts((array + 8) as *const u64, length) }
+        std::borrow::Cow::Borrowed(unsafe { std::slice::from_raw_parts((array + 8) as *const u64, length) })
+    }
+
+    /// A byte array (`@byte`): one byte per element after the header.
+    pub fn allocate_bytes(&mut self, bytes: &[u8]) -> Word {
+        let array = self.allocate(1 + bytes.len().div_ceil(8));
+        // SAFETY: room for the header and the bytes.
+        unsafe {
+            *(array as *mut u64) = header(ARRAY, Repr::Raw, bytes.len() as u32) | PACKED;
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), (array + 8) as *mut u8, bytes.len());
+        }
+        array
+    }
+
+    pub fn is_bytes(&self, array: Word) -> bool {
+        self.header_of(array) & PACKED != 0
+    }
+
+    /// The bytes of any `@byte` value: borrowed when packed, else narrowed
+    /// from its words (an empty array literal, for instance).
+    pub fn byte_view(&self, array: Word) -> std::borrow::Cow<'_, [u8]> {
+        if self.is_bytes(array) {
+            return std::borrow::Cow::Borrowed(self.bytes(array));
+        }
+        std::borrow::Cow::Owned(self.elements(array).iter().map(|&w| w as u8).collect())
+    }
+
+    /// A string with the bytes of byte array `array`, if they are UTF-8: one copy.
+    pub fn text_from_bytes(&mut self, array: Word) -> Option<Word> {
+        let bytes = self.bytes(array);
+        std::str::from_utf8(bytes).ok()?;
+        let (pointer, length) = (bytes.as_ptr(), bytes.len());
+        // SAFETY: the array stays where it is while the string is allocated
+        // (allocation neither moves nor collects), and it is valid UTF-8.
+        let text = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(pointer, length)) };
+        Some(self.allocate_text(text))
+    }
+
+    /// The bytes of a byte array.
+    pub fn bytes(&self, array: Word) -> &[u8] {
+        let header = self.header_of(array);
+        debug_assert!(header & PACKED != 0, "not a byte array");
+        // SAFETY: a packed array holds `length` bytes after its header.
+        unsafe { std::slice::from_raw_parts((array + 8) as *const u8, payload(header) as usize) }
     }
 
     // ---- integers ----

@@ -5,7 +5,7 @@ import "db/value" take DbValue,DbValueKind,ObservedDbValue,DbNativeValue;
 import "db/statement" take DbLimits,DbBoundaryLimit;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded;
-import "db/read" take RowValues,RowReader,DbColumnReader,DbMaybeReader,DbPresenceReader;
+import "db/read" take RowValues,RowReader,DbColumnReader,DbMaybeReader,DbPresenceReader,DbPage;
 import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal;
 
@@ -50,61 +50,85 @@ object DbRowCells {
     }
     values() is @native_db.DbCellState { values; }
 }
-// Validated native storage passed by built-in drivers.
+// Validated native storage passed by built-in drivers: owned cells, or one row
+// of a page whose width and byte limits the driver validated for the page.
 object DbRowData {
     has schema is DbRowSchema;
     has cells is @native_db.DbCellState;
+    has page is DbPage;
+    has base is int;
     DbRowData(schema is DbRowSchema,cells is @native_db.DbCellState) {
         confirm schema.size()==cells.size() else throw InvalidRow();
         confirm native_db.db_cells_bytes(cells)<=DbLimits().bytes() else throw DbBoundaryLimit("value bytes");
-        self.schema=schema;self.cells=cells;
+        self.schema=schema;self.cells=cells;page=DbPage();base=0;
+    }
+    DbRowData(schema is DbRowSchema,page is DbPage,row is int) {
+        confirm schema.size()==page.width() && page.width()>0 else throw InvalidRow();
+        self.schema=schema;let empty is @native_db.DbCellState=[];cells=empty;self.page=page;base=row*page.width();
     }
     schema() is DbRowSchema { schema; }
     cells() is @native_db.DbCellState { cells; }
+    page() is DbPage { page; }
+    base() is int { base; }
 }
 object Row does RowValues {
     has schema is DbRowSchema;
+    // Owned cells, or (width > 0) the row at `base` of a driver page.
     has values is @native_db.DbCellState;
+    has page is DbPage;
+    has base is int;
     Row(columns is Sequencing<Column>,values is Sequencing<DbValue>) {
         confirm columns.size()==values.size() else throw InvalidRow();
-        let limits=DbLimits();schema=DbRowSchema(columns,limits);self.values=DbRowCells(values,limits).values();
+        let limits=DbLimits();schema=DbRowSchema(columns,limits);self.values=DbRowCells(values,limits).values();page=DbPage();base=0;
     }
     Row(columns is Sequencing<Column>,values is Sequencing<DbValue>,limits is DbLimits) {
         confirm columns.size()==values.size() else throw InvalidRow();
-        schema=DbRowSchema(columns,limits);self.values=DbRowCells(values,limits).values();
+        schema=DbRowSchema(columns,limits);self.values=DbRowCells(values,limits).values();page=DbPage();base=0;
     }
-    Row(data is DbRowData) { schema=data.schema();values=data.cells(); }
-    size() is int { values.size(); }
+    Row(data is DbRowData) { schema=data.schema();values=data.cells();page=data.page();base=data.base(); }
+    size() is int { if page.width()>0 { page.width(); } else { values.size(); } }
     columns() is Sequencing<Column> { schema.columns(); }
     item(index is int) is DbValue {
-        confirm index>=0 && index<values.size() else throw InvalidRowIndex(index);
-        DbNativeValue(values[index]);
+        confirm index>=0 && index<self.size() else throw InvalidRowIndex(index);
+        DbNativeValue(self.cell(index));
     }
-    value(name is string) is DbValue { DbNativeValue(values[self.index(name)]); }
+    value(name is string) is DbValue { DbNativeValue(self.cell(self.index(name))); }
     int(name is string) is int {
-        let cell=values[self.index(name)];
-        // Native validation checks both the integer kind and its range.
-        if native_db.db_int_valid(cell) { native_db.db_int_value(cell); }
-        else { DbColumnReader(name,cell).int(); }
+        let at=self.index(name);
+        if page.width()>0 {
+            let i=base+at;
+            if page.kind(i)==2 { page.integer(i); } else { DbColumnReader(name,page,i).int(); }
+        } else {
+            let cell=values[at];
+            // Native validation checks both the integer kind and its range.
+            if native_db.db_int_valid(cell) { native_db.db_int_value(cell); }
+            else { DbColumnReader(name,cell).int(); }
+        }
     }
-    integer(name is string) is BigInt { DbColumnReader(name,values[self.index(name)]).integer(); }
-    decimal(name is string) is Decimal { DbColumnReader(name,values[self.index(name)]).decimal(); }
-    floating(name is string) is float { DbColumnReader(name,values[self.index(name)]).floating(); }
-    boolean(name is string) is bool { DbColumnReader(name,values[self.index(name)]).boolean(); }
-    flag(name is string) is bool { DbColumnReader(name,values[self.index(name)]).flag(); }
+    integer(name is string) is BigInt { self.reader(name).integer(); }
+    decimal(name is string) is Decimal { self.reader(name).decimal(); }
+    floating(name is string) is float { self.reader(name).floating(); }
+    boolean(name is string) is bool { self.reader(name).boolean(); }
+    flag(name is string) is bool { self.reader(name).flag(); }
     text(name is string) is string {
-        let cell=values[self.index(name)];
-        if native_db.db_kind(cell)==5 { native_db.db_text_value(cell); }
-        else { DbColumnReader(name,cell).text(); }
+        let at=self.index(name);
+        if page.width()>0 {
+            let i=base+at;
+            if page.kind(i)==5 { page.text(i); } else { DbColumnReader(name,page,i).text(); }
+        } else {
+            let cell=values[at];
+            if native_db.db_kind(cell)==5 { native_db.db_text_value(cell); }
+            else { DbColumnReader(name,cell).text(); }
+        }
     }
-    bytes(name is string) is @byte { DbColumnReader(name,values[self.index(name)]).bytes(); }
+    bytes(name is string) is @byte { self.reader(name).bytes(); }
 
-    maybe(name is string) is DbMaybeReader { DbMaybeReader(self.selected(name,values[self.index(name)])); }
+    maybe(name is string) is DbMaybeReader { DbMaybeReader(self.selected(name,self.index(name))); }
     presence(name is string) is DbPresenceReader {
         let at=schema.position(name);
         confirm at != -2 else throw AmbiguousColumn(name);
         if at == -1 { DbPresenceReader(Presence<DbColumnReader>.missing); }
-        else { self.selected(name,values[at]); }
+        else { self.selected(name,at); }
     }
     private:
     index(name is string) is int {
@@ -113,9 +137,17 @@ object Row does RowValues {
         confirm at != -2 else throw AmbiguousColumn(name);
         at;
     }
-    selected(name is string,cell is native_db.DbCellState) is DbPresenceReader {
-        let found is Presence<DbColumnReader> = if native_db.db_kind(cell)==0 { Presence.none; }
-            else { Presence.some(DbColumnReader(name,cell)); };
+    cell(at is int) is native_db.DbCellState { if page.width()>0 { page.cell(base+at); } else { values[at]; } }
+    reader(name is string) is DbColumnReader {
+        let at=self.index(name);
+        if page.width()>0 { DbColumnReader(name,page,base+at); } else { DbColumnReader(name,values[at]); }
+    }
+    selected(name is string,at is int) is DbPresenceReader {
+        let found is Presence<DbColumnReader> = if page.width()>0 {
+            if page.kind(base+at)==0 { Presence.none; } else { Presence.some(DbColumnReader(name,page,base+at)); }
+        } else {
+            if native_db.db_kind(values[at])==0 { Presence.none; } else { Presence.some(DbColumnReader(name,values[at])); }
+        };
         DbPresenceReader(found);
     }
 }

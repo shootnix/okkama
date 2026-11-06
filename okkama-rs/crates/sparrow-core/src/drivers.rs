@@ -189,16 +189,13 @@ fn intrinsic_step(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: u
                 return fail(runtime, FailureKind::Program(message.into()));
             };
             if deliver {
-                event.borrow_mut().waiters.retain(|&w| w != frame);
+                runtime.event_unwait(&event, frame);
                 return cancelled(runtime);
             }
-            if event.borrow().set {
+            if runtime.event_ready(&event) {
                 return Done(receiver);
             }
-            let mut event = event.borrow_mut();
-            if !event.waiters.contains(&frame) {
-                event.waiters.push(frame);
-            }
+            runtime.event_wait(&event, frame);
             Pending
         }
         LockGuard | SemaphorePermit => {
@@ -839,7 +836,7 @@ fn timeout_start(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: us
 /// An inert result word for a settled timer stand-in of `function`.
 fn timer_value(runtime: &Runtime, function: usize) -> Word {
     match runtime.loaded.functions[function].result {
-        Some(Kind::Float | Kind::Raw) => crate::word::UNBOUND_RAW,
+        Some(Kind::Float | Kind::Raw | Kind::Byte) => crate::word::UNBOUND_RAW,
         _ => UNBOUND,
     }
 }
@@ -932,8 +929,13 @@ fn collect_finish(runtime: &mut Runtime, frame: Word, function: usize) -> Step {
         let Some(okkama_sparrow::Type::Array(element)) = program.ty(items) else {
             return fail(runtime, FailureKind::Program("invalid collection result".into()));
         };
-        let repr = Kind::of(program, *element).repr();
-        let array = runtime.heap.allocate_array(repr, &values);
+        let kind = Kind::of(program, *element);
+        let array = if kind == Kind::Byte {
+            let bytes: Vec<u8> = values.iter().map(|&w| w as u8).collect();
+            runtime.heap.allocate_bytes(&bytes)
+        } else {
+            runtime.heap.allocate_array(kind.repr(), &values)
+        };
         return Done(runtime.heap.object_new(owner, &[array]));
     }
     match winner {

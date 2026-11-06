@@ -54,7 +54,11 @@ pub fn run_with(bytes: Vec<u8>, arguments: Vec<Vec<u8>>) -> Result<i64, Error> {
         if let Some(host) = &mut runtime.host {
             host.arguments = arguments;
         }
-        runtime.run_entry(STACK_BYTES)
+        let result = runtime.run_entry(STACK_BYTES);
+        if let Some(report) = runtime.stats_report() {
+            eprint!("{report}");
+        }
+        result
     })
 }
 
