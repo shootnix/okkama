@@ -1,0 +1,555 @@
+//! Runtime state shared with machine code, runtime helpers called from it, and
+//! root enumeration for the collector.
+//!
+//! Generated code receives a [`Ctx`] pointer. A failure sets `status` (and
+//! `failure`), and every caller checks it after each call or helper, so
+//! failures unwind through machine frames without Rust unwinding. Helpers that
+//! may allocate collect at their end when the heap asks for it; roots are the
+//! machine frames above the helper (found through frame records and Cranelift
+//! stack maps), runtime constants and the context.
+#![allow(unsafe_code)]
+
+use crate::Error;
+use crate::heap::{self, Heap, Integer, Payload};
+use crate::program::{Kind, Loaded};
+use crate::word::{Repr, UNBOUND, Word};
+use num_bigint::BigInt;
+use num_traits::{ToPrimitive, Zero};
+
+pub const OK: u64 = 0;
+/// A language failure is pending in `Ctx::failure`.
+pub const FAILED: u64 = 1;
+/// The engine stopped (unsupported construct, internal invariant).
+pub const FATAL: u64 = 2;
+
+/// Shared with machine code; offsets come from `offset_of!`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct Ctx {
+    pub status: u64,
+    pub interrupt: u64,
+    pub stack_limit: u64,
+    pub failure: Word,
+    pub runtime: *mut Runtime,
+    /// Frame pointer of the Rust function that entered machine code; the
+    /// collector's frame walk ends there.
+    pub entry_frame: u64,
+    /// Second result of helpers that return a flag (a found map value).
+    pub scratch: Word,
+}
+
+/// A language failure value: what failed, where it passed, what caused it.
+#[derive(Debug)]
+pub struct Failure {
+    pub kind: FailureKind,
+    /// (function, pc) of each activation it unwound through, innermost first.
+    pub trace: Vec<(u32, u32)>,
+    pub cause: Option<Word>,
+    pub secondary: Vec<Word>,
+    last_frame: Option<(u32, u64)>,
+}
+#[derive(Debug)]
+pub enum FailureKind {
+    Cancelled,
+    /// A `NativeFailure` object from a provider.
+    Native(Word),
+    Thrown(Word),
+    Program(String),
+    Panic(String),
+}
+impl Payload for Failure {
+    fn trace(&self, visit: &mut dyn FnMut(Word, Repr)) {
+        if let FailureKind::Thrown(value) | FailureKind::Native(value) = self.kind {
+            visit(value, Repr::Ref);
+        }
+        for &word in self.cause.iter().chain(&self.secondary) {
+            visit(word, Repr::Ref);
+        }
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct Runtime {
+    pub heap: Heap,
+    pub loaded: Loaded,
+    pub jit: crate::jit::Jit,
+    /// Code address per function; 0 until compiled on its first call.
+    pub code: Box<[u64]>,
+    /// Constants embedded in machine code; always roots.
+    pub constants: Vec<(Word, Repr)>,
+    /// Values held by Rust while machine code runs (entry arguments, results).
+    pub roots: Vec<(Word, Repr)>,
+    pub fatal: Option<String>,
+    pub resources: crate::failures::Resources,
+    /// Async frames ready to resume; spawned tasks; frames running on the
+    /// machine stack (innermost last). All are roots.
+    pub ready: std::collections::VecDeque<Word>,
+    pub spawned: Vec<Word>,
+    pub running: Vec<Word>,
+    /// Settled Futures so far (their completion order).
+    pub completions: u64,
+    /// Sleeping drivers by deadline; roots.
+    pub timers: Vec<(std::time::Instant, Word)>,
+    /// Async primitive state by owning object (see `primitives`).
+    pub states: crate::word::FastMap<Word, crate::primitives::State>,
+    /// Native provider of each function, resolved once.
+    pub natives: Vec<Option<okkama_runtime_abi::Native>>,
+    /// Intrinsic of each function, resolved once.
+    pub intrinsics: Vec<Option<crate::intrinsics::Intrinsic>>,
+    /// Native provider state; taken out while a provider runs.
+    pub(crate) host: Option<Box<crate::host::Heap>>,
+    pub io: crate::io::Io,
+}
+
+/// Frame pointer of the calling function's own frame record.
+macro_rules! frame_pointer {
+    () => {{
+        let frame: u64;
+        // SAFETY: reads the frame pointer register of the current function.
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            std::arch::asm!("mov {}, x29", out(reg) frame)
+        };
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            std::arch::asm!("mov {}, rbp", out(reg) frame)
+        };
+        frame
+    }};
+}
+
+impl Runtime {
+    pub fn new(loaded: Loaded) -> Result<Self, Error> {
+        let heap = Heap::new(loaded.layouts());
+        let functions = loaded.program.functions.len();
+        let resources = crate::failures::Resources::new(&loaded.program);
+        let intrinsics = loaded
+            .program
+            .functions
+            .iter()
+            .map(|f| f.intrinsic.as_ref().and_then(|i| crate::intrinsics::Intrinsic::resolve(&i.name)))
+            .collect();
+        Ok(Self {
+            resources,
+            ready: std::collections::VecDeque::new(),
+            spawned: Vec::new(),
+            running: Vec::new(),
+            completions: 0,
+            timers: Vec::new(),
+            states: crate::word::FastMap::default(),
+            natives: loaded
+                .program
+                .functions
+                .iter()
+                .map(|f| f.native.as_deref().and_then(okkama_runtime_abi::Native::resolve))
+                .collect(),
+            intrinsics,
+            host: Some(Box::new(crate::host::Heap::new(&loaded.program))),
+            io: crate::io::Io::default(),
+            heap,
+            jit: crate::jit::Jit::new()?,
+            code: vec![0; functions].into_boxed_slice(),
+            loaded,
+            constants: Vec::new(),
+            roots: Vec::new(),
+            fatal: None,
+        })
+    }
+
+    /// Collect when the heap asks for it. `frame` is the frame pointer of a
+    /// runtime helper called directly from machine code; `extra` are words
+    /// the helper still holds.
+    pub fn safepoint(&mut self, frame: u64, ctx: &Ctx, extra: &[(Word, Repr)]) {
+        if !self.heap.needs_collection() {
+            return;
+        }
+        let jit = &self.jit;
+        let constants = &self.constants;
+        let roots = &self.roots;
+        let tasks: Vec<Word> = self
+            .ready
+            .iter()
+            .chain(&self.spawned)
+            .chain(&self.running)
+            .chain(self.timers.iter().map(|(_, frame)| frame))
+            .chain(self.io.requests.keys())
+            .copied()
+            .collect();
+        let states = &self.states;
+        self.heap.collect(|visit| {
+            for state in states.values() {
+                state.trace(visit);
+            }
+            // SAFETY: frame records above a helper called from machine code
+            // lead through JIT frames to the Rust entry.
+            unsafe { jit.frame_roots(frame, ctx.entry_frame, visit) };
+            for &(word, repr) in constants.iter().chain(roots).chain(extra) {
+                visit(word, repr);
+            }
+            visit(ctx.failure, Repr::Ref);
+            for &task in &tasks {
+                visit(task, Repr::Ref);
+            }
+        });
+        let released = self.heap.take_released();
+        self.resources.forget(&released);
+        for object in &released {
+            self.states.remove(object);
+        }
+        if let Some(host) = &mut self.host {
+            host.released(&released);
+        }
+    }
+
+    pub fn failure_new(&mut self, kind: FailureKind) -> Word {
+        self.heap.allocate_payload(Box::new(Failure {
+            kind,
+            trace: Vec::new(),
+            cause: None,
+            secondary: Vec::new(),
+            last_frame: None,
+        }))
+    }
+
+    pub fn failure(&self, word: Word) -> Option<&Failure> {
+        self.heap.payload::<Failure>(word)
+    }
+
+    fn integer_value(&self, word: Word) -> BigInt {
+        match self.heap.integer(word) {
+            Integer::Small(n) => BigInt::from(n),
+            Integer::Big(n) => n.clone(),
+        }
+    }
+}
+
+// ---- helpers called from machine code ----
+//
+// SAFETY (all helpers): `ctx` is the context the generated code was entered
+// with; its runtime pointer is valid and not otherwise borrowed while machine
+// code runs.
+
+unsafe fn runtime<'a>(ctx: *mut Ctx) -> (&'a mut Ctx, &'a mut Runtime) {
+    let ctx = unsafe { &mut *ctx };
+    let runtime = unsafe { &mut *ctx.runtime };
+    (ctx, runtime)
+}
+
+fn fail(ctx: &mut Ctx, runtime: &mut Runtime, kind: FailureKind) -> Word {
+    ctx.failure = runtime.failure_new(kind);
+    ctx.status = FAILED;
+    0
+}
+
+pub(crate) fn fatal(ctx: &mut Ctx, runtime: &mut Runtime, message: String) -> Word {
+    if runtime.fatal.is_none() {
+        runtime.fatal = Some(message);
+    }
+    ctx.status = FATAL;
+    0
+}
+
+/// Slow path of inline allocation: collect if due, then a cell of `words`.
+#[inline(never)]
+pub extern "C" fn rt_allocate(ctx: *mut Ctx, words: u64) -> Word {
+    let frame = frame_pointer!();
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    runtime.safepoint(frame, ctx, &[]);
+    runtime.heap.allocate(words as usize)
+}
+
+/// Compile a function on its first call; returns its code address.
+#[inline(never)]
+pub extern "C" fn rt_compile(ctx: *mut Ctx, function: u64) -> u64 {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    match crate::jit::compile(runtime, function as usize) {
+        Ok(code) => code,
+        Err(error) => fatal(ctx, runtime, error.0),
+    }
+}
+
+pub const INT_ADD: u64 = 0;
+pub const INT_SUB: u64 = 1;
+pub const INT_MUL: u64 = 2;
+pub const INT_MOD: u64 = 3;
+
+/// Exact integer arithmetic beyond the inline fast path.
+#[inline(never)]
+pub extern "C" fn rt_int(ctx: *mut Ctx, op: u64, left: Word, right: Word) -> Word {
+    let frame = frame_pointer!();
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    // Borrow BigInt operands instead of cloning them; inline ones are widened.
+    fn widen(n: Integer<'_>) -> std::borrow::Cow<'_, BigInt> {
+        match n {
+            Integer::Small(n) => std::borrow::Cow::Owned(BigInt::from(n)),
+            Integer::Big(n) => std::borrow::Cow::Borrowed(n),
+        }
+    }
+    let (l, r) = (widen(runtime.heap.integer(left)), widen(runtime.heap.integer(right)));
+    let result = match op {
+        INT_ADD => &*l + &*r,
+        INT_SUB => &*l - &*r,
+        INT_MUL => &*l * &*r,
+        _ => {
+            if r.is_zero() {
+                return fail(ctx, runtime, FailureKind::Program("Integer division by zero".into()));
+            }
+            &*l % &*r
+        }
+    };
+    let word = runtime.heap.big(result);
+    if runtime.heap.needs_collection() {
+        runtime.safepoint(frame, ctx, &[(word, Repr::Int)]);
+    }
+    word
+}
+
+/// Integer order beyond two inline integers: -1, 0 or 1.
+#[inline(never)]
+pub extern "C" fn rt_int_order(ctx: *mut Ctx, left: Word, right: Word) -> i64 {
+    let (_, runtime) = unsafe { runtime(ctx) };
+    match runtime.integer_value(left).cmp(&runtime.integer_value(right)) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+#[inline(never)]
+pub extern "C" fn rt_concat(ctx: *mut Ctx, left: Word, right: Word) -> Word {
+    let frame = frame_pointer!();
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    let mut text = String::with_capacity(
+        runtime.heap.text(left).len() + runtime.heap.text(right).len(),
+    );
+    text.push_str(runtime.heap.text(left));
+    text.push_str(runtime.heap.text(right));
+    let word = runtime.heap.allocate_text(&text);
+    runtime.safepoint(frame, ctx, &[(word, Repr::Ref)]);
+    word
+}
+
+/// Array from `count` words at `elements` (a stack slot of the caller).
+#[inline(never)]
+pub extern "C" fn rt_array(ctx: *mut Ctx, repr: u64, elements: *const Word, count: u64) -> Word {
+    let frame = frame_pointer!();
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    let elements = unsafe { std::slice::from_raw_parts(elements, count as usize) };
+    let repr = Repr::from_bits(repr);
+    let word = runtime.heap.allocate_array(repr, elements);
+    runtime.safepoint(frame, ctx, &[(word, Repr::Ref)]);
+    word
+}
+
+/// A program failure with a constant message string.
+#[inline(never)]
+pub extern "C" fn rt_trap(ctx: *mut Ctx, message: Word) -> Word {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    let message = runtime.heap.text(message).to_owned();
+    fail(ctx, runtime, FailureKind::Program(message))
+}
+
+/// `throw value`.
+#[inline(never)]
+pub extern "C" fn rt_throw(ctx: *mut Ctx, value: Word) -> Word {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    let header = runtime.heap.header_of(value);
+    let native = heap::kind(header) == heap::OBJECT
+        && runtime.loaded.program.objects[heap::payload(header) as usize].is_native_failure();
+    fail(ctx, runtime, if native { FailureKind::Native(value) } else { FailureKind::Thrown(value) })
+}
+
+/// Record that the pending failure reaches `function` at `pc` in the
+/// activation with frame pointer `frame`; each activation is recorded once, at
+/// the pc where the failure first reached it (a rethrow does not add it again).
+#[inline(never)]
+pub extern "C" fn rt_trace(ctx: *mut Ctx, function: u64, pc: u64, frame: u64) {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    let failure = ctx.failure;
+    if let Some(failure) = runtime.heap.payload_mut::<Failure>(failure) {
+        if failure.last_frame != Some((function as u32, frame)) {
+            failure.trace.push((function as u32, pc as u32));
+            failure.last_frame = Some((function as u32, frame));
+        }
+    }
+}
+
+/// Call a native provider with `count` argument words at `arguments`.
+#[inline(never)]
+pub extern "C" fn rt_native(ctx: *mut Ctx, function: u64, arguments: *const Word, count: u64) -> Word {
+    let frame = frame_pointer!();
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    // SAFETY: the caller's argument slot outlives the call; natives do not collect.
+    let arguments = unsafe { std::slice::from_raw_parts(arguments, count as usize) };
+    match crate::natives::call(runtime, function as usize, arguments) {
+        Ok((word, repr)) => {
+            runtime.safepoint(frame, ctx, &[(word, repr)]);
+            word
+        }
+        Err(crate::natives::Refusal::Failure(kind)) => fail(ctx, runtime, kind),
+        Err(crate::natives::Refusal::Raise(failure)) => {
+            ctx.failure = failure;
+            ctx.status = FAILED;
+            0
+        }
+        Err(crate::natives::Refusal::Fatal(message)) => fatal(ctx, runtime, message),
+    }
+}
+
+impl Runtime {
+    /// Run the synchronous entry function; returns its integer result.
+    pub fn run_entry(self: &mut Box<Self>, stack: u64) -> Result<i64, Error> {
+        let entry = self
+            .loaded
+            .program
+            .entry
+            .ok_or_else(|| Error("SPB has no entry".into()))?
+            .0 as usize;
+        let result = self.run_function(entry, stack)?;
+        match self.heap.integer(result) {
+            Integer::Small(n) => Ok(n),
+            Integer::Big(n) => n.to_i64().ok_or_else(|| Error("entry result outside 0..255".into())),
+        }
+    }
+
+    /// Run a parameterless function (sync or async) to completion; its
+    /// result word, or the report of its failure.
+    pub fn run_function(self: &mut Box<Self>, entry: usize, stack: u64) -> Result<Word, Error> {
+        let function = &self.loaded.program.functions[entry];
+        if !function.params.is_empty() {
+            return Err(Error("parameterized entry is not supported".into()));
+        }
+        let asynchronous = function.is_async;
+        let marker = 0u8;
+        let mut ctx = Ctx {
+            status: OK,
+            interrupt: 0,
+            // R2: the VM thread has a large stack; keep 1 MiB of headroom.
+            stack_limit: (&marker as *const u8 as u64).saturating_sub(stack.saturating_sub(1 << 20)),
+            failure: UNBOUND,
+            runtime: &mut **self,
+            entry_frame: frame_pointer!(),
+            scratch: UNBOUND,
+        };
+        let result = if asynchronous {
+            // The root Future, its task tree, then shutdown of spawned tasks.
+            let root = self.future_new(entry, &[]);
+            self.roots.push((root, Repr::Ref));
+            unsafe { *((root + crate::tasks::STATE) as *mut u64) = crate::tasks::RUNNING };
+            self.run_body(&mut ctx, root);
+            if ctx.status == OK {
+                self.schedule(&mut ctx, root);
+            }
+            if ctx.status == OK {
+                if let Some(failure) = self.shutdown(&mut ctx) {
+                    let message = self.describe(&mut ctx, failure);
+                    return Err(Error(message));
+                }
+            }
+            if ctx.status == OK {
+                let state = unsafe { *((root + crate::tasks::STATE) as *const u64) };
+                if state == crate::tasks::FAILURE_STATE {
+                    ctx.failure = unsafe { *((root + crate::tasks::FAILURE) as *const u64) };
+                    ctx.status = FAILED;
+                }
+            }
+            unsafe { *((root + crate::tasks::RESULT) as *const u64) }
+        } else {
+            let code = rt_compile(&mut ctx, entry as u64);
+            if ctx.status != OK {
+                return Err(Error(self.fatal.clone().unwrap_or_default()));
+            }
+            // SAFETY: compiled functions take the context and return one word.
+            let entry: extern "C" fn(*mut Ctx) -> Word = unsafe { std::mem::transmute(code) };
+            entry(&mut ctx)
+        };
+        match ctx.status {
+            OK => Ok(result),
+            FAILED => {
+                ctx.status = OK;
+                let failure = ctx.failure;
+                Err(Error(self.describe(&mut ctx, failure)))
+            }
+            _ => Err(Error(self.fatal.clone().unwrap_or_else(|| "engine failure".into()))),
+        }
+    }
+}
+
+pub(crate) use frame_pointer;
+
+/// Representation of an argument or result kind for root reporting.
+pub fn repr_of(kind: Option<Kind>) -> Repr {
+    kind.map_or(Repr::Raw, Kind::repr)
+}
+
+
+/// Float operation whose inline result was not finite (or a zero divisor).
+#[inline(never)]
+pub extern "C" fn rt_float(ctx: *mut Ctx, op: u64, left: u64, right: u64) -> u64 {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    match crate::scalar::float_binary(op, f64::from_bits(left), f64::from_bits(right)) {
+        Ok(value) => value.to_bits(),
+        Err(message) => fail(ctx, runtime, FailureKind::Program(message.into())),
+    }
+}
+
+/// A closure of `function` capturing `count` words at `captures`.
+#[inline(never)]
+pub extern "C" fn rt_closure(ctx: *mut Ctx, function: u64, captures: *const Word, count: u64) -> Word {
+    let frame = frame_pointer!();
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    let captures = unsafe { std::slice::from_raw_parts(captures, count as usize) };
+    let closure = runtime.heap.closure_new(function as u32, captures);
+    runtime.safepoint(frame, ctx, &[(closure, Repr::Ref)]);
+    closure
+}
+
+/// Call a closure with `count` argument words: its captures fill the leading
+/// parameters of its function.
+#[inline(never)]
+pub extern "C" fn rt_call_closure(ctx: *mut Ctx, closure: Word, arguments: *const Word, count: u64) -> Word {
+    let (ctx_ref, runtime) = unsafe { runtime(ctx) };
+    let function = heap::payload(runtime.heap.header_of(closure)) as usize;
+    let params = runtime.loaded.program.functions[function].params.len();
+    let captured = params - count as usize;
+    let mut words = [UNBOUND; 8];
+    if params > words.len() {
+        return fatal(ctx_ref, runtime, "closure with more than 8 parameters".into());
+    }
+    for (i, word) in words.iter_mut().enumerate().take(captured) {
+        *word = runtime.heap.field(closure, i);
+    }
+    words[captured..params].copy_from_slice(unsafe { std::slice::from_raw_parts(arguments, count as usize) });
+    if runtime.loaded.program.functions[function].is_async {
+        // Calling an async action makes its cold Future.
+        return runtime.future_new(function, &words[..params]);
+    }
+    let code = match runtime.code[function] {
+        0 => match crate::jit::compile(runtime, function) {
+            Ok(code) => code,
+            Err(error) => return fatal(ctx_ref, runtime, error.0),
+        },
+        code => code,
+    };
+    // SAFETY: compiled functions take the context and `params` words.
+    unsafe { crate::jit::invoke(code, ctx, &words[..params]) }
+}
+
+/// Look a key up: 1 and the value in `scratch` when present, else 0.
+#[inline(never)]
+pub extern "C" fn rt_map_find(ctx: *mut Ctx, function: u64, pc: u64, map: Word, key: Word) -> u64 {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    match crate::ops::map_find(runtime, function as usize, pc as usize, map, key) {
+        Some(value) => {
+            ctx.scratch = value;
+            1
+        }
+        None => 0,
+    }
+}

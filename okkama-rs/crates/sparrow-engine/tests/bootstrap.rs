@@ -98,7 +98,7 @@ fn standalone_cli_executes_spb_and_preserves_exit_status() {
         std::env::temp_dir().join(format!("sparrow-next-bootstrap-{}.spb", std::process::id()));
     std::fs::write(&path, okkama_sparrow::encode(&program("42")).unwrap()).unwrap();
     for args in [vec![], vec!["--cold"]] {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_sparrow-next"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_sparrow-engine"))
             .args(args)
             .arg(&path)
             .output()

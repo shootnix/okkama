@@ -40,9 +40,9 @@ object YearMonth does Comparing<YearMonth> {
 
     YearMonth(year is int, month is int) {
         confirm year >= 1 && year <= 9999
-            else throw InvalidYearMonth("year must be within 1..9999");
+            else throw InvalidYearMonth.because("year must be within 1..9999");
         confirm month >= 1 && month <= 12
-            else throw InvalidYearMonth("month must be within 1..12");
+            else throw InvalidYearMonth.because("month must be within 1..12");
         year_value = year;
         month_value = month;
     }
@@ -86,7 +86,7 @@ object MonthDates does Sequencing<Date>, Iterating<Date>, Sizing {
 
     item(index is int) is Date {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("month date index is outside the sequence");
+            else throw OutOfRange.because("month date index is outside the sequence");
         Date(
             year: origin.year(),
             month: origin.month(),
@@ -109,7 +109,7 @@ object MonthDateCursor does Cursor<Date> {
 
     MonthDateCursor(origin is MonthDates, position is int) {
         confirm position >= 0 && position <= origin.size()
-            else throw OutOfRange("month date cursor position is invalid");
+            else throw OutOfRange.because("month date cursor position is invalid");
         self.origin = origin;
         self.position = position;
     }
@@ -135,7 +135,7 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
     CalendarWeek(start is Date) {
         self.first_date = start;
         confirm (DateOrdinal(origin: start).value()) <= 3652053
-            else throw InvalidCalendarMonth(
+            else throw InvalidCalendarMonth.because(
                 "calendar week leaves the supported date range"
             );
     }
@@ -150,7 +150,7 @@ object CalendarWeek does Sequencing<Date>, Iterating<Date>, Sizing {
 
     item(index is int) is Date {
         confirm index >= 0 && index < 7
-            else throw OutOfRange("calendar week index is outside the sequence");
+            else throw OutOfRange.because("calendar week index is outside the sequence");
         OrdinalDate(
             origin: (DateOrdinal(origin: first_date).value()) + index,
         ).value();
@@ -171,7 +171,7 @@ object CalendarWeekCursor does Cursor<Date> {
 
     CalendarWeekCursor(origin is CalendarWeek, position is int) {
         confirm position >= 0 && position <= 7
-            else throw OutOfRange("calendar week cursor position is invalid");
+            else throw OutOfRange.because("calendar week cursor position is invalid");
         self.origin = origin;
         self.position = position;
     }
@@ -221,7 +221,7 @@ object CalendarMonth does
 
     item(index is int) is Sequencing<Date> {
         confirm index >= 0 && index < self.size()
-            else throw OutOfRange("calendar month row is outside the sequence");
+            else throw OutOfRange.because("calendar month row is outside the sequence");
         let layout = CalendarMonthLayout(
             origin: origin,
             first_weekday: first_weekday,
@@ -248,7 +248,7 @@ object CalendarMonthCursor does Cursor<Sequencing<Date>> {
 
     CalendarMonthCursor(origin is CalendarMonth, position is int) {
         confirm position >= 0 && position <= origin.size()
-            else throw OutOfRange("calendar month cursor position is invalid");
+            else throw OutOfRange.because("calendar month cursor position is invalid");
         self.origin = origin;
         self.position = position;
     }
@@ -283,7 +283,7 @@ object CalendarMonthLayout {
         ) % 7;
         let result is int = (DateOrdinal(origin: first).value()) - lead;
         confirm result >= 1 && result + self.size() * 7 - 1 <= 3652059
-            else throw InvalidCalendarMonth(
+            else throw InvalidCalendarMonth.because(
                 "calendar month leaves the supported date range"
             );
         result;
@@ -306,7 +306,7 @@ object IsoWeek does Comparing<IsoWeek> {
 
     IsoWeek(year is int, week is int) {
         confirm year >= 1 && year <= 9999
-            else throw InvalidIsoWeek("ISO week year must be within 1..9999");
+            else throw InvalidIsoWeek.because("ISO week year must be within 1..9999");
         let january_first = Date(year: year, month: 1, day: 1);
         let january_index is int = WeekdayIndex(
             origin: january_first.weekday(),
@@ -315,14 +315,14 @@ object IsoWeek does Comparing<IsoWeek> {
         let maximum is int = if january_index == 3
             || (january_index == 2 && leap) { 53; } else { 52; };
         confirm week >= 1 && week <= maximum
-            else throw InvalidIsoWeek("ISO week is outside its week-year");
+            else throw InvalidIsoWeek.because("ISO week is outside its week-year");
 
         let january_fourth = Date(year: year, month: 1, day: 4);
         let first_ordinal is int = (DateOrdinal(origin: january_fourth).value())
             - (WeekdayIndex(origin: january_fourth.weekday()).value())
             + (week - 1) * 7;
         confirm first_ordinal >= 1 && first_ordinal + 6 <= 3652059
-            else throw InvalidIsoWeek(
+            else throw InvalidIsoWeek.because(
                 "ISO week leaves the supported date range"
             );
 
@@ -368,7 +368,7 @@ object LeapYear {
 
     LeapYear(year is int) {
         confirm year >= 1 && year <= 9999
-            else throw InvalidYearMonth("year must be within 1..9999");
+            else throw InvalidYearMonth.because("year must be within 1..9999");
         origin = year;
     }
 
@@ -395,38 +395,6 @@ object WeekdayIndex {
     }
 }
 
-object InvalidYearMonth does Error {
-    has message is string;
-
-    InvalidYearMonth(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
-
-object InvalidCalendarMonth does Error {
-    has message is string;
-
-    InvalidCalendarMonth(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
-
-object InvalidIsoWeek does Error {
-    has message is string;
-
-    InvalidIsoWeek(message is string) {
-        self.message = message;
-    }
-
-    text() is string {
-        message;
-    }
-}
+enum InvalidYearMonth is Error = (because(reason is string));
+enum InvalidCalendarMonth is Error = (because(reason is string));
+enum InvalidIsoWeek is Error = (because(reason is string));

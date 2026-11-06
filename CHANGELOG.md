@@ -165,6 +165,27 @@ Planned as 0.3.3: wave A of the [hardening roadmap](docs/roadmap/hardening.md).
   runtime: a collector that rescanned large post-peak arenas, a system call on
   every 4096-instruction slice, and per-task scans of the whole program were removed.
 
+- New Sparrow execution core (`crates/sparrow-core`, in progress): synchronous
+  functions compiled whole with direct calls, one-word values, a precise collector
+  on Cranelift stack maps, roles through dispatch tables, errors and `destroy`
+  regions. It runs the language-core conformance programs (L01–L07) with the same
+  output as the previous Sparrow and is 1.5–7× faster on most benchmarks. Async is
+  stackless: the heap frame of an async call is its Future, `spawn` starts eagerly,
+  cancellation reaches the innermost waiting frame. The async primitives run on it
+  (Atomic, Event, Cancellation, Lock, Semaphore, Barrier, Channel, FutureGroup and
+  FutureScope, AllFutures/Raced/FirstSuccessful, FutureCompletions, Before/Within,
+  timers), and the async conformance programs (L08) give the same output as the
+  previous Sparrow; a spawn-heavy benchmark runs in 0.3 s instead of 10.5 s. All
+  native providers of the previous engine (JSON, regex, encodings, numbers, crypto,
+  SQLite and DB cells, files, environment, input, processes, networking) run on it,
+  as do `--test` and the test assertions.
+
+### Changed
+
+- `sparrow-next` now runs on the new core. The previous engine's binary is renamed
+  `sparrow-engine` and stays until its removal. Not yet available on the new core:
+  process workers (`--worker`), `--stats` and fake storage.
+
 ### Removed
 
 - **Objects can no longer do `Error`** (error handling phase 2, compiler part): errors

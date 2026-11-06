@@ -98,7 +98,7 @@ object CsvRecord {
     CsvRecord(:fields);
 
     string() is string {
-        confirm fields.size() > 0 else throw EmptyCsvRecord();
+        confirm fields.size() > 0 else throw EmptyCsvRecord.no_fields;
         let encoded is @string = fields.map() -> field {
             CsvField(origin: field).string();
         };
@@ -131,10 +131,14 @@ object CsvField {
     }
 }
 
+enum EmptyCsvRecord is Error = (no_fields);
+
+/*
 object EmptyCsvRecord does Error {
     EmptyCsvRecord();
     text() is string { "CSV record must contain at least one field"; }
 }
+*/
 
 // Text is retained at construction; each cursor validates the complete document.
 object CsvRows does Iterating<@string> {
@@ -415,7 +419,7 @@ object CsvPrintRecord {
         confirm allowance >= 0 else throw InvalidCsvLimits();
     }
     string() is string {
-        confirm fields.size() > 0 else throw EmptyCsvRecord();
+        confirm fields.size() > 0 else throw EmptyCsvRecord.no_fields;
         confirm allowance >= 2 else throw CsvLimitExceeded(CsvLimit.output);
         // One initial scalar plus one per field covers n-1 commas and CRLF.
         let required = fields.reduce(1) -> used, field {
@@ -468,7 +472,7 @@ object CsvDialect {
     }
     record(fields is @string, allowance is int) is string {
         confirm allowance >= 0 else throw InvalidCsvLimits();
-        confirm fields.size() > 0 else throw EmptyCsvRecord();
+        confirm fields.size() > 0 else throw EmptyCsvRecord.no_fields;
         confirm allowance >= line_ending.length() else throw CsvLimitExceeded(CsvLimit.output);
         let required = fields.reduce(line_ending.length() - 1) -> used, field {
             let remaining = allowance - used;

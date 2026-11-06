@@ -37,7 +37,7 @@ fn parse_arguments(
     if worker_expected && !worker {
         return Err("worker launch rejected: --worker must precede FILE.spb; refusing to run main");
     }
-    let path = path.ok_or("usage: sparrow-next [--cold] [--stats] [--test] [--worker] FILE.spb")?;
+    let path = path.ok_or("usage: sparrow-engine [--cold] [--stats] [--test] [--worker] FILE.spb")?;
     Ok(Options {
         mode,
         path,
@@ -79,7 +79,7 @@ fn main() -> std::process::ExitCode {
     ) {
         Ok(options) => options,
         Err(error) => {
-            eprintln!("sparrow-next: {error}");
+            eprintln!("sparrow-engine: {error}");
             return 2.into();
         }
     };
@@ -88,7 +88,7 @@ fn main() -> std::process::ExitCode {
     }
     let mut worker_command = vec![
         std::env::current_exe()
-            .unwrap_or_else(|_| std::path::PathBuf::from("sparrow-next"))
+            .unwrap_or_else(|_| std::path::PathBuf::from("sparrow-engine"))
             .into_os_string(),
     ];
     if matches!(mode, Mode::Cold) {
@@ -119,7 +119,7 @@ fn main() -> std::process::ExitCode {
         return match result {
             Ok(()) => 0.into(),
             Err(error) => {
-                eprintln!("sparrow-next worker: {error}");
+                eprintln!("sparrow-engine worker: {error}");
                 1.into()
             }
         };
@@ -141,7 +141,7 @@ fn main() -> std::process::ExitCode {
             Ok(true) => 0.into(),
             Ok(false) => 1.into(),
             Err(error) => {
-                eprintln!("sparrow-next: {error}");
+                eprintln!("sparrow-engine: {error}");
                 1.into()
             }
         };
@@ -170,7 +170,7 @@ fn main() -> std::process::ExitCode {
     match result {
         Ok(code) => code.into(),
         Err(error) => {
-            eprintln!("sparrow-next: {error}");
+            eprintln!("sparrow-engine: {error}");
             1.into()
         }
     }

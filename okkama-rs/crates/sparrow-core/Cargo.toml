@@ -10,6 +10,33 @@ publish.workspace = true
 [dependencies]
 okkama-sparrow = { path = "../okkama-sparrow" }
 okkama-runtime-abi = { path = "../okkama-runtime-abi" }
+okkama-native = { path = "../okkama-native" }
+zeroize = "1.9.1"
+miniz_oxide = "0.8"
+unicode-normalization = "0.1"
+tokio = { version = "1.54.1", features = ["macros", "rt", "time", "net", "sync", "io-util", "process"] }
+rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
+aliasable = "0.1"
+fallible-iterator = "0.3"
+dns-lookup = "2"
+fancy-regex = "0.14"
+socket2 = { version = "0.6", features = ["all"] }
+libc = "0.2"
+nix = { version = "0.29", features = ["fs"] }
+rustix = { version = "1", features = ["fs", "process"] }
+num-bigint = "0.4"
+num-traits = "0.2"
+num-rational = "0.4.2"
+num-integer = "0.1"
+cranelift-codegen = "0.137"
+cranelift-frontend = "0.137"
+cranelift-jit = "0.137"
+cranelift-module = "0.137"
+cranelift-native = "0.137"
+
+[[bin]]
+name = "sparrow-next"
+path = "src/main.rs"
 
 [lints.rust]
 # Machine code, frame walking and the heap need unsafe; each module that uses

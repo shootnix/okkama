@@ -18,7 +18,7 @@ fn process_workers_transfer_bound_fields_arrays_and_marker_text_and_reap_on_canc
         ));
         std::fs::write(&path, okkama_sparrow::encode(&program).unwrap()).unwrap();
         for mode in [Mode::Cold, Mode::Jit] {
-            let mut command = vec![env!("CARGO_BIN_EXE_sparrow-next").into()];
+            let mut command = vec![env!("CARGO_BIN_EXE_sparrow-engine").into()];
             if matches!(mode, Mode::Cold) {
                 command.push("--cold".into());
             }
