@@ -35,9 +35,9 @@ fn engine() -> Result<String, String> {
     // Как `okkama run` и адаптер: IR по умолчанию, Sparrow и JVM — явно.
     let engine = std::env::var("OCS_RUST_ENGINE").unwrap_or_else(|_| "ir".into());
     match engine.as_str() {
-        "ir" | "sparrow" | "jvm" => Ok(engine),
+        "ir" | "sparrow" | "sparrow-origin" | "jvm" => Ok(engine),
         _ => Err(format!(
-            "unknown OCS_RUST_ENGINE `{engine}`; expected ir, sparrow or jvm"
+            "unknown OCS_RUST_ENGINE `{engine}`; expected ir, sparrow, sparrow-origin or jvm"
         )),
     }
 }
@@ -485,8 +485,8 @@ fn run_native(
             let absolute = std::fs::canonicalize(source).unwrap_or_else(|_| source.into());
             command.push(absolute.display().to_string());
         }
-        if engine == "sparrow" { sparrow_vm::set_worker_command(command); }
-        else { okkama_runtime::set_worker_command(command); }
+        if engine == "sparrow-origin" { sparrow_vm::set_worker_command(command); }
+        else if engine == "ir" { okkama_runtime::set_worker_command(command); }
     }
     if let Some(cwd) = request.get("cwd").and_then(Json::as_str) {
         if let Err(error) = std::env::set_current_dir(cwd) {
@@ -502,6 +502,33 @@ fn run_native(
         } else {
             okkama_runtime::execute_with_arguments(module, args)
         }
+    } else if engine == "sparrow" {
+        let program = match codegen::sparrow::generate(module) {
+            Ok(program) => program,
+            Err(error) => return Reply::unsupported(mode, "check", error.to_string()),
+        };
+        let bytes = match okkama_sparrow::encode(&program) {
+            Ok(bytes) => bytes,
+            Err(error) => return Reply::internal(mode, error.to_string()),
+        };
+        if mode == "test" {
+            // The report goes to stdout; exit status 0 when every test passed.
+            return match sparrow_core::run_tests(bytes, Box::new(std::io::stdout())) {
+                Ok(passed) => {
+                    let mut reply = Reply::new(mode, "completed", "runtime");
+                    reply.exit_status = Some(u8::from(!passed));
+                    reply.process_exit = u8::from(!passed);
+                    reply
+                }
+                Err(error) => Reply::internal(mode, error.0),
+            };
+        }
+        let (command, _file) = match crate::core::workers_for(&program, &bytes) {
+            Ok(workers) => workers,
+            Err(message) => return Reply::internal(mode, message),
+        };
+        let arguments = args.iter().map(|a| a.clone().into_bytes()).collect();
+        return core_reply(mode, sparrow_core::run_reported(bytes, arguments, command));
     } else {
         let program = match codegen::sparrow::generate(module) {
             Ok(program) => program,
@@ -587,6 +614,45 @@ fn run_native(
     });
     reply.process_exit = 1;
     reply
+}
+
+/// The core's outcome at the OCS boundary (`sparrow_core::Uncaught`).
+fn core_reply(mode: &str, result: Result<Result<i64, (sparrow_core::Error, Option<sparrow_core::Uncaught>)>, sparrow_core::Error>) -> Reply {
+    match result {
+        Err(error) => Reply::internal(mode, error.0),
+        Ok(Ok(value)) => match u8::try_from(value) {
+            Ok(code) => {
+                let mut reply = Reply::new(mode, "completed", "runtime");
+                reply.exit_status = Some(code);
+                reply.process_exit = code;
+                reply
+            }
+            Err(_) => {
+                let message = "main result must be in 0..255".to_string();
+                let mut reply = Reply::new(mode, "failed", "runtime");
+                reply.stderr = format!("RuntimeError: {message}\n");
+                reply.failure = Some(Failure { stage: "runtime", category: "runtime", error_type: None, message });
+                reply.process_exit = 1;
+                reply
+            }
+        },
+        Ok(Err((error, uncaught))) => {
+            let mut reply = Reply::new(mode, "failed", "runtime");
+            let report = crate::core::report(error);
+            reply.failure = Some(match uncaught {
+                Some(uncaught) => Failure {
+                    stage: "runtime",
+                    category: uncaught.category,
+                    error_type: uncaught.error_type,
+                    message: uncaught.message,
+                },
+                None => Failure { stage: "runtime", category: "runtime", error_type: None, message: report.trim_end().to_string() },
+            });
+            reply.stderr = report;
+            reply.process_exit = 1;
+            reply
+        }
+    }
 }
 
 // Convert only at the external OCS protocol boundary, never into IR runtime objects.

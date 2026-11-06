@@ -2,15 +2,16 @@
 # Ворота релиза (H-08): всё, что должно пройти перед выпуском версии.
 #
 #     tools/gate/gate.sh            # полный прогон (~30 минут)
-#     tools/gate/gate.sh --quick    # без тестов Rust и без порогов 2 и 10
+#     tools/gate/gate.sh --quick    # без тестов Rust и без прогона sparrow-origin
 #     make gate
 #
 # Шаги:
 #   1. release-сборка okkama и sparrow, тесты Rust всего workspace (release);
-#   2. conformance на IR, JVM и Sparrow, а Sparrow — ещё в режимах JIT
-#      eager и с порогами горячести 2 и 10 (смешанное исполнение и OSR);
-#   3. подтверждение, что JIT и OSR действительно работали (OKKAMA_JIT_STATS);
-#   4. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py).
+#   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
+#      целиком) и, до 0.5, на прежнем VM (`sparrow-origin`);
+#   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py).
+#
+# Process workers и сеть настоящие: гонять в контейнере (tools/gate/docker.sh).
 #
 # Журналы — в conformance/reports/runs/gate-<время>/. Код выхода 0 — всё прошло.
 set -uo pipefail
@@ -58,26 +59,8 @@ step "conformance"
 conformance ir --adapter-env OCS_RUST_ENGINE=ir
 conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
 conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
-conformance sparrow-eager --adapter-env OCS_RUST_ENGINE=sparrow --adapter-env OKKAMA_JIT=eager
 if [[ $QUICK -eq 0 ]]; then
-    conformance sparrow-threshold-2 --adapter-env OCS_RUST_ENGINE=sparrow --adapter-env OKKAMA_JIT_THRESHOLD=2
-    conformance sparrow-threshold-10 --adapter-env OCS_RUST_ENGINE=sparrow --adapter-env OKKAMA_JIT_THRESHOLD=10
-fi
-
-step "JIT and OSR actually ran"
-compiled=0; osr=0
-for bench in 01-arith 02-calls 07-objects 09-closures; do
-    # Предел времени: сломанный быстрый путь JIT может зациклить программу.
-    line="$(OKKAMA_JIT_STATS=1 OKKAMA_JIT_THRESHOLD=2 perl -e 'alarm shift; exec @ARGV' 300 \
-        "$OKKAMA" run --engine sparrow "$ROOT/benchmarks/$bench/main.ok" 2>&1 >/dev/null \
-        | grep '^jit: compiled' || true)"
-    echo "$bench: ${line:-no JIT statistics}"
-    if [[ "$line" =~ compiled\ ([0-9]+),.*osr\ ([0-9]+) ]]; then
-        compiled=$((compiled + BASH_REMATCH[1])); osr=$((osr + BASH_REMATCH[2]))
-    fi
-done
-if [[ $compiled -eq 0 || $osr -eq 0 ]]; then
-    fail "JIT evidence (compiled $compiled, osr $osr)"
+    conformance sparrow-origin --adapter-env OCS_RUST_ENGINE=sparrow-origin
 fi
 
 step "std inline tests"

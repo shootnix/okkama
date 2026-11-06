@@ -86,6 +86,8 @@ pub struct Runtime {
     /// Values held by Rust while machine code runs (entry arguments, results).
     pub roots: Vec<(Word, Repr)>,
     pub fatal: Option<String>,
+    /// The last failure `describe` reported, as the OCS protocol sees it.
+    pub uncaught: Option<crate::Uncaught>,
     pub resources: crate::failures::Resources,
     /// Async frames ready to resume; spawned tasks; frames running on the
     /// machine stack (innermost last). All are roots.
@@ -166,6 +168,7 @@ impl Runtime {
             constants: Vec::new(),
             roots: Vec::new(),
             fatal: None,
+            uncaught: None,
         })
     }
 

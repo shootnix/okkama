@@ -488,7 +488,32 @@ impl Runtime {
             }
         }
         self.roots.pop();
+        self.uncaught = self.uncaught_of(root, &messages);
         self.report(root, &messages)
+    }
+
+    /// Category, error type and message of a reported failure.
+    fn uncaught_of(&self, root: Word, messages: &HashMap<Word, String>) -> Option<crate::Uncaught> {
+        let record = self.failure(root)?;
+        let (category, error_type, message) = match &record.kind {
+            FailureKind::Cancelled => ("runtime", None, "Operation was cancelled".to_owned()),
+            FailureKind::Native(object) => {
+                ("runtime", Some("NativeFailure".to_owned()), self.heap.text(self.heap.field(*object, 3)).to_owned())
+            }
+            FailureKind::Program(message) => ("runtime", None, message.clone()),
+            FailureKind::Panic(message) => ("panic", None, message.clone()),
+            FailureKind::Thrown(object) => {
+                let header = self.heap.header_of(*object);
+                let name = if heap::kind(header) == heap::OBJECT {
+                    let full = &self.loaded.program.objects[heap::payload(header) as usize].name;
+                    full.rsplit("::").next().unwrap_or(full).to_owned()
+                } else {
+                    "value".into()
+                };
+                ("uncaught-error", Some(name), messages.get(&root).cloned().unwrap_or_default())
+            }
+        };
+        Some(crate::Uncaught { category, error_type, message })
     }
 
     fn error_text_method(&self, object: Word) -> Option<usize> {

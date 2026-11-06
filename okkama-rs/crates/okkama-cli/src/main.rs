@@ -21,6 +21,7 @@ use okkama_allocation_counter as allocation_stats;
 #[global_allocator]
 static ALLOCATOR: allocation_stats::Counting = allocation_stats::Counting;
 
+mod core;
 mod import_paths;
 mod lsp;
 mod ocs;
@@ -108,13 +109,14 @@ BUILD OPTIONS:
 
 RUN OPTIONS:
     --engine ir           Execute IR inside the Rust process (default)
-    --engine sparrow      Compile to Sparrow and execute it (JIT) in the process
+    --engine sparrow      Compile to Sparrow and execute it on the core (JIT)
+    --engine sparrow-origin  The previous Sparrow VM (until 0.5, for comparison)
     --engine jvm          Compile to JVM classes and execute them with `java`
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
-                          OKKAMA_ENGINE=ir|sparrow|jvm sets the default.
-                          An uncaught failure on ir and sparrow also prints
-                          its source line and the call stack;
+                          OKKAMA_ENGINE=ir|sparrow|sparrow-origin|jvm sets the default.
+                          An uncaught failure on ir and sparrow-origin also
+                          prints its source line and the call stack;
                           OKKAMA_TRACE=off prints the failure alone.
 
 EXIT STATUS:
@@ -255,28 +257,30 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
         Ok(program) => program,
         Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
     };
-    let exe = std::env::current_exe()
-        .map_or_else(|_| "okkama".to_string(), |exe| exe.display().to_string());
-    let file = std::fs::canonicalize(path)
-        .map_or_else(|_| path.clone(), |file| file.display().to_string());
-    sparrow_vm::set_worker_command(vec![exe, "exec".into(), file]);
     if program.tests.is_some() {
-        let mut stdout = io::stdout();
-        return match sparrow_vm::run_tests(&program, &mut stdout) {
-            Ok(passed) => Outcome {
-                stdout: String::new(),
-                stderr: String::new(),
-                code: u8::from(!passed),
-            },
-            Err(error) => Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
-        };
+        return core_tests(bytes);
     }
-    // Исходников у файла байткода нет: стек — в терминах Sparrow.
-    let (result, trace) = sparrow_vm::execute_traced(&program, arguments.to_vec());
-    with_trace(
-        sparrow_outcome(result),
-        sparrow_vm::render_trace(&program, &trace),
-    )
+    let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
+    core_outcome(sparrow_core::run_configured(bytes, arguments, false, core::worker_command(Path::new(path))))
+}
+
+/// A test-profile program on the core: the report goes to stdout.
+fn core_tests(bytes: Vec<u8>) -> Outcome {
+    match sparrow_core::run_tests(bytes, Box::new(io::stdout())) {
+        Ok(passed) => Outcome { stdout: String::new(), stderr: String::new(), code: u8::from(!passed) },
+        Err(error) => Outcome::failure(format!("okkama: {}\n", error.0), EXIT_DIAGNOSTICS),
+    }
+}
+
+/// main's result on the core: the exit status, or the failure report (exit 1).
+fn core_outcome(result: Result<i64, sparrow_core::Error>) -> Outcome {
+    match result {
+        Ok(value) => match u8::try_from(value) {
+            Ok(code) => Outcome { stdout: String::new(), stderr: String::new(), code },
+            Err(_) => Outcome::failure(format!("RuntimeError: main() must return an int in 0..255, got {value}\n"), 1),
+        },
+        Err(error) => Outcome::failure(core::report(error), 1),
+    }
 }
 
 /// Диагностика отказа программы (код 1) и его место со стеком вызовов;
@@ -405,6 +409,11 @@ fn run(args: &[String]) -> Outcome {
         "ir" => ir_command(rest),
         "build" => build_command(rest),
         "exec" => sparrow_exec_command(rest),
+        // Child side of a process worker of the core (`core.rs`).
+        "--worker" => match core::worker(rest) {
+            Ok(()) => Outcome { stdout: String::new(), stderr: String::new(), code: 0 },
+            Err(message) => Outcome::failure(format!("okkama worker: {message}\n"), 1),
+        },
         "run" => run_command(rest),
         // Как у Perl-CLI: `okkama [-t] program.ok args…`.
         "-t" => run_command(args),
@@ -1295,6 +1304,7 @@ fn run_command(args: &[String]) -> Outcome {
     let mut engine = match default.as_str() {
         "ir" => "ir",
         "sparrow" => "sparrow",
+        "sparrow-origin" => "sparrow-origin",
         "jvm" => "jvm",
         _ => "ir",
     };
@@ -1310,10 +1320,10 @@ fn run_command(args: &[String]) -> Outcome {
             }
             "--engine" => {
                 let Some(value) = rest.get(1) else {
-                    return Outcome::usage("--engine needs a value: ir, sparrow or jvm");
+                    return Outcome::usage("--engine needs a value: ir, sparrow, sparrow-origin or jvm");
                 };
-                if !matches!(value.as_str(), "ir" | "sparrow" | "jvm") {
-                    return Outcome::usage("unknown engine (use ir, sparrow or jvm)");
+                if !matches!(value.as_str(), "ir" | "sparrow" | "sparrow-origin" | "jvm") {
+                    return Outcome::usage("unknown engine (use ir, sparrow, sparrow-origin or jvm)");
                 }
                 engine = value;
                 rest = &rest[1..];
@@ -1362,6 +1372,8 @@ fn run_command(args: &[String]) -> Outcome {
         // Как у JVM-запуска: программа видит закреплённую ICU в окружении.
         if let Some(icu) = pinned_icu() {
             if engine == "sparrow" {
+                sparrow_core::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
+            } else if engine == "sparrow-origin" {
                 sparrow_runtime::host::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
             } else {
                 okkama_runtime::default_environment("OKKAMA_ICU_LIBDIR", &icu.display().to_string());
@@ -1393,7 +1405,26 @@ fn run_command(args: &[String]) -> Outcome {
             Ok(program) => program,
             Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
         };
-        sparrow_vm::set_worker_command(worker_command("sparrow", tests, &line));
+        let bytes = match okkama_sparrow::encode(&program) {
+            Ok(bytes) => bytes,
+            Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
+        };
+        if tests {
+            return core_tests(bytes);
+        }
+        let (command, _file) = match core::workers_for(&program, &bytes) {
+            Ok(workers) => workers,
+            Err(message) => return Outcome::failure(format!("okkama: {message}\n"), EXIT_IO),
+        };
+        let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
+        return core_outcome(sparrow_core::run_configured(bytes, arguments, false, command));
+    }
+    if engine == "sparrow-origin" {
+        let program = match codegen::sparrow::generate(&module) {
+            Ok(program) => program,
+            Err(error) => return Outcome::failure(format!("okkama: {error}\n"), EXIT_DIAGNOSTICS),
+        };
+        sparrow_vm::set_worker_command(worker_command("sparrow-origin", tests, &line));
         if tests {
             let mut stdout = io::stdout();
             return match sparrow_vm::run_tests(&program, &mut stdout) {

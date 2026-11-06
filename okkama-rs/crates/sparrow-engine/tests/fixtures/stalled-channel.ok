@@ -1,9 +1,0 @@
-module stalled_channel v1.0.0;
-import "async/channel" take Channel;
-import "async/event" take Event;
-async main() is int {
-    let cleaned=Event();
-    defer cleaned.set();
-    let channel is Channel<int> = Channel(capacity:0);
-    await channel.receiving().item();
-}

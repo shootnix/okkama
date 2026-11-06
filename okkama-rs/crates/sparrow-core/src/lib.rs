@@ -82,6 +82,38 @@ pub fn run_configured(
     })
 }
 
+/// An uncaught failure of `main`: its OCS category (`uncaught-error`,
+/// `runtime`, `panic`), the error type of a thrown value or `NativeFailure`,
+/// and its message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Uncaught {
+    pub category: &'static str,
+    pub error_type: Option<String>,
+    pub message: String,
+}
+
+/// `run_configured`, with the uncaught failure (if any) described for
+/// protocol adapters; the error text is the report printed on stderr.
+pub fn run_reported(
+    bytes: Vec<u8>,
+    arguments: Vec<Vec<u8>>,
+    worker_command: Vec<std::ffi::OsString>,
+) -> Result<Result<i64, (Error, Option<Uncaught>)>, Error> {
+    on_vm_thread(move || {
+        let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
+        let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
+        runtime.worker_command = worker_command;
+        if let Some(host) = &mut runtime.host {
+            host.arguments = arguments;
+        }
+        let result = runtime.run_entry(STACK_BYTES);
+        if let Some(report) = runtime.stats_report() {
+            eprint!("{report}");
+        }
+        Ok(result.map_err(|error| (error, runtime.uncaught.take())))
+    })
+}
+
 /// Run the module's test profile and write the standard textual report;
 /// true when every test passed. Each test runs on a fresh runtime.
 pub fn run_tests(bytes: Vec<u8>, out: Box<dyn std::io::Write + Send>) -> Result<bool, Error> {
@@ -148,6 +180,12 @@ fn on_vm_thread<T: Send + 'static>(body: impl FnOnce() -> Result<T, Error> + Sen
         .map_err(|e| Error(format!("VM thread: {e}")))?
         .join()
         .map_err(|_| Error("VM thread panicked".into()))?
+}
+
+/// A variable the launcher adds to the program's environment when the
+/// process lacks it (`okkama run` passes the pinned ICU this way).
+pub fn default_environment(name: &str, value: &str) {
+    okkama_runtime_core::host::default_environment(name, value);
 }
 
 /// Natives and whether this core provides them (`--native-capabilities`).
