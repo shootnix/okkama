@@ -8,7 +8,7 @@ use super::Checker;
 use crate::analysis::thir::{
     Builtin, Callee, CastPart, CastTarget, CompareKind, CompareOp, Expr, ExprKind,
 };
-use crate::analysis::ty::Ty;
+use crate::analysis::ty::{ObjectId, Ty};
 use crate::source::Span;
 use crate::syntax::ast;
 
@@ -213,6 +213,31 @@ impl Checker<'_, '_> {
         })
     }
 
+    /// A cap is read with `::`; it has no actions, not even its owner's.
+    fn cap_call_message(&self, object: ObjectId, cap: usize, name: &str, receiver: &Ty) -> String {
+        let info = &self.reg.objects[object.0];
+        let fields: Vec<&str> = info.caps[cap].fields.iter().map(|(field, _, _)| field.as_str()).collect();
+        let cap_name = self.type_name(receiver);
+        if fields.contains(&name) {
+            return format!(
+                "\"{name}\" is a computed field of cap \"{cap_name}\", not an action: read it with \"::{name}\""
+            );
+        }
+        let exposed = if fields.is_empty() {
+            "it exposes no computed fields".to_string()
+        } else {
+            format!("read its computed fields with \"::\" ({})", fields.join(", "))
+        };
+        if info.methods.iter().any(|method| method.name == name) {
+            format!(
+                "Action \"{name}\" of \"{}\" is not available through cap \"{cap_name}\": a cap has no actions; {exposed}",
+                info.name
+            )
+        } else {
+            format!("Cap \"{cap_name}\" has no actions; {exposed}")
+        }
+    }
+
     /// `value.name(args)` для builtin-получателя.
     pub(super) fn builtin_call(
         &mut self,
@@ -222,6 +247,14 @@ impl Checker<'_, '_> {
         span: Span,
     ) -> Expr {
         let receiver = Self::ty_of(&target).taken();
+        if let Ty::Cap(object, _, cap) = &receiver {
+            let message = self.cap_call_message(*object, *cap, &name.text, &receiver);
+            self.error(name.span, message);
+            for arg in args {
+                let _ = self.expr(&arg.value, true, None);
+            }
+            return Self::poisoned(span);
+        }
         let Some(category) = Self::category(&receiver) else {
             self.error(name.span, "Can only call actions on objects");
             for arg in args {

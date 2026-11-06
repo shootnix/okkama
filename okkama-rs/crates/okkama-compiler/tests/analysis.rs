@@ -448,3 +448,24 @@ fn for_await_checks_async_next_and_maybe_payload() {
     assert!(messages(&format!("{valid} async main() is int {{ for await Stream() -> a[2] {{}} 0; }}")).iter().any(|m| m.contains("batched")));
     assert!(messages(&format!("{valid} async main() is int {{ for await Stream() -> item {{}} item; }}")).iter().any(|m| m.contains("Undefined variable")));
 }
+
+#[test]
+fn calls_through_a_cap_name_the_cap() {
+    // Issue #8: a cap value has computed fields read with `::`, no actions.
+    assert_eq!(
+        messages(
+            "object Customer { has given, family is string; Customer(:given, :family); \
+             greet() is void {} \
+             cap Public { full_name is string { given + \" \" + family; } } } \
+             main() is int { let owner = Customer(given: \"J\", family: \"D\"); let c = owner::Public; \
+             c.greet(); c.full_name(); c.other(); 0; }"
+        ),
+        [
+            "Action \"greet\" of \"Customer\" is not available through cap \"Customer::Public\": \
+             a cap has no actions; read its computed fields with \"::\" (full_name)",
+            "\"full_name\" is a computed field of cap \"Customer::Public\", not an action: \
+             read it with \"::full_name\"",
+            "Cap \"Customer::Public\" has no actions; read its computed fields with \"::\" (full_name)",
+        ]
+    );
+}
