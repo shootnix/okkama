@@ -1,6 +1,6 @@
 //! Corpus checks against the repository the crate lives in:
 //!
-//! * every `.ok` file in `std/`, `examples/` and `okkama-rs/examples/`
+//! * every `.ok` file in `std/` and `okkama-rs/examples/`
 //!   must parse in both modes (none of them is an intentionally invalid
 //!   fixture; `tests/corpus/expected-failures.txt` would list any, with a
 //!   reason);
@@ -24,7 +24,7 @@ const EXPECTED_FAILURES: &str = include_str!("corpus/expected-failures.txt");
 fn repo_root() -> Option<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let root = root.canonicalize().ok()?;
-    if root.join("std").is_dir() && root.join("examples").is_dir() {
+    if root.join("std").is_dir() {
         return Some(root);
     }
     None
@@ -36,7 +36,7 @@ fn require_repo() -> Option<PathBuf> {
         return None;
     }
     Some(repo_root().expect(
-        "the Okkama checkout (std/ and examples/) was not found next to okkama-rs; \
+        "the Okkama checkout (std/) was not found next to okkama-rs; \
          set OKKAMA_SKIP_CORPUS=1 to skip the corpus checks explicitly",
     ))
 }
@@ -83,11 +83,12 @@ fn std_and_examples_parse_in_both_modes() {
         .map(|line| line.split('\t').next().unwrap())
         .collect();
     let mut files = Vec::new();
-    for dir in ["std", "examples", "okkama-rs/examples"] {
+    // examples/ moved out of the repository (okkama-docs) for 0.4.0.
+    for dir in ["std", "okkama-rs/examples"] {
         ok_files(&root.join(dir), &mut files);
     }
     assert!(
-        files.len() > 900,
+        files.len() > 500,
         "suspiciously small corpus: {}",
         files.len()
     );

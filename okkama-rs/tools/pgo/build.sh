@@ -2,7 +2,7 @@
 # Release-сборка с оптимизацией по профилю (PGO) в обычный target/release.
 #
 # 1. Инструментированная сборка okkama и sparrow (`-Cprofile-generate`).
-# 2. Обучение: JSON-нагрузка tools/pgo/json.ok, бенчмарки benchmarks/NN-*
+# 2. Обучение: JSON-нагрузка tools/pgo/json.ok, программы tools/pgo/workloads/NN-*
 #    на Sparrow и IR и inline-тесты модулей std (компилятор, оба движка, std).
 # 3. `llvm-profdata merge` и сборка всех бинарников с `-Cprofile-use`.
 #
@@ -31,7 +31,7 @@ okkama="$work/instrumented/release/okkama"
 export OKKAMA_STDLIB_DIR="$root/std"
 for engine in sparrow ir; do
     "$okkama" run --engine "$engine" "$rs/tools/pgo/json.ok" > /dev/null
-    for main in "$root"/benchmarks/[0-9][0-9]-*/main.ok; do
+    for main in "$rs"/tools/pgo/workloads/[0-9][0-9]-*/main.ok; do
         "$okkama" run --engine "$engine" "$main" > /dev/null
     done
 done

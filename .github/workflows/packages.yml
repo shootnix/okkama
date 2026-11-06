@@ -83,8 +83,8 @@ jobs:
           tar -C smoke -xzf dist/okkama-*-${{ matrix.platform }}.tar.gz
           bin="$(echo smoke/okkama-*/bin)"
           "$bin/okkama" env
-          "$bin/okkama" examples/gallery/quicksort.ok
-          "$bin/okkama" run --engine sparrow benchmarks/02-calls/main.ok
+          "$bin/okkama" okkama-rs/examples/hello.ok
+          "$bin/okkama" run --engine sparrow okkama-rs/tools/pgo/workloads/02-calls/main.ok
           "$bin/sparrow" --version
           "$bin/blade" --version
       - uses: actions/upload-artifact@v5

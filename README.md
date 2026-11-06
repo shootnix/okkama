@@ -15,11 +15,7 @@ is enforced by the runtime — not by code review.**
 [Quick start](#quick-start) ·
 [The Book](docs/OkkamaBook.md) ·
 [Книга](docs/OkkamaBook-RU.md) ·
-[Specification](docs/okkama-spec-11072026.md) ·
-[Grammar](docs/okkama-grammar-1.0.md) ·
-[LLM Context Pack](docs/okkama-llm-context-1.0.md) ·
-[Roadmap: hardening](docs/roadmap/hardening.md) ·
-[Trust model](docs/security-model.md)
+[Guide for LLM agents](docs/LLM-GUIDE.md)
 
 </div>
 
@@ -67,8 +63,6 @@ main() is int {
 }
 ```
 
-<sub>Runnable: [`examples/showcase/checkout.ok`](examples/showcase/checkout.ok) ·
-more in [`examples/showcase/`](examples/showcase/)</sub>
 
 | ✨ | What you get |
 |---|---|
@@ -284,7 +278,6 @@ catch e is RepoError, DbError { log(e.text()); }   // several types: e is Error
 `text()` is generated from the case: `RepoError.db(DbError.query("select", 42))`.
 A thrown value of the right type but another case falls through to the next
 `catch` of the same `try`. Panics are not errors and are never caught.
-Runnable: [`examples/showcase/errors.ok`](examples/showcase/errors.ok).
 
 ### Immutable objects and successors
 
@@ -332,8 +325,8 @@ that type. Both declaration forms share the same nominal namespace.
 
 Each read recomputes the field against the original immutable owner. Caps
 retain the owner safely and expose only their declared computed fields.
-Owners never convert implicitly to caps. See the [working example](examples/object-caps.ok)
-and [Capabilities 0.0.1 guide](docs/object-caps-0.0.1-ru.md).
+Owners never convert implicitly to caps. See the working example
+and Capabilities 0.0.1 guide.
 
 </details>
 
@@ -365,7 +358,7 @@ actions and overloads. `let p is Package = Bottle();` cannot call an extra
 `Bottle` action or read its fields. Implementations still run on the original
 object, with full access to their own state. The restriction survives aliases,
 returns, collections and bound actions; it does not copy the object.
-See the [role example](examples/role-boundaries.ok) and
+See the role example and
 [book section](docs/OkkamaBook-RU.md#221-доступ-через-роль).
 
 </details>
@@ -404,7 +397,7 @@ Apply(input: 21).value((value is int) is int { value * 2; }); // 42
 Anonymous actions are immutable values with lexical capture, modeled as
 anonymous callable objects rather than a second global function system.
 
-See [anonymous actions and action types](docs/anonymous-actions.md) for the full syntax.
+See anonymous actions and action types for the full syntax.
 
 </details>
 
@@ -492,21 +485,17 @@ and `any`, and the class behind them cannot be named outside its module. What it
 deliberately does not do: an old immutable state stays valid, so "authorize
 twice" is a job for durable state and idempotency.
 
-Full program: [`examples/showcase/state-views.ok`](examples/showcase/state-views.ok) ·
-the research behind it, with 91 checked experiments:
-[role-oriented typestate](docs/research/role-oriented-typestate.md).
-
 ## Three engines, one language
 
 The compiler lowers Okkama to one intermediate representation
-([OIR-1](docs/compiler/OIR-1.md)) and runs it on any of three engines with
+(OIR-1) and runs it on any of three engines with
 identical results — output, errors and exit status. The
-[conformance suite](conformance/) and an engine parity check over all of
-`std/` and `examples/` hold them to that.
+[conformance suite](conformance/) and an engine parity check over the tests of
+`std/` hold them to that.
 
 ```sh
 okkama hello.ok                              # IR interpreter (default), in-process
-okkama run --engine sparrow hello.ok         # Sparrow register VM + Cranelift JIT
+okkama run --engine sparrow hello.ok         # Sparrow core: whole-function Cranelift JIT
 okkama run --engine jvm hello.ok             # JVM class files, run with `java`
 okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 ```
@@ -521,16 +510,12 @@ okkama build hello.ok --target sparrow -o hello.spb && sparrow hello.spb
 | Peak memory, application | 7 MB | 15 MB | 273 MB |
 | Needs | nothing | nothing | JDK |
 
-Median of ten runs on an Apple M2 Max. On the same eleven programs written in
-each language, Sparrow with its JIT is on average (geometric mean) 2.3× faster
-than Python 3.9, 2.3× faster than Perl 5.42 and 1.7× faster than Ruby 2.6, and
-still behind them on string processing and generic collections. The full
-ladder, CPU time, memory, sizes and every run are in
-[benchmarks](benchmarks/README.md) and the
-[0.3.0 report](benchmarks/reports/2026-10-31-v0.3.0/README.md). Sparrow is a
-self-contained VM ([ISA](okkama-rs/docs/sparrow-isa.md)) with a baseline JIT,
-in-place successor updates and a cycle collector
-([runtime, GC and JIT](okkama-rs/docs/sparrow-runtime-roadmap.md)).
+Median of ten runs on an Apple M2 Max (0.3.0, the previous Sparrow VM). Since
+0.4.0 Sparrow runs on a new core: every function is compiled to machine code
+(Cranelift) before it runs, calls are direct, async frames are stackless and
+the collector is precise. On the same programs written in each language it is
+on average 5.4× faster than Python 3.9, 6.1× faster than Perl 5.42 and 4.0×
+faster than Ruby 2.6, about twice the previous Sparrow.
 
 ## Documentation
 
@@ -538,15 +523,8 @@ in-place successor updates and a cycle collector
 |---|---|
 | 📖 [The Okkama Book](docs/OkkamaBook.md) | The textbook: philosophy, every language construct, from first principles |
 | 📖 [Книга Okkama (RU)](docs/OkkamaBook-RU.md) | The book in Russian |
-| 📜 [Specification](docs/okkama-spec-11072026.md) | Normative language specification |
-| 🧩 [Grammar (EBNF)](docs/okkama-grammar-1.0.md) | Parser construction target |
-| 🤖 [LLM Context Pack](docs/okkama-llm-context-1.0.md) | Self-contained context for AI agents generating Okkama code |
-| 🔌 [Native Functions Tutorial](docs/native-functions-tutorial.md) | How the language talks to the host OS |
-| 🗺️ [Stdlib roadmap](docs/std/stdlib-roadmap-v4.md) | Current standard-library plan and module contracts |
-| 🧭 [Role-oriented typestate](docs/research/role-oriented-typestate.md) | Research: state views from roles, successors and enums, with experiments |
-| 🚨 [Error handling](docs/POC/error-handling.md) | Error enums, `try?` / `try!`, catch patterns: design and status |
+| 🤖 [Guide for LLM agents](docs/LLM-GUIDE.md) | Working on this repository: layout, build, tests, benchmarks, architecture |
 | 🧪 [Conformance suite](conformance/README.md) | Executable specification: 787 cases with expected observations |
-| ⚙️ [OIR-1](docs/compiler/OIR-1.md) | The compiler's intermediate representation |
 
 Where documents disagree, the source of truth is the conformance suite
 (`conformance/`) and the specification — in that order.
@@ -556,8 +534,8 @@ Where documents disagree, the source of truth is the conformance suite
 Okkama is **experimental**: the language and the standard library still
 evolve, and nothing is stable yet. The implementation runs the whole language
 and standard library: the conformance suite passes 787/787 cases on each
-engine, and every deterministic program in `std/` (in test mode) and
-`examples/` behaves identically on all three. See
+engine, and every deterministic program in `std/` (in test mode)
+behaves identically on all three. See
 [Appendix B of the Book](docs/OkkamaBook.md#appendix-b-implementation-status)
 for the feature table.
 
@@ -568,7 +546,6 @@ make build                        # okkama, sparrow, blade, okkama-native (relea
 make test                         # cargo test --workspace
 make dist                         # packages for this machine into dist/
 cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 8
-python3 benchmarks/run.py         # engine benchmarks (also Python, Perl, Ruby)
 ```
 
 `tools/build-icu-collation.sh` builds the pinned ICU 76.1 into `.runtime/`
@@ -584,11 +561,9 @@ for each `vX.Y.Z` tag, which must match the version in `okkama-rs/Cargo.toml`.
 okkama/
 ├── okkama-rs/        Rust implementation: compiler, JVM backend, Sparrow VM + JIT,
 │                     IR interpreter, runtime and natives, LSP, fmt, lint, blade
-├── std/              standard library (module contracts in docs/std/)
-├── docs/             book (EN/RU), specification, grammar, OIR, guides
+├── std/              standard library
+├── docs/             the Book (EN/RU) and the guide for LLM agents
 ├── conformance/      conformance suite (OCS) and its runner
-├── examples/         gallery, cookbook, web and async programs
-├── benchmarks/       engine benchmarks, ports to Python/Perl/Ruby, runner, release reports
 ├── tools/            packaging and data generators for std (CLDR, IANA, ISO, ICU, tzdb)
 └── vscode-okkama/    VS Code extension: highlighting + language server
 ```
@@ -609,7 +584,7 @@ TextMate-compatible editor can use
 - 🤝 Pull requests: small and focused, with a test (a Rust test or a
   conformance case). CI must stay green on every engine.
 - 🤖 Using an AI assistant? Give it the
-  [LLM Context Pack](docs/okkama-llm-context-1.0.md) first.
+  [guide for LLM agents](docs/LLM-GUIDE.md) first.
 
 ## License
 

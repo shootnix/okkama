@@ -5,7 +5,6 @@
 #     make uninstall
 #     make test            # тесты Rust
 #     make gate            # ворота релиза: тесты, conformance во всех режимах JIT, std
-#     make experiments     # регрессия исследовательских экспериментов (experiments/*/run.sh)
 #     make pgo             # release-сборка с PGO (нужен `rustup component add llvm-tools`)
 #     make install-pgo     # PGO-сборка и установка
 #     make dist            # пакеты этой платформы в dist/ (tar.gz + .pkg/.deb)
@@ -25,7 +24,7 @@ STAMP   := $(RUNTIME)/classes/.built
 JAVA    := $(wildcard $(RUNTIME)/src/okkama/rt/*.java $(RUNTIME)/src22/okkama/rt/*.java)
 VSIX    := vscode-okkama/okkama-vscode.vsix
 
-.PHONY: all build runtime pgo install install-pgo uninstall test gate experiments dist vscode clean
+.PHONY: all build runtime pgo install install-pgo uninstall test gate dist vscode clean
 
 all: build
 
@@ -63,13 +62,6 @@ test:
 
 gate: runtime
 	./tools/gate/gate.sh
-
-# Движки для run-ok программ: EXPERIMENT_ENGINES="ir jvm sparrow" make experiments
-EXPERIMENT_ENGINES ?= ir
-
-experiments: build
-	OKKAMA=$(CURDIR)/$(RS)/target/release/okkama ENGINES="$(EXPERIMENT_ENGINES)" \
-		./experiments/role-typestate/run.sh
 
 dist: runtime
 	./tools/package.sh --installer
