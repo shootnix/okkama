@@ -25,6 +25,8 @@ exec docker run --rm \
     -v okkama-gate-target:/work/okkama-rs/target \
     -v okkama-gate-adapter:/work/conformance/adapters/rust/.target \
     okkama-dev bash -c '
+        # The conformance adapter uses $HOME/.cargo and $HOME/.rustup.
+        ln -sfn /usr/local/cargo "$HOME/.cargo"; ln -sfn /usr/local/rustup "$HOME/.rustup"
         rsync -a --delete --exclude /okkama-rs/target --exclude /conformance/adapters/rust/.target \
             --exclude /conformance/reports/runs --exclude .git /src/ /work/
         cd /work && status=0 && tools/gate/gate.sh "$@" || status=$?
