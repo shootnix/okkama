@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Big {
+    has name is string;
+    has out is Stdout;
+    Big(:name, :out);
+    adder(n is int) is (int) is int {
+        (x is int) is int { x + n; };
+    }
+    reader() is () is string {
+        () is string { name; };
+    }
+    destroy {
+        out.writeln("destroyed " + name);
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let add = Big(name: "adder", out: out).adder(1);
+    let read = Big(name: "reader", out: out).reader();
+    out.writeln("made " + add(41).string() + " " + read());
+    0;
+}

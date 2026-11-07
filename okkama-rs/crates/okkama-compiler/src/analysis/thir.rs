@@ -577,3 +577,117 @@ pub struct Functional {
     pub bindings: Vec<LocalId>,
     pub body: Block,
 }
+
+/// Does `body` read the receiver of the action it is written in — `self`, a
+/// field, `fake.storage`, or a nested anonymous action that does? An
+/// anonymous action captures `self` only then (#53): unreferenced values are
+/// not retained. The walk names every form, so a new one must decide here.
+pub fn uses_receiver(body: &Body) -> bool {
+    block_uses_receiver(&body.block)
+}
+
+fn block_uses_receiver(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_receiver)
+}
+
+fn stmt_uses_receiver(stmt: &Stmt) -> bool {
+    match &stmt.kind {
+        StmtKind::Let { value, .. } | StmtKind::Rebind { value, .. } => expr_uses_receiver(value),
+        StmtKind::Expr(value) | StmtKind::Throw(value) | StmtKind::Defer(value) => expr_uses_receiver(value),
+        StmtKind::Guarded { condition, stmt } => expr_uses_receiver(condition) || stmt_uses_receiver(stmt),
+        StmtKind::Return(value) | StmtKind::Last(value) => value.as_ref().is_some_and(expr_uses_receiver),
+        StmtKind::Confirm { condition, fallback } => {
+            expr_uses_receiver(condition)
+                || fallback.as_ref().is_some_and(|fallback| match fallback {
+                    Fallback::Throw(value) | Fallback::Panic(value) => expr_uses_receiver(value),
+                })
+        }
+        // Fields of the object being built or succeeded belong to the receiver.
+        StmtKind::BindField { .. } | StmtKind::StageField { .. } => true,
+        StmtKind::Rethrow | StmtKind::Next => false,
+    }
+}
+
+fn source_uses_receiver(source: &Source) -> bool {
+    match source {
+        Source::Range { start, end, .. } => expr_uses_receiver(start) || expr_uses_receiver(end),
+        Source::Array(value) | Source::Map(value) | Source::Iterating(value) => expr_uses_receiver(value),
+        Source::Varargs(_) => false,
+    }
+}
+
+fn expr_uses_receiver(expr: &Expr) -> bool {
+    let any = |values: &[Expr]| values.iter().any(expr_uses_receiver);
+    match &expr.kind {
+        ExprKind::SelfValue | ExprKind::Field(_) | ExprKind::PendingField(_) | ExprKind::OwnerField(_) => true,
+        ExprKind::Constant(_)
+        | ExprKind::Local(_)
+        | ExprKind::EnumCase { .. }
+        | ExprKind::TestCapability
+        | ExprKind::Unreachable => false,
+        ExprKind::VariantNew { values, .. } => any(values),
+        ExprKind::VariantTag(value)
+        | ExprKind::VariantGet { value, .. }
+        | ExprKind::Unary { operand: value, .. }
+        | ExprKind::Coerce { value, .. }
+        | ExprKind::Cast { value, .. }
+        | ExprKind::Panic(value)
+        | ExprKind::Unpack(value)
+        | ExprKind::Await(value)
+        | ExprKind::Spawn(value) => expr_uses_receiver(value),
+        ExprKind::Binary { left, right, .. }
+        | ExprKind::Logical { left, right, .. }
+        | ExprKind::RatNew { numerator: left, denominator: right }
+        | ExprKind::Range { start: left, end: right, .. }
+        | ExprKind::StreamWrite { sink: left, source: right, .. } => expr_uses_receiver(left) || expr_uses_receiver(right),
+        ExprKind::If { condition, then_block, else_block } => {
+            expr_uses_receiver(condition)
+                || block_uses_receiver(then_block)
+                || else_block.as_ref().is_some_and(block_uses_receiver)
+        }
+        ExprKind::Match(found) => {
+            expr_uses_receiver(&found.subject)
+                || found.cases.iter().any(|(patterns, block)| any(patterns) || block_uses_receiver(block))
+                || found.else_block.as_ref().is_some_and(block_uses_receiver)
+        }
+        ExprKind::Loop(block) | ExprKind::Block(block) => block_uses_receiver(block),
+        ExprKind::For { source, body, .. } => source_uses_receiver(source) || block_uses_receiver(body),
+        ExprKind::Try(found) => {
+            block_uses_receiver(&found.body) || found.catches.iter().any(|catch| block_uses_receiver(&catch.body))
+        }
+        ExprKind::Call { callee, args } => {
+            any(args)
+                || match callee {
+                    Callee::Method { receiver, .. } | Callee::Role { receiver, .. } | Callee::Builtin { receiver, .. } => {
+                        expr_uses_receiver(receiver)
+                    }
+                    // The storage of the receiver's fake.
+                    Callee::FakeStorage(_) => true,
+                    Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => false,
+                }
+        }
+        ExprKind::Array(parts) => parts.iter().any(|part| match part {
+            ArrayPart::Value(value) => expr_uses_receiver(value),
+            ArrayPart::Range { start, end, .. } => expr_uses_receiver(start) || expr_uses_receiver(end),
+        }),
+        ExprKind::Map(entries) => entries.iter().any(|(key, value)| expr_uses_receiver(key) || expr_uses_receiver(value)),
+        ExprKind::Index { object, index, fallback } => {
+            expr_uses_receiver(object) || expr_uses_receiver(index) || fallback.as_deref().is_some_and(expr_uses_receiver)
+        }
+        ExprKind::Functional(found) => {
+            source_uses_receiver(&found.source)
+                || found.initial.as_ref().is_some_and(expr_uses_receiver)
+                || block_uses_receiver(&found.body)
+        }
+        ExprKind::ArrayCast { parts, .. } => parts.iter().any(|part| match part {
+            CastPart::One(value) | CastPart::Spread(value) => expr_uses_receiver(value),
+        }),
+        ExprKind::Pack { items, spread } => any(items) || spread.as_deref().is_some_and(expr_uses_receiver),
+        // A nested anonymous action takes `self` from this one.
+        ExprKind::Closure { body, .. } => uses_receiver(body),
+        ExprKind::BoundRoleAction { receiver, .. } | ExprKind::BoundAction { receiver, .. } => expr_uses_receiver(receiver),
+        ExprKind::CallValue { callee, args } => expr_uses_receiver(callee) || any(args),
+        ExprKind::CapSelect { owner, .. } => expr_uses_receiver(owner),
+        ExprKind::CapRead { cap, .. } => expr_uses_receiver(cap),
+    }
+}

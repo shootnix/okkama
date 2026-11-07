@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anon.self-retained-only-when-read",
+  "title": "an anonymous action retains its receiver only when its body reads it",
+  "purpose": "Observe control flow and call semantics.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "destroyed adder\nmade 42 reader\ndestroyed reader\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.10.2",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #53",
+    "expected_basis": "OkkamaBook 18.5: unreferenced values are not retained; a reference to self retains the receiver. The adder action never reads self, so its temporary receiver is destroyed when the statement ends; the reader action reads a field and keeps its receiver until main ends."
+  },
+  "status": "mandatory"
+}

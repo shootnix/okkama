@@ -2331,8 +2331,9 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         span: Span,
     ) -> Result<Out> {
         let mut values = Vec::new();
+        // `self` only when the body reads the receiver (#53).
         let self_capture = match (self.self_value, self.object) {
-            (Some(receiver), Some(_)) if self.kind != Kind::Ctor => {
+            (Some(receiver), Some(_)) if self.kind != Kind::Ctor && thir::uses_receiver(body) => {
                 values.push(receiver);
                 true
             }

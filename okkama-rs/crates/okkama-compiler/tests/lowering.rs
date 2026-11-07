@@ -388,3 +388,39 @@ fn collection_operators_need_one_collection_type() {
         assert!(lower(&source).is_err(), "{body} must be rejected");
     }
 }
+
+/// An anonymous action captures `self` only when its body reads the receiver
+/// — a field, `self`, an action of `self`, or through a nested anonymous
+/// action (#53).
+#[test]
+fn anonymous_actions_capture_self_only_when_they_read_it() {
+    let module = lower(
+        "module app v1.0.0;
+object Box {
+    has n is int;
+    Box(:n);
+    plain(k is int) is (int) is int { (x is int) is int { x + k; }; }
+    field() is (int) is int { (x is int) is int { x + n; }; }
+    explicit() is () is Box { () is Box { self; }; }
+    value() is int { n; }
+    method() is () is int { () is int { self.field()(1); }; }
+    nested() is () is int { () is int { let inner = () is int { n; }; inner(); }; }
+}
+main() is int { Box(n: 1).plain(2)(3) + Box(n: 1).field()(1) + Box(n: 1).method()() + Box(n: 1).nested()() + Box(n: 2).explicit()().value(); }",
+    )
+    .unwrap();
+    ir::verify(&module).expect("lowering output verifies");
+    let text = module.to_string();
+    // The receiver is the first parameter of an action: a capture of `self`
+    // in a method body is `%0`.
+    let captures = |method: &str| {
+        let start = text.find(&format!("func @Box.{method}(")).unwrap_or_else(|| panic!("{method} in\n{text}"));
+        let body = &text[start..start + text[start..].find("\n}\n").unwrap()];
+        let line = body.lines().find(|line| line.contains("fn.closure")).unwrap_or_else(|| panic!("{method}:\n{body}"));
+        line[line.find('[').unwrap()..].to_string()
+    };
+    assert_eq!(captures("plain"), "[%1]", "{text}");
+    for method in ["field", "explicit", "method", "nested"] {
+        assert!(captures(method).starts_with("[%0"), "{method}: {}", captures(method));
+    }
+}
