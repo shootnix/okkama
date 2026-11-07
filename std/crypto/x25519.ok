@@ -42,5 +42,5 @@ test "X25519 matches RFC 7748 section 6.1" {
     test.is(HexEncoded(shared.export_bytes()).string(), "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742");
     test.is(bob.shared_secret(alice.public_key()).export_bytes(), shared.export_bytes());
     let zero is @byte = (0..32).map() -> i { 0.byte(); };
-    test.ok(try { alice.shared_secret(X25519PublicKey(zero)); false; } catch e is AuthenticationFailed { true; });
+    test.throws(AuthenticationFailed) { alice.shared_secret(X25519PublicKey(zero)); };
 }

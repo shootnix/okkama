@@ -134,5 +134,5 @@ test "text reply declares its representation and keeps added fields" {
     test.is(response.headers().entries().size(), 3);
     test.is(response.body().length().string(), "12");
     test.is(NoContent().response().headers().entries().size(), 0);
-    test.ok(try { Redirect(200, "/x"); false; } catch failure is InvalidReply { true; });
+    test.throws(InvalidReply) { Redirect(200, "/x"); };
 }

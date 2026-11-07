@@ -55,5 +55,5 @@ test "generated Ed25519 keys export PKCS#8" {
     let key = Ed25519PrivateKey(entropy: Entropy.fake());
     test.is(key.pkcs8().size(), 48);
     test.ok(key.public_key().verified([7.byte()], key.signature([7.byte()])));
-    test.ok(try { Ed25519PrivateKey(seed: SecretBytes([1.byte()])); false; } catch e is InvalidCryptoInput { true; });
+    test.throws(InvalidCryptoInput) { Ed25519PrivateKey(seed: SecretBytes([1.byte()])); };
 }

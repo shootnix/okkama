@@ -105,7 +105,7 @@ test "framing headers are owned by the reply" {
 
 test "only representation statuses carry bodies" {
     test.is(BodyStatus(200).code(), 200);
-    test.ok(try { BodyStatus(204); false; } catch failure is InvalidReply { true; });
-    test.ok(try { BodyStatus(304); false; } catch failure is InvalidReply { true; });
-    test.ok(try { BodyStatus(101); false; } catch failure is InvalidReply { true; });
+    test.throws(InvalidReply) { BodyStatus(204); };
+    test.throws(InvalidReply) { BodyStatus(304); };
+    test.throws(InvalidReply) { BodyStatus(101); };
 }

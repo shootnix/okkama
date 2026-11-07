@@ -55,5 +55,5 @@ test "problems name status, title and detail" {
     test.is(Exception.status(404, "user 7 not found").text(), "Exception.status(404, \"user 7 not found\")");
     test.is(Problem(404, "user 7 not found").title(), "Not Found");
     test.is(Problem(599, "x").title(), "HTTP 599");
-    test.ok(try { Problem(302, "x"); false; } catch failure is InvalidReply { true; });
+    test.throws(InvalidReply) { Problem(302, "x"); };
 }

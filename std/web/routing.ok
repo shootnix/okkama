@@ -255,7 +255,7 @@ enum InvalidWebRoute is Error = (because(reason is string));
 
 test "scope prefixes are absolute and have no trailing slash" {
     test.is(WebPrefix("/api").string(), "/api");
-    test.ok(try { WebPrefix("/api/"); false; } catch failure is InvalidWebRoute { true; });
-    test.ok(try { WebPrefix("api"); false; } catch failure is InvalidWebRoute { true; });
-    test.ok(try { WebPrefix("/"); false; } catch failure is InvalidWebRoute { true; });
+    test.throws(InvalidWebRoute) { WebPrefix("/api/"); };
+    test.throws(InvalidWebRoute) { WebPrefix("api"); };
+    test.throws(InvalidWebRoute) { WebPrefix("/"); };
 }

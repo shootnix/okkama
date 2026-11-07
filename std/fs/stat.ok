@@ -198,5 +198,5 @@ test "permission observations retain integer bit groups" {
     let all = PermissionMode(4095); // 07777
     test.ok(all.owner().executable()); test.ok(all.group().writable());
     test.ok(all.others().executable()); test.is(all.special(), 7);
-    test.ok(try { PermissionMode(4096); false; } catch error is InvalidPermissionMode { true; });
+    test.throws(InvalidPermissionMode) { PermissionMode(4096); };
 }

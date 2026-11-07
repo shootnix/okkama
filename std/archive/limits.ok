@@ -146,9 +146,9 @@ test "archive accounting phase and failed transitions preserve prior values" {
     test.is(active.total_remaining(), 8);
     test.is(left.total_remaining(), 7);
     test.is(right.total_remaining(), 4);
-    test.ok(try { let rejected = active.entered("b", 0); [rejected]; false; } catch error is Error { true; });
-    test.ok(try { let rejected = idle.expanded(1); [rejected]; false; } catch error is Error { true; });
-    test.ok(try { let rejected = active.expanded(-1); [rejected]; false; } catch error is Error { true; });
+    test.throws(Error) { let rejected = active.entered("b", 0); [rejected]; };
+    test.throws(Error) { let rejected = idle.expanded(1); [rejected]; };
+    test.throws(Error) { let rejected = active.expanded(-1); [rejected]; };
     test.is(active.path().string(), "a");
 }
 

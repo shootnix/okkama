@@ -141,7 +141,7 @@ test "RSA signatures and OAEP round-trip" {
     test.ok(pkcs1.public_key().verified([1.byte()], pkcs1.signature([1.byte()])));
     let sealed = RsaOaepEncryption(key.public_key(), RsaHash.sha256, Entropy.fake()).encrypted([7.byte(), 8.byte()]);
     test.is(RsaOaepDecryption(key, RsaHash.sha256, Entropy.fake()).decrypted(sealed).export_bytes(), [7.byte(), 8.byte()]);
-    test.ok(try { RsaPrivateKey(bits: 1024, entropy: Entropy.fake()); false; } catch e is InvalidCryptoInput { true; });
+    test.throws(InvalidCryptoInput) { RsaPrivateKey(bits: 1024, entropy: Entropy.fake()); };
 }
 
 test "OpenSSL RSA keys, PKCS#1 v1.5, PSS and OAEP interoperate" {

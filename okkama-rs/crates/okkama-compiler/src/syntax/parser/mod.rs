@@ -415,6 +415,11 @@ impl<'s> Parser<'s> {
         }
     }
 
+    /// The source text of `span` (spans come from this source).
+    fn text_of(&self, span: Span) -> &str {
+        &self.text[span.range()]
+    }
+
     fn lexeme(&self, token: &Token) -> &'s str {
         self.text.get(token.span.range()).unwrap_or("")
     }

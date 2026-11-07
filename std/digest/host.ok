@@ -45,5 +45,5 @@ test "host digest states branch and reject unknown algorithms" {
     let origin = HostDigest("sha256", [], 0).appended([1.byte()]);
     test.ok(origin.appended([2.byte()]).bytes() != origin.bytes());
     test.is(origin.appended([]).bytes(), origin.bytes());
-    test.ok(try { HostDigest("md4", [], 0); false; } catch e is CryptoUnavailable { true; });
+    test.throws(CryptoUnavailable) { HostDigest("md4", [], 0); };
 }

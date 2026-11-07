@@ -175,14 +175,14 @@ test "archive reader fake consumes one entry before stable EOF" {
     let entry = reader.entry();
     test.is(entry.path().string(), "entry");
     test.ok(!reader.finished());
-    test.ok(try { reader.entry(); false; } catch end is EndOfArchive { true; });
+    test.throws(EndOfArchive) { reader.entry(); };
     test.ok(reader.finished());
-    test.ok(try { reader.entry(); false; } catch end is EndOfArchive { true; });
+    test.throws(EndOfArchive) { reader.entry(); };
     test.ok(!independent.finished());
     reader.close();reader.close();
     test.ok(reader.closed());
     test.is(entry.path().string(), "entry");
-    test.ok(try { reader.entry(); false; } catch error is Error { true; });
+    test.throws(Error) { reader.entry(); };
     independent.close();
 }
 
@@ -194,8 +194,8 @@ test "archive writer fake finishes once and rejects terminal writes" {
     writer.write(entry);
     writer.finish();
     test.ok(writer.finished());
-    test.ok(try { writer.write(entry); false; } catch error is Error { true; });
-    test.ok(try { writer.finish(); false; } catch error is Error { true; });
+    test.throws(Error) { writer.write(entry); };
+    test.throws(Error) { writer.finish(); };
     writer.close();writer.close();
     test.ok(writer.closed());
     test.ok(!reader.closed());reader.close();
@@ -207,8 +207,8 @@ test "archive fake lifetimes are independent and end diagnostic is stable" {
     abandoned.close();
     test.ok(!empty.finished());
     empty.finish();test.ok(empty.finished());
-    test.ok(try { abandoned.finish(); false; } catch error is Error { true; });
-    test.ok(try { abandoned.finished(); false; } catch error is Error { true; });
+    test.throws(Error) { abandoned.finish(); };
+    test.throws(Error) { abandoned.finished(); };
     empty.close();
     test.is(EndOfArchive.reached.text(), "EndOfArchive.reached");
 }

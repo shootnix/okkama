@@ -68,11 +68,11 @@ test "system entropy is fresh and sized" {
     test.is(entropy.bytes(32).size(), 32);
     test.ok(entropy.bytes(32) != entropy.bytes(32));
     test.is(entropy.bytes(0).size(), 0);
-    test.ok(try { entropy.bytes(-1); false; } catch e is InvalidCryptoInput { true; });
+    test.throws(InvalidCryptoInput) { entropy.bytes(-1); };
 }
 
 test "counter nonces are prefix and big-endian counter" {
     test.is(CounterNonce([1.byte()], 258, 4).bytes(), [1.byte(), 0.byte(), 1.byte(), 2.byte()]);
-    test.ok(try { CounterNonce([1.byte()], 256, 2); false; } catch e is InvalidCryptoInput { true; });
+    test.throws(InvalidCryptoInput) { CounterNonce([1.byte()], 256, 2); };
     test.is(RandomNonce(Entropy.fake(), 12).bytes().size(), 12);
 }

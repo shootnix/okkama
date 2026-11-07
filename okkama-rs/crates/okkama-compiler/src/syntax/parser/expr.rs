@@ -26,10 +26,10 @@
 use super::{PResult, Parser};
 use crate::source::Span;
 use crate::syntax::ast::{
-    ActionResult, Argument, BinaryOp, Expr, ExprKind, FunctionalOp, Literal, MapEntry, Name,
-    ResultSpec, UnaryOp,
+    ActionResult, Argument, BinaryOp, Block, CatchClause, Expr, ExprKind, FunctionalOp, Literal, MapEntry,
+    Name, ResultSpec, Stmt, StmtKind, TryBody, UnaryOp,
 };
-use crate::syntax::token::{TokenKind, TokenValue, is_lower_word, is_type_word};
+use crate::syntax::token::{StrLiteral, StringForm, TokenKind, TokenValue, is_lower_word, is_type_word};
 
 impl Parser<'_> {
     /// `expr = logic_or optional_else? compact_choice?`.
@@ -547,6 +547,13 @@ impl Parser<'_> {
             }
             if self.eat(TokenKind::Dot) {
                 let name = self.consume_member_name("Expect property name after \".\".")?;
+                if name.text == "throws"
+                    && matches!(&expr.kind, ExprKind::Name(test) if test.text == "test")
+                    && self.check(TokenKind::LeftParen)
+                {
+                    expr = self.test_throws(expr.span)?;
+                    continue;
+                }
                 expr = Expr {
                     span: expr.span.to(name.span),
                     kind: ExprKind::Get {
@@ -591,6 +598,44 @@ impl Parser<'_> {
             }
             return Ok(expr);
         }
+    }
+
+    /// `test.throws(Type) { … }` (#216) after `test.throws`: the block must
+    /// throw a `Type`, whose value is the expression's. It is written as the
+    /// `try` it means — the block, then a panic that fails the test, under a
+    /// `catch` of `Type` that yields the error — so checking and every engine
+    /// treat it as one. The binding's name cannot be written in source.
+    fn test_throws(&mut self, start: Span) -> PResult<Expr> {
+        self.consume(TokenKind::LeftParen, "Expect \"(\" after test.throws.")?;
+        let ty = self.type_expr()?;
+        self.consume(TokenKind::RightParen, "Expect \")\" after the error type of test.throws.")?;
+        if !self.check(TokenKind::LeftBrace) {
+            return Err(self.error_here("Expect a block after test.throws(Type): test.throws(Type) { … }"));
+        }
+        let mut body = self.block()?;
+        let span = start.to(body.span);
+        let expected = format!("test.throws: the block did not throw {}", self.text_of(ty.span));
+        let literal = |value: String| Expr {
+            kind: ExprKind::Literal(Literal::String(StrLiteral { value, form: StringForm::Quoted })),
+            span,
+        };
+        let panic = Expr { kind: ExprKind::Panic { value: Box::new(literal(expected)) }, span };
+        body.stmts.push(Stmt { kind: StmtKind::Expr { expr: panic, condition: None }, span: body.span });
+        let caught = Name { text: "test.throws#error".into(), span: ty.span };
+        let clause = CatchClause {
+            name: Some(caught.clone()),
+            types: vec![ty],
+            patterns: Vec::new(),
+            body: Block {
+                stmts: vec![Stmt {
+                    kind: StmtKind::Expr { expr: Expr { kind: ExprKind::Name(caught), span }, condition: None },
+                    span,
+                }],
+                span,
+            },
+            span,
+        };
+        Ok(Expr { kind: ExprKind::Try(Box::new(TryBody { body, catches: vec![clause], span })), span })
     }
 
     /// Arguments after `(` up to and including `)`.

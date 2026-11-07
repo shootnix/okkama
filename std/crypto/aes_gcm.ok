@@ -39,7 +39,7 @@ test "AES-GCM rejects tampering and wrong sizes" {
     let cipher = AesGcm(SecretBytes(key));
     let sealed = cipher.sealed(nonce, [1.byte()], [5.byte(), 6.byte()]);
     test.is(sealed.size(), 18);
-    test.ok(try { cipher.opened(nonce, [2.byte()], sealed); false; } catch e is AuthenticationFailed { true; });
-    test.ok(try { cipher.opened(nonce.slice(0, 11), [1.byte()], sealed); false; } catch e is InvalidCryptoInput { true; });
-    test.ok(try { AesGcm(SecretBytes([1.byte()])); false; } catch e is InvalidCryptoInput { true; });
+    test.throws(AuthenticationFailed) { cipher.opened(nonce, [2.byte()], sealed); };
+    test.throws(InvalidCryptoInput) { cipher.opened(nonce.slice(0, 11), [1.byte()], sealed); };
+    test.throws(InvalidCryptoInput) { AesGcm(SecretBytes([1.byte()])); };
 }

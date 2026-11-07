@@ -138,15 +138,15 @@ test "lazy failure repeated observation and configuration errors" {
     for 0..2 -> attempt {
         test.is(try { invalid.value(); -1; } catch InvalidToml.located(offset, _, _, _) { offset; }, 2);
     }
-    test.ok(try { ParsedToml("", -1, 1, 1); false; } catch error is InvalidTomlBudget { true; });
+    test.throws(InvalidTomlBudget) { ParsedToml("", -1, 1, 1); };
 }
 test "duplicate and resource limits are typed failures" {
     for ["x=1\nx=2", "a.b=1\n[a]", "a={b=1}\na.c=2", "x=9223372036854775808"] -> source {
-        test.ok(try { ParsedToml(source).value(); false; } catch error is InvalidToml { true; });
+        test.throws(InvalidToml) { ParsedToml(source).value(); };
     }
-    test.ok(try { ParsedToml("x=1", 2, 2, 2).value(); false; } catch error is InvalidToml { true; });
-    test.ok(try { ParsedToml("x=1", 3, 1, 2).value(); false; } catch error is InvalidToml { true; });
-    test.ok(try { ParsedToml("x=1", 3, 2, 1).value(); false; } catch error is InvalidToml { true; });
+    test.throws(InvalidToml) { ParsedToml("x=1", 2, 2, 2).value(); };
+    test.throws(InvalidToml) { ParsedToml("x=1", 3, 1, 2).value(); };
+    test.throws(InvalidToml) { ParsedToml("x=1", 3, 2, 1).value(); };
 }
 
 test "all value categories project through nominal callbacks" {
@@ -158,7 +158,7 @@ test "all value categories project through nominal callbacks" {
 }
 test "header-defined tables cannot be reopened with dotted keys" {
     for ["[[a.b]]\n[a]\nb.y=2", "[a.b.c]\nz=9\n[a]\nb.c.t='bad'"] -> source {
-        test.ok(try { ParsedToml(source).value(); false; } catch error is InvalidToml { true; });
+        test.throws(InvalidToml) { ParsedToml(source).value(); };
     }
     let invalid = try { ParsedToml("x=@").value(); "";} catch InvalidToml.located(offset, line, column, message) {
         test.is(offset, 2);
