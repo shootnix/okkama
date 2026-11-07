@@ -18,7 +18,7 @@ fn define(index: u32, ty: &Type) -> I {
     let dst = d(index);
     match ty {
         Type::Int => I::Const { dst, value: int(&format!("-{index}")) },
-        Type::Bool => I::Const { dst, value: Constant::Bool(index % 2 == 0) },
+        Type::Bool => I::Const { dst, value: Constant::Bool(index.is_multiple_of(2)) },
         Type::Str => I::Const { dst, value: Constant::Str(format!("s{index}")) },
         Type::Byte => I::Const { dst, value: Constant::Byte(index as u8) },
         Type::Float => I::Const { dst, value: Constant::Float((index as f64).to_bits()) },

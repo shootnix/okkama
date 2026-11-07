@@ -207,14 +207,13 @@ fn star_match(native: Native, pattern: &str, target: &str, anchored: bool, limit
             position += 1;
             continue;
         }
-        if let Some(star) = star {
-            if retry < right.len() {
+        if let Some(star) = star
+            && retry < right.len() {
                 retry += 1;
                 at = retry;
                 position = star + 1;
                 continue;
             }
-        }
         return Ok(false);
     }
 }

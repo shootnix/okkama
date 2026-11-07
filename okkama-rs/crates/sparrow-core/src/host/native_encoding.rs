@@ -145,7 +145,7 @@ fn encoded(octets: &[u8], alphabet: &[u8], width: u32, quantum: usize) -> String
             alphabet[((buffer << (width - bits)) & mask) as usize],
         ));
     }
-    while result.len() % quantum != 0 {
+    while !result.len().is_multiple_of(quantum) {
         result.push('=');
     }
     result
@@ -192,7 +192,7 @@ fn shape(source: &[u32], alphabet: &[u8], width: u32, quantum: usize) -> (i64, u
             return (offset as i64, 0);
         }
     }
-    if size % quantum != 0 {
+    if !size.is_multiple_of(quantum) {
         return (size as i64, 0);
     }
     let expected = expected_padding(width, data_end % quantum);

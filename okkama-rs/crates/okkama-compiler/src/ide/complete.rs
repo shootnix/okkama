@@ -40,15 +40,13 @@ impl Context {
         let start = prefix_start(text, offset) as usize;
         let line_start = text[..start].rfind('\n').map_or(0, |at| at + 1);
         let line = text[line_start..start].trim_start();
-        if let Some(rest) = line.strip_prefix("import \"") {
-            if let Some((path, tail)) = rest.split_once('"') {
-                if tail.contains(" take ") || tail.trim_end().ends_with("take") {
+        if let Some(rest) = line.strip_prefix("import \"")
+            && let Some((path, tail)) = rest.split_once('"')
+                && (tail.contains(" take ") || tail.trim_end().ends_with("take")) {
                     return Context::Take {
                         path: path.to_string(),
                     };
                 }
-            }
-        }
         let mut dot = start;
         while dot > 0 && bytes[dot - 1] == b' ' {
             dot -= 1;

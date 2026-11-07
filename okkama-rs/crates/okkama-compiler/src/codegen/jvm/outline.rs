@@ -575,11 +575,10 @@ fn outline_once(module: &mut Module, index: usize) -> bool {
     // Поддеревья доминаторов: дети каждого блока.
     let mut children = vec![Vec::new(); count];
     for (block, dom) in idom.iter().enumerate() {
-        if let Some(dom) = dom {
-            if *dom != block {
+        if let Some(dom) = dom
+            && *dom != block {
                 children[*dom].push(block);
             }
-        }
     }
     // Прямой порядок: поддерево `b` — блоки с pre в [pre[b], last[b]].
     let mut pre = vec![usize::MAX; count];

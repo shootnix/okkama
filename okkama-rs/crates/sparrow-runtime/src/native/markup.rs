@@ -577,11 +577,10 @@ impl Parser {
             };
             time = Some(parts);
         }
-        if let Some((y, m, d)) = date {
-            if !Self::date_valid(y, m, d) {
+        if let Some((y, m, d)) = date
+            && !Self::date_valid(y, m, d) {
                 return Err(self.error_at("invalid Gregorian date", at));
             }
-        }
         let mut coordinates = Vec::new();
         if let Some((y, m, d)) = date {
             coordinates.extend([y, m, d]);
@@ -1053,13 +1052,12 @@ fn decode_references(value: &str, attribute: bool) -> String {
     let mut result = String::new();
     let mut offset = 0;
     while offset < source.len() {
-        if source[offset] == '&' {
-            if let Some((decoded, length)) = reference_at(&source, offset, attribute) {
+        if source[offset] == '&'
+            && let Some((decoded, length)) = reference_at(&source, offset, attribute) {
                 result.push_str(&decoded);
                 offset += length;
                 continue;
             }
-        }
         result.push(source[offset]);
         offset += 1;
     }
@@ -1352,15 +1350,14 @@ fn tokenize(origin: &str) -> Vec<Event> {
                 }
             }
         }
-        if two == "</" {
-            if let Some((event, next)) = end_tag(&source, offset) {
+        if two == "</"
+            && let Some((event, next)) = end_tag(&source, offset) {
                 events.push(event);
                 offset = next;
                 continue;
             }
-        }
-        if source[offset] == '<' {
-            if let Some((event, next)) = start_tag(&source, offset) {
+        if source[offset] == '<'
+            && let Some((event, next)) = start_tag(&source, offset) {
                 let name = event.name.clone().expect("start tag has a name");
                 let raw = event.self_closing == Some(false) && (name == "script" || name == "style");
                 events.push(event);
@@ -1370,7 +1367,6 @@ fn tokenize(origin: &str) -> Vec<Event> {
                 }
                 continue;
             }
-        }
         let following = index_of(&source, "<", offset + 1).unwrap_or(source.len());
         push_text(&mut events, &slice(&source, offset, following), false);
         offset = following;

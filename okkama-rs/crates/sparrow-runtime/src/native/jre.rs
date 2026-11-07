@@ -118,7 +118,7 @@ pub fn decode(bytes: &[u8], encoding: &str) -> Option<String> {
         "ascii" => bytes.iter().all(u8::is_ascii).then(|| bytes.iter().map(|b| char::from(*b)).collect()),
         "latin-1" => Some(bytes.iter().map(|b| char::from(*b)).collect()),
         "utf-16-le" | "utf-16-be" => {
-            if bytes.len() % 2 != 0 {
+            if !bytes.len().is_multiple_of(2) {
                 return None;
             }
             let units: Vec<u16> = bytes
@@ -134,7 +134,7 @@ pub fn decode(bytes: &[u8], encoding: &str) -> Option<String> {
             String::from_utf16(&units).ok()
         }
         "utf-32-le" | "utf-32-be" => {
-            if bytes.len() % 4 != 0 {
+            if !bytes.len().is_multiple_of(4) {
                 return None;
             }
             bytes

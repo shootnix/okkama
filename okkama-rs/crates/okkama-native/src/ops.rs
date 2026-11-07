@@ -808,11 +808,10 @@ fn spki_algorithm(der: &[u8]) -> Result<Vec<u8>> {
 
 fn algorithm_text(algorithm: &spki::AlgorithmIdentifierRef<'_>) -> String {
     let mut text = algorithm.oid.to_string();
-    if let Some(parameters) = &algorithm.parameters {
-        if let Ok(curve) = parameters.decode_as::<spki::ObjectIdentifier>() {
+    if let Some(parameters) = &algorithm.parameters
+        && let Ok(curve) = parameters.decode_as::<spki::ObjectIdentifier>() {
             text.push('|');
             text.push_str(&curve.to_string());
         }
-    }
     text
 }

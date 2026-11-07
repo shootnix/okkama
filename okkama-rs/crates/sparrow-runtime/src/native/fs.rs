@@ -138,11 +138,10 @@ fn win32_canon_cat(parts: &[String]) -> String {
     path = jre::replace_first(&path, r"(?s)\\\z", "");
     if volume.ends_with('\\') {
         path = jre::replace_first(&path, r"(?s)\A\.\.(?:\\\.\.)*(?:\\|\z)", "");
-        if path.is_empty() {
-            if let Some(share) = jre::captures(r"(?s)\A(\\\\.*)\\\z", &volume) {
+        if path.is_empty()
+            && let Some(share) = jre::captures(r"(?s)\A(\\\\.*)\\\z", &volume) {
                 return share[1].clone().unwrap_or_default();
             }
-        }
     }
     if !path.is_empty() || !volume.is_empty() {
         format!("{volume}{path}")
@@ -277,11 +276,10 @@ impl Spec {
             }
             Spec::Win32 => {
                 let mut volume = volume.to_string();
-                if let Some(share) = jre::captures(r"(?s)^([\\/])[\\/][^\\/]+[\\/][^\\/]+\z", &volume) {
-                    if jre::is_match(r"(?s)^[^\\/]", directory) {
+                if let Some(share) = jre::captures(r"(?s)^([\\/])[\\/][^\\/]+[\\/][^\\/]+\z", &volume)
+                    && jre::is_match(r"(?s)^[^\\/]", directory) {
                         volume.push_str(&share[1].clone().unwrap_or_default());
                     }
-                }
                 volume.push_str(directory);
                 if !jre::matches("^[a-zA-Z]:", &volume)
                     && jre::is_match(r"[^\\/]\z", &volume)

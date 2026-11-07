@@ -284,22 +284,20 @@ fn calls_check_arguments_and_privacy() {
     let secret = symbol(&module, "C.secret");
     let value = symbol(&module, "C.value");
     for inst in &mut module.functions[main].blocks[0].insts {
-        if let InstKind::Call { func, .. } = &mut inst.kind {
-            if func.0 == value {
+        if let InstKind::Call { func, .. } = &mut inst.kind
+            && func.0 == value {
                 *func = FuncId(secret);
             }
-        }
     }
     rejects(&module, "@C.secret is private to its object");
 
     let mut module = lowered(OBJECTS);
     let main = symbol(&module, "main");
     for inst in &mut module.functions[main].blocks[0].insts {
-        if let InstKind::Call { args, .. } = &mut inst.kind {
-            if !args.is_empty() {
+        if let InstKind::Call { args, .. } = &mut inst.kind
+            && !args.is_empty() {
                 args.clear();
             }
-        }
     }
     rejects(&module, "passes 0 arguments for 1 parameters");
 }

@@ -90,11 +90,10 @@ impl Checker<'_, '_> {
                 if let ast::ExprKind::Match(body) = &inner.kind {
                     let mut names = std::collections::HashSet::new();
                     for arm in &body.cases {
-                        if let ast::ExprKind::Get { name, .. } = &arm.patterns[0].kind {
-                            if !names.insert(&name.text) {
+                        if let ast::ExprKind::Get { name, .. } = &arm.patterns[0].kind
+                            && !names.insert(&name.text) {
                                 self.error(name.span, "Duplicate variant pattern");
                             }
-                        }
                     }
                     if let ExprKind::Match(found) = &result.kind {
                         if !matches!(Self::ty_of(&found.subject), Ty::Enum(_)) {
@@ -266,16 +265,14 @@ impl Checker<'_, '_> {
             );
             return Self::poisoned(name.span);
         }
-        if matches!(
+        if (matches!(
             self.kind,
             Kind::Method | Kind::Successor | Kind::Destroy | Kind::CapField
-        ) || (self.kind == Kind::Closure && self.self_ty.is_some())
-        {
-            if let Some(field) = self.own_field(&name.text) {
+        ) || (self.kind == Kind::Closure && self.self_ty.is_some()))
+            && let Some(field) = self.own_field(&name.text) {
                 let ty = self.field_type(field);
                 return Self::typed(ExprKind::Field(field), ty, name.span);
             }
-        }
         if name.text == "test" {
             return Self::typed(ExprKind::TestCapability, Ty::Test, name.span);
         }
@@ -436,11 +433,10 @@ impl Checker<'_, '_> {
             (lhs, rhs)
         };
         let (left, right) = (Self::ty_of(&lhs).taken(), Self::ty_of(&rhs).taken());
-        if left == right && matches!(op, B::Equal | B::NotEqual) {
-            if let Ty::Variant(id, types) = &left {
+        if left == right && matches!(op, B::Equal | B::NotEqual)
+            && let Ty::Variant(id, types) = &left {
                 return self.variant_compare(lhs, rhs, *id, types.clone(), op == B::NotEqual, span);
             }
-        }
         if left.is_error() || right.is_error() {
             return Self::poisoned(span);
         }
@@ -824,22 +820,18 @@ impl Checker<'_, '_> {
                 let total = self.reg.enums[id.0].cases.len();
                 let mut seen = vec![false; total];
                 for pattern in patterns {
-                    if let ast::ExprKind::Get { object, name } = &strip_grouping(pattern).kind {
-                        if let ast::ExprKind::Name(enum_name) = &strip_grouping(object).kind {
-                            if self.local(&enum_name.text).is_none()
+                    if let ast::ExprKind::Get { object, name } = &strip_grouping(pattern).kind
+                        && let ast::ExprKind::Name(enum_name) = &strip_grouping(object).kind
+                            && self.local(&enum_name.text).is_none()
                                 && (enum_name.text == "$choice"
                                     || self.enum_named(&enum_name.text) == Some(*id))
-                            {
-                                if let Some(case) = self.reg.enums[id.0]
+                                && let Some(case) = self.reg.enums[id.0]
                                     .cases
                                     .iter()
                                     .position(|case| *case == name.text)
                                 {
                                     seen[case] = true;
                                 }
-                            }
-                        }
-                    }
                 }
                 seen.iter().all(|seen| *seen)
             }
@@ -903,8 +895,8 @@ impl Checker<'_, '_> {
             ast::ExprKind::Call { callee, args } => (&**callee, Some(args)),
             _ => (pattern, None),
         };
-        if let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind {
-            if let Some((id, _)) = self.variant_receiver(object) {
+        if let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind
+            && let Some((id, _)) = self.variant_receiver(object) {
                 let decl = self.reg.enums[id.0].clone();
                 if !decl.error {
                     self.error(
@@ -928,7 +920,6 @@ impl Checker<'_, '_> {
                 };
                 return Some((alt, Some((id, case, args.cloned().unwrap_or_default()))));
             }
-        }
         let path = args.is_none().then(|| expr_path(callee)).flatten();
         let Some(path) = path else {
             self.error(

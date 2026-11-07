@@ -269,15 +269,14 @@ fn resolve(
                     requirement,
                     by: by.clone(),
                 });
-                if let Some(package) = chosen.get(name) {
-                    if seen.insert(name.clone()) {
+                if let Some(package) = chosen.get(name)
+                    && seen.insert(name.clone()) {
                         queue.push((
                             format!("{name} {}", package.version),
                             package.manifest.clone(),
                             package.base().map(Path::to_path_buf),
                         ));
                     }
-                }
             }
         }
         let mut changed = false;
@@ -437,15 +436,14 @@ impl Work {
             }
             Source::Git(url) => {
                 let commit = self.versions(source)?[version].clone().unwrap_or_default();
-                if let Some(locked) = expected.and_then(|locked| locked.commit.as_ref()) {
-                    if *locked != commit {
+                if let Some(locked) = expected.and_then(|locked| locked.commit.as_ref())
+                    && *locked != commit {
                         return Err(format!(
                             "tag v{version} of {url} now points at {commit}, but {} has {locked}; \
                              the tag was moved — check the package, then run `blade update`",
                             crate::lock::LOCK
                         ));
                     }
-                }
                 let clone = self.clone_of(url)?;
                 git(&[
                     "-C",
@@ -475,8 +473,8 @@ impl Work {
         check_package(&dir, &name)
             .map_err(|error| format!("{name} {version} ({}): {error}", source.id()))?;
         let checksum = checksum(&dir)?;
-        if let (Some(locked), Source::Git(_)) = (expected, source) {
-            if !locked.checksum.is_empty() && locked.checksum != checksum {
+        if let (Some(locked), Source::Git(_)) = (expected, source)
+            && !locked.checksum.is_empty() && locked.checksum != checksum {
                 return Err(format!(
                     "{name} {version}: the files differ from {} ({} != {})",
                     crate::lock::LOCK,
@@ -484,7 +482,6 @@ impl Work {
                     locked.checksum
                 ));
             }
-        }
         let package = Package {
             version: *version,
             source: source.clone(),
@@ -550,11 +547,10 @@ fn remote_tags(url: &str) -> Result<BTreeMap<Version, String>, String> {
             Some(tag) => (tag, &mut peeled),
             None => (tag, &mut tags),
         };
-        if tag.starts_with('v') {
-            if let Some(version) = Version::parse(tag) {
+        if tag.starts_with('v')
+            && let Some(version) = Version::parse(tag) {
                 target.insert(version, commit.to_string());
             }
-        }
     }
     tags.extend(peeled);
     Ok(tags)

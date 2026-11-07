@@ -358,11 +358,10 @@ impl Heap {
             }
             self.json_nodes.begin_collection();
             while let Some(root) = roots.pop() {
-                if root.kind() == JSON_NODE && self.json_nodes.mark(root.bits).unwrap_or(false) {
-                    if let Ok(node) = self.json_nodes.get(root.bits) {
+                if root.kind() == JSON_NODE && self.json_nodes.mark(root.bits).unwrap_or(false)
+                    && let Ok(node) = self.json_nodes.get(root.bits) {
                         node.roots(&mut roots);
                     }
-                }
             }
             self.json_nodes.sweep();
         }

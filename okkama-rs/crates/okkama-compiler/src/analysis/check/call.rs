@@ -66,11 +66,10 @@ impl Checker<'_, '_> {
         let mut call = CallArgs::default();
         let mut seen: HashSet<String> = HashSet::new();
         for (index, arg) in args.iter().enumerate() {
-            if let Some(name) = &arg.name {
-                if !seen.insert(name.text.clone()) {
+            if let Some(name) = &arg.name
+                && !seen.insert(name.text.clone()) {
                     self.error(name.span, format!("Duplicate argument \"{}\"", name.text));
                 }
-            }
             if let ast::ExprKind::Unpack { operand, .. } = &strip_grouping(&arg.value).kind {
                 if index + 1 != args.len() || arg.name.is_some() {
                     self.error(
@@ -372,11 +371,10 @@ impl Checker<'_, '_> {
         span: Span,
         expected: Option<&Ty>,
     ) -> Expr {
-        if let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind {
-            if let Some((id, explicit)) = self.variant_receiver(object) {
+        if let ast::ExprKind::Get { object, name } = &strip_grouping(callee).kind
+            && let Some((id, explicit)) = self.variant_receiver(object) {
                 return self.variant_construct(id, explicit, name, args, expected, span);
             }
-        }
         let named = args.iter().filter(|arg| arg.name.is_some()).count();
         if named != 0 && named != args.len() {
             self.error(span, "A call cannot mix positional and named arguments");
@@ -419,13 +417,12 @@ impl Checker<'_, '_> {
                 let fields_visible =
                     matches!(self.kind, Kind::Method | Kind::Successor | Kind::Destroy)
                         || (self.kind == Kind::Closure && self.self_ty.is_some());
-                if fields_visible {
-                    if let Some(field) = self.own_field(&name.text) {
+                if fields_visible
+                    && let Some(field) = self.own_field(&name.text) {
                         let ty = self.field_type(field);
                         let value = Self::typed(ExprKind::Field(field), ty, name.span);
                         return self.call_value(value, args, span);
                     }
-                }
                 if matches!(name.text.as_str(), "NativeFailure" | "Cancelled") {
                     self.error(span, format!("Source cannot construct \"{}\"", name.text));
                     return Self::poisoned(span);
@@ -438,13 +435,12 @@ impl Checker<'_, '_> {
                     return call;
                 }
                 // `ns.Object(...)` и `ns.native(...)`: имя пространства, не локальная.
-                if let ast::ExprKind::Name(space) = &strip_grouping(object).kind {
-                    if self.local(&space.text).is_none()
+                if let ast::ExprKind::Name(space) = &strip_grouping(object).kind
+                    && self.local(&space.text).is_none()
                         && self.reg.is_namespace(self.module, &space.text)
                     {
                         return self.qualified_call(&space.text, name, args, span, expected);
                     }
-                }
                 self.method_call(object, name, args, span)
             }
             _ => {
@@ -1448,8 +1444,8 @@ impl Checker<'_, '_> {
                 }
             };
         }
-        if let ast::ExprKind::Name(space) = &strip_grouping(receiver).kind {
-            if self.local(&space.text).is_none() {
+        if let ast::ExprKind::Name(space) = &strip_grouping(receiver).kind
+            && self.local(&space.text).is_none() {
                 if self.reg.is_namespace(self.module, &space.text) {
                     let message = self
                         .reg
@@ -1470,7 +1466,6 @@ impl Checker<'_, '_> {
                     return Self::poisoned(span);
                 }
             }
-        }
         let target = self.value(receiver, None);
         let target_ty = Self::ty_of(&target).taken();
         match &target_ty {

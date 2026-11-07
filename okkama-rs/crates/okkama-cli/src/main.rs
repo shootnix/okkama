@@ -968,12 +968,11 @@ fn fmt_command(args: &[String]) -> Outcome {
                 unformatted = true;
             }
         } else if write && file != "-" {
-            if formatted != text {
-                if let Err(error) = std::fs::write(file, &formatted) {
+            if formatted != text
+                && let Err(error) = std::fs::write(file, &formatted) {
                     stderr.push_str(&format!("okkama: cannot write `{file}`: {error}\n"));
                     io_failed = true;
                 }
-            }
         } else {
             stdout.push_str(&formatted);
         }
@@ -1240,11 +1239,10 @@ impl FileLoader {
             return vec![self.stdlib.clone(), base];
         }
         let package = manifest::package_root(&importer);
-        if let Some(package) = &package {
-            if manifest::is_dependency_path(path) {
+        if let Some(package) = &package
+            && manifest::is_dependency_path(path) {
                 return vec![manifest::project_root(package)];
             }
-        }
         let mut dirs = vec![base];
         dirs.extend(package.filter(|package| !dirs.contains(package)));
         dirs.extend(self.import_dirs.iter().cloned());
@@ -1371,14 +1369,13 @@ fn build_command(args: &[String]) -> Outcome {
             directory.join(&file.name)
         };
         // Runtime classes live in package subdirectories (`okkama/rt/`).
-        if let Some(parent) = path.parent().filter(|_| index > 0) {
-            if let Err(error) = std::fs::create_dir_all(parent) {
+        if let Some(parent) = path.parent().filter(|_| index > 0)
+            && let Err(error) = std::fs::create_dir_all(parent) {
                 return Outcome::failure(
                     format!("okkama: cannot create `{}`: {error}\n", parent.display()),
                     EXIT_IO,
                 );
             }
-        }
         if let Err(error) = std::fs::write(&path, &file.bytes) {
             return Outcome::failure(
                 format!("okkama: cannot write `{}`: {error}\n", path.display()),
@@ -1795,11 +1792,10 @@ fn java_command(
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit());
-    if std::env::var_os("OKKAMA_ICU_LIBDIR").is_none() {
-        if let Some(icu) = pinned_icu() {
+    if std::env::var_os("OKKAMA_ICU_LIBDIR").is_none()
+        && let Some(icu) = pinned_icu() {
             command.env("OKKAMA_ICU_LIBDIR", icu);
         }
-    }
     command
 }
 
@@ -1833,8 +1829,8 @@ fn with_native_libraries(
     if let Some(path) = local.filter(|path| path.is_file()) {
         libraries.push((platform.clone(), path));
     }
-    if let Some(root) = std::env::var_os("OKKAMA_NATIVE_DIR") {
-        if let Ok(entries) = std::fs::read_dir(root) {
+    if let Some(root) = std::env::var_os("OKKAMA_NATIVE_DIR")
+        && let Ok(entries) = std::fs::read_dir(root) {
             for entry in entries.flatten() {
                 let target = entry.file_name().to_string_lossy().into_owned();
                 let os = target.split('-').next().unwrap_or("").to_string();
@@ -1844,7 +1840,6 @@ fn with_native_libraries(
                 }
             }
         }
-    }
     for (target, path) in libraries {
         if let Ok(bytes) = std::fs::read(&path) {
             let os = target.split('-').next().unwrap_or("").to_string();

@@ -497,18 +497,16 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
         let mut tracked: Vec<usize> = Vec::new();
         for local in locals {
-            if let Some(var) = self.local_vars[local.0] {
-                if self.vars[var].rebindable && !tracked.contains(&var) {
+            if let Some(var) = self.local_vars[local.0]
+                && self.vars[var].rebindable && !tracked.contains(&var) {
                     tracked.push(var);
                 }
-            }
         }
         for field in fields {
-            if let Some(var) = self.field_vars.get(field).copied() {
-                if !tracked.contains(&var) {
+            if let Some(var) = self.field_vars.get(field).copied()
+                && !tracked.contains(&var) {
                     tracked.push(var);
                 }
-            }
         }
         tracked.sort_unstable();
         // Staged-поле без значения получает исходное; несвязанное поле не передаётся.

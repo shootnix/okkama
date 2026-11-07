@@ -205,11 +205,10 @@ impl Parser {
             }
             _ => {}
         }
-        if allow_shorthand {
-            if let Some(matcher) = Self::shorthand(escaped) {
+        if allow_shorthand
+            && let Some(matcher) = Self::shorthand(escaped) {
                 return Ok((matcher, true));
             }
-        }
         if !(meta(escaped)
             || escaped == '-' as u32
             || escaped == ' ' as u32
@@ -409,11 +408,10 @@ impl Parser {
         } else {
             return Ok(inner);
         };
-        if let Some(next) = self.peek() {
-            if ['?', '*', '+', '{'].iter().any(|c| *c as u32 == next) {
+        if let Some(next) = self.peek()
+            && ['?', '*', '+', '{'].iter().any(|c| *c as u32 == next) {
                 return Err(self.invalid());
             }
-        }
         Ok(Node::Repeat(Box::new(inner), minimum, maximum))
     }
 

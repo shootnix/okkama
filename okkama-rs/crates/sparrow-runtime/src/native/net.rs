@@ -49,11 +49,10 @@ fn groups(text: &str, out: &mut Vec<u16>, last: bool) -> bool {
 
 pub fn parse_ipv6(text: &str) -> Option<[u8; 16]> {
     let gap = text.find("::");
-    if let Some(at) = gap {
-        if text[at + 1..].contains("::") {
+    if let Some(at) = gap
+        && text[at + 1..].contains("::") {
             return None;
         }
-    }
     let (mut head, mut tail) = (Vec::new(), Vec::new());
     match gap {
         Some(at) => {

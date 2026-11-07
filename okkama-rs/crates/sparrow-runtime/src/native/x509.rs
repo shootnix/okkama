@@ -704,7 +704,7 @@ fn is_oid(text: &str) -> bool {
 }
 
 fn is_hexes(text: &str) -> bool {
-    text.len() % 2 == 0 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    text.len().is_multiple_of(2) && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn small_number(value: &Json, maximum: i64) -> Option<u8> {
@@ -997,7 +997,7 @@ fn attribute_text(tag: u8, s: &[u8]) -> Result<String, Bad> {
             Ok(s.iter().map(|b| char::from(*b)).collect())
         }
         30 => {
-            if s.len() % 2 != 0 {
+            if !s.len().is_multiple_of(2) {
                 return bad();
             }
             units(s, 2)
@@ -1006,7 +1006,7 @@ fn attribute_text(tag: u8, s: &[u8]) -> Result<String, Bad> {
                 .collect()
         }
         28 => {
-            if s.len() % 4 != 0 {
+            if !s.len().is_multiple_of(4) {
                 return bad();
             }
             units(s, 4)
@@ -1216,7 +1216,7 @@ fn system_certificates(native: Native) -> Result<Value, Error> {
                 .collect();
             let body = encoded.trim_end_matches('=');
             let valid = !encoded.is_empty()
-                && encoded.len() % 4 == 0
+                && encoded.len().is_multiple_of(4)
                 && encoded.len() - body.len() <= 2
                 && body.bytes().all(|b| BASE64.contains(&b));
             if !valid {
@@ -1312,11 +1312,10 @@ fn dns_matches(facts: &Facts, host: &str) -> Result<bool, Bad> {
         if labels.len() <= width || labels.join(".") != suffix {
             continue;
         }
-        if let Some(dot) = host.find('.') {
-            if dot > 0 && host[dot + 1..] == *suffix {
+        if let Some(dot) = host.find('.')
+            && dot > 0 && host[dot + 1..] == *suffix {
                 return Ok(true);
             }
-        }
     }
     Ok(false)
 }
@@ -1582,8 +1581,8 @@ fn names_for_constraints(candidate: &Candidate) -> Vec<General> {
         out.push(General::Directory(candidate.subject.clone()));
     }
     let mut has_dns = false;
-    if let Ok(Some(source)) = extension(candidate.facts(), "2.5.29.17") {
-        if let Ok(node) = parse(&source) {
+    if let Ok(Some(source)) = extension(candidate.facts(), "2.5.29.17")
+        && let Ok(node) = parse(&source) {
             for child in &node.children {
                 if let Some(general) = general_name(&source, child) {
                     has_dns |= matches!(general, General::Dns(_));
@@ -1591,7 +1590,6 @@ fn names_for_constraints(candidate: &Candidate) -> Vec<General> {
                 }
             }
         }
-    }
     for group in &candidate.facts().subject {
         for (identifier, tag, value) in group {
             let Ok(text) = attribute_text(*tag, &unhex(value)) else {

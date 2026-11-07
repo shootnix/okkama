@@ -298,13 +298,12 @@ impl Heap {
             if let Some(owner) = lock.owner.upgrade() {
                 let mut state = owner.borrow_mut();
                 #[cfg(unix)]
-                if let Some(channel) = &mut state.channel {
-                    if let Some(oslock) = channel.lock.take() {
+                if let Some(channel) = &mut state.channel
+                    && let Some(oslock) = channel.lock.take() {
                         oslock
                             .release(channel.file.as_ref().expect("open"))
                             .map_err(|e| host(n, e))?;
                     }
-                }
                 state.lock = None;
             }
             lock.closed.set(true);

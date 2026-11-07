@@ -109,7 +109,7 @@ impl Runtime {
                 std::hint::spin_loop();
                 turns += 1;
                 // Reading the clock costs more than a turn; look every 64.
-                if turns % 64 == 0 {
+                if turns.is_multiple_of(64) {
                     self.io.block_on(tokio::task::yield_now());
                     if spin.elapsed() >= std::time::Duration::from_micros(SPIN_MICROS) {
                         break;

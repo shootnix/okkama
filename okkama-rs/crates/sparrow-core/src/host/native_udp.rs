@@ -310,8 +310,8 @@ impl Heap {
                 .map_err(|e| native(host(n, "Cannot register UDP socket", e)))?;
             return Ok(self.network_new(NetworkHandle::Udp(Rc::new(Udp::new(socket, v6, dual))))?);
         }
-        if n == NetworkLocalEndpoint {
-            if let NetworkHandle::Stream(state) = self.network_handle(a[0])? {
+        if n == NetworkLocalEndpoint
+            && let NetworkHandle::Stream(state) = self.network_handle(a[0])? {
                 let socket = state.socket(n).map_err(native)?;
                 let Transport::Tcp(socket) = &*socket else {
                     return Err(invalid("invalid_input", "Operation requires an IP socket"));
@@ -322,7 +322,6 @@ impl Heap {
                         .map_err(|e| native(host(n, "Cannot inspect local endpoint", e)))?,
                 )?);
             }
-        }
         if let NetworkHandle::Stream(state) = self.network_handle(a[0])? {
             return Err(if state.closed() {
                 invalid("already_closed", "Native handle is already closed")

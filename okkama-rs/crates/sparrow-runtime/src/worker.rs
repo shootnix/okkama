@@ -222,12 +222,11 @@ pub fn spawn(target: String, args: Vec<Value>, type_name: TypeName<'_>) -> Resul
     );
     promise.listen(move || {
         op.detach();
-        if let Ok(pid) = child.lock() {
-            if let Some(pid) = *pid {
+        if let Ok(pid) = child.lock()
+            && let Some(pid) = *pid {
                 // SIGTERM ещё не собранному потомку (как `destroy` JVM).
                 crate::host::signal(pid, 15);
             }
-        }
     });
     Ok(Value::Future(promise))
 }

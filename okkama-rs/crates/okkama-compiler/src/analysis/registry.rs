@@ -936,8 +936,8 @@ impl<'a> Registry<'a> {
                         .as_ref()
                         .map_or_else(|| last_segment(&path), |alias| alias.text.clone());
                     let only = (!import.take.is_empty()).then(|| taken.clone());
-                    if let Some(existing) = self.modules[module].namespaces.get(&namespace) {
-                        if existing.module != dependency {
+                    if let Some(existing) = self.modules[module].namespaces.get(&namespace)
+                        && existing.module != dependency {
                             let (first, second) = (&self.modules[existing.module].name, &self.modules[dependency].name);
                             self.error(
                                 import.span,
@@ -945,7 +945,6 @@ impl<'a> Registry<'a> {
                             );
                             continue;
                         }
-                    }
                     self.modules[module].namespaces.insert(
                         namespace,
                         Namespace {
@@ -962,8 +961,8 @@ impl<'a> Registry<'a> {
         let own = self.modules[dependency].own.clone();
         if let Some(found) = own.types.get(text) {
             let scope = &self.modules[module].scope;
-            if let Some(existing) = scope.types.get(text) {
-                if existing != found {
+            if let Some(existing) = scope.types.get(text)
+                && existing != found {
                     let kind = match existing {
                         TypeRef::Object(_) => "Object",
                         TypeRef::Role(_) => "Role",
@@ -974,7 +973,6 @@ impl<'a> Registry<'a> {
                     self.error(span, format!("{kind} \"{text}\" is already declared by {first}; this import takes another from {second}"));
                     return;
                 }
-            }
             self.modules[module]
                 .scope
                 .types
@@ -1893,8 +1891,7 @@ impl<'a> Registry<'a> {
             if let Some(other) = methods
                 .iter()
                 .find(|other| other.name == signature.name.text)
-            {
-                if other.result != result {
+                && other.result != result {
                     self.error(
                         signature.span,
                         format!(
@@ -1904,7 +1901,6 @@ impl<'a> Registry<'a> {
                     );
                     continue;
                 }
-            }
             methods.push(RoleMethod {
                 name: signature.name.text.clone(),
                 params,
@@ -2173,8 +2169,8 @@ impl<'a> Registry<'a> {
             let private = action.visibility == ast::Visibility::Private;
             // Successor объекта — его собственная копия (§11.9); `^Role` бывает
             // только в сигнатуре роли, реализация которой возвращает `^Self`.
-            if let Some(Ty::Successor(target)) = &result {
-                if **target != self_type {
+            if let Some(Ty::Successor(target)) = &result
+                && **target != self_type {
                     let message = if matches!(&**target, Ty::Role(..)) {
                         format!(
                             "Successor action \"{}\" on object \"{name}\" must return ^{name}; declare ^{} in a role signature and implement it as ^{name}",
@@ -2190,7 +2186,6 @@ impl<'a> Registry<'a> {
                     self.error(action.result.span(), message);
                     result = Some(Ty::Error);
                 }
-            }
             let candidate = MethodInfo {
                 name: action.name.text.clone(),
                 params,

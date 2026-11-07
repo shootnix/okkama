@@ -121,11 +121,10 @@ pub fn step() -> Result<(), Exhausted> {
             if state.interrupt.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                 return Err(Exhausted::Interrupted);
             }
-            if let Some((limit, base, probe)) = state.memory {
-                if probe().saturating_sub(base) as u64 > limit {
+            if let Some((limit, base, probe)) = state.memory
+                && probe().saturating_sub(base) as u64 > limit {
                     return Err(Exhausted::Memory);
                 }
-            }
         }
         Ok(())
     })

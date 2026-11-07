@@ -237,11 +237,10 @@ fn endpoint_strings(address: &SocketAddr, family: u8) -> Value {
         mapped[12..].copy_from_slice(&raw);
         format(&mapped)
     } else {
-        if let SocketAddr::V6(v6) = address {
-            if v6.scope_id() != 0 {
+        if let SocketAddr::V6(v6) = address
+            && v6.scope_id() != 0 {
                 scope = v6.scope_id().to_string();
             }
-        }
         format(&raw)
     };
     string_array([host, address.port().to_string(), scope])
@@ -627,8 +626,8 @@ fn stream_read(value: &Value, limit: &crate::IntValue) -> Value {
     });
     let weak = Rc::downgrade(&state);
     promise.listen(move || {
-        if let Some(state) = weak.upgrade() {
-            if let Ok(mut borrowed) = state.try_borrow_mut()
+        if let Some(state) = weak.upgrade()
+            && let Ok(mut borrowed) = state.try_borrow_mut()
                 && let Kind2::Stream(stream) = &mut borrowed.kind
             {
                 stream.reading = None;
@@ -636,7 +635,6 @@ fn stream_read(value: &Value, limit: &crate::IntValue) -> Value {
                     reader.detach();
                 }
             }
-        }
     });
     if ready {
         serve_read(&state);
@@ -843,13 +841,12 @@ fn receive(state: &SockRef, limit: &crate::IntValue, operation: &str) -> Value {
     let weak = Rc::downgrade(state);
     promise.listen(move || {
         op.detach();
-        if let Some(state) = weak.upgrade() {
-            if let Ok(mut borrowed) = state.try_borrow_mut()
+        if let Some(state) = weak.upgrade()
+            && let Ok(mut borrowed) = state.try_borrow_mut()
                 && let Kind2::Udp(udp) = &mut borrowed.kind
             {
                 udp.receiving = None;
             }
-        }
     });
     Value::Future(promise)
 }
@@ -891,13 +888,12 @@ fn send(state: &SockRef, payload: Vec<u8>, target_address: Option<SocketAddr>, o
     let weak = Rc::downgrade(state);
     promise.listen(move || {
         op.detach();
-        if let Some(state) = weak.upgrade() {
-            if let Ok(mut borrowed) = state.try_borrow_mut()
+        if let Some(state) = weak.upgrade()
+            && let Ok(mut borrowed) = state.try_borrow_mut()
                 && let Kind2::Udp(udp) = &mut borrowed.kind
             {
                 udp.sending = None;
             }
-        }
     });
     Value::Future(promise)
 }
@@ -1632,8 +1628,8 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
             }
             member.borrow_mut().closed = true;
             let socket = member.borrow().socket.upgrade();
-            if let Some(socket) = socket {
-                if !socket.borrow().closed {
+            if let Some(socket) = socket
+                && !socket.borrow().closed {
                     let key = format(&member.borrow().group);
                     let (group, family, interface) = {
                         let member = member.borrow();
@@ -1653,7 +1649,6 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                         }
                     });
                 }
-            }
             Ok(Value::Bool(true))
         }
         "dns_addresses" => Ok(dns_addresses(native, string(&args[0])?, int(&args[1])?)),
@@ -1788,13 +1783,11 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 let state = state.borrow();
                 (crate::host::path(&state.path), state.identity)
             };
-            if identity(&path) == Some(known) {
-                if let Err(error) = std::fs::remove_file(&path) {
-                    if error.kind() != std::io::ErrorKind::NotFound {
+            if identity(&path) == Some(known)
+                && let Err(error) = std::fs::remove_file(&path)
+                    && error.kind() != std::io::ErrorKind::NotFound {
                         return Err(as_error(host_failure(operation, "Cannot remove Unix listener entry", &error)));
                     }
-                }
-            }
             Ok(Value::Bool(true))
         }
         _ => Err(Error::Unsupported(format!(

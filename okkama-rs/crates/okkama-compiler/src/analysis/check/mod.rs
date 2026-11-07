@@ -121,14 +121,13 @@ pub(super) fn check_bodies(reg: &mut Registry<'_>) -> Vec<Body> {
             let block = checker.body(test.body, &test.name);
             bodies.push(checker.finish(BodyOwner::Test(index), Vec::new(), block, test.span));
         }
-        if module == reg.entry_module {
-            if let Some(entry) = reg.entry {
+        if module == reg.entry_module
+            && let Some(entry) = reg.entry {
                 let mut checker = Checker::new(reg, Kind::Entry, None, Some(Ty::Int));
                 checker.is_async = entry.is_async;
                 let block = checker.body(&entry.body, &entry.name.text);
                 bodies.push(checker.finish(BodyOwner::Entry, Vec::new(), block, entry.span));
             }
-        }
     }
     bodies
 }
@@ -837,9 +836,9 @@ impl<'r, 'a> Checker<'r, 'a> {
                 self.stmt(stmt, want && last, if last { expected } else { None });
             // Ожидаемый тип блока — граница его последнего значения: ветви
             // `if`/`match`/`try` приводятся к нему каждая (§6.5).
-            if let (true, Some(target), Some(actual)) = (want && last, expected, value.ty.clone()) {
-                if !value.diverges && actual != *target && !actual.is_error() {
-                    if let StmtKind::Expr(expr) = checked.kind {
+            if let (true, Some(target), Some(actual)) = (want && last, expected, value.ty.clone())
+                && !value.diverges && actual != *target && !actual.is_error()
+                    && let StmtKind::Expr(expr) = checked.kind {
                         checked.kind = match self.try_coerce(expr, target, "Value") {
                             Ok(coerced) => {
                                 value.ty = Some(target.clone());
@@ -848,8 +847,6 @@ impl<'r, 'a> Checker<'r, 'a> {
                             Err(original) => StmtKind::Expr(*original),
                         };
                     }
-                }
-            }
             if !diverged {
                 if value.diverges {
                     diverged = true;

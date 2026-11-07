@@ -273,20 +273,18 @@ fn close(state: &SessionRef) -> Result<(), Rc<Failure>> {
             Err(failure) => first = Some(failure),
         }
     }
-    if let Some(original) = session.original.clone() {
-        if let Err(failure) = apply(&session, &original, &operation) {
+    if let Some(original) = session.original.clone()
+        && let Err(failure) = apply(&session, &original, &operation) {
             first = first.or(Some(failure));
         }
-    }
     session.modes.clear();
     close_fds(&session);
-    if let Ok(mut owners) = OWNERS.lock() {
-        if let Some(owners) = owners.as_mut() {
+    if let Ok(mut owners) = OWNERS.lock()
+        && let Some(owners) = owners.as_mut() {
             for claim in &session.claims {
                 owners.remove(claim);
             }
         }
-    }
     session.claims.clear();
     match first {
         Some(failure) => Err(failure),
@@ -342,11 +340,10 @@ fn terminal_read(value: &Value, limit: &crate::IntValue) -> Value {
         },
         move |outcome: Result<Vec<u8>, i32>| {
             if target.state() != sched::State::Running {
-                if let Ok(data) = outcome {
-                    if !data.is_empty() {
+                if let Ok(data) = outcome
+                    && !data.is_empty() {
                         delivered.borrow_mut().pending = Some(data);
                     }
-                }
                 return;
             }
             let result = match outcome {
@@ -621,11 +618,10 @@ fn close_resizes(source: &Rc<RefCell<Resizes>>) {
         borrowed.closed = true;
         (borrowed.pending.clone(), borrowed.session.clone())
     };
-    if let Some(session) = session {
-        if let Ok(mut session) = session.try_borrow_mut() {
+    if let Some(session) = session
+        && let Ok(mut session) = session.try_borrow_mut() {
             session.resizes.retain(|known| !Rc::ptr_eq(known, source));
         }
-    }
     if let Some(pending) = pending {
         sched::settle(
             &pending,
@@ -777,11 +773,10 @@ fn account(native: Native, name: &str, args: &[Value]) -> Result<Value, Error> {
                     if user.is_null() {
                         break;
                     }
-                    if let Some(login) = c_text((*user).pw_name) {
-                        if (*user).pw_gid == gid {
+                    if let Some(login) = c_text((*user).pw_name)
+                        && (*user).pw_gid == gid {
                             names.insert(login);
                         }
-                    }
                 }
                 libc::endpwent();
             }

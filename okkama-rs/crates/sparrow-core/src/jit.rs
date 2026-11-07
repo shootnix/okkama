@@ -790,7 +790,7 @@ impl Emitter<'_, '_> {
         let address = self.iconst(address);
         for (offset, step) in [(0, 1), (8, words as i64 * 8)] {
             let value = self.builder.ins().load(types::I64, MEMORY, address, offset);
-            let value = self.builder.ins().iadd_imm(value, step);
+            let value = self.builder.ins().iadd_imm_s(value, step);
             self.builder.ins().store(MEMORY, value, address, offset);
         }
     }

@@ -345,11 +345,10 @@ fn when_all(futures: &[Future], then: impl FnOnce() + 'static) {
         let (counter, then) = (counter.clone(), then.clone());
         future.listen(move || {
             counter.set(counter.get() - 1);
-            if counter.get() == 0 {
-                if let Some(then) = then.borrow_mut().take() {
+            if counter.get() == 0
+                && let Some(then) = then.borrow_mut().take() {
                     then();
                 }
-            }
         });
     }
 }
@@ -925,12 +924,11 @@ fn race_timeout(
         origin_cancelled = true;
         sched::cancel(&origin);
     }
-    if let Some(timer) = &timer {
-        if winner != "timer" && !timer.done() {
+    if let Some(timer) = &timer
+        && winner != "timer" && !timer.done() {
             timer_cancelled = true;
             sched::cancel(timer);
         }
-    }
     let _ = sched::await_future(&origin);
     if let Some(timer) = &timer {
         let _ = sched::await_future(timer);
@@ -942,14 +940,13 @@ fn race_timeout(
     {
         related.push(origin.failure().expect("failed origin"));
     }
-    if let Some(timer) = &timer {
-        if winner != "timer"
+    if let Some(timer) = &timer
+        && winner != "timer"
             && timer.state() == sched::State::Failed
             && !(timer_cancelled && timer.cancelled())
         {
             related.push(timer.failure().expect("failed timer"));
         }
-    }
     if winner == "parent" {
         return Err(sched::cancelled_failure());
     }
@@ -1363,11 +1360,10 @@ pub fn call_borrowed(
                     }
                     let waited = sched::await_future(&future(&group_wait(group))?).err();
                     if let Some(body) = body {
-                        if let Some(waited) = waited {
-                            if !Rc::ptr_eq(&waited, &body) {
+                        if let Some(waited) = waited
+                            && !Rc::ptr_eq(&waited, &body) {
                                 body.with_secondary(waited);
                             }
-                        }
                         return Err(body);
                     }
                     if let Some(waited) = waited {

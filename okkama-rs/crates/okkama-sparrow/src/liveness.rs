@@ -61,11 +61,10 @@ pub fn live_counts(function: &Function) -> Option<Vec<u32>> {
     leader[0] = true;
     for (pc, instruction) in function.code.iter().enumerate() {
         for (target, _, _) in verify::edges(pc, instruction) {
-            if let Some(slot) = leader.get_mut(target as usize) {
-                if target as usize != pc + 1 || instruction.is_terminator() {
+            if let Some(slot) = leader.get_mut(target as usize)
+                && (target as usize != pc + 1 || instruction.is_terminator()) {
                     *slot = true;
                 }
-            }
         }
         if instruction.is_terminator() && pc + 1 < count {
             leader[pc + 1] = true;

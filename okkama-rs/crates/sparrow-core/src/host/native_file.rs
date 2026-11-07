@@ -63,11 +63,10 @@ impl RawFile {
 
     pub(crate) fn close(&mut self, n: Native) -> Result<(), ProviderError> {
         #[cfg(unix)]
-        if let Some(lock) = self.lock.take() {
-            if let Some(file) = &self.file {
+        if let Some(lock) = self.lock.take()
+            && let Some(file) = &self.file {
                 lock.release(file).map_err(|e| host(n, e))?;
             }
-        }
         self.file.take();
         Ok(())
     }

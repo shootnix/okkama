@@ -146,14 +146,13 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             want: value,
         });
         let body_out = body(self, index, state_params.clone());
-        if let Ok(Some(next_state)) = &body_out {
-            if self.b.is_open() {
+        if let Ok(Some(next_state)) = &body_out
+            && self.b.is_open() {
                 let mut args = next_state.clone();
                 args.extend(self.carried_args(&carried, span));
                 self.b
                     .terminate(TermKind::Br(Target { block: step, args }), span);
             }
-        }
         let frame = self.loops.pop().expect("loop frame pushed above");
         body_out?;
 
@@ -448,14 +447,13 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             span,
         );
         let body_out = body(self, vec![current], state_params.clone());
-        if let Ok(Some(next_state)) = &body_out {
-            if self.b.is_open() {
+        if let Ok(Some(next_state)) = &body_out
+            && self.b.is_open() {
                 let mut args = next_state.clone();
                 args.extend(self.carried_args(&carried, span));
                 self.b
                     .terminate(TermKind::Br(Target { block: step, args }), span);
             }
-        }
         let frame = self.loops.pop().expect("loop frame pushed above");
         body_out?;
 

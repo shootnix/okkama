@@ -73,9 +73,9 @@ impl Checker<'_, '_> {
             });
         }
         if let ast::ExprKind::Unpack { operand, .. } = &inner.kind {
-            if let ast::ExprKind::Name(name) = &strip_grouping(operand).kind {
-                if let Some(local) = self.local(&name.text) {
-                    if self.locals[local.0].variadic {
+            if let ast::ExprKind::Name(name) = &strip_grouping(operand).kind
+                && let Some(local) = self.local(&name.text)
+                    && self.locals[local.0].variadic {
                         let item = match &self.locals[local.0].ty {
                             Ty::Varargs(item) => (**item).clone(),
                             _ => Ty::Error,
@@ -88,8 +88,6 @@ impl Checker<'_, '_> {
                             diverges: false,
                         });
                     }
-                }
-            }
             let array = self.unpacked(operand, expr.span);
             let item = match Self::ty_of(&array) {
                 Ty::Array(item) => *item,

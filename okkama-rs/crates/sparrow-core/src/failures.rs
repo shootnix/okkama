@@ -473,8 +473,8 @@ impl Runtime {
         for &failure in &order {
             if let Some(FailureKind::Thrown(object)) = self.failure(failure).map(|f| &f.kind) {
                 let object = *object;
-                if let Some(function) = self.error_text_method(object) {
-                    if let Ok(code) = crate::jit::compile(self, function) {
+                if let Some(function) = self.error_text_method(object)
+                    && let Ok(code) = crate::jit::compile(self, function) {
                         // SAFETY: Error.text takes its receiver and returns a string.
                         let text = unsafe { crate::jit::invoke(code, ctx, &[object]) };
                         let ctx = unsafe { &mut *ctx };
@@ -484,7 +484,6 @@ impl Runtime {
                             ctx.status = OK;
                         }
                     }
-                }
             }
         }
         self.roots.pop();

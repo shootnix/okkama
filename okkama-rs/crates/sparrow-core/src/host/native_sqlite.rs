@@ -280,13 +280,11 @@ unsafe extern "C" fn authorize(
     if SCHEMA_ACTION.contains(&action) {
         policy.ddl_seen.set(true);
     }
-    if action == 9 || action == 18 || action == 23 {
-        if let Some(table) = c_bytes(a) {
-            if table != b"sqlite_master" && table != b"sqlite_schema" && trigger.is_null() {
+    if (action == 9 || action == 18 || action == 23)
+        && let Some(table) = c_bytes(a)
+            && table != b"sqlite_master" && table != b"sqlite_schema" && trigger.is_null() {
                 policy.dml_seen.set(true);
             }
-        }
-    }
     0
 }
 
@@ -1341,7 +1339,7 @@ fn next_job<T>(queue: &mpsc::Receiver<T>) -> Option<T> {
                 std::hint::spin_loop();
                 turns += 1;
                 // Reading the clock costs more than a turn; look every 64.
-                if turns % 64 == 0 && spin.elapsed() >= std::time::Duration::from_micros(50) {
+                if turns.is_multiple_of(64) && spin.elapsed() >= std::time::Duration::from_micros(50) {
                     return queue.recv().ok();
                 }
             }
@@ -1468,11 +1466,10 @@ impl Heap {
     }
 
     fn sqlite_state(&self, n: Native, v: Slot) -> Result<ConnectionRef, ProviderError> {
-        if v.kind() == HANDLE {
-            if let Handle::Sqlite(state) = self.handles.get(v.bits)? {
+        if v.kind() == HANDLE
+            && let Handle::Sqlite(state) = self.handles.get(v.bits)? {
                 return Ok(state.clone());
             }
-        }
         Err(ProviderError::Native(fail(
             n,
             "invalid_input",
@@ -1625,8 +1622,8 @@ impl Heap {
                 connection.stopped,
             )
         };
-        if !stopped {
-            if let Some(jobs) = jobs {
+        if !stopped
+            && let Some(jobs) = jobs {
                 // A FIFO barrier behind every previously queued operation.
                 let (done, barrier) = tokio::sync::oneshot::channel::<()>();
                 let _ = jobs.send(Box::new(move |_engine| {
@@ -1641,7 +1638,6 @@ impl Heap {
                     Ok(Flag(true))
                 });
             }
-        }
         self.native_io(async move {
             let _ = tokio::time::timeout(
                 std::time::Duration::from_secs(2),
@@ -2170,15 +2166,14 @@ impl Heap {
                     return Ok(yes);
                 }
                 connection.stopped = true;
-                if let Some(worker) = &mut connection.worker {
-                    if let Some(jobs) = worker.jobs.take() {
+                if let Some(worker) = &mut connection.worker
+                    && let Some(jobs) = worker.jobs.take() {
                         // Closing at shutdown: a refusal is no longer observable.
                         let _ = jobs.send(Box::new(|engine| {
                             let _ = engine.close();
                         }));
                         // Dropping the queue lets the worker exit after closing.
                     }
-                }
                 Ok(yes)
             }
             DatabaseSqliteClosed => {

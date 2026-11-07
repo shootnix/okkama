@@ -806,9 +806,8 @@ impl Drop for WalkLease {
         }
         let mut available = Some(scratch);
         let _ = WALK_SCRATCH.try_with(|slot| {
-            if let Ok(mut slot) = slot.try_borrow_mut() {
-                if slot.is_none() { *slot = available.take(); }
-            }
+            if let Ok(mut slot) = slot.try_borrow_mut()
+                && slot.is_none() { *slot = available.take(); }
         });
         // Any unused scratch drops outside the cache borrow, including at TLS exit.
     }
@@ -845,11 +844,10 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<u64>) {
                 #[cfg(feature = "region-walk-stats")]
                 { stats[8] += 1; }
                 for index in (0..object.field_count()).rev() {
-                    if let Some(value) = object.field(index) {
-                        if !matches!(value, Value::Undef) {
+                    if let Some(value) = object.field(index)
+                        && !matches!(value, Value::Undef) {
                             pending.push(value);
                         }
-                    }
                 }
                 out.push(object);
             }

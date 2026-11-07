@@ -302,13 +302,11 @@ extern "C" fn authorize(
     if SCHEMA_ACTION.contains(&action) {
         policy.ddl_seen.set(true);
     }
-    if action == 9 || action == 18 || action == 23 {
-        if let Some(table) = c_bytes(a) {
-            if table != b"sqlite_master" && table != b"sqlite_schema" && trigger.is_null() {
+    if (action == 9 || action == 18 || action == 23)
+        && let Some(table) = c_bytes(a)
+            && table != b"sqlite_master" && table != b"sqlite_schema" && trigger.is_null() {
                 policy.dml_seen.set(true);
             }
-        }
-    }
     0
 }
 

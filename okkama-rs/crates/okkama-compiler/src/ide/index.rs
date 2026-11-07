@@ -146,11 +146,10 @@ impl<'r, 'a> Builder<'r, 'a> {
     /// Символ локальной: переименование меняет все её вхождения в файле.
     fn push_local(&mut self, span: Span, hover: String, definition: Option<Location>, ty: &Ty) {
         self.push_typed(span, hover, definition, Some(ty));
-        if let Some(symbol) = self.symbols.last_mut() {
-            if symbol.span == span {
+        if let Some(symbol) = self.symbols.last_mut()
+            && symbol.span == span {
                 symbol.local = true;
             }
-        }
     }
 
     fn ty(&self, ty: &Ty) -> String {
@@ -1134,23 +1133,21 @@ impl<'r, 'a> Builder<'r, 'a> {
 
     fn resolve_type(&self, name: &str, qualifier: Option<&str>) -> Option<TypeRef> {
         let module = &self.registry.modules[self.root];
-        if let Some(alias) = qualifier {
-            if let Some(namespace) = module.namespaces.get(alias) {
+        if let Some(alias) = qualifier
+            && let Some(namespace) = module.namespaces.get(alias) {
                 if self.registry.modules[namespace.module].hidden.contains(name) {
                     return None;
                 }
-                if let Some(only) = &namespace.only {
-                    if !only.iter().any(|taken| taken == name) {
+                if let Some(only) = &namespace.only
+                    && !only.iter().any(|taken| taken == name) {
                         return None;
                     }
-                }
                 return self.registry.modules[namespace.module]
                     .own
                     .types
                     .get(name)
                     .copied();
             }
-        }
         if !name.starts_with(|ch: char| ch.is_ascii_uppercase()) {
             return None;
         }

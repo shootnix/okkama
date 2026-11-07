@@ -60,15 +60,12 @@ pub fn desugar_test_items(mut program: Program) -> Program {
                     };
                     // `is ^Role` в fake — successor самого fake-объекта.
                     for member in &mut members {
-                        if let ObjectMember::Action(action) = member {
-                            if let ResultSpec::Successor { ty, .. } = &mut action.result {
-                                if let TypeKind::Named { path, .. } = &mut ty.kind {
-                                    if path.len() == 1 && path[0].text == owner {
+                        if let ObjectMember::Action(action) = member
+                            && let ResultSpec::Successor { ty, .. } = &mut action.result
+                                && let TypeKind::Named { path, .. } = &mut ty.kind
+                                    && path.len() == 1 && path[0].text == owner {
                                         path[0].text = name.text.clone();
                                     }
-                                }
-                            }
-                        }
                     }
                     members.push(ObjectMember::Constructor(ConstructorDecl {
                         name: name.clone(),

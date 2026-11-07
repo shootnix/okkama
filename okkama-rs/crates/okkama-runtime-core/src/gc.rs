@@ -555,8 +555,11 @@ mod tests {
         Failure::new(Kind::Thrown { object: crate::heap::Ref(object.clone()), name: "Error".into(), message: None })
     }
 
-    /// A cycle closed by each kind of late edge; the result is its only outside holder.
-    fn cycles() -> Vec<(&'static str, fn() -> Value)> {
+    /// A named way to build a cycle; the result is its only outside holder.
+    type Cycle = (&'static str, fn() -> Value);
+
+    /// A cycle closed by each kind of late edge.
+    fn cycles() -> Vec<Cycle> {
         vec![
             ("late field", || {
                 let (value, _) = object(1);

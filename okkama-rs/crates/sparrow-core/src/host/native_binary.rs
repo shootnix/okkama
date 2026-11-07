@@ -171,15 +171,14 @@ impl Heap {
                     .integer(args[4])?
                     .to_i64()
                     .filter(|n| (0..=65536).contains(n));
-                if let (Some(phase), Some(begin), Some(count)) = (phase, begin, count) {
-                    if mask.len() == 4 && count as usize <= bytes.len() - begin as usize {
+                if let (Some(phase), Some(begin), Some(count)) = (phase, begin, count)
+                    && mask.len() == 4 && count as usize <= bytes.len() - begin as usize {
                         let rotation = (phase as usize + begin as usize) % 4;
                         let result = (0..count as usize)
                             .map(|i| bytes[begin as usize + i] ^ mask[(rotation + i) % 4])
                             .collect();
                         return self.native_byte_array(result).map(Outcome::Value);
                     }
-                }
                 let payload = self.native_failure_new(NativeFailure {
                     domain: "core.binary".into(),
                     code: "invalid_input".into(),

@@ -287,8 +287,8 @@ impl Linter<'_, '_> {
             {
                 continue;
             }
-            if let Some(alias) = &import.alias {
-                if import.take.is_empty() && !used.contains(alias.text.as_str()) {
+            if let Some(alias) = &import.alias
+                && import.take.is_empty() && !used.contains(alias.text.as_str()) {
                     self.warn(
                         alias.span,
                         "unused-import",
@@ -296,7 +296,6 @@ impl Linter<'_, '_> {
                         true,
                     );
                 }
-            }
             for name in &import.take {
                 if !used.contains(name.text.as_str()) {
                     self.warn(

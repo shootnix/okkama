@@ -251,11 +251,10 @@ impl Walk<'_> {
                 error: LoweringError::invalid(span, message),
             };
             let std_module = path.strip_prefix(super::std_paths::STD_IMPORT);
-            if std_module.is_none() {
-                if let Err(message) = self.loader.check_import(&path, &name) {
+            if std_module.is_none()
+                && let Err(message) = self.loader.check_import(&path, &name) {
                     return Err(fail(&stack, path_span, message));
                 }
-            }
             // A module loaded already (or on the current path) is known by
             // its id before it is read and parsed again (#51).
             let resolved = match std_module {

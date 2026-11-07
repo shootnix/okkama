@@ -275,13 +275,12 @@ fn clock_seconds(text: &str) -> Checked<i64> {
 }
 
 fn take_name(text: &mut &str) -> Checked<String> {
-    if let Some(rest) = text.strip_prefix('<') {
-        if let Some(end) = rest.find('>').filter(|end| *end > 0) {
+    if let Some(rest) = text.strip_prefix('<')
+        && let Some(end) = rest.find('>').filter(|end| *end > 0) {
             let name = rest[..end].to_string();
             *text = &rest[end + 1..];
             return Ok(name);
         }
-    }
     let length = text.bytes().take_while(u8::is_ascii_alphabetic).count();
     if length >= 3 {
         let name = text[..length].to_string();
@@ -418,11 +417,10 @@ fn load_zone(native: Native, name: &str) -> Checked<Zone> {
     let mut footer = None;
     if time_size == 8 && offset < bytes.len() {
         let remaining: String = bytes[offset..].iter().map(|b| char::from(*b)).collect();
-        if let Some(rest) = remaining.strip_prefix('\n') {
-            if let Some(line) = rest.split_once('\n').map(|(line, _)| line) {
+        if let Some(rest) = remaining.strip_prefix('\n')
+            && let Some(line) = rest.split_once('\n').map(|(line, _)| line) {
                 footer = parse_posix(line)?;
             }
-        }
     }
     Ok(Zone {
         transitions,
@@ -509,8 +507,8 @@ fn year_from_seconds(seconds: i64) -> i64 {
 fn observation(native: Native, name: &str, seconds: i64) -> Checked<Type> {
     let zone = zone(native, name)?;
     let transitions = &zone.transitions;
-    if let (Some(last), Some(footer)) = (transitions.last(), &zone.footer) {
-        if seconds > *last {
+    if let (Some(last), Some(footer)) = (transitions.last(), &zone.footer)
+        && seconds > *last {
             let Some(daylight_name) = &footer.daylight_name else {
                 return Ok(Type {
                     offset: footer.standard_offset,
@@ -532,7 +530,6 @@ fn observation(native: Native, name: &str, seconds: i64) -> Checked<Type> {
                 abbreviation: if daylight { daylight_name.clone() } else { footer.standard_name.clone() },
             });
         }
-    }
     let found = transitions.partition_point(|transition| *transition <= seconds);
     let index = if found > 0 { zone.indices[found - 1] } else { 0 };
     Ok(zone.types[index].clone())

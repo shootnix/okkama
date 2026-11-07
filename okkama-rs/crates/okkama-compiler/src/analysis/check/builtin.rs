@@ -326,8 +326,8 @@ impl Checker<'_, '_> {
                     }
                 },
             };
-            if let Some(expected) = expected {
-                if actual != expected && !actual.is_error() && !value.diverges {
+            if let Some(expected) = expected
+                && actual != expected && !actual.is_error() && !value.diverges {
                     let message = if let Builtin::Bits { .. } = op {
                         format!("Builtin action \"{}\" requires an int count", name.text)
                     } else {
@@ -341,7 +341,6 @@ impl Checker<'_, '_> {
                     self.error(span, message);
                     return Self::poisoned(span);
                 }
-            }
             let value = if actual != Self::ty_of(&value) {
                 self.coerce(value, &actual, arg.value.span, "Argument")
             } else {
@@ -349,9 +348,9 @@ impl Checker<'_, '_> {
             };
             values.push(value);
         }
-        if op == Builtin::ArrayJoin {
-            if let Ty::Array(element) = &receiver {
-                if **element != Ty::Str && **element != Ty::Never && !element.is_error() {
+        if op == Builtin::ArrayJoin
+            && let Ty::Array(element) = &receiver
+                && **element != Ty::Str && **element != Ty::Never && !element.is_error() {
                     let message = format!(
                         "Builtin action \"join\" requires an array of string, got {}",
                         self.type_name(&receiver)
@@ -359,10 +358,8 @@ impl Checker<'_, '_> {
                     self.error(span, message);
                     return Self::poisoned(span);
                 }
-            }
-        }
-        if op == Builtin::ArrayOrdering {
-            if let Ty::Array(element) = &receiver {
+        if op == Builtin::ArrayOrdering
+            && let Ty::Array(element) = &receiver {
                 let comparing = self
                     .reg
                     .standard
@@ -380,7 +377,6 @@ impl Checker<'_, '_> {
                     return Self::poisoned(span);
                 }
             }
-        }
         if matches!(
             op,
             Builtin::ArrayItem | Builtin::ArrayFirst | Builtin::ArrayLast

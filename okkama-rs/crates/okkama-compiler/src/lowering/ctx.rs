@@ -272,8 +272,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
             .flat_map(|module| reg.modules[module].program.items.iter())
             .collect();
         for &item in &items {
-            if let ast::Item::NativeAction(decl) = item {
-                if let Some(native) = self
+            if let ast::Item::NativeAction(decl) = item
+                && let Some(native) = self
                     .reg
                     .natives
                     .iter()
@@ -281,7 +281,6 @@ impl<'r, 'a> Ctx<'r, 'a> {
                 {
                     self.native_func(native, decl.span)?;
                 }
-            }
         }
         for &item in &items {
             match item {

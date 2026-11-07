@@ -602,11 +602,10 @@ fn group_members(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, scope: bool,
     let s = state::<GroupWait>(runtime, frame).expect("group wait");
     let (external, value) = (s.external, s.value);
     if let Some(external) = external {
-        if let Err(failed) = result {
-            if failed != external {
+        if let Err(failed) = result
+            && failed != external {
                 runtime.failure_link(external, failed, true);
             }
-        }
         return Failed(external);
     }
     match result {

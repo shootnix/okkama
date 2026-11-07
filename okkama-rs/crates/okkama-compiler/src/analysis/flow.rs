@@ -496,8 +496,8 @@ impl<'r> Flow<'r, '_> {
             | ExprKind::TestCapability
             | ExprKind::Unreachable => none(),
             ExprKind::PendingField(field) => {
-                if state.fields.get(*field) == Some(&Bound::No) {
-                    if let Some(object) = self.ctor_object {
+                if state.fields.get(*field) == Some(&Bound::No)
+                    && let Some(object) = self.ctor_object {
                         let info = &self.reg.objects[object.0];
                         let message = format!(
                             "Object \"{}\" field \"{}\" is read before it is bound",
@@ -505,7 +505,6 @@ impl<'r> Flow<'r, '_> {
                         );
                         self.error(expr.span, message);
                     }
-                }
                 none()
             }
             ExprKind::Local(local) => Some(state.holds[local.0].clone()),

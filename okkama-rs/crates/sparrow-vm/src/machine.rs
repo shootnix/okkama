@@ -1556,8 +1556,8 @@ pub(crate) fn describe_failure(engine: &Rc<Engine>, failure: &Rc<Failure>) -> Re
     let program = &engine.program;
     let located = |stop| Located { function: program.entry.map_or(0, |entry| entry.0 as usize), pc: 0, stop };
     let mut described = (**failure).clone();
-    if let Kind::Thrown { object, message, .. } = &mut described.kind {
-        if message.is_none() {
+    if let Kind::Thrown { object, message, .. } = &mut described.kind
+        && message.is_none() {
             let value = Value::Object(object.0.clone());
             let (role, declaration) = program
                 .roles
@@ -1581,7 +1581,6 @@ pub(crate) fn describe_failure(engine: &Rc<Engine>, failure: &Rc<Failure>) -> Re
                 .ok_or_else(|| located(invalid("Error.text returned void")))?;
             *message = Some(text.as_string().map_err(|error| located(invalid(error.message)))?.to_owned());
         }
-    }
     described.secondary = RefCell::new(
         failure
             .secondaries()

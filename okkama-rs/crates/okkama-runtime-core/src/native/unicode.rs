@@ -98,11 +98,10 @@ fn name(point: u32) -> String {
 
 fn numeric(point: u32) -> Option<f64> {
     let value = tables().numeric.get(&point)?;
-    if let Some((numerator, denominator)) = value.split_once('/') {
-        if let (Ok(numerator), Ok(denominator)) = (numerator.parse::<f64>(), denominator.parse::<f64>()) {
+    if let Some((numerator, denominator)) = value.split_once('/')
+        && let (Ok(numerator), Ok(denominator)) = (numerator.parse::<f64>(), denominator.parse::<f64>()) {
             return Some(numerator / denominator);
         }
-    }
     value.parse().ok()
 }
 

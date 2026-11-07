@@ -71,13 +71,11 @@ fn add_workers(program: &mut Program) -> Vec<(Option<TypeRef>, usize)> {
     let mut results = Vec::new();
     for function in &program.functions {
         for instruction in &function.code {
-            if let okkama_sparrow::Instruction::WorkerSpawn { dst, .. } = instruction {
-                if let Some(Type::Future(result)) = program.ty(function.registers[dst.0.0 as usize]) {
-                    if !results.contains(result) {
+            if let okkama_sparrow::Instruction::WorkerSpawn { dst, .. } = instruction
+                && let Some(Type::Future(result)) = program.ty(function.registers[dst.0.0 as usize])
+                    && !results.contains(result) {
                         results.push(*result);
                     }
-                }
-            }
         }
     }
     results
@@ -120,13 +118,11 @@ impl Loaded {
         // A cell is what its constructor intrinsic makes, whatever its name.
         let mut events = vec![false; program.objects.len()];
         for f in &program.functions {
-            if let Some(intrinsic) = &f.intrinsic {
-                if matches!(intrinsic.name.as_str(), "okkama.event.Event.new" | "okkama.event.Event.new_ready") {
-                    if let Some(object) = intrinsic.objects.first() {
+            if let Some(intrinsic) = &f.intrinsic
+                && matches!(intrinsic.name.as_str(), "okkama.event.Event.new" | "okkama.event.Event.new_ready")
+                    && let Some(object) = intrinsic.objects.first() {
                         events[object.0 as usize] = true;
                     }
-                }
-            }
         }
         Self { program, functions, events, workers }
     }

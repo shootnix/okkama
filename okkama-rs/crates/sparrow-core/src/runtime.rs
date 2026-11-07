@@ -588,12 +588,11 @@ pub extern "C" fn rt_throw(ctx: *mut Ctx, value: Word) -> Word {
 pub extern "C" fn rt_trace(ctx: *mut Ctx, function: u64, pc: u64, frame: u64) {
     let (ctx, runtime) = unsafe { runtime(ctx) };
     let failure = ctx.failure;
-    if let Some(failure) = runtime.heap.payload_mut::<Failure>(failure) {
-        if failure.last_frame != Some((function as u32, frame)) {
+    if let Some(failure) = runtime.heap.payload_mut::<Failure>(failure)
+        && failure.last_frame != Some((function as u32, frame)) {
             failure.trace.push((function as u32, pc as u32));
             failure.last_frame = Some((function as u32, frame));
         }
-    }
 }
 
 /// Call a native provider with `count` argument words at `arguments`.
@@ -692,12 +691,11 @@ impl Runtime {
             if ctx.status == OK {
                 self.schedule(&mut ctx, root);
             }
-            if ctx.status == OK {
-                if let Some(failure) = self.shutdown(&mut ctx) {
+            if ctx.status == OK
+                && let Some(failure) = self.shutdown(&mut ctx) {
                     let message = self.describe(&mut ctx, failure);
                     return Err(Error(message));
                 }
-            }
             if ctx.status == OK {
                 let state = unsafe { *((root + crate::tasks::STATE) as *const u64) };
                 if state == crate::tasks::FAILURE_STATE {

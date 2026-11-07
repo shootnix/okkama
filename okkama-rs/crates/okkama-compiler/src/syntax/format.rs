@@ -842,11 +842,10 @@ impl<'s> Printer<'s> {
 
     /// Комментарий в конце строки элемента списка (после его запятой).
     fn trailing_comment_before(&mut self, end: u32, limit: u32) {
-        if let Some(comment) = self.comments.get(self.next_comment) {
-            if comment.span.start < limit {
+        if let Some(comment) = self.comments.get(self.next_comment)
+            && comment.span.start < limit {
                 self.trailing_comment(end);
             }
-        }
     }
 
     // ---- блоки и операторы ----

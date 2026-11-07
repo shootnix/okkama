@@ -1393,8 +1393,7 @@ pub(crate) fn describe_failure(
     if let FailureKind::Thrown {
         object, message, ..
     } = &mut described.kind
-    {
-        if message.is_none() {
+        && message.is_none() {
             let value = Value::Object(object.0.clone());
             let (role, declaration) = module
                 .roles
@@ -1422,7 +1421,6 @@ pub(crate) fn describe_failure(
                 .ok_or_else(|| invalid_state(span, "Error.text returned void"))?;
             *message = Some(text.string(span)?.to_owned());
         }
-    }
     described.secondary = std::cell::RefCell::new(failure
         .secondaries()
         .iter()

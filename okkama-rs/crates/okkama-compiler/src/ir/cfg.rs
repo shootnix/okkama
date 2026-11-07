@@ -267,7 +267,7 @@ impl Dominators {
         let count = function.blocks.len() * 2;
         let node_successors = |node: usize| -> Vec<usize> {
             let block = BlockId(node / 2);
-            if node % 2 == 0 {
+            if node.is_multiple_of(2) {
                 let mut next = vec![body(block)];
                 if let Some(unwind) = &function.blocks[block.0].unwind {
                     next.push(start(unwind.block));

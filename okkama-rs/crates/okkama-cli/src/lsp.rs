@@ -318,8 +318,8 @@ impl Server {
             if found.unnecessary {
                 diagnostic.tags = Some(vec![lsp_types::DiagnosticTag::UNNECESSARY]);
             }
-            if found.path != source.name() {
-                if let Some(range) = import_range {
+            if found.path != source.name()
+                && let Some(range) = import_range {
                     let file = Path::new(&found.path)
                         .file_name()
                         .map_or(found.path.clone(), |name| {
@@ -334,7 +334,6 @@ impl Server {
                             format!("{file}:{}: {}", found.range.start.line + 1, found.message),
                         ));
                 }
-            }
             by_path
                 .entry(found.path.clone())
                 .or_default()

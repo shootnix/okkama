@@ -1720,11 +1720,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         let out = result?;
         closed?;
         // Значение блока освобождено его регионом: его учитывает внешняя область.
-        if let Out::Value(value) = &out {
-            if keep {
+        if let Out::Value(value) = &out
+            && keep {
                 self.track(value, block.span);
             }
-        }
         Ok(out)
     }
 
@@ -2104,11 +2103,9 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     None,
                     ExprKind::Constant(thir::Constant::Int(text)),
                 ) = (target, position, &value.kind)
-                {
-                    if let Ok(byte) = text.parse::<u8>() {
+                    && let Ok(byte) = text.parse::<u8>() {
                         return Ok(Out::Value(self.constant(Constant::Byte(byte), span)));
                     }
-                }
                 let Some(typed) = self.value(value)? else {
                     return Ok(Out::Diverged);
                 };
@@ -2478,11 +2475,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     .iter()
                     .map(|value| self.b.value_type(*value).clone())
                     .collect();
-                if let Type::Future(result) = &ty {
-                    if let ResultType::Value(result) = &**result {
+                if let Type::Future(result) = &ty
+                    && let ResultType::Value(result) = &**result {
                         crossing.push(result.clone());
                     }
-                }
                 if let Some(bad) = crossing.iter().find(|value| !transferable(value)) {
                     return Err(LoweringError::invalid(
                         span,
@@ -2754,18 +2750,16 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         assigned_in_block(body, &mut locals, &mut fields);
         let mut carried: Vec<usize> = Vec::new();
         for local in locals {
-            if let Some(var) = self.local_vars[local.0] {
-                if !carried.contains(&var) {
+            if let Some(var) = self.local_vars[local.0]
+                && !carried.contains(&var) {
                     carried.push(var);
                 }
-            }
         }
         for field in fields {
-            if let Some(var) = self.field_vars.get(field).copied() {
-                if !carried.contains(&var) {
+            if let Some(var) = self.field_vars.get(field).copied()
+                && !carried.contains(&var) {
                     carried.push(var);
                 }
-            }
         }
         carried.sort_unstable();
         for var in &carried {
@@ -2908,9 +2902,9 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
         // Значение `last` освобождено регионами итерации: его учитывает
         // область, содержащая цикл.
-        if let Some(value) = &payload {
-            if let Some(region) = self.region_at(depth.saturating_sub(1)) {
-                if !self.ctx.is_plain(&value.ty) {
+        if let Some(value) = &payload
+            && let Some(region) = self.region_at(depth.saturating_sub(1))
+                && !self.ctx.is_plain(&value.ty) {
                     self.b.emit_void(
                         InstKind::RegionTrack {
                             region,
@@ -2919,8 +2913,6 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                         span,
                     );
                 }
-            }
-        }
         let arm = self.arm(out).expect("`last` is reached in an open block");
         self.loops[frame].exits.push(arm);
         self.b.close();

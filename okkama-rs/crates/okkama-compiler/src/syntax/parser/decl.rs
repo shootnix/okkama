@@ -380,13 +380,12 @@ impl Parser<'_> {
     /// `Name(params) { }`, `Name(:a, :b);`, `Name(:a) { }` or `Name();`.
     fn constructor_declaration(&mut self, owner: Option<&Name>) -> PResult<ConstructorDecl> {
         let name = self.consume_type_name("Expect constructor name.")?;
-        if let Some(owner) = owner {
-            if name.text != owner.text {
+        if let Some(owner) = owner
+            && name.text != owner.text {
                 return Err(
                     self.error_at_span(name.span, "Constructor name must match enclosing object.")
                 );
             }
-        }
         if self.check(TokenKind::LeftParen) && self.check_next(TokenKind::Colon) {
             return self.constructor_shorthand(name);
         }

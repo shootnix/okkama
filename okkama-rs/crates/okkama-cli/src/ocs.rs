@@ -488,11 +488,10 @@ fn run_native(
         if engine == "sparrow-origin" { sparrow_vm::set_worker_command(command); }
         else if engine == "ir" { okkama_runtime::set_worker_command(command); }
     }
-    if let Some(cwd) = request.get("cwd").and_then(Json::as_str) {
-        if let Err(error) = std::env::set_current_dir(cwd) {
+    if let Some(cwd) = request.get("cwd").and_then(Json::as_str)
+        && let Err(error) = std::env::set_current_dir(cwd) {
             return Reply::internal(mode, format!("cannot enter `{cwd}`: {error}"));
         }
-    }
     let result = if engine == "ir" {
         if mode == "test" {
             // Отчёт тестов — в stdout процесса; код выхода 0 — все прошли.

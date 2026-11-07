@@ -270,12 +270,11 @@ fn slice_bounds(runtime: &Runtime, length: usize, start: Word, end: Word) -> Res
 pub(crate) fn new_array(runtime: &mut Runtime, function: usize, dst: okkama_sparrow::Register, repr: Repr, items: &[Word]) -> Word {
     let program = &runtime.loaded.program;
     let ty = program.functions[function].registers[dst.0 as usize];
-    if let Some(Type::Array(element)) = program.ty(ty) {
-        if Kind::of(program, *element) == Kind::Byte {
+    if let Some(Type::Array(element)) = program.ty(ty)
+        && Kind::of(program, *element) == Kind::Byte {
             let bytes: Vec<u8> = items.iter().map(|&w| w as u8).collect();
             return runtime.heap.allocate_bytes(&bytes);
         }
-    }
     runtime.heap.allocate_array(repr, items)
 }
 

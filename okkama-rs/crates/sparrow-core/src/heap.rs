@@ -753,6 +753,16 @@ impl std::fmt::Display for Integer<'_> {
     }
 }
 
+/// Bytes of the UTF-8 sequence that starts with `lead`.
+fn utf8_width(lead: u8) -> usize {
+    match lead {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        _ => 4,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -928,15 +938,5 @@ mod tests {
                 heap.collect(|visit| words.iter().for_each(|&word| visit(word, Repr::Ref)));
             }
         }
-    }
-}
-
-/// Bytes of the UTF-8 sequence that starts with `lead`.
-fn utf8_width(lead: u8) -> usize {
-    match lead {
-        0x00..=0x7F => 1,
-        0xC0..=0xDF => 2,
-        0xE0..=0xEF => 3,
-        _ => 4,
     }
 }

@@ -840,11 +840,10 @@ impl<'a> Typing<'a> {
             I::Return { value } => match (self.function.result, value) {
                 (Some(result), Some(value)) => {
                     // Successor-действие возвращает построенный объект или ^ того же объекта.
-                    if let (Type::Successor(o), Type::Object(p)) = (self.resolve(result), self.ty(*value)) {
-                        if o == p {
+                    if let (Type::Successor(o), Type::Object(p)) = (self.resolve(result), self.ty(*value))
+                        && o == p {
                             return Ok(());
                         }
-                    }
                     self.expect_ref(*value, result)
                 }
                 (None, None) => Ok(()),

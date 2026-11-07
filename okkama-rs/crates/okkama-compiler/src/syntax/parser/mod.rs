@@ -319,8 +319,8 @@ impl<'s> Parser<'s> {
         self.consume(TokenKind::Dot, "Expect \".\" in module version.")?;
         let minor_token = self.consume_number("Expect minor version number.")?;
         let minor_text = self.lexeme(&minor_token).to_string();
-        if let Some((minor, patch)) = minor_text.split_once('.') {
-            if is_digits(minor) && is_digits(patch) {
+        if let Some((minor, patch)) = minor_text.split_once('.')
+            && is_digits(minor) && is_digits(patch) {
                 return Ok(Version {
                     major,
                     minor: minor.to_string(),
@@ -328,7 +328,6 @@ impl<'s> Parser<'s> {
                     span: major_token.span.to(minor_token.span),
                 });
             }
-        }
         self.consume(TokenKind::Dot, "Expect \".\" in module version.")?;
         let patch_token = self.consume_number("Expect patch version number.")?;
         Ok(Version {

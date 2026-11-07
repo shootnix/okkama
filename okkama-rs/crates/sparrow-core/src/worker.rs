@@ -209,7 +209,7 @@ fn element_type(runtime: &Runtime, ty: TypeRef, index: usize) -> TypeRef {
     match runtime.loaded.program.ty(ty) {
         Some(Type::Array(element)) => *element,
         Some(Type::Map(key, item)) => {
-            if index % 2 == 0 {
+            if index.is_multiple_of(2) {
                 *key
             } else {
                 *item

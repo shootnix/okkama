@@ -85,15 +85,14 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
             let radix = runtime.small_or_big(arguments[1]);
             let text = runtime.heap.text(arguments[0]);
             // Decimal integers of up to 18 digits need no BigInt.
-            if radix == Some(10) {
-                if let Some(value) = small_decimal(text) {
+            if radix == Some(10)
+                && let Some(value) = small_decimal(text) {
                     return Ok(if native == Native::NumberTextIntParseValid {
                         (1, Repr::Raw)
                     } else {
                         (runtime.heap.int(value), Repr::Int)
                     });
                 }
-            }
             let parsed = radix.and_then(|radix| int_parse(text, radix));
             if native == Native::NumberTextIntParseValid {
                 return Ok((u64::from(parsed.is_some()), Repr::Raw));

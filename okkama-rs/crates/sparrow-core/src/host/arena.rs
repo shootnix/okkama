@@ -66,11 +66,10 @@ impl<T> Arena<T> {
     /// Drop the value of a live handle now.
     pub fn release(&mut self, handle: u64) {
         let index = handle as u32 as usize;
-        if let Some(e) = self.entries.get_mut(index).filter(|e| e.generation == (handle >> 32) as u32 && !e.pinned) {
-            if e.value.take().is_some() && e.generation != u32::MAX {
+        if let Some(e) = self.entries.get_mut(index).filter(|e| e.generation == (handle >> 32) as u32 && !e.pinned)
+            && e.value.take().is_some() && e.generation != u32::MAX {
                 self.free.push(index);
             }
-        }
     }
     pub fn begin_collection(&mut self) {
         for e in &mut self.entries[self.pinned..] {

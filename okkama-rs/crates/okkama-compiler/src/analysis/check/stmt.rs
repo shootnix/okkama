@@ -121,12 +121,11 @@ impl Checker<'_, '_> {
             }
             ast::StmtKind::FieldBind { name, value } => {
                 // В конструкторе имя поля важнее одноимённой локальной привязки.
-                if self.kind == Kind::Ctor {
-                    if let Some(field) = self.own_field(&name.text) {
+                if self.kind == Kind::Ctor
+                    && let Some(field) = self.own_field(&name.text) {
                         let (kind, flow) = self.bind_field(field, value, false);
                         return (Stmt { kind, span }, flow);
                     }
-                }
                 self.rebind(name, value)
             }
             ast::StmtKind::SelfFieldBind {

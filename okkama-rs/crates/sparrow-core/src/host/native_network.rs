@@ -389,15 +389,14 @@ impl Heap {
         self.allocate_array(values)
     }
     pub(crate) fn native_network(&mut self, n: Native, a: &[Slot]) -> Result<Outcome, Error> {
-        if matches!(n, Native::NetworkClose | Native::NetworkClosed) {
-            if let NetworkHandle::Udp(state) = self.network_handle(a[0])? {
+        if matches!(n, Native::NetworkClose | Native::NetworkClosed)
+            && let NetworkHandle::Udp(state) = self.network_handle(a[0])? {
                 if n == Native::NetworkClose {
                     state.close();
                     return Ok(Outcome::Value(Slot::boolean(true)));
                 }
                 return Ok(Outcome::Value(Slot::boolean(state.closed())));
             }
-        }
         match self.network_execute(n, a) {
             Ok(v) => Ok(Outcome::Value(v)),
             Err(ProviderError::Engine(e)) => Err(e),
