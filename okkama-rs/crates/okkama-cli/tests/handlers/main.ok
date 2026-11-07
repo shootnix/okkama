@@ -1,0 +1,36 @@
+module app;
+import "io/stdout" take Stdout;
+
+enum Boom is Error = (boom(size is int));
+
+object Guard {
+    has name is string;
+    Guard(name is string) { self.name = name; }
+    label() is string { name; }
+    destroy { Stdout().writeln("destroy " + name); }
+}
+
+object Work {
+    Work();
+    fail(n is int) is string {
+        let junk = (0..n).map()->i{ "junk-" + i.string(); };
+        throw Boom.boom(junk.size());
+    }
+    nested(n is int) is string {
+        let guard = Guard("nested-" + n.string());
+        self.fail(n) + guard.label();
+    }
+    attempt(k is int) is int {
+        let kept = "item-" + k.string() + "-" + (k * k).string();
+        let result = try { self.nested(k % 7 + 3); } catch Boom.boom(size) { kept + "/" + size.string(); };
+        result.length();
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let work = Work();
+    let total = (0..40).map()->k{ work.attempt(k); }.reduce(0)->sum,length{ sum + length; };
+    out.writeln("total " + total.string());
+    0;
+}

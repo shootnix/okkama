@@ -279,3 +279,26 @@ fn budgets_stop_a_runaway_loop_that_handlers_cannot_catch() {
     assert_eq!(invalid.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid value `lots` for --max-memory"));
 }
+
+/// Exceptional edges keep the old value of a register the call or
+/// instruction would overwrite (audit S03, #22): the handler reads it after
+/// collections, with the collector stressed (every safepoint collects and
+/// reclaimed cells are poisoned).
+#[test]
+fn handlers_read_old_registers_across_collections() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/handlers");
+    for name in ["audit", "allocating-callee", "failing-instruction", "nested-calls"] {
+        let text = std::fs::read_to_string(directory.join(format!("{name}.spa"))).unwrap();
+        let program = okkama_sparrow::assemble(&text).unwrap();
+        let file = File::new(&okkama_sparrow::encode(&program).unwrap());
+        for stress in ["0", "1"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_sparrow"))
+                .arg("run")
+                .arg(&file.0)
+                .env("SPARROW_CORE_GC_STRESS", stress)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(5), "{name}, stress {stress}: {}", String::from_utf8_lossy(&output.stderr));
+        }
+    }
+}

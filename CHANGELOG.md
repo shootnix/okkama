@@ -8,6 +8,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Sparrow core: collector stress mode, `SPARROW_CORE_GC_STRESS=1` — every
+  safepoint collects and reclaimed cells are poisoned, so a value kept alive
+  by mistake fails at once. Exceptional edges are tested under it: the
+  audit's handler-liveness program and variants (an allocating callee, a
+  failing instruction that overwrites its operand, nested calls) keep the old
+  register value, and a source program with handlers, cleanup regions and
+  nested failing calls prints what the IR engine prints. The core needed no
+  fix; with stack-map roots disabled the stressed tests fail
+  ([#22](https://github.com/shootnix/okkama/issues/22)).
+
 - Sparrow core: execution budgets for untrusted programs and services.
   `okkama exec`, `okkama run --engine sparrow` and `sparrow run` take
   `--max-steps N` (function entries and loop iterations), `--max-memory SIZE`

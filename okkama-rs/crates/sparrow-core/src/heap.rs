@@ -42,6 +42,8 @@ pub const PAGE_BYTES: usize = PAGE_WORDS * 8;
 /// one per register: classes up to 128 words keep frames of large functions
 /// on free lists instead of separate allocations.
 pub const CLASSES: [usize; 18] = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96, 128];
+/// The words of a reclaimed cell under collector stress.
+const POISON: u64 = 0xdead_dead_dead_dead;
 /// Collections start once this much has been allocated, at least.
 const COLLECTION_FLOOR: usize = 1 << 20;
 
@@ -123,6 +125,10 @@ pub struct Heap {
     released: Vec<Word>,
     /// Growth checks against a memory budget (`budget`).
     pub watch: Option<crate::budget::Watch>,
+    /// Collector stress (`SPARROW_CORE_GC_STRESS`): collect at every safepoint
+    /// and poison reclaimed cells, so a value kept alive by mistake fails at
+    /// once instead of after a reuse.
+    stress: bool,
 }
 
 impl Heap {
@@ -142,12 +148,21 @@ impl Heap {
             watched: crate::word::FastSet::default(),
             released: Vec::new(),
             watch: None,
+            stress: false,
         }
     }
 
     /// Allocation-triggered collection is proportional to the live heap.
     pub fn needs_collection(&self) -> bool {
         self.allocated >= self.threshold
+    }
+
+    /// Collector stress: a zero threshold makes every safepoint collect.
+    pub fn set_stress(&mut self, on: bool) {
+        self.stress = on;
+        if on {
+            self.threshold = 0;
+        }
     }
 
     /// Report the death of `object` through [`Heap::take_released`].
@@ -520,6 +535,20 @@ impl Heap {
         self.sweep();
     }
 
+    /// Overwrite every free cell past its link (collector stress).
+    fn poison(&mut self) {
+        for (class, &size) in CLASSES.iter().enumerate() {
+            let mut cell = self.free[class];
+            while cell != 0 {
+                for word in 2..size {
+                    // SAFETY: a free cell of `size` words inside a live page.
+                    unsafe { *((cell + word as Word * 8) as *mut u64) = POISON };
+                }
+                cell = unsafe { *((cell + 8) as *const u64) };
+            }
+        }
+    }
+
     fn sweep(&mut self) {
         self.free = [0; CLASSES.len()];
         let mut live = 0;
@@ -561,11 +590,14 @@ impl Heap {
                 false
             }
         });
+        if self.stress {
+            self.poison();
+        }
         self.live = live;
         self.live_sum += live;
         self.allocated_before += self.allocated;
         self.allocated = 0;
-        self.threshold = live.max(COLLECTION_FLOOR);
+        self.threshold = if self.stress { 0 } else { live.max(COLLECTION_FLOOR) };
         self.collections += 1;
     }
 }
