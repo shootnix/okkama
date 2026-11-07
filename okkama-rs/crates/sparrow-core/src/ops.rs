@@ -425,6 +425,13 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
     runtime.count(|_| format!("exec {}", instruction.mnemonic()));
+    if runtime.limits.memory.is_some() {
+        if let Some(bytes) = result_bytes(runtime, instruction, uses) {
+            if runtime.would_exceed(bytes) {
+                return runtime.exhaust(ctx, crate::budget::Exhausted::Memory);
+            }
+        }
+    }
     // Uses in visit order: inline for the common case, spilled past 16 (map
     // and array literals can use any number of registers).
     let mut inline = [okkama_sparrow::Register(u32::MAX); 16];
@@ -474,6 +481,35 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
             ctx.status = crate::runtime::FAILED;
             0
         }
+    }
+}
+
+/// The size of the result of an instruction whose result can be much larger
+/// than its operands (#72) — a join, a replacement — before it is built,
+/// so a memory budget stops it instead of the allocation it would make.
+fn result_bytes(runtime: &Runtime, instruction: &I, uses: *const Word) -> Option<u64> {
+    let mut registers = Vec::new();
+    instruction.visit(&mut |access| {
+        if let Access::Use(register) = access {
+            registers.push(register);
+        }
+    });
+    // SAFETY: rt_exec's caller passes one word per use.
+    let words = unsafe { std::slice::from_raw_parts(uses, registers.len()) };
+    let value = |register: &okkama_sparrow::Register| words[registers.iter().position(|r| r == register).expect("used register")];
+    let text = |register| runtime.heap.text(value(register));
+    match instruction {
+        I::ArrayJoin { array, separator, .. } => {
+            let elements = runtime.heap.elements(value(array));
+            let parts: u64 = elements.iter().map(|&element| runtime.heap.text(element).len() as u64).sum();
+            Some(parts + text(separator).len() as u64 * elements.len().saturating_sub(1) as u64)
+        }
+        I::StrReplace { text: source, pattern, replacement, .. } => {
+            let (source, pattern, replacement) = (text(source), text(pattern), text(replacement));
+            let count = if pattern.is_empty() { source.chars().count() + 1 } else { source.matches(pattern).count() };
+            Some(source.len() as u64 + count as u64 * replacement.len() as u64)
+        }
+        _ => None,
     }
 }
 

@@ -89,7 +89,7 @@ helpers! {
     compile = runtime::rt_compile as (ctx, function: u64) -> u64; [Fails];
     int = runtime::rt_int as (ctx, op: u64, left: Word, right: Word) -> Word; [Allocates, Collects, Fails];
     int_order = runtime::rt_int_order as (ctx, left: Word, right: Word) -> i64; [];
-    concat = runtime::rt_concat as (ctx, left: Word, right: Word) -> Word; [Allocates, Collects];
+    concat = runtime::rt_concat as (ctx, left: Word, right: Word) -> Word; [Allocates, Collects, Fails];
     array = runtime::rt_array as (ctx, repr: u64, elements: *const Word, count: u64) -> Word; [Allocates, Collects];
     trap = runtime::rt_trap as (ctx, message: Word) -> Word; [Allocates, Fails];
     throw = runtime::rt_throw as (ctx, value: Word) -> Word; [Allocates, Fails];
@@ -1220,6 +1220,7 @@ impl Emitter<'_, '_> {
             I::StrConcat { dst, left, right } => {
                 let (l, r) = (self.get(left), self.get(right));
                 let text = self.helper(|h| h.concat, &[ctx, l, r]).expect("result");
+                self.check(pc);
                 self.set(&dst.0, text);
             }
             I::ArrayNew { dst, elements } => {

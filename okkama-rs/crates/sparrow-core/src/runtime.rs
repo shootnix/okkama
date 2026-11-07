@@ -404,6 +404,13 @@ impl Runtime {
         0
     }
 
+    /// Mark the memory budget exhausted from code without a context (a
+    /// native): the run stops at its next poll.
+    pub(crate) fn refuse_memory(&mut self) {
+        self.budget.exhausted.get_or_insert(Exhausted::Memory);
+        self.budget.fuel.set(0);
+    }
+
     /// Would `bytes` more cross the memory budget?
     pub(crate) fn would_exceed(&self, bytes: u64) -> bool {
         match (self.limits.memory, &self.budget.meter) {
@@ -534,9 +541,12 @@ pub extern "C" fn rt_int_order(ctx: *mut Ctx, left: Word, right: Word) -> i64 {
 pub extern "C" fn rt_concat(ctx: *mut Ctx, left: Word, right: Word) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
-    let mut text = String::with_capacity(
-        runtime.heap.text(left).len() + runtime.heap.text(right).len(),
-    );
+    // The size is known before the copy (#72): a memory budget stops it here.
+    let size = runtime.heap.text(left).len() + runtime.heap.text(right).len();
+    if runtime.would_exceed(size as u64) {
+        return runtime.exhaust(ctx, Exhausted::Memory);
+    }
+    let mut text = String::with_capacity(size);
     text.push_str(runtime.heap.text(left));
     text.push_str(runtime.heap.text(right));
     let word = runtime.heap.allocate_text(&text);

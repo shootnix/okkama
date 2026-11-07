@@ -287,6 +287,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   superlinear (0.6 s at 10⁵ instructions): #239
   ([#50](https://github.com/shootnix/okkama/issues/50)).
 
+- Sparrow core, budgets: one operation whose result can be much larger than
+  its operands is measured against the memory budget before it is built —
+  string concatenation, `join`, `replace` (an empty pattern included) and
+  the BigInt power native, next to the BigInt product checked already. A
+  join of 200 copies of a 1 MiB string under `--max-memory 64M` used to
+  finish with a 589 MB peak and exit 0, because no poll followed it; it now
+  stops with "Execution budget exhausted: memory" before allocating. Long
+  natives that cannot be interrupted (sorting, provider calls) and
+  per-runtime memory accounting remain open in #238
+  ([#72](https://github.com/shootnix/okkama/issues/72)).
+
 - Runtimes: host state belongs to one run, not to a thread (Q03). Every
   engine entry (IR program and test runs, the previous Sparrow VM, each
   Sparrow core run) opens a host session — a copy of the process's working

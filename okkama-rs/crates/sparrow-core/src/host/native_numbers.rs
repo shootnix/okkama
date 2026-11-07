@@ -158,6 +158,15 @@ impl Heap {
                             "BigInt power exceeds bit limit",
                         );
                     }
+                    // At least `lower` bits: past the memory budget it is not
+                    // computed, and the run stops at its next poll (#72).
+                    // SAFETY: `rt` is set for the duration of a native call.
+                    let runtime = unsafe { &mut *self.rt };
+                    let bytes: BigInt = &lower >> 3usize;
+                    if runtime.would_exceed(bytes.to_u64().unwrap_or(u64::MAX)) {
+                        runtime.refuse_memory();
+                        return self.bigint_failure(native, "resource_exhausted", "BigInt power exceeds the memory budget");
+                    }
                     let result = left.pow(exponent.to_u32().expect("31-bit exponent"));
                     if BigInt::from(result.bits()) > maximum {
                         return self.bigint_failure(
