@@ -313,7 +313,16 @@ impl<'r, 'a> Checker<'r, 'a> {
         }
     }
 
-    pub fn finish(self, owner: BodyOwner, params: Vec<LocalId>, block: Block, span: Span) -> Body {
+    pub fn finish(mut self, owner: BodyOwner, params: Vec<LocalId>, block: Block, span: Span) -> Body {
+        if self.is_async
+            && let Some(cell) = self.reg.standard.cell
+        {
+            // A cell stays in synchronous code (#152): one error per async body.
+            let local = self.locals.iter().find(|local| local.ty.holds_object(cell)).map(|local| local.span);
+            if let Some(at) = local.or_else(|| super::thir::first_expr(&block, &|expr| expr.ty.as_ref().is_some_and(|ty| ty.holds_object(cell)))) {
+                self.error(at, "A Cell cannot be used in an async action: a cell stays in synchronous code; share state between tasks with Atomic");
+            }
+        }
         let returns_value =
             self.result.is_some() && !matches!(self.kind, Kind::Successor | Kind::Ctor);
         let body = Body {

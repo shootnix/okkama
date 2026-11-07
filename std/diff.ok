@@ -3,8 +3,8 @@ module diff v1.0.0;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "collections/iteration" take Cursor;
-import "async/atomic" take Atomic;
 import "runtime/diff" take diff_script;
+import "cell" take Cell;
 
 enum InvalidDiff is Error = (because(reason is string));
 enum DiffLimitExceeded is Error = (off_budget);
@@ -13,8 +13,7 @@ object DiffListValues<T> {
     has values is @T;
 
     DiffListValues(origin is List<T>, reverse is bool) {
-        let cursor is Atomic<Cursor<T>> = Atomic(origin.cursor());
-        defer cursor.close();
+        let cursor is Cell<Cursor<T>> = Cell(origin.cursor());
         let items is @T = (0..origin.size()).map() -> index {
             let current = cursor.value();
             let item = current.item();
@@ -184,8 +183,7 @@ object MatchingBlocks {
         let script = DiffScript(left, right);
         let edits = script.edits();
         let empty is List<MatchingBlock> = EmptyList();
-        let blocks is Atomic<List<MatchingBlock>> = Atomic(empty);
-        defer blocks.close();
+        let blocks is Cell<List<MatchingBlock>> = Cell(empty);
         for edits -> edit {
             if edit.kind() == DiffEditKind.equal {
                 let current = blocks.value();
@@ -266,8 +264,7 @@ object DiffHunks {
     DiffHunks(edits is @DiffEdit, context is int) {
         confirm context >= 0 && context <= 64 else throw InvalidDiff.because("context must be 0..64");
         let empty is List<DiffSpan> = EmptyList();
-        let spans is Atomic<List<DiffSpan>> = Atomic(empty);
-        defer spans.close();
+        let spans is Cell<List<DiffSpan>> = Cell(empty);
         for (0..edits.size()) -> index {
             if edits[index].kind() != DiffEditKind.equal {
                 let start = if index > context {
@@ -413,12 +410,9 @@ object DiffContextRows {
 
     DiffContextRows(edits is @DiffEdit, span is DiffSpan) {
         let empty is List<string> = EmptyList();
-        let left is Atomic<List<string>> = Atomic(empty);
-        let right is Atomic<List<string>> = Atomic(empty);
-        let position = Atomic(span.start());
-        defer left.close();
-        defer right.close();
-        defer position.close();
+        let left is Cell<List<string>> = Cell(empty);
+        let right is Cell<List<string>> = Cell(empty);
+        let position = Cell(span.start());
         loop {
             if position.value() >= span.end() {
                 last;

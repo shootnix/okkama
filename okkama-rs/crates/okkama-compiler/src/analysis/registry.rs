@@ -236,6 +236,8 @@ pub struct Standard {
     pub sizing: Option<RoleId>,
     pub byte_source: Option<RoleId>,
     pub writing: Option<RoleId>,
+    /// `cell::Cell`: stays in synchronous code (#152).
+    pub cell: Option<ObjectId>,
 }
 
 #[derive(Debug)]
@@ -367,6 +369,7 @@ impl<'a> Registry<'a> {
         registry.check_error_payloads();
         registry.check_hidden_leaks();
         registry.find_standard();
+        registry.check_cell_fields();
         registry.add_adapters();
         for (module, ty, span) in std::mem::take(&mut registry.pending_bounds) {
             registry.current = module;
@@ -2455,6 +2458,35 @@ impl<'a> Registry<'a> {
 
     // ----- стандартные роли -----
 
+    /// A field cannot hold a `Cell` (#152): an object can reach async code,
+    /// and a cell stays in synchronous code.
+    fn check_cell_fields(&mut self) {
+        let Some(cell) = self.standard.cell else {
+            return;
+        };
+        for object in 0..self.objects.len() {
+            if object == cell.0 {
+                continue;
+            }
+            let found: Vec<(Span, String)> = self.objects[object]
+                .fields
+                .iter()
+                .filter(|field| field.ty.holds_object(cell))
+                .map(|field| (field.span, field.name.clone()))
+                .collect();
+            if found.is_empty() {
+                continue;
+            }
+            self.current = self.objects[object].module;
+            for (span, name) in found {
+                self.error(
+                    span,
+                    format!("Field \"{name}\" cannot hold a Cell: a cell stays in synchronous code; state an object shares with tasks is an Atomic"),
+                );
+            }
+        }
+    }
+
     fn find_standard(&mut self) {
         let lookup = |registry: &Registry<'_>, module: &str, name: &str| {
             registry
@@ -2479,6 +2511,10 @@ impl<'a> Registry<'a> {
             sizing: role(lookup(self, "size", "Sizing")),
             byte_source: role(lookup(self, "io/stream", "ByteSource")),
             writing: role(lookup(self, "io/stream", "Writing")),
+            cell: match lookup(self, "cell", "Cell") {
+                Some(TypeRef::Object(id)) => Some(id),
+                _ => None,
+            },
         };
     }
 

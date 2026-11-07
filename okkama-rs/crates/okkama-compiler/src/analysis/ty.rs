@@ -218,6 +218,20 @@ impl Ty {
         }
     }
 
+    /// Holds a value of object `object` — directly, in a collection, a
+    /// successor, a future or a generic argument; an action type does not
+    /// (calling it needs one from elsewhere).
+    pub fn holds_object(&self, object: ObjectId) -> bool {
+        match self {
+            Ty::Object(id, args) => *id == object || args.iter().any(|arg| arg.holds_object(object)),
+            Ty::Array(inner) | Ty::Successor(inner) | Ty::Varargs(inner) => inner.holds_object(object),
+            Ty::Map(key, value) => key.holds_object(object) || value.holds_object(object),
+            Ty::Role(_, args) | Ty::Variant(_, args) | Ty::Cap(_, args, _) => args.iter().any(|arg| arg.holds_object(object)),
+            Ty::Future(Some(inner)) => inner.holds_object(object),
+            _ => false,
+        }
+    }
+
     /// Встречается ли параметр типа.
     pub fn mentions_param(&self) -> bool {
         match self {

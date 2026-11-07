@@ -7,6 +7,7 @@ import "encoding/utf" take Utf8Encoded, Utf8Decoded, ByteOrder;
 import "encoding/binary" take Signedness;
 import "encoding/bytes" take ByteRange, ByteSearch;
 import "async/atomic" take Atomic;
+import "cell" take Cell;
 
 // PostgreSQL frontend/backend protocol 3.0 framing, written in Okkama.
 //
@@ -144,8 +145,8 @@ object PgInput {
     // length and body), at most `limit` of them, consumed together; empty
     // when the next message is not one.
     data_rows(limit is int) is PgDataRows {
-        let end = Atomic(0);
-        let count = Atomic(0);
+        let end = Cell(0);
+        let count = Cell(0);
         loop {
             let at = end.value();
             last if count.value() >= limit || input.available() < at + 5 || input.peek(at) != 68.byte();

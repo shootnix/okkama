@@ -1,0 +1,48 @@
+module cell v1.0.0;
+import "async/atomic" take Atomic;
+
+/*
+=head1 NAME
+
+cell - a mutable value for synchronous code
+
+=head1 DESCRIPTION
+
+Cell(value: initial) holds one value; value() reads it and replace(value) puts a
+new one. It is the mutable variable of synchronous code: an accumulator a loop
+updates, a position a parser advances, headers gathered while reading.
+
+    let total = Cell(0);
+    for items -> item { total.replace(total.value() + item.price()); }
+    total.value();
+
+A Cell stays in synchronous code, and the compiler checks it: an async action
+cannot create, receive or use one, and an object's field cannot hold one. With
+no suspension point in synchronous code, every read and write is whole with
+respect to tasks. State shared between tasks is async/atomic's Atomic.
+
+A Cell is a value container, not a resource: it needs no close() and holds no
+OS resource. Values read from it are ordinary immutable Okkama values; cells
+compare by identity.
+
+=cut
+*/
+object Cell<T> {
+    has state is Atomic<T>;
+
+    Cell(value is T) { state = Atomic(value); }
+
+    value() is T { state.value(); }
+
+    replace(value is T) is void { state.replace(value); }
+}
+
+test "a cell keeps the last value it was given" {
+    let count = Cell(0);
+    for 1..=4 -> step { count.replace(count.value() + step); }
+    test.is(count.value(), 10);
+    let words = Cell(@string());
+    words.replace(words.value() + ["a"]);
+    words.replace(words.value() + ["b"]);
+    test.is(words.value(), ["a", "b"]);
+}
