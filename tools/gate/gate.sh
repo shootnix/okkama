@@ -155,7 +155,9 @@ fi
 
 step "std inline tests"
 started=$SECONDS
-if python3 "$ROOT/tools/gate/std-tests.py" | tee "$LOGS/std-tests.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+# Every std module compiled to Sparrow also passes the independent register
+# allocation check (#30).
+if OKKAMA_CHECK_REGISTERS=1 python3 "$ROOT/tools/gate/std-tests.py" | tee "$LOGS/std-tests.log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
     record "std tests" pass $((SECONDS - started))
 else
     record "std tests" fail $((SECONDS - started))

@@ -229,6 +229,12 @@ where regions are needed.
 | `natives.rs` + `host/` | native providers: `host/mod.rs` classifies each ABI native to a provider (`native_network`, `native_tls`, `native_sqlite`, `native_postgres`, `native_db`, `native_json`, …); `native_origin.rs` bridges the rest to `okkama-runtime-core` (sync, plus terminal promises pumped through `sched::pump`) |
 | `worker.rs`, `worker_process.rs` | process workers (OKW1 format), child `--worker FILE.spb` |
 
+**Register allocation** (`codegen/sparrow/registers.rs`) is checked by an
+independent must-analysis (`check.rs`): every read finds its value in its
+register on all paths, edges write block parameters at once, unwind handlers
+get the state common to every point of the block. It runs in debug builds
+and with `OKKAMA_CHECK_REGISTERS=1` (the gate's std tests).
+
 **Trust in SPB.** The core picks every register's machine representation
 from the SPB's declared types, so a false type would make it read an integer
 as a pointer. `okkama_sparrow::Program::verify` (run by `decode`, `encode` and
