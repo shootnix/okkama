@@ -71,5 +71,5 @@ test "stream digests equal digests of the whole input" {
     let whole = Digesting.fake().state(input).bytes();
     test.is(ReadDigest(ByteBuffer(input).reading(), Digesting.fake(), 7).result().bytes(), whole);
     test.is(ReadDigest(ByteBuffer().reading(), Digesting.fake()).result().bytes().size(), 0);
-    test.ok(try { ReadDigest(ByteBuffer().reading(), Digesting.fake(), 0); false; } catch e is InvalidArgument { true; });
+    test.throws(InvalidArgument) { ReadDigest(ByteBuffer().reading(), Digesting.fake(), 0); };
 }

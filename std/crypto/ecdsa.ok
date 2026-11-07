@@ -94,6 +94,6 @@ test "ECDSA keys sign deterministically and verify" {
 test "ECDSA rejects keys of another curve" {
     let p384 = EcdsaPrivateKey(curve: EcdsaCurve.p384, entropy: Entropy.fake());
     test.ok(p384.public_key().verified([3.byte()], p384.signature([3.byte()])));
-    test.ok(try { EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: p384.pkcs8()); false; } catch e is InvalidCryptoInput { true; });
-    test.ok(try { EcdsaPublicKey(EcdsaCurve.p256, p384.public_key().bytes()); false; } catch e is InvalidCryptoInput { true; });
+    test.throws(InvalidCryptoInput) { EcdsaPrivateKey(curve: EcdsaCurve.p256, pkcs8: p384.pkcs8()); };
+    test.throws(InvalidCryptoInput) { EcdsaPublicKey(EcdsaCurve.p256, p384.public_key().bytes()); };
 }

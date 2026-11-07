@@ -346,8 +346,8 @@ object TarPermissionBits {
 
 test "TAR octal fields enforce exact bounds" {
     test.is(TarOctal(2097151,8).bytes(), [byte(55),byte(55),byte(55),byte(55),byte(55),byte(55),byte(55),byte(0)]);
-    test.ok(try { TarOctal(2097152,8); false; } catch error is InvalidTar { true; });
-    test.ok(try { TarOctal(-1,8); false; } catch error is InvalidTar { true; });
+    test.throws(InvalidTar) { TarOctal(2097152,8); };
+    test.throws(InvalidTar) { TarOctal(-1,8); };
 }
 test "PAX lengths count UTF8 bytes and decimal width carries" {
     test.is(TarPaxRecord("path","я").bytes(), [byte(49),byte(49),byte(32),byte(112),byte(97),byte(116),byte(104),byte(61),byte(209),byte(143),byte(10)]);

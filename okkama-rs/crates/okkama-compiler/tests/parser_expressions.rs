@@ -536,3 +536,16 @@ fn adjacent_precedence_levels_group_the_tighter_operator() {
     }
     assert_rejects("module app v1.0.0; main() is int { a .. b ..= c; }", "Range expressions cannot be chained.");
 }
+
+/// `test.throws(Type) { … }` (#216) is the `try` it means: the block, a
+/// panic when nothing was thrown, and one catch of `Type` yielding the error.
+#[test]
+fn test_throws_is_a_try_with_one_catch() {
+    let tree = body_sexpr("let refused = test.throws(Refused) { gate.check(0); };");
+    assert!(tree.contains("TryExpr"), "{tree}");
+    assert!(tree.contains("test.throws: the block did not throw Refused"), "{tree}");
+    assert!(tree.contains("test.throws#error"), "{tree}");
+    assert_rejects("module app v1.0.0; main() is int { test.throws(Refused); 0; }", "Expect a block after test.throws(Type)");
+    // Elsewhere `throws` is an ordinary member.
+    assert!(!body_sexpr("checker.throws(Refused);").contains("TryExpr"));
+}

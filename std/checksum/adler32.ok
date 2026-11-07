@@ -70,6 +70,6 @@ test "Adler-32 seeds normalize and reject out-of-range integers" {
     test.is(Adler32([], 0).value(), 0);
     test.is(Adler32([], 4294967295).value(), 917518);
     test.is(Adler32([byte(0)], 4294967295).value(), 1835022);
-    test.ok(try { Adler32([], -1); false; } catch error is Error { true; });
-    test.ok(try { Adler32([], 4294967296); false; } catch error is Error { true; });
+    test.throws(Error) { Adler32([], -1); };
+    test.throws(Error) { Adler32([], 4294967296); };
 }

@@ -8,6 +8,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: `test.throws(Type) { … }` (#216) asserts that a block throws a
+  `Type` and yields the caught error: `let refused = test.throws(Refused) {
+  Gate().check(0); };`. It is parsed as the `try` it means — the block, a
+  panic that fails the test when nothing was thrown, and `catch e is Type`
+  yielding `e` — so checking and every engine treat it as one; `okkama fmt`
+  keeps the written form. 64 std assertions of the form
+  `test.ok(try { …; false; } catch e is T { true; })` in 28 modules now read
+  `test.throws(T) { …; };`; the ones that match an enum case keep their `try`.
+  Book §14 (EN/RU) ([#216](https://github.com/shootnix/okkama/issues/216)).
+
 - std `cell`: `Cell<T>`, the mutable value of synchronous code (#152) —
   `Cell(value)`, `value()`, `replace(value)`, no `close()`. The compiler keeps
   a cell in synchronous code: an async action cannot create, receive or use

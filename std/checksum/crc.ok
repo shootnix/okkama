@@ -123,10 +123,10 @@ test "CRC treats high-bit bytes as unsigned" {
 }
 
 test "CRC rejects negative and oversized initial values" {
-    test.ok(try { Crc32([], -1); false; } catch error is Error { true; });
-    test.ok(try { Crc32([], 4294967296); false; } catch error is Error { true; });
-    test.ok(try { Crc16Ccitt(-1); false; } catch error is Error { true; });
-    test.ok(try { Crc16Ccitt(65536); false; } catch error is Error { true; });
-    test.ok(try { Crc16Ccitt([], -1); false; } catch error is Error { true; });
-    test.ok(try { Crc16Ccitt([], 65536); false; } catch error is Error { true; });
+    test.throws(Error) { Crc32([], -1); };
+    test.throws(Error) { Crc32([], 4294967296); };
+    test.throws(Error) { Crc16Ccitt(-1); };
+    test.throws(Error) { Crc16Ccitt(65536); };
+    test.throws(Error) { Crc16Ccitt([], -1); };
+    test.throws(Error) { Crc16Ccitt([], 65536); };
 }

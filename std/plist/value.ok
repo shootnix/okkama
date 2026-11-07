@@ -227,7 +227,7 @@ test "plist missing duplicate and cardinality failures are typed" {
     test.is(try { PlistDictionary([PlistMember("x", PlistString("")), PlistMember("x", PlistString(""))]); "bad"; }
         catch DuplicatePlistMember.name(name) { name; }, "x");
     test.is(PlistArray([], 0).values().size(), 0);
-    test.ok(try { PlistArray([], -1); false; } catch error is InvalidPlistContainerLimit { true; });
+    test.throws(InvalidPlistContainerLimit) { PlistArray([], -1); };
     test.ok(try { PlistDictionary([PlistMember("x", PlistBoolean(true))], 0); false; }
         catch error is PlistContainerLimitExceeded { true; });
 }

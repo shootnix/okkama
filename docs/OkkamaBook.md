@@ -2812,8 +2812,20 @@ first-class, fresh for every case, and absent outside test execution. Failed
 assertions do not abort the block. An uncaught throw, panic, runtime, defer, or
 destroy failure ends only the current test, cleanup finishes, and the next test
 runs. The Go-like reporter returns process status 0 only for an entirely green
-suite and 1 otherwise. There is no `test.panics`; typed `try`/`catch` covers
-throw behavior, while panic is intentionally uncatchable.
+suite and 1 otherwise. There is no `test.panics`: panic is intentionally
+uncatchable.
+
+`test.throws(Type) { … }` asserts that a block throws: it fails the test
+unless the block throws a `Type` (an error type, enum or role, as after
+`catch e is`), and its value is the caught error, for further checks:
+
+```okkama
+let refused = test.throws(Refused) { Gate().check(0); };
+test.is(refused, Refused.because("non-positive"));
+```
+
+It means exactly `try { …; panic "test.throws: the block did not throw Refused"; }
+catch e is Refused { e; }`; another error still propagates and fails the test.
 
 Reusable assertions come from the bundled module:
 

@@ -1084,6 +1084,21 @@ impl<'s> Printer<'s> {
     }
 
     fn try_body(&mut self, body: &TryBody) {
+        // `test.throws(Type) { … }` (#216) is parsed as the `try` it means:
+        // its catch binds a name source cannot spell, and its block ends with
+        // the panic the parser added.
+        if let [catch] = body.catches.as_slice()
+            && catch.name.as_ref().is_some_and(|name| name.text == "test.throws#error")
+            && let [ty] = catch.types.as_slice()
+        {
+            self.word("test.throws(");
+            self.ty(ty);
+            self.word(") ");
+            let mut written = body.body.clone();
+            written.stmts.pop();
+            self.block(&written);
+            return;
+        }
         self.word("try ");
         self.block(&body.body);
         for catch in &body.catches {

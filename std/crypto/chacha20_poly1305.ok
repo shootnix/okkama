@@ -57,6 +57,6 @@ test "XChaCha20-Poly1305 round-trips and authenticates" {
     let cipher = XChaCha20Poly1305(SecretBytes(key));
     let sealed = cipher.sealed(nonce, [], [1.byte()]);
     test.is(cipher.opened(nonce, [], sealed), [1.byte()]);
-    test.ok(try { cipher.opened(nonce, [], sealed.slice(0, sealed.size() - 1)); false; } catch e is AuthenticationFailed { true; });
+    test.throws(AuthenticationFailed) { cipher.opened(nonce, [], sealed.slice(0, sealed.size() - 1)); };
 }
 

@@ -232,5 +232,5 @@ test "fields decode integers and strings" {
     test.is(fields.cstring(), "ok");
     test.is(fields.int16(), 7);
     test.is(fields.remaining(), 0);
-    test.ok(try { fields.byte(); false; } catch e is PgWireFailure { true; });
+    test.throws(PgWireFailure) { fields.byte(); };
 }
