@@ -425,13 +425,11 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
     // the instruction stays valid while the runtime is borrowed mutably.
     let instruction: &I = unsafe { &*(&runtime.loaded.program.functions[function].code[pc as usize] as *const I) };
     runtime.count(|_| format!("exec {}", instruction.mnemonic()));
-    if runtime.limits.memory.is_some() {
-        if let Some(bytes) = result_bytes(runtime, instruction, uses) {
-            if runtime.would_exceed(bytes) {
+    if runtime.limits.memory.is_some()
+        && let Some(bytes) = result_bytes(runtime, instruction, uses)
+            && runtime.would_exceed(bytes) {
                 return runtime.exhaust(ctx, crate::budget::Exhausted::Memory);
             }
-        }
-    }
     // Uses in visit order: inline for the common case, spilled past 16 (map
     // and array literals can use any number of registers).
     let mut inline = [okkama_sparrow::Register(u32::MAX); 16];
