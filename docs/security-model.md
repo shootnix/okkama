@@ -87,13 +87,15 @@ separate process with an OS memory limit.
 **Not guaranteed.**
 - On the JVM the memory budget is the Java heap and the thread stacks, not
   the whole process ([#237]).
+- On the core a deep non-tail recursion escapes `--timeout` and
+  `--max-memory`; `--max-steps` stops it ([#241]).
 - A single native operation (a long BigInt division, a sort) finishes before a
   budget stops the run; the memory budget measures the whole process ([#72]).
 - From the CLI a program has the host access of the user running it: files,
   network, processes, environment.
 
-**Use today.** Budgets on the core; a container or OS sandbox for host
-access.
+**Use today.** Budgets on any engine (with `--max-steps` on the core while
+[#241] is open); a container or OS sandbox for host access.
 
 ## 4. Packages
 
@@ -150,3 +152,4 @@ passed on the same commit ([#26]).
 [#72]: https://github.com/shootnix/okkama/issues/72
 [#73]: https://github.com/shootnix/okkama/issues/73
 [#237]: https://github.com/shootnix/okkama/issues/237
+[#241]: https://github.com/shootnix/okkama/issues/241
