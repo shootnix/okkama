@@ -297,7 +297,7 @@ pub fn spawn(runtime: &mut Runtime, ctx: *mut Ctx, entry: Word, arguments: &[Wor
     }
     let types: Vec<TypeRef> = source.params.iter().map(|r| source.registers[r.0 as usize]).collect();
     let (symbol, result) = (source.symbol.clone(), source.result);
-    let directory = std::env::current_dir().map_err(|e| e.to_string())?;
+    let directory = okkama_runtime_core::host::cwd();
     let mut request = Vec::new();
     text(&mut request, &directory.to_string_lossy())?;
     text(&mut request, &symbol)?;
@@ -435,7 +435,7 @@ pub fn respond(runtime: &mut Box<Runtime>, request: &[u8], stack: u64) -> Vec<u8
         if !path.is_dir() {
             return Err("worker working directory is not a directory".into());
         }
-        std::env::set_current_dir(&path).map_err(|e| e.to_string())?;
+        okkama_runtime_core::host::set_cwd(path);
         let value = runtime.run_function_with(entry, &arguments, stack).map_err(|e| e.0)?;
         let mut bytes = Vec::new();
         match result {

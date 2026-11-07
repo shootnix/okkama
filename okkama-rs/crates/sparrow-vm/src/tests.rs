@@ -49,6 +49,7 @@ fn run_tests_here(program: &Program, out: &mut dyn Write) -> Result<bool, Error>
             },
         });
     };
+    let _host = sparrow_runtime::host::session();
     let engine = new_engine(program);
     if sparrow_runtime::worker::active() {
         crate::machine::serve(&engine);

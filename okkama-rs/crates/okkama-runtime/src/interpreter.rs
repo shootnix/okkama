@@ -51,6 +51,7 @@ fn execute_inner(
         ));
     }
     let entry = module.entry.ok_or(RuntimeError::MissingEntry)?;
+    let _host = okkama_runtime_core::host::session();
     let engine = new_engine(module);
     if crate::worker::active() {
         crate::worker::serve(&engine);

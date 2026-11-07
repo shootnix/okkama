@@ -1,28 +1,15 @@
-//! Environment snapshots and legacy mutation are local to the VM heap. No
-//! process-global set_var, thread-local VM singleton, or unsafe mutation.
+//! The program's environment is the run's host session
+//! (`okkama_runtime_core::host`, #40), shared with the bridged origin natives;
+//! the process environment is never changed.
 use crate::host::{
     Error,
     {Outcome, ProviderError},
     *,
 };
 use okkama_runtime_abi::{Native, NativeFailure};
+use okkama_runtime_core::host;
 use std::collections::BTreeMap;
 
-fn host_snapshot(
-    values: impl Iterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
-) -> BTreeMap<String, String> {
-    values
-        // This marker belongs to the launcher/CLI handshake, not the program's
-        // environment or an ordinary subprocess launched by that program.
-        .filter(|(key, _)| key != "SPARROW_INTERNAL_WORKER")
-        .map(|(key, value)| {
-            (
-                key.to_string_lossy().into_owned(),
-                value.to_string_lossy().into_owned(),
-            )
-        })
-        .collect()
-}
 pub(crate) fn handles(n: Native) -> bool {
     n.symbol().starts_with("runtime/environment@1::")
 }
@@ -73,10 +60,6 @@ fn value(n: Native, s: &str) -> Result<String, ProviderError> {
     Ok(s.into())
 }
 impl Heap {
-    pub(crate) fn environment(&mut self) -> &mut BTreeMap<String, String> {
-        self.environment
-            .get_or_insert_with(|| host_snapshot(std::env::vars_os()))
-    }
     fn environment_map(
         &self,
         n: Native,
@@ -122,7 +105,7 @@ impl Heap {
         match n {
             EnvironmentEnvironmentSnapshot => {
                 let mut out = BTreeMap::new();
-                for (key, content) in self.environment().iter() {
+                for (key, content) in host::environment().iter() {
                     let key = name(n, key, true)?;
                     let content = value(n, content)?;
                     if out.insert(key, content).is_some() {
@@ -185,27 +168,28 @@ impl Heap {
                 let key = name(n, &String::from_utf8_lossy(&bytes), false)?;
                 match n {
                     EnvironmentEnvironmentGet => {
-                        let bytes = self
-                            .environment()
-                            .get(&key)
+                        let bytes = host::variable(&key)
                             .ok_or_else(|| {
                                 failed(n, "not_found", "Environment variable was not found")
                             })?
-                            .as_bytes()
-                            .to_vec();
+                            .into_bytes();
                         Ok(self.native_byte_array(bytes)?)
                     }
                     EnvironmentEnvironmentSet => {
                         let raw = self.native_bytes(a[1])?;
                         let content = value(n, &String::from_utf8_lossy(&raw))?;
-                        self.environment().insert(key, content);
+                        host::set_environment(&key, Some(&content));
                         Ok(Slot::boolean(true))
                     }
-                    _ => Ok(Slot::boolean(self.environment().remove(&key).is_some())),
+                    _ => {
+                        let present = host::variable(&key).is_some();
+                        host::set_environment(&key, None);
+                        Ok(Slot::boolean(present))
+                    }
                 }
             }
             EnvironmentEnvironmentAll => {
-                let values = self.environment().clone();
+                let values = host::environment();
                 let mut all = Vec::with_capacity(values.len());
                 for (key, value) in values {
                     let key = self.native_byte_array(key.into_bytes())?;

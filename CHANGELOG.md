@@ -136,6 +136,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Runtimes: host state belongs to one run, not to a thread (Q03). Every
+  engine entry (IR program and test runs, the previous Sparrow VM, each
+  Sparrow core run) opens a host session — a copy of the process's working
+  directory and environment plus the launcher's defaults — and the program's
+  `chdir` and environment changes live and die with it, so a second program
+  on the same thread no longer inherits them; the process is never changed.
+  On the Sparrow core the session is also the single source of truth: its
+  own natives and the bridged origin natives (SQLite paths, x509 files,
+  collation) now see the same directory and environment after `chdir` or
+  `env.set`, a spawned worker starts in the program's directory rather than
+  the process's, and a core worker no longer changes its process's
+  directory. A later `default_environment` for the same name replaces the
+  earlier one ([#40](https://github.com/shootnix/okkama/issues/40)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the

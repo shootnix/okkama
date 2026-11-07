@@ -232,7 +232,13 @@ fn on_vm_thread<T: Send + 'static>(body: impl FnOnce() -> Result<T, Error> + Sen
     std::thread::Builder::new()
         .name("sparrow-core".into())
         .stack_size(STACK_BYTES as usize)
-        .spawn(body)
+        .spawn(move || {
+            // The program's cwd and environment live as long as this run (#40).
+            let _host = okkama_runtime_core::host::enter(
+                okkama_runtime_core::host::Context::process().without("SPARROW_INTERNAL_WORKER"),
+            );
+            body()
+        })
         .map_err(|e| Error(format!("VM thread: {e}")))?
         .join()
         .map_err(|payload| Error(format!("internal error: {}", runtime::panic_text(&*payload))))?
