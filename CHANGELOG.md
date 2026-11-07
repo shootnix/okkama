@@ -202,6 +202,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   The `INT64_MAX` limit of `0x…`/`0b…` literals stays as documented; whether
   to lift it is #235 ([#45](https://github.com/shootnix/okkama/issues/45)).
 
+- Compiler, parser (H-23): binary operators live in one table — token, AST
+  operation, precedence level and chaining (`LEVELS` in `parser/expr.rs`) —
+  instead of a precedence enum, its successor function and a token match
+  written separately; the range level's "at most one operator" is a property
+  of its row. A test parses every pair of adjacent levels both ways and every
+  level chained with itself ([#46](https://github.com/shootnix/okkama/issues/46)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the
