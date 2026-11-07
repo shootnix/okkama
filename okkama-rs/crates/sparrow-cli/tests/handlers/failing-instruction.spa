@@ -1,0 +1,20 @@
+sparrow 9
+module "audit" "v1.0.0"
+type t0 int
+type t1 str
+type t2 failure
+function f0 "main" {
+ registers [t1, t1, t0, t2, t0, t0]
+ params []
+ result t0
+ handler 5 6 @6 r3
+ 0: const r0, str "hel"
+ 1: const r1, str "lo"
+ 2: str.concat r0, r0, r1
+ 3: const r4, int 3
+ 4: const r5, int 99
+ 5: str.slice r0, r0, r4, r5
+ 6: str.len r2, r0
+ 7: ret r2
+}
+entry f0

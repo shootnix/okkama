@@ -153,7 +153,8 @@ macro_rules! frame_pointer {
 impl Runtime {
     pub fn new(loaded: Loaded) -> Result<Self, Error> {
         crate::contracts::check(&loaded)?;
-        let heap = Heap::new(loaded.layouts());
+        let mut heap = Heap::new(loaded.layouts());
+        heap.set_stress(std::env::var_os("SPARROW_CORE_GC_STRESS").is_some_and(|value| value == "1"));
         let functions = loaded.program.functions.len();
         let resources = crate::failures::Resources::new(&loaded.program);
         let intrinsics = loaded

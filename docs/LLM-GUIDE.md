@@ -107,7 +107,9 @@ okkama exec x.spb      # SPB on the core inside okkama
 
 Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE`,
 `SPARROW_CORE_STATS=1` (= `--stats`: counts of natives, intrinsics, slow paths,
-regions, awaits, heap bytes), `OKKAMA_TRACE=off` (no stack in failures; the
+regions, awaits, heap bytes), `SPARROW_CORE_GC_STRESS=1` (collect at every
+safepoint and poison reclaimed cells: values kept alive by mistake fail at
+once), `OKKAMA_TRACE=off` (no stack in failures; the
 core prints none yet, #10), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
@@ -270,6 +272,9 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 ## 9. Debugging recipes
 
 - Runtime event counts: `sparrow --stats x.spb` or `SPARROW_CORE_STATS=1`.
+- Suspected lost roots (stack maps, handler edges, Rust-held values): run with
+  `SPARROW_CORE_GC_STRESS=1` and compare with `--engine ir`
+  (`okkama-cli/tests/handlers.rs`, `sparrow-cli/tests/handlers/*.spa`).
 - Bytecode: `sparrow --disassemble x.spb`.
 - Temporary instrumentation in the core: copy the file to the scratchpad,
   add counters (print them from `stats_report`), build in Docker into
