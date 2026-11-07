@@ -136,6 +136,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR runtime, cycle collector (H-13): `OKKAMA_GC=stress` collects at every
+  new candidate, and the gate runs the IR conformance suite that way, so an
+  edge the collector miscounts frees a live value at once. Debug builds check
+  that every node found garbage is really freed once its late edges are
+  broken (an enumerated edge that is not a strong reference fails there).
+  Tests close a cycle through every kind of late edge — object field, Future
+  value and failure, thrown object, failure cause and secondary, closure
+  capture, array and map builder, intrinsic state, `any` box and array —
+  collect it after its last holder goes, keep it while held, and check that
+  the count of live objects returns to its base after repeated cycles, with
+  and without stress. A CI job runs the heap and collector tests under Miri
+  ([#43](https://github.com/shootnix/okkama/issues/43)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the
