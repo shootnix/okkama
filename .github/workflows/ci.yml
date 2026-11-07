@@ -97,3 +97,26 @@ jobs:
           name: conformance-${{ matrix.engine }}
           path: conformance/reports/runs/
           if-no-files-found: ignore
+
+  # std inline tests on the IR engine and the Sparrow core, on x86_64 Linux:
+  # the core's frame walk, stack maps and code memory there (#27).
+  std:
+    name: std tests (ir, sparrow)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+          key: std-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: std-${{ runner.os }}-
+      - name: Build
+        working-directory: okkama-rs
+        run: cargo build --release --locked -p okkama-cli
+      - name: std tests
+        run: python3 tools/gate/std-tests.py
