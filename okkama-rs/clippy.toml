@@ -1,0 +1,4 @@
+# A map key that holds an object (#212) keeps an Rc<Object>, whose RefCell is
+# the object's late state; the key orders by its own immutable snapshot of the
+# fields, never through the object, so it is not a mutable key.
+ignore-interior-mutability = ["okkama_runtime_core::heap::MapKey"]

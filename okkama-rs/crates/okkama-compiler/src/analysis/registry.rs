@@ -270,6 +270,9 @@ pub struct Registry<'a> {
     current: usize,
     /// Применённые типы с ограничениями — проверяются после `does`.
     pending_bounds: Vec<(usize, Ty, Span)>,
+    /// Объекты-ключи словарей в объявлениях — проверяются, когда известны
+    /// поля всех объектов (#212).
+    pending_keys: Vec<(usize, Ty, Span)>,
 }
 
 /// Объекты std без конструктора: их создаёт только рантайм.
@@ -333,6 +336,7 @@ impl<'a> Registry<'a> {
             warnings: Vec::new(),
             current: 0,
             pending_bounds: Vec::new(),
+            pending_keys: Vec::new(),
         };
         registry.entry_module = registry.root();
         registry.add_system();
@@ -368,8 +372,63 @@ impl<'a> Registry<'a> {
             registry.current = module;
             registry.check_bounds(&ty, span);
         }
+        for (module, ty, span) in std::mem::take(&mut registry.pending_keys) {
+            registry.current = module;
+            if let Some(problem) = registry.key_problem(&ty) {
+                registry.error(span, problem);
+            }
+        }
         registry.current = registry.root();
         registry
+    }
+
+    /// Почему `ty` не может быть ключом словаря; `None` — может (#212).
+    /// Ключ — скаляр, enum, параметр типа (проверяется при исполнении) или
+    /// объект-значение: без `destroy` и cap, все поля которого — скаляры
+    /// (также `byte` и `rat`), enum или такие же объекты. Объекты
+    /// неизменяемы, поэтому равенство и порядок ключа — по полям, как `==`.
+    pub fn key_problem(&self, ty: &Ty) -> Option<String> {
+        if ty.is_map_key() || matches!(ty, Ty::Param(_)) || ty.is_error() {
+            return None;
+        }
+        let Ty::Object(..) = ty else {
+            return Some(format!("Map key type {} is not a scalar key type", self.type_name(ty)));
+        };
+        self.object_key_problem(ty, &mut Vec::new())
+            .map(|reason| format!("Map key type {} cannot be a key: {reason}", self.type_name(ty)))
+    }
+
+    fn object_key_problem(&self, ty: &Ty, visiting: &mut Vec<ObjectId>) -> Option<String> {
+        let Ty::Object(id, args) = ty else {
+            return Some(format!("{} is not a key type", self.type_name(ty)));
+        };
+        if visiting.contains(id) {
+            return Some(format!("{} contains itself", self.type_name(ty)));
+        }
+        let info = &self.objects[id.0];
+        if info.destroy.is_some() {
+            return Some(format!("{} has a destroy block", self.type_name(ty)));
+        }
+        if !info.caps.is_empty() {
+            return Some(format!("{} holds capabilities", self.type_name(ty)));
+        }
+        let env: Vec<(ParamId, Ty)> = info.params.iter().copied().zip(args.iter().cloned()).collect();
+        visiting.push(*id);
+        let problem = info.fields.iter().find_map(|field| {
+            let field_ty = field.ty.subst(&env);
+            let fits = field_ty.is_map_key() || matches!(field_ty, Ty::Byte | Ty::Rat | Ty::Error);
+            if fits {
+                return None;
+            }
+            match &field_ty {
+                Ty::Object(..) => self
+                    .object_key_problem(&field_ty, visiting)
+                    .map(|inner| format!("field \"{}\" ({}): {inner}", field.name, self.type_name(&field_ty))),
+                other => Some(format!("field \"{}\" is {}", field.name, self.type_name(other))),
+            }
+        });
+        visiting.pop();
+        problem
     }
 
     pub fn root(&self) -> usize {
@@ -1075,7 +1134,10 @@ impl<'a> Registry<'a> {
             ast::TypeKind::Map { key, value } => {
                 let key_type = self.resolve(key, params);
                 let value_type = self.resolve(value, params);
-                if !key_type.is_error()
+                if matches!(key_type, Ty::Object(..)) {
+                    // Поля объекта ещё могут быть не собраны: проверка в конце.
+                    self.pending_keys.push((self.current, key_type.clone(), key.span));
+                } else if !key_type.is_error()
                     && !key_type.is_map_key()
                     && !matches!(key_type, Ty::Param(_))
                 {

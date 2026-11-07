@@ -38,6 +38,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `exponent-rejected`) rejects `1e400`
   ([#57](https://github.com/shootnix/okkama/issues/57)).
 
+- Language: value objects are map keys (#212). An object whose fields are all
+  scalars (`byte` and `rat` included), enums or such objects, with no `destroy`
+  and no capabilities, can key a map: `%Card:int`. Objects are immutable, so a
+  key compares by its fields exactly like `==` — `Card(10, Suit.hearts)` built
+  twice is one key — and `keys()` orders object keys field by field in
+  declaration order, identically on the IR engine, the core and the JVM (maps
+  are ordered, so the structural identity is an order, not a hash). A type
+  that cannot be a key is named with its reason, also through nested objects
+  and generic arguments (`Map key type Outer cannot be a key: field "inner"
+  (Tagged): field "tags" is @string`); a key type in a field declaration is
+  checked once every object's fields are known. OCS: `L05.map.object-key` now
+  runs object keys (it asserted the old refusal) and
+  `L05.map.resource-key-rejected` rejects a `destroy` object. Book (EN/RU),
+  spec §6.3/§8.8 and the LLM context follow. A map keyed by a type parameter
+  is still checked only at run time (#242)
+  ([#212](https://github.com/shootnix/okkama/issues/212)).
+
 - Language: names before one type share it in every parameter list, as they
   already do in field declarations — `full(separator, suffix is string)`,
   `Person(given, family is string, age is int)`, enum case payloads

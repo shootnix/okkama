@@ -2,14 +2,17 @@ package okkama.rt;
 
 import java.io.Serializable;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 
 /**
  * Естественный порядок ключей словаря (OIR-1 §12.3, решение R06): {@code int}
  * и {@code byte} по значению, {@code char} — по code point, {@code bool} —
  * {@code false < true}, enum — порядок объявления case, {@code str} — по Unicode
- * code points (а не по UTF-16, как {@link String#compareTo}). У одного словаря
- * все ключи одного статического типа.
+ * code points (а не по UTF-16, как {@link String#compareTo}), объект-значение
+ * (#212) — по полям в порядке объявления, как {@code ==}. У одного словаря все
+ * ключи одного статического типа, поэтому объекты-ключи одного класса.
  */
 public final class KeyOrder implements Comparator<Object>, Serializable {
     private static final long serialVersionUID = 1L;
@@ -38,6 +41,24 @@ public final class KeyOrder implements Comparator<Object>, Serializable {
         if (left instanceof Integer) {
             // char — по code point.
             return Integer.compare((Integer) left, (Integer) right);
+        }
+        if (left instanceof Obj) {
+            List<Object> a = new ArrayList<Object>();
+            List<Object> b = new ArrayList<Object>();
+            ((Obj) left).okkamaFields(a);
+            ((Obj) right).okkamaFields(b);
+            // Пары «имя, значение»: сравниваются значения.
+            for (int i = 1; i < a.size() && i < b.size(); i += 2) {
+                int order = compare(a.get(i), b.get(i));
+                if (order != 0) {
+                    return order;
+                }
+            }
+            return Integer.compare(a.size(), b.size());
+        }
+        if (left instanceof Rat) {
+            // Поле-дробь ключа-объекта.
+            return ((Rat) left).compareTo((Rat) right);
         }
         return ((Boolean) left).compareTo((Boolean) right);
     }

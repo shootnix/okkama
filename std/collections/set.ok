@@ -35,10 +35,11 @@ import "size" take Sizing;
 // Intersection and Difference retain left order. SymmetricDifference emits
 // left-only values followed by right-only values.
 //
-// The runtime currently has neither a generic hashing contract nor a map that
-// accepts arbitrary object keys. OrderedSet therefore uses strict runtime
-// equality and linear membership instead of pretending to be a HashSet.
-// Values must support runtime equality; native opaque handles do not.
+// OrderedSet takes any T with runtime equality, arrays included, so it uses
+// strict runtime equality and linear membership instead of pretending to be a
+// HashSet. When the values are map keys — scalars, enums or value objects
+// (#212) — a map `%T:bool` gives logarithmic membership directly. Native
+// opaque handles have no equality.
 //
 // Set is conceptually the conjunction of Iterating<T> and Sizing. Until role
 // composition exists, concrete sets explicitly implement all three roles.

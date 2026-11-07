@@ -315,11 +315,14 @@ impl Checker<'_, '_> {
                 Param::Key => match &receiver {
                     Ty::Map(key, _) if **key != Ty::Never => Some((**key).clone()),
                     _ => {
-                        if !actual.is_map_key() && !actual.is_error() {
-                            let message = format!(
-                                "Map key type {} is not a scalar key type",
-                                self.type_name(&actual)
-                            );
+                        let problem = if matches!(actual, Ty::Object(..)) {
+                            self.reg.key_problem(&actual)
+                        } else if !actual.is_map_key() && !actual.is_error() {
+                            Some(format!("Map key type {} is not a scalar key type", self.type_name(&actual)))
+                        } else {
+                            None
+                        };
+                        if let Some(message) = problem {
                             self.error(arg.value.span, message);
                         }
                         None

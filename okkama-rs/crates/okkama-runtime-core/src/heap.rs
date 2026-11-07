@@ -371,8 +371,9 @@ impl Drop for Map {
     }
 }
 
-/// Ключ словаря: `int`, `byte`, `char`, `bool`, `float`, enum или `str`.
-/// У одного словаря все ключи одного статического типа.
+/// Ключ словаря: `int`, `byte`, `char`, `bool`, `float`, enum, `str` или
+/// объект-значение (#212). У одного словаря все ключи одного статического
+/// типа.
 #[derive(Clone, Debug)]
 pub enum MapKey {
     Int(IntValue),
@@ -382,6 +383,11 @@ pub enum MapKey {
     Char(char),
     Str(Rc<str>),
     Enum { declaration: usize, case: usize },
+    /// Поле-дробь ключа-объекта (сам `rat` ключом не бывает).
+    Rat(Rc<crate::rat::Rat>),
+    /// Объект: равенство и порядок — по объявлению и полям, как у `==`;
+    /// сам объект хранится, чтобы `keys()` вернул его.
+    Object { declaration: usize, fields: Rc<[MapKey]>, object: Rc<Object> },
 }
 
 impl MapKey {
@@ -397,7 +403,17 @@ impl MapKey {
                 declaration: *declaration,
                 case: *case,
             },
-            _ => return Err(invalid("map key must be a scalar, enum or string")),
+            Value::Rat(value) => Self::Rat(value.clone()),
+            Value::Object(object) => {
+                let fields = (0..object.field_count())
+                    .map(|index| match object.field(index) {
+                        Some(Value::Undef) | None => Err(invalid("map key object has an unbound field")),
+                        Some(field) => Self::from_value(&field),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Self::Object { declaration: object.declaration, fields: fields.into(), object: object.clone() }
+            }
+            _ => return Err(invalid("map key must be a scalar, enum, string or value object")),
         })
     }
 
@@ -413,6 +429,8 @@ impl MapKey {
                 declaration: *declaration,
                 case: *case,
             },
+            Self::Rat(value) => Value::Rat(value.clone()),
+            Self::Object { object, .. } => Value::Object(object.clone()),
         }
     }
 
@@ -425,6 +443,8 @@ impl MapKey {
             Self::Char(_) => 4,
             Self::Str(_) => 5,
             Self::Enum { .. } => 6,
+            Self::Rat(_) => 7,
+            Self::Object { .. } => 8,
         }
     }
 }
@@ -450,6 +470,11 @@ impl Ord for MapKey {
                     case: y,
                 },
             ) => (a, x).cmp(&(b, y)),
+            (Self::Rat(a), Self::Rat(b)) => a.compare(b),
+            (
+                Self::Object { declaration: a, fields: x, .. },
+                Self::Object { declaration: b, fields: y, .. },
+            ) => a.cmp(b).then_with(|| x.iter().cmp(y.iter())),
             _ => self.rank().cmp(&other.rank()),
         }
     }

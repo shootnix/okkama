@@ -724,9 +724,28 @@ let empty_map = [:];
   the *variable* `name`; write `["name": "Alex"]` for a string key.
 - Missing keys are runtime errors unless an `else` fallback is given:
   `prices["fig"] else 0;`
-- Map keys must be scalar values. Keys cannot be `any` or `byte` (the current
-  map backend cannot preserve typed key identity for them). Map *values* may
-  be any type including `any`.
+- Map keys are scalar values or value objects. Keys cannot be `any` or `byte`
+  (the current map backend cannot preserve typed key identity for them). Map
+  *values* may be any type including `any`.
+- A **value object** is a key when every field is a scalar (`byte` and `rat`
+  included), an enum or another such object, and it has no `destroy` block and
+  no capabilities. Objects are immutable, so a key compares by its fields
+  exactly like `==`, and `keys()` orders object keys field by field in
+  declaration order:
+
+  ```okkama
+  object Card {
+      has rank is int;
+      has suit is Suit;
+      Card(rank is int, suit is Suit) { self.rank = rank; self.suit = suit; }
+  }
+
+  let seen is %Card:int = [Card(10, Suit.hearts): 1];
+  seen[Card(10, Suit.hearts)] else 0;   // 1: an equal Card is the same key
+  ```
+
+  A type that is not a key is named with its reason: `Map key type Tagged
+  cannot be a key: field "tags" is @string`.
 
 ### 8.2a `+` and `-` on collections
 

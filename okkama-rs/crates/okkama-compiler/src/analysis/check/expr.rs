@@ -1449,11 +1449,14 @@ impl Checker<'_, '_> {
                 (key, value)
             }
         };
-        if !key_type.is_error() && !key_type.is_map_key() {
-            let message = format!(
-                "Map key type {} is not a scalar key type",
-                self.type_name(&key_type)
-            );
+        let problem = if matches!(key_type, Ty::Object(..)) {
+            self.reg.key_problem(&key_type)
+        } else if !key_type.is_error() && !key_type.is_map_key() {
+            Some(format!("Map key type {} is not a scalar key type", self.type_name(&key_type)))
+        } else {
+            None
+        };
+        if let Some(message) = problem {
             let at = entries.first().map_or(span, |entry| entry.key.span);
             self.error(at, message);
             return Self::poisoned(span);

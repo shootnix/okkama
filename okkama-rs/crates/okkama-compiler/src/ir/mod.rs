@@ -186,7 +186,8 @@ impl Type {
         matches!(self, Type::Builder(_) | Type::MapBuilder(..))
     }
 
-    /// Допустимый тип ключа словаря.
+    /// Допустимый тип ключа словаря; пригодность объекта (поля — скаляры,
+    /// enum, такие же объекты) проверяет анализ (#212).
     pub fn is_map_key(&self) -> bool {
         matches!(
             self,
@@ -197,6 +198,7 @@ impl Type {
                 | Type::Float
                 | Type::Str
                 | Type::Enum(_)
+                | Type::Object(_)
         )
     }
 }
