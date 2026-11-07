@@ -1,0 +1,34 @@
+module app;
+import "io/stdout" take Stdout;
+
+// Exceptional paths, cleanup order and tail recursion.
+enum Boom is Error = (boom(code is int));
+
+object Guard {
+    has name is string;
+    Guard(name is string) { self.name = name; }
+    destroy { Stdout().writeln("close " + name); }
+}
+
+object Work {
+    Work();
+    fail(code is int) is int { throw Boom.boom(code); }
+    guarded(code is int) is int {
+        let outer = Guard("outer-" + code.string());
+        let inner = Guard("inner-" + code.string());
+        self.fail(code) + 1;
+    }
+    attempt(code is int) is int {
+        try { self.guarded(code); } catch Boom.boom(found) { found * 10; }
+    }
+    divide(a is int, b is int) is int { a % b; }
+    count(n is int, total is int) is int { if n == 0 { total; } else { self.count(n - 1, total + n); } }
+}
+
+main() is int {
+    let out = Stdout();
+    let work = Work();
+    out.writeln(work.attempt(4).string());
+    out.writeln(work.count(100000, 0).string());
+    work.divide(1, 0);
+}

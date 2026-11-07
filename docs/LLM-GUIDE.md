@@ -190,6 +190,17 @@ mean). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, point query 94 µs vs 6
 (`okkama-runtime`), SPB (`codegen/sparrow`) executed by `sparrow-core`, JVM
 classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`).
 
+**IR passes** (`lowering/mod.rs`, after lowering, before `ir::verify`), each
+on verified OIR and keeping it verifiable and meaning-preserving:
+`tail-calls` (self tail calls become loops; needs calls in tail position),
+`hoist` (loop-invariant constants to the entry block), `regions` (regions
+that own nothing are not opened), `jumps` (empty trampoline blocks are
+skipped), `undef` (unread `undef` removed). `OKKAMA_IR_PASSES=none|all|list`
+selects them; every engine runs the passed OIR, so the gate runs the IR
+conformance suite with the passes off as well (`tests/ir_passes.rs` checks
+each pass alone and that `sabotage-int-add` is caught). A new pass gets a
+name there.
+
 **Language facts that shape the runtime**: objects are immutable (a successor
 `^` makes a changed copy; `Atomic` is the mutable cell); errors are enums
 (`enum E is Error = (case(payload is T), …)`, lowered to objects

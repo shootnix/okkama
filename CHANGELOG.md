@@ -8,6 +8,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Compiler: `OKKAMA_IR_PASSES=none|all|tail-calls,hoist,regions,jumps,undef`
+  selects the IR passes. Every engine runs the passed OIR, so engine
+  comparisons cannot see a pass that changes meaning; the release gate now
+  also runs the IR conformance suite with the passes off, and a test checks
+  that programs (i64 edges, BigInt promotion, division by zero, failures with
+  cleanup order, deep tail recursion) print the same under every selection
+  and that a deliberately wrong pass (`sabotage-int-add`) is caught
+  ([#29](https://github.com/shootnix/okkama/issues/29)).
+
 - Sparrow core: runtime helpers called from machine code are described once
   (H-06): each entry names the helper's Rust signature, which is checked at
   compile time — a helper with another parameter or result type, or another

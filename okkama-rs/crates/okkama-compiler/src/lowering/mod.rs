@@ -367,17 +367,31 @@ fn lower_modules(
         };
         return Err((owners[func.0], LoweringError::invalid(module.functions[func.0].span, message)));
     }
+    let passes = Passes::from_env();
     // Хвостовая рекурсия исполняется циклом на всех движках.
-    ir::recursion::eliminate_tail_calls(&mut module);
+    if passes.on("tail-calls") {
+        ir::recursion::eliminate_tail_calls(&mut module);
+    }
     // Константы циклов вычисляются один раз, во входном блоке.
-    ir::hoist::hoist_loop_constants(&mut module);
+    if passes.on("hoist") {
+        ir::hoist::hoist_loop_constants(&mut module);
+    }
     // Регионы, которые ничем не владеют, не открываются и не закрываются.
-    ir::regions::elide_unused_regions(&mut module);
+    if passes.on("regions") {
+        ir::regions::elide_unused_regions(&mut module);
+    }
     // `undef`, которые никто не читает (от убранных регионов и блоков), — тоже.
     // Пустые блоки-трамплины пропускаются.
     for function in &mut module.functions {
-        ir::cfg::thread_jumps(function);
-        ir::cfg::drop_unread_undef(function);
+        if passes.on("jumps") {
+            ir::cfg::thread_jumps(function);
+        }
+        if passes.on("undef") {
+            ir::cfg::drop_unread_undef(function);
+        }
+    }
+    if passes.sabotage {
+        sabotage_int_add(&mut module);
     }
     // Lowering обязан выдавать только корректный IR: нарушение — ошибка компилятора.
     if let Err(error) = ir::verify(&module) {
@@ -544,4 +558,46 @@ pub fn inspect(
     inspection.scopes = index.scopes;
     inspection.globals = index.globals;
     inspection
+}
+
+/// The IR passes of a build (H-09): `OKKAMA_IR_PASSES` is `all` (the
+/// default), `none` or a comma list of `tail-calls`, `hoist`, `regions`,
+/// `jumps`, `undef`. Every engine runs the passed OIR, so only a run with the
+/// passes off shows whether a pass changed meaning; the release gate runs the
+/// IR conformance suite both ways. `sabotage-int-add` turns the first
+/// `int.add` into `int.sub` — a self-test that the check catches a wrong
+/// pass, never for real builds.
+struct Passes {
+    enabled: Option<Vec<String>>,
+    sabotage: bool,
+}
+
+impl Passes {
+    fn from_env() -> Self {
+        let spec = std::env::var("OKKAMA_IR_PASSES").unwrap_or_default();
+        let mut names: Vec<String> = spec.split(',').map(|name| name.trim().to_string()).filter(|name| !name.is_empty()).collect();
+        let sabotage = names.iter().any(|name| name == "sabotage-int-add");
+        names.retain(|name| name != "sabotage-int-add");
+        // `none` names no pass, so every pass is off.
+        let enabled = (!names.is_empty() && !names.iter().any(|name| name == "all")).then_some(names);
+        Self { enabled, sabotage }
+    }
+
+    fn on(&self, pass: &str) -> bool {
+        self.enabled.as_ref().is_none_or(|names| names.iter().any(|name| name == pass))
+    }
+}
+
+/// The deliberately wrong pass of `OKKAMA_IR_PASSES=sabotage-int-add`.
+fn sabotage_int_add(module: &mut ir::Module) {
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for inst in &mut block.insts {
+                if let ir::InstKind::IntBinary { op: op @ ir::IntBinaryOp::Add, .. } = &mut inst.kind {
+                    *op = ir::IntBinaryOp::Sub;
+                    return;
+                }
+            }
+        }
+    }
 }
