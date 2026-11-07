@@ -118,3 +118,19 @@ pub fn parse(source: &SourceFile, options: &ParseOptions) -> Result<ast::Program
     }
     parser::parse_tokens(source.text(), lexed.tokens, options.clone()).map_err(|error| vec![error])
 }
+
+/// For editors (#47): every lexical and syntax error of `source` (syntax
+/// errors up to [`parser::MAX_RECOVERED_ERRORS`]) and the declarations that
+/// parsed without one. The CLI keeps [`parse`], which stops at the first.
+pub fn parse_recovering(source: &SourceFile, options: &ParseOptions) -> parser::Recovered {
+    let lexed = lexer::lex(source.text());
+    let mut recovered = parser::parse_tokens_recovering(source.text(), lexed.tokens, options.clone());
+    if !lexed.diagnostics.is_empty() {
+        // A malformed token makes its declaration unreliable even if it parsed.
+        recovered.program = None;
+        let mut diagnostics = lexed.diagnostics;
+        diagnostics.append(&mut recovered.diagnostics);
+        recovered.diagnostics = diagnostics;
+    }
+    recovered
+}

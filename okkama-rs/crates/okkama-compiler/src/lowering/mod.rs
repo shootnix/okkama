@@ -438,16 +438,25 @@ pub fn inspect(
     };
     let parsed = match syntax::parse(source, &options) {
         Ok(program) => program,
-        Err(diagnostics) => {
+        Err(_) => {
+            // Every syntax error at once, and the outline of the declarations
+            // that parsed (#47); nothing damaged goes on to analysis.
+            let recovered = syntax::parse_recovering(source, &options);
             return Inspection {
-                diagnostics: diagnostics
+                outline: recovered
+                    .program
+                    .as_ref()
+                    .map(|program| crate::ide::outline(program, &lines))
+                    .unwrap_or_default(),
+                diagnostics: recovered
+                    .diagnostics
                     .iter()
                     .map(|found| Diagnostic {
                         path: source.name().to_string(),
                         range: lines.range(found.span),
                         severity: Severity::Error,
                         message: found.message.clone(),
-                        code: None,
+                        code: Some(found.kind.as_str().to_string()),
                         unnecessary: false,
                     })
                     .collect(),

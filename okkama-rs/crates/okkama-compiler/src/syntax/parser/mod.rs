@@ -12,6 +12,11 @@
 //! * The parser stops at the first syntax error and returns one structured
 //!   [`Diagnostic`]. Error messages deliberately match the reference parser
 //!   word for word so the two implementations can be compared mechanically.
+//! * For editors, [`parse_tokens_recovering`] keeps going (#47): after an
+//!   error in a statement it skips to the end of that statement, after an
+//!   error in a declaration to the next declaration, and reports every error
+//!   up to [`MAX_RECOVERED_ERRORS`]. A declaration with an error is left out
+//!   of the tree, so a damaged tree never reaches analysis or codegen.
 //! * The whole input must be consumed: the top-level loop runs until `EOF`,
 //!   so a valid prefix followed by garbage is an error.
 //! * Recursion is bounded by [`ParseOptions::max_nesting`]; extremely deep
@@ -34,6 +39,40 @@ use crate::syntax::token::{Token, TokenKind, TokenValue, is_lower_word, is_type_
 use crate::syntax::{ParseMode, ParseOptions};
 
 pub(crate) type PResult<T> = Result<T, Diagnostic>;
+
+/// Syntax errors reported by one recovering parse at most.
+pub const MAX_RECOVERED_ERRORS: usize = 50;
+
+/// A recovering parse: the declarations that parsed cleanly (`None` when
+/// even the module declaration is broken) and every error found.
+#[derive(Debug)]
+pub struct Recovered {
+    pub program: Option<Program>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// Like [`parse_tokens`], but reports every syntax error (up to
+/// [`MAX_RECOVERED_ERRORS`]) and keeps the declarations without errors.
+pub fn parse_tokens_recovering(text: &str, tokens: Vec<Token>, options: ParseOptions) -> Recovered {
+    let (max_depth, max_nodes) = (options.max_tree_depth, options.max_nodes);
+    if tokens.len() / 4 > max_nodes {
+        let span = tokens.last().map_or(Span::empty(0), |token| token.span);
+        let error = Diagnostic::syntax_limit(format!("Program is too large (the limit is {max_nodes} syntax nodes)."), span);
+        return Recovered { program: None, diagnostics: vec![error] };
+    }
+    let mut parser = Parser::new(text, tokens, options);
+    parser.recovering = true;
+    let program = parser.parse_program_recovering();
+    let mut diagnostics = parser.errors;
+    let program = program.and_then(|program| match crate::syntax::limits::check(&program, max_depth, max_nodes) {
+        Ok(()) => Some(program),
+        Err(error) => {
+            diagnostics.push(error);
+            None
+        }
+    });
+    Recovered { program, diagnostics }
+}
 
 /// Parses a token stream produced by [`lex`](crate::syntax::lexer::lex)
 /// from the same `text`. The stream must end with an `EOF` token.
@@ -67,6 +106,11 @@ pub(crate) struct Parser<'s> {
     /// to the `for`, not to a functional call. Every nested expression
     /// (parentheses, arguments, indices, blocks) clears it.
     for_source: bool,
+    /// Recovering mode (editors): errors go to `errors` and parsing goes on.
+    recovering: bool,
+    errors: Vec<Diagnostic>,
+    /// The declaration being parsed had a statement error: leave it out.
+    damaged: bool,
 }
 
 impl<'s> Parser<'s> {
@@ -84,7 +128,129 @@ impl<'s> Parser<'s> {
             max_depth: options.max_nesting,
             external_cap_owner: None,
             for_source: false,
+            recovering: false,
+            errors: Vec::new(),
+            damaged: false,
         }
+    }
+
+    /// Record an error of a recovering parse; `false` once the cap is reached.
+    fn recover(&mut self, error: Diagnostic) -> bool {
+        if self.errors.len() < MAX_RECOVERED_ERRORS {
+            self.errors.push(error);
+        }
+        self.errors.len() < MAX_RECOVERED_ERRORS
+    }
+
+    /// Does the current token start a line without indentation? Declarations
+    /// do; statements are indented. A recovering parse takes such a line in a
+    /// block for the next declaration, so a missing `}` costs one declaration.
+    fn at_line_start(&self) -> bool {
+        let start = self.peek().span.start as usize;
+        start == 0 || self.text.as_bytes().get(start - 1) == Some(&b'\n')
+    }
+
+    /// After an error in a declaration: skip to the next one — past the `}`
+    /// that closes the braces opened since the error, or to the next token at
+    /// the start of a line.
+    fn synchronize_declaration(&mut self, from: usize) {
+        let mut depth: isize = 0;
+        if self.pos == from && !self.is_at_end() {
+            self.advance();
+        }
+        while !self.is_at_end() {
+            if self.at_line_start() && self.peek_kind() != TokenKind::RightBrace {
+                return;
+            }
+            match self.advance().kind {
+                TokenKind::LeftBrace => depth += 1,
+                TokenKind::RightBrace => {
+                    depth -= 1;
+                    if depth <= 0 && (self.at_line_start() || self.is_at_end()) {
+                        return;
+                    }
+                }
+                TokenKind::Semicolon if depth <= 0 && self.at_line_start() => return,
+                _ => {}
+            }
+        }
+    }
+
+    /// After an error in a statement: skip past its `;`, or to the `}` that
+    /// closes the enclosing block (left for the block), or to the next token
+    /// at the start of a line (a declaration: the block was never closed).
+    fn synchronize_statement(&mut self, from: usize) {
+        let mut depth = 0usize;
+        while !self.is_at_end() {
+            if self.pos != from && self.at_line_start() {
+                return;
+            }
+            match self.peek_kind() {
+                TokenKind::RightBrace if depth == 0 => return,
+                TokenKind::RightBrace => depth -= 1,
+                TokenKind::LeftBrace => depth += 1,
+                TokenKind::Semicolon if depth == 0 => {
+                    self.advance();
+                    return;
+                }
+                _ => {}
+            }
+            self.advance();
+        }
+    }
+
+    /// `program` of a recovering parse: the declarations without errors.
+    fn parse_program_recovering(&mut self) -> Option<Program> {
+        let module = match self.module_declaration() {
+            Ok(module) => Some(module),
+            Err(error) => {
+                self.recover(error);
+                let from = self.pos;
+                self.synchronize_statement(from);
+                None
+            }
+        };
+        let mut imports = Vec::new();
+        while self.eat(TokenKind::Import) {
+            let from = self.pos;
+            match self.import_declaration() {
+                Ok(import) => imports.push(import),
+                Err(error) => {
+                    if !self.recover(error) {
+                        return None;
+                    }
+                    self.synchronize_statement(from);
+                }
+            }
+        }
+        let mut items = Vec::new();
+        while !self.is_at_end() {
+            let from = self.pos;
+            self.damaged = false;
+            self.external_cap_owner = None;
+            self.for_source = false;
+            match self.module_item() {
+                Ok(item) if !self.damaged => items.push(item),
+                Ok(_) => {}
+                Err(error) => {
+                    if !self.recover(error) {
+                        break;
+                    }
+                    self.synchronize_declaration(from);
+                }
+            }
+            if self.errors.len() >= MAX_RECOVERED_ERRORS {
+                break;
+            }
+        }
+        let module = module?;
+        let end = self.peek().span.end;
+        Some(Program {
+            span: Span::new(module.span.start, end),
+            module,
+            imports,
+            items,
+        })
     }
 
     // ===== program shape ===================================================

@@ -8,6 +8,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- LSP: every syntax error at once (H-24). The editor's check parses in a
+  recovering mode (`syntax::parse_recovering`): after an error in a statement
+  it resumes after that statement, after an error in a declaration at the
+  next one, and an unindented line inside an unclosed block counts as the
+  next declaration, so a missing `}` costs one declaration instead of the
+  rest of the file. Up to 50 errors are reported, lexical and syntax errors
+  together, with codes (`lexical`, `syntax`) separate from the text, and the
+  outline shows the declarations that parsed. A declaration with an error is
+  left out of the tree, so nothing damaged reaches analysis; the CLI keeps
+  the strict parse that stops at the first error. Tests cover two
+  independent errors, statement errors in one body, a missing and a stray
+  `}`, the cap, and 500 damaged copies of the all-syntax file
+  ([#47](https://github.com/shootnix/okkama/issues/47)).
+
 - Language: `+` and `-` on arrays and maps. `a + b + c` concatenates arrays
   (or merges maps, the rightmost value winning a repeated key); `a - b`
   removes from an array every element equal to an element of `b` (or from a

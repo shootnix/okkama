@@ -22,7 +22,27 @@ impl Parser<'_> {
     fn finish_block(&mut self, open: Span) -> PResult<Block> {
         let mut stmts = Vec::new();
         while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
-            stmts.push(self.statement()?);
+            if !self.recovering {
+                stmts.push(self.statement()?);
+                continue;
+            }
+            if self.at_line_start() {
+                // An unindented line is the next declaration: this block
+                // lacks its `}` (recovering parses only).
+                return Err(self.error_here("Expect \"}\" after block."));
+            }
+            let (from, for_source, owner) = (self.pos, self.for_source, self.external_cap_owner.clone());
+            match self.statement() {
+                Ok(statement) => stmts.push(statement),
+                Err(error) => {
+                    self.damaged = true;
+                    (self.for_source, self.external_cap_owner) = (for_source, owner);
+                    if !self.recover(error) {
+                        return Err(self.error_here("Too many syntax errors."));
+                    }
+                    self.synchronize_statement(from);
+                }
+            }
         }
         let close = self.consume(TokenKind::RightBrace, "Expect \"}\" after block.")?;
         Ok(Block {
