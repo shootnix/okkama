@@ -190,8 +190,11 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
 
 Reference numbers (0.4.0, Apple M2 Max / Docker arm64): the core is ~2× the
 previous VM, 5.4× Python, 6.1× Perl, 4.0× Ruby on the ladder (geometric
-mean). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, point query 94 µs vs 69
-µs, inserts faster.
+mean). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
+point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker
+arm64). Driver checks against a live server:
+`okkama-docs/examples/std-v4/db-postgres*.ok` (`-stream-check` covers paging,
+early close, failures mid-stream, COPY refusal, transactions).
 
 ## 7. Architecture
 
@@ -367,6 +370,6 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 - `benchmarks/`, `examples/` (to be reworked), `experiments/`, `archive/`.
 
 Open issues worth knowing: #7 inline blocking natives, #9 region tracking
-cost, #10 source locations on the core, #11 PostgreSQL round trips, #12 TLS and
-terminal cancellation tests, #13 format natives in Okkama, #14 removal of the
+cost, #10 source locations on the core, #12 TLS and terminal cancellation
+tests, #13 format natives in Okkama, #14 removal of the
 previous VM.

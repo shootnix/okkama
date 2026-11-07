@@ -218,7 +218,31 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   installed. `blade new` writes the sections with their defaults
   ([#68](https://github.com/shootnix/okkama/issues/68)).
 
+### Changed
+
+- `db/postgres`: a query is one round trip. Bind, Execute without a row limit
+  and Sync go out together and the server streams the whole answer; the row
+  reader decodes it `batch` rows at a time as it is read from the socket (TCP
+  flow control bounds the buffer), instead of asking for each page with
+  Execute+Flush and settling the portal with a second Sync. A reader closed
+  early leaves the rest of the answer to be read and discarded by the next
+  operation on the connection. An implicit commit's failure (a deferred
+  constraint in autocommit) is still reported by the query it belongs to.
+  Docker arm64, 500 lookups against psycopg2: a prepared point query 114 →
+  68 µs (psycopg2 73 µs), a statement lookup 114 → 75 µs, streamed scans
+  18–20% faster, the rest unchanged. A new live-server check
+  (`okkama-docs/examples/std-v4/db-postgres-stream-check.ok`) covers paging,
+  page boundaries, early close, failures mid-stream and in parsing, COPY
+  refusal, transactions with a reader closed early, rollback and the implicit
+  commit failure, on the core and the IR engine
+  ([#11](https://github.com/shootnix/okkama/issues/11)).
+
 ### Fixed
+
+- `db/postgres`: `COPY … FROM STDIN` no longer hangs the connection. The
+  server ignores a Sync that arrives in copy-in mode, so after the driver's
+  CopyFail it waited for another Sync that never came; the refusal now sends
+  one ([#11](https://github.com/shootnix/okkama/issues/11)).
 
 - Book: chapter 10 (EN/RU) lists every builtin action the compiler has —
   string `empty`, `trim`, `chomp`; array `item`, `first`, `last`, `cursor`,

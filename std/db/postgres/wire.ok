@@ -141,19 +141,21 @@ object PgInput {
     }
 
     // Consecutive whole DataRow messages already buffered, raw (type byte,
-    // length and body), consumed together; empty when the next message is
-    // not one.
-    data_rows() is @byte {
+    // length and body), at most `limit` of them, consumed together; empty
+    // when the next message is not one.
+    data_rows(limit is int) is PgDataRows {
         let end = Atomic(0);
+        let count = Atomic(0);
         loop {
             let at = end.value();
-            last if input.available() < at + 5 || input.peek(at) != 68.byte();
+            last if count.value() >= limit || input.available() < at + 5 || input.peek(at) != 68.byte();
             let length = input.range(at + 1, at + 5).integer(Signedness.signed, ByteOrder.big);
             confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
             last if input.available() < at + 1 + length;
             end.replace(at + 1 + length);
+            count.replace(count.value() + 1);
         }
-        input.take(end.value());
+        PgDataRows(input.take(end.value()), count.value());
     }
 
     async message() is PgMessage {
@@ -176,6 +178,18 @@ object PgInput {
         confirm length >= 4 && length <= 1073741824 else throw PgWireFailure.because("invalid message length");
         length;
     }
+}
+
+// A run of raw DataRow messages and how many rows it holds.
+object PgDataRows {
+    has bytes is @byte;
+    has count is int;
+    PgDataRows(bytes is @byte, count is int) {
+        self.bytes = bytes;
+        self.count = count;
+    }
+    bytes() is @byte { bytes; }
+    count() is int { count; }
 }
 
 // Concatenation of byte runs through one native buffer.

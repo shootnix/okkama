@@ -1,7 +1,7 @@
 module db/postgres v1.0.0;
 import "db/statement" take DbLimits;
 
-import "db/postgres/wire" take PgInt32, PgInt16, PgCString, PgFrame, PgUntypedFrame, PgMessage, PgFields, PgInput, PgOutput, PgJoined, PgWireFailure;
+import "db/postgres/wire" take PgInt32, PgInt16, PgCString, PgFrame, PgUntypedFrame, PgMessage, PgFields, PgInput, PgOutput, PgJoined, PgDataRows, PgWireFailure;
 import "db/postgres/auth" take ScramExchange, Md5Password, ScramFailure;
 import "db/connection" take DbConnection, DbExecuting, DbConnecting;
 import "db/prepared" take DbPreparing, PreparedStatement, DbPreparedOpening, DbPreparedTransaction;
@@ -56,9 +56,13 @@ import "db/read" take DbPage;
 // failure, every other type (dates, json, uuid, arrays...) is DbText.
 // Column.declaration() is the type name (int4, text...) or "oid:<n>".
 //
-// Rows stream through an unnamed portal `batch` rows at a time. While a row
-// reader is open the connection is busy; closing it releases the portal on
-// the next operation. Only one operation runs at a time per connection.
+// A query is one round trip: Bind, Execute without a row limit and Sync go
+// out together, and the server streams the whole answer through
+// ReadyForQuery. The reader decodes it `batch` rows at a time as it is read
+// from the socket, so TCP flow control bounds what is buffered. While a row
+// reader is open the connection is busy; closing it early discards the rest
+// of the answer on the next operation (the server has computed it anyway).
+// Only one operation runs at a time per connection.
 //
 // Authentication accepts trust and SCRAM-SHA-256 (no channel binding); MD5
 // and cleartext passwords are refused unless PostgresOptions enables them.
@@ -401,7 +405,7 @@ object PgSession does Closing {
     has status is Atomic<string>;
     has serial, reader, transaction is Atomic<int>;
     has reader_statement is Atomic<string>;
-    has suspended, rollback is Atomic<bool>;
+    has streaming, rollback is Atomic<bool>;
     has closing, transaction_prepared is Atomic<@string>;
 
     PgSession(transport is PgTransport, input is PgInput, output is PgOutput, batch is int, version is string, status is string) {
@@ -417,7 +421,7 @@ object PgSession does Closing {
         reader = Atomic(0);
         transaction = Atomic(0);
         reader_statement = Atomic("");
-        suspended = Atomic(false);
+        streaming = Atomic(false);
         rollback = Atomic(false);
         closing = Atomic(@string());
         transaction_prepared = Atomic(@string());
@@ -446,8 +450,8 @@ object PgSession does Closing {
     }
 
     // DataRow messages already buffered, raw (see PgInput.data_rows).
-    data_rows(operation is DbOperation) is @byte {
-        try { input.data_rows(); }
+    data_rows(operation is DbOperation, limit is int) is PgDataRows {
+        try { input.data_rows(limit); }
         catch e is Error { self.close(); throw PgLost(operation).value(); }
     }
 
@@ -481,27 +485,42 @@ object PgSession does Closing {
         outcome;
     }
 
-    // Messages of one Execute up to its end or suspension; a finished portal
-    // is followed by Sync and ReadyForQuery.
+    // The next `batch` rows of a streaming answer, or the rest of it up to
+    // its end; an ended answer is read through ReadyForQuery (its request
+    // carried Sync). Otherwise the rest stays on the wire for the next
+    // portion, or for settle to discard when the reader closes early.
     async portion(operation is DbOperation, outcome is PgOutcome) is PgOutcome {
         loop {
-            outcome.data_rows(self.data_rows(operation));
+            outcome.data_rows(self.data_rows(operation, batch - outcome.rows()));
+            last if outcome.rows() >= batch;
             let ready = self.buffered(operation);
             let message = if ready.size() == 1 { ready[0]; } else { await self.message(operation); };
             let kind = message.kind();
-            if kind == "s" {
-                suspended.replace(true);
-                last;
-            }
             if self.observe(message, outcome) { await self.refuse_copy(operation); }
             if kind == "C" || kind == "I" || kind == "E" { outcome.end(); last; }
         }
-        if outcome.ended() {
-            suspended.replace(false);
-            await self.send(PgFrame("S", @byte()).bytes(), operation);
-            await self.through_ready(outcome);
-        }
+        streaming.replace(!outcome.ended());
+        if outcome.ended() { await self.through_ready(outcome); }
         outcome;
+    }
+
+    // The rest of an answer whose reader closed early, discarded through
+    // ReadyForQuery. Its failures belong to nobody; fatal ones still close
+    // the connection.
+    async drain(operation is DbOperation) is void {
+        let outcome = PgOutcome(operation);
+        loop {
+            self.data_rows(operation, 1073741824);
+            let ready = self.buffered(operation);
+            let message = if ready.size() == 1 { ready[0]; } else { await self.message(operation); };
+            let kind = message.kind();
+            if kind == "Z" {
+                status.replace(Utf8Decoded(message.body()).string());
+                last;
+            }
+            if kind != "D" { self.observe(message, outcome); }
+        }
+        streaming.replace(false);
     }
 
     // Records one message; true when the server awaits COPY data, which the
@@ -532,23 +551,22 @@ object PgSession does Closing {
         kind == "G";
     }
 
+    // The server ignores a Sync that arrives in copy-in mode, and the
+    // request's own Sync already has; after CopyFail it waits for another.
     async refuse_copy(operation is DbOperation) is void {
-        await self.send(PgFrame("f", PgCString("COPY is not supported by db/postgres").bytes()).bytes(), operation);
+        await self.send(@byte(PgFrame("f", PgCString("COPY is not supported by db/postgres").bytes()).bytes()..., PgFrame("S", @byte()).bytes()...), operation);
     }
 
     // Deferred cleanup of closed readers, statements and abandoned
     // transactions; runs under the lock before any new request. An open
-    // reader owns the portal, so nothing is settled until it closes.
+    // reader owns the rest of its answer, so nothing is settled until it
+    // closes.
     async settle(operation is DbOperation) is void {
         if reader.value() > 0 { return; }
         let complete = Event();
         let cleanup = PgInterrupted(self, complete);
         defer cleanup.close();
-        if suspended.value() {
-            suspended.replace(false);
-            await self.send(PgFrame("S", @byte()).bytes(), operation);
-            await self.ready(operation);
-        }
+        if streaming.value() { await self.drain(operation); }
         let names = closing.value();
         if names.size() > 0 {
             closing.replace(@string());
@@ -605,7 +623,7 @@ object PgSession does Closing {
         let cleanup = PgInterrupted(self, complete);
         defer cleanup.close();
         let describe = PgFrame("D", @byte(80.byte(), 0.byte())).bytes();
-        await self.send(@byte(request.parse("")..., request.bind("", "")..., describe..., PgExecute(batch).bytes()..., PgFrame("H", @byte()).bytes()...), DbOperation.executing);
+        await self.send(@byte(request.parse("")..., request.bind("", "")..., describe..., PgExecute(0).bytes()..., PgFrame("S", @byte()).bytes()...), DbOperation.executing);
         let outcome = await self.portion(DbOperation.executing, PgOutcome(DbOperation.executing));
         complete.set();
         outcome.check();
@@ -661,7 +679,7 @@ object PgSession does Closing {
         let complete = Event();
         let cleanup = PgInterrupted(self, complete);
         defer cleanup.close();
-        await self.send(@byte(request.bind("", name)..., PgExecute(batch).bytes()..., PgFrame("H", @byte()).bytes()...), DbOperation.executing);
+        await self.send(@byte(request.bind("", name)..., PgExecute(0).bytes()..., PgFrame("S", @byte()).bytes()...), DbOperation.executing);
         let outcome = await self.portion(DbOperation.executing, PgOutcome(DbOperation.executing));
         complete.set();
         outcome.check();
@@ -685,7 +703,6 @@ object PgSession does Closing {
         let complete = Event();
         let cleanup = PgInterrupted(self, complete);
         defer cleanup.close();
-        await self.send(@byte(PgExecute(batch).bytes()..., PgFrame("H", @byte()).bytes()...), DbOperation.fetching);
         let outcome = await self.portion(DbOperation.fetching, PgOutcome(DbOperation.fetching));
         complete.set();
         if outcome.ended() { self.release(id); }
@@ -693,7 +710,8 @@ object PgSession does Closing {
         outcome;
     }
 
-    // The portal stays open until the next operation settles it.
+    // The rest of the answer stays on the wire until the next operation
+    // settles it.
     release(id is int) is void {
         if reader.value() == id {
             reader.replace(0);
@@ -822,7 +840,7 @@ object PgOutcome {
     // Raw DataRow messages, newest run first (see PgInput.data_rows), and
     // the number of runs (a list's size walks it).
     has data is Atomic<List<@byte>>;
-    has runs is Atomic<int>;
+    has runs, rows is Atomic<int>;
     has columns is Atomic<@PgDescription>;
     has failures is Atomic<@DbFailure>;
     has count is Atomic<int>;
@@ -834,6 +852,7 @@ object PgOutcome {
         let empty is List<@byte> = EmptyList();
         data = Atomic(empty);
         runs = Atomic(0);
+        rows = Atomic(0);
         let described is @PgDescription = [];
         columns = Atomic(described);
         let failed is @DbFailure = [];
@@ -845,13 +864,15 @@ object PgOutcome {
 
     operation() is DbOperation { operation; }
     tag(value is string) is void { tags.replace(@string(tags.value()..., value)); }
-    row(body is @byte) is void { self.data_rows(@byte(68.byte(), PgInt32(body.size() + 4).bytes()..., body...)); }
-    data_rows(raw is @byte) is void {
-        if raw.size() > 0 {
-            data.replace(data.value().prefix(raw));
+    row(body is @byte) is void { self.data_rows(PgDataRows(@byte(68.byte(), PgInt32(body.size() + 4).bytes()..., body...), 1)); }
+    data_rows(run is PgDataRows) is void {
+        if run.count() > 0 {
+            data.replace(data.value().prefix(run.bytes()));
             runs.replace(runs.value() + 1);
+            rows.replace(rows.value() + run.count());
         }
     }
+    rows() is int { rows.value(); }
     describe(value is PgDescription) is void { columns.replace([value]); }
     parameters(value is int) is void { count.replace(value); }
     fail(value is DbFailure) is void { if failures.value().size() == 0 { failures.replace([value]); } }
