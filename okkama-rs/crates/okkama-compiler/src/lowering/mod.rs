@@ -577,9 +577,21 @@ struct Passes {
     sabotage: bool,
 }
 
+/// The IR passes in pipeline order.
+pub const PASSES: [&str; 5] = ["tail-calls", "hoist", "regions", "jumps", "undef"];
+
+static SELECTED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Select the IR passes of later lowerings in this process, as
+/// `OKKAMA_IR_PASSES` does (`okkama ir --passes`, `--after`).
+pub fn select_passes(spec: &str) {
+    *SELECTED.write().expect("pass selection") = Some(spec.to_string());
+}
+
 impl Passes {
     fn from_env() -> Self {
-        let spec = std::env::var("OKKAMA_IR_PASSES").unwrap_or_default();
+        let selected = SELECTED.read().expect("pass selection").clone();
+        let spec = selected.unwrap_or_else(|| std::env::var("OKKAMA_IR_PASSES").unwrap_or_default());
         let mut names: Vec<String> = spec.split(',').map(|name| name.trim().to_string()).filter(|name| !name.is_empty()).collect();
         let sabotage = names.iter().any(|name| name == "sabotage-int-add");
         names.retain(|name| name != "sabotage-int-add");
