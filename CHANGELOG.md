@@ -125,6 +125,16 @@ moved out.
 
 ### Fixed
 
+- The IR interpreter, the JVM backend and `--engine sparrow-origin` lacked the natives
+  the new `std/db` and `encoding/bytes` use (byte ranges, SQLite and PostgreSQL result
+  pages): SQLite and PostgreSQL programs and byte parsing failed with "native provider
+  is not implemented" there. IR and JVM now implement them; the previous VM does not
+  (it is removed in 0.5, [#14](https://github.com/shootnix/okkama/issues/14)).
+- JVM: errors the runtime raises for async intrinsics (`ChannelClosed`,
+  `InvalidChannelCapacity`, …) are built as error enums; since they became enums the
+  task constructing them died and the program waited forever.
+- Sparrow core: capturing a command's output (`os/command_capture`) aborted the VM
+  (`spawn_local` outside a `LocalSet`); provider tasks now run in the core's reactor.
 - Calling an action through a cap (`customer.wtf()` on a `Customer::Public` value)
   reported "Can only call actions on objects"; the error now names the cap, says that
   an owner's action is not available through it and lists the cap's computed fields
