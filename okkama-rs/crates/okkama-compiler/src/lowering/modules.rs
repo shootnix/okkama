@@ -31,6 +31,18 @@ pub trait ModuleLoader {
     /// ошибка в найденном файле).
     fn load(&mut self, path: &str, importer: &str) -> Result<Option<LoadedModule>, String>;
 
+    /// Id модуля `path` (как у [`LoadedModule::id`]) без чтения и разбора;
+    /// `Ok(None)` — загрузчик не умеет или модуль не найден. Обход графа
+    /// узнаёт по нему уже загруженный модуль до [`Self::load`] (#51).
+    fn resolve(&mut self, _path: &str, _importer: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
+    /// [`Self::resolve`] для модуля только из стандартной библиотеки.
+    fn resolve_std(&mut self, _path: &str, _importer: &str) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+
     /// Модуль `path` только из стандартной библиотеки (пути `std.…`).
     /// Загрузчик без отдельного поиска std ищет его, как обычный импорт.
     fn load_std(&mut self, path: &str, importer: &str) -> Result<Option<LoadedModule>, String> {
@@ -166,6 +178,14 @@ impl Frame<'_> {
 }
 
 impl Walk<'_> {
+    /// Текст о цикле: импорты от модуля `id` на текущем пути до `path`.
+    fn cycle(&self, id: &str, path: String) -> String {
+        let position = self.active.iter().position(|(_, active)| active == id).expect("on path");
+        let mut chain: Vec<String> = self.active[position..].iter().map(|(path, _)| path.clone()).collect();
+        chain.push(path);
+        format!("Import cycle detected: {}", chain.join(" -> "))
+    }
+
     /// В blade-проекте версия модуля — в `blade.toml`, не в файле.
     fn unversioned(
         &mut self,
@@ -235,6 +255,22 @@ impl Walk<'_> {
                     return Err(fail(&stack, path_span, message));
                 }
             }
+            // A module loaded already (or on the current path) is known by
+            // its id before it is read and parsed again (#51).
+            let resolved = match std_module {
+                Some(module) => self.loader.resolve_std(module, &name),
+                None => self.loader.resolve(&path, &name),
+            }
+            .map_err(LinkError::Load)?;
+            if let Some(id) = resolved {
+                if self.on_path.contains(&id) {
+                    return Err(fail(&stack, span, self.cycle(&id, path)));
+                }
+                if let Some(done) = self.cache.get(&id) {
+                    stack.last_mut().expect("frame").result.push((*done, index));
+                    continue;
+                }
+            }
             let found = match std_module {
                 Some(module) => self.loader.load_std(module, &name),
                 None => self.loader.load(&path, &name),
@@ -256,13 +292,7 @@ impl Walk<'_> {
                 }
             })?;
             if self.on_path.contains(&module.id) {
-                let position = self.active.iter().position(|(_, id)| *id == module.id).expect("on path");
-                let mut chain: Vec<String> = self.active[position..]
-                    .iter()
-                    .map(|(path, _)| path.clone())
-                    .collect();
-                chain.push(path);
-                return Err(fail(&stack, span, format!("Import cycle detected: {}", chain.join(" -> "))));
+                return Err(fail(&stack, span, self.cycle(&module.id, path)));
             }
             if let Some(done) = self.cache.get(&module.id) {
                 stack.last_mut().expect("frame").result.push((*done, index));

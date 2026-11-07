@@ -136,6 +136,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler, imports (O06): a module imported from many modules is read and
+  parsed once. Loaders now name a module's identity (`ModuleLoader::resolve`,
+  the canonical path for files) before reading it, and the import walk
+  reuses a module it has loaded, or reports a cycle, from that alone. `check`
+  of 256 modules that all import one shared module took 2.9× the time of the
+  same project with one such import; it now takes 1.3× (the remaining cost is
+  path lookup and the import edges themselves). Loop constants are hoisted
+  with one linear pass over the strongly connected components instead of a
+  search per block, so functions of any size get it (the 4096-block cap is
+  gone); the pass shares that routine with the recursion analysis
+  ([#51](https://github.com/shootnix/okkama/issues/51)).
+
 - Runtimes: host state belongs to one run, not to a thread (Q03). Every
   engine entry (IR program and test runs, the previous Sparrow VM, each
   Sparrow core run) opens a host session — a copy of the process's working

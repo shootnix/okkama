@@ -378,3 +378,90 @@ impl Dominators {
         }
     }
 }
+
+/// Which nodes of the graph `edges` lie on a cycle (a strongly connected
+/// component of two or more nodes, or a self edge): Tarjan's algorithm with
+/// an explicit stack, linear in nodes and edges.
+pub(crate) fn on_cycles(edges: &[Vec<usize>]) -> Vec<bool> {
+    let count = edges.len();
+    let mut index = vec![usize::MAX; count];
+    let mut low = vec![0; count];
+    let mut on_stack = vec![false; count];
+    let mut stack = Vec::new();
+    let mut next = 0;
+    let mut result = vec![false; count];
+    for root in 0..count {
+        if index[root] != usize::MAX {
+            continue;
+        }
+        // A frame of the walk: the node and its next edge.
+        let mut frames = vec![(root, 0usize)];
+        index[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some(&(node, edge)) = frames.last() {
+            if let Some(&to) = edges[node].get(edge) {
+                frames.last_mut().expect("frame").1 += 1;
+                if index[to] == usize::MAX {
+                    index[to] = next;
+                    low[to] = next;
+                    next += 1;
+                    stack.push(to);
+                    on_stack[to] = true;
+                    frames.push((to, 0));
+                } else if on_stack[to] {
+                    low[node] = low[node].min(index[to]);
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some(&(parent, _)) = frames.last() {
+                low[parent] = low[parent].min(low[node]);
+            }
+            if low[node] == index[node] {
+                let mut component = Vec::new();
+                loop {
+                    let member = stack.pop().expect("tarjan stack");
+                    on_stack[member] = false;
+                    component.push(member);
+                    if member == node {
+                        break;
+                    }
+                }
+                if component.len() > 1 || edges[node].contains(&node) {
+                    for member in component {
+                        result[member] = true;
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod cycle_tests {
+    use super::on_cycles;
+
+    #[test]
+    fn cycles_self_edges_and_acyclic_nodes() {
+        // 0 → 1 → 2 → 1 (loop), 2 → 3, 3 → 3 (self edge), 4 alone.
+        let edges = vec![vec![1], vec![2], vec![1, 3], vec![3], vec![]];
+        assert_eq!(on_cycles(&edges), [false, true, true, true, false]);
+    }
+
+    #[test]
+    fn a_long_loop_is_found_in_linear_time() {
+        // 10⁵ blocks in one loop, and a 10⁵-block chain off it: an iterative
+        // walk, no recursion and no per-block search.
+        let n = 100_000;
+        let mut edges: Vec<Vec<usize>> = (0..n).map(|block| vec![(block + 1) % n]).collect();
+        edges[0].push(n);
+        edges.extend((n..2 * n).map(|block| if block + 1 < 2 * n { vec![block + 1] } else { vec![] }));
+        let looping = on_cycles(&edges);
+        assert!(looping[..n].iter().all(|&on| on));
+        assert!(looping[n..].iter().all(|&on| !on));
+    }
+}

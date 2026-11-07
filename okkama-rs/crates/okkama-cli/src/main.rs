@@ -1114,20 +1114,17 @@ impl FileLoader {
 
 impl ModuleLoader for FileLoader {
     fn load(&mut self, path: &str, importer: &str) -> Result<Option<LoadedModule>, String> {
-        let file = if path.ends_with(".ok") {
-            path.to_string()
-        } else {
-            format!("{path}.ok")
-        };
-        // A module never imports itself: `"json"` from app/json.ok skips
-        // app/json.ok and finds std/json.
-        let itself = std::fs::canonicalize(importer_path(importer)).ok();
-        let dirs: Vec<PathBuf> = self
-            .search_dirs(path, importer)
-            .into_iter()
-            .filter(|dir| itself.is_none() || std::fs::canonicalize(dir.join(&file)).ok() != itself)
-            .collect();
+        let (file, dirs) = self.candidates(path, importer);
         self.load_from(&file, &dirs)
+    }
+
+    fn resolve(&mut self, path: &str, importer: &str) -> Result<Option<String>, String> {
+        let (file, dirs) = self.candidates(path, importer);
+        Ok(locate(&file, &dirs).map(|found| found.display().to_string()))
+    }
+
+    fn resolve_std(&mut self, path: &str, _importer: &str) -> Result<Option<String>, String> {
+        Ok(locate(&format!("{path}.ok"), std::slice::from_ref(&self.stdlib)).map(|found| found.display().to_string()))
     }
 
     /// В blade-проекте `pkg/…` — только прямые зависимости пакета, которому
@@ -1182,7 +1179,31 @@ fn importer_path(importer: &str) -> PathBuf {
     }
 }
 
+/// The first file `file` of the directories `dirs`, canonical.
+fn locate(file: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let candidate = dirs.iter().map(|dir| dir.join(file)).find(|candidate| candidate.is_file())?;
+    Some(std::fs::canonicalize(&candidate).unwrap_or(candidate))
+}
+
 impl FileLoader {
+    /// The file name of import `path` and the directories to look in.
+    fn candidates(&self, path: &str, importer: &str) -> (String, Vec<PathBuf>) {
+        let file = if path.ends_with(".ok") {
+            path.to_string()
+        } else {
+            format!("{path}.ok")
+        };
+        // A module never imports itself: `"json"` from app/json.ok skips
+        // app/json.ok and finds std/json.
+        let itself = std::fs::canonicalize(importer_path(importer)).ok();
+        let dirs = self
+            .search_dirs(path, importer)
+            .into_iter()
+            .filter(|dir| itself.is_none() || std::fs::canonicalize(dir.join(&file)).ok() != itself)
+            .collect();
+        (file, dirs)
+    }
+
     fn in_std(&self, file: &Path) -> bool {
         let stdlib = std::fs::canonicalize(&self.stdlib).unwrap_or_else(|_| self.stdlib.clone());
         file.starts_with(stdlib)
@@ -1215,11 +1236,7 @@ impl FileLoader {
 
     /// Первый файл `file` из каталогов `dirs`, разобранный как модуль.
     fn load_from(&mut self, file: &str, dirs: &[PathBuf]) -> Result<Option<LoadedModule>, String> {
-        for candidate in dirs.iter().map(|dir| dir.join(file)) {
-            if !candidate.is_file() {
-                continue;
-            }
-            let canonical = std::fs::canonicalize(&candidate).unwrap_or(candidate);
+        if let Some(canonical) = locate(file, dirs) {
             let name = canonical.display().to_string();
             let text = match self.overlay.get(&canonical) {
                 Some(text) => text.clone(),
