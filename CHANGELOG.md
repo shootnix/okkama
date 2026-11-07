@@ -14,6 +14,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   issue) and how to run untrusted input today
   ([#37](https://github.com/shootnix/okkama/issues/37)).
 
+- Tools: `tools/gen/okgen.py` generates well-defined programs from a seed
+  (BigInt promotion, strings, arrays, objects, a role, closures, try/catch,
+  bounded recursion), runs them on the IR engine, the Sparrow core and the
+  JVM, minimizes a disagreement by delta debugging over the statements of
+  `main` and keeps seed, program, minimized program and every engine's
+  output. `tools/gen/mutants.sh` seeds one defect per engine in a scratch
+  copy and checks that the generator finds and minimizes it: with 30 seeds
+  the IR defect is found by 2 programs, the core's by 6 and the JVM's by 8,
+  each minimized to one statement
+  ([#35](https://github.com/shootnix/okkama/issues/35)).
+
 - Docs: the Sparrow Book (`docs/SparrowBook/SparrowBook.md`, Russian
   `SparrowBook-RU.md`) — a textbook of Sparrow assembly: the file layout,
   types, registers, edges, objects and roles, arrays and maps, calls and
