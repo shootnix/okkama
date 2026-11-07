@@ -9,7 +9,7 @@
 #   1. release-сборка okkama и sparrow (провал — ворота останавливаются),
 #      тесты Rust всего workspace (release), тесты освобождения IR в debug;
 #   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
-#      целиком) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
+#      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
 #      сведения: у него нет нативов, добавленных с 0.4.0);
 #   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py).
 #
@@ -146,6 +146,9 @@ step "conformance"
 conformance ir --adapter-env OCS_RUST_ENGINE=ir
 conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
 conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
+# Every engine runs the passed OIR: the IR suite again with the passes off
+# shows a pass that changes meaning (#29).
+conformance ir-passes-off --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_IR_PASSES=none
 if [[ $QUICK -eq 0 ]]; then
     conformance sparrow-origin --adapter-env OCS_RUST_ENGINE=sparrow-origin
 fi

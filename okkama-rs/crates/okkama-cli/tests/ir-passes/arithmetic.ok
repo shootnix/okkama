@@ -1,0 +1,22 @@
+module app;
+import "io/stdout" take Stdout;
+
+// Exact integers at the i64 edges, BigInt promotion and loop constants.
+object Numbers {
+    Numbers();
+    sum(n is int) is int { (0..n).reduce(0)->total,i{ total + i * 3 + 1; }; }
+    edge() is int { -9223372036854775807 - 1; }
+}
+
+main() is int {
+    let out = Stdout();
+    let numbers = Numbers();
+    let low = numbers.edge();
+    out.writeln(low.string());
+    out.writeln((low - 1).string());
+    out.writeln((low * low).string());
+    out.writeln((9223372036854775807 + 1).string());
+    out.writeln(numbers.sum(1000).string());
+    out.writeln((-7 % 3).string() + " " + (7 % -3).string());
+    0;
+}
