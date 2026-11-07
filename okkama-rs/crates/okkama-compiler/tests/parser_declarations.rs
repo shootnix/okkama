@@ -800,3 +800,17 @@ fn removed_allow_and_while_forms_stay_invalid() {
     // As ordinary names they remain usable.
     parse_ok("module app v1.0.0; main() is int { let allow = 1; let while = 2; allow + while; }");
 }
+
+/// Words from other languages get the construct Okkama uses (#227).
+#[test]
+fn class_interface_extends_implements_and_static_are_explained() {
+    for (source, expected) in [
+        ("module app v1.0.0; object A { A(); } object B extends A { B(); } main() is int { 0; }", "Okkama has no inheritance"),
+        ("module app v1.0.0; object B implements R { B(); } main() is int { 0; }", "does Role"),
+        ("module app v1.0.0; class Dog { } main() is int { 0; }", "Okkama has no classes"),
+        ("module app v1.0.0; interface Named { } main() is int { 0; }", "declare a `role`"),
+        ("module app v1.0.0; object C { static total is int; C(); } main() is int { 0; }", "no static members"),
+    ] {
+        assert_rejects(source, expected);
+    }
+}

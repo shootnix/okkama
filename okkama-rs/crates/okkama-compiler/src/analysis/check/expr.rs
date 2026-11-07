@@ -17,10 +17,39 @@ impl Checker<'_, '_> {
     pub(super) fn value(&mut self, expr: &ast::Expr, expected: Option<&Ty>) -> Expr {
         let checked = self.expr(expr, true, expected);
         if checked.ty.is_none() && !checked.diverges {
-            self.error(expr.span, "Expression does not produce a value");
+            let message = self
+                .missing_cases(&checked)
+                .unwrap_or_else(|| "Expression does not produce a value".to_string());
+            self.error(expr.span, message);
             return Self::poisoned(expr.span);
         }
         checked
+    }
+
+    /// Why a `match` over an enum has no value: the cases it leaves out
+    /// (#229), named as the IDE lint `non-exhaustive-match` names them.
+    fn missing_cases(&self, checked: &Expr) -> Option<String> {
+        let ExprKind::Match(matched) = &checked.kind else { return None };
+        let Some(Ty::Enum(id)) = &matched.subject.ty else { return None };
+        if matched.exhaustive || matched.else_block.is_some() {
+            return None;
+        }
+        let declaration = &self.reg.enums[id.0];
+        let mut seen = vec![false; declaration.cases.len()];
+        for pattern in matched.cases.iter().flat_map(|(patterns, _)| patterns) {
+            match &pattern.kind {
+                ExprKind::EnumCase { ty, case } if ty == id => seen[*case] = true,
+                _ => return None,
+            }
+        }
+        let missing: Vec<&str> = declaration.cases.iter().zip(&seen).filter(|(_, seen)| !**seen).map(|(name, _)| name.as_str()).collect();
+        (!missing.is_empty()).then(|| {
+            format!(
+                "match over enum `{}` does not cover {}, so it has no value here; add the cases or an `else` branch",
+                declaration.name,
+                missing.join(", ")
+            )
+        })
     }
 
     /// Выражение; `want` — значение используется, `expected` — тип границы,

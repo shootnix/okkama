@@ -483,3 +483,14 @@ fn types_deeper_than_the_limit_are_refused_once() {
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].contains("is nested deeper than 64 levels"), "{found:?}");
 }
+
+/// Diagnostics that say what the rule is (#226, #229, #233).
+#[test]
+fn diagnostics_name_the_rule_and_the_fix() {
+    let assign = messages("object Bottle {\n has opened is bool;\n Bottle(:opened);\n close() is void { opened = false; }\n}\nmain() is int { 0; }");
+    assert!(assign.iter().any(|m| m.contains("Field \"opened\" cannot be assigned after construction") && m.contains("^opened")), "{assign:?}");
+    let matched = messages("enum Color = (red, green, blue);\nmain() is int {\n let c = Color.red;\n let name = match c { case Color.red { \"r\"; } case Color.green { \"g\"; } };\n 0;\n}");
+    assert!(matched.iter().any(|m| m.contains("does not cover blue")), "{matched:?}");
+    let ordering = messages("main() is int {\n let sorted = [9, 0, 2, 1].ordering();\n 0;\n}");
+    assert!(ordering.iter().any(|m| m.contains("import \"compare\" take Comparing")), "{ordering:?}");
+}
