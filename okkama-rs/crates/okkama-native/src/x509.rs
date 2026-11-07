@@ -3,6 +3,7 @@
 //! `X509Certificate.verify` JDK. Ключи — DER `SubjectPublicKeyInfo`.
 
 use crate::ops::Error;
+use crate::rsa_public::{Hash, PublicKey};
 use sha2::Digest;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -109,29 +110,26 @@ fn unsigned(content: &[u8]) -> &[u8] {
     bytes
 }
 
-fn rsa_key(bits: &[u8]) -> Result<rsa::RsaPublicKey> {
-    let (node, _) = tlv(bits)?;
-    let parts = children(node.content)?;
-    if node.tag != 0x30 || parts.len() != 2 || parts[0].tag != 2 || parts[1].tag != 2 {
-        return Err(invalid("RSAPublicKey"));
+/// RSAPublicKey из битовой строки SPKI. JDK принимает модули до 16384 бит,
+/// aws-lc тоже.
+fn rsa_key(bits: &[u8]) -> Result<PublicKey> {
+    PublicKey::parse(bits).ok_or_else(|| invalid("RSA public key"))
+}
+
+/// Ключ RSA из SPKI (rsaEncryption или RSASSA-PSS); `None`, если это не RSA.
+pub(crate) fn rsa_spki(spki: &[u8]) -> Option<PublicKey> {
+    let (identifier, _, bits) = public_key(spki).ok()?;
+    if identifier != "1.2.840.113549.1.1.1" && identifier != "1.2.840.113549.1.1.10" {
+        return None;
     }
-    let n = unsigned(parts[0].content);
-    let e = unsigned(parts[1].content);
-    let width = |bytes: &[u8]| (bytes.len() * 8) as u32;
-    let n = rsa::BoxedUint::from_be_slice(n, width(n)).map_err(|_| invalid("RSA modulus"))?;
-    let e = rsa::BoxedUint::from_be_slice(e, width(e)).map_err(|_| invalid("RSA exponent"))?;
-    // JDK принимает модули до 16384 бит.
-    rsa::RsaPublicKey::new_with_max_size(n, e, 16384).map_err(|_| invalid("RSA public key"))
+    PublicKey::parse(&bits)
 }
 
 /// Сведения о ключе SPKI: `rsa <bits>`, `ec <bits>`, `ed25519` и т. п.
 pub fn key(spki: &[u8]) -> Result<String> {
     let (identifier, curve, bits) = public_key(spki)?;
     match identifier.as_str() {
-        "1.2.840.113549.1.1.1" | "1.2.840.113549.1.1.10" => {
-            use rsa::traits::PublicKeyParts;
-            Ok(format!("rsa {}", rsa_key(&bits)?.n().bits()))
-        }
+        "1.2.840.113549.1.1.1" | "1.2.840.113549.1.1.10" => Ok(format!("rsa {}", rsa_key(&bits)?.bits())),
         "1.2.840.10045.2.1" => {
             let (field, size) = match curve.as_deref() {
                 Some("1.2.840.10045.3.1.7") => (32, 256),
@@ -152,15 +150,6 @@ pub fn key(spki: &[u8]) -> Result<String> {
         "1.2.840.10040.4.1" => Ok("dsa".to_string()),
         other => Ok(format!("other {other}")),
     }
-}
-
-#[derive(Clone, Copy)]
-enum Hash {
-    Sha1,
-    Sha224,
-    Sha256,
-    Sha384,
-    Sha512,
 }
 
 fn hash_oid(oid: &str) -> Option<Hash> {
@@ -184,15 +173,8 @@ fn hashed(hash: Hash, message: &[u8]) -> Vec<u8> {
     }
 }
 
-fn pkcs1(key: &rsa::RsaPublicKey, hash: Hash, message: &[u8], signature: &[u8]) -> bool {
-    let scheme = match hash {
-        Hash::Sha1 => rsa::Pkcs1v15Sign::new::<sha1::Sha1>(),
-        Hash::Sha224 => rsa::Pkcs1v15Sign::new::<sha2::Sha224>(),
-        Hash::Sha256 => rsa::Pkcs1v15Sign::new::<sha2::Sha256>(),
-        Hash::Sha384 => rsa::Pkcs1v15Sign::new::<sha2::Sha384>(),
-        Hash::Sha512 => rsa::Pkcs1v15Sign::new::<sha2::Sha512>(),
-    };
-    key.verify(scheme, &hashed(hash, message), signature).is_ok()
+fn pkcs1(key: &PublicKey, hash: Hash, message: &[u8], signature: &[u8]) -> bool {
+    key.pkcs1(hash, &hashed(hash, message), signature)
 }
 
 /// RSASSA-PSS-params: хэш, MGF1 с хэшем, длина соли, trailer.
@@ -234,20 +216,12 @@ fn pss_parameters(parameters: Option<Tlv<'_>>) -> Result<(Hash, Hash, usize)> {
     Ok((hash, mask, salt))
 }
 
-fn pss(key: &rsa::RsaPublicKey, parameters: Option<Tlv<'_>>, message: &[u8], signature: &[u8]) -> Result<bool> {
+fn pss(key: &PublicKey, parameters: Option<Tlv<'_>>, message: &[u8], signature: &[u8]) -> Result<bool> {
     let (hash, mask, salt) = pss_parameters(parameters)?;
-    if !std::mem::discriminant(&hash).eq(&std::mem::discriminant(&mask)) {
+    if hash != mask {
         return Err(Error::Unsupported("PSS with distinct MGF1 hash".into()));
     }
-    let digest = hashed(hash, message);
-    let valid = match hash {
-        Hash::Sha1 => key.verify(rsa::Pss::<sha1::Sha1>::new_with_salt(salt), &digest, signature),
-        Hash::Sha224 => key.verify(rsa::Pss::<sha2::Sha224>::new_with_salt(salt), &digest, signature),
-        Hash::Sha256 => key.verify(rsa::Pss::<sha2::Sha256>::new_with_salt(salt), &digest, signature),
-        Hash::Sha384 => key.verify(rsa::Pss::<sha2::Sha384>::new_with_salt(salt), &digest, signature),
-        Hash::Sha512 => key.verify(rsa::Pss::<sha2::Sha512>::new_with_salt(salt), &digest, signature),
-    };
-    Ok(valid.is_ok())
+    Ok(key.pss(hash, mask, salt, &hashed(hash, message), signature))
 }
 
 fn ecdsa(spki: &[u8], curve: Option<&str>, hash: Hash, message: &[u8], signature: &[u8]) -> Result<bool> {

@@ -24,9 +24,8 @@ p384 = { version = "0.14.0", features = ["ecdsa", "pkcs8"] }
 p521 = { version = "0.14.0", features = ["ecdsa", "pkcs8"] }
 pbkdf2 = "0.13.0"
 pkcs8 = "0.11"
-rand_chacha = "0.10.0"
-rand_core = "0.10.1"
-rsa = { version = "0.10.0-rc.19", features = ["sha2"] }
+aws-lc-rs = "=1.18.2"
+aws-lc-sys = "=0.46.0"
 sha1 = { version = "0.11.0", features = ["oid"] }
 sha2 = "0.11.0"
 sha3 = "0.12.0"
@@ -35,7 +34,8 @@ spki = "0.8"
 subtle = "2.6.1"
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 
-# C ABI для рантаймов (FFM JVM): unsafe разрешён только в `ffi`.
+# C ABI для рантаймов (FFM JVM): unsafe разрешён только в `ffi` и в
+# `rsa_public` (низкоуровневая проверка подписей RSA через aws-lc).
 [lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"

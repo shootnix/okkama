@@ -307,6 +307,50 @@ fn rsa_signatures_and_oaep_round_trip() {
         call("rsa-generate", &[b"1024", &[1; 32]]),
         Err(Error::Invalid(_))
     ));
+    for hash in ["sha384", "sha512"] {
+        let pss = call(&format!("rsa-pss-sign:{hash}"), &[&private, b"m", &[2; 32]]).unwrap();
+        let pkcs1 = call(&format!("rsa-pkcs1-sign:{hash}"), &[&private, b"m"]).unwrap();
+        for (scheme, signature) in [("pss", pss), ("pkcs1", pkcs1)] {
+            let verify = format!("rsa-{scheme}-verify:{hash}");
+            assert_eq!(call(&verify, &[&public, b"m", &signature]).unwrap(), [1], "{scheme} {hash}");
+            assert_eq!(call(&verify, &[&public, b"n", &signature]).unwrap(), [0], "{scheme} {hash}");
+        }
+    }
+}
+
+// Vectors from OpenSSL 4.0 (`tests/rsa`): a 2048-bit key (SPKI, PKCS#8) and a
+// 1024-bit public key; signatures over "hello"; an OAEP-SHA384 ciphertext.
+#[test]
+fn rsa_interoperates_with_openssl_including_x509_legacy_forms() {
+    let spki = include_bytes!("rsa/k2.spki.bin").as_slice();
+    let small = include_bytes!("rsa/k1.spki.bin").as_slice();
+    let pkcs8 = include_bytes!("rsa/k2.p8.bin").as_slice();
+    assert_eq!(call("rsa-bits", &[small]).unwrap(), b"1024");
+    assert_eq!(call("rsa-public", &[pkcs8]).unwrap(), spki);
+    let pss = include_bytes!("rsa/s_pss_384.bin").as_slice();
+    assert_eq!(call("rsa-pss-verify:sha384", &[spki, b"hello", pss]).unwrap(), [1]);
+    let pkcs1 = include_bytes!("rsa/s_p1_512.bin").as_slice();
+    assert_eq!(call("rsa-pkcs1-verify:sha512", &[spki, b"hello", pkcs1]).unwrap(), [1]);
+    assert_eq!(call("rsa-pkcs1-sign:sha512", &[pkcs8, b"hello"]).unwrap(), pkcs1);
+    let sealed = include_bytes!("rsa/c_oaep_384.bin").as_slice();
+    assert_eq!(call("rsa-oaep-decrypt:sha384", &[pkcs8, sealed, &[0; 32]]).unwrap(), b"hello");
+    // X.509 keeps what the JDK accepts: SHA-224, PSS with any salt and the
+    // default (SHA-1) parameters, keys below 2048 bits.
+    let x509 = |key: &[u8], algorithm: &str, signature: &[u8]| {
+        call("x509-verify", &[key, &hex(algorithm), b"hello", signature]).unwrap() == [1]
+    };
+    let sha224 = include_bytes!("rsa/s_p1_224.bin").as_slice();
+    assert!(x509(spki, "300d06092a864886f70d01010e0500", sha224));
+    assert!(!x509(spki, "300d06092a864886f70d01010b0500", sha224));
+    assert!(x509(small, "300d06092a864886f70d01010b0500", include_bytes!("rsa/s_p1_256_k1.bin")));
+    assert!(x509(spki, "300d06092a864886f70d01010a3000", include_bytes!("rsa/s_pss_sha1.bin")));
+    let salt0 = include_bytes!("rsa/s_pss_256_0.bin").as_slice();
+    let pss_sha256_salt0 = "304106092a864886f70d01010a3034a00f300d06096086480165030402010500a11c301a06092a864886f70d010108300d06096086480165030402010500a203020100";
+    assert!(x509(spki, pss_sha256_salt0, salt0));
+    assert!(!x509(spki, "300d06092a864886f70d01010a3000", salt0));
+    let pss_sha384_salt48 = "304106092a864886f70d01010a3034a00f300d06096086480165030402020500a11c301a06092a864886f70d010108300d06096086480165030402020500a203020130";
+    assert!(x509(spki, pss_sha384_salt48, pss));
+    assert_eq!(call("x509-key", &[small]).unwrap(), b"rsa 1024");
 }
 
 #[test]

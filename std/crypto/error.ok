@@ -5,13 +5,14 @@ import "encoding/utf" take Utf8Encoded;
 
 // Typed failures of digest/* and crypto/*, and the internal host boundary.
 //
-// Host cryptography is the reviewed RustCrypto provider (okkama-native); std
-// composes it and never reimplements primitives. HostOperation is the only
-// caller of runtime/host_crypto.crypto: invalid_input becomes
-// InvalidCryptoInput (wrong key/nonce length, parameters, encodings),
-// permission_denied becomes AuthenticationFailed (AEAD tag, RSA-OAEP padding,
-// non-contributory X25519 key) and any other host failure CryptoUnavailable.
-// Messages never contain key or plaintext bytes.
+// Host cryptography comes from reviewed providers in okkama-native, RustCrypto
+// and aws-lc (RSA); std composes them and never reimplements primitives.
+// HostOperation is the only caller of runtime/host_crypto.crypto:
+// invalid_input becomes InvalidCryptoInput (wrong key/nonce length,
+// parameters, encodings), permission_denied becomes AuthenticationFailed
+// (AEAD tag, RSA-OAEP padding, non-contributory X25519 key) and any other
+// host failure CryptoUnavailable. Messages never contain key or plaintext
+// bytes.
 enum InvalidCryptoInput is Error = (because(reason is string));
 
 enum AuthenticationFailed is Error = (failed);
