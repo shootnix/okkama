@@ -175,6 +175,13 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   (`sparrow-origin`); results in `results/`; `export.py` writes a report into
   `reports/<date>-v<X.Y.Z>/` (results.json, before.json, CSVs, REPORT.md; a
   hand-written README.md with conclusions). One report per release.
+  Method (#54): every program is built first, each configuration warmed up
+  once, then all runs go in a shuffled order (`--seed`, recorded); results
+  carry raw samples, median, quartiles, σ and `real_iqr_ratio`, versions,
+  build parameters, sha256 of inputs and binaries, timer bounds, `startup`
+  (00-hello per configuration) and `reference_outdated` interpreters.
+  `sparrow-core-compile` is compile+run in one process (`okkama run --engine
+  sparrow`); steady state is not measured yet (#236).
 - DB: `db/main.ok` + `db/main.py` (SQLite), `db/postgres.ok` +
   `db/postgres.py` (PostgreSQL, Docker). Env: `DB_BENCH_ROWS=5000
   DB_BENCH_LOOKUPS=500 DB_BENCH_WARMUPS=6`. Each prints `kind nanos checksum`
