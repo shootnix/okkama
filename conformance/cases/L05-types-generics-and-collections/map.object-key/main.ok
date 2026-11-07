@@ -2,13 +2,31 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
-object Key {
-    Key();
+enum Suit = (hearts, spades);
+
+object Card {
+    has rank is int;
+    has suit is Suit;
+    Card(rank is int, suit is Suit) { self.rank = rank; self.suit = suit; }
+    label() is string { rank.string() + if suit == Suit.hearts { "H"; } else { "S"; }; }
+}
+
+object Seat {
+    has card is Card;
+    has share is rat;
+    Seat(card is Card, share is rat) { self.card = card; self.share = share; }
 }
 
 main() is int {
     let out = Stdout();
-    let m = [Key(): 1];
-    out.writeln("unreachable");
+    let counts is %Card:int = [Card(10, Suit.hearts): 1, Card(2, Suit.spades): 5, Card(10, Suit.spades): 3];
+    let more = counts + [Card(10, Suit.hearts): 7];
+    out.writeln(more.size().string());
+    out.writeln((more[Card(10, Suit.hearts)] else 0).string());
+    out.writeln(if more.has(Card(2, Suit.spades)) && !more.has(Card(3, Suit.spades)) { "has"; } else { "wrong"; });
+    for more.keys() -> card { out.writeln(card.label()); }
+    out.writeln((more - [Card(2, Suit.spades): 0]).size().string());
+    let seats is %Seat:string = [Seat(Card(1, Suit.hearts), 1.rat() / 3.rat()): "a", Seat(Card(1, Suit.hearts), 2.rat() / 6.rat()): "b"];
+    out.writeln(seats.size().string() + " " + (seats[Seat(Card(1, Suit.hearts), 1.rat() / 3.rat())] else "none"));
     0;
 }

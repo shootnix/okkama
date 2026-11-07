@@ -494,3 +494,29 @@ fn diagnostics_name_the_rule_and_the_fix() {
     let ordering = messages("main() is int {\n let sorted = [9, 0, 2, 1].ordering();\n 0;\n}");
     assert!(ordering.iter().any(|m| m.contains("import \"compare\" take Comparing")), "{ordering:?}");
 }
+
+/// Value objects are map keys (#212): every field a scalar (also `byte` and
+/// `rat`), an enum or such an object; a resource, a collection field or a
+/// generic argument that is not a key is named in the error.
+#[test]
+fn value_objects_are_map_keys() {
+    let declarations = "enum Suit = (hearts, spades); \
+        object Card { has rank is int; has suit is Suit; has weight is rat; has mark is byte; Card(rank is int, suit is Suit, weight is rat, mark is byte) { self.rank = rank; self.suit = suit; self.weight = weight; self.mark = mark; } } \
+        object Hand { has best is Card; Hand(best is Card) { self.best = best; } } \
+        object Box<T> { has value is T; Box(value is T) { self.value = value; } } \
+        object Tagged { has tags is @string; Tagged(tags is @string) { self.tags = tags; } } \
+        object Outer { has inner is Tagged; Outer(inner is Tagged) { self.inner = inner; } } \
+        object File { has path is string; File(path is string) { self.path = path; } destroy { path; } } \
+        object Early { has index is %Tagged:int; Early(index is %Tagged:int) { self.index = index; } }";
+    assert_eq!(
+        messages(&format!("{declarations} main() is int {{ let a is %Card:int = [:]; let b is %Hand:int = [:]; let c is %Box<string>:int = [Box(\"x\"): 1]; let d is %File:int = [:]; let e is %Box<@int>:int = [:]; let f is %Outer:int = [:]; 0; }}")),
+        [
+            "Map key type Tagged cannot be a key: field \"tags\" is @string",
+            "Map key type Tagged cannot be a key: field \"tags\" is @string",
+            "Map key type File cannot be a key: File has a destroy block",
+            "Map key type Box<@int> cannot be a key: field \"value\" is @int",
+            "Map key type Outer cannot be a key: field \"inner\" (Tagged): field \"tags\" is @string",
+        ]
+    );
+    assert_eq!(messages("main() is int { let a is %@int:int = [:]; 0; }"), ["Map key type @int is not a scalar key type"]);
+}

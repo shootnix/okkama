@@ -34,12 +34,13 @@ import "size" take Sizing;
 // Frequency is a value: its positive amount is calculated during Frequencies
 // construction and does not rescan the original input.
 //
-// The runtime does not yet provide a generic hashing contract. Frequencies
-// therefore uses strict runtime equality and linear lookup, just like
-// OrderedSet, instead of pretending to be a hash table. Construction reads
-// the input once and makes O(n*d) equality comparisons, where d is the number
-// of distinct values, without rebuilding intermediate lists; amount(value) is
-// O(d). Values must support runtime equality; native opaque handles do not.
+// Frequencies takes any T with runtime equality, arrays included, so it uses
+// strict runtime equality and linear lookup, just like OrderedSet, instead of
+// pretending to be a hash table. Construction reads the input once and makes
+// O(n*d) equality comparisons, where d is the number of distinct values,
+// without rebuilding intermediate lists; amount(value) is O(d). For map keys —
+// scalars, enums, value objects (#212) — a map `%T:int` counts in O(n log d).
+// Native opaque handles have no equality.
 
 object Frequency<T> {
     has origin is T;

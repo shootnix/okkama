@@ -1,14 +1,15 @@
 {
   "schema": "ocs-case/1",
   "id": "L05.map.object-key",
-  "title": "objects are not scalar map keys",
-  "purpose": "The construct is invalid and must not complete.",
+  "title": "value objects are map keys: structural identity and order",
+  "purpose": "Accept the construct and observe its result.",
   "level": "L05",
   "contracts": [
     {
       "contract": "COLL.MAP",
       "aspects": [
-        "invalid"
+        "normal",
+        "interaction"
       ]
     }
   ],
@@ -23,20 +24,10 @@
     ]
   },
   "expect": {
-    "outcome": "error",
-    "failure": {
-      "stages": [
-        "check",
-        "runtime"
-      ],
-      "categories": [
-        "semantic",
-        "runtime"
-      ],
-      "justification": "The contract makes this an error without fixing the detection stage (spec 6.3: a static pass may diagnose boundary mismatches before execution). The program must not complete."
-    },
+    "outcome": "success",
+    "exit_status": 0,
     "stdout": {
-      "text": ""
+      "text": "3\n7\nhas\n2S\n10H\n10S\n2\n1 b\n"
     }
   },
   "spec_refs": [
@@ -47,8 +38,8 @@
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 6.3: object keys are not scalar keys."
+    "origin": "authored for OCS 0.1.0; object keys allowed by #212",
+    "expected_basis": "a value object key compares by its fields like ==: Card(10, hearts) replaces itself, keys() follows field order (rank, then suit in case order), and rat fields 1/3 and 2/6 are one key."
   },
   "status": "mandatory"
 }

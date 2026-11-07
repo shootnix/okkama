@@ -1,0 +1,58 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.map.resource-key-rejected",
+  "title": "an object with a destroy block is not a map key",
+  "purpose": "A byte key is rejected rather than stored.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The key category may be rejected statically or when the literal is evaluated."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.3",
+    "docs/OkkamaBook.md#5.3",
+    "contracts/DISCREPANCY-LEDGER.md#d-007"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #212",
+    "expected_basis": "map keys are scalars, enums or value objects; a resource (destroy) has an identity and lifetime, not a value."
+  },
+  "status": "mandatory",
+  "defects": [
+    "DEF-004"
+  ]
+}

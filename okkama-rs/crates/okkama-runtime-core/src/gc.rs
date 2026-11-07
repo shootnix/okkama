@@ -219,7 +219,15 @@ impl Node {
                 }
             }
             Self::Array(array) => array.0.iter().for_each(|value| out.value(value)),
-            Self::Map(map) => map.0.values().for_each(|value| out.value(value)),
+            Self::Map(map) => {
+                // Ключ-объект держит объект (#212).
+                for (key, value) in map.0.iter() {
+                    if let crate::heap::MapKey::Object { object, .. } = key {
+                        out.object(object);
+                    }
+                    out.value(value);
+                }
+            }
             Self::Fn(closure) => {
                 closure.captures.iter().for_each(|value| out.value(value));
                 if let Some(bound) = &closure.worker {
@@ -347,6 +355,10 @@ impl Edges {
         if let Some(node) = Node::of(value) {
             self.0.push(node);
         }
+    }
+
+    pub(crate) fn object(&mut self, object: &Rc<Object>) {
+        self.0.push(Node::Object(object.clone()));
     }
 
     pub(crate) fn future(&mut self, future: &Rc<FutureCell>) {

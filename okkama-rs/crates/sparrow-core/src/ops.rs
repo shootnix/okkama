@@ -78,13 +78,18 @@ payload! {
     }
 }
 
-/// Map keys own immutable scalar data; order follows the previous engine.
+/// Map keys own immutable data; order follows the previous engine. An
+/// object key (#212) is its declaration and its fields as keys, so equality
+/// and order are structural, like `==`; the entry keeps the object's word.
 #[derive(Debug, Clone)]
 pub enum Key {
     Int(BigInt),
     Float(f64),
     Raw(u64),
     Str(Rc<str>),
+    /// A `rat` field of an object key.
+    Rat(Rc<BigRational>),
+    Object(u32, Rc<[Key]>),
 }
 impl Ord for Key {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -93,6 +98,8 @@ impl Ord for Key {
             (Self::Float(a), Self::Float(b)) => a.partial_cmp(b).expect("finite float key"),
             (Self::Raw(a), Self::Raw(b)) => a.cmp(b),
             (Self::Str(a), Self::Str(b)) => a.cmp(b),
+            (Self::Rat(a), Self::Rat(b)) => a.cmp(b),
+            (Self::Object(a, x), Self::Object(b, y)) => a.cmp(b).then_with(|| x.iter().cmp(y.iter())),
             _ => self.rank().cmp(&other.rank()),
         }
     }
@@ -104,6 +111,8 @@ impl Key {
             Self::Float(_) => 1,
             Self::Raw(_) => 2,
             Self::Str(_) => 3,
+            Self::Rat(_) => 4,
+            Self::Object(..) => 5,
         }
     }
 }
@@ -156,6 +165,18 @@ impl Runtime {
             (Kind::Float, _) => Key::Float(f64::from_bits(word)),
             (Kind::Raw | Kind::Byte, _) => Key::Raw(word),
             (_, Some(Type::Str)) => Key::Str(Rc::from(self.heap.text(word))),
+            (_, Some(Type::Rat)) => Key::Rat(Rc::new(self.rational(word).clone())),
+            (_, Some(Type::Object(_))) if heap::kind(self.heap.header_of(word)) == heap::OBJECT => {
+                let declaration = heap::payload(self.heap.header_of(word));
+                let program = &self.loaded.program;
+                let fields = program.objects[declaration as usize]
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &(_, field))| self.key(self.heap.field(word, index), self.kind_of(field), program.ty(field)))
+                    .collect();
+                Key::Object(declaration, fields)
+            }
             _ => Key::Raw(word),
         }
     }
