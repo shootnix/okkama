@@ -519,3 +519,20 @@ fn generic_closers_split_compound_tokens() {
     // Expressions keep `>>` as a shift.
     assert_eq!(expr_sexpr("a >> b"), "(>> a b)");
 }
+
+/// Each pair of adjacent binary levels, loosest first, with one operator of
+/// each: the tighter one groups first on either side, and an operator of
+/// the same level groups left (#46).
+#[test]
+fn adjacent_precedence_levels_group_the_tighter_operator() {
+    let levels = ["||", "&&", "<-", "==", "..", "<", "|", "^", "&", "<<", "+", "*"];
+    for pair in levels.windows(2) {
+        let (loose, tight) = (pair[0], pair[1]);
+        assert_eq!(expr_sexpr(&format!("a {loose} b {tight} c")), format!("({loose} a ({tight} b c))"), "{loose} {tight}");
+        assert_eq!(expr_sexpr(&format!("a {tight} b {loose} c")), format!("({loose} ({tight} a b) c)"), "{tight} {loose}");
+    }
+    for operator in levels.iter().filter(|&&operator| operator != "..") {
+        assert_eq!(expr_sexpr(&format!("a {operator} b {operator} c")), format!("({operator} ({operator} a b) c)"));
+    }
+    assert_rejects("module app v1.0.0; main() is int { a .. b ..= c; }", "Range expressions cannot be chained.");
+}

@@ -2,7 +2,7 @@
 //!
 //! Precedence, lowest first. All binary levels are left-associative except
 //! ranges, which do not chain. The binary levels are parsed by precedence
-//! climbing over the table in [`binary_operator`]; the other levels are
+//! climbing over the table [`LEVELS`]; the other levels are
 //! one function each, mirroring `docs/okkama-grammar-1.0.md`.
 //!
 //! | level          | operators                       |
@@ -323,25 +323,24 @@ impl Parser<'_> {
     /// (`logic_or` ... `factor`). Parsing them with one function per level
     /// would push about thirty stack frames for every parenthesised
     /// sub-expression, so they are parsed here by precedence climbing over
-    /// the same table ([`binary_operator`]): identical trees, a few frames
-    /// per nesting level. All levels are left-associative; the range level
-    /// accepts at most one operator.
+    /// the same table ([`LEVELS`]): identical trees, a few frames per
+    /// nesting level.
     pub(super) fn logic_or(&mut self) -> PResult<Expr> {
-        self.binary(Precedence::Or)
+        self.binary(0)
     }
 
-    /// Parses operators whose precedence is at least `min`.
-    fn binary(&mut self, min: Precedence) -> PResult<Expr> {
+    /// Parses operators of level `min` (index into [`LEVELS`]) and tighter.
+    fn binary(&mut self, min: usize) -> PResult<Expr> {
         let mut left = self.unary()?;
-        while let Some((precedence, operator)) = binary_operator(self.peek_kind()) {
-            if precedence < min {
+        while let Some((level, operator)) = binary_operator(self.peek_kind()) {
+            if level < min {
                 break;
             }
             self.advance();
             let op_span = self.previous().span;
             // Left associativity: the right operand only takes operators
             // that bind strictly tighter.
-            let right = self.binary(precedence.next())?;
+            let right = self.binary(level + 1)?;
             let span = left.span.to(right.span);
             left = Expr {
                 span,
@@ -365,8 +364,8 @@ impl Parser<'_> {
                     },
                 },
             };
-            if matches!(operator, Operator::Range { .. })
-                && matches!(self.peek_kind(), TokenKind::DotDot | TokenKind::DotDotEqual)
+            if LEVELS[level].chaining == Chaining::Single
+                && binary_operator(self.peek_kind()).is_some_and(|(next, _)| next == level)
             {
                 return Err(self.error_here("Range expressions cannot be chained."));
             }
@@ -965,49 +964,7 @@ impl Parser<'_> {
     }
 }
 
-/// `Type` or `module.Type` — the only valid projection targets. The
-/// qualifier only has to be lower-case-shaped (the reference parser treats
-/// `self` like any other variable here); whether it names a module is a
-/// semantic question.
-/// Binary precedence levels, lowest first (the grammar's ladder).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Precedence {
-    Or,
-    And,
-    StreamWrite,
-    Equality,
-    Range,
-    Comparison,
-    BitOr,
-    BitXor,
-    BitAnd,
-    Shift,
-    Term,
-    Factor,
-    /// Above every binary operator: only prefix/postfix forms.
-    Unary,
-}
-
-impl Precedence {
-    fn next(self) -> Precedence {
-        use Precedence::*;
-        match self {
-            Or => And,
-            And => StreamWrite,
-            StreamWrite => Equality,
-            Equality => Range,
-            Range => Comparison,
-            Comparison => BitOr,
-            BitOr => BitXor,
-            BitXor => BitAnd,
-            BitAnd => Shift,
-            Shift => Term,
-            Term => Factor,
-            Factor | Unary => Unary,
-        }
-    }
-}
-
+/// What a binary operator builds.
 #[derive(Copy, Clone, Debug)]
 enum Operator {
     Binary(BinaryOp),
@@ -1015,49 +972,72 @@ enum Operator {
     Range { inclusive: bool },
 }
 
-/// The precedence table:
-///
-/// | level        | operators                |
-/// |--------------|--------------------------|
-/// | Or           | `\|\|`                     |
-/// | And          | `&&`                     |
-/// | StreamWrite  | `<-`                     |
-/// | Equality     | `==` `!=`                |
-/// | Range        | `..` `..=`               |
-/// | Comparison   | `<` `<=` `>` `>=`        |
-/// | BitOr        | `\|`                      |
-/// | BitXor       | `^`                      |
-/// | BitAnd       | `&`                      |
-/// | Shift        | `<<` `>>` `>>>`          |
-/// | Term         | `+` `-`                  |
-/// | Factor       | `*` `/` `%`              |
-fn binary_operator(kind: TokenKind) -> Option<(Precedence, Operator)> {
+/// How operators of one level combine with each other.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum Chaining {
+    /// `a - b - c` is `(a - b) - c`.
+    Left,
+    /// At most one operator: `1..2..3` is an error.
+    Single,
+}
+
+/// One precedence level of the grammar's ladder.
+struct Level {
+    chaining: Chaining,
+    operators: &'static [(TokenKind, Operator)],
+}
+
+/// Every binary operator, by precedence level from the loosest to the
+/// tightest: the one place that knows token, AST operation, precedence and
+/// chaining (#46). A new operator is a new row; a new level a new entry.
+const LEVELS: &[Level] = {
     use BinaryOp as B;
-    use Precedence as P;
-    let entry = match kind {
-        TokenKind::PipePipe => (P::Or, Operator::Binary(B::Or)),
-        TokenKind::AmpAmp => (P::And, Operator::Binary(B::And)),
-        TokenKind::StreamWrite => (P::StreamWrite, Operator::StreamWrite),
-        TokenKind::EqualEqual => (P::Equality, Operator::Binary(B::Equal)),
-        TokenKind::BangEqual => (P::Equality, Operator::Binary(B::NotEqual)),
-        TokenKind::DotDot => (P::Range, Operator::Range { inclusive: false }),
-        TokenKind::DotDotEqual => (P::Range, Operator::Range { inclusive: true }),
-        TokenKind::Less => (P::Comparison, Operator::Binary(B::Less)),
-        TokenKind::LessEqual => (P::Comparison, Operator::Binary(B::LessEqual)),
-        TokenKind::Greater => (P::Comparison, Operator::Binary(B::Greater)),
-        TokenKind::GreaterEqual => (P::Comparison, Operator::Binary(B::GreaterEqual)),
-        TokenKind::Pipe => (P::BitOr, Operator::Binary(B::BitOr)),
-        TokenKind::Caret => (P::BitXor, Operator::Binary(B::BitXor)),
-        TokenKind::Amp => (P::BitAnd, Operator::Binary(B::BitAnd)),
-        TokenKind::ShiftLeft => (P::Shift, Operator::Binary(B::ShiftLeft)),
-        TokenKind::ShiftRight => (P::Shift, Operator::Binary(B::ShiftRight)),
-        TokenKind::ShiftUnsigned => (P::Shift, Operator::Binary(B::ShiftRightUnsigned)),
-        TokenKind::Plus => (P::Term, Operator::Binary(B::Add)),
-        TokenKind::Minus => (P::Term, Operator::Binary(B::Subtract)),
-        TokenKind::Star => (P::Factor, Operator::Binary(B::Multiply)),
-        TokenKind::Slash => (P::Factor, Operator::Binary(B::Divide)),
-        TokenKind::Percent => (P::Factor, Operator::Binary(B::Remainder)),
-        _ => return None,
-    };
-    Some(entry)
+    use Chaining::*;
+    use Operator::Binary;
+    use TokenKind as T;
+    &[
+        Level { chaining: Left, operators: &[(T::PipePipe, Binary(B::Or))] },
+        Level { chaining: Left, operators: &[(T::AmpAmp, Binary(B::And))] },
+        Level { chaining: Left, operators: &[(T::StreamWrite, Operator::StreamWrite)] },
+        Level { chaining: Left, operators: &[(T::EqualEqual, Binary(B::Equal)), (T::BangEqual, Binary(B::NotEqual))] },
+        Level {
+            chaining: Single,
+            operators: &[
+                (T::DotDot, Operator::Range { inclusive: false }),
+                (T::DotDotEqual, Operator::Range { inclusive: true }),
+            ],
+        },
+        Level {
+            chaining: Left,
+            operators: &[
+                (T::Less, Binary(B::Less)),
+                (T::LessEqual, Binary(B::LessEqual)),
+                (T::Greater, Binary(B::Greater)),
+                (T::GreaterEqual, Binary(B::GreaterEqual)),
+            ],
+        },
+        Level { chaining: Left, operators: &[(T::Pipe, Binary(B::BitOr))] },
+        Level { chaining: Left, operators: &[(T::Caret, Binary(B::BitXor))] },
+        Level { chaining: Left, operators: &[(T::Amp, Binary(B::BitAnd))] },
+        Level {
+            chaining: Left,
+            operators: &[
+                (T::ShiftLeft, Binary(B::ShiftLeft)),
+                (T::ShiftRight, Binary(B::ShiftRight)),
+                (T::ShiftUnsigned, Binary(B::ShiftRightUnsigned)),
+            ],
+        },
+        Level { chaining: Left, operators: &[(T::Plus, Binary(B::Add)), (T::Minus, Binary(B::Subtract))] },
+        Level {
+            chaining: Left,
+            operators: &[(T::Star, Binary(B::Multiply)), (T::Slash, Binary(B::Divide)), (T::Percent, Binary(B::Remainder))],
+        },
+    ]
+};
+
+/// The level (index into [`LEVELS`]) and operation of a binary operator token.
+fn binary_operator(kind: TokenKind) -> Option<(usize, Operator)> {
+    LEVELS.iter().enumerate().find_map(|(level, entry)| {
+        entry.operators.iter().find(|(token, _)| *token == kind).map(|&(_, operator)| (level, operator))
+    })
 }
