@@ -10,7 +10,8 @@ use std::process::Command;
 fn compiled(case: &str) -> okkama_sparrow::Program {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let source = root.join(format!("conformance/cases/{case}/main.ok"));
-    let out = std::env::temp_dir().join(format!("intrinsic-contracts-{}.spb", std::process::id()));
+    // One file per case: the tests build in parallel.
+    let out = std::env::temp_dir().join(format!("intrinsic-contracts-{}-{}.spb", std::process::id(), case.replace('/', "-")));
     let built = Command::new(env!("CARGO_BIN_EXE_okkama"))
         .args(["build", "--target", "sparrow"])
         .arg(&source)

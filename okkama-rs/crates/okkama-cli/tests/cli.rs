@@ -549,7 +549,7 @@ fn help_and_version() {
         assert_eq!(output.status.code(), Some(0));
         assert!(stdout(&output).contains("okkama ast <FILE|->"));
         assert!(stdout(&output).contains("okkama ir <FILE|->"));
-        assert!(stdout(&output).contains("okkama build <FILE|-> --target jvm -o <FILE>"));
+        assert!(stdout(&output).contains("okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>"));
         assert!(stderr(&output).is_empty());
     }
     let output = run(&["help", "ast"]);
