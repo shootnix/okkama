@@ -429,14 +429,29 @@ impl<'a> Registry<'a> {
                     ast::Item::NativeObject(decl) => (&decl.name, "Native object type"),
                     _ => continue,
                 };
-                if roots[..position]
+                if let Some(&earlier) = roots[..position]
                     .iter()
-                    .any(|earlier| self.modules[*earlier].own.types.contains_key(&name.text))
+                    .find(|earlier| self.modules[**earlier].own.types.contains_key(&name.text))
                 {
                     self.error(
                         name.span,
-                        format!("{kind} \"{}\" is already declared", name.text),
+                        format!("{kind} \"{}\" is already declared in another file of this module", name.text),
                     );
+                    // The first declaration, reported in its own file.
+                    let first = self.modules[earlier].program.items.iter().find_map(|item| match item {
+                        ast::Item::Object(decl) if decl.name.text == name.text => Some(decl.name.span),
+                        ast::Item::Role(decl) if decl.name.text == name.text => Some(decl.name.span),
+                        ast::Item::Enum(decl) if decl.name.text == name.text => Some(decl.name.span),
+                        ast::Item::NativeObject(decl) if decl.name.text == name.text => Some(decl.name.span),
+                        _ => None,
+                    });
+                    if let Some(span) = first {
+                        self.errors.push(SemanticError::invalid(
+                            earlier,
+                            span,
+                            format!("{kind} \"{}\" is first declared here", name.text),
+                        ));
+                    }
                 }
             }
         }
@@ -594,6 +609,18 @@ impl<'a> Registry<'a> {
 
     fn own_type(&self, module: usize, name: &str) -> Option<TypeRef> {
         self.modules[module].own.types.get(name).copied()
+    }
+
+    /// The module declaring `ty`, named for a diagnostic: both sources of a
+    /// conflicting name are shown (H-16).
+    fn origin(&self, ty: TypeRef) -> String {
+        let module = match ty {
+            TypeRef::Object(id) => self.objects[id.0].module,
+            TypeRef::Role(id) => self.roles[id.0].module,
+            TypeRef::Enum(id) => self.enums[id.0].module,
+            TypeRef::Handle(id) => self.handles[id.0].module,
+        };
+        format!("module \"{}\"", self.modules[module].name)
     }
 
     fn register_names(&mut self, module: usize) {
@@ -911,9 +938,10 @@ impl<'a> Registry<'a> {
                     let only = (!import.take.is_empty()).then(|| taken.clone());
                     if let Some(existing) = self.modules[module].namespaces.get(&namespace) {
                         if existing.module != dependency {
+                            let (first, second) = (&self.modules[existing.module].name, &self.modules[dependency].name);
                             self.error(
                                 import.span,
-                                format!("Namespace \"{namespace}\" is already declared"),
+                                format!("Namespace \"{namespace}\" is already declared for module \"{first}\"; this import names module \"{second}\""),
                             );
                             continue;
                         }
@@ -942,7 +970,8 @@ impl<'a> Registry<'a> {
                         TypeRef::Enum(_) => "Enum",
                         TypeRef::Handle(_) => "Type",
                     };
-                    self.error(span, format!("{kind} \"{text}\" is already declared"));
+                    let (first, second) = (self.origin(*existing), self.origin(*found));
+                    self.error(span, format!("{kind} \"{text}\" is already declared by {first}; this import takes another from {second}"));
                     return;
                 }
             }

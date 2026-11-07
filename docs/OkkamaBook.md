@@ -3073,6 +3073,14 @@ the IR interpreter (`okkama run --engine ir`, no build) or the JAR
 project whose dependencies are not installed. Blade uses the `okkama` next to
 it, else the one on `PATH` (`BLADE_OKKAMA` names another).
 
+A name is declared once in a module's scope: a `take` of a name the module
+declares or another `take` already brought in, and an `as` namespace (or a
+plain import's namespace) already bound to another module, are compile-time
+errors naming both sources (`Object "Thing" is already declared by module
+"lib/a"; this import takes another from module "lib/b"`). The files of a
+multi-file module are taken in name order, so the order they are given in
+changes nothing; a name declared in two of them is reported in both.
+
 An import cycle is a compile-time error that names the chain
 (`Import cycle detected: lib/a -> b -> a`). A program's import graph is bounded:
 at most 1024 nested imports from the root, 16384 modules and 256 MiB of module

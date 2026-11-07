@@ -581,6 +581,10 @@ fn load_all(line: &CommandLine) -> Result<Vec<SourceFile>, Outcome> {
     for input in &line.more_inputs {
         sources.push(load(Some(input))?);
     }
+    // The files of one module are taken in name order, so the order of the
+    // arguments changes nothing — which declaration is first, the default
+    // entry file, the order of tests and of diagnostics (H-16).
+    sources.sort_by(|a, b| a.name().cmp(b.name()));
     Ok(sources)
 }
 

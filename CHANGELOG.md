@@ -106,6 +106,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   builders and closures drop on a 2 MiB stack in debug and release
   ([#28](https://github.com/shootnix/okkama/issues/28)).
 
+- Compiler: a name conflict now names both sources — two `take` of one name
+  (`Object "Thing" is already declared by module "lib/a"; this import takes
+  another from module "lib/b"`), a `take` of a name the module declares, an
+  `as` namespace bound twice, and a name declared in two files of one module
+  (reported in both files). The files of a multi-file module are taken in
+  name order, so `okkama check a.ok b.ok` and `okkama check b.ok a.ok` print
+  the same bytes; every conformance case and std module checks identically
+  run to run and with its files reversed
+  ([#33](https://github.com/shootnix/okkama/issues/33)).
+
 - Sparrow core on x86_64: the macOS x86_64 package now has a smoke test (run
   under Rosetta 2 on the arm64 runner: a program, the core under a stressed
   collector and with budget polls), and CI runs the std inline tests on the IR
