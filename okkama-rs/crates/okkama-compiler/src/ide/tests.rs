@@ -691,3 +691,30 @@ fn positions_round_trip_in_every_encoding() {
     // A column inside a surrogate pair lands after the character.
     assert_eq!(lines.offset(Position { line: 1, character: 1 }) as usize, text.find(' ').unwrap());
 }
+
+/// Members after every link of a chain (#225): a field through `self`,
+/// indexing, generic builtin results, functional-block bindings and locals
+/// typed since the last successful check.
+#[test]
+fn chains_complete_through_fields_indexing_generics_bindings_and_new_locals() {
+    let base = MAIN.replace("        let sum = total.plus(amount);\n", "        let sum = total.plus(amount);\n        let all = [sum, total];\n");
+    let complete = |edited: &str, marker: &str| -> Vec<String> {
+        let inspection = inspect(&base);
+        let offset = (edited.find(marker).unwrap_or_else(|| panic!("{marker}")) + marker.len()) as u32;
+        let mut labels: Vec<String> = inspection.complete(&base, edited, offset).into_iter().map(|c| c.label).collect();
+        labels.sort();
+        labels.dedup();
+        labels
+    };
+    let edit = |line: &str| base.replace("        sum;\n", &format!("        {line}\n"));
+    let money = ["cents", "plus"];
+    assert_eq!(complete(&edit("self.total."), "self.total."), money);
+    assert!(complete(&edit("self.total.cents()."), "self.total.cents().").contains(&"abs".to_string()));
+    assert_eq!(complete(&edit("all[0]."), "all[0]."), money);
+    assert_eq!(complete(&edit("all.first()."), "all.first()."), money);
+    assert_eq!(complete(&edit("all.map() -> m { m. };"), "m { m."), money);
+    let fresh = edit("let c = sum.cents();\n        c.");
+    assert!(complete(&fresh, "        c.").contains(&"abs".to_string()), "{:?}", complete(&fresh, "        c."));
+    let typed = edit("let d is Money = sum;\n        d.");
+    assert_eq!(complete(&typed, "        d."), money);
+}
