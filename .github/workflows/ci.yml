@@ -98,6 +98,30 @@ jobs:
           path: conformance/reports/runs/
           if-no-files-found: ignore
 
+  # The declared MSRV (workspace rust-version) builds every target (#41).
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust
+        run: |
+          msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' okkama-rs/Cargo.toml)"
+          case "$msrv" in *.*.*) ;; *) msrv="$msrv.0" ;; esac
+          rustup toolchain install "$msrv" --profile minimal && rustup default "$msrv"
+          rustc -V
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+          key: msrv-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: msrv-
+      - name: Check
+        working-directory: okkama-rs
+        run: cargo check --workspace --all-targets --locked
+
   # std inline tests on the IR engine and the Sparrow core, on x86_64 Linux:
   # the core's frame walk, stack maps and code memory there (#27).
   std:

@@ -102,7 +102,7 @@ Every file has a `.sha256` next to it. The macOS packages are not signed yet:
 open the `.pkg` with right-click → *Open*, and for an archive downloaded in a
 browser run `xattr -dr com.apple.quarantine okkama-*` once.
 
-**From source** (Rust 1.85+):
+**From source** (Rust 1.97+):
 
 ```sh
 git clone https://github.com/shootnix/okkama.git && cd okkama

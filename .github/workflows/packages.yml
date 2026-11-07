@@ -51,10 +51,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      # The pinned release toolchain (tools/release-toolchain.txt, #41).
       - name: Rust
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          toolchain="$(cat tools/release-toolchain.txt)"
+          rustup toolchain install "$toolchain" --profile minimal && rustup default "$toolchain"
           rustup target add ${{ matrix.target }}
       - uses: actions/cache@v4
         with:
