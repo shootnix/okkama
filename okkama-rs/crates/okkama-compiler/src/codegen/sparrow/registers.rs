@@ -12,33 +12,31 @@
 //! возможен в любой его инструкции.
 use crate::ir::{Function, ValueId};
 
-/// Множество значений: биты по номерам.
+/// Множество значений, разреженное (#50): копия и обход стоят числа живых
+/// значений, а не числа значений функции, — иначе кодоген функции на 10⁵
+/// инструкций квадратичен, даже когда одновременно живут два значения.
 #[derive(Clone, PartialEq, Eq)]
-struct Set(Vec<u64>);
+struct Set(std::collections::BTreeSet<usize>);
 
 impl Set {
-    fn new(count: usize) -> Self {
-        Self(vec![0; count.div_ceil(64)])
+    fn new(_count: usize) -> Self {
+        Self(std::collections::BTreeSet::new())
     }
 
     fn insert(&mut self, value: ValueId) {
-        self.0[value.0 / 64] |= 1 << (value.0 % 64);
+        self.0.insert(value.0);
     }
 
     fn remove(&mut self, value: ValueId) {
-        self.0[value.0 / 64] &= !(1 << (value.0 % 64));
+        self.0.remove(&value.0);
     }
 
     fn union(&mut self, other: &Set) {
-        for (word, more) in self.0.iter_mut().zip(&other.0) {
-            *word |= more;
-        }
+        self.0.extend(other.0.iter().copied());
     }
 
     fn values(&self) -> impl Iterator<Item = ValueId> + '_ {
-        self.0.iter().enumerate().flat_map(|(index, word)| {
-            (0..64).filter(move |bit| word & (1 << bit) != 0).map(move |bit| ValueId(index * 64 + bit))
-        })
+        self.0.iter().map(|&value| ValueId(value))
     }
 }
 

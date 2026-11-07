@@ -136,6 +136,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler, very large functions (H-28, H-39): three phases were quadratic
+  in the size of one function and are linear now. The ownership flow of the
+  analysis copied the obligations of every local at every branch (now only
+  the locals that hold any); register allocation copied and scanned a
+  bitset as wide as the function at every instruction (now a set of the
+  live values); the OIR verifier climbed the dominator tree for every use
+  (now one interval comparison). A function of 100 000 `let`s builds to
+  Sparrow in 0.2 s instead of 13 s, 100 000 `if`s in 0.5 s instead of
+  62 s, and `check` of 25 000 `reduce` blocks takes 0.4 s instead of 9 s.
+  `tools/gen/large.py` generates such functions and reports each phase's
+  growth; a release test requires the whole pipeline to grow linearly. The
+  lowering of very many branches over very many locals is still
+  superlinear (0.6 s at 10⁵ instructions): #239
+  ([#50](https://github.com/shootnix/okkama/issues/50)).
+
 - Runtimes: host state belongs to one run, not to a thread (Q03). Every
   engine entry (IR program and test runs, the previous Sparrow VM, each
   Sparrow core run) opens a host session — a copy of the process's working

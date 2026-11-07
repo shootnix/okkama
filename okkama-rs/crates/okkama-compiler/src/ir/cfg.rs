@@ -259,7 +259,11 @@ fn body(block: BlockId) -> usize {
 /// Требует, чтобы все цели существовали и все блоки были достижимы.
 #[derive(Clone, Debug)]
 pub struct Dominators {
-    idom: Vec<usize>,
+    /// Entry and exit numbers of each node in a walk of the dominator tree:
+    /// `a` dominates `b` when `b`'s interval lies inside `a`'s — one
+    /// comparison instead of a climb up the tree (#50).
+    enter: Vec<usize>,
+    exit: Vec<usize>,
 }
 
 impl Dominators {
@@ -341,25 +345,37 @@ impl Dominators {
                 }
             }
         }
-        Ok(Self {
-            idom: idom
-                .into_iter()
-                .map(|parent| parent.expect("every reachable node has an idom"))
-                .collect(),
-        })
+        let idom: Vec<usize> = idom
+            .into_iter()
+            .map(|parent| parent.expect("every reachable node has an idom"))
+            .collect();
+        let mut children = vec![Vec::new(); count];
+        for (node, &parent) in idom.iter().enumerate() {
+            if parent != node {
+                children[parent].push(node);
+            }
+        }
+        let (mut enter, mut exit) = (vec![0; count], vec![0; count]);
+        let mut clock = 0;
+        let mut walk = vec![(0usize, 0usize)];
+        enter[0] = clock;
+        clock += 1;
+        while let Some((node, next)) = walk.pop() {
+            if let Some(&child) = children[node].get(next) {
+                walk.push((node, next + 1));
+                enter[child] = clock;
+                clock += 1;
+                walk.push((child, 0));
+            } else {
+                exit[node] = clock;
+                clock += 1;
+            }
+        }
+        Ok(Self { enter, exit })
     }
 
-    fn dominates_node(&self, dominator: usize, mut node: usize) -> bool {
-        loop {
-            if node == dominator {
-                return true;
-            }
-            let parent = self.idom[node];
-            if parent == node {
-                return false;
-            }
-            node = parent;
-        }
+    fn dominates_node(&self, dominator: usize, node: usize) -> bool {
+        self.enter[dominator] <= self.enter[node] && self.exit[node] <= self.exit[dominator]
     }
 
     /// Видно ли значение с определением `def` в точке использования.
