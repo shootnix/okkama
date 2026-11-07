@@ -791,7 +791,7 @@ fn removed_allow_and_while_forms_stay_invalid() {
     }
     assert_rejects(
         "module app v1.0.0; main() is int { while true { 1; } }",
-        "Expect \";\" after expression.",
+        "Okkama has no `while`",
     );
     // As ordinary names they remain usable.
     parse_ok("module app v1.0.0; main() is int { let allow = 1; let while = 2; allow + while; }");

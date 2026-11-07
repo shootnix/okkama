@@ -292,10 +292,10 @@ fn stmt_children<'a>(stmt: &'a Stmt, push: &mut impl FnMut(Node<'a>)) {
         | StmtKind::SuccessorAssign { value, .. }
         | StmtKind::FieldBind { value, .. }
         | StmtKind::SelfFieldBind { value, .. } => push(Node::Expr(value)),
-        StmtKind::Throw { value }
-        | StmtKind::Return { value }
-        | StmtKind::Next { condition: value } => optional(value, push),
-        StmtKind::Last { value, condition } => {
+        StmtKind::Next { condition: value } => optional(value, push),
+        StmtKind::Throw { value, condition }
+        | StmtKind::Return { value, condition }
+        | StmtKind::Last { value, condition } => {
             optional(value, push);
             optional(condition, push);
         }

@@ -8,6 +8,29 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: `else if` chains in an `if` expression (#257): `let size = if n
+  > 5 { "large" } else if n > 2 { "medium" } else { "small" };`, as an
+  argument or a value anywhere. Every link has its `else` and all branches
+  one type; a chain was a syntax error outside statement position. OCS
+  `L03.if.expression-else-if` now expects the value (it expected the
+  rejection); Book §11.6, spec §8.11, grammar `if_expr` (EN/RU)
+  ([#257](https://github.com/shootnix/okkama/issues/257)).
+
+- Language: a postfix condition on `return` and `throw` (#258): `return x if
+  found;`, `return if done;` in a void action, `throw Empty.list if
+  items.size() == 0;`. The condition is evaluated first and the value only
+  when it holds, as for `last value if`. Right after the keyword, `if c;` is
+  the bare form, while `return if a { 1; } else { 2; };` still returns an
+  `if` expression. OCS `L03.return.postfix-if`; Book §12.7, spec, grammar
+  (EN/RU); `okkama fmt` keeps the form
+  ([#258](https://github.com/shootnix/okkama/issues/258)).
+
+- Diagnostics (#256): `while` and `do … while`, compound assignments (`+=`,
+  `-=`, `<<=`, …), `++`/`--`, `break` and `continue` name what Okkama writes
+  instead (`loop` with `last if`, a new name, `reduce` or a successor, `last`,
+  `next`) instead of "Expect expression" or "Undefined variable"
+  ([#256](https://github.com/shootnix/okkama/issues/256)).
+
 - Language: default values for trailing parameters of object actions and
   constructors (#149): `greet(name is string, mark is string = "!", times is
   int = 1)`. A call may leave them out positionally from the end or by name;
@@ -379,6 +402,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   ([#70](https://github.com/shootnix/okkama/issues/70)).
 
 ### Fixed
+
+- Docs: the Book (EN/RU) said that ordering accepts mixed numeric operands;
+  it needs one category on both sides, like equality — `1 < 2.5` is an error
+  (OCS `L02.ordering.int-float-rejected`), written `1.float() < 2.5` — and it
+  now also says that `&&`/`||` short-circuit. Chapter 10 listed `bool` among
+  receivers without builtins; it has `string()` (`"1"`/`"0"`). Found while
+  checking the Okkama Bible, chapter 9.
 
 - A long sort no longer outlasts `--timeout` (#238, first part). Sorting
   scalars or text ran to its end inside one native operation: three million

@@ -286,9 +286,12 @@ impl Rewrite {
             }
             S::SelfFieldBind { value, .. } => self.expr(value, false),
             S::Try(body) => self.try_body(body),
-            S::Throw { value } | S::Return { value } => {
+            S::Throw { value, condition } | S::Return { value, condition } => {
                 if let Some(value) = value {
                     self.expr(value, false);
+                }
+                if let Some(condition) = condition {
+                    self.expr(condition, false);
                 }
             }
             S::Confirm { condition, fallback } => {

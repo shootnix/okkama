@@ -345,12 +345,14 @@ fn stmt_node(stmt: &Stmt) -> Node {
             Node::new("DeferStatement", span).field("value", Value::node(expr_node(value)))
         }
         StmtKind::Try(body) => try_fields(Node::new("TryStatement", span), body),
-        StmtKind::Throw { value } => {
-            Node::new("ThrowStatement", span).field("value", opt_node(value.as_ref(), expr_node))
-        }
-        StmtKind::Return { value } => {
-            Node::new("ReturnStatement", span).field("value", opt_node(value.as_ref(), expr_node))
-        }
+        StmtKind::Throw { value, condition } => postfix(
+            Node::new("ThrowStatement", span).field("value", opt_node(value.as_ref(), expr_node)),
+            condition.as_ref(),
+        ),
+        StmtKind::Return { value, condition } => postfix(
+            Node::new("ReturnStatement", span).field("value", opt_node(value.as_ref(), expr_node)),
+            condition.as_ref(),
+        ),
         StmtKind::Confirm {
             condition,
             fallback,
@@ -419,6 +421,15 @@ fn stmt_node(stmt: &Stmt) -> Node {
         StmtKind::Expr { expr, condition } => Node::new("ExpressionStatement", span)
             .field("expression", Value::node(expr_node(expr)))
             .field("condition", opt_node(condition.as_ref(), expr_node)),
+    }
+}
+
+/// A postfix `if` on `return` or `throw`: the field appears only when written,
+/// so dumps of plain statements keep their shape.
+fn postfix(node: Node, condition: Option<&Expr>) -> Node {
+    match condition {
+        Some(condition) => node.field("condition", Value::node(expr_node(condition))),
+        None => node,
     }
 }
 

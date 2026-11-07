@@ -895,8 +895,9 @@ Rules:
 - Builtin calls are positional-only and exact-arity.
 - Builtin dispatch activates only for non-object receivers, so an object's
   own action named `size` or `less` is never shadowed and never shadows.
-- Receivers with no builtin support at all (`bool`, `range`, `enum`, `any`)
-  still report `Can only call actions on objects` when called.
+- `bool` has one builtin, `string()` (`"1"` or `"0"`). Receivers with no
+  builtin support at all (`range`, `enum`, `any`) still report
+  `Can only call actions on objects` when called.
 
 Complete list (a test checks it against the compiler's table, `analysis/check/builtin.rs`):
 
@@ -972,9 +973,11 @@ Neither binary `~` nor `<<<` is a stream-write operator.
 ### 11.3 Equality vs ordering
 
 Equality (`==`, `!=`) is strict per category (Chapter 4): `1 == 1.0` and
-`byte(1) == 1` are errors, not `false`. Ordering (`<` etc.) accepts mixed
-numeric operands under promotion. Boolean operators require `bool` operands
-and never coerce.
+`byte(1) == 1` are errors, not `false`. Ordering (`<` etc.) needs the same
+numeric category on both sides too: `1 < 2.5` is an error; write
+`1.float() < 2.5`. Boolean operators require `bool` operands and never coerce;
+`&&` and `||` evaluate their right operand only when the left one does not
+decide the result.
 
 ### 11.4 Calls
 
@@ -1018,7 +1021,11 @@ the branch's last statement is its value:
 
 ```okkama
 let value = if ready { 1; } else { 0; };
+let size = if n > 5 { "large" } else if n > 2 { "medium" } else { "small" };
 ```
+
+An `else if` chain is an expression too: every link needs its `else`, and
+all branches produce one type.
 
 `match` may also be used in expression position with the same syntax as the
 match statement (Chapter 12).
@@ -1236,14 +1243,22 @@ last result;           // exit and produce a loop result
 last result if done;   // the result is lazy when the condition is false
 ```
 
-Postfix `if` also works on ordinary expression statements:
+Postfix `if` also works on ordinary expression statements, `return` and
+`throw`:
 
 ```okkama
 counter.bump() if enabled;
+return found if done;          // leave the action with a value
+return if done;                // a void action: the bare form
+throw Failure.empty if items.size() == 0;
 ```
 
+Right after `return` or `throw`, `if cond;` is the bare form with a condition,
+while `return if a { 1; } else { 2; };` still returns an `if` expression.
+
 The postfix condition must be `bool`, like every condition. It is evaluated
-before a `last` payload; a false condition does not evaluate that payload.
+before a `last`, `return` or `throw` payload; a false condition does not
+evaluate that payload.
 Control targets the nearest `for` or `loop`. A functional
 `map`/`filter`/`reduce` block cannot control an enclosing loop directly, but a
 nested explicit `loop` establishes its own boundary. Placement is checked

@@ -772,8 +772,41 @@ impl Parser<'_> {
             _ => {
                 let token = self.peek().clone();
                 self.reject_reserved(&token)?;
-                Err(self.error_here("Expect expression."))
+                Err(self.error_here(self.foreign_operator().unwrap_or("Expect expression.")))
             }
+        }
+    }
+
+    /// `x += 1`, `x++` and `x--` stop here with an operator and no right
+    /// operand; name what Okkama writes instead (#256).
+    fn foreign_operator(&self) -> Option<&'static str> {
+        use TokenKind::{
+            Amp, Caret, Equal, Minus, Percent, Pipe, Plus, ShiftLeft, ShiftRight, ShiftUnsigned,
+            Slash, Star,
+        };
+        const STEP: &str =
+            "Okkama has no `++` or `--`: a name is bound once; bind a new name, or use `reduce` or a successor.";
+        let (before, here) = (self.previous(), self.peek());
+        // `x--` reads as `x - -` and stops after the unary minus.
+        if self.pos >= 2 {
+            let first = &self.tokens[self.pos - 2];
+            if first.kind == Minus && before.kind == Minus && first.span.end == before.span.start {
+                return Some(STEP);
+            }
+        }
+        if self.pos == 0 || before.span.end != here.span.start {
+            return None;
+        }
+        match (before.kind, here.kind) {
+            (Plus, Plus) | (Minus, Minus) => Some(STEP),
+            (
+                Plus | Minus | Star | Slash | Percent | Amp | Pipe | Caret | ShiftLeft | ShiftRight
+                | ShiftUnsigned,
+                Equal,
+            ) => Some(
+                "Okkama has no compound assignment: a name is bound once; bind a new name, or use `reduce` or a successor.",
+            ),
+            _ => None,
         }
     }
 
@@ -995,20 +1028,30 @@ impl Parser<'_> {
         })
     }
 
-    /// After `if` in expression position: `expr block "else" block`.
-    /// `else if` chains exist only in statement position.
+    /// After `if` in expression position: `expr block "else" (if_expr |
+    /// block)`. An `else if` link is an else block holding the nested `if`
+    /// alone and spanning exactly it, the shape of a choice branch; the
+    /// formatter prints it back as `else if`. Each link counts against the
+    /// nesting limit.
     fn if_expression(&mut self, start: Span) -> PResult<Expr> {
-        let condition = self.expression()?;
-        let then_block = self.block()?;
-        self.consume(TokenKind::Else, "If expression requires else branch.")?;
-        let else_block = self.block()?;
-        Ok(Expr {
-            span: start.to(else_block.span),
-            kind: ExprKind::If {
-                condition: Box::new(condition),
-                then_block,
-                else_block,
-            },
+        self.nested(|parser| {
+            let condition = parser.expression()?;
+            let then_block = parser.block()?;
+            parser.consume(TokenKind::Else, "If expression requires else branch.")?;
+            let else_block = if parser.eat(TokenKind::If) {
+                let nested_start = parser.previous().span;
+                Self::choice_block(parser.if_expression(nested_start)?)
+            } else {
+                parser.block()?
+            };
+            Ok(Expr {
+                span: start.to(else_block.span),
+                kind: ExprKind::If {
+                    condition: Box::new(condition),
+                    then_block,
+                    else_block,
+                },
+            })
         })
     }
 }
