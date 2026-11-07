@@ -139,7 +139,7 @@ impl<T: Operand> Operand for Vec<T> {
         }
     }
     fn decode(reader: &mut Reader<'_>) -> Result<Self, CodecError> {
-        let count = reader.count()?;
+        let count = reader.count_of::<T>()?;
         (0..count).map(|_| T::decode(reader)).collect()
     }
     fn print(&self, out: &mut String) {
@@ -263,7 +263,7 @@ impl Operand for Target {
     }
     fn decode(reader: &mut Reader<'_>) -> Result<Self, CodecError> {
         let pc = reader.u32()?;
-        let count = reader.count()?;
+        let count = reader.count_of::<(Register, Register)>()?;
         let moves = (0..count)
             .map(|_| Ok((Register::decode(reader)?, Register::decode(reader)?)))
             .collect::<Result<_, CodecError>>()?;

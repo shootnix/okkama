@@ -173,3 +173,28 @@ fn assembly_errors_name_the_line() {
     let text = disassemble(&sample()).replacen("    1: call", "    7: call", 1);
     assert!(assemble(&text).unwrap_err().message.contains("expected instruction 1"));
 }
+
+/// Hardening H-11 (#24): every truncation is a decoder error with a byte
+/// position, and no single corrupted byte panics or yields an unverified
+/// program.
+#[test]
+fn every_truncation_and_corrupted_byte_is_a_positioned_error() {
+    let program = everything();
+    let bytes = encode(&program).unwrap();
+    for cut in 0..bytes.len() {
+        let error = decode(&bytes[..cut]).expect_err("a truncated file decodes");
+        assert!(error.offset.is_some(), "truncated at {cut}: {error}");
+    }
+    for at in 0..bytes.len() {
+        for value in 0..=u8::MAX {
+            if bytes[at] == value {
+                continue;
+            }
+            let mut corrupted = bytes.clone();
+            corrupted[at] = value;
+            if let Ok(decoded) = decode(&corrupted) {
+                decoded.verify().expect("decode returns verified programs");
+            }
+        }
+    }
+}
