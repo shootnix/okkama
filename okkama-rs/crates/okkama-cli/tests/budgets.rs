@@ -119,7 +119,7 @@ const DEEP_FOREVER: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    
 /// instead of rendering a line per frame.
 #[test]
 fn deep_recursion_is_bounded_and_its_trace_is_cheap() {
-    for engine in ["ir", "sparrow"] {
+    for engine in ["ir", "sparrow", "jvm"] {
         let started = std::time::Instant::now();
         let output = run(engine, DEEP_FOREVER, &["--max-memory", "64M", "--timeout", "60"]);
         assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution budget exhausted: memory", "{engine}");
