@@ -253,8 +253,26 @@ fn take_deep(values: &mut [Value], pending: &mut Vec<Value>) {
     for value in values {
         if deep(value) {
             pending.push(std::mem::replace(value, Value::Undef));
+        } else if shared(value) {
+            // Released in order: a later copy in this container is then the
+            // last one and goes to the queue, not a recursive drop (S07).
+            drop(std::mem::replace(value, Value::Undef));
         }
     }
+}
+
+/// Ссылка на контейнер, у которой есть и другие владельцы.
+fn shared(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Object(_)
+            | Value::Array(_)
+            | Value::Map(_)
+            | Value::Builder(_)
+            | Value::MapBuilder(_)
+            | Value::Fn(_)
+            | Value::Any(_)
+    )
 }
 
 /// Отдаёт дочерние значения последней ссылки в `pending` вместо рекурсии.

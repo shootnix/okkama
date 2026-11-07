@@ -56,6 +56,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR runtime: dropping a value graph with repeated edges recursed through
+  destructors — the release queue took only references whose count was
+  already 1, so in `[child.clone(), child]` the second copy freed `child`
+  recursively; a DAG 20 000 levels deep overflowed the stack in debug. A
+  container now lets go of its shared references in order, so the last copy
+  joins the queue, and `any` is never boxed twice, so boxes do not nest.
+  Chains and DAGs of 200 000 levels through objects, arrays, maps, `any`,
+  builders and closures drop on a 2 MiB stack in debug and release
+  ([#28](https://github.com/shootnix/okkama/issues/28)).
+
 - Sparrow core on x86_64: the macOS x86_64 package now has a smoke test (run
   under Rosetta 2 on the arm64 runner: a program, the core under a stressed
   collector and with budget polls), and CI runs the std inline tests on the IR
