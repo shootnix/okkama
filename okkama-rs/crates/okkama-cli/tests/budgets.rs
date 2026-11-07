@@ -146,7 +146,9 @@ fn deep_recursion_is_bounded_and_its_trace_is_cheap() {
     }
 }
 
-const SORT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimport \"compare\" take Comparing;\nmain() is int {\n    let words = (0..3000000).map() -> i { \"w\" + ((i * 7919 + 13) % 1000003).string(); };\n    let sorted = try { words.ordering(); } catch e is Error { Stdout().writeln(\"caught\"); words; };\n    Stdout().writeln(sorted[0]);\n    0;\n}\n";
+// Ten million integers: integer comparisons go through big values, so the
+// sort runs for seconds on any machine and a one-second timeout lands in it.
+const SORT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimport \"compare\" take Comparing;\nmain() is int {\n    let values = (0..10000000).map() -> i { (i * 7919 + 13) % 1000003; };\n    let sorted = try { values.ordering(); } catch e is Error { Stdout().writeln(\"caught\"); values; };\n    Stdout().writeln(sorted[0].string());\n    0;\n}\n";
 
 /// A long sort of scalars or text stops for the timeout (#238): the
 /// comparisons look at the interrupt flag, and the program's `catch` does
