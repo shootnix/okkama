@@ -100,7 +100,7 @@ fn call_failed(ctx: *mut Ctx) -> Result<Word, ()> {
 fn native(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, deliver: bool) -> Step {
     let symbol = runtime.loaded.program.functions[function].native.clone().unwrap_or_default();
     let Some(native) = okkama_runtime_abi::Native::resolve(&symbol) else {
-        return fail(runtime, FailureKind::Program(format!("native provider is not implemented: {symbol}")));
+        return fail(runtime, FailureKind::Program(crate::natives::missing_native(&symbol)));
     };
     if native != okkama_runtime_abi::Native::TimeSleepNanoseconds {
         if !crate::host::supported(native) {
@@ -160,12 +160,14 @@ fn native_io(runtime: &mut Runtime, frame: Word, function: usize, native: okkama
             let arguments: Vec<Word> = (0..count).map(|i| param(runtime, frame, function, i)).collect();
             match crate::host::start(runtime, native, &arguments) {
                 Start::Pending(id) => {
+                    // An external request always suspends its caller once, even
+                    // if its reply is already there (a fast worker): `spawn`
+                    // returns before it, so a cancellation right after `spawn`
+                    // is observed, as on the other engines. The frame is woken
+                    // at once and polls the request then.
                     runtime.io.requests.insert(frame, id);
-                    let waker = runtime.io.waker(frame);
-                    match crate::host::poll(runtime, native, id, &waker) {
-                        Some(outcome) => outcome,
-                        None => return Pending,
-                    }
+                    runtime.io.waker(frame).wake();
+                    return Pending;
                 }
                 outcome => outcome,
             }

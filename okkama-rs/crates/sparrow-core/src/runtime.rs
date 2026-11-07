@@ -334,7 +334,7 @@ pub extern "C" fn rt_int(ctx: *mut Ctx, op: u64, left: Word, right: Word) -> Wor
         INT_MUL => &*l * &*r,
         _ => {
             if r.is_zero() {
-                return fail(ctx, runtime, FailureKind::Program("Integer division by zero".into()));
+                return fail(ctx, runtime, FailureKind::Program("Modulo by zero".into()));
             }
             &*l % &*r
         }
@@ -453,7 +453,7 @@ impl Runtime {
             .loaded
             .program
             .entry
-            .ok_or_else(|| Error("SPB has no entry".into()))?
+            .ok_or_else(|| Error("Sparrow program has no entry function".into()))?
             .0 as usize;
         let result = self.run_function(entry, stack)?;
         match self.heap.integer(result) {

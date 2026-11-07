@@ -42,7 +42,7 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
     // (conformance L06.native.missing-provider).
     let native = runtime.natives[function].ok_or_else(|| {
         let symbol = runtime.loaded.program.functions[function].native.clone().unwrap_or_default();
-        Refusal::Failure(FailureKind::Program(format!("native provider is not implemented: {symbol}")))
+        Refusal::Failure(FailureKind::Program(missing_native(&symbol)))
     })?;
     match native {
         Native::Utf8Encode => {
@@ -292,4 +292,14 @@ fn int_parse(text: &str, radix: i64) -> Option<num_bigint::BigInt> {
     }
     let value = num_bigint::BigInt::parse_bytes(digits.as_bytes(), base)?;
     Some(if negative { -value } else { value })
+}
+
+/// As the other engines: a runtime symbol without a provider is not
+/// implemented; a program's own native symbol is not registered.
+pub(crate) fn missing_native(symbol: &str) -> String {
+    if symbol.starts_with("runtime/") {
+        format!("native provider is not implemented: {symbol}")
+    } else {
+        format!("Native symbol \"{symbol}\" is not registered")
+    }
 }

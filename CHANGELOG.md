@@ -136,9 +136,12 @@ moved out.
 - IR and JVM: cancelling a task cancels the native request it awaits when no other
   task awaits it, as on the Sparrow core, so a SQLite cursor opened by a cancelled
   query is released instead of keeping the connection busy (`SQLITE_READER_ACTIVE`).
-- Sparrow core: failure reports name their category like the other engines
-  (`RuntimeError: …`, `Panic: …`), and a missing native provider reports
-  "native provider is not implemented: <symbol>".
+- Sparrow core: an external request (SQLite, network, files) always suspends its
+  caller once, even when its reply is already there; a fast worker (seen on Linux
+  x86_64) let a spawned fetch finish before `cancel` right after `spawn`.
+- Sparrow core: failure reports read like the other engines' (`RuntimeError: …`,
+  `Panic: …`, the error type without its module, "Modulo by zero", missing natives,
+  a program without an entry function).
 - Sparrow core: capturing a command's output (`os/command_capture`) aborted the VM
   (`spawn_local` outside a `LocalSet`); provider tasks now run in the core's reactor.
 - Calling an action through a cap (`customer.wtf()` on a `Customer::Public` value)

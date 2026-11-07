@@ -561,8 +561,10 @@ impl Runtime {
                 }
                 FailureKind::Thrown(object) => {
                     let header = self.heap.header_of(*object);
+                    // The type's own name, as the other engines print it.
                     let name = if heap::kind(header) == heap::OBJECT {
-                        self.loaded.program.objects[heap::payload(header) as usize].name.clone()
+                        let full = &self.loaded.program.objects[heap::payload(header) as usize].name;
+                        full.rsplit("::").next().unwrap_or(full).to_owned()
                     } else {
                         "value".into()
                     };
