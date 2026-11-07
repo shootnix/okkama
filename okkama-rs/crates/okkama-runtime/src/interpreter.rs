@@ -402,7 +402,13 @@ pub(crate) fn execute_function(
                                 slots[result.0] = Some(value);
                             }
                         }
-                        Err(raised) => propagate(engine, &mut frames, raised, inst.span, false)?,
+                        Err(raised) => {
+                            // A sort stopped by the budget (#238): no handler sees it.
+                            if let Some(exhausted) = okkama_runtime_core::budget::take_pending() {
+                                return Err(RuntimeError::Exhausted(exhausted));
+                            }
+                            propagate(engine, &mut frames, raised, inst.span, false)?
+                        }
                     }
                     continue;
                 }

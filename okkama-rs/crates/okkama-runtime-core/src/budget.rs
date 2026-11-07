@@ -58,6 +58,9 @@ struct State {
     memory: Option<(u64, usize, MemoryProbe)>,
     interrupt: Option<Arc<AtomicBool>>,
     until_poll: u64,
+    /// Exhaustion found inside a long intrinsic (#238), for the interpreter
+    /// to report when the intrinsic returns.
+    pending: Option<Exhausted>,
 }
 
 thread_local! {
@@ -82,6 +85,7 @@ pub fn begin(limits: &Limits) -> Result<Guard, String> {
         memory,
         interrupt: limits.interrupt.clone(),
         until_poll: POLL,
+        pending: None,
     };
     let active = state.steps.is_some() || state.output.is_some() || state.memory.is_some() || state.interrupt.is_some();
     BUDGET.with(|budget| *budget.borrow_mut() = active.then_some(state));
@@ -128,6 +132,43 @@ pub fn step() -> Result<(), Exhausted> {
         }
         Ok(())
     })
+}
+
+/// The interrupt flag and the memory budget, checked now by a long intrinsic
+/// (a sort, #238). Exhaustion is also kept for [`take_pending`]: the
+/// intrinsic returns a failure, and the interpreter reports the exhaustion
+/// instead of letting a handler see that failure.
+pub fn check_now() -> Result<(), Exhausted> {
+    if !ACTIVE.with(std::cell::Cell::get) {
+        return Ok(());
+    }
+    BUDGET.with(|budget| {
+        let mut budget = budget.borrow_mut();
+        let Some(state) = budget.as_mut() else { return Ok(()) };
+        let exhausted = if state.interrupt.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            Some(Exhausted::Interrupted)
+        } else {
+            state
+                .memory
+                .filter(|(limit, base, probe)| probe().saturating_sub(*base) as u64 > *limit)
+                .map(|_| Exhausted::Memory)
+        };
+        match exhausted {
+            Some(what) => {
+                state.pending = Some(what);
+                Err(what)
+            }
+            None => Ok(()),
+        }
+    })
+}
+
+/// Exhaustion a long intrinsic found (see [`check_now`]), once.
+pub fn take_pending() -> Option<Exhausted> {
+    if !ACTIVE.with(std::cell::Cell::get) {
+        return None;
+    }
+    BUDGET.with(|budget| budget.borrow_mut().as_mut().and_then(|state| state.pending.take()))
 }
 
 /// `bytes` about to be written to stdout or stderr.

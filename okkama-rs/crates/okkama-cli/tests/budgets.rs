@@ -145,3 +145,19 @@ fn deep_recursion_is_bounded_and_its_trace_is_cheap() {
         assert!(started.elapsed().as_secs() < 20, "{engine}: {:?}", started.elapsed());
     }
 }
+
+const SORT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimport \"compare\" take Comparing;\nmain() is int {\n    let words = (0..3000000).map() -> i { \"w\" + ((i * 7919 + 13) % 1000003).string(); };\n    let sorted = try { words.ordering(); } catch e is Error { Stdout().writeln(\"caught\"); words; };\n    Stdout().writeln(sorted[0]);\n    0;\n}\n";
+
+/// A long sort of scalars or text stops for the timeout (#238): the
+/// comparisons look at the interrupt flag, and the program's `catch` does
+/// not see the stop.
+#[test]
+fn a_long_sort_stops_for_the_timeout() {
+    for engine in ["ir", "sparrow"] {
+        let started = std::time::Instant::now();
+        let output = run(engine, SORT, &["--timeout", "1"]);
+        assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution interrupted", "{engine}");
+        assert!(output.stdout.is_empty(), "{engine}: {}", String::from_utf8_lossy(&output.stdout));
+        assert!(started.elapsed().as_secs() < 10, "{engine}: {:?}", started.elapsed());
+    }
+}
