@@ -3050,6 +3050,11 @@ the IR interpreter (`okkama run --engine ir`, no build) or the JAR
 project whose dependencies are not installed. Blade uses the `okkama` next to
 it, else the one on `PATH` (`BLADE_OKKAMA` names another).
 
+An import cycle is a compile-time error that names the chain
+(`Import cycle detected: lib/a -> b -> a`). A program's import graph is bounded:
+at most 1024 nested imports from the root, 16384 modules and 256 MiB of module
+sources; past a bound, the import that crosses it is a compile-time error.
+
 ### 26.3 What an import exposes
 
 - A **plain import** exposes declarations owned directly by the module only

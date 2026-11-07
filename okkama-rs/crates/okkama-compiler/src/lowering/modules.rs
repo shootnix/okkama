@@ -7,7 +7,7 @@
 //! Perl. Связанная программа становится одним модулем OIR: объявления
 //! импортированных модулей квалифицированы (`io.stdout::Stdout`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::{LinkError, LoweringError};
 use crate::analysis::SourceModule;
@@ -73,6 +73,8 @@ pub(super) fn load_graph(
         imports: Vec::new(),
         cache: HashMap::new(),
         active: Vec::new(),
+        on_path: HashSet::new(),
+        bytes: 0,
     };
     let mut root_imports = Vec::new();
     for (program, name, source) in roots {
@@ -106,6 +108,13 @@ pub(super) fn load_graph(
     })
 }
 
+/// Наибольшая глубина вложенных импортов (корень → … → модуль).
+pub const IMPORT_DEPTH: usize = 1024;
+/// Наибольшее число загруженных модулей программы.
+pub const MODULE_COUNT: usize = 16384;
+/// Наибольший суммарный размер исходников загруженных модулей.
+pub const MODULE_BYTES: usize = 256 << 20;
+
 struct Walk<'l> {
     loader: &'l mut dyn ModuleLoader,
     loaded: Vec<LoadedModule>,
@@ -113,6 +122,47 @@ struct Walk<'l> {
     cache: HashMap<String, usize>,
     /// Пути импортов на текущем пути обхода (для текста о цикле) и id.
     active: Vec<(String, String)>,
+    /// id модулей `active`: проверка цикла без линейного поиска.
+    on_path: HashSet<String>,
+    bytes: usize,
+}
+
+/// Программа, импорты которой обходятся: файл корня или загруженный модуль.
+enum Owner<'a> {
+    Root(&'a ast::Program, &'a str, Option<&'a SourceFile>),
+    Loaded(LoadedModule),
+}
+
+/// Кадр обхода: следующий импорт программы и уже связанные.
+struct Frame<'a> {
+    owner: Owner<'a>,
+    next: usize,
+    result: Vec<(usize, usize)>,
+    /// Номер `import` в программе родителя, который привёл сюда.
+    parent_import: usize,
+}
+
+impl Frame<'_> {
+    fn program(&self) -> &ast::Program {
+        match &self.owner {
+            Owner::Root(program, ..) => program,
+            Owner::Loaded(module) => &module.program,
+        }
+    }
+
+    fn name(&self) -> &str {
+        match &self.owner {
+            Owner::Root(_, name, _) => name,
+            Owner::Loaded(module) => &module.id,
+        }
+    }
+
+    fn source(&self) -> Option<SourceFile> {
+        match &self.owner {
+            Owner::Root(_, _, source) => source.cloned(),
+            Owner::Loaded(module) => Some(module.source.clone()),
+        }
+    }
 }
 
 impl Walk<'_> {
@@ -139,28 +189,55 @@ impl Walk<'_> {
     }
 
     /// Импорты программы `program` из файла `name`; `source` — её исходник
-    /// (у корня `None`: ошибки корня рендерит вызывающий).
+    /// (у корня `None`: ошибки корня рендерит вызывающий). Обход в глубину
+    /// с явным стеком: глубина графа не расходует стек потока.
     fn imports_of(
         &mut self,
         program: &ast::Program,
         name: &str,
         source: Option<&SourceFile>,
     ) -> Result<Vec<(usize, usize)>, LinkError> {
-        let mut result = Vec::new();
-        for (index, import) in program.imports.iter().enumerate() {
-            let path = import.path.literal.value.clone();
+        let mut stack = vec![Frame {
+            owner: Owner::Root(program, name, source),
+            next: 0,
+            result: Vec::new(),
+            parent_import: 0,
+        }];
+        loop {
+            let frame = stack.last_mut().expect("root frame");
+            if frame.next == frame.program().imports.len() {
+                let done = stack.pop().expect("frame");
+                let Owner::Loaded(module) = done.owner else {
+                    return Ok(done.result);
+                };
+                self.active.pop();
+                self.on_path.remove(&module.id);
+                let position = self.loaded.len();
+                self.cache.insert(module.id.clone(), position);
+                self.loaded.push(module);
+                self.imports.push(done.result);
+                stack.last_mut().expect("parent frame").result.push((position, done.parent_import));
+                continue;
+            }
+            let index = frame.next;
+            frame.next += 1;
+            let frame = stack.last().expect("frame");
+            let import = &frame.program().imports[index];
+            let (path, path_span, span) = (import.path.literal.value.clone(), import.path.span, import.span);
+            let name = frame.name().to_string();
+            let fail = |stack: &[Frame<'_>], span, message: String| LinkError::Lowering {
+                source: stack.last().expect("frame").source(),
+                error: LoweringError::invalid(span, message),
+            };
             let std_module = path.strip_prefix(super::std_paths::STD_IMPORT);
             if std_module.is_none() {
-                if let Err(message) = self.loader.check_import(&path, name) {
-                    return Err(LinkError::Lowering {
-                        source: source.cloned(),
-                        error: LoweringError::invalid(import.path.span, message),
-                    });
+                if let Err(message) = self.loader.check_import(&path, &name) {
+                    return Err(fail(&stack, path_span, message));
                 }
             }
             let found = match std_module {
-                Some(module) => self.loader.load_std(module, name),
-                None => self.loader.load(&path, name),
+                Some(module) => self.loader.load_std(module, &name),
+                None => self.loader.load(&path, &name),
             };
             let Some(mut module) = found.map_err(LinkError::Load)? else {
                 let message = match std_module {
@@ -170,10 +247,7 @@ impl Walk<'_> {
                     ),
                     None => format!("Import \"{path}\" not found"),
                 };
-                return Err(LinkError::Lowering {
-                    source: source.cloned(),
-                    error: LoweringError::invalid(import.span, message),
-                });
+                return Err(fail(&stack, span, message));
             };
             super::std_paths::desugar(&mut module.program).map_err(|error| {
                 LinkError::Lowering {
@@ -181,35 +255,47 @@ impl Walk<'_> {
                     error,
                 }
             })?;
-            if let Some(position) = self.active.iter().position(|(_, id)| *id == module.id) {
+            if self.on_path.contains(&module.id) {
+                let position = self.active.iter().position(|(_, id)| *id == module.id).expect("on path");
                 let mut chain: Vec<String> = self.active[position..]
                     .iter()
                     .map(|(path, _)| path.clone())
                     .collect();
                 chain.push(path);
-                return Err(LinkError::Lowering {
-                    source: source.cloned(),
-                    error: LoweringError::invalid(
-                        import.span,
-                        format!("Import cycle detected: {}", chain.join(" -> ")),
-                    ),
-                });
+                return Err(fail(&stack, span, format!("Import cycle detected: {}", chain.join(" -> "))));
             }
             if let Some(done) = self.cache.get(&module.id) {
-                result.push((*done, index));
+                stack.last_mut().expect("frame").result.push((*done, index));
                 continue;
+            }
+            if self.active.len() >= IMPORT_DEPTH {
+                return Err(fail(
+                    &stack,
+                    span,
+                    format!("Import \"{path}\" nests deeper than {IMPORT_DEPTH} modules"),
+                ));
+            }
+            self.bytes += module.source.len() as usize;
+            if self.loaded.len() + self.active.len() >= MODULE_COUNT || self.bytes > MODULE_BYTES {
+                return Err(fail(
+                    &stack,
+                    span,
+                    format!(
+                        "Import \"{path}\" exceeds the program limit of {MODULE_COUNT} modules or {} MiB of module sources",
+                        MODULE_BYTES >> 20
+                    ),
+                ));
             }
             self.unversioned(&module.program, &module.id, Some(&module.source))?;
             self.active.push((path, module.id.clone()));
-            let nested = self.imports_of(&module.program, &module.id, Some(&module.source))?;
-            self.active.pop();
-            let position = self.loaded.len();
-            self.cache.insert(module.id.clone(), position);
-            self.loaded.push(module);
-            self.imports.push(nested);
-            result.push((position, index));
+            self.on_path.insert(module.id.clone());
+            stack.push(Frame {
+                owner: Owner::Loaded(module),
+                next: 0,
+                result: Vec::new(),
+                parent_import: index,
+            });
         }
-        Ok(result)
     }
 }
 
