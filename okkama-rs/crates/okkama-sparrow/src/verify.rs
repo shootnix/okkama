@@ -262,7 +262,7 @@ impl Set {
 }
 
 /// Рёбра инструкции: цель, присваивания и регистр значения ребра.
-fn edges(pc: usize, instruction: &Instruction) -> Vec<(u32, &[(Register, Register)], Option<Register>)> {
+pub(crate) fn edges(pc: usize, instruction: &Instruction) -> Vec<(u32, &[(Register, Register)], Option<Register>)> {
     match instruction {
         Instruction::Jump { target } => vec![(target.pc, &target.moves[..], None)],
         Instruction::Branch {

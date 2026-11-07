@@ -128,6 +128,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   operator table now state the rule: same category on both sides, explicit
   conversion otherwise ([#230](https://github.com/shootnix/okkama/issues/230)).
 
+- Sparrow core: compiling a function with k values live across k fallible
+  instructions took about 0.3 KiB × k² before it ran (476 MiB at k = 1000,
+  1.8 GiB at 2000), so a small crafted SPB could exhaust memory at its first
+  call. Every fallible instruction emits several Cranelift blocks and the
+  frontend's stack-map liveness and register allocation keep a set per block.
+  The core now counts registers live at each instruction × blocks it emits
+  while it generates the function (live registers come from a leader-based
+  analysis, `okkama_sparrow::live_counts`, run only for functions large
+  enough to matter) and refuses the function before finalization once the
+  estimate passes 256 MiB, or the run's memory budget when it is lower:
+  "deep: compiling it would take more than 256 MiB ...". Probes from 1000
+  live values up are refused within a 200 MiB cap; the heaviest functions of
+  the repository (CLDR tables, ~722k live-register instructions but few
+  blocks) compile as before. Straight-line instructions now share one
+  Cranelift block; only jump, handler and resume targets start one. Benchmarks
+  on the core: instructions −2.4…+0.6% (most −1%), time within noise
+  ([#73](https://github.com/shootnix/okkama/issues/73)).
+
 - Fuzzing: `tools/fuzz/run.sh` reported a target as a finding when its build
   was killed for memory (an ASan build of cranelift-codegen with one codegen
   unit needs several gigabytes). Targets are now built first, retried with

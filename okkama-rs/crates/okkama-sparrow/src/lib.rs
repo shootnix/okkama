@@ -11,12 +11,14 @@
 
 mod asm;
 mod codec;
+mod liveness;
 mod operand;
 mod typing;
 mod verify;
 
 pub use asm::{AsmError, assemble, disassemble};
 pub use codec::{CodecError, MAX_FILE_BYTES, VERSION, decode, encode};
+pub use liveness::{MAX_LIVENESS_BYTES, live_counts, live_weight};
 pub use okkama_runtime_abi as abi;
 pub use operand::{Access, Operand};
 
