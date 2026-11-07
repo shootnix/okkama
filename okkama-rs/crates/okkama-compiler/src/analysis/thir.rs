@@ -566,6 +566,10 @@ pub enum FunctionalOp {
     Map,
     Filter,
     Reduce,
+    /// `any`, `all`, `find` (#150): stop at the first decisive item.
+    Any,
+    All,
+    Find,
 }
 
 #[derive(Clone, Debug)]
@@ -576,6 +580,9 @@ pub struct Functional {
     /// Аккумулятор (reduce), затем элемент (или ключ и значение словаря).
     pub bindings: Vec<LocalId>,
     pub body: Block,
+    /// `any`/`all`/`find`: the value at the first decisive item (it may read
+    /// the item's binding); `initial` is then the value when none decides.
+    pub found: Option<Box<Expr>>,
 }
 
 /// Does `body` read the receiver of the action it is written in — `self`, a
@@ -677,6 +684,7 @@ fn expr_uses_receiver(expr: &Expr) -> bool {
         ExprKind::Functional(found) => {
             source_uses_receiver(&found.source)
                 || found.initial.as_ref().is_some_and(expr_uses_receiver)
+                || found.found.as_deref().is_some_and(expr_uses_receiver)
                 || block_uses_receiver(&found.body)
         }
         ExprKind::ArrayCast { parts, .. } => parts.iter().any(|part| match part {
@@ -789,7 +797,10 @@ pub fn expr_mentions(expr: &Expr, local: LocalId) -> usize {
         ExprKind::Map(entries) => entries.iter().map(|(key, value)| one(key) + one(value)).sum(),
         ExprKind::Index { object, index, fallback } => one(object) + one(index) + fallback.as_deref().map_or(0, one),
         ExprKind::Functional(found) => {
-            source_mentions(&found.source, local) + found.initial.as_ref().map_or(0, one) + block(&found.body)
+            source_mentions(&found.source, local)
+                + found.initial.as_ref().map_or(0, one)
+                + found.found.as_deref().map_or(0, one)
+                + block(&found.body)
         }
         ExprKind::ArrayCast { parts, .. } => parts
             .iter()
@@ -976,6 +987,9 @@ fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
             each_source_expr(&found.source, visit);
             if let Some(initial) = &found.initial {
                 visit(initial);
+            }
+            if let Some(value) = &found.found {
+                visit(value);
             }
             each_block_expr(&found.body, visit);
         }

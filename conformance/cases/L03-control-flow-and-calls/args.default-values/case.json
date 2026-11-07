@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.args.default-values",
+  "title": "trailing parameters take default values, positionally and by name",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ARGUMENTS",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "hello, Ann! [system]\nhi, Bob? [system]\nhello, Cy! hello, Cy! [test]\nhello, Dee. hello, Dee. hello, Dee. [system]\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #149",
+    "expected_basis": "a left-out trailing parameter takes its declared default, evaluated at the call in the declaration's scope; named arguments may leave out any defaulted parameter."
+  },
+  "status": "mandatory"
+}

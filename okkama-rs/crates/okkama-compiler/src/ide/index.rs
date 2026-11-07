@@ -729,6 +729,9 @@ impl<'r, 'a> Builder<'r, 'a> {
                 if let Some(initial) = &functional.initial {
                     self.expr(initial, body, object);
                 }
+                if let Some(found) = &functional.found {
+                    self.expr(found, body, object);
+                }
                 self.block(&functional.body, body, object);
             }
             ExprKind::ArrayCast { parts, .. } => {

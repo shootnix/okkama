@@ -905,8 +905,8 @@ Complete list (a test checks it against the compiler's table, `analysis/check/bu
 | `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (elements that do `Comparing<T>`; needs `import "compare" take Comparing`), `join(separator)` on `@string` |
 | `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
 | `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)` |
-| `int`, `float` | `abs()`, `sign()`, `pow(exponent)` (a `float`), `sqrt()` (a `float`) |
-| `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (decimal strings) |
+| `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (a `float`) — `int.pow(int)` is the exact `int` (a negative exponent is an error), `float.pow(float)` a `float` |
+| `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (decimal strings), `pow(exponent)` — the exact `rat`; a negative exponent inverts it |
 | numbers, `char`, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` with the same category |
 | `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
 | scalars | conversions `int()`, `float()`, `rat()`, `byte()`, `string()` (Chapter 5) |
@@ -989,6 +989,13 @@ cash.add_bonus(bonus: 10);
   errors.
 - Receiver and arguments evaluate exactly once, left to right, in the
   *caller's* scope.
+- **Default values.** Trailing parameters of an object's action or
+  constructor may declare one: `greet(name is string, mark is string = "!")`.
+  A call may leave them out — positionally from the end, or by name in any
+  combination — and each left-out parameter takes its value, evaluated at
+  that call in the *declaring* module: it sees module names, not the caller's
+  locals or `self`. A parameter after a defaulted one needs a default too;
+  variadic actions, role signatures, natives and enum payloads have none.
 - Anonymous actions are ordinary expression values and use the same call
   syntax; their grammar, lexical capture and explicit signatures are covered
   in Section 18.5.
@@ -1298,6 +1305,17 @@ Semantics:
   checked against it. `@any` output happens only with an explicit `@any`
   target.
 - **`filter`** predicates must return exact `bool`.
+- **`any`, `all`, `find` stop early.** With the same block syntax and
+  bindings, `any` is `true` at the first item whose block is `true`, `all` is
+  `false` at the first whose block is `false`, and `find` gives
+  `Maybe.some(item)` for the first match (arrays, ranges and `Iterable`
+  objects; not maps). Later items are not visited, so a block with effects
+  stops with them; an empty source gives `false`, `true` and `Maybe.none`:
+
+  ```okkama
+  let late = orders.any() -> order { order.overdue(); };
+  let first = users.find() -> user { user.admin(); };  // Maybe<User>
+  ```
 - **`reduce`** always takes one initial value. The accumulator keeps one
   exact type, supplied by a direct declared target or the initial value.
   Reducing an empty source returns the checked initial value without running

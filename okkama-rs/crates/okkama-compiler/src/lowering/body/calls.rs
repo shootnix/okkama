@@ -9,7 +9,8 @@ use super::{BodyLowerer, Out, Typed, unsupported};
 use crate::analysis::thir::{self, Builtin, Callee, CastTarget, CompareOp, ExprKind};
 use crate::analysis::ty::Ty;
 use crate::ir::{
-    self, BitOp, Constant, InstKind, IntBinaryOp, IntValue, StrOp, Target, TermKind, TrapCode, Type,
+    self, BitOp, CompareOp as IrCompare, Constant, InstKind, IntBinaryOp, IntUnaryOp, IntValue, RatOp, StrOp, Target,
+    TermKind, TrapCode, Type, ValueId,
 };
 use crate::lowering::{LoweringError, Result};
 use crate::source::Span;
@@ -546,23 +547,16 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     Type::Float,
                 )
             }
-            Builtin::Pow => {
-                let (base, exponent) = match target.ty {
-                    Type::Int => (
-                        self.emit(InstKind::Cvt(receiver_id), Type::Float, span)
-                            .value,
-                        self.emit(InstKind::Cvt(ids[0]), Type::Float, span).value,
-                    ),
-                    _ => (receiver_id, ids[0]),
-                };
-                (
-                    InstKind::Float {
-                        op: ir::FloatOp::Pow,
-                        args: vec![base, exponent],
-                    },
-                    Type::Float,
-                )
+            Builtin::Pow if matches!(target.ty, Type::Int | Type::Rat) => {
+                return Ok(Out::Value(self.exact_power(receiver_id, target.ty.clone(), ids[0], span)));
             }
+            Builtin::Pow => (
+                InstKind::Float {
+                    op: ir::FloatOp::Pow,
+                    args: vec![receiver_id, ids[0]],
+                },
+                Type::Float,
+            ),
             Builtin::Bits { name, byte } => {
                 let op = BitOp::from_action(name).ok_or_else(|| {
                     LoweringError::invalid(
@@ -739,5 +733,126 @@ pub(super) fn ir_compare(op: CompareOp) -> ir::CompareOp {
         CompareOp::Le => ir::CompareOp::Le,
         CompareOp::Gt => ir::CompareOp::Gt,
         CompareOp::Ge => ir::CompareOp::Ge,
+    }
+}
+
+impl BodyLowerer<'_, '_, '_> {
+    /// `base.pow(exponent)` exactly (#228), by squaring: an `int` base gives
+    /// an `int` (a negative exponent is an error), a `rat` base a `rat` (a
+    /// negative exponent inverts the result). Products are the ordinary exact
+    /// multiplications, measured against the memory budget like any other.
+    fn exact_power(&mut self, base: ValueId, ty: Type, exponent: ValueId, span: Span) -> Typed {
+        let int = |value: i64| Constant::Int(IntValue::from_i64(value));
+        let zero = self.constant(int(0), span).value;
+        let one_int = self.constant(int(1), span).value;
+        let negative = self.emit(InstKind::IntCompare { op: IrCompare::Lt, left: exponent, right: zero }, Type::Bool, span).value;
+        let rat = ty == Type::Rat;
+        // The exponent to square with: |exponent| for a rat, exponent after
+        // the sign check for an int.
+        let (start, start_params) = self.block_with(&[], &[Type::Int]);
+        let flip = self.b.new_block();
+        let keep = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond { condition: negative, then_target: Target::new(flip), else_target: Target::new(keep) },
+            span,
+        );
+        self.b.switch_to(flip);
+        self.sync_unwind();
+        if rat {
+            let positive = self.emit(InstKind::IntUnary { op: IntUnaryOp::Neg, operand: exponent }, Type::Int, span).value;
+            self.b.terminate(TermKind::Br(Target { block: start, args: vec![positive] }), span);
+        } else {
+            self.b.terminate(
+                TermKind::Trap {
+                    code: TrapCode::Range,
+                    message: "int.pow needs a non-negative exponent; a rat base takes a negative one".to_string(),
+                },
+                span,
+            );
+        }
+        self.b.switch_to(keep);
+        self.sync_unwind();
+        self.b.terminate(TermKind::Br(Target { block: start, args: vec![exponent] }), span);
+        self.b.switch_to(start);
+        self.sync_unwind();
+        let count = start_params[0];
+        let one = if rat {
+            self.emit(InstKind::Rat { op: RatOp::New, args: vec![one_int, one_int] }, Type::Rat, span).value
+        } else {
+            one_int
+        };
+        let multiply = |left: ValueId, right: ValueId| {
+            if rat {
+                InstKind::Rat { op: RatOp::Mul, args: vec![left, right] }
+            } else {
+                InstKind::IntBinary { op: IntBinaryOp::Mul, left, right }
+            }
+        };
+        // head(result, square, count): while count > 0, multiply in the
+        // square for each set bit of count.
+        let (head, head_params) = self.block_with(&[], &[ty.clone(), ty.clone(), Type::Int]);
+        let (done, done_params) = self.block_with(&[], std::slice::from_ref(&ty));
+        let (join, join_params) = self.block_with(&[], std::slice::from_ref(&ty));
+        self.b.terminate(TermKind::Br(Target { block: head, args: vec![one, base, count] }), span);
+        self.b.switch_to(head);
+        self.sync_unwind();
+        let (result, square, left) = (head_params[0], head_params[1], head_params[2]);
+        let more = self.emit(InstKind::IntCompare { op: IrCompare::Gt, left, right: zero }, Type::Bool, span).value;
+        let step = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond {
+                condition: more,
+                then_target: Target::new(step),
+                else_target: Target { block: done, args: vec![result] },
+            },
+            span,
+        );
+        self.b.switch_to(step);
+        self.sync_unwind();
+        let bit = self.emit(InstKind::IntBinary { op: IntBinaryOp::And, left, right: one_int }, Type::Int, span).value;
+        let odd = self.emit(InstKind::IntCompare { op: IrCompare::Ne, left: bit, right: zero }, Type::Bool, span).value;
+        let times = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond {
+                condition: odd,
+                then_target: Target::new(times),
+                else_target: Target { block: join, args: vec![result] },
+            },
+            span,
+        );
+        self.b.switch_to(times);
+        self.sync_unwind();
+        let multiplied = self.emit(multiply(result, square), ty.clone(), span).value;
+        self.b.terminate(TermKind::Br(Target { block: join, args: vec![multiplied] }), span);
+        self.b.switch_to(join);
+        self.sync_unwind();
+        let squared = self.emit(multiply(square, square), ty.clone(), span).value;
+        let halved = self.emit(InstKind::IntBinary { op: IntBinaryOp::Shr, left, right: one_int }, Type::Int, span).value;
+        self.b.terminate(TermKind::Br(Target { block: head, args: vec![join_params[0], squared, halved] }), span);
+        self.b.switch_to(done);
+        self.sync_unwind();
+        let power = done_params[0];
+        if !rat {
+            return Typed { value: power, ty };
+        }
+        // A negative exponent: the reciprocal (0 to a negative power fails
+        // as a division by zero).
+        let (out, out_params) = self.block_with(&[], &[Type::Rat]);
+        let invert = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond {
+                condition: negative,
+                then_target: Target::new(invert),
+                else_target: Target { block: out, args: vec![power] },
+            },
+            span,
+        );
+        self.b.switch_to(invert);
+        self.sync_unwind();
+        let inverted = self.emit(InstKind::Rat { op: RatOp::Div, args: vec![one, power] }, Type::Rat, span).value;
+        self.b.terminate(TermKind::Br(Target { block: out, args: vec![inverted] }), span);
+        self.b.switch_to(out);
+        self.sync_unwind();
+        Typed { value: out_params[0], ty: Type::Rat }
     }
 }

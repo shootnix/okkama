@@ -310,6 +310,9 @@ pub struct Param {
     /// Written `a, b is T` (#232): this parameter's type is written once,
     /// after the next one's name — kept so `okkama fmt` keeps the grouping.
     pub shares_type: bool,
+    /// `name is T = value` (#149): the value when a call leaves this trailing
+    /// parameter out, evaluated at each such call in the declaration's scope.
+    pub default: Option<Expr>,
 }
 
 /// `role Name<T> { signatures, fake, tests }`

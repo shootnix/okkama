@@ -8,6 +8,34 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: default values for trailing parameters of object actions and
+  constructors (#149): `greet(name is string, mark is string = "!", times is
+  int = 1)`. A call may leave them out positionally from the end or by name;
+  each left-out value is the declared expression, evaluated at that call in
+  the declaring module (the caller's locals and `self` are not visible), and
+  its errors are reported once, at the declaration. A parameter after a
+  defaulted one needs a default; variadic actions, role signatures, natives
+  and enum payloads cannot have any. Overload selection treats a left-out
+  parameter as neutral. OCS `L03.args.default-values`; Book §11.4 (EN/RU);
+  `okkama fmt` prints the defaults ([#149](https://github.com/shootnix/okkama/issues/149)).
+
+- Language: an anonymous action's declared result (`(job is Job) is int {
+  … }`) fixes its type and supplies generic arguments, so
+  `SortedBy(origin: jobs, key: (job is Job) is int { job.priority(); })` needs
+  no `SortedBy<Job,int>` at the binding (#214). The checker already did this;
+  a test now pins it, and `collections/ordering`'s documentation no longer
+  asks for the annotation ([#214](https://github.com/shootnix/okkama/issues/214)).
+
+- Language: `any`, `all` and `find` with early exit (#150), in the block
+  syntax of `map`/`filter`/`reduce`: `orders.any() -> order { order.overdue();
+  }`, `items.all() -> x { … }`, `users.find() -> user { … }` (a `Maybe<T>`).
+  The loop leaves at the first decisive item — later items are not visited —
+  and an empty source gives `false`, `true` and `Maybe.none`; `any`/`all`
+  work on maps with `key, value`. Lowering reuses the value-mode loop of `for`
+  with a `last`-like exit, so every engine runs it unchanged. OCS
+  `L05.functional.early-exit`; Book (EN/RU); LSP completion
+  ([#150](https://github.com/shootnix/okkama/issues/150)).
+
 - Language: `test.throws(Type) { … }` (#216) asserts that a block throws a
   `Type` and yields the caught error: `let refused = test.throws(Refused) {
   Gate().check(0); };`. It is parsed as the `try` it means — the block, a
@@ -287,6 +315,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   ([#68](https://github.com/shootnix/okkama/issues/68)).
 
 ### Changed
+
+- Language: `int.pow(int)` is exact (#228): `(2).pow(100)` is
+  `1267650600228229401496703205376`, not `1.2676506002282294e+30`. A negative
+  exponent of an `int` is an error ("a rat base takes a negative one"); new
+  `rat.pow(int)` is the exact rational, and a negative exponent inverts it
+  (`(2.rat()).pow(-3)` is `1/8`); `float.pow(float)` is unchanged. The static
+  type cannot depend on the exponent's sign, so the issue's "a negative
+  exponent gives a rat" became `rat.pow`. Lowering raises by squaring with
+  the exact `int`/`rat` products every engine already has. OCS
+  `L02.int.pow-exact`; Book chapter 10 (EN/RU)
+  ([#228](https://github.com/shootnix/okkama/issues/228)).
 
 - `db/postgres`: a query is one round trip. Bind, Execute without a row limit
   and Sync go out together and the server streams the whole answer; the row

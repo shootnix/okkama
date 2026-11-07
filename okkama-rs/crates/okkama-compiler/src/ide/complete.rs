@@ -921,6 +921,9 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
             true,
             "fold from initial",
         ));
+        out.push(functional("any", "${2:item}", false, "true at the first item the block accepts"));
+        out.push(functional("all", "${2:item}", false, "false at the first item the block rejects"));
+        out.push(functional("find", "${2:item}", false, "Maybe of the first item the block accepts"));
     } else if key.starts_with('%') || key == "[:]" {
         out.push(method("size", &[], "int", ""));
         out.push(method("has", &["key is K"], "bool", ""));
@@ -934,6 +937,8 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
             true,
             "",
         ));
+        out.push(functional("any", "${2:key}, ${3:value}", false, ""));
+        out.push(functional("all", "${2:key}, ${3:value}", false, ""));
     } else if key == "string" {
         out.push(method("length", &[], "int", "characters"));
         out.push(method("empty", &[], "bool", ""));
@@ -1003,6 +1008,9 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         out.push(functional("map", "${2:item}", false, ""));
         out.push(functional("filter", "${2:item}", false, ""));
         out.push(functional("reduce", "${2:sum}, ${3:item}", true, ""));
+        out.push(functional("any", "${2:item}", false, ""));
+        out.push(functional("all", "${2:item}", false, ""));
+        out.push(functional("find", "${2:item}", false, ""));
     }
     out
 }

@@ -95,6 +95,9 @@ pub(super) struct Checker<'r, 'a> {
     pub shorthand_fields: Vec<usize>,
     /// Тело поля внешнего cap: поля владельца читаются как `Owner::field`.
     pub cap_external: bool,
+    /// Scopes below this index are hidden: a parameter's default value is
+    /// checked at the call without the caller's locals (#149).
+    pub barrier: Option<usize>,
 }
 
 /// Проверить все тела программы: зависимости раньше корня, в порядке исходника.
@@ -132,6 +135,37 @@ pub(super) fn check_bodies(reg: &mut Registry<'_>) -> Vec<Body> {
     bodies
 }
 
+/// Default values of parameters (#149), checked once where they are
+/// declared: each call that leaves a parameter out checks its value again at
+/// the call (so it is evaluated there) without repeating these errors.
+fn check_param_defaults(reg: &mut Registry<'_>, object: ObjectId) {
+    let mut defaults = Vec::new();
+    for ctor in &reg.objects[object.0].ctors {
+        if let CtorShape::Full { params, defaults: values, .. } = &ctor.shape {
+            for ((_, ty), value) in params.iter().zip(values) {
+                if let Some(value) = value {
+                    defaults.push((*value, ty.clone()));
+                }
+            }
+        }
+    }
+    for method in &reg.objects[object.0].methods {
+        if let Some(decl) = method.decl {
+            for ((_, ty), param) in method.params.iter().zip(&decl.params) {
+                if let Some(value) = &param.default {
+                    defaults.push((value, ty.clone()));
+                }
+            }
+        }
+    }
+    for (value, ty) in defaults {
+        let mut checker = Checker::new(reg, Kind::Default, Some(object), Some(ty.clone()));
+        checker.self_ty = None;
+        let checked = checker.value(value, Some(&ty));
+        let _ = checker.coerce(checked, &ty, value.span, "Default value");
+    }
+}
+
 fn check_object(reg: &mut Registry<'_>, object: ObjectId, bodies: &mut Vec<Body>) {
     // Defaults: в области объявления, без локальных вызывающего (§10).
     for field in 0..reg.objects[object.0].fields.len() {
@@ -160,6 +194,7 @@ fn check_object(reg: &mut Registry<'_>, object: ObjectId, bodies: &mut Vec<Body>
         let body = check_ctor(reg, object, ctor);
         bodies.push(body);
     }
+    check_param_defaults(reg, object);
     for method in 0..reg.objects[object.0].methods.len() {
         let info = &reg.objects[object.0].methods[method];
         let Some(decl) = info.decl else {
@@ -237,6 +272,7 @@ fn check_ctor(reg: &mut Registry<'_>, object: ObjectId, ctor: usize) -> Body {
             names,
             variadic,
             body,
+            ..
         } => {
             let count = params.len();
             for (index, ((_, ty), name)) in params.into_iter().zip(names).enumerate() {
@@ -310,6 +346,7 @@ impl<'r, 'a> Checker<'r, 'a> {
             captures: Vec::new(),
             shorthand_fields: Vec::new(),
             cap_external: false,
+            barrier: None,
         }
     }
 
@@ -486,13 +523,16 @@ impl<'r, 'a> Checker<'r, 'a> {
 
     /// Локальная по имени; во внешнем теле анонимного действия — захват.
     pub fn local(&mut self, name: &str) -> Option<LocalId> {
-        if let Some(local) = self
-            .scopes
+        let visible = self.barrier.unwrap_or(0);
+        if let Some(local) = self.scopes[visible..]
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).copied())
         {
             return Some(local);
+        }
+        if self.barrier.is_some() {
+            return None;
         }
         let (outer_local, ty) = self.outer.as_ref()?.visible.get(name).cloned()?;
         if let Some((_, inner)) = self

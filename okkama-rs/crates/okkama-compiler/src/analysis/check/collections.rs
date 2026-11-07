@@ -2,7 +2,7 @@
 
 use super::stmt::{Flow, strip_grouping};
 use super::{Checker, LoopCtx};
-use crate::analysis::thir::{Expr, ExprKind, Functional, FunctionalOp, LocalId, Source, StmtKind};
+use crate::analysis::thir::{Constant, Expr, ExprKind, Functional, FunctionalOp, LocalId, Source, StmtKind};
 use crate::analysis::ty::Ty;
 use crate::source::Span;
 use crate::syntax::ast;
@@ -428,6 +428,7 @@ impl Checker<'_, '_> {
             checked.items.clone()
         };
         let diverges = checked.diverges;
+        let mut found = None;
         let (op, initial, locals, block, ty) = match operation {
             ast::FunctionalOp::Map => {
                 let target = match expected {
@@ -469,6 +470,55 @@ impl Checker<'_, '_> {
                 };
                 (FunctionalOp::Filter, None, locals, self.block_of(out), ty)
             }
+            ast::FunctionalOp::Any | ast::FunctionalOp::All | ast::FunctionalOp::Find => {
+                // Early exit (#150): the block decides per item; `found` is
+                // the value at the first decisive item, `initial` the value
+                // when none decides.
+                let (locals, out) =
+                    self.functional_body(bindings, &item_types, body, Some(&Ty::Bool));
+                let label = match operation {
+                    ast::FunctionalOp::Any => "Any predicate",
+                    ast::FunctionalOp::All => "All predicate",
+                    _ => "Find predicate",
+                };
+                self.expect(&out, &Ty::Bool, body.span, label);
+                let boolean = |value: bool| Self::typed(ExprKind::Constant(Constant::Bool(value)), Ty::Bool, span);
+                match operation {
+                    ast::FunctionalOp::Any => {
+                        found = Some(Box::new(boolean(true)));
+                        (FunctionalOp::Any, Some(boolean(false)), locals, self.block_of(out), Ty::Bool)
+                    }
+                    ast::FunctionalOp::All => {
+                        found = Some(Box::new(boolean(false)));
+                        (FunctionalOp::All, Some(boolean(true)), locals, self.block_of(out), Ty::Bool)
+                    }
+                    _ => {
+                        if is_map {
+                            self.error(span, "`find` works on arrays, ranges and Iterating values; on a map use filter");
+                            return Self::poisoned(span);
+                        }
+                        let maybe = crate::analysis::ty::EnumId(0);
+                        let element = match (expected, checked.untagged) {
+                            (Some(Ty::Variant(id, args)), _) if *id == maybe && args.len() == 1 => args[0].clone(),
+                            (_, false) => item_types[0].clone(),
+                            (_, true) => {
+                                self.error(span, "Cannot infer find result type from empty source");
+                                return Self::poisoned(span);
+                            }
+                        };
+                        let ty = Ty::Variant(maybe, vec![element.clone()]);
+                        let item = Self::typed(ExprKind::Local(locals[0]), element, span);
+                        // Maybe's cases: some(value), none.
+                        found = Some(Box::new(Self::typed(
+                            ExprKind::VariantNew { case: 0, values: vec![item] },
+                            ty.clone(),
+                            span,
+                        )));
+                        let none = Self::typed(ExprKind::VariantNew { case: 1, values: Vec::new() }, ty.clone(), span);
+                        (FunctionalOp::Find, Some(none), locals, self.block_of(out), ty)
+                    }
+                }
+            }
             ast::FunctionalOp::Reduce => {
                 let initial = self.value(&args[0].value, expected);
                 let accumulator = match expected {
@@ -506,6 +556,7 @@ impl Checker<'_, '_> {
                 initial,
                 bindings: locals,
                 body: block,
+                found,
             })),
             ty,
             span,

@@ -22,14 +22,13 @@ import "size" take Sizing;
 // Ranked, and routes the complete decorated array through the same host bulk
 // sort. Equal keys retain their input order:
 //
-//     let by_priority is SortedBy<Job,int> = SortedBy(
+//     let by_priority = SortedBy(
 //         origin: jobs,
 //         key: (job is Job) is int { job.priority(); },
 //     );
 //
-// The explicit result type supplies K because anonymous actions do not yet
-// declare return types. A named bound action with an exact (T) is K type can
-// infer K without this contextual annotation.
+// The anonymous action's declared result (`is int`) supplies K (#214); a
+// named bound action with an exact (T) is K type does the same.
 //
 // Ranked is also useful directly when a domain ordering must differ from a
 // value's intrinsic ordering. Its order() delegates only to key.order().

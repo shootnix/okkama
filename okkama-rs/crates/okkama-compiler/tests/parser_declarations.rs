@@ -392,10 +392,6 @@ fn variadic_parameters() {
             "bad(values is ...int = 1) is int { 0; }",
             "Variadic parameter \"values\" cannot have a default value.",
         ),
-        (
-            "bad(value is int = 1) is int { 0; }",
-            "Expect \")\" after action parameters.",
-        ),
     ] {
         assert_rejects(
             &format!("module app v1.0.0; object Format {{ {source} }}"),
