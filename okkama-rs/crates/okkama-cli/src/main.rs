@@ -285,7 +285,9 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
         return core_tests(bytes);
     }
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    core_outcome(sparrow_core::run_limited(bytes, arguments, false, core::worker_command(Path::new(path)), limits))
+    let (outcome, trace) =
+        core_described(sparrow_core::run_described(bytes, arguments, false, core::worker_command(Path::new(path)), limits));
+    with_trace(outcome, sparrow_core::render_trace(&program, &trace))
 }
 
 /// A test-profile program on the core: the report goes to stdout.
@@ -293,6 +295,17 @@ fn core_tests(bytes: Vec<u8>) -> Outcome {
     match sparrow_core::run_tests(bytes, Box::new(io::stdout())) {
         Ok(passed) => Outcome { stdout: String::new(), stderr: String::new(), code: u8::from(!passed) },
         Err(error) => Outcome::failure(format!("okkama: {}\n", error.0), EXIT_DIAGNOSTICS),
+    }
+}
+
+/// `core_outcome` of `run_described`, with the failure's call stack.
+fn core_described(
+    result: Result<Result<i64, (sparrow_core::Error, Option<sparrow_core::Uncaught>)>, sparrow_core::Error>,
+) -> (Outcome, Vec<sparrow_core::Site>) {
+    match result {
+        Ok(Ok(value)) => (core_outcome(Ok(value)), Vec::new()),
+        Ok(Err((error, uncaught))) => (core_outcome(Err(error)), uncaught.map(|u| u.trace).unwrap_or_default()),
+        Err(error) => (core_outcome(Err(error)), Vec::new()),
     }
 }
 
@@ -1487,7 +1500,9 @@ fn run_command(args: &[String]) -> Outcome {
             Err(message) => return Outcome::failure(format!("okkama: {message}\n"), EXIT_IO),
         };
         let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
-        return core_outcome(sparrow_core::run_limited(bytes, arguments, false, command, limits));
+        // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
+        let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
+        return with_trace(outcome, okkama_runtime::render_trace(&module, &trace));
     }
     if engine == "sparrow-origin" {
         let program = match codegen::sparrow::generate(&module) {

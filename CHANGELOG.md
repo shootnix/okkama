@@ -130,6 +130,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   container has no findings
   ([#34](https://github.com/shootnix/okkama/issues/34)).
 
+- Sparrow core: an uncaught failure printed only its report; the IR engine and
+  the previous VM also print the place in the source and the call stack. The
+  core already recorded the activations a failure unwinds through; they are
+  now in `Uncaught::trace` (`run_described` returns them), `okkama run
+  --engine sparrow` maps them to source like the other engines, and
+  `okkama exec` and `sparrow` print them in Sparrow terms (function,
+  instruction number and text); `OKKAMA_TRACE=off` leaves them out. Every OCS
+  case that fails at run time, and every failing case of the cleanup and
+  async levels, prints the same place and stack on the core and on the IR
+  engine. Only the failure path
+  changed ([#10](https://github.com/shootnix/okkama/issues/10)).
+
 - IR runtime: dropping a value graph with repeated edges recursed through
   destructors — the release queue took only references whose count was
   already 1, so in `[child.clone(), child]` the second copy freed `child`

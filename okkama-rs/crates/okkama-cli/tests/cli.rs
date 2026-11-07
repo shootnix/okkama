@@ -281,11 +281,8 @@ fn native_run_engines_execute_source_without_java() {
 #[test]
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
-    // The Sparrow core reports the failure without its place yet (#10).
-    let core = run_stdin(&["run", "--engine", "sparrow", "-"], source);
-    assert_eq!(core.status.code(), Some(1));
-    assert_eq!(stderr(&core), "RuntimeError: Array index out of bounds\n");
-    for engine in ["ir", "sparrow-origin"] {
+    // Every engine reports the place and the call stack (the core since #10).
+    for engine in ["ir", "sparrow", "sparrow-origin"] {
         let output = run_stdin(&["run", "--engine", engine, "-"], source);
         assert_eq!(output.status.code(), Some(1));
         let text = stderr(&output);

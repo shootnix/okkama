@@ -87,6 +87,19 @@ pub fn run_limited(
     worker_command: Vec<std::ffi::OsString>,
     limits: budget::Limits,
 ) -> Result<i64, Error> {
+    run_described(bytes, arguments, stats, worker_command, limits)?.map_err(|(error, _)| error)
+}
+
+/// `run_limited`, keeping the program's failure apart from a program that
+/// does not load: the inner error is the report printed on stderr, with the
+/// uncaught failure described (its call stack included).
+pub fn run_described(
+    bytes: Vec<u8>,
+    arguments: Vec<Vec<u8>>,
+    stats: bool,
+    worker_command: Vec<std::ffi::OsString>,
+    limits: budget::Limits,
+) -> Result<Result<i64, (Error, Option<Uncaught>)>, Error> {
     on_vm_thread(move || {
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
         let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
@@ -102,18 +115,46 @@ pub fn run_limited(
         if let Some(report) = runtime.stats_report() {
             eprint!("{report}");
         }
-        result
+        Ok(result.map_err(|error| (error, runtime.uncaught.take())))
     })
 }
 
 /// An uncaught failure of `main`: its OCS category (`uncaught-error`,
 /// `runtime`, `panic`), the error type of a thrown value or `NativeFailure`,
-/// and its message.
+/// its message, and the activations it unwound through, innermost first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Uncaught {
     pub category: &'static str,
     pub error_type: Option<String>,
     pub message: String,
+    /// Function and instruction numbers; they are shared with OIR, so a
+    /// compiler can map them to source (`okkama_runtime::render_trace`).
+    pub trace: Vec<Site>,
+}
+
+pub use okkama_runtime_core::failure::Site;
+
+/// The call stack of an uncaught failure in Sparrow terms: function, number
+/// and text of the instruction of each frame. Empty for an empty stack.
+pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String {
+    use okkama_runtime_core::failure::{frame_name, stack_text};
+    if trace.is_empty() {
+        return String::new();
+    }
+    let frames: Vec<String> = trace
+        .iter()
+        .map(|site| match program.functions.get(site.function as usize) {
+            Some(function) => {
+                let name = frame_name(&function.symbol);
+                match function.code.get(site.pc as usize) {
+                    Some(instruction) => format!("{name} [f{} @{}: {}]", site.function, site.pc, instruction.text()),
+                    None => format!("{name} [f{} @{}]", site.function, site.pc),
+                }
+            }
+            None => format!("? [f{} @{}]", site.function, site.pc),
+        })
+        .collect();
+    stack_text("Stack trace (Sparrow, most recent call first):", &frames)
 }
 
 /// `run_configured`, with the uncaught failure (if any) described for
@@ -123,19 +164,7 @@ pub fn run_reported(
     arguments: Vec<Vec<u8>>,
     worker_command: Vec<std::ffi::OsString>,
 ) -> Result<Result<i64, (Error, Option<Uncaught>)>, Error> {
-    on_vm_thread(move || {
-        let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
-        let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
-        runtime.worker_command = worker_command;
-        if let Some(host) = &mut runtime.host {
-            host.arguments = arguments;
-        }
-        let result = runtime.run_entry(STACK_BYTES);
-        if let Some(report) = runtime.stats_report() {
-            eprint!("{report}");
-        }
-        Ok(result.map_err(|error| (error, runtime.uncaught.take())))
-    })
+    run_described(bytes, arguments, false, worker_command, budget::Limits::default())
 }
 
 /// Run the module's test profile and write the standard textual report;

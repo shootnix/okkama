@@ -1,0 +1,8 @@
+module app v1.0.0;
+object Worker {
+    Worker();
+    fail(n is int) is int { if n == 0 { panic "stop"; } 1 + self.fail(n - 1); }
+}
+main() is int {
+    Worker().fail(2);
+}
