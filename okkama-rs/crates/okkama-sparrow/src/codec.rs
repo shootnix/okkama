@@ -10,6 +10,10 @@ use std::fmt;
 
 /// Предел размера файла; проверяется до разбора.
 pub const MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
+/// Memory a decoded program may occupy: element counts are charged at their
+/// in-memory size before vectors are allocated, so a small file cannot
+/// expand into a large `Program` (each encoded element is at least a byte).
+pub const MAX_DECODED_BYTES: usize = 512 * 1024 * 1024;
 /// Версия формата.
 pub const VERSION: u16 = 9;
 const MAGIC: &[u8; 4] = b"SPRW";
@@ -70,6 +74,8 @@ impl Writer {
 pub struct Reader<'a> {
     bytes: &'a [u8],
     at: usize,
+    /// Bytes the decoded program occupies so far (`MAX_DECODED_BYTES`).
+    decoded: usize,
 }
 
 impl<'a> Reader<'a> {
@@ -120,6 +126,22 @@ impl<'a> Reader<'a> {
         u32::try_from(value).map_err(|_| self.error("number exceeds u32"))
     }
 
+    /// Число элементов `T`: как `count`, и их размер списывается с бюджета
+    /// декодированной программы до выделения вектора.
+    pub(crate) fn count_of<T>(&mut self) -> Result<usize, CodecError> {
+        let count = self.count()?;
+        self.charge(count.saturating_mul(std::mem::size_of::<T>()))?;
+        Ok(count)
+    }
+
+    fn charge(&mut self, bytes: usize) -> Result<(), CodecError> {
+        self.decoded = self.decoded.saturating_add(bytes);
+        if self.decoded > MAX_DECODED_BYTES {
+            return Err(self.error(format!("decoded program exceeds {MAX_DECODED_BYTES} bytes")));
+        }
+        Ok(())
+    }
+
     /// Число элементов: не больше оставшихся байтов (каждый — хотя бы байт).
     pub(crate) fn count(&mut self) -> Result<usize, CodecError> {
         let count = self.number()?;
@@ -130,7 +152,7 @@ impl<'a> Reader<'a> {
     }
 
     pub(crate) fn text(&mut self) -> Result<String, CodecError> {
-        let size = self.count()?;
+        let size = self.count_of::<u8>()?;
         let bytes = self.take(size)?;
         String::from_utf8(bytes.to_vec()).map_err(|_| self.error("invalid UTF-8 text"))
     }
@@ -257,7 +279,7 @@ fn decode_type(reader: &mut Reader<'_>) -> Result<Type, CodecError> {
         19 => Type::Any,
         20 => Type::Range,
         21 => {
-            let count = reader.count()?;
+            let count = reader.count_of::<TypeRef>()?;
             let params = (0..count).map(|_| read_type_ref(reader)).collect::<Result<_, _>>()?;
             Type::Fn {
                 params,
@@ -316,17 +338,17 @@ fn decode_function(reader: &mut Reader<'_>) -> Result<Function, CodecError> {
         }),
         other => return Err(reader.error(format!("invalid intrinsic tag {other}"))),
     };
-    let count = reader.count()?;
+    let count = reader.count_of::<TypeRef>()?;
     let registers = (0..count).map(|_| read_type_ref(reader)).collect::<Result<_, _>>()?;
     let params = Vec::<Register>::decode(reader)?;
     let result = read_option_type(reader)?;
-    let count = reader.count()?;
+    let count = reader.count_of::<Instruction>()?;
     let mut code = Vec::with_capacity(count);
     for _ in 0..count {
         let opcode = reader.byte()?;
         code.push(Instruction::decode_operands(opcode, reader)?);
     }
-    let count = reader.count()?;
+    let count = reader.count_of::<Handler>()?;
     let mut handlers = Vec::with_capacity(count);
     for _ in 0..count {
         handlers.push(Handler {
@@ -443,7 +465,7 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
             message: format!("file exceeds {MAX_FILE_BYTES} bytes"),
         });
     }
-    let mut reader = Reader { bytes, at: 0 };
+    let mut reader = Reader { bytes, at: 0, decoded: 0 };
     if reader.take(4)? != MAGIC {
         return Err(CodecError {
             offset: Some(0),
@@ -459,9 +481,9 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
     }
     let module = reader.text()?;
     let version_text = reader.text()?;
-    let count = reader.count()?;
+    let count = reader.count_of::<Type>()?;
     let types = (0..count).map(|_| decode_type(&mut reader)).collect::<Result<_, _>>()?;
-    let count = reader.count()?;
+    let count = reader.count_of::<EnumDecl>()?;
     let mut enums = Vec::with_capacity(count);
     for _ in 0..count {
         enums.push(EnumDecl {
@@ -469,16 +491,16 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
             cases: Vec::<String>::decode(&mut reader)?,
         });
     }
-    let count = reader.count()?;
+    let count = reader.count_of::<RoleDecl>()?;
     let mut roles = Vec::with_capacity(count);
     for _ in 0..count {
         let name = reader.text()?;
         let builtin = bool::decode(&mut reader)?;
-        let methods_count = reader.count()?;
+        let methods_count = reader.count_of::<RoleMethod>()?;
         let mut methods = Vec::with_capacity(methods_count);
         for _ in 0..methods_count {
             let name = reader.text()?;
-            let params_count = reader.count()?;
+            let params_count = reader.count_of::<TypeRef>()?;
             let params = (0..params_count).map(|_| read_type_ref(&mut reader)).collect::<Result<_, _>>()?;
             methods.push(RoleMethod {
                 name,
@@ -488,16 +510,16 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
         }
         roles.push(RoleDecl { name, builtin, methods });
     }
-    let count = reader.count()?;
+    let count = reader.count_of::<ObjectDecl>()?;
     let mut objects = Vec::with_capacity(count);
     for _ in 0..count {
         let name = reader.text()?;
-        let fields_count = reader.count()?;
+        let fields_count = reader.count_of::<(String, TypeRef)>()?;
         let mut fields = Vec::with_capacity(fields_count);
         for _ in 0..fields_count {
             fields.push((reader.text()?, read_type_ref(&mut reader)?));
         }
-        let does_count = reader.count()?;
+        let does_count = reader.count_of::<Witness>()?;
         let mut does = Vec::with_capacity(does_count);
         for _ in 0..does_count {
             does.push(Witness {
@@ -514,19 +536,19 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
         });
     }
     let handles = Vec::<String>::decode(&mut reader)?;
-    let count = reader.count()?;
+    let count = reader.count_of::<CapDecl>()?;
     let mut caps = Vec::with_capacity(count);
     for _ in 0..count {
         let name = reader.text()?;
         let owner = ObjectRef::decode(&mut reader)?;
-        let fields_count = reader.count()?;
+        let fields_count = reader.count_of::<(String, FuncRef)>()?;
         let mut fields = Vec::with_capacity(fields_count);
         for _ in 0..fields_count {
             fields.push((reader.text()?, FuncRef::decode(&mut reader)?));
         }
         caps.push(CapDecl { name, owner, fields });
     }
-    let count = reader.count()?;
+    let count = reader.count_of::<Function>()?;
     let mut functions = Vec::with_capacity(count);
     for _ in 0..count {
         functions.push(decode_function(&mut reader)?);
@@ -535,7 +557,7 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
     let tests = match reader.byte()? {
         0 => None,
         1 => {
-            let count = reader.count()?;
+            let count = reader.count_of::<(String, FuncRef)>()?;
             let mut tests = Vec::with_capacity(count);
             for _ in 0..count {
                 tests.push((reader.text()?, FuncRef::decode(&mut reader)?));
@@ -565,4 +587,47 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
         message: format!("invalid program: {error}"),
     })?;
     Ok(program)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reader(bytes: &[u8]) -> Reader<'_> {
+        Reader { bytes, at: 0, decoded: 0 }
+    }
+
+    #[test]
+    fn numbers_are_canonical_and_bounded() {
+        assert_eq!(reader(&[0x96, 0x01]).number().unwrap(), 150);
+        let overlong = reader(&[0x80, 0x00]).number().unwrap_err();
+        assert_eq!((overlong.offset, overlong.message.as_str()), (Some(2), "non-canonical number"));
+        let wide = reader(&[0xff; 10]).number().unwrap_err();
+        assert_eq!(wide.message, "number exceeds u64");
+        let short = reader(&[0x80]).number().unwrap_err();
+        assert_eq!(short.offset, Some(1));
+    }
+
+    #[test]
+    fn counts_are_bounded_by_the_input_and_the_decoded_size() {
+        // A count past the remaining bytes is refused before any allocation.
+        let over = reader(&[0x05, 0, 0]).count().unwrap_err();
+        assert_eq!(over.message, "count exceeds remaining bytes");
+        // Within the input but past the decoded budget at its element size.
+        let elements = MAX_DECODED_BYTES / std::mem::size_of::<Instruction>() + 1;
+        let mut bytes = Vec::new();
+        let mut value = elements as u64;
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            bytes.push(if value == 0 { byte } else { byte | 0x80 });
+            if value == 0 {
+                break;
+            }
+        }
+        bytes.resize(bytes.len() + elements, 0);
+        let error = reader(&bytes).count_of::<Instruction>().unwrap_err();
+        assert!(error.message.starts_with("decoded program exceeds"), "{error}");
+        assert!(reader(&bytes).count_of::<u8>().is_ok());
+    }
 }

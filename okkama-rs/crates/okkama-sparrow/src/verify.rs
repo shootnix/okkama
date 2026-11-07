@@ -286,95 +286,154 @@ fn edges(pc: usize, instruction: &Instruction) -> Vec<(u32, &[(Register, Registe
     }
 }
 
+/// Memory the initialization analysis of one function may use: a register
+/// set per block leader, checked before it is allocated.
+pub const MAX_ANALYSIS_BYTES: usize = 64 * 1024 * 1024;
+
+/// Does `pc` only fall through to the next instruction?
+fn falls_through(pc: usize, edges: &[(u32, &[(Register, Register)], Option<Register>)]) -> bool {
+    matches!(edges, [(target, moves, None)] if *target as usize == pc + 1 && moves.is_empty())
+}
+
+/// Every read sees a written register on every path. States are kept only at
+/// block leaders (the entry and the targets of jumps, branches, catches,
+/// lookups and handlers); a block's instructions are walked in order, so the
+/// memory is leaders × registers, not instructions × registers.
 fn check_initialization(context: &Context<'_>) -> Result<(), VerifyError> {
     let function = context.function;
     let size = function.registers.len();
     let count = function.code.len();
-    let mut state: Vec<Option<Set>> = vec![None; count];
+    if count == 0 {
+        return Ok(());
+    }
+    let mut leader = vec![false; count];
+    leader[0] = true;
+    for (pc, instruction) in function.code.iter().enumerate() {
+        let edges = edges(pc, instruction);
+        if !falls_through(pc, &edges) {
+            for (target, ..) in edges {
+                if let Some(slot) = leader.get_mut(target as usize) {
+                    *slot = true;
+                }
+            }
+        }
+    }
+    for handler in &function.handlers {
+        if let Some(slot) = leader.get_mut(handler.target.pc as usize) {
+            *slot = true;
+        }
+    }
+    let leaders: Vec<usize> = (0..count).filter(|&pc| leader[pc]).collect();
+    let mut block_of = vec![u32::MAX; count];
+    for (block, &pc) in leaders.iter().enumerate() {
+        block_of[pc] = block as u32;
+    }
+    let bytes = leaders.len().checked_mul(size.div_ceil(64)).and_then(|words| words.checked_mul(8));
+    if bytes.is_none_or(|bytes| bytes > MAX_ANALYSIS_BYTES) {
+        return Err(context.error(
+            None,
+            format!(
+                "function is too large to verify: {} blocks × {size} registers exceed {MAX_ANALYSIS_BYTES} bytes",
+                leaders.len()
+            ),
+        ));
+    }
+    let mut state: Vec<Option<Set>> = vec![None; leaders.len()];
     let mut entry = Set::empty(size);
     for param in &function.params {
         entry.insert(*param);
     }
     state[0] = Some(entry);
     let mut work = vec![0usize];
-    let mut queued = vec![false; count];
+    let mut queued = vec![false; leaders.len()];
     queued[0] = true;
-    let merge = |state: &mut Vec<Option<Set>>, work: &mut Vec<usize>, queued: &mut Vec<bool>, pc: usize, incoming: Set| {
-        let changed = match &mut state[pc] {
+    let merge = |state: &mut Vec<Option<Set>>, work: &mut Vec<usize>, queued: &mut Vec<bool>, block: usize, incoming: Set| {
+        let changed = match &mut state[block] {
             None => {
-                state[pc] = Some(incoming);
+                state[block] = Some(incoming);
                 true
             }
             Some(existing) => existing.intersect(&incoming),
         };
-        if changed && !queued[pc] {
-            queued[pc] = true;
-            work.push(pc);
+        if changed && !queued[block] {
+            queued[block] = true;
+            work.push(block);
         }
     };
-    while let Some(pc) = work.pop() {
-        queued[pc] = false;
-        let current = state[pc].clone().expect("reached");
-        let instruction = &function.code[pc];
-        // Чтения инструкции и источники её переходов — до записи.
-        let mut defs = Vec::new();
-        let mut unread = None;
-        instruction.visit(&mut |access| match access {
-            Access::Use(register) if !current.contains(register) && unread.is_none() => unread = Some(register),
-            Access::Target(target) => {
-                for (_, source) in &target.moves {
-                    if !current.contains(*source) && unread.is_none() {
-                        unread = Some(*source);
+    while let Some(block) = work.pop() {
+        queued[block] = false;
+        let mut current = state[block].clone().expect("reached");
+        let mut pc = leaders[block];
+        loop {
+            let instruction = &function.code[pc];
+            // Чтения инструкции и источники её переходов — до записи.
+            let mut defs = Vec::new();
+            let mut unread = None;
+            instruction.visit(&mut |access| match access {
+                Access::Use(register) if !current.contains(register) && unread.is_none() => unread = Some(register),
+                Access::Target(target) => {
+                    for (_, source) in &target.moves {
+                        if !current.contains(*source) && unread.is_none() {
+                            unread = Some(*source);
+                        }
                     }
                 }
+                Access::Def(register) => defs.push(register),
+                _ => {}
+            });
+            if let Some(register) = unread {
+                return Err(context.error(Some(pc), format!("register r{} may be read before it is written", register.0)));
             }
-            Access::Def(register) => defs.push(register),
-            _ => {}
-        });
-        if let Some(register) = unread {
-            return Err(context.error(Some(pc), format!("register r{} may be read before it is written", register.0)));
-        }
-        let payload = match instruction {
-            Instruction::Catch { value, .. } | Instruction::ArrayLookup { value, .. } | Instruction::MapLookup { value, .. } => Some(value.0),
-            _ => None,
-        };
-        let mut out = current.clone();
-        for register in defs {
-            if Some(register) != payload {
-                out.insert(register);
+            if let Some(handler) = function.handler_at(pc as u32) {
+                for (_, source) in &handler.target.moves {
+                    if !current.contains(*source) {
+                        return Err(context.error(Some(pc), format!("handler reads r{} before it is written", source.0)));
+                    }
+                }
+                let mut incoming = current.clone();
+                for (dst, _) in &handler.target.moves {
+                    incoming.insert(*dst);
+                }
+                incoming.insert(handler.failure);
+                let target = block_of[handler.target.pc as usize] as usize;
+                merge(&mut state, &mut work, &mut queued, target, incoming);
             }
-        }
-        for (target, moves, value) in edges(pc, instruction) {
-            if target as usize >= count {
-                return Err(context.error(Some(pc), "execution falls off the end of the code"));
-            }
-            let mut incoming = out.clone();
-            for (dst, _) in moves {
-                incoming.insert(*dst);
-            }
-            if let Some(value) = value {
-                incoming.insert(value);
-            }
-            merge(&mut state, &mut work, &mut queued, target as usize, incoming);
-        }
-        if let Some(handler) = function.handler_at(pc as u32) {
-            for (_, source) in &handler.target.moves {
-                if !current.contains(*source) {
-                    return Err(context.error(Some(pc), format!("handler reads r{} before it is written", source.0)));
+            let payload = match instruction {
+                Instruction::Catch { value, .. } | Instruction::ArrayLookup { value, .. } | Instruction::MapLookup { value, .. } => Some(value.0),
+                _ => None,
+            };
+            for register in defs {
+                if Some(register) != payload {
+                    current.insert(register);
                 }
             }
-            let mut incoming = current.clone();
-            for (dst, _) in &handler.target.moves {
-                incoming.insert(*dst);
+            let edges = edges(pc, instruction);
+            if edges.iter().any(|(target, ..)| *target as usize >= count) {
+                return Err(context.error(Some(pc), "execution falls off the end of the code"));
             }
-            incoming.insert(handler.failure);
-            merge(&mut state, &mut work, &mut queued, handler.target.pc as usize, incoming);
+            if falls_through(pc, &edges) && !leader[pc + 1] {
+                pc += 1;
+                continue;
+            }
+            for (target, moves, value) in edges {
+                let mut incoming = current.clone();
+                for (dst, _) in moves {
+                    incoming.insert(*dst);
+                }
+                if let Some(value) = value {
+                    incoming.insert(value);
+                }
+                merge(&mut state, &mut work, &mut queued, block_of[target as usize] as usize, incoming);
+            }
+            break;
         }
     }
     Ok(())
 }
 
-fn check_function(program: &Program, function: &Function) -> Result<(), VerifyError> {
+/// Register types, result and parameters: checked for every function before
+/// any body, since a call reads the callee's signature.
+fn check_signature(program: &Program, function: &Function) -> Result<(), VerifyError> {
     let context = Context { program, function };
     for ty in &function.registers {
         check_type_ref(program, ty.0, None).map_err(|e| context.error(None, e.message))?;
@@ -389,6 +448,11 @@ fn check_function(program: &Program, function: &Function) -> Result<(), VerifyEr
             return Err(context.error(None, format!("parameter register r{} is repeated", param.0)));
         }
     }
+    Ok(())
+}
+
+fn check_function(program: &Program, function: &Function) -> Result<(), VerifyError> {
+    let context = Context { program, function };
     if let Some(intrinsic) = &function.intrinsic {
         for object in &intrinsic.objects {
             if object.0 as usize >= program.objects.len() {
@@ -437,6 +501,9 @@ fn check_function(program: &Program, function: &Function) -> Result<(), VerifyEr
 
 pub(crate) fn verify(program: &Program) -> Result<(), VerifyError> {
     check_tables(program)?;
+    for function in &program.functions {
+        check_signature(program, function)?;
+    }
     for function in &program.functions {
         check_function(program, function)?;
     }

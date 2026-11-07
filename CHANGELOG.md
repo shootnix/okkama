@@ -56,6 +56,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- SPB: decoding and verification are bounded in memory. The verifier kept a
+  register set per instruction, so a 234 KiB file of 32 000 registers needed
+  132 MiB to check; it now keeps one per block leader (6 MiB for that file)
+  and refuses a function whose sets would exceed 64 MiB before allocating
+  them. The decoder charges every count at its element size against a 512 MiB
+  budget before allocating, so a small file cannot expand into a huge
+  program. A corrupted byte could make the verifier panic (a call checked
+  against a callee whose signature was not yet verified); every signature is
+  now checked before any body. Tests truncate a program at every byte and
+  corrupt every byte with every value; all 2035 SPB of the repository
+  round-trip byte for byte ([#24](https://github.com/shootnix/okkama/issues/24)).
+
 - Compiler: loading imports recursed once per nested import, so a chain of
   16 000 small modules overflowed the stack (SIGABRT). The import graph is now
   walked with an explicit stack and cycle membership is a set lookup; cycles
