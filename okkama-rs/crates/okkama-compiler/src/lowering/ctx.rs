@@ -163,6 +163,12 @@ pub(super) struct ClosureTask<'r> {
     pub sig: ir::FnSig,
 }
 
+/// Limits of monomorphization (H-15): a request chain deeper than this is a
+/// program that specializes without end (`Grow<Box<T>>` asking for
+/// `Grow<Box<Box<T>>>`, …); so is one with more functions than the count.
+pub const SPECIALIZATION_DEPTH: u32 = 256;
+pub const SPECIALIZATION_COUNT: usize = 1 << 18;
+
 pub(super) struct Ctx<'r, 'a> {
     pub reg: &'r Registry<'a>,
     pub closures: Vec<ClosureTask<'r>>,
@@ -179,6 +185,13 @@ pub(super) struct Ctx<'r, 'a> {
     /// Функции в порядке выделения: задача и символ.
     pub tasks: Vec<(Task, String)>,
     task_map: HashMap<Task, FuncId>,
+    /// Задача, тело которой сейчас понижается: она запрашивает новые.
+    pub current: Option<usize>,
+    /// Кто запросил каждую задачу и глубина цепочки запросов (H-15).
+    requested_by: Vec<Option<usize>>,
+    depths: Vec<u32>,
+    /// Предел специализаций превышен: текст диагностики с цепочкой.
+    pub overflow: Option<String>,
     pub natives: Vec<Option<FuncId>>,
     pub entry: Option<FuncId>,
     /// Префикс символов модуля: пусто у корня, `io.stdout::` у импортов.
@@ -230,6 +243,10 @@ impl<'r, 'a> Ctx<'r, 'a> {
             role_map: HashMap::new(),
             tasks: Vec::new(),
             task_map: HashMap::new(),
+            current: None,
+            requested_by: Vec::new(),
+            depths: Vec::new(),
+            overflow: None,
             natives: vec![None; reg.natives.len()],
             entry: None,
             prefixes,
@@ -653,9 +670,46 @@ impl<'r, 'a> Ctx<'r, 'a> {
 
     pub fn allocate(&mut self, task: Task, symbol: String) -> FuncId {
         let func = FuncId(self.tasks.len());
+        let depth = self.current.map_or(0, |parent| self.depths[parent] + 1);
+        if self.overflow.is_none() && (depth > SPECIALIZATION_DEPTH || self.tasks.len() >= SPECIALIZATION_COUNT) {
+            self.overflow = Some(self.chain(&symbol, depth));
+        }
         self.task_map.insert(task.clone(), func);
         self.tasks.push((task, symbol));
+        self.requested_by.push(self.current);
+        self.depths.push(depth);
         func
+    }
+
+    /// The diagnostic of a program that specializes without end: the newest
+    /// requests of the chain that led to `symbol`.
+    fn chain(&self, symbol: &str, depth: u32) -> String {
+        // Names of a growing chain grow too: keep their start and end.
+        let short = |name: &str| {
+            let chars: Vec<char> = name.chars().collect();
+            if chars.len() <= 80 {
+                return name.to_string();
+            }
+            let head: String = chars[..40].iter().collect();
+            let tail: String = chars[chars.len() - 30..].iter().collect();
+            format!("{head}…{tail}")
+        };
+        let mut names = vec![short(symbol)];
+        let mut at = self.current;
+        while let Some(task) = at {
+            if names.len() == 6 {
+                names.push("…".into());
+                break;
+            }
+            names.push(short(&self.tasks[task].1));
+            at = self.requested_by[task];
+        }
+        let what = if depth > SPECIALIZATION_DEPTH {
+            format!("a chain of more than {SPECIALIZATION_DEPTH} generic specializations")
+        } else {
+            format!("more than {SPECIALIZATION_COUNT} generic specializations")
+        };
+        format!("The program requests {what}, each asking for the next: {}", names.join(" <- "))
     }
 
     pub fn enum_id(&self, id: crate::analysis::ty::EnumId) -> ir::EnumId {

@@ -123,6 +123,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   commit, the steps with their status and time, and the known std failures,
   shown in the run summary ([#26](https://github.com/shootnix/okkama/issues/26)).
 
+- Compiler: generic code that asks for ever deeper specializations —
+  `Grow<T>` constructing `Grow<Box<T>>`, or a method returning `Node<Box<T>>`
+  and calling itself on it — monomorphized without end and took over 1 GiB in
+  17 seconds. A chain of requests deeper than 256, or more than 262 144
+  specializations, is now a diagnostic naming the newest requests of the chain
+  (`Grow<Box<…>>.deep <- Grow<Box<…>>.deep <- …`). The repository's programs
+  stay at depth 20 and 2 416 specializations
+  ([#32](https://github.com/shootnix/okkama/issues/32)).
+
 - Sparrow core: a function's machine frame grew with the number of its helper
   calls — every call with arguments took its own stack slot — so a long
   function could reserve more than the stack headroom and reach the guard

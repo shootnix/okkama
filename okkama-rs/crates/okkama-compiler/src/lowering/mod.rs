@@ -341,10 +341,15 @@ fn lower_modules(
     let mut next = 0;
     while next < ctx.tasks.len() {
         let module = ctx.task_module(next);
-        functions
-            .push(body::lower_task(&mut ctx, ir::FuncId(next)).map_err(|error| (module, error))?);
+        ctx.current = Some(next);
+        let function = body::lower_task(&mut ctx, ir::FuncId(next)).map_err(|error| (module, error))?;
+        if let Some(message) = ctx.overflow.take() {
+            return Err((module, LoweringError::invalid(function.span, message)));
+        }
+        functions.push(function);
         next += 1;
     }
+    ctx.current = None;
     let owners: Vec<usize> = (0..functions.len()).map(|index| ctx.task_module(index)).collect();
     let mut module = ctx.module(program, imports, functions);
     module.debug.function_modules = owners.clone();
