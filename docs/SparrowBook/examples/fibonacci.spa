@@ -1,0 +1,26 @@
+; Fibonacci with edge moves: the jump back writes both loop registers at once.
+sparrow 9
+module "fibonacci" "1.0.0"
+type t0 int
+type t1 bool
+
+; r0 a, r1 b, r2 counter, r3 one, r4 counter > 0, r5 a + b, r6 counter - 1
+function f0 "main" {
+    registers [t0, t0, t0, t0, t1, t0, t0]
+    params []
+    result t0
+    0: const r0, int 0
+    1: const r1, int 1
+    2: const r2, int 10
+    3: const r3, int 1
+    4: jmp @5
+    5: const r5, int 0
+    6: int.cmp gt, r4, r2, r5
+    7: br r4, @8, @11
+    8: int.add r5, r0, r1
+    9: int.sub r6, r2, r3
+    10: jmp @5(r0 <- r1, r1 <- r5, r2 <- r6)
+    11: ret r0
+}
+
+entry f0

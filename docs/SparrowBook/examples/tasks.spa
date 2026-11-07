@@ -1,0 +1,31 @@
+; Async functions: a call makes a cold future, `await` runs it to its value,
+; `fut.spawn` starts one now so it runs while the caller goes on.
+sparrow 9
+module "tasks" "1.0.0"
+type t0 int
+type t1 future t0
+
+function f0 "square" async {
+    registers [t0, t0]
+    params [r0]
+    result t0
+    0: int.mul r1, r0, r0
+    1: ret r1
+}
+
+function f1 "main" async {
+    registers [t0, t1, t0, t1, t0, t0]
+    params []
+    result t0
+    0: const r0, int 5
+    1: call r1, f0, [r0]
+    2: await r2, r1
+    3: const r0, int 6
+    4: call r3, f0, [r0]
+    5: fut.spawn r3, r3
+    6: await r4, r3
+    7: int.sub r5, r4, r2
+    8: ret r5
+}
+
+entry f1

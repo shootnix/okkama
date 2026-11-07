@@ -1,0 +1,62 @@
+; Objects, a role with two implementations, dispatch through role slots and
+; a successor (a changed copy of an immutable object).
+sparrow 9
+module "shapes" "1.0.0"
+type t0 int
+type t1 object obj0
+type t2 object obj1
+type t3 role role0
+
+role role0 "Shape" {
+    method "area" [] -> t0
+}
+object obj0 "Square" {
+    field "side" t0
+    does role0 [f0]
+}
+object obj1 "Rect" {
+    field "width" t0
+    field "height" t0
+    does role0 [f1]
+}
+
+function f0 "Square.area" {
+    registers [t1, t0, t0]
+    params [r0]
+    result t0
+    0: obj.get r1, r0, 0
+    1: int.mul r2, r1, r1
+    2: ret r2
+}
+
+function f1 "Rect.area" {
+    registers [t2, t0, t0, t0]
+    params [r0]
+    result t0
+    0: obj.get r1, r0, 0
+    1: obj.get r2, r0, 1
+    2: int.mul r3, r1, r2
+    3: ret r3
+}
+
+; area(Square 3) + area(Rect 2x5 with height 4) = 9 + 8
+function f2 "main" {
+    registers [t0, t0, t1, t2, t2, t3, t3, t0, t0, t0]
+    params []
+    result t0
+    0: const r0, int 3
+    1: const r1, int 5
+    2: obj.new r2, obj0, [r0]
+    3: const r0, int 2
+    4: obj.new r3, obj1, [r0, r1]
+    5: const r0, int 4
+    6: obj.next r4, r3, [1: r0]
+    7: role.wrap r5, r2, role0
+    8: role.wrap r6, r4, role0
+    9: call.role r7, r5, role0, 0, []
+    10: call.role r8, r6, role0, 0, []
+    11: int.add r9, r7, r8
+    12: ret r9
+}
+
+entry f2

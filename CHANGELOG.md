@@ -8,6 +8,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Docs: the Sparrow Book (`docs/SparrowBook/SparrowBook.md`, Russian
+  `SparrowBook-RU.md`) — a textbook of Sparrow assembly: the file layout,
+  types, registers, edges, objects and roles, arrays and maps, calls and
+  closures, failures and handlers, regions, async functions, tests, what the
+  verifier guarantees and how the core runs it, and a reference of all 121
+  instructions generated from `okkama-sparrow`. `build.py --check`
+  assembles, verifies and runs the ten examples and compares their output
+  with the book.
+
 - Compiler: an independent check of Sparrow register allocation (H-10). The
   core trusts the allocation for its stack maps, and the SPB verifier checks
   only that registers are written before they are read. The check follows

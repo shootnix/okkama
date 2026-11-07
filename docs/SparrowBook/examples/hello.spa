@@ -1,0 +1,27 @@
+; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
+sparrow 9
+module "hello" "1.0.0"
+type t0 int
+type t1 str
+type t2 byte
+type t3 array t2
+
+; The host provider: no body, the ABI symbol names it.
+function f0 "write" native "runtime/stdio@1::stdout_write/1" {
+    registers [t3]
+    params [r0]
+    result t0
+}
+
+function f1 "main" {
+    registers [t1, t3, t0]
+    params []
+    result t0
+    0: const r0, str "Hello, Sparrow!\n"
+    1: str.utf8 r1, r0
+    2: call _, f0, [r1]
+    3: const r2, int 0
+    4: ret r2
+}
+
+entry f1

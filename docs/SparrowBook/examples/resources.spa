@@ -1,0 +1,57 @@
+; Ownership regions: an object with `destroy` is tracked and adopted by the
+; region of its scope; leaving the region runs `destroy`, on the failure path
+; too (`region.unwind`).
+sparrow 9
+module "resources" "1.0.0"
+type t0 int
+type t1 str
+type t2 object obj0
+type t3 region
+type t4 failure
+type t5 byte
+type t6 array t5
+
+object obj0 "Handle" {
+    field "name" t1
+    destroy f1
+}
+
+function f0 "write" native "runtime/stdio@1::stdout_write/1" {
+    registers [t6]
+    params [r0]
+    result t0
+}
+
+function f1 "Handle.destroy" {
+    registers [t2, t1, t1, t1, t6]
+    params [r0]
+    result void
+    0: const r1, str "closing "
+    1: obj.get r2, r0, 0
+    2: str.concat r3, r1, r2
+    3: const r1, str "\n"
+    4: str.concat r2, r3, r1
+    5: str.utf8 r4, r2
+    6: call _, f0, [r4]
+    7: ret _
+}
+
+; A failure between 2 and 5 arrives at @8: the region is closed on the way out.
+function f2 "main" {
+    registers [t3, t1, t2, t0, t4, t4]
+    params []
+    result t0
+    handler 2 6 @8 r4
+    0: region.enter r0
+    1: const r1, str "data.txt"
+    2: obj.new r2, obj0, [r1]
+    3: region.track r0, r2
+    4: region.adopt r0, r2
+    5: const r3, int 0
+    6: region.leave r0, _
+    7: ret r3
+    8: region.unwind r5, r0, r4
+    9: raise r5
+}
+
+entry f2

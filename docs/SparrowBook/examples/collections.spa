@@ -1,0 +1,42 @@
+; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
+; branch on whether the element exists.
+sparrow 9
+module "collections" "1.0.0"
+type t0 int
+type t1 array t0
+type t2 builder t0
+type t3 str
+type t4 map t3 t0
+type t5 bool
+
+; squares of 0..9; xs[9] = 81; xs[10] is missing, so the map gives 7: 81 + 7
+function f0 "main" {
+    registers [t2, t0, t0, t1, t0, t0, t0, t5, t0, t0, t3, t4, t0, t0]
+    params []
+    result t0
+    0: builder.new r0
+    1: const r1, int 0
+    2: const r2, int 10
+    3: const r4, int 1
+    4: int.cmp lt, r7, r1, r2
+    5: br r7, @6, @10
+    6: int.mul r5, r1, r1
+    7: builder.push r0, r0, r5
+    8: int.add r6, r1, r4
+    9: jmp @4(r1 <- r6)
+    10: builder.finish r3, r0
+    11: const r8, int 9
+    12: arr.get r13, r3, r8
+    13: arr.len r8, r3
+    14: arr.lookup r3, r8, r9, @15, @16
+    15: ret r9
+    16: const r10, str "seven"
+    17: const r12, int 7
+    18: map.new r11, [r10: r12]
+    19: map.lookup r11, r10, r9, @20, @22
+    20: int.add r12, r13, r9
+    21: ret r12
+    22: ret r8
+}
+
+entry f0

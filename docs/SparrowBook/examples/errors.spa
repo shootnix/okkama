@@ -1,0 +1,57 @@
+; Throwing and catching: an object that does the builtin Error role is
+; thrown; a handler range sends failures to a `catch`, which matches the type.
+sparrow 9
+module "errors" "1.0.0"
+type t0 int
+type t1 str
+type t2 object obj0
+type t3 failure
+type t4 bool
+
+role role0 "Error" builtin {
+    method "text" [] -> t1
+}
+object obj0 "Oops" {
+    field "code" t0
+    does role0 [f0]
+}
+
+function f0 "Oops.text" {
+    registers [t2, t1]
+    params [r0]
+    result t1
+    0: const r1, str "Oops"
+    1: ret r1
+}
+
+; Fails with Oops(n) when n > 2.
+function f1 "risky" {
+    registers [t0, t0, t4, t2]
+    params [r0]
+    result t0
+    0: const r1, int 2
+    1: int.cmp gt, r2, r0, r1
+    2: br r2, @3, @5
+    3: obj.new r3, obj0, [r0]
+    4: throw r3
+    5: ret r0
+}
+
+; A failure inside 1..2 lands at @3 with the failure in r2; `catch` takes an
+; Oops into r3 and goes to @4, any other failure goes to @6 and is re-raised.
+function f2 "main" {
+    registers [t0, t0, t3, t2, t0]
+    params []
+    result t0
+    handler 1 2 @3 r2
+    0: const r0, int 7
+    1: call r1, f1, [r0]
+    2: jmp @7
+    3: catch r2, object, 0, r3, @4, @6
+    4: obj.get r4, r3, 0
+    5: jmp @7(r1 <- r4)
+    6: raise r2
+    7: ret r1
+}
+
+entry f2
