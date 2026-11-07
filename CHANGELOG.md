@@ -19,6 +19,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler: loading imports recursed once per nested import, so a chain of
+  16 000 small modules overflowed the stack (SIGABRT). The import graph is now
+  walked with an explicit stack and cycle membership is a set lookup; cycles
+  keep their diagnostic. A program's import graph is bounded — 1024 nested
+  imports, 16384 modules, 256 MiB of module sources — and the import that
+  crosses a bound is a compile-time error
+  ([#20](https://github.com/shootnix/okkama/issues/20)).
+
 - Dependencies: `crypto-bigint` 0.7.5 → 0.7.10 (RUSTSEC-2026-0387) and
   `ctutils` 0.4.2 → 0.4.8 (RUSTSEC-2026-0385) — their constant-time
   operations were not constant-time. CI now runs `cargo audit` on every
