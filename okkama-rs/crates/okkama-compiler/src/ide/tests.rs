@@ -638,3 +638,17 @@ fn a_fresh_name_is_not_taken_for_the_checked_name_it_replaced() {
             .is_none()
     );
 }
+
+/// A file with two syntax errors: both reach the editor, coded `syntax`,
+/// with the outline of the declarations that parsed (#47).
+#[test]
+fn syntax_errors_are_all_reported_with_the_outline_of_the_rest() {
+    let text = "module app v1.0.0;\n\nobject Broken {\n    has a is int;\n    Broken(:a);\n    value() is int { a +; }\n}\n\nobject Kept {\n    has b is int;\n    Kept(:b);\n}\n\nmain() is int {\n    let = 1;\n}\n";
+    let inspection = inspect(text);
+    let lines: Vec<u32> = inspection.diagnostics.iter().map(|d| d.range.start.line).collect();
+    assert_eq!(lines, [5, 14], "{:?}", inspection.diagnostics);
+    assert!(inspection.diagnostics.iter().all(|d| d.code.as_deref() == Some("syntax")));
+    assert!(!inspection.parsed);
+    let names: Vec<&str> = inspection.outline.iter().map(|item| item.name.as_str()).collect();
+    assert_eq!(names, ["Kept"]);
+}
