@@ -63,6 +63,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   the JVM, expecting identical reports
   ([#71](https://github.com/shootnix/okkama/issues/71)).
 
+- Compiler, OIR pass `fold` (H-36): `int.add`, `int.sub`, `int.mul`,
+  `int.mod` by a nonzero constant, `int.neg` and integer comparisons of
+  constants become constants, computed with the language's exact `int`:
+  `9223372036854775807 + 1` is the big integer every engine would promote
+  to. Nothing that can fail is folded (`7 % 0` stays and fails at run
+  time), nor word-level bitwise operations, and a result longer than 1024
+  digits stays a computation. It runs after `tail-calls`, before `hoist`;
+  the gate's run with the passes off checks it like every pass
+  ([#56](https://github.com/shootnix/okkama/issues/56)).
+
 - Language: `+` and `-` on arrays and maps. `a + b + c` concatenates arrays
   (or merges maps, the rightmost value winning a repeated key); `a - b`
   removes from an array every element equal to an element of `b` (or from a
