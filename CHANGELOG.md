@@ -19,6 +19,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- SQLite on the JVM: a cancelled query read the connection pointer without
+  synchronization and called `sqlite3_interrupt` on it while the worker could
+  be closing the connection — a possible use of a freed connection. The pointer
+  is now published and withdrawn under a lifetime lock that `sqlite3_close`
+  holds, and interrupt checks it under the same lock, as rusqlite's
+  `InterruptHandle` does for the IR runtime and the core. Tests: a handle
+  loaded before close, interrupts racing close and worker exit, and a
+  conformance case cancelling running queries around `close`
+  ([#18](https://github.com/shootnix/okkama/issues/18)).
+
 - X.509: building a certificate path had no work bound — ambiguous issuers
   (same name and key identifier) made the search exponential, 10 supplied
   intermediates took 5 s and 11 did not finish, synchronously in TLS

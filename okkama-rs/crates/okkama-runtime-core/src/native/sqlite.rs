@@ -1917,3 +1917,74 @@ mod reply_lifetime_tests {
         sched::reset();
     }
 }
+
+#[cfg(test)]
+mod interrupt_lifetime_tests {
+    use super::*;
+    use std::sync::Barrier;
+
+    fn engine(interrupt: &Arc<std::sync::Mutex<Option<Arc<rusqlite::InterruptHandle>>>>) -> Engine {
+        Engine {
+            db: std::ptr::null_mut(),
+            library: None,
+            classes: HashMap::new(),
+            interrupt: interrupt.clone(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            options: Options {
+                path: ":memory:".into(),
+                read_only: false,
+                create: true,
+                foreign_keys: false,
+                busy_ms: 0,
+                journal: "memory".into(),
+            },
+            serial: 0,
+            cursor: None,
+            prepared: Vec::new(),
+            blobs: Vec::new(),
+            backup: None,
+            authorizer: Box::default(),
+        }
+    }
+
+    /// The cancel listener loads the handle, then the worker closes the
+    /// connection before `interrupt` runs: the handle must not reach the
+    /// freed `sqlite3*` (audit S04).
+    #[test]
+    fn a_handle_loaded_before_close_never_touches_the_closed_connection() {
+        let slot = Arc::new(std::sync::Mutex::new(None));
+        let mut engine = engine(&slot);
+        engine.open().map_err(|_| "open").unwrap();
+        let loaded = slot.lock().unwrap().clone().expect("open publishes the handle");
+        engine.close().map_err(|_| "close").unwrap();
+        assert!(slot.lock().unwrap().is_none(), "close withdraws the handle");
+        loaded.interrupt();
+        drop(engine);
+        loaded.interrupt();
+    }
+
+    /// Interrupts race close and worker exit (drop) from another thread.
+    #[test]
+    fn interrupt_races_close_and_worker_exit() {
+        for round in 0..64 {
+            let slot = Arc::new(std::sync::Mutex::new(None));
+            let mut engine = engine(&slot);
+            engine.open().map_err(|_| "open").unwrap();
+            let loaded = slot.lock().unwrap().clone().expect("handle");
+            let barrier = Arc::new(Barrier::new(2));
+            let started = barrier.clone();
+            let canceller = std::thread::spawn(move || {
+                started.wait();
+                for _ in 0..256 {
+                    loaded.interrupt();
+                }
+            });
+            barrier.wait();
+            if round % 2 == 0 {
+                engine.close().map_err(|_| "close").unwrap();
+            }
+            drop(engine);
+            canceller.join().unwrap();
+        }
+    }
+}
