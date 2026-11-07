@@ -944,6 +944,9 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     .initial
                     .as_ref()
                     .expect("reduce has an initial value");
+                if let Some(builder) = self.linear_accumulator(functional, expr, span)? {
+                    return self.linear_reduce(functional, source, builder, span);
+                }
                 let Some(start) = self.value(initial)? else {
                     return Ok(Out::Diverged);
                 };
@@ -965,6 +968,76 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 })
             }
         }
+    }
+
+    /// The builder type of a `reduce` whose array or map accumulator is used
+    /// only as the value its block returns — alone, or as the left end of
+    /// `acc + ...` — so it can grow in place (#243): appending one element
+    /// is amortized O(1) instead of a copy of everything gathered so far.
+    /// Nothing else can hold an intermediate accumulator, so no one sees it
+    /// change. A map accumulator starts from `[:]` and grows by literals.
+    fn linear_accumulator(
+        &mut self,
+        functional: &'r thir::Functional,
+        expr: &'r thir::Expr,
+        span: Span,
+    ) -> Result<Option<Type>> {
+        let (Some(&acc), Some(initial)) = (functional.bindings.first(), functional.initial.as_ref()) else {
+            return Ok(None);
+        };
+        let builder = match self.expr_type(expr)? {
+            Type::Array(element) if !matches!(*element, Type::Never) => Type::Builder(element),
+            Type::Map(key, value) if !matches!(*key, Type::Never) && matches!(&initial.kind, thir::ExprKind::Map(entries) if entries.is_empty()) => {
+                Type::MapBuilder(key, value)
+            }
+            _ => return Ok(None),
+        };
+        let map = matches!(builder, Type::MapBuilder(..));
+        let mut allowed = 0;
+        let linear = linear_block(&functional.body, acc, map, &mut allowed)
+            && thir::local_mentions(&functional.body, acc) == allowed;
+        let _ = span;
+        Ok(linear.then_some(builder))
+    }
+
+    /// `reduce` over a builder: the start is copied into it once, the block
+    /// pushes onto it (`collection_operator`), the result is finished once.
+    fn linear_reduce(
+        &mut self,
+        functional: &'r thir::Functional,
+        source: Source,
+        builder: Type,
+        span: Span,
+    ) -> Result<Out> {
+        let initial = functional.initial.as_ref().expect("reduce has an initial value");
+        let mut state = if matches!(builder, Type::Builder(_)) {
+            self.emit(InstKind::BuilderNew, builder.clone(), span)
+        } else {
+            self.emit(InstKind::MapBuilderNew, builder.clone(), span)
+        };
+        let empty = matches!(&initial.kind, thir::ExprKind::Array(parts) if parts.is_empty())
+            || matches!(&initial.kind, thir::ExprKind::Map(entries) if entries.is_empty());
+        if !empty {
+            let Some(start) = self.value(initial)? else {
+                return Ok(Out::Diverged);
+            };
+            state = self.emit(
+                InstKind::BuilderAppend { builder: state.value, array: start.value },
+                builder.clone(),
+                span,
+            );
+        }
+        let bindings = &functional.bindings;
+        let body = &functional.body;
+        let (out, state) = self.traverse(source, vec![state], body, span, |lowerer, items, state| {
+            let mut values = vec![state[0].clone()];
+            values.extend(items);
+            let Some(value) = lowerer.functional_body(bindings, values, body)? else {
+                return Ok(None);
+            };
+            Ok(Some(vec![value.value]))
+        })?;
+        self.finish_builder(out, &state[0], span)
     }
 
     fn finish_builder(&mut self, out: Out, builder: &Typed, span: Span) -> Result<Out> {
@@ -1369,5 +1442,57 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             Type::Array(Box::new(element_type)),
             span,
         )))
+    }
+}
+
+/// The block's value is the accumulator (see `linear_accumulator`); counts
+/// the mentions of `acc` it accounts for.
+fn linear_block(block: &thir::Block, acc: LocalId, map: bool, allowed: &mut usize) -> bool {
+    match block.stmts.last().map(|stmt| &stmt.kind) {
+        Some(thir::StmtKind::Expr(value)) => linear_value(value, acc, map, allowed),
+        // `throw`, `return`, `panic`: the block does not produce a value.
+        Some(thir::StmtKind::Throw(_) | thir::StmtKind::Return(_) | thir::StmtKind::Rethrow) => true,
+        _ => false,
+    }
+}
+
+fn linear_value(expr: &thir::Expr, acc: LocalId, map: bool, allowed: &mut usize) -> bool {
+    use thir::ExprKind;
+    match &expr.kind {
+        ExprKind::Local(local) if *local == acc => {
+            *allowed += 1;
+            true
+        }
+        ExprKind::Binary { op, .. } if *op == if map { thir::BinaryOp::MapMerge } else { thir::BinaryOp::ArrayConcat } => {
+            let mut parts = Vec::new();
+            flatten_concat(*op, expr, &mut parts);
+            let starts_with_acc = matches!(&parts[0].kind, ExprKind::Local(local) if *local == acc);
+            // A map grows by literal entries: a builder has no merge.
+            let literals = !map || parts[1..].iter().all(|part| matches!(part.kind, ExprKind::Map(_)));
+            if starts_with_acc && literals {
+                *allowed += 1;
+            }
+            starts_with_acc && literals
+        }
+        ExprKind::If { then_block, else_block: Some(else_block), .. } => {
+            linear_block(then_block, acc, map, allowed) && linear_block(else_block, acc, map, allowed)
+        }
+        ExprKind::Match(found) if found.else_block.is_some() || found.exhaustive => {
+            found.cases.iter().all(|(_, block)| linear_block(block, acc, map, allowed))
+                && found.else_block.as_ref().is_none_or(|block| linear_block(block, acc, map, allowed))
+        }
+        ExprKind::Block(block) => linear_block(block, acc, map, allowed),
+        ExprKind::Panic(_) | ExprKind::Unreachable => true,
+        _ => false,
+    }
+}
+
+fn flatten_concat<'e>(op: thir::BinaryOp, expr: &'e thir::Expr, parts: &mut Vec<&'e thir::Expr>) {
+    match &expr.kind {
+        thir::ExprKind::Binary { op: inner, left, right } if *inner == op => {
+            flatten_concat(op, left, parts);
+            flatten_concat(op, right, parts);
+        }
+        _ => parts.push(expr),
     }
 }

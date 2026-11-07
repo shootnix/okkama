@@ -436,3 +436,22 @@ fn constant_arithmetic_folds_exactly() {
     assert!(!text.contains("int.add") || text.matches("int.add").count() <= 2, "{text}");
     assert!(text.contains("const true") || text.contains("const 1"), "{text}");
 }
+
+/// A `reduce` accumulator used only as the block's value — alone or as the
+/// left end of `acc + ...` — lives in a builder and grows in place (#243);
+/// any other use keeps the copying `+`.
+#[test]
+fn reduce_accumulators_grow_in_place_when_nothing_else_sees_them() {
+    let grows = |body: &str| {
+        let text = main_listing(body);
+        (text.contains("builder.push") || text.contains("mbuilder.put"), text.contains("array.concat") || text.contains("map.merge"))
+    };
+    assert_eq!(grows("let xs = (1..=3).reduce([0]) -> acc, n { acc + [n]; }; xs.size();"), (true, false));
+    assert_eq!(grows("let xs = (1..=3).reduce([0]) -> acc, n { if n > 1 { acc + [n, n]; } else { acc; } }; xs.size();"), (true, false));
+    assert_eq!(grows("let m is %int:int = (1..=3).reduce([:]) -> acc, n { acc + [n: n]; }; m.size();"), (true, false));
+    // Read in the block, or merged with a map that is not a literal: copied.
+    assert_eq!(grows("let xs = (1..=3).reduce([0]) -> acc, n { acc + [acc.size()]; }; xs.size();"), (false, true));
+    assert_eq!(grows("let base is %int:int = [1: 1]; let m is %int:int = (1..=3).reduce([:]) -> acc, n { acc + base; }; m.size();"), (false, true));
+    // Captured by an anonymous action: copied.
+    assert_eq!(grows("let xs = (1..=3).reduce([0]) -> acc, n { let f = () is int { acc.size(); }; acc + [f()]; }; xs.size();"), (false, true));
+}

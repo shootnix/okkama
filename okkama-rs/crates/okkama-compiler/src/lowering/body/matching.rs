@@ -225,10 +225,15 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             parts.extend(removed);
         }
         let mut values = Vec::with_capacity(parts.len());
-        for part in &parts {
+        for (index, part) in parts.iter().enumerate() {
             let Some(value) = self.value(part)? else {
                 return Ok(Out::Diverged);
             };
+            // A `reduce` accumulator held in a builder (#243): the other parts
+            // grow it in place.
+            if index == 0 && matches!(value.ty, Type::Builder(_) | Type::MapBuilder(..)) {
+                return self.grow_builder(value, &parts[1..], span);
+            }
             values.push(value);
         }
         // Тип результата — тип первой части с тегом (пустой литерал без тега
@@ -249,6 +254,59 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             _ => InstKind::MapDifference { map: ids[0], removed: ids[1..].to_vec() },
         };
         Ok(Out::Value(self.emit(kind, ty, span)))
+    }
+
+    /// `acc + [a, b] + more` on a builder: literal elements are pushed, other
+    /// arrays appended, map literal entries put; parts evaluate in order.
+    fn grow_builder(&mut self, mut builder: Typed, parts: &[&'r thir::Expr], span: Span) -> Result<Out> {
+        for part in parts {
+            match (&builder.ty, &part.kind) {
+                (Type::Builder(element), thir::ExprKind::Array(items))
+                    if items.iter().all(|item| matches!(item, thir::ArrayPart::Value(_))) =>
+                {
+                    let element = (**element).clone();
+                    for item in items {
+                        let thir::ArrayPart::Value(item) = item else { unreachable!("checked above") };
+                        let Some(value) = self.value(item)? else {
+                            return Ok(Out::Diverged);
+                        };
+                        let value = self.normalize(&value, &element, span);
+                        builder = self.emit(InstKind::BuilderPush { builder: builder.value, value: value.value }, builder.ty.clone(), span);
+                    }
+                }
+                (Type::Builder(_), _) => {
+                    let Some(array) = self.value(part)? else {
+                        return Ok(Out::Diverged);
+                    };
+                    builder = self.emit(InstKind::BuilderAppend { builder: builder.value, array: array.value }, builder.ty.clone(), span);
+                }
+                (Type::MapBuilder(key_type, value_type), thir::ExprKind::Map(entries)) => {
+                    let (key_type, value_type) = ((**key_type).clone(), (**value_type).clone());
+                    for (key, value) in entries {
+                        let Some(key) = self.value(key)? else {
+                            return Ok(Out::Diverged);
+                        };
+                        let key = self.normalize(&key, &key_type, span);
+                        let Some(value) = self.value(value)? else {
+                            return Ok(Out::Diverged);
+                        };
+                        let value = self.normalize(&value, &value_type, span);
+                        builder = self.emit(
+                            InstKind::MapBuilderPut { builder: builder.value, key: key.value, value: value.value },
+                            builder.ty.clone(),
+                            span,
+                        );
+                    }
+                }
+                _ => {
+                    return Err(LoweringError::invalid(
+                        part.span,
+                        "internal compiler error: a map accumulator grows only by literals",
+                    ));
+                }
+            }
+        }
+        Ok(Out::Value(builder))
     }
 
     fn binary_values(&mut self, op: BinaryOp, lhs: Typed, rhs: Typed, span: Span) -> Result<Typed> {

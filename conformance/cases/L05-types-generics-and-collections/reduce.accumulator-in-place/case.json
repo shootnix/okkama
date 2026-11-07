@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.reduce.accumulator-in-place",
+  "title": "reduce accumulators: in-place growth and copying give the same values",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "CALL.FUNCTIONAL-OPS",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0,1,4,9,16,25\n2,20,4,40,6,60,8,80,10,100\na,b,c\nx1|2|3|\n0,1,2,3\n0,1,1,2\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#6.8",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #243",
+    "expected_basis": "reduce folds left to right; acc + [e] appends; a map accumulator keeps the last value per key and keys() is sorted."
+  },
+  "status": "mandatory",
+  "notes": "D-036"
+}
