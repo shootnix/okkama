@@ -8,6 +8,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: names before one type share it in every parameter list, as they
+  already do in field declarations — `full(separator, suffix is string)`,
+  `Person(given, family is string, age is int)`, enum case payloads
+  `declined(id, line is int)`, role signatures, natives and anonymous actions
+  `(a, b is int) is int { … }`. A group cannot be variadic ("give the
+  variadic parameter its own type"). `okkama fmt` keeps the grouping the
+  author wrote. Two OCS cases run the forms on every engine and reject a
+  variadic group ([#232](https://github.com/shootnix/okkama/issues/232)).
+
 - LSP: every syntax error at once (H-24). The editor's check parses in a
   recovering mode (`syntax::parse_recovering`): after an error in a statement
   it resumes after that statement, after an error in a declaration at the

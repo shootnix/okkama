@@ -539,7 +539,7 @@ impl Parser<'_> {
                         "Constructor shorthand cannot mix field entries and typed parameters.",
                     ));
                 }
-                params.push(self.parameter()?);
+                params.extend(self.parameter_group()?);
                 if context == ParamContext::Native && self.check(TokenKind::Equal) {
                     return Err(self.error_here("Native parameters cannot have default values."));
                 }
@@ -576,6 +576,59 @@ impl Parser<'_> {
         Ok(params)
     }
 
+    /// `name ("," name)* is ...? Type` (#232): names before one type share
+    /// it, as fields do (`has given, family is string;`). A group cannot be
+    /// variadic.
+    pub(super) fn parameter_group(&mut self) -> PResult<Vec<Param>> {
+        let mut names = Vec::new();
+        while self.grouped_name_follows() {
+            names.push(self.consume_identifier("Expect parameter name.")?);
+            self.advance();
+        }
+        let last = self.parameter()?;
+        if names.is_empty() {
+            return Ok(vec![last]);
+        }
+        if last.variadic {
+            return Err(self.error_at_span(
+                names[0].span,
+                "Grouped parameters cannot be variadic: give the variadic parameter its own type.",
+            ));
+        }
+        let mut params: Vec<Param> = names
+            .into_iter()
+            .map(|name| Param {
+                span: name.span.to(last.ty.span),
+                name,
+                variadic: false,
+                ty: last.ty.clone(),
+                shares_type: true,
+            })
+            .collect();
+        params.push(last);
+        Ok(params)
+    }
+
+    /// At `name ,` inside a group that ends in `is`: another name follows.
+    pub(super) fn grouped_name_follows(&self) -> bool {
+        self.check_name_token(0) && self.nth(1).kind == TokenKind::Comma && Self::group_ends_in_is(&self.tokens, self.pos + 2)
+    }
+
+    fn check_name_token(&self, offset: usize) -> bool {
+        self.nth(offset).kind == TokenKind::Identifier
+    }
+
+    /// Do the tokens from `index` read `name ("," name)* is`?
+    pub(super) fn group_ends_in_is(tokens: &[crate::syntax::token::Token], mut index: usize) -> bool {
+        loop {
+            match (tokens.get(index).map(|t| t.kind), tokens.get(index + 1).map(|t| t.kind)) {
+                (Some(TokenKind::Identifier), Some(TokenKind::Is)) => return true,
+                (Some(TokenKind::Identifier), Some(TokenKind::Comma)) => index += 2,
+                _ => return false,
+            }
+        }
+    }
+
     /// `name is ...? Type`
     pub(super) fn parameter(&mut self) -> PResult<Param> {
         let name = self.consume_identifier("Expect parameter name.")?;
@@ -601,6 +654,7 @@ impl Parser<'_> {
             name,
             variadic,
             ty,
+            shares_type: false,
         })
     }
 

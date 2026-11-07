@@ -673,6 +673,10 @@ impl<'s> Printer<'s> {
             close,
             |p, param| {
                 p.word(&param.name.text);
+                // `a, b is T` keeps its single type (#232).
+                if param.shares_type {
+                    return;
+                }
                 p.word(" is ");
                 if param.variadic {
                     p.word("...");

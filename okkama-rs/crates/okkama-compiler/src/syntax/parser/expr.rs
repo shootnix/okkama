@@ -662,7 +662,7 @@ impl Parser<'_> {
     fn starts_anonymous_action(&self, index: usize) -> bool {
         index + 2 < self.tokens.len()
             && self.tokens[index].kind == TokenKind::LeftParen
-            && self.tokens[index + 2].kind == TokenKind::Is
+            && (self.tokens[index + 2].kind == TokenKind::Is || Self::group_ends_in_is(&self.tokens, index + 1))
     }
 
     // ===== primaries =========================================================
@@ -794,7 +794,10 @@ impl Parser<'_> {
     /// anonymous action.
     fn parenthesized(&mut self, start: Span) -> PResult<Expr> {
         self.advance();
-        if self.check(TokenKind::RightParen) || self.nth(1).kind == TokenKind::Is {
+        if self.check(TokenKind::RightParen)
+            || self.nth(1).kind == TokenKind::Is
+            || Self::group_ends_in_is(&self.tokens, self.pos)
+        {
             return self.anonymous_action(start);
         }
         let inner = self.expression()?;
@@ -831,8 +834,8 @@ impl Parser<'_> {
     fn anonymous_action(&mut self, start: Span) -> PResult<Expr> {
         let mut params = Vec::new();
         if !self.check(TokenKind::RightParen) {
-            loop {
-                let param = self.parameter()?;
+            'params: loop {
+                for param in self.parameter_group()? {
                 if params
                     .iter()
                     .any(|seen: &crate::syntax::ast::Param| seen.name.text == param.name.text)
@@ -850,8 +853,9 @@ impl Parser<'_> {
                     ));
                 }
                 params.push(param);
+                }
                 if !self.eat(TokenKind::Comma) {
-                    break;
+                    break 'params;
                 }
                 if self.check(TokenKind::RightParen) {
                     return Err(self.error_here("Expect anonymous action parameter after \",\"."));
