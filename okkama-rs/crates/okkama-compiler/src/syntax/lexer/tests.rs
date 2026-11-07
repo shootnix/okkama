@@ -303,18 +303,6 @@ fn integer_literals_keep_digits_and_radix() {
 }
 
 #[test]
-fn underscores_only_between_decimal_digits() {
-    assert_eq!(
-        kinds_and_lexemes("1__0"),
-        vec!["INT 1", "IDENTIFIER __0", "EOF "]
-    );
-    assert_eq!(
-        kinds_and_lexemes("1_"),
-        vec!["INT 1", "IDENTIFIER _", "EOF "]
-    );
-}
-
-#[test]
 fn malformed_based_literals_are_errors() {
     for text in [
         "0x", "0b", "0b_1", "0b1_", "0b1__0", "0b102", "0xFG", "0x1.5",
@@ -328,13 +316,61 @@ fn malformed_based_literals_are_errors() {
     }
 }
 
+/// Number literals next to dots, separators, exponents and the 64-bit
+/// bounds: fixed tokens, or one error over an exact span (#45).
+#[test]
+fn number_literal_table() {
+    let render = |text: &str| -> Vec<String> {
+        let output = lex(text);
+        if output.diagnostics.is_empty() {
+            return output
+                .tokens
+                .iter()
+                .filter(|token| token.kind != TokenKind::Eof)
+                .map(|token| format!("{} {}", token.kind.name(), &text[token.span.range()]))
+                .collect();
+        }
+        output
+            .diagnostics
+            .iter()
+            .map(|d| format!("error {} {:?}: {}", &text[d.span.range()], d.span.range(), d.message))
+            .collect()
+    };
+    let table: &[(&str, &[&str])] = &[
+        ("1..2", &["INT 1", "DOT_DOT ..", "INT 2"]),
+        ("1..=2", &["INT 1", "DOT_DOT_EQUAL ..=", "INT 2"]),
+        ("1...2", &["INT 1", "ELLIPSIS ...", "INT 2"]),
+        ("1.5", &["FLOAT 1.5"]),
+        ("1.x", &["INT 1", "DOT .", "IDENTIFIER x"]),
+        ("1.", &["INT 1", "DOT ."]),
+        ("1_000.000_1", &["FLOAT 1_000.000_1"]),
+        ("1._5", &["INT 1", "DOT .", "IDENTIFIER _5"]),
+        ("9223372036854775807", &["INT 9223372036854775807"]),
+        ("9223372036854775808", &["INT 9223372036854775808"]),
+        ("-9223372036854775808", &["MINUS -", "INT 9223372036854775808"]),
+        ("0x7FFF_FFFF_FFFF_FFFF", &["INT 0x7FFF_FFFF_FFFF_FFFF"]),
+        ("0x8000000000000000", &["error 0x8000000000000000 0..18: Integer literal 0x8000000000000000 exceeds the signed 64-bit maximum."]),
+        ("0b1..0b10", &["INT 0b1", "DOT_DOT ..", "INT 0b10"]),
+        ("1__0", &["error 1__0 0..4: Invalid integer literal 1__0: `_` may only separate two digits."]),
+        ("1_", &["error 1_ 0..2: Invalid integer literal 1_: `_` may only separate two digits."]),
+        ("x = 1_ + 2", &["error 1_ 4..6: Invalid integer literal 1_: `_` may only separate two digits."]),
+        ("1.5_", &["error 1.5_ 0..4: Invalid float literal 1.5_: `_` may only separate two digits."]),
+        ("1e5", &["error 1e5 0..3: Number literal 1e5 uses an exponent; Okkama has no exponent notation."]),
+        ("1.5E-3", &["error 1.5E-3 0..6: Number literal 1.5E-3 uses an exponent; Okkama has no exponent notation."]),
+        ("(2e+10)", &["error 2e+10 1..6: Number literal 2e+10 uses an exponent; Okkama has no exponent notation."]),
+        ("1e", &["INT 1", "IDENTIFIER e"]),
+        ("1e+", &["INT 1", "IDENTIFIER e", "PLUS +"]),
+        ("0x1.5", &["error 0x1 0..3: Invalid integer literal 0x1."]),
+        ("0b1__0", &["error 0b1__0 0..6: Invalid integer literal 0b1__0."]),
+    ];
+    for (text, expected) in table {
+        assert_eq!(render(text), *expected, "{text}");
+    }
+}
+
 #[test]
 fn based_literals_are_limited_to_int64_max() {
     assert!(errors("0x7FFFFFFFFFFFFFFF").is_empty());
-    assert_eq!(
-        errors("0x8000000000000000"),
-        vec!["Integer literal 0x8000000000000000 exceeds the signed 64-bit maximum."]
-    );
     assert_eq!(
         errors("0x1_0000_0000_0000_0000_0000_0000_0000_0000").len(),
         1

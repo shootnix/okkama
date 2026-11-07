@@ -136,6 +136,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler, lexer (H-22): malformed number literals are one error over the
+  whole literal instead of a number followed by a stray identifier that
+  failed somewhere later — `1__0` and `1_` ("`_` may only separate two
+  digits"), `1.5_`, and exponent notation `1e5`, `1.5E-3`, `2e+10` (Okkama has
+  none). A token table pins numbers next to `.`, `..`, `..=`, `...`, `_` and
+  the 64-bit bounds with exact spans; two OCS cases reject `1__0` and `1e5`.
+  The `INT64_MAX` limit of `0x…`/`0b…` literals stays as documented; whether
+  to lift it is #235 ([#45](https://github.com/shootnix/okkama/issues/45)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the
