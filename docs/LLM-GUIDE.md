@@ -153,7 +153,7 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 | All std, core vs previous VM | `python3 okkama-rs/tools/new-runtime/std-compare.py --compiler okkama --stdlib std --reference sparrow-origin --core sparrow --work DIR [prefixes]` | runs each module caged; expected fails: `locale/collation` (ICU), `net/tcp` (network in cage) |
 | Conformance, core vs previous VM | `core-compare.py --compiler … --stdlib std --origin sparrow-origin --core sparrow --work DIR L00 … L13` | caged; skips workers/network; `SPEC` = core matches case.json where the previous VM cannot |
 | Conformance (OCS) | `cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 6 --adapter-env OCS_RUST_ENGINE=sparrow` | Docker only; the adapter builds its own debug `okkama` in `adapters/rust/.target` |
-| Release gate | `make gate` (= `tools/gate/docker.sh`, ~30–40 min) | Rust tests, conformance ir/jvm/sparrow/sparrow-origin, std tests ir/sparrow vs `tools/gate/known-failures.txt`; logs in `conformance/reports/runs/gate-*` |
+| Release gate | `make gate` (= `tools/gate/docker.sh`, ~40 min) | Rust tests, conformance ir/jvm/sparrow (+ sparrow-origin, informative), std tests ir/sparrow vs `tools/gate/known-failures.txt`; logs in `conformance/reports/runs/gate-*`. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO) |
 
 Last known state (0.4.0): conformance 420/420 on core-compare + 13 core-only
 DB cases matching their spec; std 238 modules pass on the core.
@@ -213,11 +213,26 @@ where regions are needed.
 | `natives.rs` + `host/` | native providers: `host/mod.rs` classifies each ABI native to a provider (`native_network`, `native_tls`, `native_sqlite`, `native_postgres`, `native_db`, `native_json`, …); `native_origin.rs` bridges the rest to `okkama-runtime-core` (sync, plus terminal promises pumped through `sched::pump`) |
 | `worker.rs`, `worker_process.rs` | process workers (OKW1 format), child `--worker FILE.spb` |
 
-**Adding a native**: entry in `okkama-runtime-abi/src/table.rs` (id, symbol,
-signature), declaration in `std/runtime/<module>.ok`, implementation in a core
-provider (`host/native_*.rs`, register in `host/mod.rs` `classify`) — or rely
-on the origin bridge if `okkama-runtime-core` implements it; the IR engine
-uses `okkama-runtime-core`. `sparrow --native-capabilities` lists coverage.
+**Adding a native** — every engine needs it, or std code that calls it fails
+there ("native provider is not implemented"; the gate catches it):
+
+1. `okkama-runtime-abi/src/table.rs`: id, symbol, signature;
+   `std/runtime/<module>.ok`: the `native` declaration.
+2. Sparrow core: a provider in `sparrow-core/src/host/native_*.rs`
+   (registered in `host/mod.rs` `classify`), or nothing if the origin bridge
+   can run the `okkama-runtime-core` implementation.
+3. IR engine: `okkama-runtime-core/src/native/*.rs` (route the module in
+   `native.rs` `route`).
+4. JVM: a `public static` method `runtime_<module>__<name>` in a class of
+   `okkama-compiler/runtime/jvm/src/okkama/rt` (Java 8; FFM code in `src22`,
+   Java 22); types: `int` → `BigInteger`, `bool` → `boolean`, `float` →
+   `Double`, arrays → `List<Object>` (bytes as `Byte`), native objects →
+   `Object`. Rebuild with `okkama-rs/tools/jvm-runtime/build.sh` and commit
+   the classes (they are embedded in `okkama`).
+5. `sparrow-origin` (previous VM) has its own `sparrow-runtime` natives; it is
+   not extended any more (#14).
+
+`sparrow --native-capabilities` lists the core's coverage.
 
 **DB layer**: `std/db/*` (query, row, read/DbPage, statement, transaction),
 drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
