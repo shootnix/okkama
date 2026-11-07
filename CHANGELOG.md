@@ -218,6 +218,26 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   installed. `blade new` writes the sections with their defaults
   ([#68](https://github.com/shootnix/okkama/issues/68)).
 
+### Security
+
+- RSA private operations are constant-time and blinded on every Rust engine:
+  key generation, PSS and PKCS#1 v1.5 signing and OAEP decryption run in
+  aws-lc (`aws-lc-rs` 1.18.2) instead of the `rsa` crate, which has no fix for
+  the Marvin timing attack (RUSTSEC-2023-0071). Signature checks of `crypto/rsa`
+  and X.509 go through aws-lc's own RSA verification, so certificates keep
+  what the JDK accepts: SHA-224, PSS with any salt and the default SHA-1
+  parameters, keys from 1024 to 16384 bits. The `rsa` crate and its advisory
+  exception are gone (`cargo audit --deny warnings` passes with no
+  exceptions). Generated keys and PSS/OAEP randomness now come from aws-lc's
+  CSPRNG: the `entropy` arguments of `crypto/rsa` stay for the API but no
+  longer make these outputs reproducible. Imported PKCS#8 private keys must
+  be 2048 to 8192 bits (a smaller one is InvalidCryptoInput). Every
+  operation got faster (2048-bit key on the core, M2 Max): PSS verification
+  239 → 75 µs, OAEP decryption 5.5 → 3.5 ms, PKCS#1 v1.5 signing 4.6 → 3.3 ms,
+  PSS signing 4.2 → 3.8 ms. OpenSSL vectors cover SHA-384/512 signatures,
+  OAEP-SHA384 and the X.509 legacy forms
+  ([#70](https://github.com/shootnix/okkama/issues/70)).
+
 ### Fixed
 
 - Book: chapter 10 (EN/RU) lists every builtin action the compiler has —

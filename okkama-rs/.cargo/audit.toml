@@ -1,10 +1,4 @@
 # cargo audit (CI: .github/workflows/audit.yml). Every exception names its
 # reason and its ticket; a new advisory fails the build.
 [advisories]
-ignore = [
-    # rsa: Marvin timing side channel, no fixed version of the crate exists.
-    # Private RSA operations (PSS/PKCS#1 v1.5 signing, OAEP decryption) are
-    # not constant-time on the IR runtime and the core; the JVM uses JCA.
-    # Choosing a provider: https://github.com/shootnix/okkama/issues/70
-    "RUSTSEC-2023-0071",
-]
+ignore = []

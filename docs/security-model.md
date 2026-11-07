@@ -79,6 +79,9 @@ separate process with an OS memory limit.
 - Value graphs of the IR engine are freed without recursion ([#28]).
 - A cancelled SQLite query never reaches a closed connection ([#18]); X.509
   path search is bounded ([#17]).
+- Private RSA operations (key generation, PSS and PKCS#1 v1.5 signing, OAEP
+  decryption) run in aws-lc, constant-time and blinded, on every Rust engine
+  ([#70]).
 
 **Not guaranteed.**
 - Budgets on the IR and JVM engines ([#71]).
@@ -86,7 +89,6 @@ separate process with an OS memory limit.
   budget stops the run; the memory budget measures the whole process ([#72]).
 - From the CLI a program has the host access of the user running it: files,
   network, processes, environment.
-- Private RSA operations on the Rust engines are not constant-time ([#70]).
 
 **Use today.** Budgets on the core; a container or OS sandbox for host
 access.

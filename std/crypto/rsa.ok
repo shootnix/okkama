@@ -9,11 +9,14 @@ import "strings/parse" take ParsedInt;
 import "encoding/pem" take PemBlock;
 import "encoding/hex" take HexDecoded;
 
-// RSA (RFC 8017) over the host provider (RustCrypto rsa, constant-time
-// big integers, blinded private operations). Keys are 2048, 3072 or 4096
-// bits. RsaPrivateKey(bits:, entropy:) generates (seconds for 4096 bits) once
-// at construction; RsaPrivateKey(pkcs8: ...) takes DER PKCS#8. Signing and
-// encryption are explicit schemes over a key and a hash:
+// RSA (RFC 8017) over the host provider (aws-lc: constant-time, blinded
+// private operations). Generated keys are 2048, 3072 or 4096 bits; imported
+// PKCS#8 keys 2048 to 8192. The entropy arguments are kept for the API: key
+// generation, PSS salts and OAEP padding draw from the provider's own CSPRNG,
+// so Entropy.fake() does not make them reproducible. RsaPrivateKey(bits:,
+// entropy:) generates once at construction (seconds for 4096 bits);
+// RsaPrivateKey(pkcs8: ...) takes DER PKCS#8. Signing and encryption are
+// explicit schemes over a key and a hash:
 //
 //     RsaPssSigning(key, RsaHash.sha256, entropy)   // RSASSA-PSS, salt = hash length
 //     RsaPkcs1Signing(key, RsaHash.sha256)          // RSASSA-PKCS1-v1_5
