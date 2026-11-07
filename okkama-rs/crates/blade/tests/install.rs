@@ -338,3 +338,40 @@ fn bad_packages_and_conflicts_leave_the_project_as_it_was() {
         "{error}"
     );
 }
+
+/// S01 (#15): a package name is a module path, never a file system path.
+#[test]
+fn package_names_cannot_leave_the_project() {
+    let (tree, app, _) = world("names");
+    let victim = tree.write("victim/proof.txt", "original");
+    // A package without `.ok` files skipped the namespace check: its name was
+    // joined to the staging directory as a path.
+    let evil = tree.write("evil/blade.toml", &manifest_text("../../victim", "1.0.0", ""));
+    tree.write("evil/proof.txt", "replaced");
+    let dir = evil.parent().unwrap().to_str().unwrap().to_string();
+    let error = install::add(&app, &dir, None, false).unwrap_err();
+    assert!(error.contains("package name"), "{error}");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "original");
+    assert!(!app.join("pkg").exists() || !app.join("pkg/../../victim").exists());
+    assert!(!tree.path("victim/blade.toml").exists());
+
+    for bad in ["/abs", "a//b", "", ".", "..", "a/../b", "a/./b", "a b", "1x", "a/", "/", "a\\b", "x:y"] {
+        let text = manifest_text(bad, "1.0.0", "");
+        let error = Manifest::parse(&text).unwrap_err();
+        assert!(error.contains("package name"), "{bad:?}: {error}");
+        let text = manifest_text("app", "1.0.0", &format!("{:?} = \"1.0.0\"\n", bad));
+        let error = Manifest::parse(&text).unwrap_err();
+        assert!(error.contains("package name"), "{bad:?}: {error}");
+    }
+    for good in ["web", "json_ext", "acme/web", "_x2"] {
+        Manifest::parse(&manifest_text(good, "1.0.0", "")).unwrap();
+    }
+    // Two dependencies cannot share a directory of pkg/ through letter case;
+    // nested names (`acme`, `acme/web`) are allowed (the longest name wins).
+    Manifest::parse(&manifest_text("app", "1.0.0", "acme = \"1.0.0\"\n\"acme/web\" = \"1.0.0\"\n")).unwrap();
+    for (a, b) in [("Web", "web")] {
+        let text = manifest_text("app", "1.0.0", &format!("{a:?} = \"1.0.0\"\n{b:?} = \"1.0.0\"\n"));
+        let error = Manifest::parse(&text).unwrap_err();
+        assert!(error.contains("share a directory"), "{a} {b}: {error}");
+    }
+}

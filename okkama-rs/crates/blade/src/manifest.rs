@@ -31,6 +31,38 @@ pub fn is_dependency_path(path: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
+/// A package name is a module path, never a file system path: components
+/// separated by `/`, each an identifier (`[A-Za-z_][A-Za-z0-9_]*`). It is also
+/// the package's directory under `pkg/`, so nothing else may pass.
+pub fn check_package_name(name: &str) -> Result<(), String> {
+    let identifier = |part: &str| {
+        let mut chars = part.chars();
+        chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if name.split('/').all(identifier) {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid package name \"{name}\": use identifiers separated by \"/\" (letters, digits, \"_\")"
+        ))
+    }
+}
+
+/// Names whose directories under `pkg/` would be the same on a file system
+/// that ignores letter case (macOS, Windows).
+pub fn check_distinct<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<(), String> {
+    let mut seen: BTreeMap<String, &str> = BTreeMap::new();
+    for name in names {
+        if let Some(other) = seen.insert(name.to_lowercase(), name) {
+            return Err(format!(
+                "packages \"{other}\" and \"{name}\" would share a directory of {PKG}/ (they differ only in letter case)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// A parsed `blade.toml`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Manifest {
@@ -62,6 +94,9 @@ impl Manifest {
         if let Some(module) = table.get("module") {
             let module = module.as_table().ok_or("[module] must be a table")?;
             manifest.name = string_field(module, "module", "name")?;
+            if let Some(name) = &manifest.name {
+                check_package_name(name)?;
+            }
             manifest.version = string_field(module, "module", "version")?;
         }
         if let Some(dependencies) = table.get("dependencies") {
@@ -69,6 +104,7 @@ impl Manifest {
                 .as_table()
                 .ok_or("[dependencies] must be a table")?;
             for (name, value) in dependencies {
+                check_package_name(name)?;
                 let dependency = match value {
                     toml::Value::String(version) => Dependency {
                         version: Some(version.clone()),
@@ -90,6 +126,7 @@ impl Manifest {
                 };
                 manifest.dependencies.insert(name.clone(), dependency);
             }
+            check_distinct(manifest.dependencies.keys().map(String::as_str))?;
         }
         Ok(manifest)
     }
