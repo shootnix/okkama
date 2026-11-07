@@ -1,0 +1,56 @@
+# Coverage-guided fuzzing (H-17): every target of okkama-rs/fuzz nightly,
+# with the corpus carried over between runs (cache) and the corpus, findings
+# and coverage kept as artifacts. A finding fails the run.
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "37 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per target
+        default: "600"
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup toolchain install nightly --profile minimal --component llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+            okkama-rs/fuzz/target
+          key: fuzz-build-${{ hashFiles('okkama-rs/Cargo.lock', 'okkama-rs/fuzz/Cargo.lock') }}
+          restore-keys: fuzz-build-
+      # The corpus of the previous run, extended by this one.
+      - uses: actions/cache@v4
+        with:
+          path: okkama-rs/fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - name: Fuzz
+        run: tools/fuzz/run.sh "${{ inputs.seconds || '600' }}" --coverage
+      - name: Keep corpus, findings and coverage
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fuzz-${{ github.run_id }}
+          path: |
+            okkama-rs/fuzz/corpus
+            okkama-rs/fuzz/artifacts
+            okkama-rs/fuzz/coverage
+            okkama-rs/fuzz/logs
+          if-no-files-found: ignore

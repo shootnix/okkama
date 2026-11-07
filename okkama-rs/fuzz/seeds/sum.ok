@@ -1,0 +1,6 @@
+module app;
+object Sum {
+    Sum();
+    of(n is int) is int { if n == 0 { 0; } else { n + self.of(n - 1); } }
+}
+main() is int { Sum().of(10) % 7; }

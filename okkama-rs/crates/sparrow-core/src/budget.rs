@@ -205,7 +205,8 @@ pub fn memory_probe() -> Option<MemoryProbe> {
 }
 
 /// mimalloc's committed bytes, a probe for processes whose allocator is
-/// mimalloc (the CLIs); referencing it needs mimalloc linked.
+/// mimalloc (the CLIs, feature `mimalloc`); it needs mimalloc linked.
+#[cfg(feature = "mimalloc")]
 pub fn mimalloc_committed() -> usize {
     unsafe extern "C" {
         fn mi_process_info(
