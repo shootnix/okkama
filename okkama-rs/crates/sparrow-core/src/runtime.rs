@@ -115,6 +115,9 @@ pub struct Runtime {
     pub io: crate::io::Io,
     /// Event counts by name when `SPARROW_CORE_STATS` is set (diagnostics).
     pub stats: Option<Box<std::collections::HashMap<String, u64>>>,
+    /// When this runtime was made: `--stats` reports the run's wall time, so
+    /// machine code ≈ run − compile − collection (#55).
+    created: std::time::Instant,
     /// The command (`sparrow-next`, FILE.spb) process workers run; empty
     /// when the embedder configured none.
     pub worker_command: Vec<std::ffi::OsString>,
@@ -160,6 +163,9 @@ impl Runtime {
         crate::contracts::check(&loaded)?;
         let mut heap = Heap::new(loaded.layouts());
         heap.set_stress(std::env::var_os("SPARROW_CORE_GC_STRESS").is_some_and(|value| value == "1"));
+        if std::env::var_os("SPARROW_CORE_STATS").is_some() {
+            heap.allocations = Some(Box::default());
+        }
         let functions = loaded.program.functions.len();
         let resources = crate::failures::Resources::new(&loaded.program);
         let intrinsics = loaded
@@ -186,6 +192,7 @@ impl Runtime {
             host: Some(Box::new(crate::host::Heap::new(&loaded.program))),
             io: crate::io::Io::default(),
             stats: std::env::var_os("SPARROW_CORE_STATS").map(|_| Box::default()),
+            created: std::time::Instant::now(),
             worker_command: Vec::new(),
             limits: crate::budget::Limits::default(),
             poisoned: false,
@@ -267,11 +274,35 @@ impl Runtime {
             ("heap live bytes, mean after collection".to_string(), (heap.live_sum / heap.collections.max(1)) as u64),
         ];
         let helpers = self.jit.helper_calls();
+        // Runtime allocations by kind (objects by type) and collection time.
+        let program = &self.loaded.program;
+        let allocations: Vec<(String, u64)> = self
+            .heap
+            .allocations
+            .iter()
+            .flat_map(|allocations| {
+                allocations
+                    .kinds
+                    .iter()
+                    .flat_map(|(&(kind, descriptor), &(count, bytes))| {
+                        let what = match kind {
+                            "object" => format!("object {}", program.objects.get(descriptor as usize).map_or("?", |object| object.name.as_str())),
+                            other => other.to_string(),
+                        };
+                        [(format!("alloc runtime {what}, count"), count), (format!("alloc runtime {what}, bytes"), bytes)]
+                    })
+                    .chain([
+                        ("collection, microseconds".to_string(), allocations.collection_nanos / 1000),
+                        ("run, microseconds".to_string(), self.created.elapsed().as_micros() as u64),
+                    ])
+            })
+            .collect();
         let mut entries: Vec<_> = stats
             .iter()
             .map(|(k, v)| (k, v))
             .chain(extra.iter().map(|(k, v)| (k, v)))
             .chain(helpers.iter().map(|(k, v)| (k, v)))
+            .chain(allocations.iter().map(|(k, v)| (k, v)))
             .collect();
         entries.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
         Some(entries.iter().map(|(k, v)| format!("{v:>12} {k}\n")).collect())

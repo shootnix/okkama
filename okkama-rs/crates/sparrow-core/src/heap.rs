@@ -129,9 +129,29 @@ pub struct Heap {
     /// and poison reclaimed cells, so a value kept alive by mistake fails at
     /// once instead of after a reuse.
     stress: bool,
+    /// Allocations made by the runtime (not inline by machine code), by
+    /// kind, and the time spent collecting — when statistics are on (#55).
+    pub allocations: Option<Box<Allocations>>,
+}
+
+/// Runtime allocations by kind: count and bytes; collection time.
+#[derive(Debug, Default)]
+pub struct Allocations {
+    /// (kind, object descriptor or 0) → (count, bytes).
+    pub kinds: std::collections::BTreeMap<(&'static str, u32), (u64, u64)>,
+    pub collection_nanos: u64,
 }
 
 impl Heap {
+    #[inline]
+    pub(crate) fn counted(&mut self, kind: &'static str, descriptor: u32, words: usize) {
+        if let Some(allocations) = &mut self.allocations {
+            let entry = allocations.kinds.entry((kind, descriptor)).or_default();
+            entry.0 += 1;
+            entry.1 += words as u64 * 8;
+        }
+    }
+
     pub fn new(layouts: Layouts) -> Self {
         Self {
             layouts,
@@ -148,6 +168,7 @@ impl Heap {
             watched: crate::word::FastSet::default(),
             released: Vec::new(),
             watch: None,
+            allocations: None,
             stress: false,
         }
     }
@@ -247,6 +268,7 @@ impl Heap {
     // ---- objects ----
 
     pub fn object_new(&mut self, descriptor: u32, fields: &[Word]) -> Word {
+        self.counted("object", descriptor, fields.len().max(1) + 1);
         let object = self.allocate(fields.len().max(1) + 1);
         // SAFETY: freshly allocated storage of fields.len() + 1 words.
         unsafe {
@@ -286,6 +308,7 @@ impl Heap {
     pub fn allocate_text(&mut self, text: &str) -> Word {
         let bytes = text.len();
         let words = 1 + bytes.div_ceil(8).max(1);
+        self.counted("string", 0, words);
         let string = self.allocate(words);
         // SAFETY: room for the header and `bytes` bytes.
         unsafe {
@@ -323,6 +346,7 @@ impl Heap {
     // ---- arrays ----
 
     pub fn allocate_array(&mut self, repr: Repr, elements: &[Word]) -> Word {
+        self.counted("array", 0, elements.len() + 1);
         let array = self.allocate(elements.len() + 1);
         // SAFETY: room for the header and the elements.
         unsafe {
@@ -348,6 +372,7 @@ impl Heap {
 
     /// A byte array (`@byte`): one byte per element after the header.
     pub fn allocate_bytes(&mut self, bytes: &[u8]) -> Word {
+        self.counted("bytes", 0, 1 + bytes.len().div_ceil(8));
         let array = self.allocate(1 + bytes.len().div_ceil(8));
         // SAFETY: room for the header and the bytes.
         unsafe {
@@ -416,6 +441,7 @@ impl Heap {
         // The digits live outside the heap pages; count them so that garbage
         // big integers trigger collections by their real size.
         self.allocated += (n.bits() / 8) as usize + 32;
+        self.counted("bigint", 0, 2);
         let object = self.allocate(2);
         // SAFETY: two fresh words; the box is dropped by the sweep.
         unsafe {
@@ -435,6 +461,7 @@ impl Heap {
     // ---- Rust payloads ----
 
     pub fn allocate_payload(&mut self, payload: Box<dyn Payload>) -> Word {
+        self.counted("payload", 0, 2);
         let object = self.allocate(2);
         // SAFETY: two fresh words; the double box gives a thin pointer.
         unsafe {
@@ -463,6 +490,7 @@ impl Heap {
     pub fn closure_new(&mut self, function: u32, captures: &[Word]) -> Word {
         let words = self.layouts.closures[function as usize].len();
         debug_assert!(captures.len() <= words);
+        self.counted("closure", 0, words.max(1) + 1);
         let closure = self.allocate(words.max(1) + 1);
         // SAFETY: room for the header and `words` words.
         unsafe {
@@ -482,6 +510,14 @@ impl Heap {
     /// Mark everything reachable from `roots`, then sweep. Roots report each
     /// word with its representation; the heap traces the rest by layout.
     pub fn collect(&mut self, roots: impl FnOnce(&mut dyn FnMut(Word, Repr))) {
+        let started = self.allocations.is_some().then(std::time::Instant::now);
+        self.collect_inner(roots);
+        if let (Some(allocations), Some(started)) = (&mut self.allocations, started) {
+            allocations.collection_nanos += started.elapsed().as_nanos() as u64;
+        }
+    }
+
+    fn collect_inner(&mut self, roots: impl FnOnce(&mut dyn FnMut(Word, Repr))) {
         let mut worklist = std::mem::take(&mut self.worklist);
         roots(&mut |word, repr| {
             if let Some(pointer) = repr.pointer(word) {

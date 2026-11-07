@@ -117,6 +117,7 @@ impl Runtime {
         let source = &self.loaded.program.functions[function];
         let registers = source.registers.len();
         let words = 1 + FIXED_WORDS + registers + usize::from(self.loaded.functions[function].driver);
+        self.heap.counted("async frame", 0, words);
         let frame = self.heap.allocate(words);
         // SAFETY: fresh storage of `words` words.
         unsafe {

@@ -308,3 +308,44 @@ fn handlers_read_old_registers_across_collections() {
         }
     }
 }
+#[test]
+fn stats_attribute_allocations_to_sites_and_kinds() {
+    // main: a Point(x: 7) object, then x as the exit status.
+    let program = Program {
+        module: "app".into(),
+        version: "1.0.0".into(),
+        types: vec![Type::Int, Type::Object(okkama_sparrow::ObjectRef(0))],
+        objects: vec![okkama_sparrow::ObjectDecl {
+            name: "Point".into(),
+            fields: vec![("x".into(), TypeRef(0))],
+            does: Vec::new(),
+            destroy: None,
+            builtin: false,
+        }],
+        functions: vec![Function {
+            symbol: "main".into(),
+            is_async: false,
+            native: None,
+            intrinsic: None,
+            registers: vec![TypeRef(0), TypeRef(1), TypeRef(0)],
+            params: Vec::new(),
+            result: Some(TypeRef(0)),
+            code: vec![
+                Instruction::Const { dst: Dst(Register(0)), value: Constant::Int("7".into()) },
+                Instruction::ObjNew { dst: Dst(Register(1)), object: okkama_sparrow::ObjectRef(0), fields: vec![Register(0)] },
+                Instruction::ObjGet { dst: Dst(Register(2)), object: Register(1), field: 0 },
+                Instruction::Return { value: Some(Register(2)) },
+            ],
+            handlers: Vec::new(),
+        }],
+        entry: Some(FuncRef(0)),
+        ..Program::default()
+    };
+    let file = File::new(&okkama_sparrow::encode(&program).unwrap());
+    let output = file.run_with(&["run", "--stats"]);
+    assert_eq!(output.status.code(), Some(7));
+    let stats = String::from_utf8_lossy(&output.stderr);
+    for line in ["1 alloc site main:1 obj.new Point, count", "16 alloc site main:1 obj.new Point, bytes", " run, microseconds", " collection, microseconds"] {
+        assert!(stats.contains(line), "{line:?} in\n{stats}");
+    }
+}
