@@ -7,7 +7,8 @@
 #
 # Шаги:
 #   1. release-сборка okkama и sparrow (провал — ворота останавливаются),
-#      тесты Rust всего workspace (release), тесты освобождения IR в debug;
+#      тесты Rust всего workspace (release и debug: глубина стека и
+#      debug-проверки видны только там), clippy без предупреждений;
 #   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
 #      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
 #      сведения: у него нет нативов, добавленных с 0.4.0);
@@ -112,16 +113,27 @@ if [[ $QUICK -eq 0 ]]; then
 fi
 
 if [[ $QUICK -eq 0 ]]; then
-    # Drops of deep value graphs must not recurse: debug frames are larger,
-    # so the IR runtime's drop tests run unoptimized too (#28).
-    step "IR runtime drop tests (debug)"
+    # Debug frames are larger and debug assertions are on: stack depth (drops
+    # of deep value graphs, #28) and invariants fail here first (#42).
+    step "Rust tests (debug, workspace)"
     started=$SECONDS
-    if (cd "$ROOT/okkama-rs" && cargo test -p okkama-runtime-core --lib drop_tests >"$LOGS/debug-drop-tests.log" 2>&1); then
-        record "debug drop tests" pass $((SECONDS - started))
+    if (cd "$ROOT/okkama-rs" && cargo test --workspace --no-fail-fast >"$LOGS/cargo-test-debug.log" 2>&1); then
+        record "rust tests debug" pass $((SECONDS - started))
+        echo "ok: $(grep -c '^test result: ok' "$LOGS/cargo-test-debug.log") test binaries"
     else
-        record "debug drop tests" fail $((SECONDS - started))
-        tail -20 "$LOGS/debug-drop-tests.log"
-        fail "IR runtime drop tests (debug)"
+        record "rust tests debug" fail $((SECONDS - started))
+        grep -E "^test .* FAILED|panicked|^error|SIGABRT|overflowed its stack" "$LOGS/cargo-test-debug.log" | head -20
+        fail "Rust tests (debug)"
+    fi
+
+    step "clippy"
+    started=$SECONDS
+    if (cd "$ROOT/okkama-rs" && cargo clippy --workspace --all-targets -- -D warnings >"$LOGS/clippy.log" 2>&1); then
+        record clippy pass $((SECONDS - started))
+    else
+        record clippy fail $((SECONDS - started))
+        grep -E "^(warning|error)" -A4 "$LOGS/clippy.log" | head -30
+        fail "clippy"
     fi
 fi
 

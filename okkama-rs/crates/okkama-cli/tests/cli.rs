@@ -1351,7 +1351,7 @@ fn functions_with_huge_frames_stay_interpreted_under_eager_jit() {
         values.join(", ")
     );
     // Σ(seed + i) for seed 1 and 2 over i < 20 000, modulo 251.
-    let expected = ((count * (count - 1) + 3 * count) % 251) as i32;
+    let expected = (count * (count - 1) + 3 * count) % 251;
     let file = TempFile::new("wide-frame.ok", source.as_bytes());
     for mode in ["off", "eager"] {
         let output = okkama()

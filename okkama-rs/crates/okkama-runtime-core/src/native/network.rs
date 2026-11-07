@@ -1532,7 +1532,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         "udp_send" => {
             let attempt = || -> Result<Value, Rc<Failure>> {
-                let (family, port, address) = decode(native, &args[0 + 1]).map_err(|error| match error {
+                let (family, port, address) = decode(native, &args[1]).map_err(|error| match error {
                     Error::Failure(failure) => Failure::new(Kind::Native(Rc::new(failure))),
                     other => Failure::new(Kind::Program(format!("{other:?}"))),
                 })?;

@@ -192,13 +192,14 @@ fn run() -> Result<u8, Failure> {
             let mut stats = false;
             let mut limits = sparrow_core::budget::Limits::default();
             let mut rest = rest;
-            while first == "run" {
-                match rest {
-                    [flag, tail @ ..] if flag == "--stats" => {
+            // Options belong to `run` only.
+            while let ("run", [flag, tail @ ..]) = (first.as_str(), rest) {
+                match (flag.as_str(), tail) {
+                    ("--stats", _) => {
                         stats = true;
                         rest = tail;
                     }
-                    [flag, value, tail @ ..] if limits.option(flag, value).map_err(|e| (2, e))? => rest = tail,
+                    (_, [value, tail @ ..]) if limits.option(flag, value).map_err(|e| (2, e))? => rest = tail,
                     _ => break,
                 }
             }

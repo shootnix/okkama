@@ -110,7 +110,7 @@ fn descriptor_flags(program: &Program) -> Vec<bool> {
             // A role value is one of the objects doing it (linked below);
             // runtime-made values of a builtin role (`Error`) are not.
             Type::Role(role) if !program.roles[role.0 as usize].builtin => {
-                roles.entry(role.0).or_insert_with(Vec::new).push(index);
+                roles.entry(role.0).or_default().push(index);
                 None
             }
             _ => {

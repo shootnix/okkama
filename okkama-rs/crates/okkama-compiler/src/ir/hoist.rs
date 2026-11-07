@@ -22,7 +22,7 @@ pub fn hoist_loop_constants(module: &mut Module) -> usize {
 
 fn hoist(function: &mut Function) -> usize {
     let count = function.blocks.len();
-    if count < 2 || count > MAX_BLOCKS {
+    if !(2..=MAX_BLOCKS).contains(&count) {
         return 0;
     }
     let successors: Vec<Vec<usize>> = (0..count)

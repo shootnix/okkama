@@ -355,7 +355,7 @@ impl CommandNew {
         let mut file = std::fs::File::create(path)?;
         file.write_all(filecontent)?;
         
-        return Ok(())
+        Ok(())
     }
 }
 
@@ -373,7 +373,7 @@ impl  CommandVersion {
 
 impl Cli {
     pub fn new(args: Args) -> Self {
-        Self { args: args }
+        Self { args }
     }
 
     pub fn command(self) -> Box<dyn Command> {

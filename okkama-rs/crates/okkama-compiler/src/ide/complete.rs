@@ -623,7 +623,7 @@ impl CallSite {
         names
             .iter()
             .position(|param| free(param) && param.starts_with(typed))
-            .or_else(|| names.iter().position(|param| free(param)))
+            .or_else(|| names.iter().position(free))
             .unwrap_or(position)
     }
 

@@ -938,7 +938,7 @@ fn temporary_name(prefix: &str) -> String {
     name
 }
 
-fn prefix<'a>(native: Native, prefix: &'a str) -> Result<&'a str, Error> {
+fn prefix(native: Native, prefix: &str) -> Result<&str, Error> {
     if prefix.contains(['\0', '/', '\\']) {
         return Err(fail(native, "invalid_input", "Temporary prefix must be one path component"));
     }

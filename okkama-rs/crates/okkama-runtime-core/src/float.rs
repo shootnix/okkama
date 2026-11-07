@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(format_g(2.5, 1), "2");
         assert_eq!(format_g(3.5, 1), "4");
         assert_eq!(format_g(-1.5e-300, 3), "-1.5e-300");
-        assert_eq!(format_g(9.9999999999999999e22, 15), "1e+23");
+        assert_eq!(format_g(1e23, 15), "1e+23");
     }
 
     use super::*;

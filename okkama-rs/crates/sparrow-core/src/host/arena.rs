@@ -96,8 +96,4 @@ impl<T> Arena<T> {
         self.live = live;
         self.allocations = 0;
     }
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
 }

@@ -633,7 +633,7 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
                 &crate::integer::multiply(&IntValue::from_i64(seconds), &billion),
                 int(&args[7])?,
             );
-            let rat = crate::rat::Rat::new(&numerator, &billion).map_err(|message| Error::Trap(message))?;
+            let rat = crate::rat::Rat::new(&numerator, &billion).map_err(Error::Trap)?;
             Ok(Value::Rat(Rc::new(rat)))
         }
         _ => Err(Error::Unsupported(format!(

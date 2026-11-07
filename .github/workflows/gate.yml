@@ -24,7 +24,7 @@ jobs:
       - name: Rust
         run: |
           toolchain="$(cat tools/release-toolchain.txt)"
-          rustup toolchain install "$toolchain" --profile minimal && rustup default "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal --component clippy && rustup default "$toolchain"
       - uses: actions/cache@v4
         with:
           path: |

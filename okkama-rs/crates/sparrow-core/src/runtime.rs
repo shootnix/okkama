@@ -269,7 +269,6 @@ impl Runtime {
         let helpers = self.jit.helper_calls();
         let mut entries: Vec<_> = stats
             .iter()
-            .map(|(k, v)| (k, v))
             .chain(extra.iter().map(|(k, v)| (k, v)))
             .chain(helpers.iter().map(|(k, v)| (k, v)))
             .collect();

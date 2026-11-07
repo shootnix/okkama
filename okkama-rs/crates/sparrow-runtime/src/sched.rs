@@ -107,6 +107,9 @@ impl Task {
 /// цикле событий потока программы.
 type Delivery = Box<dyn std::any::Any + Send>;
 
+/// Продолжение внешней операции: получает её исход.
+type Continuation = Box<dyn FnOnce(Delivery)>;
+
 struct Scheduler {
     current: RefCell<Rc<Task>>,
     /// Future, запущенные `spawn`: их исход проверяет завершение программы.
@@ -122,7 +125,7 @@ struct Scheduler {
     sender: std::sync::mpsc::Sender<(u64, Delivery)>,
     receiver: std::sync::mpsc::Receiver<(u64, Delivery)>,
     /// Продолжения внешних операций по номеру.
-    pending: RefCell<HashMap<u64, Box<dyn FnOnce(Delivery)>>>,
+    pending: RefCell<HashMap<u64, Continuation>>,
     next_op: Cell<u64>,
 }
 

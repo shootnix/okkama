@@ -369,7 +369,8 @@ fn package_names_cannot_leave_the_project() {
     // Two dependencies cannot share a directory of pkg/ through letter case;
     // nested names (`acme`, `acme/web`) are allowed (the longest name wins).
     Manifest::parse(&manifest_text("app", "1.0.0", "acme = \"1.0.0\"\n\"acme/web\" = \"1.0.0\"\n")).unwrap();
-    for (a, b) in [("Web", "web")] {
+    {
+        let (a, b) = ("Web", "web");
         let text = manifest_text("app", "1.0.0", &format!("{a:?} = \"1.0.0\"\n{b:?} = \"1.0.0\"\n"));
         let error = Manifest::parse(&text).unwrap_err();
         assert!(error.contains("share a directory"), "{a} {b}: {error}");

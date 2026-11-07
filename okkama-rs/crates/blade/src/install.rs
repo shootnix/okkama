@@ -691,7 +691,6 @@ fn checksum(dir: &Path) -> Result<String, String> {
 
 // ----- установка -----
 
-/// Assemble the new `pkg/` beside the old one and swap it in.
 // ----- фиксация pkg/ и blade.lock -----
 //
 // pkg/ and blade.lock change together: both are prepared next to the old ones
@@ -736,6 +735,7 @@ fn write_synced(file: &Path, text: &str) -> Result<(), String> {
     handle.write_all(text.as_bytes()).and_then(|()| handle.sync_all()).map_err(io(file))
 }
 
+/// Assemble the new `pkg/` beside the old one and swap it in.
 fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>, lock: &Lock) -> Result<(), String> {
     let staged = root.join(STAGED);
     let pkg = root.join(PKG);
