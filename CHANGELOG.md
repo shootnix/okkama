@@ -172,6 +172,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   gone); the pass shares that routine with the recursion analysis
   ([#51](https://github.com/shootnix/okkama/issues/51)).
 
+- Runtimes, strings (O07): slicing a non-ASCII string one code point at a
+  time, and `length()` in a loop, are linear on every engine instead of
+  quadratic. Each engine remembers, for its four most recently indexed long
+  strings, the code point count and the byte (on the JVM, `char`) offset of
+  the last position reached, and walks from the nearest of the start, the end
+  and that position; strings stay code point indexed. Random access costs the
+  distance from the nearest of those three points. Slicing 16 384 Cyrillic
+  letters one by one took 0.84 s on the IR engine, 0.44 s on the Sparrow core
+  and 0.68 s on the JVM; it now takes 0.13 s, 0.05 s and 0.12 s, and 65 536
+  letters take 0.49 s, 0.13 s and 0.20 s (a debug build against the 0.4.0
+  release). The core's cache is cleared at each collection, the only time a
+  string's memory is freed; the IR engine and the JVM hold weak references
+  ([#52](https://github.com/shootnix/okkama/issues/52)).
+
 - Runtimes: host state belongs to one run, not to a thread (Q03). Every
   engine entry (IR program and test runs, the previous Sparrow VM, each
   Sparrow core run) opens a host session — a copy of the process's working

@@ -431,14 +431,88 @@ public final class Rt {
 
     // ----- строки (по code points) -----
 
+    /**
+     * Позиции нескольких недавних строк потока (#52): число code points и
+     * индекс char последнего достигнутого code point. Индекс рядом с ним
+     * ищется от него, поэтому size() в цикле и срез по одному code point
+     * подряд линейны, а не квадратичны.
+     */
+    private static final class Positions {
+        final java.lang.ref.WeakReference<?>[] texts = new java.lang.ref.WeakReference<?>[4];
+        final int[] counts = new int[4], points = new int[4], chars = new int[4];
+        int next;
+
+        int entry(String text) {
+            for (int at = 0; at < texts.length; at++) {
+                if (texts[at] != null && texts[at].get() == text) {
+                    return at;
+                }
+            }
+            int at = next;
+            next = (next + 1) % texts.length;
+            texts[at] = new java.lang.ref.WeakReference<String>(text);
+            counts[at] = text.codePointCount(0, text.length());
+            points[at] = 0;
+            chars[at] = 0;
+            return at;
+        }
+
+        /** Индекс char code point {@code index} (не больше числа). */
+        int offset(String text, int index) {
+            int at = entry(text);
+            int point = 0, position = 0;
+            int best = index;
+            if (Math.abs(counts[at] - index) < best) {
+                point = counts[at];
+                position = text.length();
+                best = Math.abs(counts[at] - index);
+            }
+            if (Math.abs(points[at] - index) < best) {
+                point = points[at];
+                position = chars[at];
+            }
+            while (point < index) {
+                position += Character.charCount(text.codePointAt(position));
+                point++;
+            }
+            while (point > index) {
+                position--;
+                if (position > 0 && Character.isLowSurrogate(text.charAt(position)) && Character.isHighSurrogate(text.charAt(position - 1))) {
+                    position--;
+                }
+                point--;
+            }
+            points[at] = point;
+            chars[at] = position;
+            return position;
+        }
+    }
+
+    private static final ThreadLocal<Positions> POSITIONS = ThreadLocal.withInitial(Positions::new);
+
+    /** Короткие строки дешевле посчитать, чем искать в кэше. */
+    private static final int CACHED_LENGTH = 64;
+
+    private static int codePoints(String text) {
+        if (text.length() < CACHED_LENGTH) {
+            return text.codePointCount(0, text.length());
+        }
+        Positions positions = POSITIONS.get();
+        return positions.counts[positions.entry(text)];
+    }
+
     public static BigInteger length(String text) {
-        return BigInteger.valueOf(text.codePointCount(0, text.length()));
+        return BigInteger.valueOf(codePoints(text));
     }
 
     public static String slice(String text, BigInteger start, BigInteger end) {
-        sliceBounds(start, end, text.codePointCount(0, text.length()));
-        int from = text.offsetByCodePoints(0, start.intValue());
-        int to = text.offsetByCodePoints(0, end.intValue());
+        sliceBounds(start, end, codePoints(text));
+        if (text.length() < CACHED_LENGTH) {
+            return text.substring(text.offsetByCodePoints(0, start.intValue()), text.offsetByCodePoints(0, end.intValue()));
+        }
+        Positions positions = POSITIONS.get();
+        int from = positions.offset(text, start.intValue());
+        int to = positions.offset(text, end.intValue());
         return text.substring(from, to);
     }
 

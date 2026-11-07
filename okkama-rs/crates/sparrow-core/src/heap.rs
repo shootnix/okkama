@@ -129,6 +129,42 @@ pub struct Heap {
     /// and poison reclaimed cells, so a value kept alive by mistake fails at
     /// once instead of after a reuse.
     stress: bool,
+    /// Code point positions of recently indexed non-ASCII strings.
+    positions: Positions,
+}
+
+/// Code point positions of a few recently indexed non-ASCII strings (#52):
+/// the number of code points, and the byte offset of the last code point
+/// index reached. Indexing near it walks from there, so `size()` in a loop
+/// and slicing one code point after another are linear, not quadratic.
+/// Strings are immutable and freed only by a collection, which clears it.
+#[derive(Debug, Default)]
+struct Positions {
+    entries: [Position; 4],
+    next: usize,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Position {
+    string: Word,
+    count: Option<usize>,
+    char: usize,
+    byte: usize,
+}
+
+impl Positions {
+    fn entry(&mut self, string: Word) -> &mut Position {
+        let at = match self.entries.iter().position(|entry| entry.string == string) {
+            Some(at) => at,
+            None => {
+                let at = self.next;
+                self.next = (self.next + 1) % self.entries.len();
+                self.entries[at] = Position { string, ..Position::default() };
+                at
+            }
+        };
+        &mut self.entries[at]
+    }
 }
 
 impl Heap {
@@ -148,6 +184,7 @@ impl Heap {
             watched: crate::word::FastSet::default(),
             released: Vec::new(),
             watch: None,
+            positions: Positions::default(),
             stress: false,
         }
     }
@@ -307,6 +344,53 @@ impl Heap {
         // allocated (allocation neither moves nor collects).
         let part = unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(pointer, length)) };
         self.allocate_text(part)
+    }
+
+    /// The number of code points of `string`.
+    pub fn char_count(&mut self, string: Word) -> usize {
+        if self.is_ascii_text(string) {
+            return self.text(string).len();
+        }
+        if let Some(count) = self.positions.entry(string).count {
+            return count;
+        }
+        let count = self.text(string).chars().count();
+        self.positions.entry(string).count = Some(count);
+        count
+    }
+
+    /// The byte offset of code point `index` (at most the count) of
+    /// `string`, walking from the nearest of the start, the end and the last
+    /// position reached.
+    pub fn char_offset(&mut self, string: Word, index: usize) -> usize {
+        if self.is_ascii_text(string) {
+            return index;
+        }
+        let count = self.char_count(string);
+        let text: &str = {
+            let length = payload(self.header_of(string)) as usize;
+            // SAFETY: as in `text`; the string outlives this call.
+            unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts((string + 8) as *const u8, length)) }
+        };
+        let entry = self.positions.entry(string);
+        let (mut char, mut byte) = [(0, 0), (count, text.len()), (entry.char, entry.byte)]
+            .into_iter()
+            .min_by_key(|(char, _)| char.abs_diff(index))
+            .expect("three starts");
+        let bytes = text.as_bytes();
+        while char < index {
+            byte += utf8_width(bytes[byte]);
+            char += 1;
+        }
+        while char > index {
+            byte -= 1;
+            while bytes[byte] & 0xC0 == 0x80 {
+                byte -= 1;
+            }
+            char -= 1;
+        }
+        (entry.char, entry.byte) = (char, byte);
+        byte
     }
 
     pub fn text(&self, string: Word) -> &str {
@@ -482,6 +566,8 @@ impl Heap {
     /// Mark everything reachable from `roots`, then sweep. Roots report each
     /// word with its representation; the heap traces the rest by layout.
     pub fn collect(&mut self, roots: impl FnOnce(&mut dyn FnMut(Word, Repr))) {
+        // A freed string's address may be reused for another one.
+        self.positions = Positions::default();
         let mut worklist = std::mem::take(&mut self.worklist);
         roots(&mut |word, repr| {
             if let Some(pointer) = repr.pointer(word) {
@@ -782,5 +868,39 @@ mod tests {
         assert_eq!(heap.stats().large, 2);
         heap.collect(|_| {});
         assert_eq!(heap.stats().large, 0);
+    }
+
+    /// Code point positions agree with a plain count from the start, in any
+    /// order of access, for several strings at once and across collections
+    /// (#52).
+    #[test]
+    fn code_point_positions_match_a_plain_count() {
+        let mut heap = Heap::new(layouts());
+        let texts = ["ascii only text", "жёлтый 😀 e\u{301} 中文 ok", "😀😀😀", ""];
+        let words: Vec<Word> = texts.iter().map(|text| heap.allocate_text(text)).collect();
+        let mut state: u64 = 7;
+        for round in 0..2000 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let which = (state >> 33) as usize % texts.len();
+            let (text, word) = (texts[which], words[which]);
+            let count = text.chars().count();
+            assert_eq!(heap.char_count(word), count);
+            let index = (state >> 13) as usize % (count + 1);
+            let plain = text.char_indices().map(|(at, _)| at).chain([text.len()]).nth(index).unwrap();
+            assert_eq!(heap.char_offset(word, index), plain, "{text:?} {index}");
+            if round % 500 == 0 {
+                heap.collect(|visit| words.iter().for_each(|&word| visit(word, Repr::Ref)));
+            }
+        }
+    }
+}
+
+/// Bytes of the UTF-8 sequence that starts with `lead`.
+fn utf8_width(lead: u8) -> usize {
+    match lead {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        _ => 4,
     }
 }
