@@ -8,6 +8,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sparrow: a crafted `.spb` could make the core read an integer as a pointer —
+  the core takes each register's machine representation from the declared
+  types, and the verifier checked only structure. The SPB verifier now checks
+  types: the operands and result of every instruction, call arity and argument
+  and result types (`call`, `call.fn`, `call.role`, `call.cap`, `fn.closure`,
+  `worker.spawn`), edge moves, handler failure registers, `ret`, role slots,
+  cap fields, `destroy`, the entry (`int`, no parameters) and tests, and
+  natives against the ABI signatures. The core checks intrinsic contracts at
+  load (arity, kinds, Atomic/Event cell receivers, related objects, timeout
+  helpers; `sparrow check` runs them), recognizes Atomic and Event cells by
+  their constructor intrinsics instead of by name, and keeps every channel's
+  messages to one representation. Generic payloads checked by type:
+  [#69](https://github.com/shootnix/okkama/issues/69)
+  ([#16](https://github.com/shootnix/okkama/issues/16)).
+
 - Blade: a package name is checked as a module path (identifiers separated by `/`)
   before it becomes a directory of `pkg/`; `../../victim` as a name of a package
   without `.ok` files replaced files outside the project. Names differing only in

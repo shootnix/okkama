@@ -200,7 +200,8 @@ where regions are needed.
 | File | Role |
 |---|---|
 | `lib.rs` | entry points: `run_configured`, `run_reported` (OCS: `Uncaught`), `run_tests`, `run_worker`, `default_environment`; VM thread with a 1 GiB stack |
-| `program.rs` | loaded program facts: machine representation (`Kind`) of every type |
+| `program.rs` | loaded program facts: machine representation (`Kind`) of every type; Atomic and Event cells (descriptors their constructor intrinsics name) |
+| `contracts.rs` | load-time intrinsic contracts: arity, kinds, receiver layouts, related objects, timeout helpers (`sparrow check` runs them too) |
 | `word.rs` | one word per value; reprs Int/Raw/Ref |
 | `jit.rs` | whole-function Cranelift compilation on first call; stack maps (`maps`: frame-to-SP offset + live slots); safepoints |
 | `code_memory.rs` | JIT memory: one reservation per kind, no membarrier |
@@ -212,6 +213,18 @@ where regions are needed.
 | `intrinsics.rs`, `primitives.rs` | runtime-provided functions; Atomic, Event, Lock, channels, groups |
 | `natives.rs` + `host/` | native providers: `host/mod.rs` classifies each ABI native to a provider (`native_network`, `native_tls`, `native_sqlite`, `native_postgres`, `native_db`, `native_json`, …); `native_origin.rs` bridges the rest to `okkama-runtime-core` (sync, plus terminal promises pumped through `sched::pump`) |
 | `worker.rs`, `worker_process.rs` | process workers (OKW1 format), child `--worker FILE.spb` |
+
+**Trust in SPB.** The core picks every register's machine representation
+from the SPB's declared types, so a false type would make it read an integer
+as a pointer. `okkama_sparrow::Program::verify` (run by `decode`, `encode` and
+the assembler) checks the operand and result types of every instruction,
+calls (arity, argument and result types), edge moves, handlers, `ret`, role
+slots, cap fields, `destroy`, the entry and tests, and natives against the ABI
+table (`typing.rs`); `sparrow-core/src/contracts.rs` checks intrinsics. A new
+instruction needs a rule in `typing.rs`, a new intrinsic a contract in
+`contracts.rs`, otherwise a crafted file can break memory safety. Generic
+intrinsic payloads are held to one representation, not one type
+([#69](https://github.com/shootnix/okkama/issues/69)).
 
 **Adding a native** — every engine needs it, or std code that calls it fails
 there ("native provider is not implemented"; the gate catches it):

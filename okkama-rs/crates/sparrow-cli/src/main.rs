@@ -29,7 +29,8 @@ run          Verify and execute bytecode; ARGS are the program's arguments.
              counts of runtime events at exit (also SPARROW_CORE_STATS=1).
 test         Run the tests of bytecode built with `okkama build -t`
              (`sparrow --test FILE.spb` is the same).
-check        Verify bytecode without executing it.
+check        Verify bytecode (types, calls, intrinsic contracts) without
+             executing it.
 --assemble   Assemble Sparrow assembly text into bytecode.
 --disassemble  Print bytecode as Sparrow assembly (stdout without -o).
 --native-capabilities  List natives (JSON) and whether this runtime has them.
@@ -184,7 +185,10 @@ fn run() -> Result<u8, Failure> {
                 return Ok(0);
             }
             match first.as_str() {
-                "check" if arguments.is_empty() => load(Path::new(path)).map(|_| 0),
+                "check" if arguments.is_empty() => {
+                    let bytes = read(Path::new(path))?;
+                    sparrow_core::check(&bytes).map(|()| 0).map_err(|e| (1, e.0))
+                }
                 "test" if arguments.is_empty() => test(Path::new(path)),
                 "run" => execute(Path::new(path), arguments, stats),
                 _ => Err(usage()),

@@ -196,3 +196,45 @@ fn uncaught_failures_are_reported_like_okkama() {
     let quiet = Command::new(env!("CARGO_BIN_EXE_sparrow-origin")).arg("run").arg(&file.0).env("OKKAMA_TRACE", "off").output().unwrap();
     assert_eq!(String::from_utf8_lossy(&quiet.stderr), "RuntimeError: confirm failed\n");
 }
+
+/// An Atomic read on an object the program builds itself: the core would
+/// read the cell's closed flag past the object (#16).
+#[test]
+fn check_refuses_intrinsics_against_their_runtime_contract() {
+    use okkama_sparrow::{Intrinsic, ObjectDecl, ObjectRef};
+    let mut program = main(
+        3,
+        vec![
+            Instruction::ObjNew { dst: Dst(Register(1)), object: ObjectRef(0), fields: vec![] },
+            Instruction::Call { dst: Some(Dst(Register(2))), function: FuncRef(1), args: vec![Register(1)] },
+            Instruction::Const { dst: Dst(Register(0)), value: Constant::Int("0".into()) },
+            Instruction::Return { value: Some(Register(0)) },
+        ],
+    );
+    program.types.extend([Type::Object(ObjectRef(0)), Type::Bool]);
+    program.functions[0].registers = vec![TypeRef(0), TypeRef(1), TypeRef(2)];
+    program.objects = vec![ObjectDecl { name: "Atomic".into(), fields: vec![], does: vec![], destroy: None, builtin: false }];
+    program.functions.push(Function {
+        symbol: "Atomic.closed".into(),
+        is_async: false,
+        native: None,
+        intrinsic: Some(Intrinsic { name: "okkama.atomic.Atomic.closed".into(), objects: vec![], helpers: vec![] }),
+        registers: vec![TypeRef(1)],
+        params: vec![Register(0)],
+        result: Some(TypeRef(2)),
+        code: Vec::new(),
+        handlers: Vec::new(),
+    });
+    let file = File::new(&okkama_sparrow::encode(&program).unwrap());
+    for command in ["check", "run"] {
+        let output = file.run(command);
+        assert_eq!(output.status.code(), Some(1), "{command}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("intrinsic contract: parameter 0"), "{command}: {stderr}");
+    }
+    // Without the plain construction no such object can exist: accepted.
+    program.functions[0].code[0] = Instruction::Undef { dst: Dst(Register(1)) };
+    program.functions[0].code[1] = Instruction::Const { dst: Dst(Register(2)), value: Constant::Bool(false) };
+    let file = File::new(&okkama_sparrow::encode(&program).unwrap());
+    assert!(file.run("check").status.success());
+}

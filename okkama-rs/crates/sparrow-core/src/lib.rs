@@ -22,6 +22,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 mod code_memory;
+mod contracts;
 pub mod drivers;
 pub mod failures;
 pub mod heap;
@@ -52,6 +53,13 @@ pub fn run(bytes: Vec<u8>) -> Result<i64, Error> {
 /// `run` with the program's command-line arguments.
 pub fn run_with(bytes: Vec<u8>, arguments: Vec<Vec<u8>>) -> Result<i64, Error> {
     run_configured(bytes, arguments, false, Vec::new())
+}
+
+/// Everything loading checks before a program runs: the SPB verifier and
+/// the intrinsic contracts of the core (`sparrow check`).
+pub fn check(bytes: &[u8]) -> Result<(), Error> {
+    let program = okkama_sparrow::decode(bytes).map_err(|e| Error(e.to_string()))?;
+    contracts::check(&program::Loaded::new(program))
 }
 
 /// `run_with`, optionally printing runtime event counts to stderr at exit

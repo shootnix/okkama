@@ -319,10 +319,19 @@ fn channel(runtime: &mut Runtime, frame: Word, function: usize, send: bool, deli
         }
         _ => return Pending,
     }
+    // Sending<T> and Receiving<T> of one channel agree on T only by the
+    // program's types; the core holds them to one representation.
+    let repr = if send {
+        param_kind(runtime, function, 1).repr()
+    } else {
+        runtime.loaded.functions[function].result.map_or(Repr::Raw, Kind::repr)
+    };
+    if *channel.borrow_mut().repr.get_or_insert(repr) != repr {
+        return fail(runtime, FailureKind::Program("Channel endpoints disagree on the message type".into()));
+    }
     if send {
         let value = param(runtime, frame, function, 1);
         let mut c = channel.borrow_mut();
-        c.repr = Kind::repr(param_kind(runtime, function, 1));
         if c.closed {
             drop(c);
             return Failed(failure_of(runtime, function, 0));

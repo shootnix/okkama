@@ -55,8 +55,8 @@ pub struct FunctionInfo {
 pub struct Loaded {
     pub program: Program,
     pub functions: Vec<FunctionInfo>,
-    /// Descriptor of `async.event::Event`, if the program has it.
-    event: Option<usize>,
+    /// Per descriptor: is it an Event cell (created by `Event.new`)?
+    events: Vec<bool>,
     /// Worker Future functions by result type (see [`WORKER`]).
     workers: Vec<(Option<TypeRef>, usize)>,
 }
@@ -117,11 +117,18 @@ impl Loaded {
                 driver: is_driver(f),
             })
             .collect();
-        let event = program
-            .objects
-            .iter()
-            .position(|o| o.name == "async.event::Event" && o.fields.len() == 1 && o.fields[0].0 == "initial");
-        Self { program, functions, event, workers }
+        // A cell is what its constructor intrinsic makes, whatever its name.
+        let mut events = vec![false; program.objects.len()];
+        for f in &program.functions {
+            if let Some(intrinsic) = &f.intrinsic {
+                if matches!(intrinsic.name.as_str(), "okkama.event.Event.new" | "okkama.event.Event.new_ready") {
+                    if let Some(object) = intrinsic.objects.first() {
+                        events[object.0 as usize] = true;
+                    }
+                }
+            }
+        }
+        Self { program, functions, events, workers }
     }
 
     /// The worker Future function for results of type `result`.
@@ -129,22 +136,20 @@ impl Loaded {
         self.workers.iter().find(|(r, _)| *r == result).map(|&(_, function)| function)
     }
 
-    /// Is `descriptor` the `async.event::Event` object (`initial` only)?
+    /// Is `descriptor` an Event cell (the object `Event.new` creates)?
     pub fn is_event(&self, descriptor: usize) -> bool {
-        self.event == Some(descriptor)
+        self.events.get(descriptor).copied().unwrap_or(false)
     }
 
     /// The value kind of an `Atomic<T>` descriptor (from its constructor).
     pub fn atomic_value(&self, descriptor: usize) -> Option<Kind> {
         let p = &self.program;
-        if !p.objects[descriptor].name.starts_with("async.atomic::Atomic<") {
-            return None;
-        }
         p.functions.iter().zip(&self.functions).find_map(|(f, info)| {
             let intrinsic = f.intrinsic.as_ref()?;
             (intrinsic.name == "okkama.atomic.Atomic.new_value"
                 && intrinsic.objects.first().is_some_and(|o| o.0 as usize == descriptor))
-            .then(|| info.kinds[f.params[0].0 as usize])
+            .then(|| f.params.first().map(|p| info.kinds[p.0 as usize]))
+            .flatten()
         })
     }
 

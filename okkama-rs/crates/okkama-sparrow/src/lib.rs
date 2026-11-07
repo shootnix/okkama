@@ -12,6 +12,7 @@
 mod asm;
 mod codec;
 mod operand;
+mod typing;
 mod verify;
 
 pub use asm::{AsmError, assemble, disassemble};
@@ -557,10 +558,15 @@ impl fmt::Display for VerifyError {
 impl std::error::Error for VerifyError {}
 
 impl Program {
-    /// Проверяет ссылки таблиц, регистры, переходы, обработчики и
-    /// инициализацию регистров на всех путях до чтения.
+    /// Проверяет ссылки таблиц, регистры, переходы, обработчики,
+    /// инициализацию регистров на всех путях до чтения и типы операндов.
     pub fn verify(&self) -> Result<(), VerifyError> {
         verify::verify(self)
+    }
+
+    /// Структурное равенство типов (одинаковые типы могут стоять в таблице дважды).
+    pub fn same_type(&self, a: TypeRef, b: TypeRef) -> bool {
+        typing::same(self, a, b)
     }
 
     pub fn ty(&self, ty: TypeRef) -> Option<&Type> {
