@@ -186,6 +186,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   string's memory is freed; the IR engine and the JVM hold weak references
   ([#52](https://github.com/shootnix/okkama/issues/52)).
 
+- Compiler, anonymous actions (H-33): an anonymous action written in an
+  action captures `self` only when its body reads the receiver — `self`, a
+  field, an action of `self`, `fake.storage`, or a nested anonymous action
+  that does — as the Book (§18.5) already said: unreferenced values are not
+  retained. Before, every such action captured `self` and kept its whole
+  graph alive, and with it postponed the receiver's `destroy`. Twenty
+  objects holding 200 000 integers each, of which only the returned adders
+  are kept, peaked at 111 MB on the IR engine and 46 MB on the Sparrow core;
+  now 33 MB and 31 MB. The walk over the body names every expression and
+  statement form, so a new form must decide whether it reads the receiver.
+  An OCS case shows the receiver destroyed at once when its action does not
+  read it, and kept while it does
+  ([#53](https://github.com/shootnix/okkama/issues/53)).
+
 - Runtimes: host state belongs to one run, not to a thread (Q03). Every
   engine entry (IR program and test runs, the previous Sparrow VM, each
   Sparrow core run) opens a host session — a copy of the process's working
