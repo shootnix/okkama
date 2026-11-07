@@ -137,6 +137,16 @@ pub struct Jit {
 /// deepest machine frame.
 pub const MAX_FRAME: u64 = crate::runtime::STACK_HEADROOM / 4;
 
+/// Memory compiling one function may take (#73). Machine-code liveness and
+/// register allocation keep a set per Cranelift block, so the cost is about
+/// Σ registers live at an instruction × blocks it emits — quadratic for k
+/// values live across k fallible instructions. A memory budget lowers it.
+pub const MAX_COMPILE_BYTES: u64 = 256 << 20;
+/// Compiler bytes per live register in one block (measured: about 58).
+const BYTES_PER_LIVE_BLOCK: u64 = 64;
+/// No instruction emits more blocks than this (inline allocation, checks).
+const MAX_BLOCKS_PER_INSTRUCTION: u64 = 16;
+
 impl std::fmt::Debug for Jit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Jit")
@@ -262,6 +272,50 @@ pub(crate) unsafe fn invoke(code: u64, ctx: *mut Ctx, words: &[Word]) -> Word {
 }
 
 /// Compile `function` unless it is compiled; returns its code address.
+/// Instructions where control enters other than by falling through: the
+/// first, every jump/branch/lookup/catch target, every handler target and
+/// every `await` (its resume point). Only these get their own Cranelift
+/// block: a block per instruction made stack-map liveness and register
+/// allocation quadratic in straight-line code with many live values (#73).
+fn leaders(source: &okkama_sparrow::Function) -> Vec<bool> {
+    let mut leaders = vec![false; source.code.len()];
+    let mut mark = |target: &Target| {
+        if let Some(leader) = leaders.get_mut(target.pc as usize) {
+            *leader = true;
+        }
+    };
+    for instruction in &source.code {
+        match instruction {
+            I::Jump { target } => mark(target),
+            I::Branch { then_target, else_target, .. } => {
+                mark(then_target);
+                mark(else_target);
+            }
+            I::Catch { handler, next, .. } => {
+                mark(handler);
+                mark(next);
+            }
+            I::ArrayLookup { found, missing, .. } | I::MapLookup { found, missing, .. } => {
+                mark(found);
+                mark(missing);
+            }
+            _ => {}
+        }
+    }
+    for handler in &source.handlers {
+        mark(&handler.target);
+    }
+    for (pc, instruction) in source.code.iter().enumerate() {
+        if matches!(instruction, I::Await { .. }) {
+            leaders[pc] = true;
+        }
+    }
+    if let Some(first) = leaders.first_mut() {
+        *first = true;
+    }
+    leaders
+}
+
 pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     if runtime.code[function] != 0 {
         return Ok(runtime.code[function]);
@@ -285,6 +339,20 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             jit.ids.insert(function, id);
             id
         }
+    };
+    // Live registers per instruction, for the cost of large functions only:
+    // a function whose instructions × registers × blocks cannot reach the
+    // limit skips the analysis.
+    let cost_limit = limits.memory.map_or(MAX_COMPILE_BYTES, |memory| memory.min(MAX_COMPILE_BYTES)) / BYTES_PER_LIVE_BLOCK;
+    let bound = (source.code.len() as u64)
+        .saturating_mul(source.registers.len() as u64)
+        .saturating_mul(MAX_BLOCKS_PER_INSTRUCTION);
+    let live = if bound > cost_limit {
+        Some(okkama_sparrow::live_counts(source).ok_or_else(|| {
+            Error(format!("{}: too large to compile ({} instructions, {} registers)", source.symbol, source.code.len(), source.registers.len()))
+        })?)
+    } else {
+        None
     };
     let config = jit.module.target_config();
     let mut context = jit.module.make_context();
@@ -312,6 +380,9 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             refusable: limits.memory.is_some(),
             pc: 0,
             spill_area: None,
+            live,
+            cost: 0,
+            cost_limit,
         };
         emit.body()?;
         builder.seal_all_blocks();
@@ -366,7 +437,15 @@ struct Emitter<'a, 'b> {
     function: usize,
     kinds: &'a [Kind],
     vars: Vec<Variable>,
-    blocks: Vec<Block>,
+    /// The block of each instruction where control enters other than by
+    /// falling through (`leaders`); straight-line instructions share one.
+    blocks: Vec<Option<Block>>,
+    /// Registers live before each instruction, when the function is large
+    /// enough to need the compile-cost check (#73).
+    live: Option<Vec<u32>>,
+    /// Σ live registers × blocks emitted so far, and its limit.
+    cost: u64,
+    cost_limit: u64,
     ctx: Option<Value>,
     /// The frame variable of an async body.
     frame: Option<Variable>,
@@ -534,6 +613,11 @@ impl Emitter<'_, '_> {
         self.builder.switch_to_block(next);
     }
 
+    /// The block of a leader instruction.
+    fn block(&self, pc: usize) -> Block {
+        self.blocks[pc].expect("a jump, handler or resume target starts a block")
+    }
+
     fn jump(&mut self, target: &Target) {
         if self.polled && target.pc as usize <= self.pc {
             self.poll();
@@ -542,7 +626,8 @@ impl Emitter<'_, '_> {
         for ((dst, _), value) in target.moves.iter().zip(values) {
             self.set(dst, value);
         }
-        self.builder.ins().jump(self.blocks[target.pc as usize], &[]);
+        let block = self.block(target.pc as usize);
+        self.builder.ins().jump(block, &[]);
     }
 
     /// Inline allocation of `words` words from the free list of their class.
@@ -697,7 +782,10 @@ impl Emitter<'_, '_> {
                 self.set_word(register, value);
             }
         }
-        self.blocks = source.code.iter().map(|_| self.builder.create_block()).collect();
+        self.blocks = leaders(source)
+            .into_iter()
+            .map(|leader| leader.then(|| self.builder.create_block()))
+            .collect();
         // R2: stack exhaustion is a typed failure.
         let ctx = self.ctx();
         let sp = self.builder.ins().get_stack_pointer(types::I64);
@@ -709,7 +797,7 @@ impl Emitter<'_, '_> {
         );
         let low = self.builder.ins().icmp(IntCC::UnsignedLessThan, sp, limit);
         let overflow = self.builder.create_block();
-        let start = if source.is_async { self.builder.create_block() } else { self.blocks[0] };
+        let start = if source.is_async { self.builder.create_block() } else { self.block(0) };
         let entered = if self.polled { self.builder.create_block() } else { start };
         self.builder.ins().brif(low, overflow, &[], entered, &[]);
         if self.polled {
@@ -726,18 +814,41 @@ impl Emitter<'_, '_> {
         self.helper(|h| h.trap, &[ctx, message]);
         let zero = self.iconst(0);
         self.builder.ins().return_(&[zero]);
+        // Open: the previous instruction falls through into this one.
+        let mut open = false;
         for pc in 0..source.code.len() {
-            self.builder.switch_to_block(self.blocks[pc]);
-            self.pc = pc;
-            if self.instruction(pc)? {
-                continue;
-            }
-            match self.blocks.get(pc + 1).copied() {
-                Some(next) => {
-                    self.builder.ins().jump(next, &[]);
+            match self.blocks[pc] {
+                Some(block) => {
+                    if open {
+                        self.builder.ins().jump(block, &[]);
+                    }
+                    self.builder.switch_to_block(block);
                 }
-                None => return Err(Error(format!("{}: falls off the end", source.symbol))),
+                // Unreachable: nothing jumps here and nothing falls through.
+                None if !open => {
+                    let block = self.builder.create_block();
+                    self.builder.switch_to_block(block);
+                }
+                None => {}
             }
+            self.pc = pc;
+            let before = self.builder.func.dfg.num_blocks();
+            open = !self.instruction(pc)?;
+            if let Some(live) = &self.live {
+                let blocks = self.builder.func.dfg.num_blocks() - before + usize::from(self.blocks[pc].is_some());
+                self.cost = self.cost.saturating_add(u64::from(live[pc]) * blocks as u64);
+                if self.cost > self.cost_limit {
+                    return Err(Error(format!(
+                        "{}: compiling it would take more than {} MiB (registers live across its blocks, at instruction {pc}); \
+                         keep fewer values alive at once or split the function",
+                        source.symbol,
+                        (self.cost_limit * BYTES_PER_LIVE_BLOCK) >> 20
+                    )));
+                }
+            }
+        }
+        if open {
+            return Err(Error(format!("{}: falls off the end", source.symbol)));
         }
         Ok(())
     }
@@ -765,14 +876,16 @@ impl Emitter<'_, '_> {
             let value = self.frame_register(register.0 as usize);
             self.set_word(register, value);
         }
-        self.builder.ins().jump(self.blocks[0], &[]);
+        let first = self.block(0);
+        self.builder.ins().jump(first, &[]);
         for (pc, block) in reloads {
             self.builder.switch_to_block(block);
             for register in 0..self.kinds.len() {
                 let value = self.frame_register(register);
                 self.set_word(&okkama_sparrow::Register(register as u32), value);
             }
-            self.builder.ins().jump(self.blocks[pc], &[]);
+            let resumed = self.block(pc);
+            self.builder.ins().jump(resumed, &[]);
         }
     }
 
@@ -1743,7 +1856,8 @@ impl Emitter<'_, '_> {
             self.set(dst, value);
         }
         self.set_word(&register, word);
-        self.builder.ins().jump(self.blocks[target.pc as usize], &[]);
+        let block = self.block(target.pc as usize);
+        self.builder.ins().jump(block, &[]);
     }
 }
 
