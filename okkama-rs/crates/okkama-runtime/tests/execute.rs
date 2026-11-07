@@ -33,7 +33,9 @@ fn source_to_ir_to_result_in_the_same_process() {
 
 #[test]
 fn large_ir_constants_use_exact_arithmetic() {
-    let mut module = lower("1 + 1;");
+    // One operand is not a constant, so `fold` (#56) leaves the addition
+    // to the interpreter.
+    let mut module = lower("\"x\".length() + 1;");
     let function = &mut module.functions[module.entry.unwrap().0];
     for inst in &mut function.blocks[0].insts {
         if let ir::InstKind::Const(ir::Constant::Int(value)) = &mut inst.kind {
@@ -42,7 +44,7 @@ fn large_ir_constants_use_exact_arithmetic() {
     }
     assert_eq!(
         execute(&module).unwrap().to_string(),
-        "-1999999999999999999999999999998"
+        "-999999999999999999999999999998"
     );
 }
 
@@ -121,7 +123,9 @@ fn every_comparison_selects_the_correct_branch() {
 
 #[test]
 fn invalid_ir_is_rejected_before_execution() {
-    let mut module = lower("1 + 1;");
+    // One operand is not a constant, so `fold` (#56) leaves the addition
+    // to the interpreter.
+    let mut module = lower("\"x\".length() + 1;");
     let function = &mut module.functions[module.entry.unwrap().0];
     function.blocks[0].term.kind = ir::TermKind::Ret(Some(ir::ValueId(999)));
     assert!(matches!(execute(&module), Err(RuntimeError::InvalidIr(_))));
