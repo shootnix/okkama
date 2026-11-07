@@ -1,0 +1,9 @@
+module app;
+enum Boom is Error = (boom(code is int));
+object Work {
+    Work();
+    fail(code is int) is int {
+        throw Boom.boom(code);
+    }
+}
+main() is int { Work().fail(3); }

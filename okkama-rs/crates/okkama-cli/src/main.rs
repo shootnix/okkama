@@ -172,10 +172,13 @@ const IR_HELP: &str = "\
 okkama ir — print module and function IR
 
 USAGE:
-    okkama ir <FILE|-> [--format text]
+    okkama ir <FILE|-> [--format text] [--passes LIST | --after PASS]
 
 OPTIONS:
     --format text     Output format (default: text)
+    --passes LIST     Run only these IR passes: none, all, or a comma list of
+                      tail-calls, hoist, regions, jumps, undef (in that order)
+    --after PASS      The IR after PASS: the passes up to it in that order
 
 Input is a complete Okkama program: one or several source files of one module
 (spec §5.1). Imports are loaded (import directories, the importing file's
@@ -701,6 +704,30 @@ fn ast_command(args: &[String]) -> Outcome {
 }
 
 fn ir_command(args: &[String]) -> Outcome {
+    // `--passes LIST` / `--after PASS`: the IR after some passes (H-19).
+    let mut rest = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--passes" | "--after" => {
+                let Some(value) = iter.next() else {
+                    return Outcome::usage(&format!("{arg} needs a value"));
+                };
+                let spec = if arg == "--passes" {
+                    value.clone()
+                } else {
+                    let Some(at) = lowering::PASSES.iter().position(|pass| pass == value) else {
+                        return Outcome::usage(&format!("unknown pass `{value}` (passes: {})", lowering::PASSES.join(", ")));
+                    };
+                    let upto = lowering::PASSES[..=at].join(",");
+                    upto
+                };
+                lowering::select_passes(&spec);
+            }
+            _ => rest.push(arg.clone()),
+        }
+    }
+    let args = &rest[..];
     let line = match parse_command_line(args, CommandOptions::Program) {
         Ok(line) => line,
         Err(message) => return Outcome::usage(&message),

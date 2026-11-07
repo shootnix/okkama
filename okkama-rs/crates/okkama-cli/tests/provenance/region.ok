@@ -1,0 +1,13 @@
+module app;
+object Resource {
+    has zero is int;
+    Resource(zero is int) { self.zero = zero; }
+    destroy {
+        let broken = 1 % zero;
+    }
+}
+object Use {
+    Use();
+    run() is int { let r = Resource(0); 5; }
+}
+main() is int { Use().run(); }

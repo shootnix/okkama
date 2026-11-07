@@ -191,7 +191,8 @@ mean). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, point query 94 µs vs 6
 (`analysis`: types, roles, caps, errors; THIR) → lowering (`lowering`) to OIR
 (`ir`, verified by `ir/verify.rs`) → backends: IR interpreter
 (`okkama-runtime`), SPB (`codegen/sparrow`) executed by `sparrow-core`, JVM
-classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`).
+classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`). What each
+phase guarantees and what checks it: [phases.md](phases.md).
 
 **IR passes** (`lowering/mod.rs`, after lowering, before `ir::verify`), each
 on verified OIR and keeping it verifiable and meaning-preserving:

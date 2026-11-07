@@ -56,6 +56,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   block parameters written in the wrong order
   ([#30](https://github.com/shootnix/okkama/issues/30)).
 
+- Compiler: phase contracts (`docs/phases.md`) — what the lexer, parser,
+  analysis, lowering, IR passes, both code generators and SPB loading take,
+  guarantee and are checked by. `okkama ir --passes LIST` and
+  `--after PASS` print the IR before or between passes. Tests show that every
+  public consumer of OIR (both code generators, `execute`, `run_tests`)
+  rejects a corrupted module, and that failures in short-circuit operands,
+  `throw`, closures and region cleanup point at their source operation with
+  every pass selection ([#36](https://github.com/shootnix/okkama/issues/36)).
+
 - Compiler: `OKKAMA_IR_PASSES=none|all|tail-calls,hoist,regions,jumps,undef`
   selects the IR passes. Every engine runs the passed OIR, so engine
   comparisons cannot see a pass that changes meaning; the release gate now
