@@ -253,6 +253,11 @@ impl Checker<'_, '_> {
                 }
             },
             ast::Literal::Float(float) => match float_value(float) {
+                // A literal that is not zero but rounds to it lost its value (#57).
+                Some(value) if value == 0.0 && float.nonzero() => {
+                    self.error(span, "Float literal is too small: it would round to 0.0");
+                    return Self::poisoned(span);
+                }
                 Some(value) => (Constant::Float(value.to_bits()), Ty::Float),
                 None => {
                     self.error(span, "Float value must contain a finite number");
@@ -344,6 +349,10 @@ impl Checker<'_, '_> {
             match &operand.kind {
                 ast::ExprKind::Literal(ast::Literal::Float(float)) => {
                     return match float_value(float) {
+                        Some(value) if value == 0.0 && float.nonzero() => {
+                            self.error(operand.span, "Float literal is too small: it would round to 0.0");
+                            Self::poisoned(span)
+                        }
                         Some(value) => Self::typed(
                             ExprKind::Constant(Constant::Float((-value).to_bits())),
                             Ty::Float,
@@ -1816,7 +1825,8 @@ fn int_value(literal: &crate::syntax::token::IntLiteral) -> Option<IntValue> {
     }
 }
 
-/// Конечный binary64 литерала `whole.fraction`.
+/// Конечный binary64 литерала `whole.fraction[e±exponent]`; экспонента любой
+/// длины разбирается без раскрытия в цифры (`1e999999999` — бесконечность).
 pub(super) fn float_value(literal: &crate::syntax::token::FloatLiteral) -> Option<f64> {
     literal
         .text()

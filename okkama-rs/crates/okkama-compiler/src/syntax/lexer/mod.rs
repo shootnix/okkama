@@ -370,42 +370,50 @@ impl Lexer<'_> {
         } else {
             None
         };
-        // `1e5`, `1.5E-3`: no exponent notation; one error over the whole
-        // literal instead of a stray identifier `e5` (#45).
-        let exponent = matches!(self.peek(), b'e' | b'E')
+        // `1e5`, `1.5E-3`, `2e+10`: an exponent makes a float (#57). It
+        // needs a digit after `e` or after its sign; `1e_5` and `1.e5` are
+        // not exponents.
+        let exponent = if matches!(self.peek(), b'e' | b'E')
             && (self.peek_next().is_ascii_digit()
                 || (matches!(self.peek_next(), b'+' | b'-')
-                    && self.bytes.get(self.pos + 2).is_some_and(u8::is_ascii_digit)));
-        if exponent {
-            self.pos += 2;
-            while self.peek().is_ascii_digit() || self.peek() == b'_' {
+                    && self.bytes.get(self.pos + 2).is_some_and(u8::is_ascii_digit)))
+        {
+            self.pos += 1;
+            let sign = if matches!(self.peek(), b'+' | b'-') {
                 self.pos += 1;
-            }
-        }
+                self.text[self.pos - 1..self.pos].to_string()
+            } else {
+                String::new()
+            };
+            let (digits, groups) = self.digit_groups();
+            valid &= groups;
+            Some(sign + &digits)
+        } else {
+            None
+        };
         let span = self.span_from(self.start);
         let text = self.text[self.start..self.pos].to_string();
-        if exponent {
-            self.error(
-                format!("Number literal {text} uses an exponent; Okkama has no exponent notation."),
-                span,
-            );
-        } else if !valid {
-            let kind = if fraction.is_some() { "float" } else { "integer" };
+        if !valid {
+            let kind = if fraction.is_some() || exponent.is_some() { "float" } else { "integer" };
             self.error(
                 format!("Invalid {kind} literal {text}: `_` may only separate two digits."),
                 span,
             );
         }
-        match fraction {
-            Some(fraction) => self.add_value(
-                TokenKind::Float,
-                TokenValue::Float(FloatLiteral { whole, fraction }),
-            ),
-            None => self.add_value(
+        match (fraction, exponent) {
+            (None, None) => self.add_value(
                 TokenKind::Int,
                 TokenValue::Int(IntLiteral {
                     radix: Radix::Decimal,
                     digits: whole,
+                }),
+            ),
+            (fraction, exponent) => self.add_value(
+                TokenKind::Float,
+                TokenValue::Float(FloatLiteral {
+                    whole,
+                    fraction: fraction.unwrap_or_else(|| "0".to_string()),
+                    exponent: exponent.unwrap_or_default(),
                 }),
             ),
         }

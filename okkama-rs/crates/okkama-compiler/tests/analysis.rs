@@ -494,3 +494,21 @@ fn diagnostics_name_the_rule_and_the_fix() {
     let ordering = messages("main() is int {\n let sorted = [9, 0, 2, 1].ordering();\n 0;\n}");
     assert!(ordering.iter().any(|m| m.contains("import \"compare\" take Comparing")), "{ordering:?}");
 }
+
+/// Exponent literals are floats (#57); one that cannot be a finite float, or
+/// that is not zero but would round to 0.0, is an error.
+#[test]
+fn exponent_literals_are_floats_in_range() {
+    assert!(messages("main() is int { let a is float = 1e5; let b is float = 1.5E-3; let c is float = -2e+10; let d is float = 4.9e-324; let e is float = 0e9; let f is float = 0.0e-999; 0; }").is_empty());
+    assert_eq!(
+        messages("main() is int { let a is int = 1e5; let b = 1e400; let c = 1e-400; let d = -1e-400; let e = 0.000_1e-330; 0; }"),
+        [
+            "Cannot initialize variable \"a\" of type int with float",
+            "Float value must contain a finite number",
+            "Float literal is too small: it would round to 0.0",
+            "Float literal is too small: it would round to 0.0",
+            "Float literal is too small: it would round to 0.0",
+        ]
+    );
+    assert_eq!(messages("main() is int { let a = 1e99999999999999999999999; 0; }"), ["Float value must contain a finite number"]);
+}

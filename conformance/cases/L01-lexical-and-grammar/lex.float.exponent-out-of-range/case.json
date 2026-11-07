@@ -1,7 +1,7 @@
 {
   "schema": "ocs-case/1",
-  "id": "L01.lex.float.exponent-rejected",
-  "title": "exponent notation 1e5 is rejected",
+  "id": "L01.lex.float.exponent-out-of-range",
+  "title": "an exponent literal beyond binary64 is rejected",
   "purpose": "Invalid source is rejected before execution.",
   "level": "L01",
   "contracts": [
@@ -21,14 +21,12 @@
     "outcome": "reject",
     "rejection": {
       "stages": [
-        "parse",
         "check"
       ],
       "categories": [
-        "syntax",
         "semantic"
       ],
-      "justification": "Malformed numeric tokens are lexical errors; an implementation may surface them while parsing or in the token-validation step before analysis."
+      "justification": "1e400 is a well-formed float literal whose value is not a finite binary64; the checker rejects it, as it rejects a literal that is not zero but rounds to 0.0."
     }
   },
   "spec_refs": [
@@ -39,8 +37,8 @@
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS with issue #45",
-    "expected_basis": "grammar FLOAT production is digits \".\" digits; there is no exponent part."
+    "origin": "authored for OCS with issue #45; exponents became float literals in #57",
+    "expected_basis": "FLOAT allows an exponent; a literal must denote a finite binary64 value (spec 4.2)."
   },
   "status": "mandatory"
 }

@@ -317,7 +317,7 @@ fn malformed_based_literals_are_errors() {
 }
 
 /// Number literals next to dots, separators, exponents and the 64-bit
-/// bounds: fixed tokens, or one error over an exact span (#45).
+/// bounds: fixed tokens, or one error over an exact span (#45, #57).
 #[test]
 fn number_literal_table() {
     let render = |text: &str| -> Vec<String> {
@@ -355,9 +355,14 @@ fn number_literal_table() {
         ("1_", &["error 1_ 0..2: Invalid integer literal 1_: `_` may only separate two digits."]),
         ("x = 1_ + 2", &["error 1_ 4..6: Invalid integer literal 1_: `_` may only separate two digits."]),
         ("1.5_", &["error 1.5_ 0..4: Invalid float literal 1.5_: `_` may only separate two digits."]),
-        ("1e5", &["error 1e5 0..3: Number literal 1e5 uses an exponent; Okkama has no exponent notation."]),
-        ("1.5E-3", &["error 1.5E-3 0..6: Number literal 1.5E-3 uses an exponent; Okkama has no exponent notation."]),
-        ("(2e+10)", &["error 2e+10 1..6: Number literal 2e+10 uses an exponent; Okkama has no exponent notation."]),
+        ("1e5", &["FLOAT 1e5"]),
+        ("1.5E-3", &["FLOAT 1.5E-3"]),
+        ("(2e+10)", &["LEFT_PAREN (", "FLOAT 2e+10", "RIGHT_PAREN )"]),
+        ("1_000e1_0", &["FLOAT 1_000e1_0"]),
+        ("1e5..2", &["FLOAT 1e5", "DOT_DOT ..", "INT 2"]),
+        ("1e1_", &["error 1e1_ 0..4: Invalid float literal 1e1_: `_` may only separate two digits."]),
+        ("1_e5", &["error 1_e5 0..4: Invalid float literal 1_e5: `_` may only separate two digits."]),
+        ("1e_5", &["INT 1", "IDENTIFIER e_5"]),
         ("1e", &["INT 1", "IDENTIFIER e"]),
         ("1e+", &["INT 1", "IDENTIFIER e", "PLUS +"]),
         ("0x1.5", &["error 0x1 0..3: Invalid integer literal 0x1."]),
@@ -385,7 +390,16 @@ fn float_literals_need_digits_after_the_dot() {
         token.value,
         Some(TokenValue::Float(FloatLiteral {
             whole: "3".into(),
-            fraction: "14".into()
+            fraction: "14".into(),
+            exponent: String::new(),
+        }))
+    );
+    assert_eq!(
+        single("2_5E-0_3").value,
+        Some(TokenValue::Float(FloatLiteral {
+            whole: "25".into(),
+            fraction: "0".into(),
+            exponent: "-03".into(),
         }))
     );
     assert_eq!(kinds("1.x"), vec!["INT", "DOT", "IDENTIFIER", "EOF"]);

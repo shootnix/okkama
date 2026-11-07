@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.float.exponent",
+  "title": "exponent literals are floats: 1e5, 1.5e-3, 2E+10, separators, subnormals",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.FLOAT-LITERALS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "0.0015\n250\n1e5 is 100000.0\nforms agree\nsubnormal and zero\n100\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #57",
+    "expected_basis": "an exponent scales the mantissa by a power of ten and the literal is the nearest binary64; 1.5e-3 has canonical text 0.0015, 2.5E+2 is 250."
+  },
+  "status": "mandatory"
+}
