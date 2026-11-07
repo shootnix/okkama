@@ -40,8 +40,8 @@ okkama exec --max-steps 100000000 --max-memory 256M --timeout 5 app.spb
 - `--max-steps N` counts function entries and loop iterations.
 - `--max-memory SIZE` (bytes, or `K`/`M`/`G`) bounds the memory the process
   holds beyond the start of the run — the core heap, big integers, strings and
-  collections — and the machine stack, so deep recursion ends as `Stack
-  overflow` within it.
+  collections — and the machine stack, so deep recursion that outgrows it
+  ends with the same memory report.
 - `--max-output SIZE` bounds what the program writes to stdout and stderr.
 - `--timeout SECONDS` interrupts the run after that much wall-clock time, also
   while it awaits.

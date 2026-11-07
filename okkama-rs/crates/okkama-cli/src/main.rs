@@ -289,7 +289,7 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
     let (outcome, trace) =
         core_described(sparrow_core::run_described(bytes, arguments, false, core::worker_command(Path::new(path)), limits));
-    with_trace(outcome, sparrow_core::render_trace(&program, &trace))
+    with_trace(outcome, || sparrow_core::render_trace(&program, &trace))
 }
 
 /// A test-profile program on the core: the report goes to stdout.
@@ -339,9 +339,11 @@ fn core_outcome(result: Result<i64, sparrow_core::Error>) -> Outcome {
 
 /// Диагностика отказа программы (код 1) и его место со стеком вызовов;
 /// `OKKAMA_TRACE=off` — без них (например, для сравнения движков).
-fn with_trace(mut outcome: Outcome, trace: String) -> Outcome {
+/// The trace is rendered only when it is printed: with `OKKAMA_TRACE=off`
+/// a stack of millions of frames costs nothing (#241).
+fn with_trace(mut outcome: Outcome, trace: impl FnOnce() -> String) -> Outcome {
     if outcome.code == 1 && std::env::var("OKKAMA_TRACE").as_deref() != Ok("off") {
-        outcome.stderr.push_str(&trace);
+        outcome.stderr.push_str(&trace());
     }
     outcome
 }
@@ -1524,10 +1526,7 @@ fn run_command(args: &[String]) -> Outcome {
             watchdog(limits.interrupt.clone().expect("flag"));
         }
         let (result, trace) = okkama_runtime::execute_limited(&module, arguments, &budget);
-        return with_trace(
-            native_outcome(result),
-            okkama_runtime::render_trace(&module, &trace),
-        );
+        return with_trace(native_outcome(result), || okkama_runtime::render_trace(&module, &trace));
     }
     if engine == "sparrow" {
         let program = match codegen::sparrow::generate(&module) {
@@ -1548,7 +1547,7 @@ fn run_command(args: &[String]) -> Outcome {
         let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
         // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
         let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
-        return with_trace(outcome, okkama_runtime::render_trace(&module, &trace));
+        return with_trace(outcome, || okkama_runtime::render_trace(&module, &trace));
     }
     if engine == "sparrow-origin" {
         let program = match codegen::sparrow::generate(&module) {
@@ -1570,12 +1569,11 @@ fn run_command(args: &[String]) -> Outcome {
         // Номера функций и инструкций Sparrow совпадают с OIR: место — по исходнику.
         let (result, trace) =
             sparrow_vm::execute_traced(&program, program_args.to_vec());
-        return with_trace(
-            sparrow_outcome(result),
+        return with_trace(sparrow_outcome(result), || {
             okkama_runtime::render_trace(&module, &trace.iter().map(|site| okkama_runtime::Site {
                 function: site.function, pc: site.pc,
-            }).collect::<Vec<_>>()),
-        );
+            }).collect::<Vec<_>>())
+        });
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),

@@ -138,13 +138,13 @@ pub use okkama_runtime_core::failure::Site;
 /// The call stack of an uncaught failure in Sparrow terms: function, number
 /// and text of the instruction of each frame. Empty for an empty stack.
 pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String {
-    use okkama_runtime_core::failure::{frame_name, stack_text};
+    use okkama_runtime_core::failure::{frame_name, stack_text_by};
     if trace.is_empty() {
         return String::new();
     }
-    let frames: Vec<String> = trace
-        .iter()
-        .map(|site| match program.functions.get(site.function as usize) {
+    // Строки только показанных кадров: стек глубокой рекурсии — миллионы (#241).
+    stack_text_by("Stack trace (Sparrow, most recent call first):", trace, |site| {
+        match program.functions.get(site.function as usize) {
             Some(function) => {
                 let name = frame_name(&function.symbol);
                 match function.code.get(site.pc as usize) {
@@ -153,9 +153,8 @@ pub fn render_trace(program: &okkama_sparrow::Program, trace: &[Site]) -> String
                 }
             }
             None => format!("? [f{} @{}]", site.function, site.pc),
-        })
-        .collect();
-    stack_text("Stack trace (Sparrow, most recent call first):", &frames)
+        }
+    })
 }
 
 /// `run_configured`, with the uncaught failure (if any) described for

@@ -20,7 +20,7 @@ pub enum Kind {
 /// Место кадра на пути отказа: функция программы и номер инструкции в ней.
 /// Нумерация общая для IR и Sparrow: инструкции блоков по порядку, терминатор
 /// блока — после его инструкций (кодогенератор Sparrow сохраняет её 1:1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Site {
     pub function: u32,
     pub pc: u32,
@@ -186,25 +186,39 @@ pub fn frame_name(symbol: &str) -> &str {
 /// идущие одинаковые строки (рекурсия) схлопываются, а слишком длинный стек
 /// показывается началом и концом.
 pub fn stack_text(header: &str, frames: &[String]) -> String {
-    let mut lines: Vec<String> = Vec::new();
-    let mut index = 0;
-    while index < frames.len() {
-        let repeat = frames[index..].iter().take_while(|frame| **frame == frames[index]).count();
-        if repeat > 1 {
-            lines.push(format!("  at {}  (\u{00d7}{repeat})", frames[index]));
-        } else {
-            lines.push(format!("  at {}", frames[index]));
+    stack_text_by(header, frames, String::clone)
+}
+
+/// `stack_text` над кадрами любого вида: подряд идущие равные кадры
+/// схлопываются, а `render` вызывается только для показанных строк. Стек в
+/// миллионы кадров (глубокая рекурсия до переполнения) печатается за время,
+/// линейное в числе кадров, без строки на каждый (#241).
+pub fn stack_text_by<T: PartialEq>(header: &str, frames: &[T], render: impl Fn(&T) -> String) -> String {
+    // (первый кадр серии, её длина)
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for (index, frame) in frames.iter().enumerate() {
+        match runs.last_mut() {
+            Some((start, count)) if frames[*start] == *frame => *count += 1,
+            _ => runs.push((index, 1)),
         }
-        index += repeat;
     }
-    if lines.len() > STACK_LINES {
+    let line = |&(start, count): &(usize, usize)| {
+        if count > 1 {
+            format!("  at {}  (\u{00d7}{count})", render(&frames[start]))
+        } else {
+            format!("  at {}", render(&frames[start]))
+        }
+    };
+    let mut lines: Vec<String> = Vec::new();
+    if runs.len() > STACK_LINES {
         let tail = 10;
         let head = STACK_LINES - tail - 1;
-        let omitted = lines.len() - head - tail;
-        let rest = lines.split_off(lines.len() - tail);
-        lines.truncate(head);
+        let omitted = runs.len() - head - tail;
+        lines.extend(runs[..head].iter().map(line));
         lines.push(format!("  ... {omitted} more frames ..."));
-        lines.extend(rest);
+        lines.extend(runs[runs.len() - tail..].iter().map(line));
+    } else {
+        lines.extend(runs.iter().map(line));
     }
     let mut out = String::from(header);
     out.push('\n');
@@ -253,5 +267,20 @@ mod tests {
         assert_eq!(text.lines().count(), 1 + STACK_LINES);
         assert!(text.contains("  ... 61 more frames ...\n"), "{text}");
         assert!(text.ends_with("  at f99\n"), "{text}");
+    }
+
+    /// A stack of millions of frames renders only the frames it shows (#241).
+    #[test]
+    fn stack_text_by_renders_only_shown_frames() {
+        let rendered = std::cell::Cell::new(0);
+        let mut frames: Vec<u32> = vec![7; 3_000_000];
+        frames.extend(0..100);
+        let text = stack_text_by("Stack:", &frames, |frame| {
+            rendered.set(rendered.get() + 1);
+            format!("f{frame}")
+        });
+        assert_eq!(rendered.get(), STACK_LINES - 1);
+        assert!(text.starts_with("Stack:\n  at f7  (\u{00d7}3000000)\n  at f0\n"), "{text}");
+        assert!(text.contains("  ... 62 more frames ...\n"), "{text}");
     }
 }

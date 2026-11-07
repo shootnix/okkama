@@ -92,6 +92,7 @@ helpers! {
     concat = runtime::rt_concat as (ctx, left: Word, right: Word) -> Word; [Allocates, Collects, Fails];
     array = runtime::rt_array as (ctx, repr: u64, elements: *const Word, count: u64) -> Word; [Allocates, Collects];
     trap = runtime::rt_trap as (ctx, message: Word) -> Word; [Allocates, Fails];
+    stack_overflow = runtime::rt_stack_overflow as (ctx) -> Word; [Allocates, Fails];
     throw = runtime::rt_throw as (ctx, value: Word) -> Word; [Allocates, Fails];
     trace = runtime::rt_trace as (ctx, function: u64, pc: u64, frame: u64); [];
     native = runtime::rt_native as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
@@ -945,8 +946,7 @@ impl Emitter<'_, '_> {
             self.resume_dispatch(start);
         }
         self.builder.switch_to_block(overflow);
-        let message = self.constant_text("Stack overflow");
-        self.helper(|h| h.trap, &[ctx, message]);
+        self.helper(|h| h.stack_overflow, &[ctx]);
         let zero = self.iconst(0);
         self.builder.ins().return_(&[zero]);
         // Open: the previous instruction falls through into this one.
