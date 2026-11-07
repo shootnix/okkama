@@ -704,33 +704,16 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             Ok(compare_flag(*op, order))
         }
         I::StrLen { text, .. } => {
-            let text = value(text);
-            let length = if runtime.heap.is_ascii_text(text) {
-                runtime.heap.text(text).len()
-            } else {
-                runtime.heap.text(text).chars().count()
-            };
+            let length = runtime.heap.char_count(value(text));
             Ok(runtime.heap.int(length as i64))
         }
         I::StrSlice { text, start, end, .. } => {
             let text = value(text);
-            // ASCII strings index by byte; others map code points to bytes once.
-            let (first, last) = if runtime.heap.is_ascii_text(text) {
-                let range = slice_bounds(runtime, runtime.heap.text(text).len(), value(start), value(end))?;
-                (range.start, range.end)
-            } else {
-                let count = runtime.heap.text(text).chars().count();
-                let range = slice_bounds(runtime, count, value(start), value(end))?;
-                let source = runtime.heap.text(text);
-                let mut offsets = source.char_indices().map(|(i, _)| i).chain(std::iter::once(source.len()));
-                let first = offsets.nth(range.start).expect("validated code point boundary");
-                let last = if range.end == range.start {
-                    first
-                } else {
-                    offsets.nth(range.end - range.start - 1).expect("validated code point boundary")
-                };
-                (first, last)
-            };
+            // Code points map to bytes from the last position reached (#52).
+            let count = runtime.heap.char_count(text);
+            let range = slice_bounds(runtime, count, value(start), value(end))?;
+            let first = runtime.heap.char_offset(text, range.start);
+            let last = runtime.heap.char_offset(text, range.end);
             Ok(runtime.heap.substring(text, first, last))
         }
         I::StrSplit { text, separator, .. } => {

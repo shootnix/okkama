@@ -372,9 +372,9 @@ pub fn string(op: StrOp, args: &[&Value]) -> Result<Value> {
             args[2].as_string()?,
             op == StrOp::ReplaceFirst,
         )))),
-        StrOp::Len => Ok(Value::Int(IntValue::from_u128(args[0].as_string()?.chars().count() as u128))),
+        StrOp::Len => Ok(Value::Int(IntValue::from_u128(strings::length(args[0].as_rc_string()?) as u128))),
         StrOp::Slice => Ok(Value::Str(Rc::from(
-            strings::slice(args[0].as_string()?, args[1].as_int()?, args[2].as_int()?).map_err(trap)?,
+            strings::slice(args[0].as_rc_string()?, args[1].as_int()?, args[2].as_int()?).map_err(trap)?,
         ))),
         StrOp::Split => Ok(ArrayHeap.split(args[0].as_string()?, args[1].as_string()?)),
         StrOp::Utf8 => Ok(ArrayHeap.utf8(args[0].as_string()?)),

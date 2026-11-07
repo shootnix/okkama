@@ -1,0 +1,14 @@
+module app v1.0.0;
+
+// Slices one code point at a time, forwards and backwards, over a long
+// string of 1-, 2-, 3- and 4-byte code points and a combining mark (#52).
+main() is int {
+    let unit = "aж中😀e\u{301}";
+    let s = (0..200).map() -> i { unit; }.join("");
+    let n = s.length();
+    let forward = (0..n).map() -> i { s.slice(i, i + 1); }.join("");
+    let backward = (0..n).map() -> i { s.slice(n - 1 - i, n - i); };
+    let reversed = (0..n).map() -> i { backward[n - 1 - i]; }.join("");
+    let pairs = (0..600).map() -> i { s.slice(2 * i, 2 * i + 2); }.join("");
+    if n == 1200 && forward == s && reversed == s && pairs == s && s.slice(600, 606) == unit { 0; } else { 1; }
+}

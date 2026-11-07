@@ -144,6 +144,14 @@ impl Value {
         }
     }
 
+    /// The shared string itself (its identity keys position caches).
+    pub fn as_rc_string(&self) -> Result<&Rc<str>, ValueError> {
+        match self {
+            Self::Str(value) => Ok(value),
+            _ => Err(invalid_state("expected string value")),
+        }
+    }
+
     pub fn as_object(&self) -> Result<&Rc<crate::heap::Object>, ValueError> {
         match self {
             Self::Object(object) => Ok(object),

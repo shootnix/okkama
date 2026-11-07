@@ -34,14 +34,113 @@ pub fn replace(text: &str, pattern: &str, replacement: &str, first: bool) -> Str
     }
 }
 
-pub fn slice<'a>(text: &'a str, start: &IntValue, end: &IntValue) -> Result<&'a str, &'static str> {
-    let range = integer::slice_range(text.chars().count(), start, end)?;
-    let boundary = |index| {
-        text.char_indices()
-            .map(|(offset, _)| offset)
-            .chain(std::iter::once(text.len()))
-            .nth(index)
-            .expect("validated code point boundary")
-    };
-    Ok(&text[boundary(range.start)..boundary(range.end)])
+/// Позиции нескольких недавних строк (#52): число code points и байтовое
+/// смещение последнего достигнутого индекса. Индекс рядом с ним ищется от
+/// него, поэтому `size()` в цикле и срез по одному code point подряд
+/// линейны, а не квадратичны. `Weak` не даёт адресу строки достаться другой.
+#[derive(Default)]
+struct Position {
+    text: Option<std::rc::Weak<str>>,
+    count: usize,
+    char: usize,
+    byte: usize,
+}
+
+thread_local! {
+    static POSITIONS: std::cell::RefCell<([Position; 4], usize)> = std::cell::RefCell::new(Default::default());
+}
+
+/// Позиция строки `text`, при необходимости новая (число code points).
+fn with_position<R>(text: &std::rc::Rc<str>, f: impl FnOnce(&mut Position) -> R) -> R {
+    POSITIONS.with(|positions| {
+        let (entries, next) = &mut *positions.borrow_mut();
+        let at = match entries.iter().position(|entry| entry.text.as_ref().is_some_and(|weak| std::ptr::eq(weak.as_ptr(), std::rc::Rc::as_ptr(text)))) {
+            Some(at) => at,
+            None => {
+                let at = *next;
+                *next = (*next + 1) % entries.len();
+                entries[at] = Position { text: Some(std::rc::Rc::downgrade(text)), count: text.chars().count(), char: 0, byte: 0 };
+                at
+            }
+        };
+        f(&mut entries[at])
+    })
+}
+
+/// Число code points строки.
+pub fn length(text: &std::rc::Rc<str>) -> usize {
+    if text.len() < 64 {
+        return text.chars().count();
+    }
+    with_position(text, |position| position.count)
+}
+
+/// Байтовое смещение code point `index` (не больше числа): от ближайшего из
+/// начала, конца и последней достигнутой позиции.
+fn offset(text: &std::rc::Rc<str>, index: usize) -> usize {
+    with_position(text, |position| {
+        let (mut char, mut byte) = [(0, 0), (position.count, text.len()), (position.char, position.byte)]
+            .into_iter()
+            .min_by_key(|(char, _)| char.abs_diff(index))
+            .expect("three starts");
+        let bytes = text.as_bytes();
+        while char < index {
+            byte += match bytes[byte] {
+                0x00..=0x7F => 1,
+                0xC0..=0xDF => 2,
+                0xE0..=0xEF => 3,
+                _ => 4,
+            };
+            char += 1;
+        }
+        while char > index {
+            byte -= 1;
+            while bytes[byte] & 0xC0 == 0x80 {
+                byte -= 1;
+            }
+            char -= 1;
+        }
+        (position.char, position.byte) = (char, byte);
+        byte
+    })
+}
+
+pub fn slice<'a>(text: &'a std::rc::Rc<str>, start: &IntValue, end: &IntValue) -> Result<&'a str, &'static str> {
+    if text.len() < 64 {
+        // Short strings: counting is cheaper than the cache.
+        let range = integer::slice_range(text.chars().count(), start, end)?;
+        let boundary = |index| {
+            text.char_indices().map(|(offset, _)| offset).chain(std::iter::once(text.len())).nth(index).expect("validated code point boundary")
+        };
+        return Ok(&text[boundary(range.start)..boundary(range.end)]);
+    }
+    let range = integer::slice_range(length(text), start, end)?;
+    let (first, last) = (offset(text, range.start), offset(text, range.end));
+    Ok(&text[first..last])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Slices agree with a plain count from the start, sequentially, backwards
+    /// and at random, on long strings that use the position cache (#52).
+    #[test]
+    fn slices_match_a_plain_count() {
+        let text: std::rc::Rc<str> = "жёлтый 😀 e\u{301} 中文 ok · ".repeat(20).into();
+        let count = text.chars().count();
+        let plain = |a: usize, b: usize| text.chars().skip(a).take(b - a).collect::<String>();
+        let int = |n: usize| IntValue::from_i64(n as i64);
+        assert_eq!(length(&text), count);
+        for index in (0..count).chain((0..count).rev()) {
+            assert_eq!(slice(&text, &int(index), &int(index + 1)).unwrap(), plain(index, index + 1));
+        }
+        let mut state: u64 = 11;
+        for _ in 0..1000 {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let a = (state >> 33) as usize % (count + 1);
+            let b = a + (state >> 17) as usize % (count + 1 - a);
+            assert_eq!(slice(&text, &int(a), &int(b)).unwrap(), plain(a, b));
+        }
+    }
 }
