@@ -28,7 +28,12 @@ run          Verify and execute bytecode; ARGS are the program's arguments.
              main's integer result in 0..255 becomes the exit status; an
              uncaught failure is reported on stderr (exit 1) with the call
              stack in Sparrow terms (OKKAMA_TRACE=off: without). `--stats` prints
-             counts of runtime events at exit (also SPARROW_CORE_STATS=1).
+             counts of runtime events at exit (also SPARROW_CORE_STATS=1),
+             with the compile time and machine-code size of each function.
+             DEBUGGING the compiled code (SYMBOLS: comma-separated, or *):
+               SPARROW_CORE_DUMP=SYMBOLS         CLIF and machine code to stderr
+               SPARROW_CORE_UNOPTIMIZED=SYMBOLS  compile without Cranelift's passes
+               SPARROW_CORE_PLAIN=SYMBOLS        compile without inline fast paths
              BUDGETS (all off by default; running out exits 1 with
              \"Execution budget exhausted: …\" or \"Execution interrupted\"):
                --max-steps N      stop after N steps (function entries, loop iterations)

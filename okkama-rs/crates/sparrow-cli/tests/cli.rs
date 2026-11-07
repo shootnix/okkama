@@ -308,3 +308,40 @@ fn handlers_read_old_registers_across_collections() {
         }
     }
 }
+#[test]
+fn chosen_functions_dump_and_compile_without_optimizations_or_fast_paths() {
+    // −(−21) + −(−21): negation has an inline fast path, addition too.
+    let program = main(
+        4,
+        vec![
+            Instruction::Const { dst: Dst(Register(0)), value: Constant::Int("21".into()) },
+            Instruction::IntNeg { dst: Dst(Register(1)), operand: Register(0) },
+            Instruction::IntNeg { dst: Dst(Register(2)), operand: Register(1) },
+            Instruction::IntAdd { dst: Dst(Register(3)), left: Register(2), right: Register(2) },
+            Instruction::Return { value: Some(Register(3)) },
+        ],
+    );
+    let file = File::new(&okkama_sparrow::encode(&program).unwrap());
+    let run = |variables: &[(&str, &str)], options: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sparrow"));
+        command.arg("run").args(options).arg(&file.0).env("PATH", "");
+        for (name, value) in variables {
+            command.env(name, value);
+        }
+        let output = command.output().unwrap();
+        assert_eq!(output.status.code(), Some(42), "{variables:?}: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    assert!(run(&[], &[]).is_empty());
+    let dump = run(&[("SPARROW_CORE_DUMP", "main")], &[]);
+    assert!(dump.contains("; CLIF of main (f0)") && dump.contains("function "), "{dump}");
+    assert!(dump.contains("; machine code of main at 0x"), "{dump}");
+    assert!(run(&[("SPARROW_CORE_DUMP", "other")], &[]).is_empty());
+    // The same result without Cranelift's passes and without inline fast
+    // paths; the plain body calls the shared slow path for each negation.
+    run(&[("SPARROW_CORE_UNOPTIMIZED", "*")], &[]);
+    let plain = run(&[("SPARROW_CORE_PLAIN", "main"), ("SPARROW_CORE_STATS", "1")], &[]);
+    assert!(plain.contains(" exec int.neg"), "{plain}");
+    let stats = run(&[], &["--stats"]);
+    assert!(stats.contains(" compile main, microseconds") && stats.contains(" machine code main, bytes"), "{stats}");
+}

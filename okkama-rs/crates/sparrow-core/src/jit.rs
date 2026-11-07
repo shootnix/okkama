@@ -19,7 +19,7 @@ use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, MemFlagsData, Signatur
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{FuncId, Linkage, Module, default_libcall_names};
+use cranelift_module::{FuncId, Linkage, Module, ModuleReloc, default_libcall_names};
 use okkama_sparrow::{Cmp, Constant, Instruction as I, Target, Type};
 use std::collections::BTreeMap;
 
@@ -130,6 +130,62 @@ pub struct Jit {
     helper_counts: Box<[u64]>,
     /// The largest machine frame compiled, bytes (`--stats`).
     largest_frame: u32,
+    /// Functions whose CLIF and machine code go to stderr (`SPARROW_CORE_DUMP`).
+    dump: Chosen,
+    /// Functions compiled without Cranelift's optimizations, and the target
+    /// that does it (`SPARROW_CORE_UNOPTIMIZED`).
+    unoptimized: Chosen,
+    unoptimized_isa: Option<std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>>,
+    /// Functions compiled without the core's inline fast paths: each
+    /// instruction that has one runs through the shared slow path instead
+    /// (`SPARROW_CORE_PLAIN`).
+    plain: Chosen,
+}
+
+/// Functions chosen by symbol in an environment variable: a comma-separated
+/// list, or `*` for all. Bisecting a wrong result over these lists narrows it
+/// to one compiled function without rebuilding (#44).
+#[derive(Debug, Default)]
+struct Chosen {
+    all: bool,
+    symbols: std::collections::BTreeSet<String>,
+}
+
+impl Chosen {
+    fn from_env(variable: &str) -> Self {
+        let Some(text) = std::env::var_os(variable) else {
+            return Self::default();
+        };
+        let text = text.to_string_lossy();
+        let symbols: std::collections::BTreeSet<String> =
+            text.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
+        Self { all: symbols.contains("*"), symbols }
+    }
+
+    fn any(&self) -> bool {
+        self.all || !self.symbols.is_empty()
+    }
+
+    fn has(&self, symbol: &str) -> bool {
+        self.all || self.symbols.contains(symbol)
+    }
+}
+
+/// The target for compiled code, at a Cranelift optimization level.
+fn target(opt_level: &str) -> Result<std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>, Error> {
+    let mut flags = settings::builder();
+    let set = |flags: &mut settings::Builder, name: &str, value: &str| {
+        flags.set(name, value).map_err(|e| Error(format!("JIT flag {name}: {e}")))
+    };
+    set(&mut flags, "opt_level", opt_level)?;
+    set(&mut flags, "is_pic", "false")?;
+    set(&mut flags, "use_colocated_libcalls", "false")?;
+    // The collector walks frame records to find each frame's stack map.
+    set(&mut flags, "preserve_frame_pointers", "true")?;
+    cranelift_native::builder()
+        .map_err(|e| Error(format!("JIT target: {e}")))?
+        .finish(settings::Flags::new(flags))
+        .map_err(|e| Error(format!("JIT target: {e}")))
 }
 
 /// Largest machine frame of a compiled function: a quarter of the stack
@@ -158,19 +214,9 @@ impl std::fmt::Debug for Jit {
 
 impl Jit {
     pub fn new() -> Result<Self, Error> {
-        let mut flags = settings::builder();
-        let set = |flags: &mut settings::Builder, name: &str, value: &str| {
-            flags.set(name, value).map_err(|e| Error(format!("JIT flag {name}: {e}")))
-        };
-        set(&mut flags, "opt_level", "speed")?;
-        set(&mut flags, "is_pic", "false")?;
-        set(&mut flags, "use_colocated_libcalls", "false")?;
-        // The collector walks frame records to find each frame's stack map.
-        set(&mut flags, "preserve_frame_pointers", "true")?;
-        let isa = cranelift_native::builder()
-            .map_err(|e| Error(format!("JIT target: {e}")))?
-            .finish(settings::Flags::new(flags))
-            .map_err(|e| Error(format!("JIT target: {e}")))?;
+        let isa = target("speed")?;
+        let unoptimized = Chosen::from_env("SPARROW_CORE_UNOPTIMIZED");
+        let unoptimized_isa = if unoptimized.any() { Some(target("none")?) } else { None };
         let mut builder = JITBuilder::with_isa(isa, default_libcall_names());
         builder.memory_provider(Box::new(crate::code_memory::CodeMemory::new()));
         declare_helpers(&mut builder);
@@ -185,6 +231,10 @@ impl Jit {
             dispatch: BTreeMap::new(),
             helper_counts: vec![0; HELPERS.len()].into_boxed_slice(),
             largest_frame: 0,
+            dump: Chosen::from_env("SPARROW_CORE_DUMP"),
+            unoptimized,
+            unoptimized_isa,
+            plain: Chosen::from_env("SPARROW_CORE_PLAIN"),
         })
     }
 
@@ -321,8 +371,10 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         return Ok(runtime.code[function]);
     }
     let Runtime { heap, loaded, jit, code, constants, resources, limits, budget, stats, .. } = runtime;
+    let started = stats.is_some().then(std::time::Instant::now);
     let program = &loaded.program;
     let source = &program.functions[function];
+    let symbol = source.symbol.as_str();
     if source.is_async && (source.native.is_some() || source.intrinsic.is_some()) {
         return Err(Error(format!("{}: async natives and intrinsics are driven, not compiled", source.symbol)));
     }
@@ -354,6 +406,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     } else {
         None
     };
+    let plain = jit.plain.has(symbol);
     let config = jit.module.target_config();
     let mut context = jit.module.make_context();
     context.func.signature = jit.signature(params);
@@ -383,14 +436,47 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             live,
             cost: 0,
             cost_limit,
+            plain,
         };
         emit.body()?;
         builder.seal_all_blocks();
         builder.finalize(config);
     }
-    jit.module
-        .define_function(id, &mut context)
-        .map_err(|e| Error(format!("{}: {e:?}", source.symbol)))?;
+    let dump = jit.dump.has(symbol);
+    if dump {
+        // Callees by their CLIF names: the runtime's helpers and the program's functions.
+        let callees: String = context
+            .func
+            .params
+            .user_named_funcs()
+            .values()
+            .map(|name| {
+                let id = FuncId::from_u32(name.index);
+                let linkage = jit.module.declarations().get_function_decl(id).linkage_name(id).into_owned();
+                let callee = match linkage.strip_prefix('f').and_then(|n| n.parse::<usize>().ok()) {
+                    Some(n) => program.functions[n].symbol.clone(),
+                    None => linkage,
+                };
+                format!(";   u{}:{} = {callee}\n", name.namespace, name.index)
+            })
+            .collect();
+        eprintln!("; CLIF of {symbol} (f{function}), before Cranelift's passes\n{callees}{}", context.func.display());
+        context.set_disasm(true);
+    }
+    match &jit.unoptimized_isa {
+        Some(isa) if jit.unoptimized.has(symbol) => {
+            // What `define_function` does, with the unoptimizing target.
+            context.compile(&**isa, &mut Default::default()).map_err(|e| Error(format!("{symbol}: {:?}", e.inner)))?;
+            let compiled = context.compiled_code().expect("compiled function");
+            let alignment = u64::from(compiled.buffer.min_alignment);
+            let relocs: Vec<ModuleReloc> =
+                compiled.buffer.relocs().iter().map(|reloc| ModuleReloc::from_mach_reloc(reloc, &context.func, id)).collect();
+            jit.module
+                .define_function_bytes(id, alignment, compiled.code_buffer(), &relocs)
+                .map_err(|e| Error(format!("{symbol}: {e:?}")))?;
+        }
+        _ => jit.module.define_function(id, &mut context).map_err(|e| Error(format!("{symbol}: {e:?}")))?,
+    }
     let compiled = context.compiled_code().expect("compiled function");
     let maps: Vec<(u32, Vec<u32>)> = compiled
         .buffer
@@ -423,6 +509,20 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     jit.ranges.push((address, address + u64::from(size)));
     jit.ranges.sort_unstable();
     code[function] = address;
+    if dump && let Some(listing) = &compiled.vcode {
+        eprintln!("; machine code of {symbol} at {address:#x}, {size} bytes, frame {fp_to_sp} bytes\n{listing}");
+    }
+    if let (Some(stats), Some(started)) = (stats, started) {
+        let micros = started.elapsed().as_micros() as u64;
+        for (key, value) in [
+            (format!("compile {symbol}, microseconds"), micros),
+            (format!("machine code {symbol}, bytes"), u64::from(size)),
+            ("compile, microseconds".to_string(), micros),
+            ("machine code, bytes".to_string(), u64::from(size)),
+        ] {
+            *stats.entry(key).or_default() += value;
+        }
+    }
     Ok(address)
 }
 
@@ -446,6 +546,9 @@ struct Emitter<'a, 'b> {
     /// Σ live registers × blocks emitted so far, and its limit.
     cost: u64,
     cost_limit: u64,
+    /// Instructions with an inline fast path take the shared slow path
+    /// (`SPARROW_CORE_PLAIN`).
+    plain: bool,
     ctx: Option<Value>,
     /// The frame variable of an async body.
     frame: Option<Variable>,
@@ -908,6 +1011,10 @@ impl Emitter<'_, '_> {
                 instruction.mnemonic()
             ))
         };
+        if self.plain && generic(instruction) {
+            self.generic_instruction(pc, instruction);
+            return Ok(false);
+        }
         match instruction {
             I::Const { dst, value } => {
                 let value = match value {
@@ -1727,18 +1834,7 @@ impl Emitter<'_, '_> {
                 let value = self.builder.block_params(done)[0];
                 self.set(&dst.0, value);
             }
-            other if generic(other) => {
-                let mut def = None;
-                other.visit(&mut |access| {
-                    if let okkama_sparrow::Access::Def(register) = access {
-                        def = Some(register);
-                    }
-                });
-                let result = self.exec_generic(pc, other);
-                if let Some(def) = def {
-                    self.set_word(&def, result);
-                }
-            }
+            other if generic(other) => self.generic_instruction(pc, other),
             _ => return Err(unsupported()),
         }
         Ok(false)
@@ -1817,6 +1913,20 @@ impl Emitter<'_, '_> {
         let result = self.helper(|h| h.failure_op, &[ctx, function, at, address]).expect("result");
         self.check(pc);
         result
+    }
+
+    /// Compile `instruction` as a call of the shared slow path, defining its result.
+    fn generic_instruction(&mut self, pc: usize, instruction: &I) {
+        let mut def = None;
+        instruction.visit(&mut |access| {
+            if let okkama_sparrow::Access::Def(register) = access {
+                def = Some(register);
+            }
+        });
+        let result = self.exec_generic(pc, instruction);
+        if let Some(def) = def {
+            self.set_word(&def, result);
+        }
     }
 
     /// Run `instruction` through the shared slow path (`rt_exec`); its result word.
