@@ -825,9 +825,12 @@ pub(crate) fn execute_function(
                     .map_err(|message| invalid_state(inst.span, message))?,
                     // Cap — сам владелец: поле вычисляется при каждом чтении.
                     InstKind::CapMake(owner) => read(slots, *owner, inst.span)?.clone(),
-                    InstKind::AnyBox(value) => {
-                        Value::Any(Rc::new(read(slots, *value, inst.span)?.clone()))
-                    }
+                    // An `any` is not boxed again: boxes never nest, so
+                    // dropping them never recurses (S07).
+                    InstKind::AnyBox(value) => match read(slots, *value, inst.span)? {
+                        boxed @ Value::Any(_) => boxed.clone(),
+                        other => Value::Any(Rc::new(other.clone())),
+                    },
                     InstKind::MapNew(entries) => operations::map_new(
                         entries
                             .iter()

@@ -7,7 +7,7 @@
 #
 # Шаги:
 #   1. release-сборка okkama и sparrow (провал — ворота останавливаются),
-#      тесты Rust всего workspace (release);
+#      тесты Rust всего workspace (release), тесты освобождения IR в debug;
 #   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
 #      целиком) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
 #      сведения: у него нет нативов, добавленных с 0.4.0);
@@ -102,6 +102,20 @@ if [[ $QUICK -eq 0 ]]; then
         record "rust tests" fail $((SECONDS - started))
         grep -E "^test .* FAILED|panicked|^error" "$LOGS/cargo-test.log" | head -20
         fail "Rust tests"
+    fi
+fi
+
+if [[ $QUICK -eq 0 ]]; then
+    # Drops of deep value graphs must not recurse: debug frames are larger,
+    # so the IR runtime's drop tests run unoptimized too (#28).
+    step "IR runtime drop tests (debug)"
+    started=$SECONDS
+    if (cd "$ROOT/okkama-rs" && cargo test -p okkama-runtime-core --lib drop_tests >"$LOGS/debug-drop-tests.log" 2>&1); then
+        record "debug drop tests" pass $((SECONDS - started))
+    else
+        record "debug drop tests" fail $((SECONDS - started))
+        tail -20 "$LOGS/debug-drop-tests.log"
+        fail "IR runtime drop tests (debug)"
     fi
 fi
 

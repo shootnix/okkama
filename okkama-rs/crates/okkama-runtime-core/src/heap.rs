@@ -248,13 +248,33 @@ fn deep(value: &Value) -> bool {
     }
 }
 
-/// Переносит из `values` в `pending` только значения, уходящие в глубину.
+/// Переносит из `values` в `pending` значения, уходящие в глубину, по
+/// порядку: разделяемая ссылка отпускается сразу (это лишь уменьшение
+/// счётчика), поэтому её следующая копия в том же контейнере уже последняя
+/// и тоже попадает в очередь. Иначе `[child.clone(), child]` оставлял обе
+/// копии и вторая освобождала `child` рекурсивно (S07).
 fn take_deep(values: &mut [Value], pending: &mut Vec<Value>) {
     for value in values {
         if deep(value) {
             pending.push(std::mem::replace(value, Value::Undef));
+        } else if shared(value) {
+            drop(std::mem::replace(value, Value::Undef));
         }
     }
+}
+
+/// Ссылка на контейнер, у которой есть и другие владельцы.
+fn shared(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Object(_)
+            | Value::Array(_)
+            | Value::Map(_)
+            | Value::Builder(_)
+            | Value::MapBuilder(_)
+            | Value::Fn(_)
+            | Value::Any(_)
+    )
 }
 
 /// Отдаёт дочерние значения последней ссылки в `pending` вместо рекурсии.
@@ -1253,5 +1273,66 @@ mod equality_tests {
             Err(EqualityError::MixedTypes)
         );
         assert!(heap.equal(&arrays, &Value::Undef, &Value::Undef).is_err());
+    }
+}
+
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// Build and drop on a 2 MiB stack: a recursive drop of these depths
+    /// overflows it (S07, #28).
+    fn drops_on_a_small_stack(build: fn(usize) -> Value) {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || drop(build(200_000)))
+            .unwrap()
+            .join()
+            .expect("dropped without overflowing the stack");
+    }
+
+    fn leaf() -> Value {
+        Value::Int(crate::IntValue::from_i64(7))
+    }
+
+    #[test]
+    fn chains_drop_iteratively() {
+        drops_on_a_small_stack(|depth| (0..depth).fold(leaf(), |next, _| ObjectHeap.allocate(0, vec![next, leaf()])));
+        drops_on_a_small_stack(|depth| (0..depth).fold(leaf(), |next, _| ArrayHeap.allocate(vec![next])));
+        // `any` is never boxed twice (`AnyBox` of an `any` keeps it): chains
+        // go through containers.
+        drops_on_a_small_stack(|depth| {
+            (0..depth).fold(leaf(), |next, _| Value::Any(Rc::new(ArrayHeap.allocate(vec![next]))))
+        });
+        drops_on_a_small_stack(|depth| {
+            (0..depth).fold(leaf(), |next, _| {
+                Value::Fn(Rc::new(Closure { function: 0, captures: vec![next], worker: None }))
+            })
+        });
+        drops_on_a_small_stack(|depth| {
+            let chain = (0..depth).fold(leaf(), |next, _| ArrayHeap.allocate(vec![next]));
+            Value::Builder(Rc::new(RefCell::new(vec![chain.clone(), chain])))
+        });
+    }
+
+    #[test]
+    fn graphs_with_repeated_edges_drop_iteratively() {
+        drops_on_a_small_stack(|depth| (0..depth).fold(leaf(), |next, _| ArrayHeap.allocate(vec![next.clone(), next])));
+        drops_on_a_small_stack(|depth| {
+            (0..depth).fold(leaf(), |next, _| ObjectHeap.allocate(0, vec![next.clone(), leaf(), next]))
+        });
+        drops_on_a_small_stack(|depth| {
+            (0..depth).fold(leaf(), |next, _| {
+                let entries = (0..2).map(|key| (MapKey::Int(crate::IntValue::from_i64(key)), next.clone())).collect();
+                drop(next);
+                Value::Map(Rc::new(Map(entries)))
+            })
+        });
+        drops_on_a_small_stack(|depth| {
+            (0..depth).fold(leaf(), |next, _| {
+                Value::Fn(Rc::new(Closure { function: 0, captures: vec![next.clone(), next], worker: None }))
+            })
+        });
     }
 }
