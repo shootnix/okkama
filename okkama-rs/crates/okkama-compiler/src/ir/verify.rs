@@ -1114,6 +1114,41 @@ impl<'a> FunctionVerifier<'a> {
                 self.expect_type(*separator, &Type::Str)?;
                 Type::Str
             }
+            // Склейка и вычитание коллекций: каждая часть того же типа, что и
+            // результат, или пустой литерал без тега.
+            InstKind::ArrayConcat(parts)
+            | InstKind::ArrayDifference { removed: parts, .. }
+            | InstKind::MapMerge(parts)
+            | InstKind::MapDifference { removed: parts, .. } => {
+                let Some(result) = result else {
+                    return Err(format!("`{kind}` must define a value"));
+                };
+                let ty = self.ty(result)?.clone();
+                let untagged = match &ty {
+                    Type::Array(_) if matches!(kind, InstKind::ArrayConcat(_) | InstKind::ArrayDifference { .. }) => {
+                        Type::Array(Box::new(Type::Never))
+                    }
+                    Type::Map(..) if matches!(kind, InstKind::MapMerge(_) | InstKind::MapDifference { .. }) => {
+                        Type::Map(Box::new(Type::Never), Box::new(Type::Never))
+                    }
+                    other => return Err(format!("{kind} cannot define {other}")),
+                };
+                if parts.is_empty() && matches!(kind, InstKind::ArrayConcat(_) | InstKind::MapMerge(_)) {
+                    return Err(format!("{kind} needs at least one part"));
+                }
+                let base = match kind {
+                    InstKind::ArrayDifference { array, .. } => Some(*array),
+                    InstKind::MapDifference { map, .. } => Some(*map),
+                    _ => None,
+                };
+                for part in base.iter().chain(parts.iter()) {
+                    let part_ty = self.ty(*part)?;
+                    if part_ty != &ty && part_ty != &untagged {
+                        return Err(format!("{kind}: {part} is {part_ty}, expected {ty}"));
+                    }
+                }
+                return Ok(());
+            }
             InstKind::Retag(value) => {
                 let Some(result) = result else {
                     return Err("`retag` must define a value".to_string());

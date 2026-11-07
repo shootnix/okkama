@@ -864,6 +864,87 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             }
             Ok(runtime.heap.allocate_payload(Box::new(map)))
         }
+        I::ArrayConcat { dst, parts } => {
+            let words: Vec<Word> = parts.iter().map(value).collect();
+            let element = match runtime.ty(function, dst.0) {
+                Some(Type::Array(element)) => *element,
+                _ => return Err("arr.concat needs an array type".into()),
+            };
+            // The result is allocated once, for the sum of the parts' lengths.
+            let size: usize = words.iter().map(|&w| crate::heap::payload(runtime.heap.header_of(w)) as usize).sum();
+            if runtime.kind_of(element) == Kind::Byte {
+                let mut bytes = Vec::with_capacity(size);
+                for &w in &words {
+                    bytes.extend_from_slice(&runtime.heap.byte_view(w));
+                }
+                return Ok(runtime.heap.allocate_bytes(&bytes));
+            }
+            let mut items = Vec::with_capacity(size);
+            for &w in &words {
+                items.extend_from_slice(&runtime.heap.elements(w));
+            }
+            let repr = runtime.kind_of(element).repr();
+            Ok(new_array(runtime, function, dst.0, repr, &items))
+        }
+        I::ArrayDiff { dst, array, removed } => {
+            let element = match runtime.ty(function, dst.0) {
+                Some(Type::Array(element)) => *element,
+                _ => return Err("arr.diff needs an array type".into()),
+            };
+            let kind = runtime.kind_of(element);
+            let ty = runtime.loaded.program.ty(element).cloned();
+            let mut excluded = Vec::new();
+            for part in removed {
+                excluded.extend_from_slice(&runtime.heap.elements(value(part)));
+            }
+            let items = runtime.heap.elements(value(array)).into_owned();
+            // Scalars and strings compare by key; other elements deeply.
+            let keyed = matches!(kind, Kind::Int | Kind::Raw | Kind::Byte) || ty == Some(Type::Str);
+            let mut kept = Vec::with_capacity(items.len());
+            if keyed {
+                let keys: std::collections::BTreeSet<_> = excluded.iter().map(|&w| runtime.key(w, kind, ty.as_ref())).collect();
+                kept.extend(items.into_iter().filter(|&w| !keys.contains(&runtime.key(w, kind, ty.as_ref()))));
+            } else {
+                for item in items {
+                    let mut found = false;
+                    for &other in &excluded {
+                        if equal(runtime, item, other, element)? {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        kept.push(item);
+                    }
+                }
+            }
+            if kind == Kind::Byte {
+                let bytes: Vec<u8> = kept.iter().map(|&w| w as u8).collect();
+                return Ok(runtime.heap.allocate_bytes(&bytes));
+            }
+            Ok(new_array(runtime, function, dst.0, kind.repr(), &kept))
+        }
+        I::MapMerge { dst, parts } => {
+            let mut map = map_for(runtime, function, dst.0)?;
+            for part in parts {
+                let entries = &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries;
+                for (key, (key_word, item)) in entries {
+                    map.entries.entry(key.clone()).and_modify(|e| e.1 = *item).or_insert((*key_word, *item));
+                }
+            }
+            Ok(runtime.heap.allocate_payload(Box::new(map)))
+        }
+        I::MapDiff { dst, map: base, removed } => {
+            let mut map = map_for(runtime, function, dst.0)?;
+            map.entries = runtime.heap.payload::<MapValue>(value(base)).expect("map").entries.clone();
+            for part in removed {
+                let entries = &runtime.heap.payload::<MapValue>(value(part)).expect("map").entries;
+                for key in entries.keys() {
+                    map.entries.remove(key);
+                }
+            }
+            Ok(runtime.heap.allocate_payload(Box::new(map)))
+        }
         I::MapBuilderNew { dst } => Ok({
             let map = map_for(runtime, function, dst.0)?;
             runtime.heap.allocate_payload(Box::new(map))

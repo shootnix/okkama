@@ -511,6 +511,26 @@ fn write_inst(
             write!(f, "array.slice {array}, {start}, {end}")
         }
         InstKind::ArrayJoin { array, separator } => write!(f, "array.join {array}, {separator}"),
+        InstKind::ArrayConcat(parts) => {
+            f.write_str("array.concat [")?;
+            write_list(f, parts)?;
+            f.write_char(']')
+        }
+        InstKind::ArrayDifference { array, removed } => {
+            write!(f, "array.difference {array}, [")?;
+            write_list(f, removed)?;
+            f.write_char(']')
+        }
+        InstKind::MapMerge(parts) => {
+            f.write_str("map.merge [")?;
+            write_list(f, parts)?;
+            f.write_char(']')
+        }
+        InstKind::MapDifference { map, removed } => {
+            write!(f, "map.difference {map}, [")?;
+            write_list(f, removed)?;
+            f.write_char(']')
+        }
         InstKind::Retag(value) => write!(f, "array.retag {value}"),
         InstKind::BuilderNew => f.write_str("builder.new"),
         InstKind::BuilderPush { builder, value } => write!(f, "builder.push {builder}, {value}"),

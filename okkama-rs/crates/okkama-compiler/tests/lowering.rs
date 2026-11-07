@@ -362,3 +362,29 @@ fn endless_specialization_is_a_diagnostic_with_its_chain() {
         assert!(error.contains(&format!("{action} <- ")), "{error}");
     }
 }
+
+#[test]
+fn collection_operator_chains_are_one_instruction() {
+    // `a + b + c` and `a + (b + c)` allocate one result for all parts (#145).
+    let text = main_listing("let a = [1]; let b = [2]; let c = [3]; let d = a + b + c; let e = a + (b + c); d.size() + e.size();");
+    assert_eq!(text.matches("array.concat [").count(), 2, "{text}");
+    // Each line is the result and its three parts.
+    assert!(text.lines().filter(|l| l.contains("array.concat")).all(|l| l.matches('%').count() == 4), "{text}");
+    // `(a - b) - c` subtracts both at once; `a - (b - c)` stays nested.
+    let text = main_listing("let a = [1, 2, 3]; let b = [1]; let c = [2]; let d = a - b - c; let e = a - (b - c); d.size() + e.size();");
+    let differences: Vec<&str> = text.lines().filter(|l| l.contains("array.difference")).collect();
+    assert_eq!(differences.len(), 3, "{text}");
+    assert!(differences[0].contains(", [%") && differences[0].matches('%').count() == 4, "{text}");
+    // Maps merge and subtract the same way.
+    let text = main_listing("let m = [\"a\": 1] + [\"b\": 2] + [\"c\": 3]; let n = m - [\"a\": 0] - [\"b\": 0]; n.size();");
+    assert_eq!(text.matches("map.merge [").count(), 1, "{text}");
+    assert_eq!(text.matches("map.difference").count(), 1, "{text}");
+}
+
+#[test]
+fn collection_operators_need_one_collection_type() {
+    for body in ["let c = [1] + [[1]];", "let c = [1] + [\"k\": 1];", "let a is @any = [1]; let c = a - a;", "let c = [1] * [2];"] {
+        let source = format!("module app v1.0.0; main() is int {{ {body} 0; }}");
+        assert!(lower(&source).is_err(), "{body} must be rejected");
+    }
+}

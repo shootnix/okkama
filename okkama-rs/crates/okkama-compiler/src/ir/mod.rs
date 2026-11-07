@@ -1010,6 +1010,15 @@ pub enum InstKind {
         start: ValueId,
         end: ValueId,
     },
+    /// `a + b + ...` над массивами одного типа: результат выделяется один раз
+    /// под сумму длин частей (цепочка `+` — одна инструкция).
+    ArrayConcat(Vec<ValueId>),
+    /// `a - b - ...`: элементы `array`, не равные ни одному элементу
+    /// `removed`, в исходном порядке; одно выделение.
+    ArrayDifference {
+        array: ValueId,
+        removed: Vec<ValueId>,
+    },
     /// Склейка `array<str>` через разделитель.
     ArrayJoin {
         array: ValueId,
@@ -1189,6 +1198,14 @@ pub enum InstKind {
     MapValues(ValueId),
     /// `map<never,never>` → `map<K,V>` (тип — из результата).
     MapRetag(ValueId),
+    /// `a + b + ...` над словарями одного типа; при повторе ключа побеждает
+    /// значение более правой части.
+    MapMerge(Vec<ValueId>),
+    /// `a - b - ...`: записи `map`, ключей которых нет ни в одной из `removed`.
+    MapDifference {
+        map: ValueId,
+        removed: Vec<ValueId>,
+    },
     MapBuilderNew,
     MapBuilderPut {
         builder: ValueId,
@@ -1275,6 +1292,11 @@ impl InstKind {
             InstKind::ArrayGet { array, index } => vec![*array, *index],
             InstKind::ArraySlice { array, start, end } => vec![*array, *start, *end],
             InstKind::ArrayJoin { array, separator } => vec![*array, *separator],
+            InstKind::ArrayConcat(parts) | InstKind::MapMerge(parts) => parts.clone(),
+            InstKind::ArrayDifference { array: base, removed }
+            | InstKind::MapDifference { map: base, removed } => {
+                std::iter::once(*base).chain(removed.iter().copied()).collect()
+            }
             InstKind::BuilderNew => Vec::new(),
             InstKind::BuilderPush { builder, value } => vec![*builder, *value],
             InstKind::BuilderAppend { builder, array } => vec![*builder, *array],
@@ -1386,6 +1408,11 @@ impl InstKind {
             InstKind::ArrayGet { array, index } => vec![array, index],
             InstKind::ArraySlice { array, start, end } => vec![array, start, end],
             InstKind::ArrayJoin { array, separator } => vec![array, separator],
+            InstKind::ArrayConcat(parts) | InstKind::MapMerge(parts) => parts.iter_mut().collect(),
+            InstKind::ArrayDifference { array: base, removed }
+            | InstKind::MapDifference { map: base, removed } => {
+                std::iter::once(base).chain(removed.iter_mut()).collect()
+            }
             InstKind::BuilderNew => Vec::new(),
             InstKind::BuilderPush { builder, value } => vec![builder, value],
             InstKind::BuilderAppend { builder, array } => vec![builder, array],

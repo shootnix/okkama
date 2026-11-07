@@ -583,6 +583,42 @@ impl<'a> Typing<'a> {
                 self.expect_ref(*value, *e)?;
                 self.define(dst.0, ty, "builder.push")
             }
+            I::ArrayConcat { dst, parts } | I::ArrayDiff { dst, removed: parts, .. } => {
+                let ty = self.ty(dst.0);
+                let Type::Array(element) = ty else {
+                    return Err(format!("{} defines {}, not an array", instruction.mnemonic(), self.name(ty)));
+                };
+                if parts.is_empty() && matches!(instruction, I::ArrayConcat { .. }) {
+                    return Err("arr.concat needs at least one part".into());
+                }
+                let base = if let I::ArrayDiff { array, .. } = instruction { Some(*array) } else { None };
+                for part in base.iter().chain(parts.iter()) {
+                    match self.ty(*part) {
+                        Type::Array(e) if self.equal(self.resolve(*e), self.resolve(*element)) || *self.resolve(*e) == Type::Never => {}
+                        other => return Err(format!("{} of {} into {}", instruction.mnemonic(), self.name(other), self.name(ty))),
+                    }
+                }
+                Ok(())
+            }
+            I::MapMerge { dst, parts } | I::MapDiff { dst, removed: parts, .. } => {
+                let ty = self.ty(dst.0);
+                let Type::Map(key, value) = ty else {
+                    return Err(format!("{} defines {}, not a map", instruction.mnemonic(), self.name(ty)));
+                };
+                if parts.is_empty() && matches!(instruction, I::MapMerge { .. }) {
+                    return Err("map.merge needs at least one part".into());
+                }
+                let base = if let I::MapDiff { map, .. } = instruction { Some(*map) } else { None };
+                for part in base.iter().chain(parts.iter()) {
+                    match self.ty(*part) {
+                        Type::Map(k, v)
+                            if (self.equal(self.resolve(*k), self.resolve(*key)) && self.equal(self.resolve(*v), self.resolve(*value)))
+                                || *self.resolve(*k) == Type::Never => {}
+                        other => return Err(format!("{} of {} into {}", instruction.mnemonic(), self.name(other), self.name(ty))),
+                    }
+                }
+                Ok(())
+            }
             I::BuilderAppend { dst, builder, array } => {
                 let ty = self.ty(*builder);
                 let Type::Builder(e) = ty else {

@@ -831,6 +831,30 @@ pub(crate) fn execute_function(
                         boxed @ Value::Any(_) => boxed.clone(),
                         other => Value::Any(Rc::new(other.clone())),
                     },
+                    InstKind::ArrayConcat(parts) | InstKind::MapMerge(parts) => {
+                        let parts = parts
+                            .iter()
+                            .map(|id| read(slots, *id, inst.span))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        if matches!(&inst.kind, InstKind::ArrayConcat(_)) {
+                            operations::array_concat(&parts, inst.span)?
+                        } else {
+                            operations::map_merge(&parts, inst.span)?
+                        }
+                    }
+                    InstKind::ArrayDifference { array: base, removed }
+                    | InstKind::MapDifference { map: base, removed } => {
+                        let base_value = read(slots, *base, inst.span)?;
+                        let removed = removed
+                            .iter()
+                            .map(|id| read(slots, *id, inst.span))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        if matches!(&inst.kind, InstKind::ArrayDifference { .. }) {
+                            operations::array_difference(base_value, &removed, inst.span)?
+                        } else {
+                            operations::map_difference(base_value, &removed, inst.span)?
+                        }
+                    }
                     InstKind::MapNew(entries) => operations::map_new(
                         entries
                             .iter()

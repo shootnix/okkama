@@ -310,6 +310,10 @@ instructions! {
     ArrayGet = 102, "arr.get" { dst: Dst, array: Register, index: Register }
     ArraySlice = 103, "arr.slice" { dst: Dst, array: Register, start: Register, end: Register }
     ArrayJoin = 104, "arr.join" { dst: Dst, array: Register, separator: Register }
+    /// `a + b + ...`: один массив под сумму длин частей.
+    ArrayConcat = 96, "arr.concat" { dst: Dst, parts: Vec<Register> }
+    /// `a - b - ...`: элементы `array`, не равные ни одному элементу `removed`.
+    ArrayDiff = 97, "arr.diff" { dst: Dst, array: Register, removed: Vec<Register> }
     BuilderNew = 105, "builder.new" { dst: Dst }
     BuilderPush = 106, "builder.push" { dst: Dst, builder: Register, value: Register }
     BuilderAppend = 107, "builder.append" { dst: Dst, builder: Register, array: Register }
@@ -322,6 +326,10 @@ instructions! {
     MapGet = 113, "map.get" { dst: Dst, map: Register, key: Register }
     MapKeys = 114, "map.keys" { dst: Dst, map: Register }
     MapValues = 115, "map.values" { dst: Dst, map: Register }
+    /// `a + b + ...`: записи всех частей; повтор ключа — значение правой части.
+    MapMerge = 98, "map.merge" { dst: Dst, parts: Vec<Register> }
+    /// `a - b - ...`: записи `map`, ключей которых нет ни в одной из `removed`.
+    MapDiff = 99, "map.diff" { dst: Dst, map: Register, removed: Vec<Register> }
     MapBuilderNew = 116, "mbuilder.new" { dst: Dst }
     MapBuilderPut = 117, "mbuilder.put" { dst: Dst, builder: Register, key: Register, value: Register }
     MapBuilderFinish = 118, "mbuilder.finish" { dst: Dst, builder: Register }

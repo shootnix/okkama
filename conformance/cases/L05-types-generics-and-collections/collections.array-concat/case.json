@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.collections.array-concat",
+  "title": "+ concatenates arrays of one type, a chain in one result",
+  "purpose": "Observe the arrays produced by + and that operands are unchanged.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[1 2 3 4 5 6]\n[1 2 3 4 5 6]\n[1 2 3 5 6]\n[1 2 3]\nx,y,z\n3 3\n3 4\n[1 2 3]\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#8-collections"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for issue #145 (collection operators)",
+    "expected_basis": "Issue #145: + over arrays of the same type appends the right operands in order; an untagged [] takes the other operand's type; operands are immutable."
+  },
+  "status": "mandatory"
+}

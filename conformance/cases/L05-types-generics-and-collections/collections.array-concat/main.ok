@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show() {}
+    ints(values is @int) is string { "[" + values.map() -> v { v.string(); }.join(" ") + "]"; }
+    map(values is %string:int) is string { "{" + values.keys().map() -> k { k + "=" + values[k].string(); }.join(" ") + "}"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    let a = [1, 2, 3];
+    let b = [4];
+    let c = [5, 6];
+    out.writeln(show.ints(a + b + c));
+    out.writeln(show.ints(a + (b + c)));
+    out.writeln(show.ints(a + [] + c));
+    out.writeln(show.ints([] + a));
+    out.writeln((["x", "y"] + ["z"]).join(","));
+    let bytes = @byte(1, 2) + @byte(3);
+    out.writeln(bytes.size().string() + " " + bytes.last().string());
+    let rows = [[1], [2, 3]] + [[4]];
+    out.writeln(rows.size().string() + " " + rows[2][0].string());
+    out.writeln(show.ints(a));
+    0;
+}

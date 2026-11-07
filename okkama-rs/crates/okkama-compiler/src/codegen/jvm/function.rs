@@ -1154,6 +1154,38 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             }
             // Сборщик словаря линеен, как и сборщик массива: та же ссылка.
             InstKind::MapRetag(map) | InstKind::MapBuilderFinish(map) => self.load(*map),
+            // Склейка и вычитание коллекций: части — массив `Object[]` для `Rt`,
+            // который выделяет результат один раз.
+            InstKind::ArrayConcat(parts) => {
+                self.boxed_array(parts)?;
+                self.class.call_rt(&mut self.asm, "concat", "([Ljava/lang/Object;)Ljava/util/List;", 1, 1)?;
+            }
+            InstKind::ArrayDifference { array, removed } => {
+                self.load(*array);
+                self.boxed_array(removed)?;
+                self.class.call_rt(
+                    &mut self.asm,
+                    "difference",
+                    "(Ljava/util/List;[Ljava/lang/Object;)Ljava/util/List;",
+                    2,
+                    1,
+                )?;
+            }
+            InstKind::MapMerge(parts) => {
+                self.boxed_array(parts)?;
+                self.class.call_rt(&mut self.asm, "merge", "([Ljava/lang/Object;)Ljava/util/Map;", 1, 1)?;
+            }
+            InstKind::MapDifference { map, removed } => {
+                self.load(*map);
+                self.boxed_array(removed)?;
+                self.class.call_rt(
+                    &mut self.asm,
+                    "without",
+                    "(Ljava/util/Map;[Ljava/lang/Object;)Ljava/util/Map;",
+                    2,
+                    1,
+                )?;
+            }
             InstKind::MapLen(map) => {
                 self.load(*map);
                 self.class.call_rt(

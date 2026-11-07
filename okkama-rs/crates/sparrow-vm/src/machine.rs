@@ -1031,6 +1031,18 @@ pub(crate) fn evaluate<'a>(
         I::MapGet { dst, map, key } => write(*dst, ops::map_get(r(*map)?, r(*key)?, &|declaration, case| engine.case_name(declaration, case))?),
         I::MapKeys { dst, map } => write(*dst, ops::map_keys(r(*map)?)?),
         I::MapValues { dst, map } => write(*dst, ops::map_values(r(*map)?)?),
+        I::ArrayConcat { dst, parts } | I::MapMerge { dst, parts } => {
+            let parts = parts.iter().map(|part| r(*part)).collect::<Result<Vec<_>, _>>()?;
+            write(*dst, if matches!(instruction, I::ArrayConcat { .. }) { ops::array_concat(&parts)? } else { ops::map_merge(&parts)? })
+        }
+        I::ArrayDiff { dst, array: base, removed } | I::MapDiff { dst, map: base, removed } => {
+            let removed = removed.iter().map(|part| r(*part)).collect::<Result<Vec<_>, _>>()?;
+            let base = r(*base)?;
+            write(
+                *dst,
+                if matches!(instruction, I::ArrayDiff { .. }) { ops::array_difference(base, &removed)? } else { ops::map_difference(base, &removed)? },
+            )
+        }
         I::MapBuilderNew { dst } => write(*dst, sparrow_runtime::heap::maps::new_builder()),
         I::MapBuilderPut { dst, builder, key, value } => write(*dst, ops::map_builder_put(r(*builder)?, r(*key)?, r(*value)?.clone())?),
         I::MapBuilderFinish { dst, builder } => write(*dst, ops::map_builder_finish(r(*builder)?)?),

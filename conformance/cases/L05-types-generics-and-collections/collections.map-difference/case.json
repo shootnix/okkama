@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.collections.map-difference",
+  "title": "- removes the keys of the right operand from a map",
+  "purpose": "Observe the maps produced by -.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "{b=2 c=3 d=4}\n{b=2 d=4}\n{a=1 b=2 c=3 d=4}\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#8-collections"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for issue #145 (collection operators)",
+    "expected_basis": "Issue #145: a - b keeps the entries of a whose keys are in no right operand; values of b are ignored."
+  },
+  "status": "mandatory"
+}
