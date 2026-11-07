@@ -8,6 +8,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Benchmarks, method (H-31): the runner (`okkama-docs/benchmarks/run.py`)
+  builds every program first, warms each configuration up once and then runs
+  all samples in a shuffled order (the seed is recorded), so drift does not
+  bias the last configurations. Results carry the raw samples with their
+  order, median, extremes, quartiles, σ and the interquartile range relative
+  to the median; versions (`okkama --version`, rustc, JDK, interpreters),
+  build parameters (release profile, RUSTFLAGS, the pinned toolchain, JVM
+  flags), sha256 of every program's sources and of the binaries, and timer
+  bounds. `sparrow-core-compile` measures compile+run in one process next to
+  the prebuilt `sparrow-core`, and the start-up cost (`00-hello`) of each
+  configuration is reported. Reference interpreters older than the current
+  stable line (here Python 3.9, Ruby 2.6) are listed and the report says so.
+  The report shows each time's spread and the start-up line; steady-state
+  timing is #236 ([#54](https://github.com/shootnix/okkama/issues/54)).
+
 - Language: `+` and `-` on arrays and maps. `a + b + c` concatenates arrays
   (or merges maps, the rightmost value winning a repeated key); `a - b`
   removes from an array every element equal to an element of `b` (or from a
