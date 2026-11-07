@@ -17,7 +17,7 @@ use okkama_compiler::source::SourceFile;
 use okkama_compiler::syntax::{self, ParseOptions, ast};
 use sha2::{Digest, Sha256};
 
-use crate::lock::{Lock, Locked};
+use crate::lock::{LOCK, Lock, Locked};
 use crate::manifest::{self, Dependency, MANIFEST, Manifest, PKG};
 use crate::version::{Requirement, Version};
 
@@ -94,6 +94,12 @@ pub struct Report {
 /// Install the dependencies of the project at `root`.
 pub fn install(root: &Path, unlock: &Unlock) -> Result<Report, String> {
     let _busy = Busy::take(root)?;
+    install_busy(root, unlock)
+}
+
+/// `install` while this blade holds the project.
+fn install_busy(root: &Path, unlock: &Unlock) -> Result<Report, String> {
+    recover(root)?;
     let manifest = Manifest::read(root)?;
     let lock = Lock::read(root)?;
     let mut work = Work::new()?;
@@ -104,8 +110,7 @@ pub fn install(root: &Path, unlock: &Unlock) -> Result<Report, String> {
             .map(|(name, package)| (name.clone(), package.locked()))
             .collect(),
     };
-    swap_in(root, &chosen)?;
-    new_lock.write(root)?;
+    swap_in(root, &chosen, &new_lock)?;
     Ok(report(&lock, &new_lock))
 }
 
@@ -167,10 +172,12 @@ pub fn add(
         git: matches!(source, Source::Git(_)).then(|| spelled.clone()),
         path: matches!(source, Source::Path(_)).then_some(spelled),
     };
+    // The manifest edit and the install are one operation of this blade.
+    let _busy = Busy::take(root)?;
     let file = root.join(MANIFEST);
     let before = std::fs::read(&file).map_err(|error| format!("{}: {error}", file.display()))?;
     manifest::add_dependency(root, &name, &dependency)?;
-    match install(root, &Unlock::Packages(BTreeSet::from([name.clone()]))) {
+    match install_busy(root, &Unlock::Packages(BTreeSet::from([name.clone()]))) {
         Ok(report) => Ok((name, report)),
         Err(error) => {
             // Неудачная установка не оставляет зависимость в манифесте.
@@ -685,15 +692,54 @@ fn checksum(dir: &Path) -> Result<String, String> {
 // ----- установка -----
 
 /// Assemble the new `pkg/` beside the old one and swap it in.
-fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>) -> Result<(), String> {
-    let staged = root.join("pkg.blade-new");
-    let old = root.join("pkg.blade-old");
+// ----- фиксация pkg/ и blade.lock -----
+//
+// pkg/ and blade.lock change together: both are prepared next to the old ones
+// (`pkg.blade-new`, `blade.lock.blade-new`), then a marker
+// (`pkg.blade-commit`) records that the new state is complete, then the
+// renames happen. A blade that finds the marker finishes the renames; without
+// it the prepared files are discarded and the old state stays.
+
+const STAGED: &str = "pkg.blade-new";
+const OLD: &str = "pkg.blade-old";
+const STAGED_LOCK: &str = "blade.lock.blade-new";
+const COMMIT: &str = "pkg.blade-commit";
+
+fn io(path: &Path) -> impl Fn(std::io::Error) -> String + use<> {
+    let path = path.display().to_string();
+    move |error: std::io::Error| format!("{path}: {error}")
+}
+
+thread_local! {
+    static FAIL_AT: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
+/// Tests only: stop the next commit after `step` as if the process died
+/// there (`staged`, `lock`, `marker`, `pkg-moved`, `pkg-in`, `lock-in`).
+#[doc(hidden)]
+pub fn fail_after(step: Option<&'static str>) {
+    FAIL_AT.with(|cell| cell.set(step));
+}
+
+fn step(name: &'static str) -> Result<(), String> {
+    if FAIL_AT.with(|cell| cell.get()) == Some(name) {
+        FAIL_AT.with(|cell| cell.set(None));
+        return Err(format!("interrupted after {name}"));
+    }
+    Ok(())
+}
+
+/// Write `text` to `file` and sync it to disk before the next step.
+fn write_synced(file: &Path, text: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut handle = std::fs::File::create(file).map_err(io(file))?;
+    handle.write_all(text.as_bytes()).and_then(|()| handle.sync_all()).map_err(io(file))
+}
+
+fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>, lock: &Lock) -> Result<(), String> {
+    let staged = root.join(STAGED);
     let pkg = root.join(PKG);
-    let io = |path: &Path| {
-        let path = path.display().to_string();
-        move |error: std::io::Error| format!("{path}: {error}")
-    };
-    for dir in [&staged, &old] {
+    for dir in [&staged, &root.join(OLD)] {
         if dir.exists() {
             std::fs::remove_dir_all(dir).map_err(io(dir))?;
         }
@@ -712,15 +758,79 @@ fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>) -> Result<(), String
         }
         copy_tree(&chosen[name].dir, &target, false)?;
     }
+    step("staged")?;
+    write_synced(&root.join(STAGED_LOCK), &lock.text())?;
+    step("lock")?;
+    write_synced(&root.join(COMMIT), "")?;
+    step("marker")?;
     if pkg.exists() {
-        std::fs::rename(&pkg, &old).map_err(io(&pkg))?;
+        std::fs::rename(&pkg, root.join(OLD)).map_err(io(&pkg))?;
     }
-    if let Err(error) = std::fs::rename(&staged, &pkg) {
-        let _ = std::fs::rename(&old, &pkg);
-        return Err(io(&staged)(error));
+    step("pkg-moved")?;
+    finish_commit(root)
+}
+
+/// The renames after the marker; each is skipped when already done, so a
+/// blade interrupted anywhere here is finished by the next one.
+fn finish_commit(root: &Path) -> Result<(), String> {
+    let (staged, old, pkg) = (root.join(STAGED), root.join(OLD), root.join(PKG));
+    if staged.exists() {
+        if pkg.exists() {
+            if old.exists() {
+                std::fs::remove_dir_all(&old).map_err(io(&old))?;
+            }
+            std::fs::rename(&pkg, &old).map_err(io(&pkg))?;
+        }
+        std::fs::rename(&staged, &pkg).map_err(io(&staged))?;
     }
+    step("pkg-in")?;
+    let staged_lock = root.join(STAGED_LOCK);
+    if staged_lock.exists() {
+        std::fs::rename(&staged_lock, root.join(LOCK)).map_err(io(&staged_lock))?;
+    }
+    step("lock-in")?;
+    let marker = root.join(COMMIT);
+    std::fs::remove_file(&marker).map_err(io(&marker))?;
     if old.exists() {
         std::fs::remove_dir_all(&old).map_err(io(&old))?;
+    }
+    Ok(())
+}
+
+/// Bring an interrupted commit to one state: forward when its marker is
+/// there, back to the old pkg/ and lock otherwise. `install` does it first;
+/// the caller holds the project (or nothing else runs on it).
+pub fn recover(root: &Path) -> Result<(), String> {
+    if root.join(COMMIT).exists() {
+        return finish_commit(root);
+    }
+    let (staged, old, pkg) = (root.join(STAGED), root.join(OLD), root.join(PKG));
+    if staged.exists() {
+        std::fs::remove_dir_all(&staged).map_err(io(&staged))?;
+    }
+    let staged_lock = root.join(STAGED_LOCK);
+    if staged_lock.exists() {
+        std::fs::remove_file(&staged_lock).map_err(io(&staged_lock))?;
+    }
+    if old.exists() {
+        if pkg.exists() {
+            std::fs::remove_dir_all(&old).map_err(io(&old))?;
+        } else {
+            std::fs::rename(&old, &pkg).map_err(io(&old))?;
+        }
+    }
+    Ok(())
+}
+
+/// The installed state is consistent (no interrupted commit) — for commands
+/// that read pkg/ and blade.lock without changing them (`blade build`).
+pub fn settled(root: &Path) -> Result<(), String> {
+    for name in [COMMIT, STAGED, STAGED_LOCK, OLD] {
+        if root.join(name).exists() {
+            return Err(format!(
+                "an earlier blade was interrupted ({name} exists); run `blade install` to finish it"
+            ));
+        }
     }
     Ok(())
 }
