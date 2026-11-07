@@ -260,7 +260,13 @@ impl Runtime {
             ("heap bytes allocated".to_string(), heap.allocated_bytes as u64),
             ("heap live bytes, mean after collection".to_string(), (heap.live_sum / heap.collections.max(1)) as u64),
         ];
-        let mut entries: Vec<_> = stats.iter().map(|(k, v)| (k, v)).chain(extra.iter().map(|(k, v)| (k, v))).collect();
+        let helpers = self.jit.helper_calls();
+        let mut entries: Vec<_> = stats
+            .iter()
+            .map(|(k, v)| (k, v))
+            .chain(extra.iter().map(|(k, v)| (k, v)))
+            .chain(helpers.iter().map(|(k, v)| (k, v)))
+            .collect();
         entries.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
         Some(entries.iter().map(|(k, v)| format!("{v:>12} {k}\n")).collect())
     }
