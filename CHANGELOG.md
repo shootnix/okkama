@@ -294,6 +294,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   CopyFail it waited for another Sync that never came; the refusal now sends
   one ([#11](https://github.com/shootnix/okkama/issues/11)).
 
+- Deep recursion no longer looks like a hang (#241). A failure thousands or
+  millions of frames deep rendered one trace line per frame, each with a
+  `getcwd` call, before collapsing them — tens of seconds after the run had
+  ended, past `--timeout`. The trace is now built once per distinct place and
+  only for the lines it shows (`stack_text_by`), and not at all with
+  `OKKAMA_TRACE=off`: a failure 300000 frames deep prints in 0.17 s instead of
+  12.6 s on the core. On the core, a stack overflow under `--max-memory`
+  (which caps the machine stack) is now `Execution budget exhausted: memory`,
+  as on the IR engine and the JVM, instead of `RuntimeError: Stack overflow`
+  ([#241](https://github.com/shootnix/okkama/issues/241)).
+
 - Book: chapter 10 (EN/RU) lists every builtin action the compiler has —
   string `empty`, `trim`, `chomp`; array `item`, `first`, `last`, `cursor`,
   `ordering`; numeric `abs`, `sign`, `pow`, `sqrt`, bit actions; rat

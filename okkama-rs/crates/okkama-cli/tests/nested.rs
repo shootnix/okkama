@@ -1,5 +1,6 @@
 //! Stack safety of the Sparrow core (H-02, H-12, #25): recursion that goes
-//! through Rust (`destroy`, closures) ends as a `Stack overflow` failure, the
+//! through Rust (`destroy`, closures) ends at the stack limit — under a
+//! memory budget, which caps the stack, as running out of memory (#241) — the
 //! process stays usable, and helper calls do not grow the machine frame.
 
 use sparrow_core::budget::{Counted, Limits, Meter, counted_bytes};
@@ -38,7 +39,7 @@ fn recursion_through_rust_ends_in_a_failure_and_the_process_goes_on() {
     for _ in 0..2 {
         for bytes in &programs {
             let error = sparrow_core::run_limited(bytes.clone(), Vec::new(), false, Vec::new(), limits()).unwrap_err();
-            assert!(error.0.contains("Stack overflow"), "{}", error.0);
+            assert!(error.0.contains("Execution budget exhausted: memory"), "{}", error.0);
         }
         assert_eq!(sparrow_core::run_limited(build("calls"), Vec::new(), false, Vec::new(), limits()).unwrap(), 0);
         assert!(meter.used() < 4 << 20, "held after the runs: {} bytes", meter.used());

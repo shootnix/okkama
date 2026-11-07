@@ -109,3 +109,39 @@ fn budgeted_jvm_builds_take_the_limit_from_the_command_line() {
     assert_eq!(sparrow.status.code(), Some(2));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+const DEEP_FAILURE: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    go(n is int, zero is int) is int { if n == 0 { 1 % zero; } else { self.go(n - 1, zero) + 1; } }\n}\nmain() is int { Down().go(300000, 0); }\n";
+const DEEP_FOREVER: &str = "module app v1.0.0;\nobject Down {\n    Down();\n    go(n is int) is int { if n < 0 { 0; } else { self.go(n + 1) + 1; } }\n}\nmain() is int { Down().go(0); }\n";
+
+/// Deep non-tail recursion (#241): the memory budget stops it with the same
+/// report on every engine (on the core the budget caps the machine stack),
+/// and a failure 300000 frames deep prints its collapsed trace at once
+/// instead of rendering a line per frame.
+#[test]
+fn deep_recursion_is_bounded_and_its_trace_is_cheap() {
+    for engine in ["ir", "sparrow"] {
+        let started = std::time::Instant::now();
+        let output = run(engine, DEEP_FOREVER, &["--max-memory", "64M", "--timeout", "60"]);
+        assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution budget exhausted: memory", "{engine}");
+        assert!(started.elapsed().as_secs() < 30, "{engine}: {:?}", started.elapsed());
+    }
+    for engine in ["ir", "sparrow"] {
+        let path = std::env::temp_dir().join(format!("budgets-trace-{}-{engine}.ok", std::process::id()));
+        std::fs::write(&path, DEEP_FAILURE).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let started = std::time::Instant::now();
+        let output = Command::new(env!("CARGO_BIN_EXE_okkama"))
+            .args(["run", "--engine", engine, "--timeout", "60"])
+            .arg(&path)
+            .env("OKKAMA_STDLIB_DIR", root.join("std"))
+            .env_remove("OKKAMA_TRACE")
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(path);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{engine}: {stderr}");
+        assert!(stderr.contains("(\u{00d7}300000)"), "{engine}: {stderr}");
+        assert!(stderr.lines().count() < 60, "{engine}: {stderr}");
+        assert!(started.elapsed().as_secs() < 20, "{engine}: {:?}", started.elapsed());
+    }
+}

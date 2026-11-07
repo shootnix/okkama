@@ -139,6 +139,9 @@ pub(crate) struct Budget {
     pub written: u64,
     /// Steps left in the current slice; machine code polls below zero.
     pub fuel: crate::budget::Fuel,
+    /// The memory budget caps the machine stack: overflowing it is running
+    /// out of memory, as on the IR engine and the JVM (#241).
+    pub stack_capped: bool,
 }
 
 /// Frame pointer of the calling function's own frame record.
@@ -581,6 +584,17 @@ pub extern "C" fn rt_trap(ctx: *mut Ctx, message: Word) -> Word {
     fail(ctx, runtime, FailureKind::Program(message))
 }
 
+/// The machine stack ran out at a function entry: the memory budget when it
+/// caps the stack, otherwise the failure `Stack overflow`.
+#[inline(never)]
+pub extern "C" fn rt_stack_overflow(ctx: *mut Ctx) -> Word {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    if runtime.budget.stack_capped {
+        return runtime.exhaust(ctx, Exhausted::Memory);
+    }
+    fail(ctx, runtime, FailureKind::Program("Stack overflow".into()))
+}
+
 /// `throw value`.
 #[inline(never)]
 pub extern "C" fn rt_throw(ctx: *mut Ctx, value: Word) -> Word {
@@ -681,6 +695,7 @@ impl Runtime {
         let fuel = self.start_budget()?;
         self.budget.fuel.set(fuel);
         // A memory budget also bounds the machine stack.
+        self.budget.stack_capped = self.limits.memory.is_some_and(|memory| memory.max(2 << 20) < stack);
         let stack = self.limits.memory.map_or(stack, |memory| stack.min(memory.max(2 << 20)));
         let marker = 0u8;
         let mut ctx = Ctx {

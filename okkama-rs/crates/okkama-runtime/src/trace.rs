@@ -4,7 +4,9 @@
 //! «функция, номер инструкции» в нумерации, общей для IR и Sparrow. Здесь они
 //! превращаются в файлы, строки и колонки по отладочным сведениям OIR.
 use okkama_compiler::{ir, source::SourceFile};
-use okkama_runtime_core::failure::{Site, frame_name, stack_text};
+use okkama_runtime_core::failure::{Site, frame_name, stack_text_by};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::fmt::Write;
 
 /// Место отказа (строка исходника с подчёркиванием) и стек вызовов.
@@ -13,21 +15,33 @@ pub fn render_trace(module: &ir::Module, trace: &[Site]) -> String {
     if trace.is_empty() {
         return String::new();
     }
-    let frames: Vec<String> = trace
+    // Строка кадра — одна на место, а не на кадр: глубокая рекурсия даёт
+    // миллионы кадров из нескольких мест (#241). Кадры — номера строк.
+    let cwd = std::env::current_dir().ok();
+    let mut texts: Vec<String> = Vec::new();
+    let mut by_text: HashMap<String, usize> = HashMap::new();
+    let mut by_site: HashMap<Site, usize> = HashMap::new();
+    let frames: Vec<usize> = trace
         .iter()
         .map(|site| {
-            let func = ir::FuncId(site.function as usize);
-            let name = module
-                .functions
-                .get(func.0)
-                .map_or("?", |function| frame_name(&function.symbol));
-            match place(module, *site) {
-                Some((source, span)) => {
-                    let at = source.location(span.start);
-                    format!("{name} ({}:{}:{})", display_path(source), at.line, at.column)
-                }
-                None => format!("{name} (pc {})", site.pc),
-            }
+            *by_site.entry(*site).or_insert_with(|| {
+                let func = ir::FuncId(site.function as usize);
+                let name = module
+                    .functions
+                    .get(func.0)
+                    .map_or("?", |function| frame_name(&function.symbol));
+                let text = match place(module, *site) {
+                    Some((source, span)) => {
+                        let at = source.location(span.start);
+                        format!("{name} ({}:{}:{})", display_path(source, cwd.as_ref()), at.line, at.column)
+                    }
+                    None => format!("{name} (pc {})", site.pc),
+                };
+                *by_text.entry(text.clone()).or_insert_with(|| {
+                    texts.push(text);
+                    texts.len() - 1
+                })
+            })
         })
         .collect();
     // Подчёркивается ближайший к отказу кадр кода программы, а не импорта:
@@ -38,9 +52,9 @@ pub fn render_trace(module: &ir::Module, trace: &[Site]) -> String {
         .or_else(|| trace.iter().find(|site| place(module, **site).is_some()));
     let mut out = String::new();
     if let Some((source, span)) = shown.and_then(|site| place(module, *site)) {
-        out.push_str(&snippet(source, span));
+        out.push_str(&snippet(source, span, cwd.as_ref()));
     }
-    out.push_str(&stack_text("Stack trace (most recent call first):", &frames));
+    out.push_str(&stack_text_by("Stack trace (most recent call first):", &frames, |text| texts[*text].clone()));
     out
 }
 
@@ -53,7 +67,7 @@ fn place(module: &ir::Module, site: Site) -> Option<(&SourceFile, okkama_compile
 }
 
 /// ` --> файл:строка:колонка`, строка исходника и подчёркивание места.
-fn snippet(source: &SourceFile, span: okkama_compiler::source::Span) -> String {
+fn snippet(source: &SourceFile, span: okkama_compiler::source::Span, cwd: Option<&PathBuf>) -> String {
     let start = source.location(span.start);
     let end = source.location(span.end);
     let text = source.line_text(start.line);
@@ -66,7 +80,7 @@ fn snippet(source: &SourceFile, span: okkama_compiler::source::Span) -> String {
     };
     let width = last.saturating_sub(start.column).max(1) as usize;
     let mut out = String::new();
-    let _ = writeln!(out, "{pad}--> {}:{}:{}", display_path(source), start.line, start.column);
+    let _ = writeln!(out, "{pad}--> {}:{}:{}", display_path(source, cwd), start.line, start.column);
     let _ = writeln!(out, "{pad} |");
     let _ = writeln!(out, "{gutter} | {}", text.replace('\t', " "));
     let _ = writeln!(
@@ -79,15 +93,13 @@ fn snippet(source: &SourceFile, span: okkama_compiler::source::Span) -> String {
 }
 
 /// Путь файла: относительно текущего каталога, если файл внутри него.
-fn display_path(source: &SourceFile) -> String {
+fn display_path(source: &SourceFile, cwd: Option<&PathBuf>) -> String {
     let name = source.name();
-    std::env::current_dir()
-        .ok()
-        .and_then(|dir| {
-            std::path::Path::new(name)
-                .strip_prefix(&dir)
-                .ok()
-                .map(|relative| relative.display().to_string())
-        })
-        .unwrap_or_else(|| name.to_string())
+    cwd.and_then(|dir| {
+        std::path::Path::new(name)
+            .strip_prefix(dir)
+            .ok()
+            .map(|relative| relative.display().to_string())
+    })
+    .unwrap_or_else(|| name.to_string())
 }
