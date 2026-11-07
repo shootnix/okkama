@@ -12,7 +12,7 @@ Update this document in the same change that closes or opens a boundary issue.
 | Input | Today |
 |---|---|
 | Okkama source | check and compile in your process (`okkama check`, `okkama build`); every compiler phase is bounded, see §1 |
-| Bytecode `.spb` | verified before it runs; run it in a separate process with OS limits on memory (§2, [#73]) |
+| Bytecode `.spb` | verified before it runs, compiled under a memory bound (§2); a separate process with OS limits remains the safest way to run untrusted bytecode |
 | A program | on the Sparrow core under budgets (`--max-steps`, `--max-memory`, `--max-output`, `--timeout`); in a sandbox when it must not reach files, network or processes (§3) |
 | Embedding `sparrow-core` | `run_limited` with `Limits`: budgets and the native groups the program may use (§5) |
 
@@ -58,9 +58,12 @@ types, so the verifier is a memory-safety boundary.
   time ([#23]); exceptional edges keep the values their handlers read, also
   under a stressed collector ([#22]).
 
+- Compiling a function is bounded: the core estimates its cost (registers
+  live at each instruction × the blocks it emits) while generating it and
+  refuses a function above 256 MiB, or above the run's memory budget, before
+  the expensive phases run ([#73]).
+
 **Not guaranteed.**
-- Compiling a function with thousands of simultaneously live values takes
-  memory quadratic in their number, before any budget applies ([#73]).
 - Generic intrinsic payloads are checked by representation, not by exact type
   ([#69]).
 
