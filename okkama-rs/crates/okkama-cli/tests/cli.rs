@@ -23,7 +23,9 @@ fn run_stdin(args: &[&str], input: &[u8]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn okkama");
-    child.stdin.take().unwrap().write_all(input).unwrap();
+    // A usage error exits before reading stdin: the write may then meet a
+    // closed pipe, which the exit status and stderr already report.
+    let _ = child.stdin.take().unwrap().write_all(input);
     child.wait_with_output().unwrap()
 }
 
