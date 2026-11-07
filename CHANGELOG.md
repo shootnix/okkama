@@ -201,6 +201,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Book: chapter 10 (EN/RU) lists every builtin action the compiler has —
+  string `empty`, `trim`, `chomp`; array `item`, `first`, `last`, `cursor`,
+  `ordering`; numeric `abs`, `sign`, `pow`, `sqrt`, bit actions; rat
+  `numerator`, `denominator`; Future `cancel`, `done`, `cancelled` — and a
+  test reads the compiler's table from `analysis/check/builtin.rs`, so a new
+  builtin fails until the Book names it
+  ([#224](https://github.com/shootnix/okkama/issues/224)).
+
 - Diagnostics say what the rule is and what to write instead: assigning a
   field after construction ("objects are immutable; return a successor",
   [#226](https://github.com/shootnix/okkama/issues/226)); `class`,

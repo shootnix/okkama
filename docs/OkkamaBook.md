@@ -863,6 +863,20 @@ Rules:
 - Receivers with no builtin support at all (`bool`, `range`, `enum`, `any`)
   still report `Can only call actions on objects` when called.
 
+Complete list (a test checks it against the compiler's table, `analysis/check/builtin.rs`):
+
+| Receiver | Builtin actions |
+|---|---|
+| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (elements that do `Comparing<T>`; needs `import "compare" take Comparing`), `join(separator)` on `@string` |
+| `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
+| `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)` |
+| `int`, `float` | `abs()`, `sign()`, `pow(exponent)` (a `float`), `sqrt()` (a `float`) |
+| `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (decimal strings) |
+| numbers, `char`, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` with the same category |
+| `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
+| scalars | conversions `int()`, `float()`, `rat()`, `byte()`, `string()` (Chapter 5) |
+| `Future<T>` | `cancel()`, `done()`, `cancelled()` |
+
 ---
 
 # Part III — Expressions and Statements
