@@ -511,6 +511,7 @@ fn exponent_literals_are_floats_in_range() {
         ]
     );
     assert_eq!(messages("main() is int { let a = 1e99999999999999999999999; 0; }"), ["Float value must contain a finite number"]);
+}
 
 /// Value objects are map keys (#212): every field a scalar (also `byte` and
 /// `rat`), an enum or such an object; a resource, a collection field or a
