@@ -652,3 +652,42 @@ fn syntax_errors_are_all_reported_with_the_outline_of_the_rest() {
     let names: Vec<&str> = inspection.outline.iter().map(|item| item.name.as_str()).collect();
     assert_eq!(names, ["Kept"]);
 }
+
+/// Positions in every encoding over the hard cases (#48): Cyrillic, emoji
+/// (a UTF-16 surrogate pair), combining marks, tabs, LF and CRLF, the end of
+/// the file. Every character boundary round-trips byte → position → byte.
+#[test]
+fn positions_round_trip_in_every_encoding() {
+    use crate::ide::{Encoding, LineIndex, Position};
+    let text = "привет\tмир\r\n😀 e\u{301}x\n\r\nlast";
+    for encoding in [Encoding::Utf8, Encoding::Utf16, Encoding::Utf32] {
+        let lines = LineIndex::with_encoding(text, encoding);
+        for (offset, ch) in text.char_indices() {
+            if ch == '\r' || ch == '\n' {
+                continue;
+            }
+            let position = lines.position(offset as u32);
+            assert_eq!(lines.offset(position) as usize, offset, "{encoding:?} {offset} {position:?}");
+        }
+        assert_eq!(lines.offset(lines.position(text.len() as u32)) as usize, text.len(), "{encoding:?} EOF");
+    }
+    // The emoji line: `😀` is 4 UTF-8 bytes, 2 UTF-16 units, 1 scalar.
+    let after_emoji = text.find(' ').unwrap() as u32;
+    for (encoding, character) in [(Encoding::Utf8, 4), (Encoding::Utf16, 2), (Encoding::Utf32, 1)] {
+        assert_eq!(LineIndex::with_encoding(text, encoding).position(after_emoji), Position { line: 1, character });
+    }
+    // `e` + U+0301: the mark is its own unit in every encoding.
+    let x = text.find('x').unwrap() as u32;
+    assert_eq!(LineIndex::with_encoding(text, Encoding::Utf16).position(x).character, 5);
+    let lines = LineIndex::with_encoding(text, Encoding::Utf16);
+    // CRLF: the end of a line is before `\r`, and a column past it stays there.
+    let crlf = text.find('\r').unwrap() as u32;
+    assert_eq!(lines.position(crlf), Position { line: 0, character: 10 });
+    assert_eq!(lines.position(crlf + 1), Position { line: 0, character: 10 });
+    assert_eq!(lines.offset(Position { line: 0, character: 99 }), crlf);
+    // An empty CRLF line, and lines past the end.
+    assert_eq!(lines.offset(Position { line: 2, character: 3 }) as usize, text.find("\n\r\n").unwrap() + 1);
+    assert_eq!(lines.offset(Position { line: 9, character: 0 }) as usize, text.len());
+    // A column inside a surrogate pair lands after the character.
+    assert_eq!(lines.offset(Position { line: 1, character: 1 }) as usize, text.find(' ').unwrap());
+}

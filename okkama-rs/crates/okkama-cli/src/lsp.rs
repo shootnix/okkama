@@ -45,6 +45,8 @@ struct Document {
     good: Option<(String, Inspection)>,
     /// Пути, в которые публиковались диагностики этого файла.
     published: Vec<String>,
+    /// Версия текста от клиента: диагностики публикуются с ней (#48).
+    version: Option<i32>,
 }
 
 struct Server {
@@ -54,9 +56,41 @@ struct Server {
     import_dirs: Vec<PathBuf>,
 }
 
+/// The position encoding to use with a client (#48): UTF-8 — byte offsets,
+/// no conversion — or UTF-32 when the client offers them, else UTF-16, the
+/// protocol's default.
+fn negotiate_encoding(params: &Value) -> ide::Encoding {
+    let offered: Vec<&str> = params
+        .pointer("/capabilities/general/positionEncodings")
+        .and_then(Value::as_array)
+        .map(|kinds| kinds.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if offered.contains(&"utf-8") {
+        ide::Encoding::Utf8
+    } else if offered.contains(&"utf-32") {
+        ide::Encoding::Utf32
+    } else {
+        ide::Encoding::Utf16
+    }
+}
+
 pub fn run() -> ExitCode {
     let (connection, threads) = Connection::stdio();
+    let (id, params) = match connection.initialize_start() {
+        Ok(started) => started,
+        Err(error) => {
+            eprintln!("okkama lsp: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let encoding = negotiate_encoding(&params);
+    ide::set_encoding(encoding);
     let capabilities = ServerCapabilities {
+        position_encoding: Some(match encoding {
+            ide::Encoding::Utf8 => lsp_types::PositionEncodingKind::UTF8,
+            ide::Encoding::Utf16 => lsp_types::PositionEncodingKind::UTF16,
+            ide::Encoding::Utf32 => lsp_types::PositionEncodingKind::UTF32,
+        }),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
@@ -90,18 +124,9 @@ pub fn run() -> ExitCode {
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
         },
     });
-    let params = match connection.initialize_start() {
-        Ok((id, params)) => {
-            if connection.initialize_finish(id, result).is_err() {
-                return ExitCode::FAILURE;
-            }
-            params
-        }
-        Err(error) => {
-            eprintln!("okkama lsp: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
+    if connection.initialize_finish(id, result).is_err() {
+        return ExitCode::FAILURE;
+    }
     let options = params
         .get("initializationOptions")
         .cloned()
@@ -201,6 +226,7 @@ impl Server {
                         inspection: Inspection::default(),
                         good: None,
                         published: Vec::new(),
+                        version: document.get("version").and_then(Value::as_i64).and_then(|v| i32::try_from(v).ok()),
                     },
                 );
                 // Сразу: правки, пришедшие следом, не должны лишить файл
@@ -217,8 +243,10 @@ impl Server {
                     .and_then(|changes| changes.last())
                     .and_then(|change| change.get("text"))
                     .and_then(Value::as_str);
+                let version = params.pointer("/textDocument/version").and_then(Value::as_i64).and_then(|v| i32::try_from(v).ok());
                 if let (Some(document), Some(text)) = (self.documents.get_mut(uri), text) {
                     document.text = text.to_string();
+                    document.version = version;
                     dirty.push(uri.to_string());
                 }
                 // Изменение файла меняет и проверку импортирующих его.
@@ -235,7 +263,7 @@ impl Server {
                 };
                 if let Some(document) = self.documents.remove(uri) {
                     for path in document.published {
-                        self.publish(&path, Vec::new());
+                        self.publish(&path, Vec::new(), None);
                     }
                 }
                 dirty.retain(|other| other != uri);
@@ -318,11 +346,15 @@ impl Server {
             .map(|document| document.published.clone())
             .unwrap_or_default();
         for path in previous.iter().filter(|path| !by_path.contains_key(*path)) {
-            self.publish(path, Vec::new());
+            self.publish(path, Vec::new(), None);
         }
         let published: Vec<String> = by_path.keys().cloned().collect();
+        // The checked text's version on its own file; other files are not
+        // the client's open text of this version.
+        let version = self.documents.get(uri).and_then(|document| document.version);
         for (path, diagnostics) in by_path {
-            self.publish(&path, diagnostics);
+            let own = path == source.name();
+            self.publish(&path, diagnostics, if own { version } else { None });
         }
         if let Some(document) = self.documents.get_mut(uri) {
             if inspection.parsed {
@@ -333,14 +365,14 @@ impl Server {
         }
     }
 
-    fn publish(&self, path: &str, diagnostics: Vec<lsp_types::Diagnostic>) {
+    fn publish(&self, path: &str, diagnostics: Vec<lsp_types::Diagnostic>, version: Option<i32>) {
         let Some(uri) = path_uri(path) else {
             return;
         };
         let params = PublishDiagnosticsParams {
             uri,
             diagnostics,
-            version: None,
+            version,
         };
         let _ = self
             .connection
@@ -912,5 +944,13 @@ mod tests {
             uri_path("file:///a%3Ab.ok").unwrap(),
             PathBuf::from("/a:b.ok")
         );
+    }
+    #[test]
+    fn the_position_encoding_is_negotiated() {
+        let offer = |kinds: Value| serde_json::json!({ "capabilities": { "general": { "positionEncodings": kinds } } });
+        assert_eq!(negotiate_encoding(&offer(serde_json::json!(["utf-16", "utf-8"]))), ide::Encoding::Utf8);
+        assert_eq!(negotiate_encoding(&offer(serde_json::json!(["utf-32", "utf-16"]))), ide::Encoding::Utf32);
+        assert_eq!(negotiate_encoding(&offer(serde_json::json!(["utf-16"]))), ide::Encoding::Utf16);
+        assert_eq!(negotiate_encoding(&serde_json::json!({ "capabilities": {} })), ide::Encoding::Utf16);
     }
 }

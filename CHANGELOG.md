@@ -223,6 +223,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   of its row. A test parses every pair of adjacent levels both ways and every
   level chained with itself ([#46](https://github.com/shootnix/okkama/issues/46)).
 
+- LSP and diagnostics, positions (H-25): the language server negotiates the
+  position encoding — UTF-8 when the client offers it (byte offsets, no
+  conversion), else UTF-32, else the protocol's UTF-16 — and every position
+  it sends or reads uses it. A column past the end of a CRLF line now stops
+  before the `\r`, and diagnostics are published with the version of the
+  text they were computed from, so an editor can drop stale ones. Terminal
+  carets follow display width: an East Asian wide character or an emoji
+  takes two cells, a combining mark none. Tests round-trip every character
+  boundary of Cyrillic, emoji, combining marks, tabs, LF/CRLF and the end of
+  the file through all three encodings
+  ([#48](https://github.com/shootnix/okkama/issues/48)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the
