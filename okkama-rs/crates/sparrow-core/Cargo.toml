@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# `budget::mimalloc_committed`: a memory probe for processes whose allocator
+# is mimalloc (the CLIs); it links against mimalloc's C library.
+mimalloc = []
+
 [dependencies]
 okkama-sparrow = { path = "../okkama-sparrow" }
 okkama-runtime-abi = { path = "../okkama-runtime-abi" }
