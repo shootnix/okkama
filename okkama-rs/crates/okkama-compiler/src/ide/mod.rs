@@ -209,33 +209,87 @@ impl Inspection {
     }
 }
 
+/// Единица столбца позиции LSP (`positionEncoding`, #48): UTF-16 — значение
+/// по умолчанию протокола, UTF-8 и UTF-32 — по согласию клиента.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum Encoding {
+    Utf8,
+    #[default]
+    Utf16,
+    Utf32,
+}
+
+impl Encoding {
+    fn units(self, ch: char) -> u32 {
+        match self {
+            Encoding::Utf8 => ch.len_utf8() as u32,
+            Encoding::Utf16 => ch.len_utf16() as u32,
+            Encoding::Utf32 => 1,
+        }
+    }
+}
+
+/// Кодировка позиций процесса: сервер языка согласует её один раз при
+/// `initialize` ([`set_encoding`]); остальные — UTF-16.
+static ENCODING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
+
+pub fn set_encoding(encoding: Encoding) {
+    ENCODING.store(encoding as u8, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn encoding() -> Encoding {
+    match ENCODING.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => Encoding::Utf8,
+        2 => Encoding::Utf32,
+        _ => Encoding::Utf16,
+    }
+}
+
 /// Перевод байтовых смещений текста в позиции LSP и обратно.
 #[derive(Debug)]
 pub struct LineIndex<'a> {
     text: &'a str,
     starts: Vec<usize>,
+    encoding: Encoding,
 }
 
 impl<'a> LineIndex<'a> {
+    /// В кодировке процесса ([`encoding`]).
     pub fn new(text: &'a str) -> Self {
+        Self::with_encoding(text, encoding())
+    }
+
+    pub fn with_encoding(text: &'a str, encoding: Encoding) -> Self {
         let mut starts = vec![0];
         for (offset, byte) in text.bytes().enumerate() {
             if byte == b'\n' {
                 starts.push(offset + 1);
             }
         }
-        Self { text, starts }
+        Self { text, starts, encoding }
+    }
+
+    /// Конец строки `line` без `\n` и без `\r` перед ним.
+    fn line_end(&self, line: usize) -> usize {
+        let end = self.starts.get(line + 1).map_or(self.text.len(), |next| next - 1);
+        if end > self.starts[line] && self.text.as_bytes()[end - 1] == b'\r' {
+            end - 1
+        } else {
+            end
+        }
     }
 
     pub fn position(&self, offset: u32) -> Position {
-        let offset = (offset as usize).min(self.text.len());
+        let mut offset = (offset as usize).min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
         let line = self.starts.partition_point(|start| *start <= offset) - 1;
         let start = self.starts[line];
-        let prefix = self.text.get(start..offset).unwrap_or("");
-        Position {
-            line: line as u32,
-            character: prefix.encode_utf16().count() as u32,
-        }
+        // `\r` of CRLF belongs to the line break, not to the line.
+        let offset = offset.min(self.line_end(line).max(start));
+        let character = self.text[start..offset].chars().map(|ch| self.encoding.units(ch)).sum();
+        Position { line: line as u32, character }
     }
 
     pub fn range(&self, span: Span) -> Range {
@@ -245,21 +299,20 @@ impl<'a> LineIndex<'a> {
         }
     }
 
-    /// Смещение позиции LSP; столбец за концом строки — конец строки.
+    /// Смещение позиции LSP; столбец за концом строки — конец строки,
+    /// столбец внутри символа — начало следующего символа.
     pub fn offset(&self, position: Position) -> u32 {
-        let Some(start) = self.starts.get(position.line as usize).copied() else {
+        let line = position.line as usize;
+        if line >= self.starts.len() {
             return self.text.len() as u32;
-        };
-        let end = self
-            .starts
-            .get(position.line as usize + 1)
-            .map_or(self.text.len(), |next| next - 1);
+        }
+        let (start, end) = (self.starts[line], self.line_end(line));
         let mut units = 0u32;
         for (index, ch) in self.text[start..end].char_indices() {
             if units >= position.character {
                 return (start + index) as u32;
             }
-            units += ch.len_utf16() as u32;
+            units += self.encoding.units(ch);
         }
         end as u32
     }
