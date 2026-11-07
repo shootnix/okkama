@@ -55,65 +55,12 @@ fn callees(module: &Module, function: &Function) -> Vec<usize> {
 
 /// Функции на циклах графа прямых вызовов (Тарьян, без рекурсии Rust).
 fn recursive(module: &Module) -> BTreeSet<usize> {
-    let count = module.functions.len();
     let edges: Vec<Vec<usize>> = module
         .functions
         .iter()
         .map(|function| if function.is_async() { Vec::new() } else { callees(module, function) })
         .collect();
-    let mut index = vec![usize::MAX; count];
-    let mut low = vec![0; count];
-    let mut on_stack = vec![false; count];
-    let mut stack = Vec::new();
-    let mut next = 0;
-    let mut result = BTreeSet::new();
-    for root in 0..count {
-        if index[root] != usize::MAX {
-            continue;
-        }
-        // Кадр обхода: вершина и номер следующего ребра.
-        let mut frames = vec![(root, 0usize)];
-        index[root] = next;
-        low[root] = next;
-        next += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&(node, edge)) = frames.last() {
-            if let Some(&to) = edges[node].get(edge) {
-                frames.last_mut().expect("frame").1 += 1;
-                if index[to] == usize::MAX {
-                    index[to] = next;
-                    low[to] = next;
-                    next += 1;
-                    stack.push(to);
-                    on_stack[to] = true;
-                    frames.push((to, 0));
-                } else if on_stack[to] {
-                    low[node] = low[node].min(index[to]);
-                }
-                continue;
-            }
-            frames.pop();
-            if let Some(&(parent, _)) = frames.last() {
-                low[parent] = low[parent].min(low[node]);
-            }
-            if low[node] == index[node] {
-                let mut component = Vec::new();
-                loop {
-                    let member = stack.pop().expect("tarjan stack");
-                    on_stack[member] = false;
-                    component.push(member);
-                    if member == node {
-                        break;
-                    }
-                }
-                if component.len() > 1 || edges[node].contains(&node) {
-                    result.extend(component);
-                }
-            }
-        }
-    }
-    result
+    super::cfg::on_cycles(&edges).into_iter().enumerate().filter_map(|(function, cyclic)| cyclic.then_some(function)).collect()
 }
 
 /// Инструкция не может отказать (и не завершает функцию).
