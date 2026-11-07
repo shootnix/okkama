@@ -38,17 +38,35 @@ impl Wake for FrameWaker {
 
 #[derive(Debug, Default)]
 pub struct Io {
-    tokio: Option<tokio::runtime::Runtime>,
+    /// The reactor and the local tasks of providers (`spawn_local`: process
+    /// reapers and capture pipes); both progress while the scheduler waits.
+    tokio: Option<(tokio::runtime::Runtime, tokio::task::LocalSet)>,
     shared: Arc<Shared>,
     /// Native request of each waiting driver frame (frames are roots).
     pub requests: HashMap<Word, u64>,
 }
 
 impl Io {
-    pub fn tokio(&mut self) -> &tokio::runtime::Runtime {
+    fn reactor(&mut self) -> &(tokio::runtime::Runtime, tokio::task::LocalSet) {
         self.tokio.get_or_insert_with(|| {
-            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("Tokio runtime")
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("Tokio runtime");
+            (runtime, tokio::task::LocalSet::new())
         })
+    }
+
+    pub fn tokio(&mut self) -> &tokio::runtime::Runtime {
+        &self.reactor().0
+    }
+
+    /// The set `spawn_local` of providers puts its tasks into (see `enter`).
+    pub fn local(&mut self) -> &tokio::task::LocalSet {
+        &self.reactor().1
+    }
+
+    /// Turn the reactor and run local tasks until `future` completes.
+    pub fn block_on<F: std::future::Future>(&mut self, future: F) -> F::Output {
+        let (runtime, local) = self.reactor();
+        runtime.block_on(local.run_until(future))
     }
 
     pub fn waker(&self, frame: Word) -> Waker {
@@ -90,7 +108,7 @@ impl Runtime {
                 turns += 1;
                 // Reading the clock costs more than a turn; look every 64.
                 if turns % 64 == 0 {
-                    self.io.tokio().block_on(tokio::task::yield_now());
+                    self.io.block_on(tokio::task::yield_now());
                     if spin.elapsed() >= std::time::Duration::from_micros(SPIN_MICROS) {
                         break;
                     }
@@ -101,7 +119,7 @@ impl Runtime {
             self.count(|_| "scheduler idle wait".into());
             let started = std::time::Instant::now();
             let shared = self.io.shared.clone();
-            self.io.tokio().block_on(async move {
+            self.io.block_on(async move {
                 match earliest {
                     Some(deadline) => {
                         tokio::select! {

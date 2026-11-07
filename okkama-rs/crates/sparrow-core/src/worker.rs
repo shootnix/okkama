@@ -331,6 +331,7 @@ pub fn drive(runtime: &mut Runtime, frame: Word, deliver: bool) -> Step {
     let waker = runtime.io.waker(frame);
     let polled = {
         let _tokio = runtime.io.tokio().enter();
+        let _local = runtime.io.local().enter();
         request.poll(&mut std::task::Context::from_waker(&waker))
     };
     let outcome = match polled {

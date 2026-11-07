@@ -520,7 +520,14 @@ fn run_native(
                     reply.process_exit = u8::from(!passed);
                     reply
                 }
-                Err(error) => Reply::internal(mode, error.0),
+                // A test run the program cannot make (no tests) fails at runtime.
+                Err(error) => {
+                    let mut reply = Reply::new(mode, "failed", "runtime");
+                    reply.stderr = format!("RuntimeError: {}\n", error.0);
+                    reply.failure = Some(Failure { stage: "runtime", category: "runtime", error_type: None, message: error.0 });
+                    reply.process_exit = 1;
+                    reply
+                }
             };
         }
         let (command, _file) = match crate::core::workers_for(&program, &bytes) {

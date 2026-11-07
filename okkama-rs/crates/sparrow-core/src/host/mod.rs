@@ -861,6 +861,7 @@ fn with_host<T>(runtime: &mut Runtime, tokio: bool, body: impl FnOnce(&mut Heap)
     // Tokio resources created or polled by providers need the runtime context.
     let handle = tokio.then(|| runtime.io.tokio().handle().clone());
     let _context = handle.as_ref().map(|h| h.enter());
+    let _local = tokio.then(|| runtime.io.local().enter());
     let result = body(&mut host);
     host.rt = std::ptr::null_mut();
     runtime.host = Some(host);

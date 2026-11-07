@@ -1690,6 +1690,84 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         "sqlite_settled" => Ok(settled(handle::<ConnectionRef>(&args[0])?)),
         "sqlite_autocommit" => Ok(Value::Bool(connection(&args[0], "sqlite_autocommit", 1).map_err(as_error)?.borrow().autocommit)),
         "sqlite_reply_ok" => Ok(Value::Bool(reply(&args[0], name, 1)?.ok)),
+        // A batch as one page of flat columns (see `db/read.DbPage`): cell kinds,
+        // integer values or ordinals into the typed arrays, and the widest row.
+        "sqlite_reply_kinds" | "sqlite_reply_values" | "sqlite_reply_floats" | "sqlite_reply_texts"
+        | "sqlite_reply_blobs" | "sqlite_reply_row_bytes" => {
+            let reply = reply(&args[0], name, 1)?;
+            let data = reply.data.borrow();
+            let rows: &[Vec<Cell>] = if reply.ok { data.rows.as_deref().unwrap_or(&[]) } else { &[] };
+            let cells = rows.iter().flatten();
+            let int = |n: i64| Value::Int(IntValue::from_i64(n));
+            Ok(match name {
+                "sqlite_reply_kinds" => super::support::array(
+                    cells
+                        .map(|cell| {
+                            int(match cell {
+                                Cell::Null => 0,
+                                Cell::Integer(_) => 2,
+                                Cell::Floating(_) => 3,
+                                Cell::Text(_) => 5,
+                                Cell::Bytes(_) => 6,
+                            })
+                        })
+                        .collect(),
+                ),
+                "sqlite_reply_values" => {
+                    let (mut floats, mut texts, mut blobs) = (0, 0, 0);
+                    let ordinal = |n: &mut i64| {
+                        *n += 1;
+                        *n - 1
+                    };
+                    super::support::array(
+                        cells
+                            .map(|cell| {
+                                int(match cell {
+                                    Cell::Null => 0,
+                                    Cell::Integer(v) => *v,
+                                    Cell::Floating(_) => ordinal(&mut floats),
+                                    Cell::Text(_) => ordinal(&mut texts),
+                                    Cell::Bytes(_) => ordinal(&mut blobs),
+                                })
+                            })
+                            .collect(),
+                    )
+                }
+                "sqlite_reply_floats" => super::support::array(
+                    cells.filter_map(|cell| if let Cell::Floating(v) = cell { Some(Value::Float(*v)) } else { None }).collect(),
+                ),
+                "sqlite_reply_texts" => super::support::array(
+                    cells.filter_map(|cell| if let Cell::Text(v) = cell { Some(text(v.as_str())) } else { None }).collect(),
+                ),
+                "sqlite_reply_blobs" => super::support::array(
+                    cells.filter_map(|cell| if let Cell::Bytes(v) = cell { Some(byte_array(v.clone())) } else { None }).collect(),
+                ),
+                _ => {
+                    // The widest row in the bytes `db_cells_bytes` counts.
+                    let widest = rows
+                        .iter()
+                        .map(|row| {
+                            row.iter()
+                                .map(|cell| match cell {
+                                    Cell::Null => 0,
+                                    Cell::Integer(v) => v.to_string().len(),
+                                    Cell::Floating(v) => crate::float::text(*v).len(),
+                                    Cell::Text(v) => v.len(),
+                                    Cell::Bytes(v) => v.len(),
+                                })
+                                .sum::<usize>()
+                        })
+                        .max()
+                        .unwrap_or(0);
+                    int(widest as i64)
+                }
+            })
+        }
+        // No first page is fetched with the cursor here, so no failure waits.
+        "sqlite_reply_deferred" => {
+            reply(&args[0], name, 1)?;
+            Ok(super::support::array(Vec::new()))
+        }
         "sqlite_reply_id" => Ok(Value::Int(IntValue::from_i64(reply(&args[0], name, 1)?.data.borrow().id.unwrap_or(0)))),
         "sqlite_reply_eof" => Ok(Value::Bool(reply(&args[0], name, 1)?.data.borrow().eof)),
         "sqlite_reply_count" => Ok(Value::Int(IntValue::from_u128(reply(&args[0], name, 1)?.data.borrow().rows.as_ref().map_or(0, Vec::len) as u128))),

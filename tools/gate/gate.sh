@@ -8,7 +8,8 @@
 # Шаги:
 #   1. release-сборка okkama и sparrow, тесты Rust всего workspace (release);
 #   2. conformance на IR, JVM, Sparrow (ядро; компилирует каждую функцию
-#      целиком) и, до 0.5, на прежнем VM (`sparrow-origin`);
+#      целиком) и, до 0.5, на прежнем VM (`sparrow-origin`, только для
+#      сведения: у него нет нативов, добавленных с 0.4.0);
 #   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py).
 #
 # Process workers и сеть настоящие: гонять в контейнере (tools/gate/docker.sh).
@@ -44,14 +45,17 @@ fi
 
 conformance() {
     local name="$1"; shift
+    local informative=0
+    [[ "$name" == "sparrow-origin" ]] && informative=1
     (cd "$ROOT/conformance" && ./ocs run --adapter adapters/rust/adapter.json --profile full-release \
         --stdlib-root ../std -j 6 "$@" >"$LOGS/conformance-$name.log" 2>&1)
     local summary
     summary="$(tail -1 "$LOGS/conformance-$name.log")"
     echo "$name: $summary"
     if ! [[ "$summary" =~ ([0-9]+)/([0-9]+)\ PASS && ${BASH_REMATCH[1]} == "${BASH_REMATCH[2]}" ]]; then
-        grep -E "^\[.*(FAIL|ERROR)" "$LOGS/conformance-$name.log" | head -10
-        fail "conformance $name"
+        grep -E "^\[.*(FAIL|ERROR|CRASH|UNSUPPORTED|TIMEOUT)" "$LOGS/conformance-$name.log" | head -10
+        # The previous VM lacks natives added since 0.4.0 (removed in 0.5, #14).
+        [[ $informative -eq 1 ]] && echo "(informative: not a gate failure)" || fail "conformance $name"
     fi
 }
 

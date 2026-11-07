@@ -7,6 +7,7 @@ use crate::{
 use std::rc::Rc;
 pub mod application;
 pub mod buffer;
+pub mod bytes;
 pub mod collation;
 pub mod encoding;
 pub mod formats;
@@ -24,6 +25,7 @@ pub mod misc;
 pub mod net;
 pub mod network;
 pub mod numbers;
+pub mod postgres;
 pub mod process;
 pub mod regex;
 pub mod sqlite;
@@ -78,6 +80,8 @@ pub fn execute(
     }
     match provider(native) {
         Provider::Regex => regex::execute(native, args),
+        Provider::Bytes => bytes::execute(native, args),
+        Provider::Postgres => postgres::execute(native, args),
         Provider::Misc => misc::execute(native, args, context),
         Provider::Idna => idna::execute(native, args),
         Provider::Json => json::execute(native, args),
@@ -120,6 +124,8 @@ pub fn execute(
 /// Provider, исполняющий native.
 #[derive(Clone, Copy, Debug)]
 enum Provider {
+    Bytes,
+    Postgres,
     Regex,
     Misc,
     Idna,
@@ -174,6 +180,8 @@ fn provider(native: Native) -> Provider {
 fn route(native: Native) -> Provider {
     match native.module() {
         "runtime/regex" => return Provider::Regex,
+        "runtime/bytes" => return Provider::Bytes,
+        "runtime/postgres" => return Provider::Postgres,
         "runtime/crypto" | "runtime/secret" | "runtime/debug" | "runtime/diff"
         | "runtime/math_aggregate" | "runtime/url_text" | "runtime/layout" => {
             return Provider::Misc;

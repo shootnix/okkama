@@ -1716,6 +1716,87 @@ public final class SqliteNatives {
         return rows.get(row.intValue()).get(column.intValue());
     }
 
+    /** Cells of a batch in row order (empty for a failed reply). */
+    @SuppressWarnings("unchecked")
+    private static List<Object[]> pageCells(Object handle, String name) {
+        Reply reply=reply(handle,name,1);
+        List<List<Object[]>> rows=reply.ok ? (List<List<Object[]>>)reply.data.get("rows") : null;
+        List<Object[]> cells=new ArrayList<>();
+        if(rows!=null) for(List<Object[]> row:rows) cells.addAll(row);
+        return cells;
+    }
+
+    private static int pageKind(Object[] cell) {
+        String kind=(String)cell[0];
+        return kind.equals("null_value") ? 0 : kind.equals("integer") ? 2 : kind.equals("floating") ? 3 : kind.equals("text") ? 5 : 6;
+    }
+
+    // A batch as one page of flat columns (see `db/read.DbPage`), as on the Sparrow core.
+    public static List<Object> runtime_database__sqlite_reply_kinds(Object handle) {
+        List<Object> out=new ArrayList<>();
+        for(Object[] c:pageCells(handle,"sqlite_reply_kinds")) out.add(BigInteger.valueOf(pageKind(c)));
+        return out;
+    }
+
+    public static List<Object> runtime_database__sqlite_reply_values(Object handle) {
+        List<Object> out=new ArrayList<>();
+        long floats=0, texts=0, blobs=0;
+        for(Object[] c:pageCells(handle,"sqlite_reply_values")) {
+            switch(pageKind(c)) {
+                case 0 -> out.add(BigInteger.ZERO);
+                case 2 -> out.add(BigInteger.valueOf((Long)c[1]));
+                case 3 -> out.add(BigInteger.valueOf(floats++));
+                case 5 -> out.add(BigInteger.valueOf(texts++));
+                default -> out.add(BigInteger.valueOf(blobs++));
+            }
+        }
+        return out;
+    }
+
+    public static List<Object> runtime_database__sqlite_reply_floats(Object handle) {
+        List<Object> out=new ArrayList<>();
+        for(Object[] c:pageCells(handle,"sqlite_reply_floats")) if(pageKind(c)==3) out.add(c[1]);
+        return out;
+    }
+
+    public static List<Object> runtime_database__sqlite_reply_texts(Object handle) {
+        List<Object> out=new ArrayList<>();
+        for(Object[] c:pageCells(handle,"sqlite_reply_texts")) if(pageKind(c)==5) out.add(c[1]);
+        return out;
+    }
+
+    public static List<Object> runtime_database__sqlite_reply_blobs(Object handle) {
+        List<Object> out=new ArrayList<>();
+        for(Object[] c:pageCells(handle,"sqlite_reply_blobs")) if(pageKind(c)==6) {byte[] b=(byte[])c[1];out.add(Natives.fromBytes(b,b.length));}
+        return out;
+    }
+
+    /** The widest row in the bytes `db_cells_bytes` counts. */
+    @SuppressWarnings("unchecked")
+    public static BigInteger runtime_database__sqlite_reply_row_bytes(Object handle) {
+        Reply reply=reply(handle,"sqlite_reply_row_bytes",1);
+        List<List<Object[]>> rows=reply.ok ? (List<List<Object[]>>)reply.data.get("rows") : null;
+        long widest=0;
+        if(rows!=null) for(List<Object[]> row:rows) {
+            long size=0;
+            for(Object[] c:row) switch(pageKind(c)) {
+                case 2 -> size+=c[1].toString().length();
+                case 3 -> size+=Floats.text((Double)c[1]).length();
+                case 5 -> size+=((String)c[1]).getBytes(StandardCharsets.UTF_8).length;
+                case 6 -> size+=((byte[])c[1]).length;
+                default -> {}
+            }
+            widest=Math.max(widest,size);
+        }
+        return BigInteger.valueOf(widest);
+    }
+
+    /** No first page is fetched with the cursor here, so no failure waits. */
+    public static List<Object> runtime_database__sqlite_reply_deferred(Object handle) {
+        reply(handle,"sqlite_reply_deferred",1);
+        return new ArrayList<>();
+    }
+
     @SuppressWarnings("unchecked")
     public static List<Object> runtime_database__sqlite_reply_cells(Object handle, BigInteger row) {
         Reply reply=reply(handle,"sqlite_reply_cells",2);
