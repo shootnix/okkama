@@ -202,6 +202,7 @@ where regions are needed.
 |---|---|
 | `lib.rs` | entry points: `run_configured`, `run_reported` (OCS: `Uncaught`), `run_tests`, `run_worker`, `default_environment`; VM thread with a 1 GiB stack |
 | `program.rs` | loaded program facts: machine representation (`Kind`) of every type; Atomic and Event cells (descriptors their constructor intrinsics name) |
+| `budget.rs` | execution budgets (`Limits`: steps, memory, output, interrupt): fuel cell polled at entries and back-edges only when a budget is set, `EXHAUSTED` status, memory probe set by the embedder (CLIs: mimalloc committed) |
 | `contracts.rs` | load-time intrinsic contracts: arity, kinds, receiver layouts, related objects, timeout helpers (`sparrow check` runs them too) |
 | `word.rs` | one word per value; reprs Int/Raw/Ref |
 | `jit.rs` | whole-function Cranelift compilation on first call; stack maps (`maps`: frame-to-SP offset + live slots); safepoints |

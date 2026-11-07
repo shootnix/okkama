@@ -7,6 +7,7 @@ use std::{fs::File, path::Path, process::ExitCode};
 #[cfg(not(feature = "allocation-stats"))]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+
 #[cfg(feature = "allocation-stats")]
 #[global_allocator]
 static ALLOCATOR: okkama_allocation_counter::Counting = okkama_allocation_counter::Counting;
@@ -15,7 +16,7 @@ const HELP: &str = "Sparrow runtime
 
 USAGE:
     sparrow [--stats] <FILE.spb> [ARGS...]
-    sparrow run [--stats] <FILE.spb> [ARGS...]
+    sparrow run [--stats] [BUDGETS] <FILE.spb> [ARGS...]
     sparrow test <FILE.spb>
     sparrow check <FILE.spb>
     sparrow --assemble <FILE.spa> -o <FILE.spb>
@@ -27,6 +28,12 @@ run          Verify and execute bytecode; ARGS are the program's arguments.
              main's integer result in 0..255 becomes the exit status; an
              uncaught failure is reported on stderr (exit 1). `--stats` prints
              counts of runtime events at exit (also SPARROW_CORE_STATS=1).
+             BUDGETS (all off by default; running out exits 1 with
+             \"Execution budget exhausted: …\" or \"Execution interrupted\"):
+               --max-steps N      stop after N steps (function entries, loop iterations)
+               --max-memory SIZE  stop when the run holds more than SIZE bytes (K/M/G)
+               --max-output SIZE  stop when stdout and stderr exceed SIZE bytes
+               --timeout SECONDS  interrupt the run after SECONDS of wall-clock time
 test         Run the tests of bytecode built with `okkama build -t`
              (`sparrow --test FILE.spb` is the same).
 check        Verify bytecode (types, calls, intrinsic contracts) without
@@ -76,10 +83,10 @@ fn report(error: sparrow_core::Error) -> Result<u8, Failure> {
     Ok(1)
 }
 
-fn execute(path: &Path, arguments: &[String], stats: bool) -> Result<u8, Failure> {
+fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core::budget::Limits) -> Result<u8, Failure> {
     let (bytes, _) = load(path)?;
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    match sparrow_core::run_configured(bytes, arguments, stats, worker_command(path)) {
+    match sparrow_core::run_limited(bytes, arguments, stats, worker_command(path), limits) {
         Ok(code) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
         Err(error) => report(error),
     }
@@ -173,10 +180,19 @@ fn run() -> Result<u8, Failure> {
             _ => Err(usage()),
         },
         "run" | "check" | "test" => {
-            let (stats, rest) = match rest.split_first() {
-                Some((flag, rest)) if flag == "--stats" && first == "run" => (true, rest),
-                _ => (false, rest),
-            };
+            let mut stats = false;
+            let mut limits = sparrow_core::budget::Limits::default();
+            let mut rest = rest;
+            while first == "run" {
+                match rest {
+                    [flag, tail @ ..] if flag == "--stats" => {
+                        stats = true;
+                        rest = tail;
+                    }
+                    [flag, value, tail @ ..] if limits.option(flag, value).map_err(|e| (2, e))? => rest = tail,
+                    _ => break,
+                }
+            }
             let Some((path, arguments)) = rest.split_first() else {
                 return Err(usage());
             };
@@ -190,17 +206,17 @@ fn run() -> Result<u8, Failure> {
                     sparrow_core::check(&bytes).map(|()| 0).map_err(|e| (1, e.0))
                 }
                 "test" if arguments.is_empty() => test(Path::new(path)),
-                "run" => execute(Path::new(path), arguments, stats),
+                "run" => execute(Path::new(path), arguments, stats, limits),
                 _ => Err(usage()),
             }
         }
         "--stats" => match rest.split_first() {
-            Some((path, arguments)) => execute(Path::new(path), arguments, true),
+            Some((path, arguments)) => execute(Path::new(path), arguments, true, Default::default()),
             None => Err(usage()),
         },
         // `--cold` was a switch of the previous VM; the core always compiles.
         "--cold" => match rest.split_first() {
-            Some((path, arguments)) => execute(Path::new(path), arguments, false),
+            Some((path, arguments)) => execute(Path::new(path), arguments, false, Default::default()),
             None => Err(usage()),
         },
         option if option.starts_with('-') => Err((2, format!("unknown option `{option}`\n{HELP}"))),
@@ -208,7 +224,7 @@ fn run() -> Result<u8, Failure> {
             if !Path::new(path).exists() && !path.ends_with(".spb") {
                 return Err((2, format!("unknown command `{path}`\n{HELP}")));
             }
-            execute(Path::new(path), rest, false)
+            execute(Path::new(path), rest, false, Default::default())
         }
     }
 }
@@ -216,6 +232,8 @@ fn run() -> Result<u8, Failure> {
 fn main() -> ExitCode {
     #[cfg(feature = "allocation-stats")]
     let _allocation_report = okkama_allocation_counter::Report;
+    #[cfg(not(feature = "allocation-stats"))]
+    sparrow_core::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
     match run() {
         Ok(code) => ExitCode::from(code),
         Err((code, message)) => {

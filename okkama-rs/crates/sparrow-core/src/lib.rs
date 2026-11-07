@@ -10,8 +10,10 @@
 //! - a precise collector finds roots through Cranelift stack maps, async
 //!   frames and Rust-side visitors, and runs only at safepoints, never inside a
 //!   native provider; it does not move objects (decision R1);
-//! - no preemption inside synchronous code: loop back-edges poll an interrupt
-//!   flag so cancellation and timeouts stop runaway loops with a typed failure.
+//! - no preemption inside synchronous code; under execution budgets
+//!   (`budget`) function entries and loop back-edges poll a fuel cell, so
+//!   step, memory and output budgets and the host's interrupt flag stop
+//!   runaway code (async cancellation still cannot stop a synchronous loop).
 //!
 //! Stages: 1 heap and values, 2 synchronous execution, 3 async, 4 natives and
 //! CLI (`sparrow-next` switches here), 5 performance and std/db, 6 removal of
@@ -21,6 +23,7 @@
 // the context as a raw pointer and are sound for the code that calls them.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+pub mod budget;
 mod code_memory;
 mod contracts;
 pub mod drivers;
@@ -72,10 +75,23 @@ pub fn run_configured(
     stats: bool,
     worker_command: Vec<std::ffi::OsString>,
 ) -> Result<i64, Error> {
+    run_limited(bytes, arguments, stats, worker_command, budget::Limits::default())
+}
+
+/// `run_configured` under execution budgets (`budget::Limits`); a run that
+/// exhausts one fails with its report ("Execution budget exhausted: …").
+pub fn run_limited(
+    bytes: Vec<u8>,
+    arguments: Vec<Vec<u8>>,
+    stats: bool,
+    worker_command: Vec<std::ffi::OsString>,
+    limits: budget::Limits,
+) -> Result<i64, Error> {
     on_vm_thread(move || {
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
         let mut runtime = Box::new(runtime::Runtime::new(program::Loaded::new(program))?);
         runtime.worker_command = worker_command;
+        runtime.limits = limits;
         if stats && runtime.stats.is_none() {
             runtime.stats = Some(Box::default());
         }

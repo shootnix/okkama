@@ -292,6 +292,12 @@ impl Runtime {
     /// Resume ready frames until `root` settles (or nothing can run).
     pub fn schedule(&mut self, ctx: *mut Ctx, root: Word) {
         while get(root, STATE) == RUNNING || get(root, STATE) == COLD {
+            if self.limits.interrupt.is_some() || self.limits.memory.is_some() {
+                if let Some(what) = self.over_budget() {
+                    self.exhaust(unsafe { &mut *ctx }, what);
+                    return;
+                }
+            }
             self.poll_io();
             let Some(frame) = self.ready.pop_front() else {
                 if self.wait_external() {

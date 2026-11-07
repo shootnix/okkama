@@ -8,6 +8,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Sparrow core: execution budgets for untrusted programs and services.
+  `okkama exec`, `okkama run --engine sparrow` and `sparrow run` take
+  `--max-steps N` (function entries and loop iterations), `--max-memory SIZE`
+  (memory the process holds beyond the start of the run: heap, BigInt,
+  strings, collections; it also bounds the machine stack), `--max-output SIZE`
+  and `--timeout SECONDS` (also while awaiting); embedders set
+  `sparrow_core::budget::Limits`, including an interrupt flag. Running out
+  exits 1 with `Execution budget exhausted: steps|memory|output` or
+  `Execution interrupted`; `catch` does not see it and a later run in the same
+  process starts from the base memory. Machine code polls only when a budget
+  is set: unbudgeted runs are unchanged (±0.1% instructions); with a step
+  budget, +7–15%. IR/JVM: [#71](https://github.com/shootnix/okkama/issues/71);
+  native operations and per-runtime memory:
+  [#72](https://github.com/shootnix/okkama/issues/72)
+  ([#21](https://github.com/shootnix/okkama/issues/21)).
+
 - Blade: `blade build` and `blade run`. Every setting is in `blade.toml`:
   `[build] entry/target/output` (sparrow or jvm; default
   `target/<name>.spb`) and `[run] engine/args/env` (sparrow, ir or jvm;
