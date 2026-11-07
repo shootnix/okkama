@@ -13,7 +13,8 @@
 # compiled SPB), findings land in okkama-rs/fuzz/artifacts/<target>, and with
 # --coverage a summary per target in okkama-rs/fuzz/coverage/<target>.txt;
 # each run's output is in okkama-rs/fuzz/logs/<target>.log.
-# Exit status 1 when any target found something.
+# Exit status 1 when any target found something, 2 when the targets do not
+# build (logs/build.log).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -39,10 +40,22 @@ for file in "$ROOT/okkama-rs/examples"/*.ok "$FUZZ/seeds"/*.ok; do
     "$ROOT/okkama-rs/target/release/okkama" build "$file" --target sparrow -o "corpus/spb/$(basename "$file" .ok).spb" 2>/dev/null || true
 done
 
+# Build every target first: a build killed for memory must not be reported as
+# a finding. An ASan build of cranelift-codegen with one codegen unit needs
+# several gigabytes on its own, so a failed parallel build is retried with one
+# job, continuing from the crates already built.
+mkdir -p logs
+if ! CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" cargo +nightly fuzz build >logs/build.log 2>&1 &&
+    ! CARGO_BUILD_JOBS=1 cargo +nightly fuzz build >>logs/build.log 2>&1; then
+    grep -E "^error|SIGKILL|could not compile" logs/build.log | head -10
+    echo "BUILD FAILED (okkama-rs/fuzz/logs/build.log)"
+    exit 2
+fi
+
 found=()
 for target in "${TARGETS[@]}"; do
     echo "==> $target (${TIME}s)"
-    mkdir -p "artifacts/$target" logs
+    mkdir -p "artifacts/$target"
     if ! cargo +nightly fuzz run "$target" "corpus/$target" -- \
         -max_total_time="$TIME" -rss_limit_mb=2048 -timeout=30 -max_len=65536 -print_final_stats=1 \
         >"logs/$target.log" 2>&1; then
