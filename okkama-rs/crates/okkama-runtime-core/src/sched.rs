@@ -596,6 +596,15 @@ pub fn cancel(future: &Future) {
         .waiters
         .borrow_mut()
         .retain(|waiter| !matches!(waiter, Waiter::Task(other) if Rc::ptr_eq(other, &task)));
+    // A runtime promise (a native request) that no other task awaits is
+    // cancelled with its awaiter, as on the Sparrow core: its provider then
+    // interrupts the work and releases what a late reply opened.
+    let orphaned = inner.task.borrow().is_none()
+        && inner.body.borrow().is_none()
+        && !inner.waiters.borrow().iter().any(|waiter| matches!(waiter, Waiter::Task(_)));
+    if orphaned && inner.state.get() == State::Running {
+        cancel(&inner);
+    }
     transfer(&task);
 }
 

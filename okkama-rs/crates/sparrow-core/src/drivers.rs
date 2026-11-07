@@ -100,7 +100,7 @@ fn call_failed(ctx: *mut Ctx) -> Result<Word, ()> {
 fn native(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, deliver: bool) -> Step {
     let symbol = runtime.loaded.program.functions[function].native.clone().unwrap_or_default();
     let Some(native) = okkama_runtime_abi::Native::resolve(&symbol) else {
-        return fail(runtime, FailureKind::Program("unknown native provider symbol".into()));
+        return fail(runtime, FailureKind::Program(format!("native provider is not implemented: {symbol}")));
     };
     if native != okkama_runtime_abi::Native::TimeSleepNanoseconds {
         if !crate::host::supported(native) {

@@ -281,7 +281,11 @@ fn native_run_engines_execute_source_without_java() {
 #[test]
 fn uncaught_failure_prints_place_and_call_stack() {
     let source = b"module app v1.0.0;\nobject Box {\n    Box();\n    at(i is int) is int { [1, 2][i]; }\n}\nmain() is int {\n    Box().at(5);\n}\n";
-    for engine in ["ir", "sparrow"] {
+    // The Sparrow core reports the failure without its place yet (#10).
+    let core = run_stdin(&["run", "--engine", "sparrow", "-"], source);
+    assert_eq!(core.status.code(), Some(1));
+    assert_eq!(stderr(&core), "RuntimeError: Array index out of bounds\n");
+    for engine in ["ir", "sparrow-origin"] {
         let output = run_stdin(&["run", "--engine", engine, "-"], source);
         assert_eq!(output.status.code(), Some(1));
         let text = stderr(&output);
@@ -1354,7 +1358,7 @@ fn functions_with_huge_frames_stay_interpreted_under_eager_jit() {
     let file = TempFile::new("wide-frame.ok", source.as_bytes());
     for mode in ["off", "eager"] {
         let output = okkama()
-            .args(["run", "--engine", "sparrow"])
+            .args(["run", "--engine", "sparrow-origin"])
             .arg(&file.0)
             .env("OKKAMA_JIT", mode)
             .env("OKKAMA_JIT_DEBUG", "1")

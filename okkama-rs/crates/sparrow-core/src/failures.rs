@@ -531,10 +531,10 @@ impl Runtime {
     fn report(&self, root: Word, messages: &HashMap<Word, String>) -> String {
         use std::fmt::Write;
         let mut output = String::new();
-        let mut pending = vec![(root, "", true)];
+        let mut pending = vec![(root, "")];
         let mut shown: HashMap<Word, usize> = HashMap::default();
         let mut next_index = 0;
-        while let Some((failure, label, first)) = pending.pop() {
+        while let Some((failure, label)) = pending.pop() {
             if !label.is_empty() {
                 let _ = write!(output, "\n{label}\n  ");
             }
@@ -548,13 +548,11 @@ impl Runtime {
                 output.push_str("<invalid failure reference>");
                 continue;
             };
-            let simple = first && record.cause.is_none() && record.secondary.is_empty();
             match &record.kind {
                 FailureKind::Cancelled => output.push_str("Cancelled: Operation was cancelled"),
                 FailureKind::Native(object) => {
                     let _ = write!(output, "NativeFailure: {}", self.heap.text(self.heap.field(*object, 3)));
                 }
-                FailureKind::Program(message) | FailureKind::Panic(message) if simple => output.push_str(message),
                 FailureKind::Program(message) => {
                     let _ = write!(output, "RuntimeError: {message}");
                 }
@@ -579,9 +577,9 @@ impl Runtime {
                 }
             }
             if let Some(cause) = record.cause {
-                pending.push((cause, "Caused by:", false));
+                pending.push((cause, "Caused by:"));
             }
-            pending.extend(record.secondary.iter().rev().map(|&s| (s, "Secondary cleanup failure:", false)));
+            pending.extend(record.secondary.iter().rev().map(|&s| (s, "Secondary cleanup failure:")));
         }
         output
     }

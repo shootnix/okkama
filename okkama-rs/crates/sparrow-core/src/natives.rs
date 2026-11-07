@@ -40,8 +40,10 @@ pub fn supported(native: Native) -> bool {
 pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Result<(Word, Repr), Refusal> {
     // A missing provider is a runtime error of the call, after earlier effects
     // (conformance L06.native.missing-provider).
-    let native = runtime.natives[function]
-        .ok_or_else(|| Refusal::Failure(FailureKind::Program("unknown native provider symbol".into())))?;
+    let native = runtime.natives[function].ok_or_else(|| {
+        let symbol = runtime.loaded.program.functions[function].native.clone().unwrap_or_default();
+        Refusal::Failure(FailureKind::Program(format!("native provider is not implemented: {symbol}")))
+    })?;
     match native {
         Native::Utf8Encode => {
             let bytes = runtime.heap.text(arguments[0]).as_bytes().to_vec();

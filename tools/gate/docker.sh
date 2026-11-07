@@ -18,6 +18,7 @@ mkdir -p "$ROOT/conformance/reports/runs"
 exec docker run --rm \
     --network "${OKKAMA_GATE_NETWORK:-none}" \
     --cpus "${OKKAMA_GATE_CPUS:-6}" --memory "${OKKAMA_GATE_MEMORY:-7g}" --pids-limit 4096 \
+    -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
     -e CARGO_BUILD_JOBS="${OKKAMA_GATE_JOBS:-2}" \
     -e CARGO_NET_OFFLINE="$([[ "${OKKAMA_GATE_NETWORK:-none}" == none ]] && echo true || echo false)" \
     -v "$ROOT":/src:ro \

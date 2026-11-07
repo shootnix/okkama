@@ -314,6 +314,16 @@ public final class Scheduler {
             }
         }
         inner.waiters.remove(task);
+        // A runtime promise (a native request) that no other task awaits is
+        // cancelled with its awaiter, as on the Sparrow core: its provider then
+        // interrupts the work and releases what a late reply opened.
+        if (inner.task == null && inner.body == null && inner.state == Future.RUNNING) {
+            boolean awaited = false;
+            for (Object waiter : inner.waiters) {
+                if (waiter instanceof Task) awaited = true;
+            }
+            if (!awaited) cancel(inner);
+        }
         transfer(task);
     }
 

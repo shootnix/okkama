@@ -133,6 +133,12 @@ moved out.
 - JVM: errors the runtime raises for async intrinsics (`ChannelClosed`,
   `InvalidChannelCapacity`, …) are built as error enums; since they became enums the
   task constructing them died and the program waited forever.
+- IR and JVM: cancelling a task cancels the native request it awaits when no other
+  task awaits it, as on the Sparrow core, so a SQLite cursor opened by a cancelled
+  query is released instead of keeping the connection busy (`SQLITE_READER_ACTIVE`).
+- Sparrow core: failure reports name their category like the other engines
+  (`RuntimeError: …`, `Panic: …`), and a missing native provider reports
+  "native provider is not implemented: <symbol>".
 - Sparrow core: capturing a command's output (`os/command_capture`) aborted the VM
   (`spawn_local` outside a `LocalSet`); provider tasks now run in the core's reactor.
 - Calling an action through a cap (`customer.wtf()` on a `Customer::Public` value)
