@@ -469,3 +469,17 @@ fn calls_through_a_cap_name_the_cap() {
         ]
     );
 }
+
+/// A chain of `let`s that deepens a generic type stops at the type depth
+/// limit with one error (#49): lowering would keep a full copy of every
+/// value's type, memory growing with the square of the depth.
+#[test]
+fn types_deeper_than_the_limit_are_refused_once() {
+    let lets: String = (0..100).map(|i| format!("    let b{} = b{i}.deeper();\n", i + 1)).collect();
+    let text = format!(
+        "object Box<T> {{\n    has value is T;\n    Box(:value);\n    deeper() is Box<@T> {{ Box(value: [value]); }}\n}}\nmain() is int {{\n    let b0 = Box(value: 1);\n{lets}    0;\n}}\n"
+    );
+    let found = messages(&text);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("is nested deeper than 64 levels"), "{found:?}");
+}
