@@ -1948,6 +1948,10 @@ fn generic(instruction: &I) -> bool {
             | I::AnyBox { .. }
             | I::ArraySlice { .. }
             | I::ArrayJoin { .. }
+            | I::ArrayConcat { .. }
+            | I::ArrayDiff { .. }
+            | I::MapMerge { .. }
+            | I::MapDiff { .. }
             | I::BuilderNew { .. }
             | I::BuilderPush { .. }
             | I::BuilderAppend { .. }

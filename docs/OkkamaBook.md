@@ -712,6 +712,29 @@ let empty_map = [:];
   map backend cannot preserve typed key identity for them). Map *values* may
   be any type including `any`.
 
+### 8.2a `+` and `-` on collections
+
+Arrays and maps of exactly the same type combine with `+` and `-`:
+
+```okkama
+let all = [1, 2] + [3] + [4, 5];          // [1, 2, 3, 4, 5]
+let rest = [1, 2, 3, 2] - [2];            // [1, 3]: every equal element goes
+let merged = ["a": 1] + ["a": 2, "b": 3]; // ["a": 2, "b": 3]: the right value wins
+let kept = merged - ["a": 0];             // ["b": 3]: keys of the right map go
+```
+
+- Both operands must have the same type: `@int + @@int`, `@int + %string:int`
+  and `@int + @string` are compile errors. An untagged empty literal (`[]`,
+  `[:]`) takes the other operand's type.
+- `a + b + c` is one operation: the result is allocated once for the sum of
+  the parts, never through intermediate arrays or maps. `(a - b) - c` removes
+  the elements (or keys) of `b` and `c` in one pass; `a - (b - c)` keeps its
+  grouping.
+- `-` on arrays compares elements deeply (`==`), so arrays holding `any`
+  cannot be subtracted. `-` on maps removes keys and ignores the right map's
+  values.
+- To append one element, concatenate a one-element array: `items + [item]`.
+
 ### 8.3 Typed collection identity
 
 Arrays and maps are backed by an immutable typed runtime representation
@@ -863,7 +886,7 @@ else                   optional fallback (Maybe<T> else T, map[k] else v)
 ^                      bitwise exclusive or
 &                      bitwise and
 <<  >>  >>>             fixed-width shifts
-+  -                   addition/concat, subtraction
++  -                   addition/concat, subtraction (also arrays and maps, 8.2a)
 *  /  %                multiplication, division, modulo
 !  -  ~                unary not, unary minus, bitwise complement
 postfix                calls, member access, indexing, unpack `...`

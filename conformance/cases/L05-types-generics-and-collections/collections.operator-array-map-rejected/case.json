@@ -1,0 +1,59 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.collections.operator-array-map-rejected",
+  "title": "+ rejects an array and a map",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The operand types are known before execution, so the reference compiler rejects the program in check; the contract only requires that the program does not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#8-collections"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for issue #145 (collection operators)",
+    "expected_basis": "Issue #145: + and - need two collections of the same type."
+  },
+  "status": "mandatory"
+}

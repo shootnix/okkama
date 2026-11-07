@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.collections.array-difference",
+  "title": "- removes every element equal to an element of the right operand",
+  "purpose": "Observe the arrays produced by - over scalars, strings and objects.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[1 3 4]\n[1 3 5]\n[1 3 4 5]\n[1 2]\na,c\n1 (3,4)\n"
+    }
+  },
+  "spec_refs": [
+    "docs/OkkamaBook.md#8-collections"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for issue #145 (collection operators)",
+    "expected_basis": "Issue #145: a - b keeps the elements of a equal to no element of b, in order (all occurrences removed); (a - b) - c removes b and c; elements compare deeply."
+  },
+  "status": "mandatory"
+}

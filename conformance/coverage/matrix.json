@@ -412,6 +412,60 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L08.for-await.stream"
+     ],
+     "mandatory_cases": [
+      "L08.for-await.stream"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L08.for-await.stream"
+     ],
+     "mandatory_cases": [
+      "L08.for-await.stream"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L08.for-await.multiple-bindings",
+      "L08.for-await.sync-action",
+      "L08.for-await.sync-next",
+      "L08.for-await.wrong-result"
+     ],
+     "mandatory_cases": [
+      "L08.for-await.multiple-bindings",
+      "L08.for-await.sync-action",
+      "L08.for-await.sync-next",
+      "L08.for-await.wrong-result"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L08.for-await.stream"
+     ],
+     "mandatory_cases": [
+      "L08.for-await.stream"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "ASYNC.FOR-AWAIT",
+   "discrepancies": [],
+   "family": "Async and concurrency",
+   "spec_refs": [
+    "docs/for-await.md"
+   ],
+   "status": "mandatory",
+   "title": "Async iteration through next returning Future<Maybe<T>>"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
       "L08.future.lazy-and-cached",
       "L08.future.never-awaited"
      ],
@@ -1368,20 +1422,26 @@
     "boundary": {
      "cases": [
       "L02.byte.compare-and-index",
-      "L05.array.access"
+      "L05.array.access",
+      "L05.collections.array-difference"
      ],
      "mandatory_cases": [
       "L02.byte.compare-and-index",
-      "L05.array.access"
+      "L05.array.access",
+      "L05.collections.array-difference"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
-      "L05.array.no-push"
+      "L05.array.no-push",
+      "L05.collections.array-concat",
+      "L05.collections.array-difference"
      ],
      "mandatory_cases": [
-      "L05.array.no-push"
+      "L05.array.no-push",
+      "L05.collections.array-concat",
+      "L05.collections.array-difference"
      ],
      "requirement": "required"
     },
@@ -1390,24 +1450,34 @@
       "L05.array.byte-index-rejected",
       "L05.array.negative-index",
       "L05.array.out-of-bounds",
-      "L05.array.string-index"
+      "L05.array.string-index",
+      "L05.collections.operator-any-difference-rejected",
+      "L05.collections.operator-array-map-rejected",
+      "L05.collections.operator-element-types-rejected"
      ],
      "mandatory_cases": [
       "L05.array.byte-index-rejected",
       "L05.array.negative-index",
       "L05.array.out-of-bounds",
-      "L05.array.string-index"
+      "L05.array.string-index",
+      "L05.collections.operator-any-difference-rejected",
+      "L05.collections.operator-array-map-rejected",
+      "L05.collections.operator-element-types-rejected"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
       "L01.gram.index.fallback",
-      "L05.array.access"
+      "L05.array.access",
+      "L05.collections.array-concat",
+      "L05.collections.array-difference"
      ],
      "mandatory_cases": [
       "L01.gram.index.fallback",
-      "L05.array.access"
+      "L05.array.access",
+      "L05.collections.array-concat",
+      "L05.collections.array-difference"
      ],
      "requirement": "required"
     }
@@ -1523,10 +1593,12 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.collections.map-difference",
       "L05.map.int-key-order",
       "L05.map.key-types"
      ],
      "mandatory_cases": [
+      "L05.collections.map-difference",
       "L05.map.int-key-order",
       "L05.map.key-types"
      ],
@@ -1534,21 +1606,25 @@
     },
     "interaction": {
      "cases": [
+      "L05.collections.map-merge",
       "L05.map.fallback-lazy"
      ],
      "mandatory_cases": [
+      "L05.collections.map-merge",
       "L05.map.fallback-lazy"
      ],
      "requirement": "required"
     },
     "invalid": {
      "cases": [
+      "L05.collections.operator-array-map-rejected",
       "L05.map.missing-key",
       "L05.map.mixed-key-types-rejected",
       "L05.map.object-key",
       "L05.map.undefined-key-variable"
      ],
      "mandatory_cases": [
+      "L05.collections.operator-array-map-rejected",
       "L05.map.missing-key",
       "L05.map.mixed-key-types-rejected",
       "L05.map.object-key",
@@ -1558,9 +1634,13 @@
     },
     "normal": {
      "cases": [
+      "L05.collections.map-difference",
+      "L05.collections.map-merge",
       "L05.map.access"
      ],
      "mandatory_cases": [
+      "L05.collections.map-difference",
+      "L05.collections.map-merge",
       "L05.map.access"
      ],
      "requirement": "required"
@@ -2570,6 +2650,58 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L07.catch-pattern.cases-and-types",
+      "L07.catch-pattern.unmatched-propagates"
+     ],
+     "mandatory_cases": [
+      "L07.catch-pattern.cases-and-types",
+      "L07.catch-pattern.unmatched-propagates"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L07.catch-pattern.cases-and-types"
+     ],
+     "mandatory_cases": [
+      "L07.catch-pattern.cases-and-types"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L07.catch-pattern.bindings-need-one-pattern",
+      "L07.catch-pattern.plain-enum-case"
+     ],
+     "mandatory_cases": [
+      "L07.catch-pattern.bindings-need-one-pattern",
+      "L07.catch-pattern.plain-enum-case"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L07.catch-pattern.cases-and-types"
+     ],
+     "mandatory_cases": [
+      "L07.catch-pattern.cases-and-types"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "ERR.CATCH-PATTERNS",
+   "discrepancies": [],
+   "family": "Errors, cleanup and lifetimes",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6"
+   ],
+   "status": "mandatory",
+   "title": "catch clauses with several types or error enum case patterns; a missed case continues with the next clause"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
       "L07.confirm.lazy-else"
      ],
      "mandatory_cases": [
@@ -2656,6 +2788,63 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.throw-and-catch"
+     ],
+     "mandatory_cases": [
+      "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.throw-and-catch"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L07.error-enum.throw-and-catch"
+     ],
+     "mandatory_cases": [
+      "L07.error-enum.throw-and-catch"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L07.error-enum.catch-plain-enum",
+      "L07.error-enum.generic",
+      "L07.error-enum.object-payload"
+     ],
+     "mandatory_cases": [
+      "L07.error-enum.catch-plain-enum",
+      "L07.error-enum.generic",
+      "L07.error-enum.object-payload"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L07.error-enum.throw-and-catch",
+      "L07.error-enum.uncaught"
+     ],
+     "mandatory_cases": [
+      "L07.error-enum.throw-and-catch",
+      "L07.error-enum.uncaught"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "ERR.ENUM",
+   "discrepancies": [],
+   "family": "Errors, cleanup and lifetimes",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.5.1",
+    "docs/okkama-spec-11072026.md#9.6"
+   ],
+   "status": "mandatory",
+   "title": "enum Name is Error declares error values: thrown, caught by enum type or Error, generated text()"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -2691,7 +2880,7 @@
     "docs/okkama-spec-11072026.md#9.5"
    ],
    "status": "mandatory",
-   "title": "Error is a system role requiring text(); objects must explicitly does Error"
+   "title": "Error is a system role requiring text(); only error enums (and NativeFailure) implement it, objects cannot do Error"
   },
   {
    "aspects": {
@@ -2871,7 +3060,7 @@
     "docs/okkama-spec-11072026.md#9.5"
    ],
    "status": "mandatory",
-   "title": "throw accepts only objects that nominally do Error (or NativeFailure)"
+   "title": "throw accepts only error enum values (or NativeFailure and rethrown Error references)"
   },
   {
    "aspects": {
@@ -2912,6 +3101,62 @@
    ],
    "status": "mandatory",
    "title": "try is an expression yielding the try or selected catch value"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L07.try-mark.optional",
+      "L07.try-mark.panic-passes"
+     ],
+     "mandatory_cases": [
+      "L07.try-mark.optional",
+      "L07.try-mark.panic-passes"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L07.try-mark.optional",
+      "L07.try-mark.optional-successor"
+     ],
+     "mandatory_cases": [
+      "L07.try-mark.optional",
+      "L07.try-mark.optional-successor"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L07.try-mark.optional-successor",
+      "L07.try-mark.optional-void"
+     ],
+     "mandatory_cases": [
+      "L07.try-mark.optional-successor",
+      "L07.try-mark.optional-void"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L07.try-mark.force-panics",
+      "L07.try-mark.optional"
+     ],
+     "mandatory_cases": [
+      "L07.try-mark.force-panics",
+      "L07.try-mark.optional"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "ERR.TRY-MARK",
+   "discrepancies": [],
+   "family": "Errors, cleanup and lifetimes",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.6.1"
+   ],
+   "status": "mandatory",
+   "title": "try? value yields Maybe<T> (none on a thrown error); try! value turns a thrown error into a panic"
   },
   {
    "aspects": {
@@ -3021,9 +3266,11 @@
     },
     "normal": {
      "cases": [
+      "L05.generic.bound-role-argument",
       "L05.generic.bound-satisfied"
      ],
      "mandatory_cases": [
+      "L05.generic.bound-role-argument",
       "L05.generic.bound-satisfied"
      ],
      "requirement": "required"
@@ -6191,6 +6438,62 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L06.hidden.contextual-keyword",
+      "L06.hidden.namespace-rejected"
+     ],
+     "mandatory_cases": [
+      "L06.hidden.contextual-keyword",
+      "L06.hidden.namespace-rejected"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L06.hidden.state-views"
+     ],
+     "mandatory_cases": [
+      "L06.hidden.state-views"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L06.hidden.namespace-rejected",
+      "L06.hidden.public-does-hidden-role",
+      "L06.hidden.signature-leak",
+      "L06.hidden.take-rejected"
+     ],
+     "mandatory_cases": [
+      "L06.hidden.namespace-rejected",
+      "L06.hidden.public-does-hidden-role",
+      "L06.hidden.signature-leak",
+      "L06.hidden.take-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L06.hidden.state-views"
+     ],
+     "mandatory_cases": [
+      "L06.hidden.state-views"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "MOD.HIDDEN",
+   "discrepancies": [],
+   "family": "Modules and native boundaries",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1.1"
+   ],
+   "status": "mandatory",
+   "title": "hidden object/role/enum is visible only inside its module; public signatures and does lists cannot name hidden types"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -6989,10 +7292,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L04.fields.defaults-per-construction"
+      "L04.fields.defaults-per-construction",
+      "L04.fields.scalar-replacement"
      ],
      "mandatory_cases": [
-      "L04.fields.defaults-per-construction"
+      "L04.fields.defaults-per-construction",
+      "L04.fields.scalar-replacement"
      ],
      "requirement": "required"
     },
@@ -7023,11 +7328,13 @@
     "normal": {
      "cases": [
       "L01.gram.has.forms",
-      "L04.fields.defaults-per-construction"
+      "L04.fields.defaults-per-construction",
+      "L04.fields.scalar-replacement"
      ],
      "mandatory_cases": [
       "L01.gram.has.forms",
-      "L04.fields.defaults-per-construction"
+      "L04.fields.defaults-per-construction",
+      "L04.fields.scalar-replacement"
      ],
      "requirement": "required"
     }
@@ -7103,21 +7410,25 @@
      "cases": [
       "L03.bound.private-action",
       "L04.private-actions.external-call",
-      "L04.private-actions.peer-call"
+      "L04.private-actions.peer-call",
+      "L04.private-actions.successor-external-call"
      ],
      "mandatory_cases": [
       "L03.bound.private-action",
       "L04.private-actions.external-call",
-      "L04.private-actions.peer-call"
+      "L04.private-actions.peer-call",
+      "L04.private-actions.successor-external-call"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L01.gram.private.section"
+      "L01.gram.private.section",
+      "L04.private-actions.successor"
      ],
      "mandatory_cases": [
-      "L01.gram.private.section"
+      "L01.gram.private.section",
+      "L04.private-actions.successor"
      ],
      "requirement": "required"
     }
@@ -7956,11 +8267,13 @@
     "boundary": {
      "cases": [
       "L08.channel.close-semantics",
-      "L08.channel.rendezvous"
+      "L08.channel.rendezvous",
+      "L08.intrinsic.retained-arguments"
      ],
      "mandatory_cases": [
       "L08.channel.close-semantics",
-      "L08.channel.rendezvous"
+      "L08.channel.rendezvous",
+      "L08.intrinsic.retained-arguments"
      ],
      "requirement": "required"
     },
@@ -9478,9 +9791,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L12.x509-path-search-budget"
+     ],
+     "mandatory_cases": [
+      "L12.x509-path-search-budget"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9489,15 +9805,21 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L12.x509-path-search-budget"
+     ],
+     "mandatory_cases": [
+      "L12.x509-path-search-budget"
+     ],
      "requirement": "required"
     },
     "normal": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L12.x509-path-search-budget"
+     ],
+     "mandatory_cases": [
+      "L12.x509-path-search-budget"
+     ],
      "requirement": "required"
     }
    },
@@ -9770,9 +10092,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.param-binding"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.param-binding"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9781,15 +10106,66 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.param-binding"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.param-binding"
+     ],
      "requirement": "required"
     },
     "normal": {
+     "cases": [
+      "L11.sqlite.param-binding"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.param-binding"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DB.PARAM",
+   "discrepancies": [],
+   "family": "Standard library: db",
+   "spec_refs": [
+    "std/db/param.ok",
+    "docs/std/db-values.md"
+   ],
+   "status": "mandatory",
+   "title": "std db/param typed bound values and Maybe NULL contract"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
      "cases": [],
-     "gap": true,
      "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
      "requirement": "required"
     }
    },
@@ -9805,9 +10181,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9816,15 +10195,21 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
      "requirement": "required"
     },
     "normal": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
      "requirement": "required"
     }
    },
@@ -9840,9 +10225,20 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.db.query-lifetime",
+      "L11.sqlite.closed-reply-row",
+      "L11.sqlite.prepared-pool-query",
+      "L11.sqlite.query-cardinality",
+      "L11.sqlite.throughput-lifetime"
+     ],
+     "mandatory_cases": [
+      "L08.db.query-lifetime",
+      "L11.sqlite.closed-reply-row",
+      "L11.sqlite.prepared-pool-query",
+      "L11.sqlite.query-cardinality",
+      "L11.sqlite.throughput-lifetime"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9851,16 +10247,80 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L08.db.query-lifetime",
+      "L11.sqlite.closed-reply-row",
+      "L11.sqlite.prepared-pool-query",
+      "L11.sqlite.query-cardinality",
+      "L11.sqlite.throughput-lifetime"
+     ],
+     "mandatory_cases": [
+      "L08.db.query-lifetime",
+      "L11.sqlite.closed-reply-row",
+      "L11.sqlite.prepared-pool-query",
+      "L11.sqlite.query-cardinality",
+      "L11.sqlite.throughput-lifetime"
+     ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L11.sqlite.closed-reply-row",
+      "L11.sqlite.prepared-pool-query",
+      "L11.sqlite.query-cardinality",
+      "L11.sqlite.throughput-lifetime"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.closed-reply-row",
+      "L11.sqlite.prepared-pool-query",
+      "L11.sqlite.query-cardinality",
+      "L11.sqlite.throughput-lifetime"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.DB.QUERY",
+   "discrepancies": [],
+   "family": "Standard library: db",
+   "spec_refs": [
+    "std/db/query.ok",
+    "docs/std/db-values.md"
+   ],
+   "status": "mandatory",
+   "title": "std db/query cardinality, bounded collection and streaming ownership contract"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L09.db.row-readers"
+     ],
+     "mandatory_cases": [
+      "L09.db.row-readers"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [
+      "L09.db.row-readers"
+     ],
+     "mandatory_cases": [
+      "L09.db.row-readers"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L09.db.row-readers",
       "L11.sqlite.round-trip"
      ],
      "mandatory_cases": [
+      "L09.db.row-readers",
       "L11.sqlite.round-trip"
      ],
      "requirement": "required"
@@ -9878,9 +10338,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L09.db.row-readers"
+     ],
+     "mandatory_cases": [
+      "L09.db.row-readers"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -9889,16 +10352,21 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L09.db.row-readers"
+     ],
+     "mandatory_cases": [
+      "L09.db.row-readers"
+     ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L09.db.row-readers",
       "L11.sqlite.round-trip"
      ],
      "mandatory_cases": [
+      "L09.db.row-readers",
       "L11.sqlite.round-trip"
      ],
      "requirement": "required"
@@ -9928,9 +10396,11 @@
     },
     "interaction": {
      "cases": [
+      "L11.sqlite.cancel-close-race",
       "L11.sqlite.transaction-rollback-commit"
      ],
      "mandatory_cases": [
+      "L11.sqlite.cancel-close-race",
       "L11.sqlite.transaction-rollback-commit"
      ],
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
@@ -9946,9 +10416,11 @@
     },
     "normal": {
      "cases": [
+      "L11.sqlite.cancel-close-race",
       "L11.sqlite.round-trip"
      ],
      "mandatory_cases": [
+      "L11.sqlite.cancel-close-race",
       "L11.sqlite.round-trip"
      ],
      "requirement": "required"
@@ -10071,9 +10543,12 @@
   {
    "aspects": {
     "boundary": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
      "requirement": "required"
     },
     "interaction": {
@@ -10082,16 +10557,23 @@
      "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
     },
     "invalid": {
-     "cases": [],
-     "gap": true,
-     "mandatory_cases": [],
+     "cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
+     "mandatory_cases": [
+      "L11.sqlite.prepared-pool-query"
+     ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L11.sqlite.param-binding",
+      "L11.sqlite.prepared-pool-query",
       "L11.sqlite.round-trip"
      ],
      "mandatory_cases": [
+      "L11.sqlite.param-binding",
+      "L11.sqlite.prepared-pool-query",
       "L11.sqlite.round-trip"
      ],
      "requirement": "required"
@@ -15176,11 +15658,13 @@
     "boundary": {
      "cases": [
       "L09.json.codec",
+      "L09.json.member-readers",
       "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
       "L09.json.codec",
+      "L09.json.member-readers",
       "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
@@ -15194,11 +15678,13 @@
     "invalid": {
      "cases": [
       "L09.json.codec",
+      "L09.json.member-readers",
       "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
       "L09.json.codec",
+      "L09.json.member-readers",
       "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
@@ -15207,11 +15693,13 @@
     "normal": {
      "cases": [
       "L09.json.codec",
+      "L09.json.member-readers",
       "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
      "mandatory_cases": [
       "L09.json.codec",
+      "L09.json.member-readers",
       "L09.json.parsed-reading",
       "L09.json.typed-reading"
      ],
@@ -25688,7 +26176,9 @@
       "L04.successor.assign-in-destroy",
       "L04.successor.assign-outside-successor",
       "L04.successor.assign-unknown-field",
-      "L04.successor.assign-wrong-type"
+      "L04.successor.assign-wrong-type",
+      "L04.successor.object-role-result",
+      "L04.successor.tail-replacement"
      ],
      "mandatory_cases": [
       "L03.return.value-in-successor",
@@ -25696,15 +26186,19 @@
       "L04.successor.assign-in-destroy",
       "L04.successor.assign-outside-successor",
       "L04.successor.assign-unknown-field",
-      "L04.successor.assign-wrong-type"
+      "L04.successor.assign-wrong-type",
+      "L04.successor.object-role-result",
+      "L04.successor.tail-replacement"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L04.private-actions.successor",
       "L04.successor.new-object"
      ],
      "mandatory_cases": [
+      "L04.private-actions.successor",
       "L04.successor.new-object"
      ],
      "requirement": "required"
@@ -28561,9 +29055,6 @@
    "STD.CRYPTO.X509.NAME [normal]",
    "STD.CRYPTO.X509.NAME [boundary]",
    "STD.CRYPTO.X509.NAME [invalid]",
-   "STD.CRYPTO.X509.TRUST [normal]",
-   "STD.CRYPTO.X509.TRUST [boundary]",
-   "STD.CRYPTO.X509.TRUST [invalid]",
    "STD.CRYPTO.X509.VALUE [normal]",
    "STD.CRYPTO.X509.VALUE [boundary]",
    "STD.CRYPTO.X509.VALUE [invalid]",
@@ -28581,16 +29072,6 @@
    "STD.DB.CONNECTION [invalid]",
    "STD.DB.ERROR [boundary]",
    "STD.DB.ERROR [invalid]",
-   "STD.DB.POOL [normal]",
-   "STD.DB.POOL [boundary]",
-   "STD.DB.POOL [invalid]",
-   "STD.DB.PREPARED [normal]",
-   "STD.DB.PREPARED [boundary]",
-   "STD.DB.PREPARED [invalid]",
-   "STD.DB.READ [boundary]",
-   "STD.DB.READ [invalid]",
-   "STD.DB.ROW [boundary]",
-   "STD.DB.ROW [invalid]",
    "STD.DB.SQLITE.BACKUP [normal]",
    "STD.DB.SQLITE.BACKUP [boundary]",
    "STD.DB.SQLITE.BACKUP [invalid]",
@@ -28600,8 +29081,6 @@
    "STD.DB.SQLITE.SCRIPT [normal]",
    "STD.DB.SQLITE.SCRIPT [boundary]",
    "STD.DB.SQLITE.SCRIPT [invalid]",
-   "STD.DB.STATEMENT [boundary]",
-   "STD.DB.STATEMENT [invalid]",
    "STD.DB.TRANSACTION [invalid]",
    "STD.DB.VALUE [boundary]",
    "STD.DB.VALUE [invalid]",
@@ -29658,14 +30137,11 @@
    "STD.CRYPTO.SECRET",
    "STD.CRYPTO.X509.CERTIFICATE",
    "STD.CRYPTO.X509.NAME",
-   "STD.CRYPTO.X509.TRUST",
    "STD.CRYPTO.X509.VALUE",
    "STD.CSV.INPUT",
    "STD.CSV.STREAM",
    "STD.DB.ACQUISITION",
    "STD.DB.CONNECTION",
-   "STD.DB.POOL",
-   "STD.DB.PREPARED",
    "STD.DB.SQLITE.BACKUP",
    "STD.DB.SQLITE.BLOB",
    "STD.DB.SQLITE.SCRIPT",
@@ -30001,5 +30477,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "3cb4a14baee71dbe378618e3c29556ccdd224ee930214138a0e11b208ab53bce"
+ "suite_tree_sha256": "ee27682b73cacc32ab91f0f00956c9f7dd6794f1e5fa64551bb9af8d599b6b80"
 }

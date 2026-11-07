@@ -381,6 +381,74 @@ pub fn string(op: StrOp, args: &[&Value]) -> Result<Value> {
     }
 }
 
+/// `a + b + ...` над массивами: результат выделяется один раз под сумму длин.
+pub fn array_concat(parts: &[&Value]) -> Result<Value> {
+    let mut size = 0;
+    for part in parts {
+        size += ArrayHeap.elements(part)?.len();
+    }
+    let mut items = Vec::with_capacity(size);
+    for part in parts {
+        items.extend_from_slice(ArrayHeap.elements(part)?);
+    }
+    Ok(ArrayHeap.allocate(items))
+}
+
+/// `a - b - ...` над массивами: элементы `array`, не равные ни одному
+/// элементу `removed`, в исходном порядке. Скалярные элементы сравниваются
+/// по ключу словаря (множество), составные — глубоким равенством.
+pub fn array_difference(array: &Value, removed: &[&Value]) -> Result<Value> {
+    let mut excluded = Vec::new();
+    for part in removed {
+        excluded.extend_from_slice(ArrayHeap.elements(part)?);
+    }
+    let keys: Option<std::collections::BTreeSet<crate::heap::MapKey>> =
+        excluded.iter().map(|item| crate::heap::MapKey::from_value(item).ok()).collect();
+    let items = ArrayHeap.elements(array)?;
+    let mut kept = Vec::with_capacity(items.len());
+    for item in items {
+        let present = match (&keys, crate::heap::MapKey::from_value(item)) {
+            (Some(keys), Ok(key)) => keys.contains(&key),
+            _ => {
+                let mut found = false;
+                for other in &excluded {
+                    if equal(item, other)? {
+                        found = true;
+                        break;
+                    }
+                }
+                found
+            }
+        };
+        if !present {
+            kept.push(item.clone());
+        }
+    }
+    Ok(ArrayHeap.allocate(kept))
+}
+
+/// `a + b + ...` над словарями; повтор ключа — значение правой части.
+pub fn map_merge(parts: &[&Value]) -> Result<Value> {
+    let mut entries = std::collections::BTreeMap::new();
+    for part in parts {
+        for (key, value) in maps::entries(part)? {
+            entries.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(Value::Map(Rc::new(crate::heap::Map(entries))))
+}
+
+/// `a - b - ...` над словарями: записи `map`, ключей которых нет в `removed`.
+pub fn map_difference(map: &Value, removed: &[&Value]) -> Result<Value> {
+    let mut entries = maps::entries(map)?.clone();
+    for part in removed {
+        for key in maps::entries(part)?.keys() {
+            entries.remove(key);
+        }
+    }
+    Ok(Value::Map(Rc::new(crate::heap::Map(entries))))
+}
+
 pub fn map_new(entries: impl IntoIterator<Item = (Value, Value)>) -> Result<Value> {
     Ok(maps::from_entries(entries)?)
 }

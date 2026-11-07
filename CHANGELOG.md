@@ -8,6 +8,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: `+` and `-` on arrays and maps. `a + b + c` concatenates arrays
+  (or merges maps, the rightmost value winning a repeated key); `a - b`
+  removes from an array every element equal to an element of `b` (or from a
+  map every key of `b`). Both operands must have exactly the same type —
+  `@int + @@int` is a compile error — and an untagged `[]`/`[:]` takes the
+  other's. A chain is one operation: `a + b + c` and `a + (b + c)` lower to
+  one OIR instruction (`array.concat`, `map.merge`; `array.difference`,
+  `map.difference` for `(a - b) - c`), and every engine allocates the result
+  once for the sum of the parts. New SPB instructions `arr.concat`,
+  `arr.diff`, `map.merge`, `map.diff` (96–99) with verifier rules; the IR
+  engine, the JVM backend (`Rt.concat/difference/merge/without`), the
+  Sparrow core and the previous VM implement them; seven OCS cases
+  ([#145](https://github.com/shootnix/okkama/issues/145)).
+
 - Docs: the trust model is back in the repository (`docs/security-model.md`,
   H-01): for source, bytecode on the Sparrow core, programs, packages and
   embedding it says what is guaranteed, what is not (each with its open

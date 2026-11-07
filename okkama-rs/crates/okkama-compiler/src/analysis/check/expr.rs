@@ -492,6 +492,13 @@ impl Checker<'_, '_> {
                 (_, _, Ty::Str, Ty::Str) if arith == ArithOp::Add => {
                     Ok((BinaryOp::Concat, Ty::Str))
                 }
+                // Массивы и словари: `+` склеивает, `-` вычитает; оба операнда
+                // одного типа (пустой литерал `[]`/`[:]` принимает тип другого).
+                (_, _, Ty::Array(_), Ty::Array(_)) | (_, _, Ty::Map(..), Ty::Map(..))
+                    if matches!(arith, ArithOp::Add | ArithOp::Sub) =>
+                {
+                    self.collection_operator(op, arith, &left, &right)
+                }
                 _ => Err(self.operator_error(op, &left, &right)),
             }
         } else if let Some(bits) = bits {
@@ -585,6 +592,36 @@ impl Checker<'_, '_> {
                 Self::poisoned(span)
             }
         }
+    }
+
+    /// `+`/`-` над массивами и словарями: тип результата — общий тип операндов.
+    fn collection_operator(&self, op: ast::BinaryOp, arith: ArithOp, left: &Ty, right: &Ty) -> Result<(BinaryOp, Ty), String> {
+        let ty = if left.is_untagged() {
+            right.clone()
+        } else if right.is_untagged() || left == right {
+            left.clone()
+        } else {
+            return Err(format!(
+                "Operator {} needs two collections of the same type, got {} and {}",
+                op.symbol(),
+                self.type_name(left),
+                self.type_name(right)
+            ));
+        };
+        let array = matches!(ty, Ty::Array(_));
+        if arith == ArithOp::Sub && holds_any(&ty) {
+            return Err(format!(
+                "Operator - compares elements, and {} holds any, which cannot be compared",
+                self.type_name(&ty)
+            ));
+        }
+        let kind = match (array, arith) {
+            (true, ArithOp::Add) => BinaryOp::ArrayConcat,
+            (true, _) => BinaryOp::ArrayDifference,
+            (false, ArithOp::Add) => BinaryOp::MapMerge,
+            (false, _) => BinaryOp::MapDifference,
+        };
+        Ok((kind, ty))
     }
 
     fn operator_error(&self, op: ast::BinaryOp, left: &Ty, right: &Ty) -> String {

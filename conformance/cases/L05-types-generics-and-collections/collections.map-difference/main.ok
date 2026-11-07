@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show() {}
+    ints(values is @int) is string { "[" + values.map() -> v { v.string(); }.join(" ") + "]"; }
+    map(values is %string:int) is string { "{" + values.keys().map() -> k { k + "=" + values[k].string(); }.join(" ") + "}"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    let all = ["a": 1, "b": 2, "c": 3, "d": 4];
+    out.writeln(show.map(all - ["a": 0]));
+    out.writeln(show.map(all - ["a": 0] - ["c": 0, "z": 0]));
+    out.writeln(show.map(all - [:]));
+    0;
+}

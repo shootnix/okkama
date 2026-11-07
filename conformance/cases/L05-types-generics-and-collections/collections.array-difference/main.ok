@@ -1,0 +1,28 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show() {}
+    ints(values is @int) is string { "[" + values.map() -> v { v.string(); }.join(" ") + "]"; }
+    map(values is %string:int) is string { "{" + values.keys().map() -> k { k + "=" + values[k].string(); }.join(" ") + "}"; }
+}
+
+object Point {
+    has x, y is int;
+    Point(x is int, y is int) { self.x = x; self.y = y; }
+    text() is string { "(" + x.string() + "," + y.string() + ")"; }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    out.writeln(show.ints([1, 2, 3, 2, 4, 2] - [2]));
+    out.writeln(show.ints([1, 2, 3, 4, 5] - [2] - [4, 9]));
+    out.writeln(show.ints([1, 2, 3, 4, 5] - ([2, 4] - [4])));
+    out.writeln(show.ints([1, 2] - []));
+    out.writeln((["a", "b", "c"] - ["b"]).join(","));
+    let points = [Point(1, 2), Point(3, 4), Point(1, 2)] - [Point(1, 2)];
+    out.writeln(points.size().string() + " " + points[0].text());
+    0;
+}

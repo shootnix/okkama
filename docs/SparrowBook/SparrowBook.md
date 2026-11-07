@@ -413,6 +413,12 @@ while `arr.lookup` and `map.lookup` end the block and branch: the element is
 written to their destination register on the *found* edge only. Maps
 (`map.new r11, [r10: r12]`) keep keys in their natural order.
 
+The operators `+` and `-` of Okkama collections compile to one instruction
+per chain: `arr.concat rD, [rA, rB, rC]` allocates its result once for the sum
+of the parts' lengths, `arr.diff rD, rA, [rB, rC]` keeps the elements of `rA`
+equal to none of the others, and `map.merge` and `map.diff` do the same for
+maps (a repeated key takes the rightmost value).
+
 ## 11. Calls, closures and natives
 
 - `call rD, fN, [args]` calls a function directly; `call _, …` drops the
@@ -842,6 +848,8 @@ edge moves; `[…]` a list.
 | 102 | `arr.get rD, rX, rX` | element by index; a bad index fails |
 | 103 | `arr.slice rD, rX, rX, rX` | subarray start..end |
 | 104 | `arr.join rD, rX, rX` | join an array of str with a separator |
+| 96 | `arr.concat rD, [rX, …]` | `a + b + …`: one array allocated for the sum of the parts' lengths |
+| 97 | `arr.diff rD, rX, [rX, …]` | `a - b - …`: the elements of the first array equal to no element of the others, in order |
 | 105 | `builder.new rD` | an empty array builder |
 | 106 | `builder.push rD, rX, rX` | append one element; the result is the builder to use next |
 | 107 | `builder.append rD, rX, rX` | append an array |
@@ -853,6 +861,8 @@ edge moves; `[…]` a list.
 | 113 | `map.get rD, rX, rX` | value by key; a missing key fails |
 | 114 | `map.keys rD, rX` | keys in their natural order |
 | 115 | `map.values rD, rX` | values in key order |
+| 98 | `map.merge rD, [rX, …]` | `a + b + …`: the entries of every part; a repeated key takes the rightmost value |
+| 99 | `map.diff rD, rX, [rX, …]` | `a - b - …`: the entries of the first map whose keys are in none of the others |
 | 116 | `mbuilder.new rD` | an empty map builder |
 | 117 | `mbuilder.put rD, rX, rX, rX` | put one entry; the result is the builder to use next |
 | 118 | `mbuilder.finish rD, rX` | the built map |

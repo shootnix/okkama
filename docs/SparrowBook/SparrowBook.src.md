@@ -211,6 +211,12 @@ while `arr.lookup` and `map.lookup` end the block and branch: the element is
 written to their destination register on the *found* edge only. Maps
 (`map.new r11, [r10: r12]`) keep keys in their natural order.
 
+The operators `+` and `-` of Okkama collections compile to one instruction
+per chain: `arr.concat rD, [rA, rB, rC]` allocates its result once for the sum
+of the parts' lengths, `arr.diff rD, rA, [rB, rC]` keeps the elements of `rA`
+equal to none of the others, and `map.merge` and `map.diff` do the same for
+maps (a repeated key takes the rightmost value).
+
 ## 11. Calls, closures and natives
 
 - `call rD, fN, [args]` calls a function directly; `call _, …` drops the

@@ -194,6 +194,22 @@ pub(crate) fn string(op: ir::StrOp, args: &[&Value], span: Span) -> Result<Value
     ops::string(str_op(op), args).map_err(fault(span))
 }
 
+pub(crate) fn array_concat(parts: &[&Value], span: Span) -> Result<Value, RuntimeError> {
+    ops::array_concat(parts).map_err(fault(span))
+}
+
+pub(crate) fn array_difference(array: &Value, removed: &[&Value], span: Span) -> Result<Value, RuntimeError> {
+    ops::array_difference(array, removed).map_err(fault(span))
+}
+
+pub(crate) fn map_merge(parts: &[&Value], span: Span) -> Result<Value, RuntimeError> {
+    ops::map_merge(parts).map_err(fault(span))
+}
+
+pub(crate) fn map_difference(map: &Value, removed: &[&Value], span: Span) -> Result<Value, RuntimeError> {
+    ops::map_difference(map, removed).map_err(fault(span))
+}
+
 pub(crate) fn map_new(entries: impl IntoIterator<Item = (Value, Value)>, span: Span) -> Result<Value, RuntimeError> {
     ops::map_new(entries).map_err(fault(span))
 }

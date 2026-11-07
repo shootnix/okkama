@@ -588,6 +588,61 @@ public final class Rt {
         return key.toString();
     }
 
+    /** {@code a + b + ...} over arrays: one list sized for all parts. */
+    public static List<Object> concat(Object[] parts) {
+        int size = 0;
+        for (Object part : parts) {
+            size += ((List<?>) part).size();
+        }
+        ArrayList<Object> result = new ArrayList<Object>(size);
+        for (Object part : parts) {
+            result.addAll((List<?>) part);
+        }
+        return result;
+    }
+
+    /** {@code a - b - ...} over arrays: elements equal to none of the removed ones, in order. */
+    public static List<Object> difference(List<?> array, Object[] removed) {
+        ArrayList<Object> all = new ArrayList<Object>();
+        boolean hashable = true;
+        for (Object part : removed) {
+            for (Object item : (List<?>) part) {
+                all.add(item);
+                hashable &= item instanceof BigInteger || item instanceof String || item instanceof Boolean
+                    || item instanceof Byte || item instanceof Character;
+            }
+        }
+        java.util.Collection<Object> excluded = hashable ? new java.util.HashSet<Object>(all) : all;
+        ArrayList<Object> result = new ArrayList<Object>(array.size());
+        for (Object item : array) {
+            if (!excluded.contains(item)) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    /** {@code a + b + ...} over maps: entries of every part; a repeated key takes the rightmost value. */
+    public static Map<Object, Object> merge(Object[] parts) {
+        Map<Object, Object> result = newMap();
+        for (Object part : parts) {
+            result.putAll((Map<?, ?>) part);
+        }
+        return result;
+    }
+
+    /** {@code a - b - ...} over maps: entries of {@code map} whose keys are in none of the removed maps. */
+    public static Map<Object, Object> without(Map<?, ?> map, Object[] removed) {
+        Map<Object, Object> result = newMap();
+        result.putAll(map);
+        for (Object part : removed) {
+            for (Object key : ((Map<?, ?>) part).keySet()) {
+                result.remove(key);
+            }
+        }
+        return result;
+    }
+
     public static List<Object> keys(Map<?, ?> map) {
         return new ArrayList<Object>(map.keySet());
     }
