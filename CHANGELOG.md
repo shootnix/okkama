@@ -19,6 +19,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- X.509: building a certificate path had no work bound — ambiguous issuers
+  (same name and key identifier) made the search exponential, 10 supplied
+  intermediates took 5 s and 11 did not finish, synchronously in TLS
+  `authorize`. The path builder now skips issuers from which no trust anchor
+  is reachable and links whose signature does not verify (each signature is
+  checked once), and spends at most 1024 steps (a considered issuer, or a link
+  of a path validated at an anchor); past that, verification fails with
+  `resource_exhausted` (`CertificateLimitExceeded`). The JVM runtime runs the
+  same search instead of JDK `CertPathBuilder`, so every engine finds the
+  same path and stops at the same point
+  ([#17](https://github.com/shootnix/okkama/issues/17)).
+
 - Sparrow: a crafted `.spb` could make the core read an integer as a pointer —
   the core takes each register's machine representation from the declared
   types, and the verifier checked only structure. The SPB verifier now checks

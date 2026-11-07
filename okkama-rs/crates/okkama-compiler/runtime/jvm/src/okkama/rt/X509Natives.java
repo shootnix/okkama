@@ -7,16 +7,11 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.cert.CertPath;
-import java.security.cert.CertPathBuilder;
-import java.security.cert.CertPathBuilderException;
-import java.security.cert.CertStore;
-import java.security.cert.Certificate;
+import java.security.cert.CertPathValidator;
+import java.security.cert.CertPathValidatorException;
 import java.security.cert.CertificateFactory;
-import java.security.cert.CollectionCertStoreParameters;
-import java.security.cert.PKIXBuilderParameters;
-import java.security.cert.PKIXCertPathBuilderResult;
+import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
-import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -1444,6 +1439,187 @@ public final class X509Natives {
         }
     }
 
+    /**
+     * Предел работы построителя пути: шаг — рассмотренный издатель-кандидат
+     * или звено пути, проверяемого у якоря. Сверх предела —
+     * {@code resource_exhausted}: неоднозначные издатели дают экспоненту путей.
+     */
+    private static final int PATH_STEPS = 1024;
+
+    /**
+     * Поиск пути от листа к якорю, общий с Rust-провайдером: тот же порядок
+     * кандидатов (якоря первыми), те же отсечения и тот же бюджет. Найденный
+     * путь проверяет {@code CertPathValidator} PKIX.
+     */
+    private static final class PathBuilder {
+        final List<X509Certificate> pool;
+        final List<byte[]> ders;
+        final boolean[] anchor;
+        final List<List<Integer>> issuers = new ArrayList<List<Integer>>();
+        final boolean[] reaches;
+        final HashMap<Long, Boolean> signatures = new HashMap<Long, Boolean>();
+        final java.util.Date date;
+        int steps;
+
+        /** {@code pool}: лист, промежуточные, якоря — в порядке входа. */
+        PathBuilder(List<X509Certificate> pool, List<byte[]> ders, List<Facts> facts, int anchors, java.util.Date date) {
+            this.pool = pool;
+            this.ders = ders;
+            this.date = date;
+            int size = pool.size();
+            anchor = new boolean[size];
+            for (int index = size - anchors; index < size; index++) {
+                anchor[index] = true;
+            }
+            byte[][] ski = new byte[size][];
+            byte[][] aki = new byte[size][];
+            for (int index = 0; index < size; index++) {
+                ski[index] = keyIdentifier(facts.get(index), "2.5.29.14");
+                aki[index] = keyIdentifier(facts.get(index), "2.5.29.35");
+            }
+            HashMap<javax.security.auth.x500.X500Principal, List<Integer>> subjects =
+                new HashMap<javax.security.auth.x500.X500Principal, List<Integer>>();
+            for (int step = 0; step < size - 1; step++) {
+                int index = step < anchors ? size - anchors + step : step - anchors + 1;
+                subjects.computeIfAbsent(pool.get(index).getSubjectX500Principal(), key -> new ArrayList<Integer>()).add(index);
+            }
+            List<List<Integer>> issued = new ArrayList<List<Integer>>();
+            for (int current = 0; current < size; current++) {
+                issued.add(new ArrayList<Integer>());
+            }
+            for (int current = 0; current < size; current++) {
+                ArrayList<Integer> found = new ArrayList<Integer>();
+                List<Integer> named = anchor[current] ? null : subjects.get(pool.get(current).getIssuerX500Principal());
+                if (named != null) {
+                    for (int index : named) {
+                        if (index != current && (aki[current] == null || ski[index] == null || Arrays.equals(aki[current], ski[index]))) {
+                            found.add(index);
+                            issued.get(index).add(current);
+                        }
+                    }
+                }
+                issuers.add(found);
+            }
+            reaches = anchor.clone();
+            ArrayList<Integer> queue = new ArrayList<Integer>();
+            for (int index = size - anchors; index < size; index++) {
+                queue.add(index);
+            }
+            while (!queue.isEmpty()) {
+                int index = queue.remove(queue.size() - 1);
+                for (int subject : issued.get(index)) {
+                    if (!reaches[subject]) {
+                        reaches[subject] = true;
+                        queue.add(subject);
+                    }
+                }
+            }
+        }
+
+        /** SKI или keyIdentifier AKI; испорченное расширение — без идентификатора. */
+        private static byte[] keyIdentifier(Facts facts, String oid) {
+            try {
+                byte[] source = extension(facts, oid);
+                if (source == null) {
+                    return null;
+                }
+                Node node = parse(source);
+                if (oid.equals("2.5.29.14")) {
+                    return node.tag == 4 ? content(source, node) : null;
+                }
+                for (Node child : node.children) {
+                    if (child.tag == 0x80) {
+                        return content(source, child);
+                    }
+                }
+                return null;
+            } catch (Bad error) {
+                return null;
+            }
+        }
+
+        void spend(int count) {
+            steps += count;
+            if (steps > PATH_STEPS) {
+                throw limit("certificate path search");
+            }
+        }
+
+        boolean signed(int subject, int issuer) {
+            Long key = (long) subject * pool.size() + issuer;
+            Boolean known = signatures.get(key);
+            if (known == null) {
+                try {
+                    pool.get(subject).verify(pool.get(issuer).getPublicKey());
+                    known = true;
+                } catch (Exception error) {
+                    known = false;
+                }
+                signatures.put(key, known);
+            }
+            return known;
+        }
+
+        /** Поиск в глубину: найденный якорь или -1; путь остаётся в {@code path}. */
+        int search(List<Integer> path) throws Exception {
+            if (path.size() > 30) {
+                return -1;
+            }
+            int current = path.get(path.size() - 1);
+            for (int candidate : issuers.get(current)) {
+                if (!reaches[candidate]) {
+                    continue;
+                }
+                if (!anchor[candidate] && repeats(path, candidate)) {
+                    continue;
+                }
+                spend(1);
+                if (!signed(current, candidate)) {
+                    continue;
+                }
+                if (anchor[candidate]) {
+                    spend(path.size());
+                    if (valid(path, candidate)) {
+                        return candidate;
+                    }
+                    continue;
+                }
+                path.add(candidate);
+                int found = search(path);
+                if (found >= 0) {
+                    return found;
+                }
+                path.remove(path.size() - 1);
+            }
+            return -1;
+        }
+
+        private boolean repeats(List<Integer> path, int candidate) {
+            for (int known : path) {
+                if (Arrays.equals(ders.get(known), ders.get(candidate))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private boolean valid(List<Integer> path, int candidate) throws Exception {
+            ArrayList<X509Certificate> certificates = new ArrayList<X509Certificate>();
+            for (int index : path) {
+                certificates.add(pool.get(index));
+            }
+            PKIXParameters parameters = new PKIXParameters(java.util.Collections.singleton(new TrustAnchor(pool.get(candidate), null)));
+            parameters.setRevocationEnabled(false);
+            parameters.setDate(date);
+            try {
+                CertPathValidator.getInstance("PKIX").validate(CertificateFactory.getInstance("X.509").generateCertPath(certificates), parameters);
+                return true;
+            } catch (CertPathValidatorException error) {
+                return false;
+            }
+        }
+    }
+
     /** Причина без пути: подпись найденного по имени издателя или недоверие. */
     private static String reason(X509Certificate leaf, List<X509Certificate> pool, Set<X509Certificate> anchors) {
         X509Certificate current = leaf;
@@ -1570,39 +1746,36 @@ public final class X509Natives {
             if (anchors.isEmpty()) {
                 throw new Rejected("untrusted");
             }
-            HashSet<TrustAnchor> trust = new HashSet<TrustAnchor>();
-            for (X509Certificate anchor : anchors) {
-                trust.add(new TrustAnchor(anchor, null));
-            }
             List<X509Certificate> path = new ArrayList<X509Certificate>();
             if (anchors.contains(leaf) || containsEncoding(anchors, leaf)) {
                 path.add(leaf);
             } else {
-                X509CertSelector target = new X509CertSelector();
-                target.setCertificate(leaf);
-                PKIXBuilderParameters parameters = new PKIXBuilderParameters(trust, target);
-                parameters.setRevocationEnabled(false);
-                parameters.setMaxPathLength(30);
                 java.math.BigDecimal millis = new java.math.BigDecimal(Rat.numerator(at))
                     .divide(new java.math.BigDecimal(Rat.denominator(at)), 3, java.math.RoundingMode.FLOOR)
                     .multiply(java.math.BigDecimal.valueOf(1000));
-                parameters.setDate(new java.util.Date(millis.longValue()));
-                ArrayList<Certificate> pool = new ArrayList<Certificate>(intermediates);
+                ArrayList<X509Certificate> pool = new ArrayList<X509Certificate>();
                 pool.add(leaf);
-                parameters.addCertStore(CertStore.getInstance("Collection", new CollectionCertStoreParameters(pool)));
-                PKIXCertPathBuilderResult result;
-                try {
-                    result = (PKIXCertPathBuilderResult) CertPathBuilder.getInstance("PKIX").build(parameters);
-                } catch (CertPathBuilderException error) {
+                pool.addAll(intermediates);
+                pool.addAll(anchors);
+                ArrayList<byte[]> ders = new ArrayList<byte[]>();
+                ArrayList<Facts> poolFacts = new ArrayList<Facts>();
+                for (X509Certificate certificate : pool) {
+                    ders.add(sources.get(certificate));
+                    poolFacts.add(snapshots.get(certificate));
+                }
+                PathBuilder builder = new PathBuilder(pool, ders, poolFacts, anchors.size(), new java.util.Date(millis.longValue()));
+                ArrayList<Integer> built = new ArrayList<Integer>();
+                built.add(0);
+                int anchor = builder.search(built);
+                if (anchor < 0) {
                     ArrayList<X509Certificate> all = new ArrayList<X509Certificate>(intermediates);
                     all.addAll(anchors);
                     throw new Rejected(reason(leaf, all, new HashSet<X509Certificate>(anchors)));
                 }
-                CertPath built = result.getCertPath();
-                for (Certificate certificate : built.getCertificates()) {
-                    path.add(original(sources, (X509Certificate) certificate));
+                built.add(anchor);
+                for (int index : built) {
+                    path.add(pool.get(index));
                 }
-                path.add(original(sources, result.getTrustAnchor().getTrustedCert()));
             }
             if (path.size() > 32) {
                 throw limit("verified path");
@@ -1675,20 +1848,5 @@ public final class X509Natives {
             return false;
         }
         return false;
-    }
-
-    /** Экземпляр с исходным DER входа (PKIX может вернуть копию). */
-    private static X509Certificate original(IdentityHashMap<X509Certificate, byte[]> sources, X509Certificate certificate)
-            throws java.security.cert.CertificateEncodingException {
-        if (sources.containsKey(certificate)) {
-            return certificate;
-        }
-        byte[] encoded = certificate.getEncoded();
-        for (Map.Entry<X509Certificate, byte[]> entry : sources.entrySet()) {
-            if (Arrays.equals(entry.getValue(), encoded)) {
-                return entry.getKey();
-            }
-        }
-        return certificate;
     }
 }
