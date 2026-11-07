@@ -241,6 +241,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   stay ordinary identifiers: only code that failed to parse before gets the
   new messages.
 
+- LSP: completion after a dot follows every link of a chain. Besides calls
+  on names, calls and literals, it now resolves a field reached through
+  `self` (`self.total.`), an element after indexing (`all[0].`), the
+  element type in generic builtin results (`all.first().`, `m.values().`),
+  the bindings of functional blocks (`list.map() -> m { m. }`, `reduce`'s
+  accumulator from its initial value) and locals declared since the last
+  successful check (`let c = sum.cents();` then `c.`, or `let d is Money`)
+  ([#225](https://github.com/shootnix/okkama/issues/225)).
+
 - Compiler, imports (O06): a module imported from many modules is read and
   parsed once. Loaders now name a module's identity (`ModuleLoader::resolve`,
   the canonical path for files) before reading it, and the import walk
