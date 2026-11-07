@@ -153,6 +153,7 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 | All std, core vs previous VM | `python3 okkama-rs/tools/new-runtime/std-compare.py --compiler okkama --stdlib std --reference sparrow-origin --core sparrow --work DIR [prefixes]` | runs each module caged; expected fails: `locale/collation` (ICU), `net/tcp` (network in cage) |
 | Conformance, core vs previous VM | `core-compare.py --compiler … --stdlib std --origin sparrow-origin --core sparrow --work DIR L00 … L13` | caged; skips workers/network; `SPEC` = core matches case.json where the previous VM cannot |
 | Conformance (OCS) | `cd conformance && ./ocs run --adapter adapters/rust/adapter.json --profile full-release -j 6 --adapter-env OCS_RUST_ENGINE=sparrow` | Docker only; the adapter builds its own debug `okkama` in `adapters/rust/.target` |
+| Dependency advisories | `cd okkama-rs && cargo audit --deny warnings` | RustSec against `Cargo.lock`; CI `audit.yml` on every change and weekly. Exceptions with reason and ticket in `okkama-rs/.cargo/audit.toml` (only RUSTSEC-2023-0071, #70) |
 | Release gate | `make gate` (= `tools/gate/docker.sh`, ~40 min) | Rust tests, conformance ir/jvm/sparrow (+ sparrow-origin, informative), std tests ir/sparrow vs `tools/gate/known-failures.txt`; logs in `conformance/reports/runs/gate-*`. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO) |
 
 Last known state (0.4.0): conformance 420/420 on core-compare + 13 core-only

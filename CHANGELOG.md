@@ -19,6 +19,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Dependencies: `crypto-bigint` 0.7.5 → 0.7.10 (RUSTSEC-2026-0387) and
+  `ctutils` 0.4.2 → 0.4.8 (RUSTSEC-2026-0385) — their constant-time
+  operations were not constant-time. CI now runs `cargo audit` on every
+  change and weekly and fails on any new advisory. The one exception is
+  RUSTSEC-2023-0071 (Marvin, `rsa`): no version of the crate fixes it; private
+  RSA operations on the Rust engines are not constant-time until a provider is
+  chosen ([#70](https://github.com/shootnix/okkama/issues/70))
+  ([#19](https://github.com/shootnix/okkama/issues/19)). The conformance
+  adapter no longer caches a failed build: a gate run without a new crate in
+  its offline registry kept reporting every case unsupported.
+
 - SQLite on the JVM: a cancelled query read the connection pointer without
   synchronization and called `sqlite3_interrupt` on it while the worker could
   be closing the connection — a possible use of a freed connection. The pointer

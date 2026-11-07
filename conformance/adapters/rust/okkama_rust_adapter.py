@@ -91,7 +91,7 @@ def probe():
                 engines = json.load(fh).get("engines", {})
             cached = engines.get(engine, {})
             if (cached.get("fingerprint") == fingerprint and fingerprint is not None
-                    and cached.get("engine") == engine):
+                    and cached.get("engine") == engine and cached.get("build_exit") == 0):
                 cached["cached"] = True
                 return cached
         except (OSError, ValueError):
@@ -99,9 +99,12 @@ def probe():
         ev = probe_uncached()
         ev["fingerprint"] = fingerprint
         ev["engine"] = engine
-        engines[engine] = ev
-        with open(cache, "w") as fh:
-            json.dump({"engines": engines}, fh)
+        # A failed build is not evidence of the sources: it may be the
+        # environment (an offline registry missing a new crate); retry it.
+        if ev.get("build_exit") == 0:
+            engines[engine] = ev
+            with open(cache, "w") as fh:
+                json.dump({"engines": engines}, fh)
         return ev
 
 

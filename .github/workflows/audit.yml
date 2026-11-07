@@ -1,0 +1,25 @@
+# RustSec advisories against okkama-rs/Cargo.lock: on every change and weekly,
+# since new advisories appear without changes here. Exceptions with reasons:
+# okkama-rs/.cargo/audit.toml.
+name: Audit
+
+on:
+  push:
+    branches: [develop, "release/**"]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+jobs:
+  advisories:
+    name: RustSec advisories
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        working-directory: okkama-rs
+        run: cargo audit --deny warnings
