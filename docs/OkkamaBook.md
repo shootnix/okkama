@@ -3024,6 +3024,32 @@ dependencies declared in `[dependencies]` of the importing package's
 `blade.toml` can be imported this way. Module files of a project declare no
 version (`module app;`): the version is set in `blade.toml` (spec §5.2.2).
 
+### 26.2.1 Building and running a Blade project
+
+`blade` manages a project: `blade new NAME` creates one (`blade.toml`,
+`src/main.ok`), `blade install` puts its dependencies into `pkg/` and records
+them in `blade.lock`, `blade build` compiles it and `blade run` runs it. Every
+setting of the last two lives in `blade.toml`; all keys are optional:
+
+```toml
+[build]
+entry = "src/main.ok"      # or a list: the files of the root module
+target = "sparrow"         # sparrow | jvm
+output = "target/app.spb"  # default target/<name>.spb or .jar
+
+[run]
+engine = "sparrow"         # sparrow | ir | jvm; default: the build target
+args = []                  # `blade run -- a b` appends a and b
+env = {}                   # extra environment variables
+```
+
+`blade run` builds first when a `.ok` file, `blade.toml` or `blade.lock` is
+newer than the output, then runs the `.spb` (`okkama exec`), the sources on
+the IR interpreter (`okkama run --engine ir`, no build) or the JAR
+(`java -jar`); the program's exit status is Blade's. Both commands refuse a
+project whose dependencies are not installed. Blade uses the `okkama` next to
+it, else the one on `PATH` (`BLADE_OKKAMA` names another).
+
 ### 26.3 What an import exposes
 
 - A **plain import** exposes declarations owned directly by the module only

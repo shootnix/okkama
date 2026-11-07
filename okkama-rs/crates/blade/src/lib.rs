@@ -3,6 +3,7 @@
 pub mod install;
 pub mod lock;
 pub mod manifest;
+pub mod project;
 pub mod version;
 
 use std::{env::Args, io::Write, process::ExitCode};
@@ -23,10 +24,24 @@ USAGE:
                                      (--git treats a local directory as git)
     blade remove NAME                remove a dependency
     blade update [NAME...]           install the newest allowed versions
+    blade build                      compile the project as [build] says
+    blade run [-- ARGS...]           build if sources changed, then run it as
+                                     [run] says; ARGS follow [run] args
     blade --help
     blade --version
 
 VERSION is 1.2.3 (compatible with 1.2.3), 1.*, 1.2.*, =1.2.3 or *.
+
+blade.toml, build and run (all keys optional, defaults shown):
+    [build]
+    entry = \"src/main.ok\"       # or a list of the root module's files
+    target = \"sparrow\"          # sparrow | jvm
+    output = \"target/NAME.spb\"  # .jar for jvm
+    [run]
+    engine = \"sparrow\"          # sparrow | ir | jvm (default: the target)
+    args = []
+    env = {}
+Blade runs the okkama next to it (or on PATH; BLADE_OKKAMA overrides).
 ";
 
 /// Version of the Blade package.
@@ -55,6 +70,14 @@ struct CommandRemove {
 }
 
 struct CommandUpdate {
+    args: Vec<String>,
+}
+
+struct CommandBuild {
+    args: Vec<String>,
+}
+
+struct CommandRun {
     args: Vec<String>,
 }
 
@@ -139,8 +162,14 @@ name = "{project_name}"
 version = "1.0.0"
 
 [build]
+entry = "src/main.ok"
 target = "sparrow"
-output = "{project_name}"
+output = "target/{project_name}.spb"
+
+[run]
+engine = "sparrow"
+args = []
+env = {{}}
 
 [dependencies]
 "#
@@ -236,6 +265,48 @@ fn finish(result: Result<Report, String>) -> ExitCode {
     }
 }
 
+impl Command for CommandBuild {
+    fn execute(&self) -> ExitCode {
+        if !self.args.is_empty() {
+            eprint!("{HELP}");
+            return ExitCode::from(2);
+        }
+        let project = match project_root().and_then(|root| project::Project::read(&root)) {
+            Ok(project) => project,
+            Err(e) => return failure(&e),
+        };
+        match project::build(&project, true) {
+            Ok(_) => {
+                println!("built {}", project.output);
+                ExitCode::SUCCESS
+            }
+            Err(e) => failure(&e),
+        }
+    }
+}
+
+impl Command for CommandRun {
+    fn execute(&self) -> ExitCode {
+        let extra = match self.args.split_first() {
+            None => &[][..],
+            Some((dashes, rest)) if dashes == "--" => rest,
+            Some(_) => {
+                eprint!("{HELP}");
+                return ExitCode::from(2);
+            }
+        };
+        let project = match project_root().and_then(|root| project::Project::read(&root)) {
+            Ok(project) => project,
+            Err(e) => return failure(&e),
+        };
+        match project::run(&project, extra) {
+            // The program's status, clamped to what a process can return.
+            Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+            Err(e) => failure(&e),
+        }
+    }
+}
+
 impl Command for  CommandVersion {
     fn execute(&self) -> ExitCode {
         println!("{}", self.version);
@@ -309,13 +380,16 @@ impl Cli {
         let mut args = self.args;
         args.next();
         let command = args.next();
-        let help = std::env::args().skip(2).any(|arg| arg == "--help" || arg == "-h");
+        // After `--` the arguments belong to the program (`blade run -- --help`).
+        let help = std::env::args().skip(2).take_while(|arg| arg != "--").any(|arg| arg == "--help" || arg == "-h");
         let cmd: Box<dyn Command> = match command.as_deref() {
             Some(_) if help                       => Box::new(CommandUsage::new(false)),
             Some("new")                           => Box::new(CommandNew::new(args)),
             Some("install")                       => Box::new(CommandInstall { args: args.collect() }),
             Some("remove")                        => Box::new(CommandRemove { args: args.collect() }),
             Some("update")                        => Box::new(CommandUpdate { args: args.collect() }),
+            Some("build")                         => Box::new(CommandBuild { args: args.collect() }),
+            Some("run")                           => Box::new(CommandRun { args: args.collect() }),
             Some("--help" | "-h" | "help") | None => Box::new(CommandUsage::new(false)),
             Some("--version" | "-v" | "version")  => Box::new(CommandVersion::new(String::from(VERSION))),
             Some(_)                               => Box::new(CommandUsage::new(true)),

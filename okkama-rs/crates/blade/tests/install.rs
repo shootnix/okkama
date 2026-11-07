@@ -375,3 +375,65 @@ fn package_names_cannot_leave_the_project() {
         assert!(error.contains("share a directory"), "{a} {b}: {error}");
     }
 }
+
+/// The version of each installed package as its `pkg/` copy declares it.
+fn installed(app: &Path) -> Vec<(String, String)> {
+    Lock::read(app)
+        .unwrap()
+        .packages
+        .keys()
+        .map(|name| {
+            let manifest = Manifest::read(&app.join("pkg").join(name)).unwrap();
+            (name.clone(), manifest.version.unwrap())
+        })
+        .collect()
+}
+
+#[test]
+fn an_interrupted_install_recovers_to_one_consistent_state() {
+    for (step, done) in [
+        ("staged", false),
+        ("lock", false),
+        ("marker", true),
+        ("pkg-moved", true),
+        ("pkg-in", true),
+        ("lock-in", true),
+    ] {
+        let (tree, app, _) = world(&format!("interrupt-{step}"));
+        let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
+        tree.write("local/util/util.ok", "module util;\nobject Shout { Shout(); }\n");
+        let dir = util.parent().unwrap().to_str().unwrap().to_string();
+        install::add(&app, &dir, Some("2.*"), false).unwrap();
+        tree.write("local/util/blade.toml", &manifest_text("util", "2.2.0", ""));
+
+        install::fail_after(Some(step));
+        let error = install::install(&app, &Unlock::All).unwrap_err();
+        assert!(error.contains(&format!("interrupted after {step}")), "{error}");
+        assert!(install::settled(&app).is_err(), "{step}: the interruption is visible");
+
+        install::recover(&app).unwrap();
+        install::settled(&app).unwrap();
+        let expected = if done { "2.2.0" } else { "2.1.0" };
+        assert_eq!(locked(&app), pairs(&[("util", expected)]), "{step}");
+        assert_eq!(installed(&app), pairs(&[("util", expected)]), "{step}");
+        for leftover in ["pkg.blade-new", "pkg.blade-old", "blade.lock.blade-new", "pkg.blade-commit"] {
+            assert!(!app.join(leftover).exists(), "{step}: {leftover}");
+        }
+        // The next install starts from that state.
+        install::install(&app, &Unlock::All).unwrap();
+        assert_eq!(installed(&app), pairs(&[("util", "2.2.0")]));
+    }
+}
+
+#[test]
+fn a_busy_project_is_not_changed() {
+    let (tree, app, _) = world("busy");
+    let util = tree.write("local/util/blade.toml", &manifest_text("util", "2.1.0", ""));
+    tree.write("local/util/util.ok", "module util;\nobject Shout { Shout(); }\n");
+    let dir = util.parent().unwrap().to_str().unwrap().to_string();
+    std::fs::write(app.join("pkg.blade-busy"), "").unwrap();
+    let error = install::add(&app, &dir, None, false).unwrap_err();
+    assert!(error.contains("another blade is working on this project"), "{error}");
+    assert!(Manifest::read(&app).unwrap().dependencies.is_empty());
+    assert!(!app.join("pkg").exists() && !app.join("blade.lock").exists());
+}

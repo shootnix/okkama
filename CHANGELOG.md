@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- Blade: `blade build` and `blade run`. Every setting is in `blade.toml`:
+  `[build] entry/target/output` (sparrow or jvm; default
+  `target/<name>.spb`) and `[run] engine/args/env` (sparrow, ir or jvm;
+  `blade run -- ARGS` appends arguments). `run` builds only when sources,
+  `blade.toml` or `blade.lock` are newer than the output and returns the
+  program's exit status; both refuse a project whose dependencies are not
+  installed. `blade new` writes the sections with their defaults
+  ([#68](https://github.com/shootnix/okkama/issues/68)).
+
 ### Fixed
 
 - Sparrow: a crafted `.spb` could make the core read an integer as a pointer —
@@ -28,6 +39,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   without `.ok` files replaced files outside the project. Names differing only in
   letter case are refused, and a nested package cannot land on its parent's files
   ([#15](https://github.com/shootnix/okkama/issues/15)).
+
+- Blade: `pkg/` and `blade.lock` change together. Both are prepared next to
+  the old ones and a marker is written before the renames; a blade
+  interrupted at any step is finished (marker present) or rolled back by the
+  next `blade install`, and `blade build`/`run` refuse a half-committed
+  project. `blade install SOURCE` holds the project for the manifest edit as
+  well as the install ([#39](https://github.com/shootnix/okkama/issues/39)).
 
 ## [0.4.0] — 2026-11-07
 
