@@ -8,6 +8,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Docs: the trust model is back in the repository (`docs/security-model.md`,
+  H-01): for source, bytecode on the Sparrow core, programs, packages and
+  embedding it says what is guaranteed, what is not (each with its open
+  issue) and how to run untrusted input today
+  ([#37](https://github.com/shootnix/okkama/issues/37)).
+
 - Docs: the Sparrow Book (`docs/SparrowBook/SparrowBook.md`, Russian
   `SparrowBook-RU.md`) — a textbook of Sparrow assembly: the file layout,
   types, registers, edges, objects and roles, arrays and maps, calls and

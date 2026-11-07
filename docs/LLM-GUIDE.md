@@ -327,7 +327,9 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 
 - `docs/` — specification (`okkama-spec-11072026.md`), grammar, std reference
   (`docs/std`), guides, `roadmap/hardening.md` (H-01…H-38, waves per release),
-  audits, compiler (OIR-1), security model, language LLM context pack.
+  audits, compiler (OIR-1), the previous VM's security model (the current
+  trust model is `docs/security-model.md` in this repository), language LLM
+  context pack.
 - `runtime/` — architecture, Sparrow ISA, compatibility,
   `new-runtime/core-rebuild.md` (journal of the core rebuild, stages 0–6).
 - `benchmarks/`, `examples/` (to be reworked), `experiments/`, `archive/`.
