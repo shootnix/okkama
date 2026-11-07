@@ -33,7 +33,21 @@ pub fn execute_traced(
     module: &ir::Module,
     arguments: Vec<String>,
 ) -> (Result<IntValue, RuntimeError>, Vec<Site>) {
+    execute_limited(module, arguments, &okkama_runtime_core::budget::Limits::default())
+}
+
+/// [`execute_traced`] в пределах бюджетов запуска (шаги, память, вывод,
+/// прерывание; #71): исчерпанный бюджет — [`RuntimeError::Exhausted`].
+pub fn execute_limited(
+    module: &ir::Module,
+    arguments: Vec<String>,
+    limits: &okkama_runtime_core::budget::Limits,
+) -> (Result<IntValue, RuntimeError>, Vec<Site>) {
     let mut trace = Vec::new();
+    let _budget = match okkama_runtime_core::budget::begin(limits) {
+        Ok(budget) => budget,
+        Err(message) => return (Err(invalid_state(module.span, message)), trace),
+    };
     let result = execute_inner(module, arguments, &mut trace);
     (result, trace)
 }
@@ -1100,6 +1114,10 @@ pub(crate) fn execute_function(
         for (param, value) in function.blocks[target.block.0].params.iter().zip(arguments) {
             slots[param.0] = Some(value);
         }
+        // A branch back to this block or an earlier one closes a loop: a step.
+        if target.block.0 <= frame.block.0 {
+            okkama_runtime_core::budget::step().map_err(RuntimeError::Exhausted)?;
+        }
         frame.block = target.block;
         frame.next_inst = 0;
     }
@@ -1182,6 +1200,8 @@ impl Frame {
         destination: Option<ir::ValueId>,
         span: Span,
     ) -> Result<Self, RuntimeError> {
+        // A function entry is one step of the run's budget (#71).
+        okkama_runtime_core::budget::step().map_err(RuntimeError::Exhausted)?;
         let function = &module.functions[id.0];
         if function.extern_symbol().is_some() || function.intrinsic().is_some() {
             return Err(unsupported(

@@ -15,12 +15,13 @@ mod tests;
 mod trace;
 mod value;
 
-pub use interpreter::{execute, execute_traced, execute_with_arguments};
+pub use interpreter::{execute, execute_limited, execute_traced, execute_with_arguments};
 pub use okkama_runtime_core::failure::Site;
 pub use trace::render_trace;
 pub use tests::run_tests;
 pub use worker::set_worker_command;
 pub use okkama_runtime_core::failure::Kind as FailureKind;
+pub use okkama_runtime_core::budget;
 pub use okkama_runtime_core::host::default_environment;
 
 use std::fmt;
@@ -57,6 +58,9 @@ pub enum RuntimeError {
         span: Span,
         message: String,
     },
+    /// Бюджет запуска исчерпан (#71): запуск останавливается, обработчики
+    /// программы его не перехватывают.
+    Exhausted(okkama_runtime_core::budget::Exhausted),
 }
 
 impl fmt::Display for RuntimeError {
@@ -70,6 +74,7 @@ impl fmt::Display for RuntimeError {
             Self::Unsupported { message, .. } => write!(f, "IR interpreter: {message}"),
             Self::InvalidState { message, .. } => write!(f, "invalid interpreter state: {message}"),
             Self::Trap { message, .. } => write!(f, "RuntimeError: {message}"),
+            Self::Exhausted(exhausted) => f.write_str(exhausted.message()),
         }
     }
 }
@@ -125,6 +130,7 @@ pub fn report(error: &RuntimeError) -> Option<String> {
         RuntimeError::Panic { message, .. } => format!("Panic: {message}"),
         RuntimeError::Trap { message, .. } => format!("RuntimeError: {message}"),
         RuntimeError::NativeFailure { failure, .. } => native_text(failure),
+        RuntimeError::Exhausted(exhausted) => exhausted.message().to_string(),
         _ => return None,
     };
     text.push('\n');

@@ -50,6 +50,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   and a JSON record of commit, hashes, seed and settings
   ([#55](https://github.com/shootnix/okkama/issues/55)).
 
+- Execution budgets on the IR engine and the JVM: `okkama run --engine ir`
+  takes `--max-steps`, `--max-memory`, `--max-output` and `--timeout` with
+  the Sparrow core's reports and exit status — steps are function entries
+  and backward branches, memory what the allocator holds beyond the start
+  of the run, output the bytes of stdout and stderr; running out is not a
+  failure any handler catches, and a run blocked in a native is stopped a
+  second after its timeout. `--engine jvm` takes `--max-output` and
+  `--timeout`: `java` runs as a child whose output passes through counters
+  and which is killed with the same report; steps and memory there wait for
+  #237. A test runs every budget on ir and sparrow, and output and timeout on
+  the JVM, expecting identical reports
+  ([#71](https://github.com/shootnix/okkama/issues/71)).
+
 - Language: `+` and `-` on arrays and maps. `a + b + c` concatenates arrays
   (or merges maps, the rightmost value winning a repeated key); `a - b`
   removes from an array every element equal to an element of `b` (or from a

@@ -1,6 +1,7 @@
 //! Shared runtime values; no source syntax, IR, or execution-engine dependency.
 
 pub mod bignum;
+pub mod budget;
 pub mod data;
 pub mod failure;
 pub mod float;
