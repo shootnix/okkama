@@ -128,7 +128,14 @@ pub struct Jit {
     /// Calls of each helper (`HELPERS` order) from code compiled under
     /// `--stats`; machine code increments them, other code does not count.
     helper_counts: Box<[u64]>,
+    /// The largest machine frame compiled, bytes (`--stats`).
+    largest_frame: u32,
 }
+
+/// Largest machine frame of a compiled function: a quarter of the stack
+/// headroom (`STACK_HEADROOM`), leaving the rest to the Rust helpers below the
+/// deepest machine frame.
+pub const MAX_FRAME: u64 = crate::runtime::STACK_HEADROOM / 4;
 
 impl std::fmt::Debug for Jit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -167,16 +174,19 @@ impl Jit {
             ranges: Vec::new(),
             dispatch: BTreeMap::new(),
             helper_counts: vec![0; HELPERS.len()].into_boxed_slice(),
+            largest_frame: 0,
         })
     }
 
-    /// `--stats` lines of the helpers machine code called.
+    /// `--stats` lines of the helpers machine code called, and the largest
+    /// machine frame.
     pub(crate) fn helper_calls(&self) -> Vec<(String, u64)> {
         HELPERS
             .iter()
             .zip(self.helper_counts.iter())
             .filter(|(_, count)| **count > 0)
             .map(|((name, _), &count)| (format!("helper {name}"), count))
+            .chain([("largest machine frame, bytes".to_string(), u64::from(self.largest_frame))])
             .collect()
     }
 
@@ -301,6 +311,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             fuel: budget.fuel.address(),
             refusable: limits.memory.is_some(),
             pc: 0,
+            spill_area: None,
         };
         emit.body()?;
         builder.seal_all_blocks();
@@ -318,6 +329,17 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
         .collect();
     // Distance from the frame's FP down to its SP inside the body.
     let fp_to_sp = compiled.buffer.frame_layout().map_or(0, |layout| layout.frame_to_fp_offset);
+    // The prologue compares SP with the stack limit after reserving the
+    // frame; a frame within the headroom below that limit cannot reach the
+    // guard page before the comparison fails (#25).
+    if u64::from(fp_to_sp) > MAX_FRAME {
+        return Err(Error(format!(
+            "{}: machine frame of {fp_to_sp} bytes exceeds the {} KiB limit",
+            source.symbol,
+            MAX_FRAME >> 10
+        )));
+    }
+    jit.largest_frame = jit.largest_frame.max(fp_to_sp);
     let size = compiled.code_info().total_size;
     jit.module
         .finalize_definitions()
@@ -358,6 +380,8 @@ struct Emitter<'a, 'b> {
     refusable: bool,
     /// The instruction being emitted.
     pc: usize,
+    /// Stack slot of `spill`, created on first use.
+    spill_area: Option<cranelift_codegen::ir::StackSlot>,
 }
 
 const MEMORY: MemFlagsData = MemFlagsData::trusted();
@@ -584,13 +608,24 @@ impl Emitter<'_, '_> {
         result
     }
 
-    /// Words of `registers` in a fresh stack slot; returns its address.
+    /// Words of `registers` in the function's spill area; returns its address.
+    /// One area serves every helper call (its contents are read before the
+    /// call returns), sized for the widest: a slot per call site made the
+    /// machine frame grow with the number of calls (#25).
     fn spill(&mut self, registers: &[okkama_sparrow::Register]) -> Value {
-        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-            StackSlotKind::ExplicitSlot,
-            (registers.len().max(1) * 8) as u32,
-            3,
-        ));
+        let size = u32::try_from(registers.len().max(1).saturating_mul(8)).unwrap_or(u32::MAX);
+        let slot = match self.spill_area {
+            Some(slot) => {
+                let data = &mut self.builder.func.sized_stack_slots[slot];
+                data.size = data.size.max(size);
+                slot
+            }
+            None => {
+                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, size, 3));
+                self.spill_area = Some(slot);
+                slot
+            }
+        };
         for (i, register) in registers.iter().enumerate() {
             let value = self.word(register);
             self.builder.ins().stack_store(types::I64, value, slot, (i * 8) as i32);

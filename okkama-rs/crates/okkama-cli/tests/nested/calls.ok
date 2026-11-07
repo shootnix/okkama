@@ -1,0 +1,19 @@
+module app;
+import "io/stdout" take Stdout;
+
+// Many calls through helper argument areas: the machine frame does not
+// grow with their number (#25).
+object Text {
+    Text();
+    pieces(text is string) is int {
+        text.slice(0, 1).length() + text.slice(1, 2).length() + text.slice(2, 3).length()
+            + text.slice(0, 2).length() + text.slice(1, 3).length() + text.slice(0, 3).length()
+            + text.slice(0, 1).length() + text.slice(1, 2).length() + text.slice(2, 3).length()
+            + text.slice(0, 2).length() + text.slice(1, 3).length() + text.slice(0, 3).length();
+    }
+}
+
+main() is int {
+    Stdout().writeln(Text().pieces("abc").string());
+    0;
+}

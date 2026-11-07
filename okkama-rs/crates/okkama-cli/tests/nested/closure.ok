@@ -1,0 +1,13 @@
+module app;
+object Walker {
+    Walker();
+    step(walker is Walker, n is int) is int {
+        let onward = (x is int) is int { walker.step(walker, x); };
+        if n == 0 { 0; } else { onward(n - 1) + 1; }
+    }
+}
+main() is int {
+    let walker = Walker();
+    walker.step(walker, 100000000);
+    0;
+}
