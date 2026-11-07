@@ -86,6 +86,8 @@ impl Object {
             created.set(created.get() + 1);
             created.get()
         });
+        #[cfg(test)]
+        LIVE_OBJECTS.with(|live| live.set(live.get() + 1));
         Self {
             declaration,
             fields,
@@ -330,8 +332,16 @@ fn release_all(mut pending: Vec<Value>) {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Живые объекты потока (тесты сборщика циклов).
+    pub(crate) static LIVE_OBJECTS: Cell<usize> = const { Cell::new(0) };
+}
+
 impl Drop for Object {
     fn drop(&mut self) {
+        #[cfg(test)]
+        LIVE_OBJECTS.with(|live| live.set(live.get() - 1));
         // Пустая очередь не выделяет память: объект из скаляров и
         // разделяемых ссылок освобождается без обхода.
         let mut pending = Vec::new();

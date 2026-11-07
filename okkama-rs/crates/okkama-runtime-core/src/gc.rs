@@ -23,6 +23,14 @@
 //!
 //! Темп: сборка, когда новых кандидатов не меньше `max(MIN, выживших,
 //! узлов прошлой сборки / 8)` — амортизированно O(1) работы на кандидата.
+//! `OKKAMA_GC=stress` собирает на каждом новом кандидате (#43): ошибка
+//! перечисления рёбер проявляется сразу, а не через тысячи кандидатов.
+//!
+//! Проверки debug-сборки: ни один узел не получает больше перечисленных
+//! рёбер, чем у него сильных ссылок, и каждый узел, признанный мусором,
+//! действительно освобождается после разрыва поздних рёбер. Нарушение любой
+//! из них значит, что перечисление насчитало ребро, которого нет, — то есть
+//! сборщик мог очистить живой узел.
 use crate::Value;
 use crate::failure::{Failure, Kind};
 use crate::heap::{Array, ArrayBuilder, Closure, Map, MapBuilder, Object};
@@ -65,6 +73,8 @@ struct Collector {
     threshold: Cell<usize>,
     collecting: Cell<bool>,
     enabled: Cell<bool>,
+    /// Собирать на каждом кандидате (`OKKAMA_GC=stress`).
+    stress: Cell<bool>,
     collections: Cell<u64>,
     freed: Cell<u64>,
 }
@@ -76,6 +86,7 @@ thread_local! {
         threshold: Cell::new(MIN_THRESHOLD),
         collecting: Cell::new(false),
         enabled: Cell::new(std::env::var_os("OKKAMA_GC").is_none_or(|value| value != "off")),
+        stress: Cell::new(std::env::var_os("OKKAMA_GC").is_some_and(|value| value == "stress")),
         collections: Cell::new(0),
         freed: Cell::new(0),
     };
@@ -93,7 +104,7 @@ fn track(candidate: Candidate) {
         }
         gc.candidates.borrow_mut().push(candidate);
         gc.fresh.set(gc.fresh.get() + 1);
-        !gc.collecting.get() && gc.fresh.get() >= gc.threshold.get()
+        !gc.collecting.get() && (gc.stress.get() || gc.fresh.get() >= gc.threshold.get())
     });
     if due {
         collect();
@@ -119,6 +130,11 @@ pub fn set_enabled(enabled: bool) {
             gc.fresh.set(0);
         }
     });
+}
+
+/// Собирать на каждом новом кандидате (как `OKKAMA_GC=stress`).
+pub fn set_stress(stress: bool) {
+    GC.with(|gc| gc.stress.set(stress));
 }
 
 /// Статистика: (число сборок, освобождённых узлов-мусора).
@@ -275,6 +291,54 @@ impl Node {
     }
 }
 
+/// Слабая ссылка на узел: проверка debug-сборки, что мусор освобождён.
+#[cfg(debug_assertions)]
+enum Freed {
+    Object(Weak<Object>),
+    Array(Weak<Array>),
+    Map(Weak<Map>),
+    Fn(Weak<Closure>),
+    Any(Weak<Value>),
+    Future(Weak<FutureCell>),
+    Failure(Weak<Failure>),
+    Builder(Weak<ArrayBuilder>),
+    MapBuilder(Weak<MapBuilder>),
+    State(Weak<dyn Any>),
+}
+
+#[cfg(debug_assertions)]
+impl Freed {
+    fn of(node: &Node) -> Self {
+        match node {
+            Node::Object(rc) => Self::Object(Rc::downgrade(rc)),
+            Node::Array(rc) => Self::Array(Rc::downgrade(rc)),
+            Node::Map(rc) => Self::Map(Rc::downgrade(rc)),
+            Node::Fn(rc) => Self::Fn(Rc::downgrade(rc)),
+            Node::Any(rc) => Self::Any(Rc::downgrade(rc)),
+            Node::Future(rc) => Self::Future(Rc::downgrade(rc)),
+            Node::Failure(rc) => Self::Failure(Rc::downgrade(rc)),
+            Node::Builder(rc) => Self::Builder(Rc::downgrade(rc)),
+            Node::MapBuilder(rc) => Self::MapBuilder(Rc::downgrade(rc)),
+            Node::State(rc) => Self::State(Rc::downgrade(rc)),
+        }
+    }
+
+    fn alive(&self) -> bool {
+        match self {
+            Self::Object(weak) => weak.strong_count() > 0,
+            Self::Array(weak) => weak.strong_count() > 0,
+            Self::Map(weak) => weak.strong_count() > 0,
+            Self::Fn(weak) => weak.strong_count() > 0,
+            Self::Any(weak) => weak.strong_count() > 0,
+            Self::Future(weak) => weak.strong_count() > 0,
+            Self::Failure(weak) => weak.strong_count() > 0,
+            Self::Builder(weak) => weak.strong_count() > 0,
+            Self::MapBuilder(weak) => weak.strong_count() > 0,
+            Self::State(weak) => weak.strong_count() > 0,
+        }
+    }
+}
+
 /// Приёмник рёбер обхода.
 pub(crate) struct Edges(Vec<Node>);
 
@@ -405,10 +469,14 @@ fn sweep(candidates: Vec<Candidate>) -> (usize, usize, Vec<Candidate>) {
     let mut states = Vec::new();
     let mut failures = Vec::new();
     let mut garbage = 0;
+    #[cfg(debug_assertions)]
+    let mut freed = Vec::new();
     for (at, node) in nodes.iter().enumerate() {
         if !live[at] {
             node.clear(&mut sink, &mut states, &mut failures);
             garbage += 1;
+            #[cfg(debug_assertions)]
+            freed.push(Freed::of(node));
         }
     }
     let count = nodes.len();
@@ -418,6 +486,11 @@ fn sweep(candidates: Vec<Candidate>) -> (usize, usize, Vec<Candidate>) {
     drop(states);
     drop(failures);
     crate::heap::release_values(sink);
+    #[cfg(debug_assertions)]
+    assert!(
+        freed.iter().all(|node| !node.alive()),
+        "gc: a node found garbage outlived its broken edges (an enumerated edge is not a strong reference)"
+    );
     (garbage, count, survivors)
 }
 
@@ -465,6 +538,141 @@ mod tests {
         drop(opaque);
         collect();
         assert!(weak.upgrade().is_none());
+    }
+
+    fn object(fields: usize) -> (Value, Rc<Object>) {
+        let value = ObjectHeap.allocate(0, vec![Value::Undef; fields]);
+        let Value::Object(object) = &value else { unreachable!() };
+        let object = object.clone();
+        (value, object)
+    }
+
+    fn live_objects() -> usize {
+        crate::heap::LIVE_OBJECTS.with(Cell::get)
+    }
+
+    fn thrown(object: &Rc<Object>) -> Rc<Failure> {
+        Failure::new(Kind::Thrown { object: crate::heap::Ref(object.clone()), name: "Error".into(), message: None })
+    }
+
+    /// A cycle closed by each kind of late edge; the result is its only outside holder.
+    fn cycles() -> Vec<(&'static str, fn() -> Value)> {
+        vec![
+            ("late field", || {
+                let (value, _) = object(1);
+                ObjectHeap.init(&value, 0, value.clone()).unwrap();
+                value
+            }),
+            ("future outcome", || {
+                // Future → its value object → late field → the Future.
+                let future = crate::sched::promise();
+                let (value, _) = object(1);
+                ObjectHeap.init(&value, 0, Value::Future(future.clone())).unwrap();
+                crate::sched::complete(&future, Ok(value.clone()));
+                value
+            }),
+            ("future failure", || {
+                let future = crate::sched::promise();
+                let (value, holder) = object(1);
+                ObjectHeap.init(&value, 0, Value::Future(future.clone())).unwrap();
+                crate::sched::complete(&future, Err(thrown(&holder)));
+                value
+            }),
+            ("thrown object", || {
+                let (value, holder) = object(1);
+                ObjectHeap.init(&value, 0, Value::Failure(thrown(&holder))).unwrap();
+                value
+            }),
+            ("failure cause and secondary", || {
+                // later → cause → earlier → thrown object → late field → later.
+                let (value, holder) = object(1);
+                let earlier = thrown(&holder);
+                let later = Failure::new(Kind::Panic("later".into()));
+                *later.cause.borrow_mut() = Some(earlier.clone());
+                later.secondary.borrow_mut().push(earlier);
+                ObjectHeap.init(&value, 0, Value::Failure(later)).unwrap();
+                value
+            }),
+            ("closure capture", || {
+                let (value, _) = object(1);
+                let closure = Rc::new(Closure { function: 0, captures: vec![value.clone()], worker: None });
+                ObjectHeap.init(&value, 0, Value::Fn(closure)).unwrap();
+                value
+            }),
+            ("array builder", || {
+                let (value, _) = object(1);
+                let builder: Rc<ArrayBuilder> = Rc::new(RefCell::new(vec![value.clone()]));
+                ObjectHeap.init(&value, 0, Value::Builder(builder)).unwrap();
+                value
+            }),
+            ("map builder", || {
+                let (value, _) = object(1);
+                let key = crate::heap::MapKey::Int(crate::IntValue::from_i64(1));
+                let builder: Rc<MapBuilder> = Rc::new(RefCell::new([(key, value.clone())].into()));
+                ObjectHeap.init(&value, 0, Value::MapBuilder(builder)).unwrap();
+                value
+            }),
+            ("intrinsic state", || {
+                // A handle's state that holds its own object.
+                let (value, holder) = object(0);
+                holder.set_intrinsic(Rc::new(value.clone()));
+                value
+            }),
+            ("any box and array", || {
+                let (value, _) = object(1);
+                let inner = crate::heap::ArrayHeap.allocate(vec![Value::Any(Rc::new(value.clone()))]);
+                ObjectHeap.init(&value, 0, inner).unwrap();
+                value
+            }),
+        ]
+    }
+
+    #[test]
+    fn every_kind_of_late_edge_closes_a_collectable_cycle() {
+        for stress in [false, true] {
+            set_stress(stress);
+            for (name, cycle) in cycles() {
+                collect();
+                let base = live_objects();
+                for _ in 0..3 {
+                    let value = cycle();
+                    let Value::Object(object) = &value else { unreachable!() };
+                    let weak = Rc::downgrade(object);
+                    // Held from outside: kept with every edge intact.
+                    collect();
+                    assert!(weak.upgrade().is_some_and(|object| object.extra().borrow().is_some()), "{name}: a held cycle was cleared");
+                    drop(value);
+                    assert!(weak.upgrade().is_some(), "{name}: reference counting alone frees a cycle");
+                    collect();
+                    assert!(weak.upgrade().is_none(), "{name}: the unreachable cycle survives");
+                }
+                assert_eq!(live_objects(), base, "{name}: objects outlive repeated cycles");
+            }
+        }
+        set_stress(false);
+    }
+
+    #[test]
+    fn stress_mode_collects_at_every_candidate_without_losing_live_values() {
+        set_stress(true);
+        let (before, _) = stats();
+        let kept: Vec<Value> = (0..64)
+            .map(|_| {
+                let (value, _) = object(1);
+                ObjectHeap.init(&value, 0, value.clone()).unwrap();
+                value
+            })
+            .collect();
+        for _ in 0..64 {
+            let (value, _) = object(1);
+            ObjectHeap.init(&value, 0, value.clone()).unwrap();
+        }
+        set_stress(false);
+        assert!(stats().0 - before >= 128, "a collection per candidate");
+        for value in &kept {
+            let Value::Object(object) = value else { unreachable!() };
+            assert!(matches!(object.field(0), Some(Value::Object(back)) if Rc::ptr_eq(&back, object)));
+        }
     }
 
     #[test]
