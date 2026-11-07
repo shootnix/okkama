@@ -593,7 +593,7 @@ fn fake_storage(runtime: &mut Runtime, function: usize, intrinsic: Intrinsic, ar
     let expected = result.expect("fake get result");
     let result_repr = runtime.loaded.functions[function].result.map_or(Repr::Raw, Kind::repr);
     let program = &runtime.loaded.program;
-    if program.ty(expected) == program.ty(stored) {
+    if program.same_type(expected, stored) {
         return Value(value, result_repr);
     }
     match program.ty(expected).cloned() {

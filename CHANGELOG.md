@@ -136,6 +136,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sparrow core, load-time contracts of generic intrinsics: payloads are
+  checked by type, not only by representation. The object types a channel's
+  state passes through (`sending`/`receiving`) form a class, and every
+  `send` value and `item` result of a class must be one type, so a crafted
+  SPB pairing `Sending<string>` with `Receiving<SomeObject>` is refused by
+  `sparrow check`. `FutureScope.result` requires its receiver's action to
+  take the group and yield the result type; raced, first-successful and
+  timed results and `AllFutures` results must be the type of the futures
+  they wait for; `fake.storage` reads compare stored and requested types
+  structurally. Tests pair crafted copies of these intrinsics with compiler
+  output ([#69](https://github.com/shootnix/okkama/issues/69)).
+
 - Runtimes: host state belongs to one run, not to a thread (Q03). Every
   engine entry (IR program and test runs, the previous Sparrow VM, each
   Sparrow core run) opens a host session — a copy of the process's working

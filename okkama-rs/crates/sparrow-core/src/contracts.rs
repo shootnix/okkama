@@ -300,7 +300,8 @@ impl Check<'_> {
             && match (intrinsic, value) {
                 (Intrinsic::CollectRace | Intrinsic::CollectFirst | Intrinsic::TimeoutBefore | Intrinsic::TimeoutWithin, Some(waited)) => {
                     match (waited, result) {
-                        (Some(w), Some(r)) => self.kind(w) == self.kind(r),
+                        // By type, not representation: a string is not an object (#69).
+                        (Some(w), Some(r)) => self.program.same_type(w, r),
                         (None, None) => true,
                         _ => false,
                     }
@@ -312,6 +313,9 @@ impl Check<'_> {
         }
         if intrinsic == Intrinsic::GroupStart && self.future(params[1]).is_none() {
             return Err("starts a value that is not a future".into());
+        }
+        if intrinsic == Intrinsic::ScopeResult {
+            self.scope_action(params[0], declared.objects.first().map(|o| o.0 as usize), result)?;
         }
         let objects = &declared.objects;
         let rules = related(intrinsic);
@@ -355,11 +359,101 @@ impl Check<'_> {
         Ok(())
     }
 
+    /// ScopeResult calls field 0 of its receiver with the group it makes and
+    /// returns what that call's future yields: the field must be an async
+    /// action taking the group and yielding the intrinsic's result type (#69).
+    fn scope_action(&self, receiver: TypeRef, group: Option<usize>, result: Option<TypeRef>) -> Result<(), String> {
+        let p = self.program;
+        let object = self.object(receiver).ok_or("scope receiver is not an object")?;
+        let group = group.ok_or("scope names no group object")?;
+        let action = p.objects[object].fields.first().map(|(_, ty)| *ty).ok_or("scope receiver has no action")?;
+        let Some(Type::Fn { params, result: Some(future) }) = p.ty(action) else {
+            return Err("scope action is not an action returning a future".into());
+        };
+        let takes_group = match params.as_slice() {
+            [param] => match p.ty(*param) {
+                Some(Type::Object(o)) => o.0 as usize == group,
+                Some(Type::Role(role)) => p.objects[group].does.iter().any(|w| w.role == *role),
+                _ => false,
+            },
+            _ => false,
+        };
+        let yields = match (self.future(*future), result) {
+            (Some(Some(value)), Some(result)) => p.same_type(value, result),
+            (Some(None), None) => true,
+            _ => false,
+        };
+        if takes_group && yields { Ok(()) } else { Err("scope action does not take the group or yield the result".into()) }
+    }
+
+    /// Channel payloads: the endpoints a channel hands out, and what `send`
+    /// takes and `item` returns through them, carry one type (#69). The core
+    /// keeps a channel's state on its object and on the endpoints
+    /// `sending`/`receiving` make from it, so the object types linked by
+    /// those calls form a class, and every `send` value and `item` result of
+    /// a class must be the same type — a crafted program cannot pair
+    /// `Sending<string>` with `Receiving<SomeObject>`.
+    fn channels(&self) -> Result<(), String> {
+        let p = self.program;
+        let mut parent: Vec<usize> = (0..p.objects.len()).collect();
+        let mut payload: Vec<Option<TypeRef>> = vec![None; p.objects.len()];
+        fn root(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        let agree = |a: Option<TypeRef>, b: Option<TypeRef>| -> Result<Option<TypeRef>, String> {
+            match (a, b) {
+                (Some(a), Some(b)) if !p.same_type(a, b) => Err("channel endpoints carry different payload types".into()),
+                (a, b) => Ok(a.or(b)),
+            }
+        };
+        // Objects a value of `ty` can be: an object, or every object doing a role.
+        let objects = |ty: TypeRef| -> Vec<usize> {
+            match p.ty(ty) {
+                Some(Type::Object(o)) => vec![o.0 as usize],
+                Some(Type::Role(role)) => {
+                    (0..p.objects.len()).filter(|&o| p.objects[o].does.iter().any(|w| w.role == *role)).collect()
+                }
+                _ => Vec::new(),
+            }
+        };
+        for function in &p.functions {
+            let Some(intrinsic) = function.intrinsic.as_ref().and_then(|i| Intrinsic::resolve(&i.name)) else { continue };
+            let params: Vec<TypeRef> = function.params.iter().map(|r| function.registers[r.0 as usize]).collect();
+            let (links, value): (Vec<usize>, Option<TypeRef>) = match intrinsic {
+                Intrinsic::ChannelEndpoint => {
+                    let mut linked = objects(params[0]);
+                    linked.extend(function.result.map(objects).unwrap_or_default());
+                    (linked, None)
+                }
+                Intrinsic::Send => (objects(params[0]), params.get(1).copied()),
+                Intrinsic::Receive => (objects(params[0]), function.result),
+                _ => continue,
+            };
+            let Some((&first, rest)) = links.split_first() else { continue };
+            let mut at = root(&mut parent, first);
+            payload[at] = agree(payload[at], value)?;
+            for &other in rest {
+                let other = root(&mut parent, other);
+                if other != at {
+                    let merged = agree(payload[at], payload[other])?;
+                    parent[other] = at;
+                    payload[at] = merged;
+                    at = root(&mut parent, at);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// CollectAll's result object: one array of the futures' results.
     fn collected(&self, object: usize, waited: Option<TypeRef>) -> bool {
         match (&self.program.objects[object].fields[..], waited) {
             ([(_, items)], Some(waited)) => match self.program.ty(*items) {
-                Some(Type::Array(element)) => self.kind(*element) == self.kind(waited),
+                Some(Type::Array(element)) => self.program.same_type(*element, waited),
                 _ => false,
             },
             _ => false,
@@ -395,6 +489,7 @@ impl Check<'_> {
 /// Check every intrinsic function and cell use of `loaded`.
 pub fn check(loaded: &Loaded) -> Result<(), Error> {
     let check = Check { loaded, program: &loaded.program };
+    check.channels().map_err(|message| Error(format!("Sparrow: intrinsic contract: {message}")))?;
     for function in &loaded.program.functions {
         check
             .function(function)
