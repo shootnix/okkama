@@ -136,6 +136,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler, types (H-26): a local's type may be at most 64 levels deep. A
+  chain of `let`s can deepen a generic type one level per step
+  (`deeper() is Box<@T>`), and lowering keeps a full copy of each value's
+  type: 2 000 levels took 4.7 s and 840 MB to build, 20 000 more than
+  16 GB. Now the first local past the limit is one error. Interning types
+  was measured and is not worth it: checking `std/web/app.ok` with its
+  imports spends about 3 % of its working time on types, against lexing,
+  parsing and allocation ([#49](https://github.com/shootnix/okkama/issues/49)).
+
 - Compiler, very large functions (H-28, H-39): three phases were quadratic
   in the size of one function and are linear now. The ownership flow of the
   analysis copied the obligations of every local at every branch (now only

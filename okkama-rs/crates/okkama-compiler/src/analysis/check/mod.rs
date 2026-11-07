@@ -443,7 +443,18 @@ impl<'r, 'a> Checker<'r, 'a> {
     }
 
     /// Новая привязка в текущей области.
-    pub fn declare(&mut self, name: &ast::Name, ty: Ty, variadic: bool) -> LocalId {
+    pub fn declare(&mut self, name: &ast::Name, mut ty: Ty, variadic: bool) -> LocalId {
+        if ty.depth_up_to(crate::analysis::ty::MAX_TYPE_DEPTH) > crate::analysis::ty::MAX_TYPE_DEPTH {
+            self.error(
+                name.span,
+                format!(
+                    "Type of \"{}\" is nested deeper than {} levels",
+                    name.text,
+                    crate::analysis::ty::MAX_TYPE_DEPTH
+                ),
+            );
+            ty = Ty::Error;
+        }
         if self
             .scopes
             .last()
