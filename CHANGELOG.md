@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Sparrow core: runtime helpers called from machine code are described once
+  (H-06): each entry names the helper's Rust signature, which is checked at
+  compile time — a helper with another parameter or result type, or another
+  arity, does not compile — the Cranelift signature is derived from it, and
+  its effects (allocates, collects, re-enters machine code, may fail) are
+  listed in `jit::HELPERS`. `--stats` counts calls of every helper, and a
+  test runs programs that reach all 28. A panic in a helper aborts with its
+  message at the `extern "C"` boundary; turning it into a failure status
+  would cost every helper call. No cost: ±0.2% instructions
+  ([#23](https://github.com/shootnix/okkama/issues/23)).
+
 - Sparrow core: collector stress mode, `SPARROW_CORE_GC_STRESS=1` — every
   safepoint collects and reclaimed cells are poisoned, so a value kept alive
   by mistake fails at once. Exceptional edges are tested under it: the

@@ -23,59 +23,95 @@ use cranelift_module::{FuncId, Linkage, Module, default_libcall_names};
 use okkama_sparrow::{Cmp, Constant, Instruction as I, Target, Type};
 use std::collections::BTreeMap;
 
+/// What a runtime helper may do, beyond computing its result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    /// Allocates heap objects.
+    Allocates,
+    /// May collect (a safepoint: the caller's frame is walked for roots).
+    Collects,
+    /// Runs machine code (compiled functions, destroys, async bodies).
+    Reenters,
+    /// May set a failure status, which machine code reads after the call or
+    /// returns to its caller.
+    Fails,
+}
+
+/// One description per helper (H-06): its Rust signature, checked at compile
+/// time (the function must coerce to exactly that `extern "C"` pointer type;
+/// every word is 8 bytes), the Cranelift signature derived from it, and its
+/// effects. A panic inside a helper aborts with its message at the `extern
+/// "C"` boundary and never unwinds through machine code.
 macro_rules! helpers {
-    ($($field:ident = $function:path, $params:expr, $returns:expr;)*) => {
+    ($($field:ident = $function:path as ($ctx:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)? ; [$($effect:ident),*];)*) => {
         #[derive(Debug)]
         struct Helpers { $($field: FuncId,)* }
+
+        /// Every helper and its effects, in declaration order.
+        pub const HELPERS: &[(&str, &[Effect])] = &[$((stringify!($field), &[$(Effect::$effect),*]),)*];
+
+        $(
+            const _: () = {
+                $(assert!(std::mem::size_of::<$ty>() == 8);)*
+                $(assert!(std::mem::size_of::<$ret>() == 8);)?
+            };
+            const _: extern "C" fn(*mut Ctx $(, $ty)*) $(-> $ret)? = $function;
+        )*
+
         fn declare_helpers(builder: &mut JITBuilder) {
             $(builder.symbol(concat!("sparrow_core_", stringify!($field)), $function as *const u8);)*
         }
+
         fn import_helpers(module: &mut JITModule) -> Result<Helpers, Error> {
             Ok(Helpers { $($field: {
                 let mut signature = module.make_signature();
-                for _ in 0..$params {
-                    signature.params.push(AbiParam::new(types::I64));
-                }
-                if $returns {
-                    signature.returns.push(AbiParam::new(types::I64));
-                }
+                signature.params.push(AbiParam::new(types::I64));
+                $(let _ = stringify!($arg); signature.params.push(AbiParam::new(types::I64));)*
+                $(let _ = stringify!($ret); signature.returns.push(AbiParam::new(types::I64));)?
                 module
                     .declare_function(concat!("sparrow_core_", stringify!($field)), Linkage::Import, &signature)
                     .map_err(|e| Error(format!("JIT helper: {e}")))?
             },)* })
         }
+
+        impl Helpers {
+            /// The ids in `HELPERS` order.
+            fn ids(&self) -> Vec<FuncId> {
+                vec![$(self.$field),*]
+            }
+        }
     };
 }
 
 helpers! {
-    allocate = runtime::rt_allocate, 2, true;
-    poll = runtime::rt_poll, 1, false;
-    compile = runtime::rt_compile, 2, true;
-    int = runtime::rt_int, 4, true;
-    int_order = runtime::rt_int_order, 3, true;
-    concat = runtime::rt_concat, 3, true;
-    array = runtime::rt_array, 4, true;
-    trap = runtime::rt_trap, 2, true;
-    throw = runtime::rt_throw, 2, true;
-    trace = runtime::rt_trace, 4, false;
-    native = runtime::rt_native, 4, true;
-    float = runtime::rt_float, 4, true;
-    exec = crate::ops::rt_exec, 4, true;
-    closure = runtime::rt_closure, 4, true;
-    call_closure = runtime::rt_call_closure, 4, true;
-    map_find = runtime::rt_map_find, 5, true;
-    intrinsic = crate::intrinsics::rt_intrinsic, 4, true;
-    failure_op = crate::failures::rt_failure_op, 4, true;
-    catch = crate::failures::rt_catch, 4, true;
-    created = crate::failures::rt_created, 3, false;
-    region_add = crate::failures::rt_region_add, 4, false;
-    builder_push = crate::ops::rt_builder_push, 3, true;
-    int_text = crate::ops::rt_int_text, 2, true;
-    future_new = crate::tasks::rt_future_new, 4, true;
-    await_ = crate::tasks::rt_await, 3, true;
-    complete = crate::tasks::rt_complete, 3, false;
-    spawn = crate::tasks::rt_spawn, 2, true;
-    fut = crate::tasks::rt_fut, 3, true;
+    allocate = runtime::rt_allocate as (ctx, words: u64) -> Word; [Allocates, Collects];
+    poll = runtime::rt_poll as (ctx); [Fails];
+    compile = runtime::rt_compile as (ctx, function: u64) -> u64; [Fails];
+    int = runtime::rt_int as (ctx, op: u64, left: Word, right: Word) -> Word; [Allocates, Collects, Fails];
+    int_order = runtime::rt_int_order as (ctx, left: Word, right: Word) -> i64; [];
+    concat = runtime::rt_concat as (ctx, left: Word, right: Word) -> Word; [Allocates, Collects];
+    array = runtime::rt_array as (ctx, repr: u64, elements: *const Word, count: u64) -> Word; [Allocates, Collects];
+    trap = runtime::rt_trap as (ctx, message: Word) -> Word; [Allocates, Fails];
+    throw = runtime::rt_throw as (ctx, value: Word) -> Word; [Allocates, Fails];
+    trace = runtime::rt_trace as (ctx, function: u64, pc: u64, frame: u64); [];
+    native = runtime::rt_native as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
+    float = runtime::rt_float as (ctx, op: u64, left: u64, right: u64) -> u64; [Allocates, Fails];
+    exec = crate::ops::rt_exec as (ctx, function: u64, pc: u64, uses: *const Word) -> Word; [Allocates, Collects, Reenters, Fails];
+    closure = runtime::rt_closure as (ctx, function: u64, captures: *const Word, count: u64) -> Word; [Allocates, Collects];
+    call_closure = runtime::rt_call_closure as (ctx, closure: Word, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
+    map_find = runtime::rt_map_find as (ctx, function: u64, pc: u64, map: Word, key: Word) -> u64; [];
+    intrinsic = crate::intrinsics::rt_intrinsic as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Reenters, Fails];
+    failure_op = crate::failures::rt_failure_op as (ctx, function: u64, pc: u64, uses: *const Word) -> Word; [Allocates, Collects, Reenters, Fails];
+    catch = crate::failures::rt_catch as (ctx, function: u64, pc: u64, failure: Word) -> u64; [Allocates];
+    created = crate::failures::rt_created as (ctx, descriptor: u64, object: Word); [];
+    region_add = crate::failures::rt_region_add as (ctx, region: Word, value: Word, own: u64); [];
+    builder_push = crate::ops::rt_builder_push as (ctx, builder: Word, item: Word) -> Word; [];
+    int_text = crate::ops::rt_int_text as (ctx, word: Word) -> Word; [Allocates, Collects];
+    future_new = crate::tasks::rt_future_new as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
+    await_ = crate::tasks::rt_await as (ctx, this: Word, future: Word) -> u64; [Collects, Reenters, Fails];
+    complete = crate::tasks::rt_complete as (ctx, frame: Word, value: Word); [Collects, Reenters];
+    spawn = crate::tasks::rt_spawn as (ctx, future: Word) -> Word; [Reenters, Fails];
+    fut = crate::tasks::rt_fut as (ctx, op: u64, future: Word) -> Word; [Reenters, Fails];
 }
 
 pub struct Jit {
@@ -89,6 +125,9 @@ pub struct Jit {
     ranges: Vec<(u64, u64)>,
     /// (role, slot) → function index by object descriptor (u64::MAX: none).
     dispatch: BTreeMap<(u32, u32), Box<[u64]>>,
+    /// Calls of each helper (`HELPERS` order) from code compiled under
+    /// `--stats`; machine code increments them, other code does not count.
+    helper_counts: Box<[u64]>,
 }
 
 impl std::fmt::Debug for Jit {
@@ -127,7 +166,18 @@ impl Jit {
             maps: Vec::new(),
             ranges: Vec::new(),
             dispatch: BTreeMap::new(),
+            helper_counts: vec![0; HELPERS.len()].into_boxed_slice(),
         })
+    }
+
+    /// `--stats` lines of the helpers machine code called.
+    pub(crate) fn helper_calls(&self) -> Vec<(String, u64)> {
+        HELPERS
+            .iter()
+            .zip(self.helper_counts.iter())
+            .filter(|(_, count)| **count > 0)
+            .map(|((name, _), &count)| (format!("helper {name}"), count))
+            .collect()
     }
 
     fn in_code(&self, address: u64) -> bool {
@@ -206,7 +256,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     if runtime.code[function] != 0 {
         return Ok(runtime.code[function]);
     }
-    let Runtime { heap, loaded, jit, code, constants, resources, limits, budget, .. } = runtime;
+    let Runtime { heap, loaded, jit, code, constants, resources, limits, budget, stats, .. } = runtime;
     let program = &loaded.program;
     let source = &program.functions[function];
     if source.is_async && (source.native.is_some() || source.intrinsic.is_some()) {
@@ -247,6 +297,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             ctx: None,
             frame: None,
             polled: limits.polled(),
+            count_helpers: stats.is_some(),
             fuel: budget.fuel.address(),
             refusable: limits.memory.is_some(),
             pc: 0,
@@ -299,6 +350,8 @@ struct Emitter<'a, 'b> {
     frame: Option<Variable>,
     /// Budget polls at entry and on back-edges (`budget`).
     polled: bool,
+    /// Count helper calls (`--stats`).
+    count_helpers: bool,
     /// Address of the runtime's fuel cell.
     fuel: i64,
     /// Allocation slow paths may refuse under a memory budget.
@@ -316,6 +369,13 @@ impl Emitter<'_, '_> {
 
     fn helper(&mut self, id: fn(&Helpers) -> FuncId, args: &[Value]) -> Option<Value> {
         let id = id(&self.jit.helpers);
+        if self.count_helpers {
+            let index = self.jit.helpers.ids().iter().position(|known| *known == id).expect("helper");
+            let counter = self.iconst(&self.jit.helper_counts[index] as *const u64 as i64);
+            let count = self.builder.ins().load(types::I64, MEMORY, counter, 0);
+            let count = self.builder.ins().iadd_imm_s(count, 1);
+            self.builder.ins().store(MEMORY, count, counter, 0);
+        }
         let reference = self.jit.module.declare_func_in_func(id, self.builder.func);
         let call = self.builder.ins().call(reference, args);
         self.builder.inst_results(call).first().copied()

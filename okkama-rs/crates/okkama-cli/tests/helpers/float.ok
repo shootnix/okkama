@@ -1,0 +1,13 @@
+module app;
+
+// The float helper runs only for a result that is not finite: here it ends
+// the program (#23).
+object Ratio {
+    Ratio();
+    of(a is float, b is float) is float { a / b; }
+}
+
+main() is int {
+    Ratio().of(1.0, 0.0);
+    0;
+}
