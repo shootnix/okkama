@@ -1,0 +1,10 @@
+module app v1.0.0;
+
+// The machine stack runs out under a memory budget (#241): the stack-overflow
+// helper reports it as the memory budget.
+object Down {
+    Down();
+    go(n is int) is int { if n < 0 { 0; } else { self.go(n + 1) + 1; } }
+}
+
+main() is int { Down().go(0); }
