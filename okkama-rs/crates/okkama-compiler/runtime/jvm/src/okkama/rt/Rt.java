@@ -92,6 +92,45 @@ public final class Rt {
     static String[] argv = new String[0];
 
     /**
+     * Бюджеты JVM (#237), как у ядра. {@code okkama.steps} — сколько шагов
+     * разрешено программе, собранной под {@code --max-steps} (вход в функцию
+     * и обратный переход вызывают {@link #step}); без свойства предела нет.
+     * {@code okkama.memory} — предел памяти в байтах, он же {@code -Xmx}:
+     * нехватка кучи или стека (стеки не больше предела) — отчёт о памяти.
+     */
+    static long steps = Long.getLong("okkama.steps", Long.MAX_VALUE);
+    static final long MEMORY = Long.getLong("okkama.memory", 0L);
+
+    /** Шаг бюджета: после {@code okkama.steps} шагов — отчёт. */
+    public static void step() {
+        if (steps == 0) {
+            exhausted("steps");
+        }
+        steps--;
+    }
+
+    /**
+     * Исчерпанный бюджет: отчёт ядра и код 1 сразу, без catch, defer и
+     * cleanup программы (их бы перехватила или продлила сама программа).
+     */
+    static void exhausted(String budget) {
+        System.out.flush();
+        System.err.println("Execution budget exhausted: " + budget);
+        System.err.flush();
+        Runtime.getRuntime().halt(1);
+    }
+
+    /** Нехватка памяти под бюджетом {@code okkama.memory}. */
+    static boolean outOfMemory(Throwable error) {
+        return MEMORY > 0 && (error instanceof OutOfMemoryError || error instanceof StackOverflowError);
+    }
+
+    /** Стек потока не больше бюджета памяти, если он задан. */
+    static long stack(long size) {
+        return MEMORY > 0 ? Math.min(size, MEMORY) : size;
+    }
+
+    /**
      * Стек потока программы: глубокая (нехвостовая) рекурсия ограничена
      * памятью, как у исполнителей IR и Sparrow с кадрами в куче, а не 8 МБ
      * стека главного потока JVM. Память стека выделяется по мере роста.
@@ -100,16 +139,31 @@ public final class Rt {
 
     /** Исполнить {@code body} в потоке программы с большим стеком. */
     static void onProgramStack(final Runnable body) {
+        if (MEMORY > 0) {
+            // Задачи и рабочие потоки: нехватка памяти — тот же отчёт.
+            Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+                public void uncaughtException(Thread thread, Throwable error) {
+                    if (outOfMemory(error)) {
+                        exhausted("memory");
+                    }
+                    System.err.print("Exception in thread \"" + thread.getName() + "\" ");
+                    error.printStackTrace();
+                }
+            });
+        }
         final Throwable[] escaped = new Throwable[1];
         Thread thread = new Thread(null, new Runnable() {
             public void run() {
                 try {
                     body.run();
                 } catch (Throwable other) {
+                    if (outOfMemory(other)) {
+                        exhausted("memory");
+                    }
                     escaped[0] = other;
                 }
             }
-        }, "main", PROGRAM_STACK);
+        }, "main", stack(PROGRAM_STACK));
         thread.start();
         boolean interrupted = false;
         while (true) {

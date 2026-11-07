@@ -112,7 +112,12 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
         for index in 0..self.function.blocks.len() {
             let block = BlockId(index);
             let label = self.labels[index];
-            if index == 0 {
+            if index == 0 && self.class.steps.is_some_and(|original| self.index < original) {
+                // Вход в функцию — шаг; переход в блок 0 считается отдельно.
+                self.step()?;
+                let frame = self.frame(UsePoint::Unwind(block));
+                self.asm.place_with_frame(label, frame);
+            } else if index == 0 {
                 self.asm.place(label, 0);
             } else {
                 let frame = self.frame(UsePoint::Unwind(block));
@@ -1615,31 +1620,51 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
         self.asm.jump(0xa7, label, 0); // goto
     }
 
+    /// Шаг бюджета `--max-steps` (#237).
+    fn step(&mut self) -> Result<()> {
+        self.class.call_rt(&mut self.asm, "step", "()V", 0, 0)
+    }
+
+    /// Ребро в этот же или более ранний блок замыкает цикл: шаг, как у IR.
+    fn back_edge(&self, from: BlockId, target: &Target) -> bool {
+        self.class.steps.is_some() && target.block.0 <= from.0
+    }
+
+    /// Переход терминатора `Br`/`Cond`: обратное ребро сначала делает шаг.
+    fn branch(&mut self, from: BlockId, target: &Target) -> Result<()> {
+        if self.back_edge(from, target) {
+            self.step()?;
+        }
+        self.goto(target);
+        Ok(())
+    }
+
     fn terminator(&mut self, block: BlockId, kind: &TermKind) -> Result<()> {
         match kind {
-            TermKind::Br(target) => self.goto(target),
+            TermKind::Br(target) => self.branch(block, target)?,
             TermKind::Cond {
                 condition,
                 then_target,
                 else_target,
             } => {
                 self.load(*condition);
-                if else_target.args.is_empty() {
+                // Прямой условный переход — у ребра без аргументов и без шага.
+                if else_target.args.is_empty() && !self.back_edge(block, else_target) {
                     let label = self.labels[else_target.block.0];
                     self.asm.jump(0x99, label, 1); // ifeq
-                    self.goto(then_target);
-                } else if then_target.args.is_empty() {
+                    self.branch(block, then_target)?;
+                } else if then_target.args.is_empty() && !self.back_edge(block, then_target) {
                     let label = self.labels[then_target.block.0];
                     self.asm.jump(0x9a, label, 1); // ifne
-                    self.goto(else_target);
+                    self.branch(block, else_target)?;
                 } else {
-                    // У обоих рёбер есть аргументы: ветка else копирует в своей заглушке.
+                    // Ветка else копирует аргументы (и делает шаг) в своей заглушке.
                     let stub = self.asm.label();
                     self.asm.jump(0x99, stub, 1); // ifeq
-                    self.goto(then_target);
+                    self.branch(block, then_target)?;
                     let frame = self.frame(UsePoint::Term(block));
                     self.asm.place_with_frame(stub, frame);
-                    self.goto(else_target);
+                    self.branch(block, else_target)?;
                 }
             }
             TermKind::Ret(Some(value)) => {

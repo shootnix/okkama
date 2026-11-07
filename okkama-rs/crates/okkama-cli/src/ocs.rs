@@ -382,6 +382,7 @@ fn run(mode: &str, module: &okkama_compiler::ir::Module, request: &Json) -> Repl
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),
+        ..Default::default()
     };
     let artifact = match codegen::generate(module, Backend::Jvm, &options) {
         Ok(artifact) => super::with_native_libraries(module, artifact),
@@ -397,7 +398,7 @@ fn run(mode: &str, module: &okkama_compiler::ir::Module, request: &Json) -> Repl
         .and_then(Json::as_array)
         .map(|items| items.iter().filter_map(Json::as_str).collect())
         .unwrap_or_default();
-    let mut command = super::java_command(&dir, "Main", &args);
+    let mut command = super::java_command(&dir, "Main", &args, &[]);
     command.env("OKKAMA_FAILURE_REPORT", &report);
     if let Some(cwd) = request.get("cwd").and_then(Json::as_str) {
         command.current_dir(cwd);

@@ -308,6 +308,7 @@ public final class JvmProbe {
         Backend::Jvm,
         &Options {
             artifact_name: "Helpers".to_string(),
+            ..Default::default()
         },
     )
     .unwrap();

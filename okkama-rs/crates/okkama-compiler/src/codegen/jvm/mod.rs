@@ -214,7 +214,7 @@ impl Layout {
 
 /// Class-файлы модуля: главный класс первым, затем вспомогательные.
 /// Имена файлов относительны каталогу главного класса.
-pub fn generate(module: &ir::Module, class_name: &str) -> Result<Vec<(String, Vec<u8>)>> {
+pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result<Vec<(String, Vec<u8>)>> {
     validate_name(class_name, false)?;
     ir::verify(module).map_err(|verify| error(format!("invalid IR: {verify}")))?;
     if !module.imports.is_empty() {
@@ -223,6 +223,7 @@ pub fn generate(module: &ir::Module, class_name: &str) -> Result<Vec<(String, Ve
         ));
     }
     // Метод JVM ограничен 64 КБ: большие функции делятся (`outline`).
+    let original = module.functions.len();
     let mut split = module.clone();
     outline::split_large(&mut split);
     let module = &split;
@@ -237,7 +238,7 @@ pub fn generate(module: &ir::Module, class_name: &str) -> Result<Vec<(String, Ve
     }
     let layout = layout(module, class_name, entry)?;
 
-    let mut class = runtime::ClassGen::new(layout);
+    let mut class = runtime::ClassGen::new(layout, budgeted.then_some(original));
     let names = ClassNames {
         access: 0x0031, // public final super
         this_class: class.pool.class(class_name)?,

@@ -58,7 +58,7 @@ USAGE:
     okkama repl
     okkama env
     okkama ir <FILE|-> [--format text]
-    okkama build <FILE|-> --target jvm -o <FILE>
+    okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>
     okkama build <FILE|-> --target sparrow -o <FILE.spb>
     okkama exec [BUDGETS] <FILE.spb>
     okkama run [-t] <FILE> [FILE.ok...] [ARGS...]
@@ -107,6 +107,7 @@ BUILD OPTIONS:
     --target sparrow      Select Sparrow bytecode (.spb)
     --backend NAME        Compatibility alias for --target
     -o, --output FILE      Output artifact path (required)
+    --budgeted            JVM: count steps (`java -Dokkama.steps=N`)
 
 RUN OPTIONS:
     --engine ir           Execute IR inside the Rust process (default)
@@ -117,11 +118,13 @@ RUN OPTIONS:
                           tests (-t), program arguments and `spawn` workers.
                           OKKAMA_ENGINE=ir|sparrow|sparrow-origin|jvm sets the default.
     --max-steps N         Stop after N steps: function entries and loop
-                          iterations (off by default). All budgets work on
-                          sparrow, exec and ir; the jvm has --max-output and
-                          --timeout
+                          iterations (off by default), counted alike on
+                          every engine; on the jvm only a run with this
+                          option generates the counting code
     --max-memory SIZE     Stop when the run holds more than SIZE bytes
-                          (K/M/G suffixes); also bounds recursion depth
+                          (K/M/G suffixes); also bounds recursion depth. On
+                          the jvm: the Java heap (-Xmx, runtime included)
+                          and every thread stack
     --max-output SIZE     Stop when stdout and stderr exceed SIZE bytes
     --timeout SECONDS     Interrupt the run after SECONDS of wall-clock time
                           Running out exits 1: \"Execution budget exhausted:
@@ -199,7 +202,7 @@ const BUILD_HELP: &str = "\
 okkama build — invoke a code generation backend
 
 USAGE:
-    okkama build <FILE|-> --target jvm -o <FILE>
+    okkama build <FILE|-> --target jvm [--budgeted] -o <FILE>
     okkama build <FILE|-> --target sparrow -o <FILE.spb>
 
 OPTIONS:
@@ -207,6 +210,8 @@ OPTIONS:
     --target sparrow      Generate Sparrow bytecode
     --backend NAME        Compatibility alias for --target
     -o, --output FILE      Output artifact path (required)
+    --budgeted            JVM: count steps; the limit comes from
+                          `java -Dokkama.steps=N` (without it, no limit)
 
 Use `-` as input to read Okkama source from standard input.
 The pipeline is source -> AST -> module IR -> selected backend -> output file.
@@ -502,6 +507,8 @@ struct CommandLine {
     prune_tests: bool,
     backend: Option<String>,
     output: Option<String>,
+    /// `build --budgeted`: JVM-классы считают шаги (`-Dokkama.steps=N`, #237).
+    budgeted: bool,
     help: bool,
 }
 
@@ -545,6 +552,7 @@ fn parse_command_line(args: &[String], options: CommandOptions) -> Result<Comman
             "-o" | "--output" if options == CommandOptions::Build => {
                 line.output = Some(value_for(flag)?);
             }
+            "--budgeted" if options == CommandOptions::Build => line.budgeted = true,
             "-" => set_input(&mut line, arg, options)?,
             other if other.starts_with('-') => return Err(format!("unknown option `{other}`")),
             _ => set_input(&mut line, arg, options)?,
@@ -1322,8 +1330,12 @@ fn build_command(args: &[String]) -> Outcome {
         Ok(lowered) => lowered,
         Err(outcome) => return outcome,
     };
+    if line.budgeted && backend != Backend::Jvm {
+        return Outcome::usage("--budgeted applies to --target jvm (Sparrow bytecode always honours budgets)");
+    }
     let options = CodegenOptions {
         artifact_name: artifact_name.to_string(),
+        budgeted: line.budgeted,
     };
     let artifact = match codegen::generate(&module, backend, &options) {
         Ok(artifact) => with_native_libraries(&module, artifact),
@@ -1456,9 +1468,6 @@ fn run_command(args: &[String]) -> Outcome {
     if budgeted && !matches!(engine, "sparrow" | "ir" | "jvm") {
         return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow, ir or jvm");
     }
-    if engine == "jvm" && (limits.steps.is_some() || limits.memory.is_some()) {
-        return Outcome::usage("--max-steps and --max-memory are not available on the JVM yet (#237): use --timeout and --max-output");
-    }
     let Some((input, mut program_args)) = rest.split_first() else {
         return Outcome::usage("missing input file");
     };
@@ -1579,6 +1588,7 @@ fn run_command(args: &[String]) -> Outcome {
     }
     let options = CodegenOptions {
         artifact_name: "Main".to_string(),
+        budgeted: limits.steps.is_some(),
     };
     let artifact = match codegen::generate(&module, Backend::Jvm, &options) {
         Ok(artifact) => with_native_libraries(&module, artifact),
@@ -1594,11 +1604,31 @@ fn run_command(args: &[String]) -> Outcome {
         Err(text) => return Outcome::failure(text, EXIT_IO),
     };
     let args: Vec<&str> = program_args.iter().map(String::as_str).collect();
-    let mut command = java_command(&classpath, "Main", &args);
+    let mut command = java_command(&classpath, "Main", &args, &jvm_limits(limits.steps, limits.memory));
     if limits.output.is_some() || limits.interrupt.is_some() {
         return jvm_budgeted(&mut command, limits.output, limits.interrupt.clone());
     }
     exec_or_wait(&mut command)
+}
+
+/// Steps and memory on the JVM (#237): the program counts steps itself
+/// (classes generated with `budgeted`, `Rt.step`), and the memory limit is the
+/// Java heap (`-Xmx`, which also counts the runtime's own objects) and the
+/// bound of every thread stack; `okkama.rt.Rt` turns running out of either
+/// into the core's report.
+fn jvm_limits(steps: Option<u64>, memory: Option<u64>) -> Vec<String> {
+    let mut options = Vec::new();
+    if let Some(steps) = steps {
+        options.push(format!("-Dokkama.steps={steps}"));
+    }
+    if let Some(memory) = memory {
+        // The JVM refuses a heap below 2 MiB and an initial heap above the maximum.
+        let heap = memory.max(2 << 20);
+        options.push(format!("-Xmx{heap}"));
+        options.push(format!("-Xms{}", heap.min(8 << 20)));
+        options.push(format!("-Dokkama.memory={heap}"));
+    }
+    options
 }
 
 /// The JVM under an output limit or a timeout (#71): `java` as a child whose
@@ -1766,6 +1796,7 @@ fn java_command(
     dir: impl AsRef<std::ffi::OsStr>,
     main: &str,
     args: &[&str],
+    options: &[String],
 ) -> std::process::Command {
     let mut command = std::process::Command::new("java");
     // JDK 22+: natives на FFM (SQLite) без предупреждений о native access.
@@ -1773,6 +1804,7 @@ fn java_command(
         command.arg("--enable-native-access=ALL-UNNAMED");
     }
     command
+        .args(options)
         .arg("-cp")
         .arg(dir)
         .arg(main)

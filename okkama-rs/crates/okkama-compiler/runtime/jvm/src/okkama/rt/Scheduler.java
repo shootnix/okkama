@@ -78,7 +78,7 @@ public final class Scheduler {
 
     private static Carrier fresh() {
         Carrier carrier = new Carrier();
-        Thread thread = new Thread(null, carrier, "okkama-task", STACK);
+        Thread thread = new Thread(null, carrier, "okkama-task", Rt.stack(STACK));
         thread.setDaemon(true);
         thread.start();
         return carrier;

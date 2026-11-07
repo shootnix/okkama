@@ -23,7 +23,7 @@ fn every_consumer_rejects_corrupted_ir() {
     let operand = function.blocks.iter_mut().flat_map(|block| block.insts.iter_mut()).flat_map(|inst| inst.kind.operands_mut()).next();
     *operand.expect("an operand") = missing;
     assert!(ir::verify(&corrupted).is_err());
-    let options = Options { artifact_name: "Corrupted".into() };
+    let options = Options { artifact_name: "Corrupted".into(), ..Default::default() };
     assert!(codegen::generate(&corrupted, Backend::Jvm, &options).is_err());
     assert!(codegen::generate(&corrupted, Backend::Sparrow, &options).is_err());
     assert!(okkama_runtime::execute(&corrupted).is_err());

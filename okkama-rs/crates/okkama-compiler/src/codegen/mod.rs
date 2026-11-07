@@ -59,9 +59,12 @@ impl std::error::Error for CodegenError {}
 
 /// Логическое имя выходного артефакта, без каталога и расширения.
 /// JVM использует его как имя класса, независимо от имени модуля Okkama.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     pub artifact_name: String,
+    /// JVM: счётчик шагов `--max-steps` (#237) на входах в функции и обратных
+    /// переходах, `okkama.rt.Rt.step`; без него байткод прежний.
+    pub budgeted: bool,
 }
 
 /// Общая развилка: новый backend добавляется рядом с `jvm` и в этот match.
@@ -92,7 +95,7 @@ pub fn generate(
     options: &Options,
 ) -> Result<Artifact, CodegenError> {
     let files = match backend {
-        Backend::Jvm => jvm::generate(module, &options.artifact_name)?,
+        Backend::Jvm => jvm::generate(module, &options.artifact_name, options.budgeted)?,
         Backend::Sparrow => {
             let program =
                 sparrow::generate(module).map_err(|error| CodegenError::InvalidInput {
