@@ -58,10 +58,34 @@ public final class Intrinsics {
         try {
             Constructor<?> constructor = ((Class<?>) type).getDeclaredConstructors()[0];
             constructor.setAccessible(true);
-            return constructor.newInstance(fields);
+            Object[] arguments = constructor.getParameterTypes().length == fields.length
+                ? fields : raised((Class<?>) type, fields);
+            return constructor.newInstance(arguments);
         } catch (ReflectiveOperationException failure) {
             throw Rt.trap("Cannot construct " + ((Class<?>) type).getName() + ": " + failure);
         }
+    }
+
+    /**
+     * An error enum raised by the runtime (`enum E is Error`): its first case,
+     * the given payload values in the fields of that case ({@code $0_name}),
+     * the payloads of other cases empty — as the Rust runtimes build it.
+     */
+    static Object[] raised(Class<?> type, Object[] values) {
+        java.util.List<java.lang.reflect.Field> fields = new java.util.ArrayList<java.lang.reflect.Field>();
+        for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) fields.add(field);
+        }
+        if (fields.isEmpty() || !fields.get(0).getName().equals("$tag")) return values;
+        Object[] arguments = new Object[fields.size()];
+        arguments[0] = java.math.BigInteger.ZERO;
+        int next = 0;
+        for (int index = 1; index < arguments.length; index++) {
+            java.util.ArrayList<Object> payload = new java.util.ArrayList<Object>();
+            if (fields.get(index).getName().startsWith("$0_") && next < values.length) payload.add(values[next++]);
+            arguments[index] = payload;
+        }
+        return arguments;
     }
 
     static Failure thrown(Object type, Object... fields) {
