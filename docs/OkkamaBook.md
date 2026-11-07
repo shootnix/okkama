@@ -1266,6 +1266,18 @@ Semantics:
   exact type, supplied by a direct declared target or the initial value.
   Reducing an empty source returns the checked initial value without running
   the block.
+- **Building with `reduce` is linear.** When the block uses an array or map
+  accumulator only as its value — alone, or as the left end of `acc + ...` —
+  the accumulator grows in place: `acc + [x]` is an append, amortized O(1),
+  not a copy of everything gathered so far. Nothing else can see an
+  intermediate accumulator, so the result is the same. Any other use (a read
+  such as `acc.size()`, a call, a capture) keeps the copying `+`; a map
+  accumulator grows in place from `[:]` by literal entries:
+
+  ```okkama
+  let squares = (1..=n).reduce(@int()) -> acc, i { acc + [i * i]; };
+  let lengths is %string:int = words.reduce([:]) -> acc, w { acc + [w: w.length()]; };
+  ```
 - The receiver and the initial value evaluate exactly once; items are visited
   deterministically in source order (maps in sorted-key order); the first
   failing item stops the operation and propagates through ordinary typed

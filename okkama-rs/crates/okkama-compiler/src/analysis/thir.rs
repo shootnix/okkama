@@ -691,3 +691,118 @@ fn expr_uses_receiver(expr: &Expr) -> bool {
         ExprKind::CapRead { cap, .. } => expr_uses_receiver(cap),
     }
 }
+
+/// How many times `body` names `local`: reads, rebinds and captures by an
+/// anonymous action. Lowering keeps a `reduce` accumulator in a builder only
+/// when every mention is one it can rewrite (#243). The walk names every
+/// form, so a new one must decide here.
+pub fn local_mentions(block: &Block, local: LocalId) -> usize {
+    block.stmts.iter().map(|stmt| stmt_mentions(stmt, local)).sum()
+}
+
+fn stmt_mentions(stmt: &Stmt, local: LocalId) -> usize {
+    let one = |value: &Expr| expr_mentions(value, local);
+    match &stmt.kind {
+        StmtKind::Let { value, .. }
+        | StmtKind::Expr(value)
+        | StmtKind::Throw(value)
+        | StmtKind::Defer(value)
+        | StmtKind::BindField { value, .. }
+        | StmtKind::StageField { value, .. } => one(value),
+        StmtKind::Rebind { local: target, value } => usize::from(*target == local) + one(value),
+        StmtKind::Guarded { condition, stmt } => one(condition) + stmt_mentions(stmt, local),
+        StmtKind::Return(value) | StmtKind::Last(value) => value.as_ref().map_or(0, one),
+        StmtKind::Confirm { condition, fallback } => {
+            one(condition)
+                + fallback.as_ref().map_or(0, |fallback| match fallback {
+                    Fallback::Throw(value) | Fallback::Panic(value) => one(value),
+                })
+        }
+        StmtKind::Rethrow | StmtKind::Next => 0,
+    }
+}
+
+fn source_mentions(source: &Source, local: LocalId) -> usize {
+    match source {
+        Source::Range { start, end, .. } => expr_mentions(start, local) + expr_mentions(end, local),
+        Source::Array(value) | Source::Map(value) | Source::Iterating(value) => expr_mentions(value, local),
+        Source::Varargs(varargs) => usize::from(*varargs == local),
+    }
+}
+
+pub fn expr_mentions(expr: &Expr, local: LocalId) -> usize {
+    let one = |value: &Expr| expr_mentions(value, local);
+    let all = |values: &[Expr]| values.iter().map(|value| expr_mentions(value, local)).sum::<usize>();
+    let block = |block: &Block| local_mentions(block, local);
+    match &expr.kind {
+        ExprKind::Local(found) => usize::from(*found == local),
+        ExprKind::Constant(_)
+        | ExprKind::SelfValue
+        | ExprKind::Field(_)
+        | ExprKind::PendingField(_)
+        | ExprKind::OwnerField(_)
+        | ExprKind::EnumCase { .. }
+        | ExprKind::TestCapability
+        | ExprKind::Unreachable => 0,
+        ExprKind::VariantNew { values, .. } => all(values),
+        ExprKind::VariantTag(value)
+        | ExprKind::VariantGet { value, .. }
+        | ExprKind::Unary { operand: value, .. }
+        | ExprKind::Coerce { value, .. }
+        | ExprKind::Cast { value, .. }
+        | ExprKind::Panic(value)
+        | ExprKind::Unpack(value)
+        | ExprKind::Await(value)
+        | ExprKind::Spawn(value) => one(value),
+        ExprKind::Binary { left, right, .. }
+        | ExprKind::Logical { left, right, .. }
+        | ExprKind::RatNew { numerator: left, denominator: right }
+        | ExprKind::Range { start: left, end: right, .. }
+        | ExprKind::StreamWrite { sink: left, source: right, .. } => one(left) + one(right),
+        ExprKind::If { condition, then_block, else_block } => {
+            one(condition) + block(then_block) + else_block.as_ref().map_or(0, block)
+        }
+        ExprKind::Match(found) => {
+            one(&found.subject)
+                + found.cases.iter().map(|(patterns, body)| all(patterns) + block(body)).sum::<usize>()
+                + found.else_block.as_ref().map_or(0, block)
+        }
+        ExprKind::Loop(body) | ExprKind::Block(body) => block(body),
+        ExprKind::For { source, body, .. } => source_mentions(source, local) + block(body),
+        ExprKind::Try(found) => block(&found.body) + found.catches.iter().map(|catch| block(&catch.body)).sum::<usize>(),
+        ExprKind::Call { callee, args } => {
+            all(args)
+                + match callee {
+                    Callee::Method { receiver, .. } | Callee::Role { receiver, .. } | Callee::Builtin { receiver, .. } => {
+                        one(receiver)
+                    }
+                    Callee::FakeStorage(_) | Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => 0,
+                }
+        }
+        ExprKind::Array(parts) => parts
+            .iter()
+            .map(|part| match part {
+                ArrayPart::Value(value) => one(value),
+                ArrayPart::Range { start, end, .. } => one(start) + one(end),
+            })
+            .sum(),
+        ExprKind::Map(entries) => entries.iter().map(|(key, value)| one(key) + one(value)).sum(),
+        ExprKind::Index { object, index, fallback } => one(object) + one(index) + fallback.as_deref().map_or(0, one),
+        ExprKind::Functional(found) => {
+            source_mentions(&found.source, local) + found.initial.as_ref().map_or(0, one) + block(&found.body)
+        }
+        ExprKind::ArrayCast { parts, .. } => parts
+            .iter()
+            .map(|part| match part {
+                CastPart::One(value) | CastPart::Spread(value) => one(value),
+            })
+            .sum(),
+        ExprKind::Pack { items, spread } => all(items) + spread.as_deref().map_or(0, one),
+        // An anonymous action names an outer local only through a capture.
+        ExprKind::Closure { captures, .. } => captures.iter().filter(|(outer, _)| *outer == local).count(),
+        ExprKind::BoundRoleAction { receiver, .. } | ExprKind::BoundAction { receiver, .. } => one(receiver),
+        ExprKind::CallValue { callee, args } => one(callee) + all(args),
+        ExprKind::CapSelect { owner, .. } => one(owner),
+        ExprKind::CapRead { cap, .. } => one(cap),
+    }
+}

@@ -218,6 +218,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   installed. `blade new` writes the sections with their defaults
   ([#68](https://github.com/shootnix/okkama/issues/68)).
 
+### Changed
+
+- Compiler: building an array or map with `reduce` is linear (#243). When the
+  block uses its accumulator only as its value — alone, or as the left end of
+  `acc + ...` — the accumulator lives in a builder (the one `map` and `filter`
+  already use on every engine): `acc + [x]` appends in place, amortized O(1),
+  instead of copying everything gathered so far; a map accumulator grows the
+  same way from `[:]` by literal entries. Nothing else can hold an
+  intermediate accumulator, so results are unchanged; any other use of `acc`
+  (a read, a call, a capture, a merge with a map value) keeps the copy.
+  Building n integers, before → after: n = 100000 takes 8.5 s → 0.16 s on the
+  core, 44 s → 0.25 s on the IR engine, 2.9 s → 0.28 s on the JVM; n = 10^6
+  now takes 0.18 / 0.67 / 0.35 s. OCS `L05.reduce.accumulator-in-place`
+  checks both paths on every engine; the Book (EN/RU) describes the rule
+  ([#243](https://github.com/shootnix/okkama/issues/243)).
+
 ### Fixed
 
 - Book: chapter 10 (EN/RU) lists every builtin action the compiler has —

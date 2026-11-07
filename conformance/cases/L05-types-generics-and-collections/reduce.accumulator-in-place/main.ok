@@ -1,0 +1,23 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Accumulators that grow in place (#243) and ones that are copied must give
+// the same results: literals, branches, maps, chains, a read of acc, nesting.
+main() is int {
+    let out = Stdout();
+    let squares = (1..=5).reduce([0]) -> acc, n { acc + [n * n]; };
+    out.writeln(squares.map() -> x { x.string(); }.join(","));
+    let evens is @int = (1..=10).reduce([]) -> acc, n { if n % 2 == 0 { acc + [n, n * 10]; } else { acc; } };
+    out.writeln(evens.map() -> x { x.string(); }.join(","));
+    let words = ["b", "a", "b", "c"];
+    let index is %string:int = words.reduce([:]) -> acc, w { acc + [w: w.length()]; };
+    out.writeln(index.keys().join(","));
+    let pairs = (1..=3).reduce(["x"]) -> acc, n { acc + [n.string()] + ["|"]; };
+    out.writeln(pairs.join(""));
+    let twice = (1..=3).reduce([0]) -> acc, n { acc + [acc.size()]; };
+    out.writeln(twice.map() -> x { x.string(); }.join(","));
+    let nested = (1..=2).reduce([0]) -> outer, n { outer + (1..=n).reduce(@int()) -> inner, m { inner + [m]; }; };
+    out.writeln(nested.map() -> x { x.string(); }.join(","));
+    0;
+}
