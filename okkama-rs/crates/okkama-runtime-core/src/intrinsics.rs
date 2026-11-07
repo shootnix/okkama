@@ -1049,8 +1049,18 @@ fn array_ordering(host: &HostRef, array: &Value) -> Result<Value> {
         .map_err(|e| trap(e.message))?
         .to_vec();
     let mut failure = None;
+    let mut compared = 0u32;
     sorted.sort_by(|left, right| {
         if failure.is_some() {
+            return std::cmp::Ordering::Equal;
+        }
+        // A long sort stops for the interrupt flag or the memory budget
+        // (#238); the rest of the comparisons are then free.
+        compared = compared.wrapping_add(1);
+        if compared.is_multiple_of(4096)
+            && let Err(exhausted) = crate::budget::check_now()
+        {
+            failure = Some(trap(exhausted.message()));
             return std::cmp::Ordering::Equal;
         }
         order(host, left, right).unwrap_or_else(|error| {

@@ -289,6 +289,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- A long sort no longer outlasts `--timeout` (#238, first part). Sorting
+  scalars or text ran to its end inside one native operation: three million
+  strings took 3 s on the core and 8 s on the IR engine after a one-second
+  timeout. The comparisons now look at the interrupt flag and the memory
+  budget every 4096 steps and stop at once (1.25 s with `--timeout 1` on
+  both); the program's `catch` does not see the stop and its cleanup does not
+  run, as for every budget. A sort through `Comparing` was already
+  interruptible: each comparison is a call. Unlimited runs are unchanged
+  ([#238](https://github.com/shootnix/okkama/issues/238)).
+
 - `db/postgres`: `COPY … FROM STDIN` no longer hangs the connection. The
   server ignores a Sync that arrives in copy-in mode, so after the driver's
   CopyFail it waited for another Sync that never came; the refusal now sends

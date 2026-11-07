@@ -776,6 +776,10 @@ pub(crate) fn call_function(ctx: *mut Ctx, runtime: &mut Runtime, function: usiz
     (unsafe { (*ctx).status } == OK).then_some(result)
 }
 
+/// Comparisons between two looks at the interrupt flag and the memory budget
+/// in a sort of scalars or text (#238); a comparison costs nanoseconds.
+const SORT_POLL: u32 = 4096;
+
 /// Stable ordering of an array: natural order for scalars and text, otherwise
 /// a bottom-up merge sort over `compare::Comparing<T>.order`.
 fn ordering(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, source: Word) -> Word {
@@ -793,13 +797,33 @@ fn ordering(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, source: Word)
     );
     let repr = kind.repr();
     if builtin {
-        items.sort_by(|&a, &b| match element_type {
-            Some(Type::Int) => runtime.big_value(a).cmp(&runtime.big_value(b)),
-            Some(Type::Float) => f64::from_bits(a).partial_cmp(&f64::from_bits(b)).unwrap_or(Ordering::Equal),
-            Some(Type::Rat) => runtime.rational(a).cmp(runtime.rational(b)),
-            Some(Type::Str) => runtime.heap.text(a).cmp(runtime.heap.text(b)),
-            _ => a.cmp(&b),
+        // A long sort stops for the interrupt flag or the memory budget
+        // (#238): every few thousand comparisons look at them, and once one
+        // fires the rest compare as equal, so the sort ends at once.
+        let mut compared = 0u32;
+        let mut stopped = None;
+        items.sort_by(|&a, &b| {
+            if stopped.is_some() {
+                return Ordering::Equal;
+            }
+            compared = compared.wrapping_add(1);
+            if compared.is_multiple_of(SORT_POLL) && runtime.limits.polled() {
+                stopped = runtime.over_budget();
+                if stopped.is_some() {
+                    return Ordering::Equal;
+                }
+            }
+            match element_type {
+                Some(Type::Int) => runtime.big_value(a).cmp(&runtime.big_value(b)),
+                Some(Type::Float) => f64::from_bits(a).partial_cmp(&f64::from_bits(b)).unwrap_or(Ordering::Equal),
+                Some(Type::Rat) => runtime.rational(a).cmp(runtime.rational(b)),
+                Some(Type::Str) => runtime.heap.text(a).cmp(runtime.heap.text(b)),
+                _ => a.cmp(&b),
+            }
         });
+        if let Some(what) = stopped {
+            return runtime.exhaust(unsafe { &mut *ctx }, what);
+        }
         if kind == Kind::Byte {
             let bytes: Vec<u8> = items.iter().map(|&w| w as u8).collect();
             return runtime.heap.allocate_bytes(&bytes);
