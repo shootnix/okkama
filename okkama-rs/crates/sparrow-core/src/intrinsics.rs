@@ -415,7 +415,7 @@ fn call(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, intrinsic: Intrin
             let channel = primitives::Channel {
                 capacity: capacity as usize,
                 closed: false,
-                repr: Repr::Raw,
+                repr: None,
                 messages: Default::default(),
                 senders: Default::default(),
                 receivers: Default::default(),

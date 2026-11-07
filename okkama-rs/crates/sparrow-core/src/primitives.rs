@@ -90,7 +90,9 @@ pub struct Barrier {
 pub struct Channel {
     pub capacity: usize,
     pub closed: bool,
-    pub repr: Repr,
+    /// Representation of its messages, fixed by the first endpoint that sends
+    /// or receives; endpoints of another representation are refused.
+    pub repr: Option<Repr>,
     pub messages: VecDeque<Word>,
     /// Blocked `send` frames; the payload stays in the frame.
     pub senders: VecDeque<Word>,
@@ -117,7 +119,7 @@ impl State {
             Self::Barrier(barrier) => barrier.borrow().waiting.iter().for_each(|&w| visit(w, Repr::Ref)),
             Self::Channel(channel) => {
                 let channel = channel.borrow();
-                channel.messages.iter().for_each(|&w| visit(w, channel.repr));
+                channel.messages.iter().for_each(|&w| visit(w, channel.repr.unwrap_or(Repr::Raw)));
                 channel.senders.iter().chain(&channel.receivers).for_each(|&w| visit(w, Repr::Ref));
             }
             Self::WorkerBinding { entry, fields } => {

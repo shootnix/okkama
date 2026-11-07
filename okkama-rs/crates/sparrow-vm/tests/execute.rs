@@ -35,7 +35,7 @@ fn program(functions: Vec<Function>) -> Program {
     Program {
         module: "app".into(),
         version: "1.0.0".into(),
-        types: vec![Type::Int, Type::Failure],
+        types: vec![Type::Int, Type::Failure, Type::Bool],
         functions,
         entry: Some(FuncRef(0)),
         ..Program::default()
@@ -44,7 +44,7 @@ fn program(functions: Vec<Function>) -> Program {
 
 /// `sum(n) = n == 0 ? 0 : n + sum(n - 1)` — глубокая рекурсия без рекурсии Rust.
 fn recursion(depth: &str) -> Program {
-    program(vec![
+    let mut program = program(vec![
         function(
             "main",
             2,
@@ -71,7 +71,9 @@ fn recursion(depth: &str) -> Program {
                 I::Return { value: Some(R(4)) },
             ],
         ),
-    ])
+    ]);
+    program.functions[1].registers[2] = TypeRef(2);
+    program
 }
 
 #[test]
@@ -108,7 +110,7 @@ fn exact_values_traps_and_handlers_are_independent_of_source_locations() {
     // Отказ деления перехватывает обработчик диапазона и продолжает программу.
     let mut caught = program(vec![function(
         "main",
-        3,
+        4,
         vec![],
         vec![
             I::Const { dst: d(0), value: int("7") },
@@ -119,8 +121,8 @@ fn exact_values_traps_and_handlers_are_independent_of_source_locations() {
             I::Return { value: Some(R(2)) },
         ],
     )]);
-    caught.functions[0].registers[1] = TypeRef(0);
-    caught.functions[0].handlers = vec![Handler { start: 2, end: 4, target: to(4), failure: R(1) }];
+    caught.functions[0].registers[3] = TypeRef(1);
+    caught.functions[0].handlers = vec![Handler { start: 2, end: 4, target: to(4), failure: R(3) }];
     assert_eq!(execute(&caught).unwrap().to_string(), "42");
     caught.functions[0].handlers.clear();
     assert!(matches!(

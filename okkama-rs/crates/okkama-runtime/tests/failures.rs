@@ -32,8 +32,8 @@ fn untaken_panic_is_lazy_and_bytecode_message_must_be_a_string() {
             .to_string(),
         "42"
     );
-    // Проверка SPB 9 структурна: тип операнда проверяет исполнение — не
-    // строка в `panic` даёт ошибку состояния VM, а не отказ программы.
+    // Проверка SPB 9 типизирована: не строка в `panic` отвергается до
+    // исполнения (#16).
     let module = lower("panic \"stop\";");
     let mut invalid = codegen::sparrow::generate(&module).unwrap();
     let main = invalid.entry.unwrap().0 as usize;
@@ -46,11 +46,8 @@ fn untaken_panic_is_lazy_and_bytecode_message_must_be_a_string() {
         unreachable!()
     };
     *value = okkama_sparrow::Constant::Bool(false);
-    assert!(invalid.verify().is_ok());
-    assert!(matches!(
-        sparrow::execute(&invalid),
-        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::InvalidState { .. }, .. })
-    ));
+    let error = invalid.verify().unwrap_err().to_string();
+    assert!(error.contains("str cannot hold the bool result"), "{error}");
 }
 
 #[test]

@@ -39,7 +39,7 @@ pub fn program(functions: Vec<Function>) -> Program {
     Program {
         module: "app".into(),
         version: "1.0.0".into(),
-        types: vec![Type::Int, Type::Bool, Type::Str],
+        types: vec![Type::Int, Type::Bool, Type::Str, Type::Failure],
         functions,
         entry: Some(FuncRef(0)),
         ..Program::default()
@@ -75,5 +75,7 @@ pub fn sample() -> Program {
             I::Return { value: Some(r(4)) },
         ],
     );
+    let mut factorial = factorial;
+    factorial.registers[2] = TypeRef(1);
     program(vec![main, factorial])
 }

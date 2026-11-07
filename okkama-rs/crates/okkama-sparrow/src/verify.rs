@@ -1,6 +1,7 @@
 //! Проверка программы до исполнения: ссылки таблиц, регистры, переходы и
 //! обработчики, завершённость кода, и что каждый читаемый регистр записан на
-//! всех путях к чтению (прямой анализ потока данных над битовыми множествами).
+//! всех путях к чтению (прямой анализ потока данных над битовыми множествами),
+//! и типы операндов каждой инструкции (`typing`).
 use crate::{Access, Function, Instruction, Program, Register, Target, Type, VerifyError};
 
 fn program_error(message: impl Into<String>) -> VerifyError {
@@ -426,7 +427,12 @@ fn check_function(program: &Program, function: &Function) -> Result<(), VerifyEr
         context.target(None, &handler.target)?;
         context.register(None, handler.failure)?;
     }
-    check_initialization(&context)
+    check_initialization(&context)?;
+    let typing = crate::typing::Typing::new(program, function);
+    for (pc, instruction) in function.code.iter().enumerate() {
+        typing.instruction(instruction).map_err(|message| context.error(Some(pc), message))?;
+    }
+    typing.handlers().map_err(|message| context.error(None, message))
 }
 
 pub(crate) fn verify(program: &Program) -> Result<(), VerifyError> {
@@ -434,5 +440,5 @@ pub(crate) fn verify(program: &Program) -> Result<(), VerifyError> {
     for function in &program.functions {
         check_function(program, function)?;
     }
-    Ok(())
+    crate::typing::tables(program).map_err(program_error)
 }

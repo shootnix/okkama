@@ -69,10 +69,10 @@ fn native_identity_and_signature_are_checked_before_execution() {
     assert!(
         matches!(execute(&module), Err(RuntimeError::InvalidState { message, .. }) if message.contains("signature"))
     );
-    assert!(matches!(
-        sparrow::execute(&codegen::sparrow::generate(&module).unwrap()),
-        Err(sparrow::Error::Operation { error: sparrow_vm::OperationError::InvalidState { message, .. }, .. }) if message.contains("signature")
-    ));
+    // SPB сверяет native с таблицей ABI при проверке программы (#16).
+    assert!(
+        matches!(codegen::sparrow::generate(&module), Err(error) if error.message.contains("does not match the signature"))
+    );
     let module = lower(r#"utf16_encode("x", "middle").size();"#);
     assert!(
         matches!(execute(&module), Err(RuntimeError::Trap { message, .. }) if message == "Native invocation \"runtime/utf@1::utf16_encode/2\" failed")

@@ -7,7 +7,29 @@ use okkama_sparrow::{
     assemble, decode, disassemble, encode,
 };
 
-/// Программа со всеми видами таблиц и инструкций (синтаксически корректная).
+/// Тип регистра `Oops.text` по индексу в таблице типов `everything`.
+const TEXT_REGISTERS: [u32; 40] = [
+    7, 0, 0, 0, 0, 6, 8, 10, 5, 20, 3, 19, 11, 12, 13, 15, 9, 14, 4, 0, 2, 17, 18, 16, 1, 16, 7, 4, 1, 0, 16, 8, 9, 14, 0,
+    0, 8, 1, 19, 0,
+];
+
+/// Определение регистра `index` значением его типа (пролог `Oops.text`).
+fn define(index: u32, ty: &Type) -> I {
+    let dst = d(index);
+    match ty {
+        Type::Int => I::Const { dst, value: int(&format!("-{index}")) },
+        Type::Bool => I::Const { dst, value: Constant::Bool(index % 2 == 0) },
+        Type::Str => I::Const { dst, value: Constant::Str(format!("s{index}")) },
+        Type::Byte => I::Const { dst, value: Constant::Byte(index as u8) },
+        Type::Float => I::Const { dst, value: Constant::Float((index as f64).to_bits()) },
+        Type::Char => I::Const { dst, value: Constant::Char('c') },
+        Type::Builder(_) => I::BuilderNew { dst },
+        Type::MapBuilder(..) => I::MapBuilderNew { dst },
+        _ => I::Undef { dst },
+    }
+}
+
+/// Программа со всеми видами таблиц и инструкций (корректная, с типами).
 fn everything() -> Program {
     let mut program = sample();
     program.types = vec![
@@ -27,25 +49,32 @@ fn everything() -> Program {
         Type::Builder(TypeRef(0)),
         Type::Future(None),
         Type::Successor(ObjectRef(0)),
+        Type::Byte,
+        Type::Float,
+        Type::Char,
+        Type::Failure,
+        Type::Region,
+        Type::Array(TypeRef(16)),
     ];
     program.enums = vec![EnumDecl { name: "Color".into(), cases: vec!["red".into(), "green \"x\"".into()] }];
     program.roles = vec![RoleDecl {
         name: "Error".into(),
         builtin: true,
-        methods: vec![RoleMethod { name: "text".into(), params: vec![], result: Some(TypeRef(2)) }],
+        methods: vec![RoleMethod { name: "code".into(), params: vec![], result: Some(TypeRef(0)) }],
     }];
     program.objects = vec![ObjectDecl {
         name: "app::Oops".into(),
         fields: vec![("why".into(), TypeRef(2))],
         does: vec![Witness { role: RoleRef(0), slots: vec![FuncRef(2)] }],
-        destroy: Some(FuncRef(2)),
+        destroy: Some(FuncRef(5)),
         builtin: false,
     }];
     program.handles = vec!["FileState".into()];
     program.caps = vec![CapDecl { name: "Oops::View".into(), owner: ObjectRef(0), fields: vec![("why".into(), FuncRef(2))] }];
     let mut text = function("Oops.text", 40, vec![0], true, Vec::new());
-    text.code = (0..39)
-        .map(|index| I::Const { dst: d(index + 1), value: int(&format!("-{}", index + 1)) })
+    text.registers = TEXT_REGISTERS.iter().map(|&ty| TypeRef(ty)).collect();
+    text.code = (1..40)
+        .map(|index| define(index, &program.types[TEXT_REGISTERS[index as usize] as usize]))
         .chain([
             I::Const { dst: d(20), value: Constant::Str("tab\t\u{1}é🙂".into()) },
             I::Const { dst: d(21), value: Constant::Float(1.5f64.to_bits()) },
@@ -55,31 +84,33 @@ fn everything() -> Program {
             I::Bits { op: BitOp::RotateLeft, byte: true, dst: d(25), value: r(23), count: Some(r(1)) },
             I::ObjNext { dst: d(26), object: r(0), updates: vec![(0, r(20))] },
             I::MapNew { dst: d(27), entries: vec![(r(20), r(1))] },
-            I::Fut { op: FutOp::Cancelled, dst: Some(d(28)), future: r(1) },
-            I::CallRole { dst: None, receiver: r(0), role: RoleRef(0), slot: 0, args: vec![r(1), r(2)] },
-            I::CallCap { dst: d(29), cap: r(0), ty: CapRef(0), field: 0 },
+            I::Fut { op: FutOp::Cancelled, dst: Some(d(28)), future: r(5) },
+            I::CallRole { dst: None, receiver: r(6), role: RoleRef(0), slot: 0, args: vec![] },
+            I::CallCap { dst: d(29), cap: r(7), ty: CapRef(0), field: 0 },
             I::ByteFrom { dst: d(30), source: r(1), context: Some("@byte() argument 3".into()) },
-            I::RoleNarrow { dst: d(31), source: r(0), role: RoleRef(0), message: "no \"role\"".into() },
+            I::RoleNarrow { dst: d(31), source: r(6), role: RoleRef(0), message: "no \"role\"".into() },
             I::EnumCase { dst: d(32), ty: EnumRef(0), case: 1 },
-            I::WorkerSpawn { dst: d(33), entry: r(1), args: vec![], direct: true },
-            I::RegionLeave { region: r(1), keep: None },
-            I::ArrayLookup { array: r(1), index: r(2), value: d(34), found: Target { pc: 58, moves: vec![(r(35), r(3))] }, missing: to(59) },
-            I::Catch { failure: r(1), kind: CatchKind::Role, ty: 0, value: d(36), handler: to(59), next: to(60) },
+            I::WorkerSpawn { dst: d(33), entry: r(8), args: vec![r(1)], direct: true },
+            I::RegionLeave { region: r(9), keep: None },
+            I::ArrayLookup { array: r(10), index: r(2), value: d(34), found: Target { pc: 58, moves: vec![(r(35), r(3))] }, missing: to(59) },
+            I::Catch { failure: r(11), kind: CatchKind::Role, ty: 0, value: d(36), handler: to(59), next: to(60) },
             I::Return { value: Some(r(34)) },
             I::Trap { code: TrapCode::Confirm, message: "confirm failed".into() },
             I::IntCmp { op: Cmp::Ge, dst: d(37), left: r(1), right: r(2) },
-            I::Return { value: Some(r(37)) },
+            I::Return { value: Some(r(1)) },
         ])
         .collect();
     text.handlers = vec![Handler { start: 40, end: 50, target: to(59), failure: r(38) }];
-    text.registers[0] = TypeRef(7);
-    let mut native = function("runtime.write", 1, vec![0], false, Vec::new());
+    let mut native = function("runtime.write", 1, vec![0], true, Vec::new());
+    native.registers[0] = TypeRef(21);
     native.native = Some("runtime/stdio@1::stdout_write/1".into());
     let mut intrinsic = function("okkama.lock.Lock.new", 1, vec![], true, Vec::new());
     intrinsic.intrinsic = Some(Intrinsic { name: "okkama.lock.Lock.new".into(), objects: vec![ObjectRef(0)], helpers: vec![FuncRef(1)] });
     intrinsic.is_async = true;
-    program.functions.extend([text, native, intrinsic]);
-    program.tests = Some(vec![("works".into(), FuncRef(1))]);
+    let mut destroy = function("Oops.destroy", 1, vec![0], false, vec![I::Return { value: None }]);
+    destroy.registers[0] = TypeRef(7);
+    program.functions.extend([text, native, intrinsic, destroy]);
+    program.tests = Some(vec![("works".into(), FuncRef(0))]);
     program
 }
 

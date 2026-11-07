@@ -133,6 +133,7 @@ macro_rules! frame_pointer {
 
 impl Runtime {
     pub fn new(loaded: Loaded) -> Result<Self, Error> {
+        crate::contracts::check(&loaded)?;
         let heap = Heap::new(loaded.layouts());
         let functions = loaded.program.functions.len();
         let resources = crate::failures::Resources::new(&loaded.program);
