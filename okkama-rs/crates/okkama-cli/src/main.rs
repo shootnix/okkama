@@ -15,6 +15,7 @@ use std::process::ExitCode;
 #[cfg(not(feature = "allocation-stats"))]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+
 #[cfg(feature = "allocation-stats")]
 use okkama_allocation_counter as allocation_stats;
 #[cfg(feature = "allocation-stats")]
@@ -59,7 +60,7 @@ USAGE:
     okkama ir <FILE|-> [--format text]
     okkama build <FILE|-> --target jvm -o <FILE>
     okkama build <FILE|-> --target sparrow -o <FILE.spb>
-    okkama exec <FILE.spb>
+    okkama exec [BUDGETS] <FILE.spb>
     okkama run [-t] <FILE> [FILE.ok...] [ARGS...]
     okkama run --engine ir|sparrow <FILE> [FILE.ok...]
     okkama <FILE.ok> [FILE.ok...]
@@ -115,6 +116,14 @@ RUN OPTIONS:
                           Place engine options before FILE; every engine runs
                           tests (-t), program arguments and `spawn` workers.
                           OKKAMA_ENGINE=ir|sparrow|sparrow-origin|jvm sets the default.
+    --max-steps N         Stop after N steps: function entries and loop
+                          iterations (sparrow and exec; off by default)
+    --max-memory SIZE     Stop when the run holds more than SIZE bytes
+                          (K/M/G suffixes); also bounds recursion depth
+    --max-output SIZE     Stop when stdout and stderr exceed SIZE bytes
+    --timeout SECONDS     Interrupt the run after SECONDS of wall-clock time
+                          Running out exits 1: \"Execution budget exhausted:
+                          steps|memory|output\" or \"Execution interrupted\".
                           An uncaught failure on ir and sparrow-origin also
                           prints its source line and the call stack;
                           OKKAMA_TRACE=off prints the failure alone.
@@ -219,7 +228,10 @@ const EXEC_HELP: &str = "\
 okkama exec — execute Sparrow bytecode
 
 USAGE:
-    okkama exec <FILE.spb> [ARGS...]
+    okkama exec [BUDGETS] <FILE.spb> [ARGS...]
+
+BUDGETS (off by default): --max-steps N, --max-memory SIZE, --max-output SIZE,
+--timeout SECONDS (see `okkama help run`); running out exits 1.
 
 Loads and verifies an SPB file, then executes it in the Rust process with
 ARGS as the program's arguments; a test-profile file (`build -t`) runs its
@@ -230,6 +242,15 @@ and read errors with 3.
 ";
 
 fn sparrow_exec_command(args: &[String]) -> Outcome {
+    let mut limits = sparrow_core::budget::Limits::default();
+    let mut args = args;
+    while let [option, value, rest @ ..] = args {
+        match limits.option(option, value) {
+            Ok(true) => args = rest,
+            Ok(false) => break,
+            Err(message) => return Outcome::usage(&message),
+        }
+    }
     let Some((path, arguments)) = args.split_first() else {
         return Outcome::usage("exec requires a bytecode file");
     };
@@ -261,7 +282,7 @@ fn sparrow_exec_command(args: &[String]) -> Outcome {
         return core_tests(bytes);
     }
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    core_outcome(sparrow_core::run_configured(bytes, arguments, false, core::worker_command(Path::new(path))))
+    core_outcome(sparrow_core::run_limited(bytes, arguments, false, core::worker_command(Path::new(path)), limits))
 }
 
 /// A test-profile program on the core: the report goes to stdout.
@@ -363,6 +384,8 @@ impl Outcome {
 fn main() -> ExitCode {
     #[cfg(feature = "allocation-stats")]
     let _allocation_report = allocation_stats::Report;
+    #[cfg(not(feature = "allocation-stats"))]
+    sparrow_core::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Сервер языка владеет stdin/stdout сам.
     if args.first().map(String::as_str) == Some("lsp") {
@@ -1301,6 +1324,8 @@ fn run_command(args: &[String]) -> Outcome {
     let mut rest = args;
     let mut tests = false;
     let default = std::env::var("OKKAMA_ENGINE").unwrap_or_default();
+    let mut limits = sparrow_core::budget::Limits::default();
+    let mut budgeted = false;
     let mut engine = match default.as_str() {
         "ir" => "ir",
         "sparrow" => "sparrow",
@@ -1334,12 +1359,26 @@ fn run_command(args: &[String]) -> Outcome {
                 rest = &rest[1..];
                 break;
             }
+            budget if budget.starts_with("--max-") || budget == "--timeout" => {
+                let Some(value) = rest.get(1) else {
+                    return Outcome::usage(&format!("{budget} needs a value"));
+                };
+                match limits.option(budget, value) {
+                    Ok(true) => budgeted = true,
+                    Ok(false) => return Outcome::usage(&format!("unknown option `{budget}`")),
+                    Err(message) => return Outcome::usage(&message),
+                }
+                rest = &rest[1..];
+            }
             other if other.starts_with('-') && other != "-" => {
                 return Outcome::usage(&format!("unknown option `{other}`"));
             }
             _ => break,
         }
         rest = &rest[1..];
+    }
+    if budgeted && engine != "sparrow" {
+        return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow");
     }
     let Some((input, mut program_args)) = rest.split_first() else {
         return Outcome::usage("missing input file");
@@ -1417,7 +1456,7 @@ fn run_command(args: &[String]) -> Outcome {
             Err(message) => return Outcome::failure(format!("okkama: {message}\n"), EXIT_IO),
         };
         let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
-        return core_outcome(sparrow_core::run_configured(bytes, arguments, false, command));
+        return core_outcome(sparrow_core::run_limited(bytes, arguments, false, command, limits));
     }
     if engine == "sparrow-origin" {
         let program = match codegen::sparrow::generate(&module) {

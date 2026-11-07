@@ -12,6 +12,8 @@ use std::task::{Wake, Waker};
 
 /// How long the scheduler spins for a pending native reply before sleeping.
 const SPIN_MICROS: u64 = 50;
+/// How often a waiting scheduler looks at the interrupt flag.
+const INTERRUPT_LOOK: std::time::Duration = std::time::Duration::from_millis(20);
 
 #[derive(Debug, Default)]
 struct Shared {
@@ -119,6 +121,14 @@ impl Runtime {
             self.count(|_| "scheduler idle wait".into());
             let started = std::time::Instant::now();
             let shared = self.io.shared.clone();
+            // An interruptible run wakes to look at its interrupt flag.
+            let earliest = match self.limits.interrupt {
+                Some(_) => {
+                    let look = std::time::Instant::now() + INTERRUPT_LOOK;
+                    Some(earliest.map_or(look, |deadline| deadline.min(look)))
+                }
+                None => earliest,
+            };
             self.io.block_on(async move {
                 match earliest {
                     Some(deadline) => {

@@ -36,6 +36,8 @@ pub const VISITED: u64 = 1 << 12;
 /// A string whose bytes are all ASCII: lengths and slices are byte offsets.
 pub const ASCII: u64 = 1 << 13;
 const PAGE_WORDS: usize = 64 * 1024 / 8;
+/// Bytes of one page of small cells.
+pub const PAGE_BYTES: usize = PAGE_WORDS * 8;
 /// Cell sizes in words, header included. Async frames are seven words plus
 /// one per register: classes up to 128 words keep frames of large functions
 /// on free lists instead of separate allocations.
@@ -119,6 +121,8 @@ pub struct Heap {
     watched: crate::word::FastSet<Word>,
     /// Watched objects reclaimed by the last sweeps, until taken.
     released: Vec<Word>,
+    /// Growth checks against a memory budget (`budget`).
+    pub watch: Option<crate::budget::Watch>,
 }
 
 impl Heap {
@@ -137,6 +141,7 @@ impl Heap {
             worklist: Vec::new(),
             watched: crate::word::FastSet::default(),
             released: Vec::new(),
+            watch: None,
         }
     }
 
@@ -169,6 +174,9 @@ impl Heap {
     pub fn allocate(&mut self, words: usize) -> Word {
         let Some(class) = Self::class_of(words) else {
             self.allocated += words * 8;
+            if let Some(watch) = &mut self.watch {
+                watch.grow(words * 8);
+            }
             let mut memory = vec![0u64; words].into_boxed_slice();
             let address = memory.as_mut_ptr() as Word;
             self.large.push(memory);
@@ -202,6 +210,9 @@ impl Heap {
     /// pops free cells inline, and only an empty list reaches the heap.
     fn add_page(&mut self, class: usize) {
         self.allocated += PAGE_WORDS * 8;
+        if let Some(watch) = &mut self.watch {
+            watch.grow(PAGE_BYTES);
+        }
         let size = CLASSES[class];
         let mut memory = vec![0u64; PAGE_WORDS - PAGE_WORDS % size].into_boxed_slice();
         let base = memory.as_mut_ptr() as Word;

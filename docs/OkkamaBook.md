@@ -29,6 +29,29 @@ for `--target`. `sparrow check out.spb` verifies without execution.
 See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
+The Sparrow core (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`)
+can bound a run, for untrusted programs or services. Every budget is off by
+default and costs nothing then:
+
+```sh
+okkama exec --max-steps 100000000 --max-memory 256M --timeout 5 app.spb
+```
+
+- `--max-steps N` counts function entries and loop iterations.
+- `--max-memory SIZE` (bytes, or `K`/`M`/`G`) bounds the memory the process
+  holds beyond the start of the run — the core heap, big integers, strings and
+  collections — and the machine stack, so deep recursion ends as `Stack
+  overflow` within it.
+- `--max-output SIZE` bounds what the program writes to stdout and stderr.
+- `--timeout SECONDS` interrupts the run after that much wall-clock time, also
+  while it awaits.
+
+Running out ends the program with exit status 1 and `Execution budget
+exhausted: steps` (`memory`, `output`) or `Execution interrupted`. It is not a
+failure of the program: `catch` does not see it and `destroy` does not run. A
+single native operation (a long BigInt division, a sort) finishes before the
+run stops; a BigInt product that cannot fit is refused before it is computed.
+
 ---
 
 ## Table of Contents

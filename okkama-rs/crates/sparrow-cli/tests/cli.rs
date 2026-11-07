@@ -1,4 +1,4 @@
-use okkama_sparrow::{Constant, Dst, FuncRef, Function, Instruction, Program, Register, Target, Type, TypeRef};
+use okkama_sparrow::{Constant, Dst, FuncRef, Function, Handler, Instruction, Program, Register, Target, Type, TypeRef};
 use std::{
     path::PathBuf,
     process::{Command, Output},
@@ -17,8 +17,11 @@ impl File {
         Self(path)
     }
     fn run(&self, command: &str) -> Output {
+        self.run_with(&[command])
+    }
+    fn run_with(&self, options: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_sparrow"))
-            .arg(command)
+            .args(options)
             .arg(&self.0)
             .env("PATH", "")
             .output()
@@ -237,4 +240,42 @@ fn check_refuses_intrinsics_against_their_runtime_contract() {
     program.functions[0].code[1] = Instruction::Const { dst: Dst(Register(2)), value: Constant::Bool(false) };
     let file = File::new(&okkama_sparrow::encode(&program).unwrap());
     assert!(file.run("check").status.success());
+}
+
+/// An infinite loop inside a handler's range: budgets stop it, and the
+/// handler does not catch exhaustion (#21).
+#[test]
+fn budgets_stop_a_runaway_loop_that_handlers_cannot_catch() {
+    let program = Program {
+        module: "app".into(),
+        version: "1.0.0".into(),
+        types: vec![Type::Int, Type::Failure],
+        functions: vec![Function {
+            symbol: "main".into(),
+            is_async: false,
+            native: None,
+            intrinsic: None,
+            registers: vec![TypeRef(0), TypeRef(1)],
+            params: Vec::new(),
+            result: Some(TypeRef(0)),
+            code: vec![
+                Instruction::Const { dst: Dst(Register(0)), value: Constant::Int("7".into()) },
+                Instruction::Jump { target: Target { pc: 1, moves: vec![] } },
+                Instruction::Return { value: Some(Register(0)) },
+            ],
+            handlers: vec![Handler { start: 1, end: 2, target: Target { pc: 2, moves: vec![] }, failure: Register(1) }],
+        }],
+        entry: Some(FuncRef(0)),
+        ..Program::default()
+    };
+    let file = File::new(&okkama_sparrow::encode(&program).unwrap());
+    let stopped = file.run_with(&["run", "--max-steps", "100000"]);
+    assert_eq!(stopped.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&stopped.stderr), "Execution budget exhausted: steps\n");
+    let interrupted = file.run_with(&["run", "--timeout", "0.2"]);
+    assert_eq!(interrupted.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&interrupted.stderr), "Execution interrupted\n");
+    let invalid = file.run_with(&["run", "--max-memory", "lots"]);
+    assert_eq!(invalid.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid value `lots` for --max-memory"));
 }

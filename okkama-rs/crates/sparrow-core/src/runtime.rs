@@ -12,6 +12,7 @@
 use crate::Error;
 use crate::heap::{self, Heap, Integer, Payload};
 use crate::program::{Kind, Loaded};
+use crate::budget::Exhausted;
 use crate::word::{Repr, UNBOUND, Word};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -21,13 +22,15 @@ pub const OK: u64 = 0;
 pub const FAILED: u64 = 1;
 /// The engine stopped (unsupported construct, internal invariant).
 pub const FATAL: u64 = 2;
+/// A budget ran out or the host interrupted the run (`budget`); like
+/// `FATAL`, it unwinds every activation without handlers.
+pub const EXHAUSTED: u64 = 3;
 
 /// Shared with machine code; offsets come from `offset_of!`.
 #[repr(C)]
 #[derive(Debug)]
 pub struct Ctx {
     pub status: u64,
-    pub interrupt: u64,
     pub stack_limit: u64,
     pub failure: Word,
     pub runtime: *mut Runtime,
@@ -112,6 +115,22 @@ pub struct Runtime {
     /// The command (`sparrow-next`, FILE.spb) process workers run; empty
     /// when the embedder configured none.
     pub worker_command: Vec<std::ffi::OsString>,
+    /// Budgets of the next run (`budget::Limits`); set before it starts.
+    pub limits: crate::budget::Limits,
+    pub(crate) budget: Budget,
+}
+
+/// Budget state of the current run.
+#[derive(Debug, Default)]
+pub(crate) struct Budget {
+    pub exhausted: Option<Exhausted>,
+    steps_left: Option<u64>,
+    /// Size of the slice given at the last refill.
+    slice: u64,
+    meter: Option<crate::budget::Meter>,
+    pub written: u64,
+    /// Steps left in the current slice; machine code polls below zero.
+    pub fuel: crate::budget::Fuel,
 }
 
 /// Frame pointer of the calling function's own frame record.
@@ -162,6 +181,8 @@ impl Runtime {
             io: crate::io::Io::default(),
             stats: std::env::var_os("SPARROW_CORE_STATS").map(|_| Box::default()),
             worker_command: Vec::new(),
+            limits: crate::budget::Limits::default(),
+            budget: Budget::default(),
             heap,
             jit: crate::jit::Jit::new()?,
             code: vec![0; functions].into_boxed_slice(),
@@ -292,13 +313,115 @@ pub(crate) fn fatal(ctx: &mut Ctx, runtime: &mut Runtime, message: String) -> Wo
 }
 
 /// Slow path of inline allocation: collect if due, then a cell of `words`.
+/// Under a memory budget, 0 when the allocation would cross it (status
+/// `EXHAUSTED`); machine code then returns.
 #[inline(never)]
 pub extern "C" fn rt_allocate(ctx: *mut Ctx, words: u64) -> Word {
     let frame = frame_pointer!();
     let (ctx, runtime) = unsafe { runtime(ctx) };
     runtime.count(|_| "allocation slow path".into());
+    if let (Some(limit), Some(meter)) = (runtime.limits.memory, &runtime.budget.meter) {
+        // A small cell comes from a new page when its free list is empty.
+        let bytes = match Heap::class_of(words as usize) {
+            Some(_) => crate::heap::PAGE_BYTES,
+            None => words as usize * 8,
+        };
+        if meter.used().saturating_add(bytes as isize) > limit as isize {
+            return runtime.exhaust(ctx, Exhausted::Memory);
+        }
+    }
     runtime.safepoint(frame, ctx, &[]);
     runtime.heap.allocate(words as usize)
+}
+
+/// A step slice is used up (or the run must stop): charge it, check the
+/// other budgets and the interrupt flag, and give the next slice.
+#[inline(never)]
+pub extern "C" fn rt_poll(ctx: *mut Ctx) {
+    let (ctx, runtime) = unsafe { runtime(ctx) };
+    if let Some(what) = runtime.over_budget() {
+        runtime.exhaust(ctx, what);
+        return;
+    }
+    match runtime.refill() {
+        // The step that polled is the first of the new slice.
+        Some(fuel) => runtime.budget.fuel.set(fuel - 1),
+        None => {
+            runtime.exhaust(ctx, Exhausted::Steps);
+        }
+    }
+}
+
+impl Runtime {
+    /// Stop the run because `what` ran out; the first reason is kept.
+    pub(crate) fn exhaust(&mut self, ctx: &mut Ctx, what: Exhausted) -> Word {
+        self.budget.exhausted.get_or_insert(what);
+        ctx.status = EXHAUSTED;
+        self.budget.fuel.set(0);
+        0
+    }
+
+    /// Would `bytes` more cross the memory budget?
+    pub(crate) fn would_exceed(&self, bytes: u64) -> bool {
+        match (self.limits.memory, &self.budget.meter) {
+            (Some(limit), Some(meter)) => meter.used().saturating_add(bytes.min(isize::MAX as u64) as isize) > limit as isize,
+            _ => false,
+        }
+    }
+
+    /// The reason to stop at a poll, other than steps.
+    pub(crate) fn over_budget(&self) -> Option<Exhausted> {
+        if let Some(what) = self.budget.exhausted {
+            return Some(what);
+        }
+        if self.limits.interrupted() {
+            return Some(Exhausted::Interrupted);
+        }
+        match (self.limits.memory, &self.budget.meter) {
+            (Some(limit), Some(meter)) if meter.used() > limit as isize => Some(Exhausted::Memory),
+            _ => None,
+        }
+    }
+
+    /// Charge the slice just used and size the next; None when the step
+    /// budget is spent.
+    fn refill(&mut self) -> Option<i64> {
+        let Some(left) = &mut self.budget.steps_left else {
+            return Some(crate::budget::SLICE as i64);
+        };
+        *left = left.saturating_sub(self.budget.slice);
+        if *left == 0 {
+            return None;
+        }
+        self.budget.slice = (*left).min(crate::budget::SLICE);
+        Some(self.budget.slice as i64)
+    }
+
+    /// Start the budgets of a run: the first slice of steps.
+    fn start_budget(&mut self) -> Result<i64, Error> {
+        if let Some(limit) = self.limits.memory {
+            let probe = crate::budget::memory_probe().ok_or_else(|| {
+                Error("a memory budget needs a memory probe (sparrow_core::budget::set_memory_probe)".into())
+            })?;
+            let meter = *self.budget.meter.get_or_insert_with(|| crate::budget::Meter::start(probe));
+            self.heap.watch = Some(crate::budget::Watch::new(meter, limit, &self.budget.fuel));
+        }
+        Ok(match self.limits.steps {
+            None => crate::budget::SLICE as i64,
+            Some(steps) => {
+                self.budget.steps_left = Some(steps);
+                self.budget.slice = steps.min(crate::budget::SLICE);
+                self.budget.slice as i64
+            }
+        })
+    }
+
+    /// The report of an exhausted run.
+    fn exhausted_report(&mut self) -> Error {
+        let message = self.budget.exhausted.unwrap_or(Exhausted::Interrupted).message();
+        self.uncaught = Some(crate::Uncaught { category: "exhausted", error_type: None, message: message.into() });
+        Error(message.into())
+    }
 }
 
 /// Compile a function on its first call; returns its code address.
@@ -332,7 +455,13 @@ pub extern "C" fn rt_int(ctx: *mut Ctx, op: u64, left: Word, right: Word) -> Wor
     let result = match op {
         INT_ADD => &*l + &*r,
         INT_SUB => &*l - &*r,
-        INT_MUL => &*l * &*r,
+        INT_MUL => {
+            // The product's size is known before the (long) multiplication.
+            if runtime.would_exceed((l.bits() + r.bits()) / 8) {
+                return runtime.exhaust(ctx, Exhausted::Memory);
+            }
+            &*l * &*r
+        }
         _ => {
             if r.is_zero() {
                 return fail(ctx, runtime, FailureKind::Program("Modulo by zero".into()));
@@ -444,6 +573,7 @@ pub extern "C" fn rt_native(ctx: *mut Ctx, function: u64, arguments: *const Word
             0
         }
         Err(crate::natives::Refusal::Fatal(message)) => fatal(ctx, runtime, message),
+        Err(crate::natives::Refusal::Exhausted(what)) => runtime.exhaust(ctx, what),
     }
 }
 
@@ -480,10 +610,13 @@ impl Runtime {
             return Err(Error("argument count mismatch".into()));
         }
         let asynchronous = function.is_async;
+        let fuel = self.start_budget()?;
+        self.budget.fuel.set(fuel);
+        // A memory budget also bounds the machine stack.
+        let stack = self.limits.memory.map_or(stack, |memory| stack.min(memory.max(2 << 20)));
         let marker = 0u8;
         let mut ctx = Ctx {
             status: OK,
-            interrupt: 0,
             // R2: the VM thread has a large stack; keep 1 MiB of headroom.
             stack_limit: (&marker as *const u8 as u64).saturating_sub(stack.saturating_sub(1 << 20)),
             failure: UNBOUND,
@@ -529,6 +662,7 @@ impl Runtime {
                 let failure = ctx.failure;
                 Err(Error(self.describe(&mut ctx, failure)))
             }
+            EXHAUSTED => Err(self.exhausted_report()),
             _ => Err(Error(self.fatal.clone().unwrap_or_else(|| "engine failure".into()))),
         }
     }

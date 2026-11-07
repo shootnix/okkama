@@ -11,6 +11,8 @@ pub enum Refusal {
     /// An existing failure word (a provider's NativeFailure).
     Raise(Word),
     Fatal(String),
+    /// A budget ran out (`budget`).
+    Exhausted(crate::budget::Exhausted),
 }
 
 /// Natives this core provides.
@@ -51,6 +53,13 @@ pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Resul
         }
         Native::StdoutWrite | Native::StderrWrite => {
             let bytes = runtime.heap.byte_view(arguments[0]).into_owned();
+            if let Some(limit) = runtime.limits.output {
+                let written = runtime.budget.written.saturating_add(bytes.len() as u64);
+                if written > limit {
+                    return Err(Refusal::Exhausted(crate::budget::Exhausted::Output));
+                }
+                runtime.budget.written = written;
+            }
             let written = if native == Native::StdoutWrite {
                 std::io::Write::write_all(&mut std::io::stdout().lock(), &bytes)
             } else {

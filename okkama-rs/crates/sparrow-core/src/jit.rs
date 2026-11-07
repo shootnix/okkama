@@ -49,6 +49,7 @@ macro_rules! helpers {
 
 helpers! {
     allocate = runtime::rt_allocate, 2, true;
+    poll = runtime::rt_poll, 1, false;
     compile = runtime::rt_compile, 2, true;
     int = runtime::rt_int, 4, true;
     int_order = runtime::rt_int_order, 3, true;
@@ -205,7 +206,7 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
     if runtime.code[function] != 0 {
         return Ok(runtime.code[function]);
     }
-    let Runtime { heap, loaded, jit, code, constants, resources, .. } = runtime;
+    let Runtime { heap, loaded, jit, code, constants, resources, limits, budget, .. } = runtime;
     let program = &loaded.program;
     let source = &program.functions[function];
     if source.is_async && (source.native.is_some() || source.intrinsic.is_some()) {
@@ -245,6 +246,10 @@ pub fn compile(runtime: &mut Runtime, function: usize) -> Result<u64, Error> {
             blocks: Vec::new(),
             ctx: None,
             frame: None,
+            polled: limits.polled(),
+            fuel: budget.fuel.address(),
+            refusable: limits.memory.is_some(),
+            pc: 0,
         };
         emit.body()?;
         builder.seal_all_blocks();
@@ -292,6 +297,14 @@ struct Emitter<'a, 'b> {
     ctx: Option<Value>,
     /// The frame variable of an async body.
     frame: Option<Variable>,
+    /// Budget polls at entry and on back-edges (`budget`).
+    polled: bool,
+    /// Address of the runtime's fuel cell.
+    fuel: i64,
+    /// Allocation slow paths may refuse under a memory budget.
+    refusable: bool,
+    /// The instruction being emitted.
+    pc: usize,
 }
 
 const MEMORY: MemFlagsData = MemFlagsData::trusted();
@@ -391,7 +404,56 @@ impl Emitter<'_, '_> {
         self.builder.switch_to_block(next);
     }
 
+    /// One budget step (`budget`): below zero fuel calls `rt_poll`, and a
+    /// stopped run returns from this activation like a fatal status.
+    fn poll(&mut self) {
+        let ctx = self.ctx();
+        let cell = self.iconst(self.fuel);
+        let fuel = self.builder.ins().load(types::I64, MEMORY, cell, 0);
+        let left = self.builder.ins().iadd_imm_s(fuel, -1);
+        self.builder.ins().store(MEMORY, left, cell, 0);
+        let empty = self.builder.ins().icmp_imm_s(IntCC::SignedLessThan, left, 0);
+        let slow = self.builder.create_block();
+        let next = self.builder.create_block();
+        self.builder.set_cold_block(slow);
+        self.builder.ins().brif(empty, slow, &[], next, &[]);
+        self.builder.switch_to_block(slow);
+        self.helper(|h| h.poll, &[ctx]);
+        self.return_unless_ok(next);
+    }
+
+    /// Continue at `next` when the status is OK, otherwise return 0.
+    fn return_unless_ok(&mut self, next: Block) {
+        let ctx = self.ctx();
+        let status = self.builder.ins().load(types::I64, MEMORY, ctx, Self::status_offset());
+        let stop = self.builder.create_block();
+        self.builder.set_cold_block(stop);
+        self.builder.ins().brif(status, stop, &[], next, &[]);
+        self.builder.switch_to_block(stop);
+        let zero = self.iconst(0);
+        self.builder.ins().return_(&[zero]);
+        self.builder.switch_to_block(next);
+    }
+
+    /// A refused allocation (0 under a memory budget) returns.
+    fn refused(&mut self, cell: Value) {
+        if !self.refusable {
+            return;
+        }
+        let next = self.builder.create_block();
+        let stop = self.builder.create_block();
+        self.builder.set_cold_block(stop);
+        self.builder.ins().brif(cell, next, &[], stop, &[]);
+        self.builder.switch_to_block(stop);
+        let zero = self.iconst(0);
+        self.builder.ins().return_(&[zero]);
+        self.builder.switch_to_block(next);
+    }
+
     fn jump(&mut self, target: &Target) {
+        if self.polled && target.pc as usize <= self.pc {
+            self.poll();
+        }
         let values: Vec<_> = target.moves.iter().map(|(_, source)| self.get(source)).collect();
         for ((dst, _), value) in target.moves.iter().zip(values) {
             self.set(dst, value);
@@ -404,7 +466,9 @@ impl Emitter<'_, '_> {
         let ctx = self.ctx();
         let Some(class) = Heap::class_of(words) else {
             let size = self.iconst(words as i64);
-            return self.helper(|h| h.allocate, &[ctx, size]).expect("result");
+            let cell = self.helper(|h| h.allocate, &[ctx, size]).expect("result");
+            self.refused(cell);
+            return cell;
         };
         let head = self.heap.free_head(class) as i64;
         let head = self.iconst(head);
@@ -421,6 +485,7 @@ impl Emitter<'_, '_> {
         self.builder.switch_to_block(slow);
         let size = self.iconst(words as i64);
         let fresh = self.helper(|h| h.allocate, &[ctx, size]).expect("result");
+        self.refused(fresh);
         self.builder.ins().jump(done, &[fresh.into()]);
         self.builder.switch_to_block(done);
         self.builder.block_params(done)[0]
@@ -550,7 +615,14 @@ impl Emitter<'_, '_> {
         let low = self.builder.ins().icmp(IntCC::UnsignedLessThan, sp, limit);
         let overflow = self.builder.create_block();
         let start = if source.is_async { self.builder.create_block() } else { self.blocks[0] };
-        self.builder.ins().brif(low, overflow, &[], start, &[]);
+        let entered = if self.polled { self.builder.create_block() } else { start };
+        self.builder.ins().brif(low, overflow, &[], entered, &[]);
+        if self.polled {
+            // A function entry is a step.
+            self.builder.switch_to_block(entered);
+            self.poll();
+            self.builder.ins().jump(start, &[]);
+        }
         if source.is_async {
             self.resume_dispatch(start);
         }
@@ -561,6 +633,7 @@ impl Emitter<'_, '_> {
         self.builder.ins().return_(&[zero]);
         for pc in 0..source.code.len() {
             self.builder.switch_to_block(self.blocks[pc]);
+            self.pc = pc;
             if self.instruction(pc)? {
                 continue;
             }
@@ -1567,6 +1640,9 @@ impl Emitter<'_, '_> {
 
     /// Jump to `target` after its edge moves, then define `register` as `word`.
     fn jump_then(&mut self, target: &Target, register: okkama_sparrow::Register, word: Value) {
+        if self.polled && target.pc as usize <= self.pc {
+            self.poll();
+        }
         let values: Vec<_> = target.moves.iter().map(|(_, source)| self.get(source)).collect();
         for ((dst, _), value) in target.moves.iter().zip(values) {
             self.set(dst, value);
