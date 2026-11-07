@@ -7,6 +7,7 @@
 //! параметром цели (`catch`, `lookup`, отказ `unwind`), пишет сама
 //! инструкция (или обработчик). Цель `unwind` блока — обработчик диапазона
 //! его инструкций, включая терминатор. Таблицы модуля переносятся целиком.
+mod check;
 mod registers;
 
 use crate::{ir, source::Span};
@@ -460,8 +461,15 @@ impl FunctionGen<'_> {
 }
 
 fn function(module: &ir::Module, function: &ir::Function, types: &mut Types) -> Result<Function, GenerateError> {
-    // Значения с непересекающейся жизнью делят регистр.
+    // Значения с непересекающейся жизнью делят регистр; проверка независима
+    // от распределителя (H-10).
     let allocated = registers::allocate(function);
+    if check_registers() {
+        check::check(function, &allocated).map_err(|message| GenerateError {
+            span: function.span,
+            message: format!("{}: register allocation check: {message}", function.symbol),
+        })?;
+    }
     let function = &allocated;
     let registers = function.values.iter().map(|ty| types.intern(ty)).collect();
     let result = types.result(&function.result);
@@ -600,4 +608,10 @@ pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
         .verify()
         .map_err(|e| error(module.span, format!("generated invalid Sparrow: {e}")))?;
     Ok(program)
+}
+
+/// The register check runs in debug builds and with `OKKAMA_CHECK_REGISTERS=1`.
+fn check_registers() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| cfg!(debug_assertions) || std::env::var_os("OKKAMA_CHECK_REGISTERS").is_some_and(|value| value == "1"))
 }

@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Compiler: an independent check of Sparrow register allocation (H-10). The
+  core trusts the allocation for its stack maps, and the SPB verifier checks
+  only that registers are written before they are read. The check follows
+  each register's definite value through the original function — reads,
+  parallel block-parameter writes on edges, unwind edges from every point of
+  a protected block — in debug builds and with `OKKAMA_CHECK_REGISTERS=1`.
+  It passes on every function of the repository's 1509 programs and catches a
+  live value overwritten, a value an unwind handler needs overwritten, and
+  block parameters written in the wrong order
+  ([#30](https://github.com/shootnix/okkama/issues/30)).
+
 - Compiler: `OKKAMA_IR_PASSES=none|all|tail-calls,hoist,regions,jumps,undef`
   selects the IR passes. Every engine runs the passed OIR, so engine
   comparisons cannot see a pass that changes meaning; the release gate now
