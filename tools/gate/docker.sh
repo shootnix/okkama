@@ -13,12 +13,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# The container has no .git: gate.json names the commit from here.
+COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+[[ -n "$COMMIT" && -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]] && COMMIT="$COMMIT+dirty"
 docker build -q -t okkama-dev "$ROOT/tools/docker" >/dev/null
 mkdir -p "$ROOT/conformance/reports/runs"
 exec docker run --rm \
     --network "${OKKAMA_GATE_NETWORK:-none}" \
     --cpus "${OKKAMA_GATE_CPUS:-6}" --memory "${OKKAMA_GATE_MEMORY:-7g}" --pids-limit 4096 \
-    -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 \
+    -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -e GATE_COMMIT="$COMMIT" \
     -e CARGO_BUILD_JOBS="${OKKAMA_GATE_JOBS:-2}" \
     -e CARGO_NET_OFFLINE="$([[ "${OKKAMA_GATE_NETWORK:-none}" == none ]] && echo true || echo false)" \
     -v "$ROOT":/src:ro \

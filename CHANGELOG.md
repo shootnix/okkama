@@ -56,6 +56,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Releases: packages were published without the release gate, which ran only
+  by hand, judged steps by the last line of their logs and carried on after a
+  failed build. A reusable `gate.yml` now runs the gate on the exact commit,
+  and `packages.yml` publishes a release or a nightly only after it passes.
+  Every step's status comes from its exit code (`ocs` exits 0 only when all
+  mandatory cases pass); a failed build stops the gate; `gate.json` lists the
+  commit, the steps with their status and time, and the known std failures,
+  shown in the run summary ([#26](https://github.com/shootnix/okkama/issues/26)).
+
 - Sparrow core: a function's machine frame grew with the number of its helper
   calls — every call with arguments took its own stack slot — so a long
   function could reserve more than the stack headroom and reach the guard
