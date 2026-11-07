@@ -388,3 +388,15 @@ fn collection_operators_need_one_collection_type() {
         assert!(lower(&source).is_err(), "{body} must be rejected");
     }
 }
+
+/// Constant arithmetic folds exactly (H-36): a sum beyond 64 bits is the big
+/// integer the engines promote to; what may fail (`% 0`) stays.
+#[test]
+fn constant_arithmetic_folds_exactly() {
+    let text = main_listing("let a = 10 + 20 * 3; let b = 9223372036854775807 + 1; let c = 7 % 0; if a < 100 && -a == 0 - 70 { a + b.string().length() + c; } else { 0; }");
+    assert!(text.contains("const 70"), "{text}");
+    assert!(text.contains("const 9223372036854775808"), "{text}");
+    assert!(text.contains("int.mod"), "{text}");
+    assert!(!text.contains("int.add") || text.matches("int.add").count() <= 2, "{text}");
+    assert!(text.contains("const true") || text.contains("const 1"), "{text}");
+}

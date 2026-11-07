@@ -10,6 +10,7 @@
 //! выводится через `Display` у [`Module`].
 
 pub mod cfg;
+pub mod fold;
 pub mod hoist;
 pub mod regions;
 mod print;

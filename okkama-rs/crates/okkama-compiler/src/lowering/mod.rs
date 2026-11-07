@@ -377,6 +377,10 @@ fn lower_modules(
     if passes.on("tail-calls") {
         ir::recursion::eliminate_tail_calls(&mut module);
     }
+    // Constant arithmetic is computed once, exactly, at build time.
+    if passes.on("fold") {
+        ir::fold::fold_constants(&mut module);
+    }
     // Константы циклов вычисляются один раз, во входном блоке.
     if passes.on("hoist") {
         ir::hoist::hoist_loop_constants(&mut module);
@@ -566,7 +570,7 @@ pub fn inspect(
 }
 
 /// The IR passes of a build (H-09): `OKKAMA_IR_PASSES` is `all` (the
-/// default), `none` or a comma list of `tail-calls`, `hoist`, `regions`,
+/// default), `none` or a comma list of `tail-calls`, `fold`, `hoist`, `regions`,
 /// `jumps`, `undef`. Every engine runs the passed OIR, so only a run with the
 /// passes off shows whether a pass changed meaning; the release gate runs the
 /// IR conformance suite both ways. `sabotage-int-add` turns the first
@@ -578,7 +582,7 @@ struct Passes {
 }
 
 /// The IR passes in pipeline order.
-pub const PASSES: [&str; 5] = ["tail-calls", "hoist", "regions", "jumps", "undef"];
+pub const PASSES: [&str; 6] = ["tail-calls", "fold", "hoist", "regions", "jumps", "undef"];
 
 static SELECTED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
