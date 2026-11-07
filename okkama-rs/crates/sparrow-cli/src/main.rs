@@ -26,7 +26,8 @@ USAGE:
 
 run          Verify and execute bytecode; ARGS are the program's arguments.
              main's integer result in 0..255 becomes the exit status; an
-             uncaught failure is reported on stderr (exit 1). `--stats` prints
+             uncaught failure is reported on stderr (exit 1) with the call
+             stack in Sparrow terms (OKKAMA_TRACE=off: without). `--stats` prints
              counts of runtime events at exit (also SPARROW_CORE_STATS=1).
              BUDGETS (all off by default; running out exits 1 with
              \"Execution budget exhausted: …\" or \"Execution interrupted\"):
@@ -84,10 +85,18 @@ fn report(error: sparrow_core::Error) -> Result<u8, Failure> {
 }
 
 fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core::budget::Limits) -> Result<u8, Failure> {
-    let (bytes, _) = load(path)?;
+    let (bytes, program) = load(path)?;
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
-    match sparrow_core::run_limited(bytes, arguments, stats, worker_command(path), limits) {
-        Ok(code) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
+    match sparrow_core::run_described(bytes, arguments, stats, worker_command(path), limits) {
+        Ok(Ok(code)) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
+        Ok(Err((error, uncaught))) => {
+            let code = report(error);
+            // `OKKAMA_TRACE=off` — the failure alone, as with `okkama run`.
+            if let Some(uncaught) = uncaught.filter(|_| std::env::var("OKKAMA_TRACE").as_deref() != Ok("off")) {
+                eprint!("{}", sparrow_core::render_trace(&program, &uncaught.trace));
+            }
+            code
+        }
         Err(error) => report(error),
     }
 }

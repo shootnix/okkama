@@ -1,0 +1,10 @@
+module app v1.0.0;
+enum Broken is Error = (broken(code is int));
+object Runner {
+    Runner();
+    apply(f is (int) is int, x is int) is int { f(x) + 1; }
+}
+main() is int {
+    let explode = (x is int) is int { throw Broken.broken(x); };
+    Runner().apply(explode, 7);
+}

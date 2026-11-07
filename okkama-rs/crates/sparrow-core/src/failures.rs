@@ -513,7 +513,8 @@ impl Runtime {
                 ("uncaught-error", Some(name), messages.get(&root).cloned().unwrap_or_default())
             }
         };
-        Some(crate::Uncaught { category, error_type, message })
+        let trace = record.trace.iter().map(|&(function, pc)| crate::Site { function, pc }).collect();
+        Some(crate::Uncaught { category, error_type, message, trace })
     }
 
     fn error_text_method(&self, object: Word) -> Option<usize> {

@@ -1,0 +1,9 @@
+module app v1.0.0;
+enum Broken is Error = (broken);
+object Failing {
+    Failing();
+    async run() is int { throw Broken.broken; }
+}
+async main() is int {
+    await Failing().run();
+}

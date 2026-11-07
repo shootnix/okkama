@@ -1,0 +1,16 @@
+module app v1.0.0;
+enum Broken is Error = (broken);
+object Store {
+    Store();
+    load() is int { throw Broken.broken; }
+    retry() is int {
+        try {
+            self.load();
+        } catch error is Broken {
+            throw error;
+        }
+    }
+}
+main() is int {
+    Store().retry();
+}
