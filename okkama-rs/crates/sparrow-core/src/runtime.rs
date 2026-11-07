@@ -25,6 +25,9 @@ pub const FATAL: u64 = 2;
 /// A budget ran out or the host interrupted the run (`budget`); like
 /// `FATAL`, it unwinds every activation without handlers.
 pub const EXHAUSTED: u64 = 3;
+/// Stack kept below the limit machine code checks: room for one frame
+/// (`jit::MAX_FRAME`) and the Rust helpers it calls.
+pub const STACK_HEADROOM: u64 = 1 << 20;
 
 /// Shared with machine code; offsets come from `offset_of!`.
 #[repr(C)]
@@ -624,8 +627,8 @@ impl Runtime {
         let marker = 0u8;
         let mut ctx = Ctx {
             status: OK,
-            // R2: the VM thread has a large stack; keep 1 MiB of headroom.
-            stack_limit: (&marker as *const u8 as u64).saturating_sub(stack.saturating_sub(1 << 20)),
+            // R2: the VM thread has a large stack; keep a headroom below the limit.
+            stack_limit: (&marker as *const u8 as u64).saturating_sub(stack.saturating_sub(STACK_HEADROOM)),
             failure: UNBOUND,
             runtime: &mut **self,
             entry_frame: frame_pointer!(),

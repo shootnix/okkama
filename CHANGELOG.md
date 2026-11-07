@@ -56,6 +56,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sparrow core: a function's machine frame grew with the number of its helper
+  calls — every call with arguments took its own stack slot — so a long
+  function could reserve more than the stack headroom and reach the guard
+  page before the prologue's stack check. All calls of a function now share
+  one argument area, and a frame above 256 KiB (a quarter of the 1 MiB
+  headroom) is refused when the function compiles. Recursion through Rust
+  (`destroy`, closures) is tested to end as `Stack overflow` with the process
+  usable afterwards. `--stats` reports the largest machine frame. Compile
+  memory for functions with thousands of live values:
+  [#73](https://github.com/shootnix/okkama/issues/73)
+  ([#25](https://github.com/shootnix/okkama/issues/25)).
+
 - SPB: decoding and verification are bounded in memory. The verifier kept a
   register set per instruction, so a 234 KiB file of 32 000 registers needed
   132 MiB to check; it now keeps one per block leader (6 MiB for that file)

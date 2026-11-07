@@ -1,0 +1,16 @@
+module app;
+object Nest {
+    has depth is int;
+    Nest(depth is int) { self.depth = depth; }
+    destroy {
+        if depth < 100000000 {
+            let inner = Nest(depth + 1);
+            inner.level();
+        }
+    }
+    level() is int { depth; }
+}
+main() is int {
+    let root = Nest(0);
+    root.level();
+}
