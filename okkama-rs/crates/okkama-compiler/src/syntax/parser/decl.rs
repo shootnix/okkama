@@ -45,6 +45,18 @@ impl Parser<'_> {
         if self.check(TokenKind::Async) && self.check_next(TokenKind::Native) {
             return Err(self.error_here("Native declarations cannot be async."));
         }
+        // `class Name` and `interface Name` from other languages (#227).
+        if self.check_name() && is_type_word(self.lexeme(self.nth(1))) {
+            match self.lexeme(self.peek()) {
+                "class" | "struct" => {
+                    return Err(self.error_here("Okkama has no classes: declare an `object` (fields, a constructor, actions)."));
+                }
+                "interface" | "trait" | "protocol" => {
+                    return Err(self.error_here("Okkama's interfaces are roles: declare a `role` and perform it with `does`."));
+                }
+                _ => {}
+            }
+        }
         // `hidden` is contextual: only before `object`, `role` or `enum`.
         if self.check_name()
             && self.lexeme(self.peek()) == "hidden"
@@ -223,6 +235,18 @@ impl Parser<'_> {
         if self.check(TokenKind::LeftParen) {
             return Err(self.error_here("Object headers do not accept parameters in v1.0."));
         }
+        // Words from other languages get the construct Okkama uses (#227).
+        if self.check_name() {
+            match self.lexeme(self.peek()) {
+                "extends" | "inherits" => {
+                    return Err(self.error_here(
+                        "Okkama has no inheritance: an object holds the objects it builds on as fields and performs roles with `does Role`.",
+                    ));
+                }
+                "implements" => return Err(self.error_here("An object performs a role with `does Role`, not `implements`.")),
+                _ => {}
+            }
+        }
         let mut roles = Vec::new();
         if self.eat(TokenKind::Does) {
             roles.push(self.type_expr()?);
@@ -285,6 +309,11 @@ impl Parser<'_> {
     }
 
     fn object_member(&mut self, owner: Option<&Name>) -> PResult<ObjectMember> {
+        if self.check_name() && self.lexeme(self.peek()) == "static" && self.nth(1).kind != TokenKind::LeftParen {
+            return Err(self.error_here(
+                "Okkama has no static members: shared state is an object passed in, and a helper is an action of a module-level object or a function value.",
+            ));
+        }
         if self.check_cap_declaration() {
             if owner.is_none() {
                 return Err(self.error_here("Caps are only allowed inside objects."));

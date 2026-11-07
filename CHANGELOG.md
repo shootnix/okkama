@@ -201,6 +201,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Diagnostics say what the rule is and what to write instead: assigning a
+  field after construction ("objects are immutable; return a successor",
+  [#226](https://github.com/shootnix/okkama/issues/226)); `class`,
+  `interface`, `extends`, `implements` and `static` from other languages
+  name the Okkama construct — `object`, `role`, fields and `does`
+  ([#227](https://github.com/shootnix/okkama/issues/227)); a `match` used as a
+  value that leaves enum cases out names them instead of "Expression does
+  not produce a value" ([#229](https://github.com/shootnix/okkama/issues/229));
+  `ordering()` without the `Comparing` role loaded says which import is
+  missing ([#233](https://github.com/shootnix/okkama/issues/233)). The words
+  stay ordinary identifiers: only code that failed to parse before gets the
+  new messages.
+
 - Compiler, imports (O06): a module imported from many modules is read and
   parsed once. Loaders now name a module's identity (`ModuleLoader::resolve`,
   the canonical path for files) before reading it, and the import walk

@@ -313,7 +313,15 @@ impl Checker<'_, '_> {
 
     fn rebind(&mut self, name: &ast::Name, value: &ast::Expr) -> (StmtKind, Flow) {
         let Some(local) = self.local(&name.text) else {
-            self.error(name.span, format!("Undefined variable \"{}\"", name.text));
+            let message = match (self.own_field(&name.text), self.object) {
+                // A field outside its constructor (#226): fields never change.
+                (Some(_), Some(object)) => format!(
+                    "Field \"{}\" cannot be assigned after construction: objects are immutable; return a successor instead (`is ^{}` and `^{} = …`)",
+                    name.text, self.reg.objects[object.0].name, name.text
+                ),
+                _ => format!("Undefined variable \"{}\"", name.text),
+            };
+            self.error(name.span, message);
             let _ = self.value(value, None);
             return (StmtKind::Expr(Self::poisoned(name.span)), Flow::unit());
         };

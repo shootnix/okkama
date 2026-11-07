@@ -369,10 +369,18 @@ impl Checker<'_, '_> {
                     || element.is_error()
                     || comparing.is_some_and(|role| self.reg.assignable(element, &role));
                 if !ordered {
-                    let message = format!(
-                        "Builtin action \"ordering\" requires elements that do Comparing<{0}>, got {0}",
-                        self.type_name(element)
-                    );
+                    // Without the role loaded no element type can qualify (#233).
+                    let message = if self.reg.standard.comparing.is_none() {
+                        format!(
+                            "Builtin action \"ordering\" compares elements through the role Comparing, which this program does not load: add `import \"compare\" take Comparing;` (elements: {})",
+                            self.type_name(element)
+                        )
+                    } else {
+                        format!(
+                            "Builtin action \"ordering\" requires elements that do Comparing<{0}>, got {0}",
+                            self.type_name(element)
+                        )
+                    };
                     self.error(span, message);
                     return Self::poisoned(span);
                 }
