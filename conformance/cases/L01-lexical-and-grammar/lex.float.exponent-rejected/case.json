@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.float.exponent-rejected",
+  "title": "exponent notation 1e5 is rejected",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.FLOAT-LITERALS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "Malformed numeric tokens are lexical errors; an implementation may surface them while parsing or in the token-validation step before analysis."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #45",
+    "expected_basis": "grammar FLOAT production is digits \".\" digits; there is no exponent part."
+  },
+  "status": "mandatory"
+}

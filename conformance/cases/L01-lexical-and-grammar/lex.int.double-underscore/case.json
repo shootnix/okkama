@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.lex.int.double-underscore",
+  "title": "malformed decimal literal 1__0",
+  "purpose": "Invalid source is rejected before execution.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "LEX.INT-LITERALS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "parse",
+        "check"
+      ],
+      "categories": [
+        "syntax",
+        "semantic"
+      ],
+      "justification": "Malformed numeric tokens are lexical errors; an implementation may surface them while parsing or in the token-validation step before analysis."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#4.2",
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #45",
+    "expected_basis": "grammar INT production: `_` separates single digits; `1__0` is one malformed literal, not 1 followed by an identifier."
+  },
+  "status": "mandatory"
+}
