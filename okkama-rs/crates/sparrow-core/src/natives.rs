@@ -39,13 +39,24 @@ pub fn supported(native: Native) -> bool {
     ) || crate::host::supported(native)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Tests: the next native call on this thread panics (panic isolation).
+    pub(crate) static PANIC_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 pub fn call(runtime: &mut Runtime, function: usize, arguments: &[Word]) -> Result<(Word, Repr), Refusal> {
+    #[cfg(test)]
+    if PANIC_NEXT.with(|next| next.replace(false)) {
+        panic!("provider failure");
+    }
     // A missing provider is a runtime error of the call, after earlier effects
     // (conformance L06.native.missing-provider).
     let native = runtime.natives[function].ok_or_else(|| {
         let symbol = runtime.loaded.program.functions[function].native.clone().unwrap_or_default();
         Refusal::Failure(FailureKind::Program(missing_native(&symbol)))
     })?;
+    runtime.limits.permits(native).map_err(|message| Refusal::Failure(FailureKind::Program(message)))?;
     match native {
         Native::Utf8Encode => {
             let bytes = runtime.heap.text(arguments[0]).as_bytes().to_vec();

@@ -186,7 +186,10 @@ pub fn run_tests(bytes: Vec<u8>, out: Box<dyn std::io::Write + Send>) -> Result<
 }
 
 /// The child side of a process worker: answer the framed `request` for the
-/// program `bytes`; nested spawns run `worker_command`.
+/// program `bytes`; nested spawns run `worker_command`. For the CLIs' worker
+/// processes only, not an embedding entry point: a worker runs without
+/// budgets or native permissions.
+#[doc(hidden)]
 pub fn run_worker(bytes: Vec<u8>, request: Vec<u8>, worker_command: Vec<std::ffi::OsString>) -> Result<Vec<u8>, Error> {
     on_vm_thread(move || {
         let program = okkama_sparrow::decode(&bytes).map_err(|e| Error(e.to_string()))?;
@@ -203,7 +206,7 @@ fn on_vm_thread<T: Send + 'static>(body: impl FnOnce() -> Result<T, Error> + Sen
         .spawn(body)
         .map_err(|e| Error(format!("VM thread: {e}")))?
         .join()
-        .map_err(|_| Error("VM thread panicked".into()))?
+        .map_err(|payload| Error(format!("internal error: {}", runtime::panic_text(&*payload))))?
 }
 
 /// A variable the launcher adds to the program's environment when the

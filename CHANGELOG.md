@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Sparrow core, embedding: native permissions by group — `Limits::natives`
+  lists the groups a program may use (`Fs`, `Net`, `Process`, `Env`, `Clock`,
+  `Random`, `Terminal`; `None`, the CLIs' default, allows all; pure natives and
+  stdout/stderr are always allowed). A native outside them fails the program
+  ("Native … needs the Clock permission"), and process workers need
+  `Process`. A panic inside a native provider no longer aborts the host: it
+  stops the run with "internal error in native …", and the runtime refuses
+  further runs; a fresh one works. `run_worker` is marked as the CLIs'
+  worker entry, not an embedding API. No cost without restrictions
+  ([#31](https://github.com/shootnix/okkama/issues/31)).
+
 - Compiler: an independent check of Sparrow register allocation (H-10). The
   core trusts the allocation for its stack maps, and the SPB verifier checks
   only that registers are written before they are read. The check follows
