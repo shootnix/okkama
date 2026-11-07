@@ -1,0 +1,43 @@
+module app v1.0.0;
+
+// A cancelled query interrupts SQLite while the connection is being closed
+// (audit S04, #18): the interrupt must reach an open connection or nothing,
+// never a closed one. A query that is not interrupted runs for minutes, so the
+// case also shows that every cancellation reaches the running statement.
+import "io/stdout" take Stdout;
+import "db/sqlite" take SqliteMemory, SqliteConnection;
+import "db/statement" take Statement;
+import "db/error" take DbFailure;
+import "async/atomic" take Atomic;
+
+object LongQuery {
+    has connection is SqliteConnection;
+    LongQuery(connection is SqliteConnection) { self.connection = connection; }
+    async run() is int {
+        await self.connection.execution(Statement("WITH RECURSIVE t(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM t WHERE i < 4000000000) SELECT count(*) FROM t"));
+        1;
+    }
+}
+
+async main() is int {
+    let out = Stdout();
+    let cancelled = Atomic(0);
+    for 0..24 -> round {
+        let connection = await SqliteMemory().connection();
+        let pending = spawn LongQuery(connection).run();
+        // Alternate the order: interrupt before the close is queued, and
+        // while the close waits behind the running statement.
+        if round % 2 == 0 { pending.cancel(); connection.close(); }
+        else { connection.close(); pending.cancel(); }
+        let outcome = try { await pending; "finished"; } catch e is Cancelled { "cancelled"; } catch e is DbFailure { "failed"; };
+        await connection.settled();
+        if outcome == "cancelled" { cancelled.replace(cancelled.value() + 1); } else { out.writeln("round " + round.string() + ": " + outcome); }
+    }
+    out.writeln("cancelled " + cancelled.value().string() + " of 24");
+    let connection = await SqliteMemory().connection();
+    defer await connection.settled();
+    defer connection.close();
+    await connection.execution(Statement("CREATE TABLE t(x INTEGER)"));
+    out.writeln("fresh connection works");
+    0;
+}

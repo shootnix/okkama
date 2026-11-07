@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.sqlite.cancel-close-race",
+  "title": "cancelling a running query races connection close without touching a closed connection",
+  "purpose": "Audit S04 (#18): sqlite3_interrupt from a cancellation must reach an open connection or nothing while the worker closes it.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.DB.SQLITE",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "sqlite"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "cancelled 24 of 24\nfresh connection works\n"
+    }
+  },
+  "spec_refs": [
+    "std/db/sqlite.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #18 from the audit 2026-11-01 S04 finding",
+    "expected_basis": "Cancelling the future of a running statement interrupts it (the recursive query would otherwise run for minutes) and the await observes Cancelled, whether the close is queued before or after the cancel; the closed connection is never interrupted and later connections work."
+  },
+  "status": "mandatory"
+}

@@ -248,7 +248,18 @@ public final class SqliteNatives {
 
     static final class Engine {
         final Arena arena = Arena.ofShared();
+        /**
+         * Пишется потоком соединения под {@link #lifetime}; другие потоки
+         * читают его только под ним же (см. {@link #interrupt()}).
+         */
         MemorySegment db = MemorySegment.NULL;
+        /**
+         * Время жизни {@code sqlite3*} для {@code sqlite3_interrupt}: SQLite
+         * требует открытого соединения до возврата interrupt. Закрытие держит
+         * замок на {@code sqlite3_close}, interrupt под ним видит NULL или
+         * открытое соединение (как {@code InterruptHandle} rusqlite).
+         */
+        final Object lifetime = new Object();
         final Connection connection;
         long serial;
         Statement cursor;
@@ -326,7 +337,9 @@ public final class SqliteNatives {
             MemorySegment slot = arena.allocate(Api.PTR);
             int flags = connection.readOnly ? 1 : 2 | (connection.create ? 4 : 0);
             int rc = call(Api.open, arena.allocateFrom(connection.path), slot, flags, MemorySegment.NULL);
-            db = slot.get(Api.PTR, 0);
+            synchronized (lifetime) {
+                db = slot.get(Api.PTR, 0);
+            }
             if (rc != 0) {
                 close();
                 throw new SqliteFailure("connection", "SQLITE_" + rc, true);
@@ -1044,9 +1057,22 @@ public final class SqliteNatives {
             for (Long id : new ArrayList<>(prepared.keySet())) {
                 unprepare(id);
             }
-            MemorySegment current = db;
-            db = MemorySegment.NULL;
-            check(call(Api.close, current));
+            int rc;
+            synchronized (lifetime) {
+                MemorySegment current = db;
+                db = MemorySegment.NULL;
+                rc = call(Api.close, current);
+            }
+            check(rc);
+        }
+
+        /** Прервать текущий запрос из любого потока; закрытое — без действия. */
+        void interrupt() {
+            synchronized (lifetime) {
+                if (!db.equals(MemorySegment.NULL)) {
+                    invoke(Api.interrupt, db);
+                }
+            }
         }
     }
 
@@ -1169,9 +1195,9 @@ public final class SqliteNatives {
         promise.listen(new Runnable() {
             public void run() {
                 pending.detach();
-                if (Future.cancelled(promise) && !engine.db.equals(MemorySegment.NULL)) {
+                if (Future.cancelled(promise)) {
                     engine.cancelled = true;
-                    invoke(Api.interrupt, engine.db);
+                    engine.interrupt();
                 }
             }
         });
