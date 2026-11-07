@@ -989,6 +989,13 @@ cash.add_bonus(bonus: 10);
   errors.
 - Receiver and arguments evaluate exactly once, left to right, in the
   *caller's* scope.
+- **Default values.** Trailing parameters of an object's action or
+  constructor may declare one: `greet(name is string, mark is string = "!")`.
+  A call may leave them out — positionally from the end, or by name in any
+  combination — and each left-out parameter takes its value, evaluated at
+  that call in the *declaring* module: it sees module names, not the caller's
+  locals or `self`. A parameter after a defaulted one needs a default too;
+  variadic actions, role signatures, natives and enum payloads have none.
 - Anonymous actions are ordinary expression values and use the same call
   syntax; their grammar, lexical capture and explicit signatures are covered
   in Section 18.5.

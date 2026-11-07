@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: default values for trailing parameters of object actions and
+  constructors (#149): `greet(name is string, mark is string = "!", times is
+  int = 1)`. A call may leave them out positionally from the end or by name;
+  each left-out value is the declared expression, evaluated at that call in
+  the declaring module (the caller's locals and `self` are not visible), and
+  its errors are reported once, at the declaration. A parameter after a
+  defaulted one needs a default; variadic actions, role signatures, natives
+  and enum payloads cannot have any. Overload selection treats a left-out
+  parameter as neutral. OCS `L03.args.default-values`; Book §11.4 (EN/RU);
+  `okkama fmt` prints the defaults ([#149](https://github.com/shootnix/okkama/issues/149)).
+
 - Language: an anonymous action's declared result (`(job is Job) is int {
   … }`) fixes its type and supplies generic arguments, so
   `SortedBy(origin: jobs, key: (job is Job) is int { job.priority(); })` needs

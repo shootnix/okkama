@@ -81,6 +81,8 @@ pub enum CtorShape<'a> {
     Full {
         params: Vec<(String, Ty)>,
         names: Vec<&'a ast::Name>,
+        /// `name is T = value` per parameter (#149).
+        defaults: Vec<Option<&'a ast::Expr>>,
         variadic: bool,
         body: &'a ast::Block,
     },
@@ -1737,7 +1739,7 @@ impl<'a> Registry<'a> {
                 .collect();
             let mut payloads = Vec::new();
             for fields in &decl.payloads {
-                let (fields, variadic) = self.signature_params(fields, &names);
+                let (fields, variadic) = self.signature_params(fields, &names, Some("Enum payloads"));
                 if variadic {
                     self.error(decl.span, "Variant payloads cannot be variadic");
                 }
@@ -1770,7 +1772,7 @@ impl<'a> Registry<'a> {
                     if !std::ptr::eq(self.natives[index].decl, decl) {
                         continue;
                     }
-                    let (params, variadic) = self.signature_params(&decl.params, &[]);
+                    let (params, variadic) = self.signature_params(&decl.params, &[], Some("Natives"));
                     for (param, (_, ty)) in decl.params.iter().zip(&params) {
                         if contains_action(ty) {
                             self.error(
@@ -1861,12 +1863,36 @@ impl<'a> Registry<'a> {
 
     /// Параметры сигнатуры; variadic-хвост `...T` — последний, его тип
     /// внутри действия — массив `@T` (§11.8.1).
+    /// `without_defaults` names a declaration whose parameters cannot have
+    /// default values (roles, natives, enum payloads).
     fn signature_params(
         &mut self,
         params: &[ast::Param],
         scope: &[(String, ParamId)],
+        without_defaults: Option<&str>,
     ) -> (Vec<(String, Ty)>, bool) {
         let mut resolved: Vec<(String, Ty)> = Vec::new();
+        // Default values (#149): only on trailing parameters, not with a
+        // variadic tail, and only on object actions and constructors.
+        let mut defaulted = false;
+        for param in params {
+            match (&param.default, without_defaults) {
+                (Some(default), Some(what)) => {
+                    self.error(default.span, format!("{what} cannot declare default values"));
+                }
+                (Some(default), None) if params.last().is_some_and(|last| last.variadic) => {
+                    self.error(default.span, "An action with a variadic parameter cannot declare default values");
+                }
+                (Some(_), None) => defaulted = true,
+                (None, None) if defaulted && !param.variadic => {
+                    self.error(
+                        param.name.span,
+                        format!("Parameter \"{}\" follows a parameter with a default value, so it needs one too", param.name.text),
+                    );
+                }
+                _ => {}
+            }
+        }
         for (index, param) in params.iter().enumerate() {
             if param.variadic && index + 1 != params.len() {
                 self.error(
@@ -1932,7 +1958,7 @@ impl<'a> Registry<'a> {
                     continue;
                 }
             };
-            let (params, variadic) = self.signature_params(&signature.params, &scope);
+            let (params, variadic) = self.signature_params(&signature.params, &scope, Some("Role actions"));
             let result = self.resolve_result(&signature.result, &scope);
             if methods.iter().any(|other| {
                 other.name == signature.name.text
@@ -2108,10 +2134,11 @@ impl<'a> Registry<'a> {
             }
             let shape = match &ctor.form {
                 ast::ConstructorForm::Full { params, body } => {
-                    let (resolved, variadic) = self.signature_params(params, &scope);
+                    let (resolved, variadic) = self.signature_params(params, &scope, None);
                     CtorShape::Full {
                         params: resolved,
                         names: params.iter().map(|param| &param.name).collect(),
+                        defaults: params.iter().map(|param| param.default.as_ref()).collect(),
                         variadic,
                         body,
                     }
@@ -2228,7 +2255,7 @@ impl<'a> Registry<'a> {
 
         let mut methods: Vec<MethodInfo<'a>> = Vec::new();
         for action in actions {
-            let (params, variadic) = self.signature_params(&action.params, &scope);
+            let (params, variadic) = self.signature_params(&action.params, &scope, None);
             let mut result = self.resolve_result(&action.result, &scope);
             let successor = matches!(action.result, ast::ResultSpec::Successor { .. });
             let private = action.visibility == ast::Visibility::Private;

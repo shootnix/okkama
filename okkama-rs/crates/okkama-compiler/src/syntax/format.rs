@@ -682,6 +682,10 @@ impl<'s> Printer<'s> {
                     p.word("...");
                 }
                 p.ty(&param.ty);
+                if let Some(default) = &param.default {
+                    p.word(" = ");
+                    p.expr(default);
+                }
             },
             |param| param.span,
         );

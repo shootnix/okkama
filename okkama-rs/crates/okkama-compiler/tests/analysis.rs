@@ -552,3 +552,22 @@ fn anonymous_action_results_supply_generic_arguments() {
         ["Cannot initialize variable \"k\" of type string with int"]
     );
 }
+
+/// Default values of trailing parameters (#149): a call may leave them out,
+/// positionally or by name; the value is checked in the declaring scope,
+/// without the caller's locals, and reported once at the declaration.
+#[test]
+fn trailing_parameters_take_default_values() {
+    let greeter = "object Greeter { has greeting is string; Greeter(greeting is string = \"hello\") { self.greeting = greeting; } \
+        greet(name is string, mark is string = \"!\", times is int = 1) is string { greeting + name + mark + times.string(); } }";
+    assert!(messages(&format!("{greeter} main() is int {{ let a = Greeter().greet(\"x\"); let b = Greeter(\"hi\").greet(\"y\", \"?\"); let c = Greeter().greet(name: \"z\", times: 2); 0; }}")).is_empty());
+    assert_eq!(
+        messages("object Bad { Bad(); first(a is int = 1, b is int) is int { a + b; } typed(a is int = \"one\") is int { a; } hidden(a is int = secret) is int { a; } } main() is int { let secret = 1; Bad().typed(); Bad().typed(); 0; }"),
+        [
+            "Parameter \"b\" follows a parameter with a default value, so it needs one too",
+            "Default value must be int, got string",
+            "Undefined variable \"secret\"",
+        ]
+    );
+    assert_eq!(messages("role Named { name(prefix is string = \"x\") is string; } main() is int { 0; }"), ["Role actions cannot declare default values"]);
+}

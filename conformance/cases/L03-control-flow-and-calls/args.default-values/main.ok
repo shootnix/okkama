@@ -1,0 +1,27 @@
+module app v1.0.0;
+import "io/stdout" take Stdout;
+
+object Clock {
+    has label is string;
+    Clock(label is string) { self.label = label; }
+    label() is string { label; }
+}
+
+object Greeter {
+    has greeting is string;
+    has clock is Clock;
+    Greeter(greeting is string = "hello", clock is Clock = Clock("system")) { self.greeting = greeting; self.clock = clock; }
+    greet(name is string, punctuation is string = "!", times is int = 1) is string {
+        (0..times).reduce("") -> text, i { text + greeting + ", " + name + punctuation + " "; } + "[" + clock.label() + "]";
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let name = "local";
+    out.writeln(Greeter().greet("Ann"));
+    out.writeln(Greeter("hi").greet("Bob", "?"));
+    out.writeln(Greeter(clock: Clock("test")).greet(name: "Cy", times: 2));
+    out.writeln(Greeter().greet(name: "Dee", times: 3, punctuation: "."));
+    0;
+}

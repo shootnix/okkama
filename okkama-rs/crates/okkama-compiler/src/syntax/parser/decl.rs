@@ -568,10 +568,13 @@ impl Parser<'_> {
                         "Constructor shorthand cannot mix field entries and typed parameters.",
                     ));
                 }
-                params.extend(self.parameter_group()?);
-                if context == ParamContext::Native && self.check(TokenKind::Equal) {
-                    return Err(self.error_here("Native parameters cannot have default values."));
+                let group = self.parameter_group()?;
+                if context == ParamContext::Native
+                    && let Some(default) = group.iter().find_map(|param| param.default.as_ref())
+                {
+                    return Err(self.error_at_span(default.span, "Native parameters cannot have default values."));
                 }
+                params.extend(group);
                 if !self.eat(TokenKind::Comma) || self.check(TokenKind::RightParen) {
                     break;
                 }
@@ -632,6 +635,7 @@ impl Parser<'_> {
                 variadic: false,
                 ty: last.ty.clone(),
                 shares_type: true,
+                default: None,
             })
             .collect();
         params.push(last);
@@ -678,12 +682,15 @@ impl Parser<'_> {
                 name.text
             )));
         }
+        let default = if self.eat(TokenKind::Equal) { Some(self.expression()?) } else { None };
+        let end = default.as_ref().map_or(ty.span, |value| value.span);
         Ok(Param {
-            span: name.span.to(ty.span),
+            span: name.span.to(end),
             name,
             variadic,
             ty,
             shares_type: false,
+            default,
         })
     }
 
