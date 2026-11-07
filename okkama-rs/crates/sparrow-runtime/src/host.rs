@@ -2,15 +2,41 @@
 //! программы виртуальный (процесс не меняет свой cwd, `chdir` программы меняет
 //! копию, от неё разрешаются относительные пути natives), окружение — копия,
 //! которую получают дочерние процессы; переносимые коды отказов ввода-вывода.
+//! Состояние принадлежит сессии запуска ([`Session`]), а не потоку.
 #![allow(unsafe_code)]
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-struct State {
-    cwd: PathBuf,
-    environment: BTreeMap<String, String>,
+/// Начальное состояние хоста запуска: текущий каталог и окружение, которые
+/// программа видит при старте.
+#[derive(Clone, Debug)]
+pub struct Context {
+    pub cwd: PathBuf,
+    pub environment: BTreeMap<String, String>,
 }
+
+impl Context {
+    /// Снимок процесса: его текущий каталог и окружение плюс переменные
+    /// запускающего ([`default_environment`]), которых у процесса нет.
+    pub fn process() -> Self {
+        let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+        if let Ok(defaults) = DEFAULTS.lock() {
+            for (name, value) in defaults.iter() {
+                environment.entry(name.clone()).or_insert_with(|| value.clone());
+            }
+        }
+        Self { cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")), environment }
+    }
+
+    /// Без переменной `name` (служебные метки запускающего).
+    pub fn without(mut self, name: &str) -> Self {
+        self.environment.remove(name);
+        self
+    }
+}
+
+type State = Context;
 
 thread_local! {
     static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
@@ -18,32 +44,50 @@ thread_local! {
 
 /// Переменные, которые запускающий добавляет в окружение программы, если их
 /// нет у процесса (как `okkama run` передаёт `OKKAMA_ICU_LIBDIR` JVM).
-static DEFAULTS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+static DEFAULTS: std::sync::Mutex<BTreeMap<String, String>> = std::sync::Mutex::new(BTreeMap::new());
 
 pub fn default_environment(name: &str, value: &str) {
     if let Ok(mut defaults) = DEFAULTS.lock() {
-        defaults.push((name.into(), value.into()));
+        defaults.insert(name.into(), value.into());
     }
 }
 
-fn initial_environment() -> BTreeMap<String, String> {
-    let mut environment: BTreeMap<String, String> = std::env::vars().collect();
-    if let Ok(defaults) = DEFAULTS.lock() {
-        for (name, value) in defaults.iter() {
-            environment.entry(name.clone()).or_insert_with(|| value.clone());
-        }
-    }
-    environment
+/// Сессия хоста одного запуска (#40): пока она жива, natives потока видят её
+/// каталог и окружение; `chdir` и изменения окружения программы остаются в
+/// ней и исчезают вместе с ней, а прежнее состояние потока возвращается.
+/// Процесс не меняется никогда. Каждая точка входа движка открывает сессию,
+/// поэтому второй запуск в том же потоке не наследует состояние первого.
+#[derive(Debug)]
+pub struct Session {
+    previous: Option<State>,
+    /// Сессия принадлежит потоку, в котором открыта.
+    _thread: std::marker::PhantomData<*const ()>,
 }
 
+/// Открыть сессию с начальным состоянием `context`.
+pub fn enter(context: Context) -> Session {
+    let previous = STATE.with(|state| state.borrow_mut().replace(context));
+    Session { previous, _thread: std::marker::PhantomData }
+}
+
+/// Открыть сессию со снимком процесса ([`Context::process`]).
+pub fn session() -> Session {
+    enter(Context::process())
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        STATE.with(|state| *state.borrow_mut() = previous);
+    }
+}
+
+/// Вне сессии (REPL, прямые вызовы natives) состояние потока создаётся
+/// снимком процесса при первом обращении.
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        let state = state.get_or_insert_with(|| State {
-            cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
-            environment: initial_environment(),
-        });
-        f(state)
+        f(state.get_or_insert_with(Context::process))
     })
 }
 
@@ -63,6 +107,11 @@ pub fn path(text: &str) -> PathBuf {
 
 pub fn environment() -> BTreeMap<String, String> {
     with(|state| state.environment.clone())
+}
+
+/// Значение одной переменной окружения программы.
+pub fn variable(name: &str) -> Option<String> {
+    with(|state| state.environment.get(name).cloned())
 }
 
 pub fn set_environment(name: &str, value: Option<&str>) {
@@ -161,4 +210,48 @@ pub fn readable(path: &std::path::Path) -> bool {
 pub fn signal(pid: u32, number: i32) -> bool {
     // SAFETY: kill(2) по идентификатору потомка.
     unsafe { libc::kill(pid as i32, number) == 0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn context(cwd: &str, variable: &str) -> Context {
+        Context { cwd: cwd.into(), environment: BTreeMap::from([(variable.to_string(), "1".to_string())]) }
+    }
+
+    #[test]
+    fn runs_in_one_thread_do_not_share_state() {
+        {
+            let _first = enter(context("/first", "FIRST"));
+            set_cwd("/elsewhere".into());
+            set_environment("LEAKED", Some("yes"));
+            assert_eq!(path("file"), PathBuf::from("/elsewhere/file"));
+        }
+        let _second = enter(context("/second", "SECOND"));
+        assert_eq!(cwd(), PathBuf::from("/second"));
+        assert_eq!(environment().keys().collect::<Vec<_>>(), ["SECOND"]);
+    }
+
+    #[test]
+    fn a_nested_session_restores_the_outer_one() {
+        let _outer = enter(context("/outer", "OUTER"));
+        {
+            let _inner = enter(context("/inner", "INNER"));
+            set_environment("OUTER", Some("changed"));
+        }
+        assert_eq!(cwd(), PathBuf::from("/outer"));
+        assert_eq!(environment()["OUTER"], "1");
+    }
+
+    #[test]
+    fn a_session_never_changes_the_process() {
+        let before = (std::env::current_dir().unwrap(), std::env::var_os("OKKAMA_HOST_SESSION_TEST"));
+        {
+            let _session = session();
+            set_cwd("/".into());
+            set_environment("OKKAMA_HOST_SESSION_TEST", Some("1"));
+        }
+        assert_eq!((std::env::current_dir().unwrap(), std::env::var_os("OKKAMA_HOST_SESSION_TEST")), before);
+    }
 }

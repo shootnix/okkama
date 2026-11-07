@@ -1684,6 +1684,7 @@ fn execute_inner(program: &Program, arguments: Vec<String>, trace: &mut Vec<Site
         });
     }
     let entry = program.entry.ok_or(Error::MissingEntry)?.0 as usize;
+    let _host = sparrow_runtime::host::session();
     let engine = new_engine(program);
     if sparrow_runtime::worker::active() {
         serve(&engine);

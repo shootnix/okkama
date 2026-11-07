@@ -199,10 +199,8 @@ pub(crate) struct Heap {
     shape_index: HashMap<Shape, usize>,
     /// Shapes of each native's parameters, by native.
     signatures: Vec<Option<Box<[Shape]>>>,
-    pub(crate) cwd: Option<std::path::PathBuf>,
     pub(crate) stdin: Option<Box<native_input::Stdin>>,
     pub(crate) arguments: Vec<Vec<u8>>,
-    pub(crate) environment: Option<std::collections::BTreeMap<String, String>>,
     /// Descriptor of the builtin NativeFailure object.
     native_failure: Option<u32>,
     /// Provider state of the bridged origin natives (`native_origin`).
@@ -218,10 +216,8 @@ impl Heap {
             json_nodes: Arena::default(),
             futures: Arena::default(),
             test_failures: None,
-            cwd: None,
             stdin: None,
             arguments: Vec::new(),
-            environment: None,
             objects: Default::default(),
             ids: Default::default(),
             signatures: Vec::new(),

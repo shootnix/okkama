@@ -111,7 +111,7 @@ impl Heap {
                 #[cfg(unix)]
                 nix::unistd::access(&real, nix::unistd::AccessFlags::X_OK)
                     .map_err(|e| host(n, e.into()))?;
-                self.cwd = Some(real);
+                okkama_runtime_core::host::set_cwd(real);
             }
             FsMkdir | FsChmod => {
                 let mode = self

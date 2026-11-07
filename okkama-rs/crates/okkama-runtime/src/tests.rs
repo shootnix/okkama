@@ -51,6 +51,7 @@ fn run_tests_here(module: &ir::Module, out: &mut dyn Write) -> Result<bool, Runt
         .tests
         .clone()
         .ok_or_else(|| unsupported(module.span, "module has no tests"))?;
+    let _host = okkama_runtime_core::host::session();
     let engine = crate::interpreter::new_engine(module);
     if crate::worker::active() {
         crate::worker::serve(&engine);
