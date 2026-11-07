@@ -250,6 +250,12 @@ pub enum FunctionalOp {
     Map,
     Filter,
     Reduce,
+    /// Early exit (#150): true at the first item whose block is true.
+    Any,
+    /// Early exit: false at the first item whose block is false.
+    All,
+    /// Early exit: `Maybe.some(item)` at the first item whose block is true.
+    Find,
 }
 
 impl FunctionalOp {
@@ -258,6 +264,9 @@ impl FunctionalOp {
             "map" => Some(FunctionalOp::Map),
             "filter" => Some(FunctionalOp::Filter),
             "reduce" => Some(FunctionalOp::Reduce),
+            "any" => Some(FunctionalOp::Any),
+            "all" => Some(FunctionalOp::All),
+            "find" => Some(FunctionalOp::Find),
             _ => None,
         }
     }
@@ -267,6 +276,9 @@ impl FunctionalOp {
             FunctionalOp::Map => "map",
             FunctionalOp::Filter => "filter",
             FunctionalOp::Reduce => "reduce",
+            FunctionalOp::Any => "any",
+            FunctionalOp::All => "all",
+            FunctionalOp::Find => "find",
         }
     }
 }

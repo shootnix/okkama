@@ -1298,6 +1298,17 @@ Semantics:
   checked against it. `@any` output happens only with an explicit `@any`
   target.
 - **`filter`** predicates must return exact `bool`.
+- **`any`, `all`, `find` stop early.** With the same block syntax and
+  bindings, `any` is `true` at the first item whose block is `true`, `all` is
+  `false` at the first whose block is `false`, and `find` gives
+  `Maybe.some(item)` for the first match (arrays, ranges and `Iterable`
+  objects; not maps). Later items are not visited, so a block with effects
+  stops with them; an empty source gives `false`, `true` and `Maybe.none`:
+
+  ```okkama
+  let late = orders.any() -> order { order.overdue(); };
+  let first = users.find() -> user { user.admin(); };  // Maybe<User>
+  ```
 - **`reduce`** always takes one initial value. The accumulator keeps one
   exact type, supplied by a direct declared target or the initial value.
   Reducing an empty source returns the checked initial value without running

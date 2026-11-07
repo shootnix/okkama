@@ -2919,6 +2919,25 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         Ok(Out::Diverged)
     }
 
+    /// Leave the innermost loop with `value`, as `last value` does after its
+    /// value is computed (`any`/`all`/`find`, #150).
+    fn leave_loop(&mut self, value: Typed, span: Span) -> Result<()> {
+        let frame = self.loops.len() - 1;
+        let depth = self.loops[frame].depth;
+        if !self.exit_scopes(depth, Some(&value), span)? {
+            return Ok(());
+        }
+        if let Some(region) = self.region_at(depth.saturating_sub(1))
+            && !self.ctx.is_plain(&value.ty)
+        {
+            self.b.emit_void(InstKind::RegionTrack { region, value: value.value }, span);
+        }
+        let arm = self.arm(Out::Value(value)).expect("the loop is left from an open block");
+        self.loops[frame].exits.push(arm);
+        self.b.close();
+        Ok(())
+    }
+
     // ----- блоки с параметрами (try, lookup) -----
 
     /// Блок с параметрами для `tracked` (типы `types`) и дополнительными.

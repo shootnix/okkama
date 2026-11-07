@@ -8,6 +8,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: `any`, `all` and `find` with early exit (#150), in the block
+  syntax of `map`/`filter`/`reduce`: `orders.any() -> order { order.overdue();
+  }`, `items.all() -> x { … }`, `users.find() -> user { … }` (a `Maybe<T>`).
+  The loop leaves at the first decisive item — later items are not visited —
+  and an empty source gives `false`, `true` and `Maybe.none`; `any`/`all`
+  work on maps with `key, value`. Lowering reuses the value-mode loop of `for`
+  with a `last`-like exit, so every engine runs it unchanged. OCS
+  `L05.functional.early-exit`; Book (EN/RU); LSP completion
+  ([#150](https://github.com/shootnix/okkama/issues/150)).
+
 - Language: `test.throws(Type) { … }` (#216) asserts that a block throws a
   `Type` and yields the caught error: `let refused = test.throws(Refused) {
   Gate().check(0); };`. It is parsed as the `try` it means — the block, a

@@ -657,6 +657,9 @@ fn walk_expr(expr: &thir::Expr, visit: &mut dyn FnMut(&thir::Expr)) {
             if let Some(initial) = &functional.initial {
                 walk_expr(initial, visit);
             }
+            if let Some(found) = &functional.found {
+                walk_expr(found, visit);
+            }
             walk_block(&functional.body, visit);
         }
         ExprKind::ArrayCast { parts, .. } => {
@@ -863,6 +866,9 @@ fn children_of<'b>(
             source_exprs(&functional.source, out);
             if let Some(initial) = &functional.initial {
                 out.push(initial);
+            }
+            if let Some(found) = &functional.found {
+                out.push(found);
             }
             blocks.push(&functional.body);
         }

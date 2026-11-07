@@ -1,0 +1,48 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.functional.early-exit",
+  "title": "any, all and find stop at the first decisive item",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "CALL.FUNCTIONAL-OPS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "any sees 1\nany sees 3\nany sees 5\nany sees 6\nany 1\nall sees 1\nall sees 3\nall sees 5\nall 0\nfind 5\nrange none\n0 1\n1 1\n"
+    }
+  },
+  "spec_refs": [
+    "std/collections/iteration.ok",
+    "docs/okkama-spec-11072026.md#9.9",
+    "docs/okkama-spec-11072026.md#6.8",
+    "docs/okkama-spec-11072026.md#6.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #150",
+    "expected_basis": "any is true at the first item whose block is true, all false at the first whose block is false, find gives Maybe.some of the first match; later items are not visited; an empty source gives false, true and none."
+  },
+  "status": "mandatory",
+  "notes": "D-036"
+}

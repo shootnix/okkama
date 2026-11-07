@@ -939,6 +939,9 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 )?;
                 self.finish_builder(out, &state[0], span)
             }
+            FunctionalOp::Any | FunctionalOp::All | FunctionalOp::Find => {
+                self.early_exit(functional, source, span)
+            }
             FunctionalOp::Reduce => {
                 let initial = functional
                     .initial
@@ -1038,6 +1041,54 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             Ok(Some(vec![value.value]))
         })?;
         self.finish_builder(out, &state[0], span)
+    }
+
+    /// `any`/`all`/`find` (#150): a loop that leaves at the first item whose
+    /// block decides — true for `any` and `find`, false for `all` — with the
+    /// checker's `found` value (the item may be read in it), and otherwise
+    /// ends with `initial`. The loop runs in value mode with the state
+    /// `[ran = true, result = initial]`, so exhaustion yields `initial`.
+    fn early_exit(&mut self, functional: &'r thir::Functional, source: Source, span: Span) -> Result<Out> {
+        let initial = functional.initial.as_ref().expect("early exit has a default");
+        let found = functional.found.as_deref().expect("early exit has a found value");
+        let Some(default) = self.value(initial)? else {
+            return Ok(Out::Diverged);
+        };
+        let ran = self.constant(Constant::Bool(true), span);
+        let decides = functional.op != FunctionalOp::All;
+        let bindings = &functional.bindings;
+        let body = &functional.body;
+        let (out, _) = self.traverse_with(source, vec![ran, default], body, span, true, |lowerer, items, state| {
+            let Some(verdict) = lowerer.functional_body(bindings, items.clone(), body)? else {
+                return Ok(None);
+            };
+            let hit = lowerer.b.new_block();
+            let miss = lowerer.b.new_block();
+            let (then_target, else_target) = if decides { (hit, miss) } else { (miss, hit) };
+            lowerer.b.terminate(
+                TermKind::Cond {
+                    condition: verdict.value,
+                    then_target: Target::new(then_target),
+                    else_target: Target::new(else_target),
+                },
+                body.span,
+            );
+            lowerer.b.switch_to(hit);
+            lowerer.sync_unwind();
+            lowerer.push_scope();
+            for (local, item) in bindings.iter().zip(items) {
+                lowerer.bind_local(*local, item);
+            }
+            let value = lowerer.value(found)?;
+            lowerer.pop_scope();
+            if let Some(value) = value {
+                lowerer.leave_loop(value, span)?;
+            }
+            lowerer.b.switch_to(miss);
+            lowerer.sync_unwind();
+            Ok(Some(state.iter().map(|value| value.value).collect()))
+        })?;
+        Ok(out)
     }
 
     fn finish_builder(&mut self, out: Out, builder: &Typed, span: Span) -> Result<Out> {
