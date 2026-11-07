@@ -8,6 +8,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: exponent literals are floats (#57): `1e5`, `1.5e-3`, `2E+10`,
+  `1_000e1_0` — `e` or `E`, an optional sign, digits that `_` may separate,
+  with or without a fraction; an exponent never makes an `int`. The value is
+  the nearest binary64, and a literal must be one: `1e400` (not finite) and a
+  literal that is not zero but would round to `0.0` (`1e-400`, also
+  `0.000…1` with hundreds of zeros) are compile errors; subnormals such as
+  `4.9e-324` are kept. The lexer error of #45 is gone. The grammar, spec §4.2,
+  the Book (EN/RU), the LLM context and the VS Code highlighting follow;
+  `okkama fmt` keeps the spelling. OCS: `L01.lex.float.exponent` runs the forms
+  on every engine and `L01.lex.float.exponent-out-of-range` (was
+  `exponent-rejected`) rejects `1e400`
+  ([#57](https://github.com/shootnix/okkama/issues/57)).
+
 - Language: names before one type share it in every parameter list, as they
   already do in field declarations — `full(separator, suffix is string)`,
   `Person(given, family is string, age is int)`, enum case payloads

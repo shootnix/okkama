@@ -333,6 +333,7 @@ The runtime-supported literals are:
 ````okkama
 10          // int
 3.14        // float
+1.5e-3      // float, with an exponent
 "hello"     // string
 ```raw "text" \n remains raw``` // string
 'x'         // char
@@ -442,8 +443,14 @@ Key properties of the type system:
 
 ### 5.1 `int` and `float`
 
-Integers and floats are written as ordinary literals (`42`, `3.14`). The
-arithmetic operators are `+ - * / %`. Rules:
+Integers and floats are written as ordinary literals (`42`, `3.14`). An
+exponent makes a float, with or without a fraction: `1e5` is `100000.0`,
+`1.5e-3` is `0.0015`, `2E+10` is `20000000000.0`; `_` separates digits in the
+exponent as elsewhere (`1_000e1_0`). The value is the nearest binary64, and a
+literal must be one: `1e400` (not finite) and `1e-400` (not zero, but it would
+round to `0.0`) are compile errors. `1.e5` stays a member access on `1`, and
+there is no hexadecimal float. The arithmetic operators are `+ - * / %`.
+Rules:
 
 - `-`, `*`, `/`, `%` require numeric operands;
 - both operands must have the **same** numeric category: types never mix.
