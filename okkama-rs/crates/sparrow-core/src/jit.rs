@@ -140,6 +140,9 @@ pub struct Jit {
     /// instruction that has one runs through the shared slow path instead
     /// (`SPARROW_CORE_PLAIN`).
     plain: Chosen,
+    /// Allocations of each inline allocation site compiled under `--stats`:
+    /// its label and the count and bytes machine code adds there (#55).
+    alloc_sites: Vec<(String, Box<[u64; 2]>)>,
 }
 
 /// Functions chosen by symbol in an environment variable: a comma-separated
@@ -235,6 +238,7 @@ impl Jit {
             unoptimized,
             unoptimized_isa,
             plain: Chosen::from_env("SPARROW_CORE_PLAIN"),
+            alloc_sites: Vec::new(),
         })
     }
 
@@ -247,6 +251,9 @@ impl Jit {
             .filter(|(_, count)| **count > 0)
             .map(|((name, _), &count)| (format!("helper {name}"), count))
             .chain([("largest machine frame, bytes".to_string(), u64::from(self.largest_frame))])
+            .chain(self.alloc_sites.iter().filter(|(_, counts)| counts[0] > 0).flat_map(|(site, counts)| {
+                [(format!("alloc site {site}, count"), counts[0]), (format!("alloc site {site}, bytes"), counts[1])]
+            }))
             .collect()
     }
 
@@ -735,6 +742,9 @@ impl Emitter<'_, '_> {
 
     /// Inline allocation of `words` words from the free list of their class.
     fn allocate(&mut self, words: usize) -> Value {
+        if self.count_helpers {
+            self.count_allocation(words);
+        }
         let ctx = self.ctx();
         let Some(class) = Heap::class_of(words) else {
             let size = self.iconst(words as i64);
@@ -761,6 +771,28 @@ impl Emitter<'_, '_> {
         self.builder.ins().jump(done, &[fresh.into()]);
         self.builder.switch_to_block(done);
         self.builder.block_params(done)[0]
+    }
+
+    /// Count an allocation of `words` words at this instruction (`--stats`):
+    /// the site is the function, the instruction and, for objects, the type.
+    fn count_allocation(&mut self, words: usize) {
+        let program = &self.loaded.program;
+        let source = &program.functions[self.function];
+        let instruction = &source.code[self.pc];
+        let what = match instruction {
+            I::ObjNew { object, .. } => format!("{} {}", instruction.mnemonic(), program.objects[object.0 as usize].name),
+            _ => instruction.mnemonic().to_string(),
+        };
+        let label = format!("{}:{} {what}", source.symbol, self.pc);
+        let counts = Box::new([0u64; 2]);
+        let address = counts.as_ptr() as i64;
+        self.jit.alloc_sites.push((label, counts));
+        let address = self.iconst(address);
+        for (offset, step) in [(0, 1), (8, words as i64 * 8)] {
+            let value = self.builder.ins().load(types::I64, MEMORY, address, offset);
+            let value = self.builder.ins().iadd_imm(value, step);
+            self.builder.ins().store(MEMORY, value, address, offset);
+        }
     }
 
     fn constant_text(&mut self, text: &str) -> Value {

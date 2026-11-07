@@ -37,6 +37,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   The report shows each time's spread and the start-up line; steady-state
   timing is #236 ([#54](https://github.com/shootnix/okkama/issues/54)).
 
+- Sparrow core, profiling (H-32, O01): `--stats` attributes allocations —
+  each inline allocation site in machine code counts its allocations and
+  bytes (`alloc site Point.moved:3 obj.new Point`), and the runtime counts
+  its own by kind (objects by type, strings, arrays, byte arrays, closures,
+  big integers, payloads, async frames) — and reports the time spent
+  collecting and the run's wall time, so machine-code time is the run less
+  compile and collection time. `tools/profile/ab.py` compares two core
+  binaries on one workload: shuffled runs, identical output required,
+  median and interquartile range, peak memory and the `--stats`
+  differences, with a verdict (faster beyond the spread, memory within 5 %)
+  and a JSON record of commit, hashes, seed and settings
+  ([#55](https://github.com/shootnix/okkama/issues/55)).
+
 - Language: `+` and `-` on arrays and maps. `a + b + c` concatenates arrays
   (or merges maps, the rightmost value winning a repeated key); `a - b`
   removes from an array every element equal to an element of `b` (or from a

@@ -304,7 +304,15 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
 
 ## 9. Debugging recipes
 
-- Runtime event counts: `sparrow --stats x.spb` or `SPARROW_CORE_STATS=1`.
+- Runtime event counts: `sparrow --stats x.spb` or `SPARROW_CORE_STATS=1` —
+  also allocations by site (`alloc site <function>:<pc> obj.new <Type>`, from
+  machine code) and by kind (`alloc runtime object <Type>|string|array|…`),
+  collection time and the run's wall time.
+- A/B of an optimization: `tools/profile/ab.py OLD/sparrow NEW/sparrow
+  x.spb --runs 15 --out DIR` — shuffled runs, same output, median and IQR,
+  peak memory, `--stats` differences; accepts when the new IQR lies below
+  the old and memory grows ≤ 5 %; `DIR/ab.json` records commit, hashes,
+  seed and settings.
 - Suspected lost roots (stack maps, handler edges, Rust-held values): run with
   `SPARROW_CORE_GC_STRESS=1` and compare with `--engine ir`
   (`okkama-cli/tests/handlers.rs`, `sparrow-cli/tests/handlers/*.spa`).

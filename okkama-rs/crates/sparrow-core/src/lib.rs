@@ -107,6 +107,7 @@ pub fn run_described(
         runtime.limits = limits;
         if stats && runtime.stats.is_none() {
             runtime.stats = Some(Box::default());
+            runtime.heap.allocations = Some(Box::default());
         }
         if let Some(host) = &mut runtime.host {
             host.arguments = arguments;
