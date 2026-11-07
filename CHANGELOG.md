@@ -316,6 +316,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Language: `int.pow(int)` is exact (#228): `(2).pow(100)` is
+  `1267650600228229401496703205376`, not `1.2676506002282294e+30`. A negative
+  exponent of an `int` is an error ("a rat base takes a negative one"); new
+  `rat.pow(int)` is the exact rational, and a negative exponent inverts it
+  (`(2.rat()).pow(-3)` is `1/8`); `float.pow(float)` is unchanged. The static
+  type cannot depend on the exponent's sign, so the issue's "a negative
+  exponent gives a rat" became `rat.pow`. Lowering raises by squaring with
+  the exact `int`/`rat` products every engine already has. OCS
+  `L02.int.pow-exact`; Book chapter 10 (EN/RU)
+  ([#228](https://github.com/shootnix/okkama/issues/228)).
+
 - `db/postgres`: a query is one round trip. Bind, Execute without a row limit
   and Sync go out together and the server streams the whole answer; the row
   reader decodes it `batch` rows at a time as it is read from the socket (TCP

@@ -190,7 +190,10 @@ impl Checker<'_, '_> {
             (Ty::Int | Ty::Float, "abs") => (Builtin::Abs, vec![], Some(receiver.clone())),
             (Ty::Rat, "abs") => (Builtin::Abs, vec![], Some(Ty::Rat)),
             (Ty::Int | Ty::Float | Ty::Rat, "sign") => (Builtin::Sign, vec![], Some(Ty::Int)),
-            (Ty::Int | Ty::Float, "pow") => (Builtin::Pow, vec![Param::Same], Some(Ty::Float)),
+            // Exact powers (#228): an int stays an int, a rat a rat.
+            (Ty::Int, "pow") => (Builtin::Pow, vec![Param::Exact(Ty::Int)], Some(Ty::Int)),
+            (Ty::Rat, "pow") => (Builtin::Pow, vec![Param::Exact(Ty::Int)], Some(Ty::Rat)),
+            (Ty::Float, "pow") => (Builtin::Pow, vec![Param::Same], Some(Ty::Float)),
             (Ty::Int | Ty::Float, "sqrt") => (Builtin::Sqrt, vec![], Some(Ty::Float)),
             (Ty::Rat, "numerator") => (Builtin::Numerator, vec![], Some(Ty::Str)),
             (Ty::Rat, "denominator") => (Builtin::Denominator, vec![], Some(Ty::Str)),

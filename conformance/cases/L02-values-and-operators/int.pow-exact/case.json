@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.int.pow-exact",
+  "title": "int.pow is an exact int, rat.pow an exact rat",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.INT-ARITH",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "VAL.RAT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1267650600228229401496703205376\n1 -8 1\n8/27\n1/8\n2.25\n1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/bitwise-guide.md",
+    "docs/okkama-llm-context-1.0.md#6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #228",
+    "expected_basis": "an int power with a non-negative exponent is the exact integer, a rat power the exact rational (a negative exponent inverts it), a float power IEEE pow."
+  },
+  "status": "mandatory"
+}

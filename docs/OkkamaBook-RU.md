@@ -959,8 +959,8 @@ prices.values();             // @V, тот же порядок пар, что у
 | `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (элементы делают `Comparing<T>`; нужен `import "compare" take Comparing`), `join(separator)` у `@string` |
 | `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
 | `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)` |
-| `int`, `float` | `abs()`, `sign()`, `pow(exponent)` (это `float`), `sqrt()` (это `float`) |
-| `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (десятичные строки) |
+| `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (это `float`) — `int.pow(int)` даёт точный `int` (отрицательная степень — ошибка), `float.pow(float)` — `float` |
+| `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (десятичные строки), `pow(exponent)` — точный `rat`, отрицательная степень его обращает |
 | числа, `char`, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` с той же категорией |
 | `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
 | скаляры | преобразования `int()`, `float()`, `rat()`, `byte()`, `string()` (глава 5) |
