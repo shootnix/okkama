@@ -446,9 +446,12 @@ Integers and floats are written as ordinary literals (`42`, `3.14`). The
 arithmetic operators are `+ - * / %`. Rules:
 
 - `-`, `*`, `/`, `%` require numeric operands;
-- for `+`, `-`, `*`, and `%`, the result is `rat` when a `rat` participates,
-  otherwise `int` unless a `float` operand forces `float`;
-- `/` returns `float` when a `float` participates and exact `rat` otherwise,
+- both operands must have the **same** numeric category: types never mix.
+  `1 + 1.5`, `1 + 1 / 2` and `byte(2) + 3` are compile errors; convert
+  explicitly (`1.float()`, `1.rat()`, `byte(2).int()`);
+- `+`, `-`, `*` and `%` give `int` for `int`, `rat` for `rat` and `float` for
+  `float`; two `byte` operands give `int`;
+- `/` gives `float` for `float` and the exact `rat` for integer operands,
   including `6 / 2`;
 - division and modulo by zero are runtime errors.
 
@@ -521,10 +524,9 @@ greatest common divisor, keeps the denominator positive, and rejects zero
 denominators. Thus `rat(2, 6)` and `rat(1, 3)` have one canonical value.
 
 Integer division produces `rat`, so `(1 / 3 + 2 / 3).string()` is exactly
-`"1"`. Arithmetic may mix `rat` with `int` or `byte` and remains `rat`.
-Mixing `rat` with `float` is an error until `.float()` is called explicitly.
-Equality remains category-strict, while ordering accepts `rat` with exact
-integer categories.
+`"1"`. Arithmetic, equality and ordering combine `rat` only with `rat`:
+`1 / 2 + 1`, `1 / 2 < 1` and `1 / 2 + 0.5` are errors until the other operand
+is converted (`1.rat()`, `(1 / 2).float()`).
 
 `rat.string()` returns canonical `n/d` text (or just `n` for denominator
 one), `.int()` truncates toward zero, `.byte()` truncates and checks `0..255`,
@@ -856,7 +858,7 @@ else                   optional fallback (Maybe<T> else T, map[k] else v)
 <-                     stream write
 ==  !=                 equality          (strict same-category)
 ..  ..=                range construction
-<  <=  >  >=           numeric ordering  (numeric promotion applies)
+<  <=  >  >=           numeric ordering  (same category only)
 |                      bitwise or
 ^                      bitwise exclusive or
 &                      bitwise and
