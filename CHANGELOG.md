@@ -96,6 +96,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Fuzzing: `tools/fuzz/run.sh` reported a target as a finding when its build
+  was killed for memory (an ASan build of cranelift-codegen with one codegen
+  unit needs several gigabytes). Targets are now built first, retried with
+  one job, and a failed build exits with status 2 and `logs/build.log`
+  instead of a finding. A 20-second smoke run of all six targets in a 6 GB
+  container has no findings
+  ([#34](https://github.com/shootnix/okkama/issues/34)).
+
 - IR runtime: dropping a value graph with repeated edges recursed through
   destructors — the release queue took only references whose count was
   already 1, so in `[child.clone(), child]` the second copy freed `child`
