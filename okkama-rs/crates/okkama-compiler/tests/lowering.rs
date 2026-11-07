@@ -334,3 +334,31 @@ fn role_bound_actions_worker_spawn_and_root_native_objects_lower() {
         assert!(printed.contains(needle), "{text}:\n{printed}");
     }
 }
+
+/// Generic code that asks for ever deeper specializations stops with the
+/// request chain instead of exhausting memory (H-15, #32).
+#[test]
+fn endless_specialization_is_a_diagnostic_with_its_chain() {
+    let through_construction = "module app;
+        object Box<T> { has value is T; Box(value is T) { self.value = value; } }
+        object Grow<T> {
+            has value is T;
+            Grow(value is T) { self.value = value; }
+            deep(n is int) is int { if n == 0 { 0; } else { Grow(value: Box(value: value)).deep(n - 1) + 1; } }
+        }
+        main() is int { Grow(value: 1).deep(3); }";
+    let through_result_type = "module app;
+        object Box<T> { has value is T; Box(value is T) { self.value = value; } }
+        object Node<T> {
+            has value is T;
+            Node(value is T) { self.value = value; }
+            wrap() is Node<Box<T>> { Node(value: Box(value: value)); }
+            unwrap_all(n is int) is int { if n == 0 { 0; } else { self.wrap().unwrap_all(n - 1) + 1; } }
+        }
+        main() is int { Node(value: 1).unwrap_all(3); }";
+    for (source, action) in [(through_construction, ".deep"), (through_result_type, ".unwrap_all")] {
+        let error = lower(source).unwrap_err().to_string();
+        assert!(error.contains("requests a chain of more than 256 generic specializations"), "{error}");
+        assert!(error.contains(&format!("{action} <- ")), "{error}");
+    }
+}
