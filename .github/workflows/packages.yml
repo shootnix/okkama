@@ -4,6 +4,9 @@
 #   пре-релиз `nightly` на странице Releases обновляется;
 # - тег vX.Y.Z: релиз X.Y.Z (тег обязан совпадать с версией в Cargo.toml);
 # - вручную (workflow_dispatch): только артефакты сборки.
+#
+# Публикация (релиз и nightly) ждёт ворота релиза (gate.yml) на том же
+# коммите: провал ворот — ничего не публикуется.
 name: Packages
 
 on:
@@ -93,9 +96,13 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # The full release gate on this commit: nothing is published without it.
+  gate:
+    uses: ./.github/workflows/gate.yml
+
   publish:
     name: Publish
-    needs: build
+    needs: [build, gate]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:

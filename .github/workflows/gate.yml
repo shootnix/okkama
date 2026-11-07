@@ -1,0 +1,61 @@
+# Release gate (tools/gate/gate.sh) on the exact commit of the calling run:
+# Rust tests, conformance on ir/jvm/sparrow, std inline tests. Packages publish
+# only after it passes (packages.yml). The step statuses come from exit codes;
+# gate.json in the uploaded logs lists them with the known std failures.
+name: Gate
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    name: Release gate
+    # SQLite 3.41+ (std db/sqlite): Ubuntu 22.04 has 3.37.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "22"
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            okkama-rs/target
+            conformance/adapters/rust/.target
+          key: gate-${{ runner.os }}-${{ hashFiles('okkama-rs/Cargo.lock') }}
+          restore-keys: gate-${{ runner.os }}-
+      # The conformance adapter builds with --offline: crates first.
+      - name: Fetch crates
+        working-directory: okkama-rs
+        run: cargo fetch --locked
+      - name: Gate
+        run: tools/gate/gate.sh
+      - name: Summary
+        if: always()
+        run: |
+          report=$(ls -d conformance/reports/runs/gate-*/gate.json 2>/dev/null | tail -1)
+          [ -n "$report" ] || exit 0
+          python3 - "$report" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          print(f"## Gate {'passed' if report['passed'] else 'FAILED'} at {report['commit']}\n")
+          print("| step | status | seconds |\n|---|---|---:|")
+          for step in report["steps"]:
+              print(f"| {step['name']} | {step['status']} | {step['seconds']} |")
+          if report["known_std_failures"]:
+              print("\nKnown std failures: " + ", ".join(report["known_std_failures"]))
+          PY
+      - name: Keep the gate logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: gate-logs
+          path: conformance/reports/runs/gate-*
+          if-no-files-found: ignore
