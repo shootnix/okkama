@@ -122,6 +122,12 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Book: numeric operands never mix (owner decision, #230). The Book said that
+  `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
+  always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the
+  operator table now state the rule: same category on both sides, explicit
+  conversion otherwise ([#230](https://github.com/shootnix/okkama/issues/230)).
+
 - Fuzzing: `tools/fuzz/run.sh` reported a target as a finding when its build
   was killed for memory (an ASan build of cranelift-codegen with one codegen
   unit needs several gigabytes). Targets are now built first, retried with
