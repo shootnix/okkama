@@ -120,6 +120,8 @@ pub struct Runtime {
     pub worker_command: Vec<std::ffi::OsString>,
     /// Budgets of the next run (`budget::Limits`); set before it starts.
     pub limits: crate::budget::Limits,
+    /// A native panicked: the runtime's state is unknown and it runs nothing more.
+    pub poisoned: bool,
     pub(crate) budget: Budget,
 }
 
@@ -186,6 +188,7 @@ impl Runtime {
             stats: std::env::var_os("SPARROW_CORE_STATS").map(|_| Box::default()),
             worker_command: Vec::new(),
             limits: crate::budget::Limits::default(),
+            poisoned: false,
             budget: Budget::default(),
             heap,
             jit: crate::jit::Jit::new()?,
@@ -571,7 +574,20 @@ pub extern "C" fn rt_native(ctx: *mut Ctx, function: u64, arguments: *const Word
     // SAFETY: the caller's argument slot outlives the call; natives do not collect.
     let arguments = unsafe { std::slice::from_raw_parts(arguments, count as usize) };
     runtime.count(|r| format!("native {}", r.loaded.program.functions[function as usize].symbol));
-    match crate::natives::call(runtime, function as usize, arguments) {
+    // A panicking provider must not unwind through machine code: it stops the
+    // run with an internal error and poisons the runtime (H-14).
+    let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::natives::call(runtime, function as usize, arguments)
+    }));
+    let called = match called {
+        Ok(called) => called,
+        Err(payload) => {
+            let symbol = runtime.loaded.program.functions[function as usize].symbol.clone();
+            runtime.poisoned = true;
+            return fatal(ctx, runtime, format!("internal error in native {symbol}: {}", panic_text(&*payload)));
+        }
+    };
+    match called {
         Ok((word, repr)) => {
             runtime.safepoint(frame, ctx, &[(word, repr)]);
             word
@@ -615,6 +631,9 @@ impl Runtime {
     /// Run a function (sync or async) over `arguments` to completion: its
     /// result word, or the report of its failure (process workers).
     pub fn run_function_with(self: &mut Box<Self>, entry: usize, arguments: &[Word], stack: u64) -> Result<Word, Error> {
+        if self.poisoned {
+            return Err(Error("internal error: the runtime is unusable after a panic in a native".into()));
+        }
         let function = &self.loaded.program.functions[entry];
         if function.params.len() != arguments.len() {
             return Err(Error("argument count mismatch".into()));
@@ -749,5 +768,84 @@ pub extern "C" fn rt_map_find(ctx: *mut Ctx, function: u64, pc: u64, map: Word, 
             1
         }
         None => 0,
+    }
+}
+
+/// The message of a panic payload.
+pub(crate) fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| text.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "panic".into())
+}
+
+#[cfg(test)]
+mod embedding_tests {
+    use super::*;
+    use crate::budget::{Limits, NativeGroup};
+    use okkama_sparrow::{Dst, FuncRef, Function, Instruction as I, Program, Register, Type, TypeRef};
+
+    /// `main` returns the wall clock: one native of the Clock group.
+    fn clock() -> Box<Runtime> {
+        let native = Function {
+            symbol: "runtime/time@1::wall_clock/0".into(),
+            is_async: false,
+            native: Some("runtime/time@1::wall_clock/0".into()),
+            intrinsic: None,
+            registers: Vec::new(),
+            params: Vec::new(),
+            result: Some(TypeRef(0)),
+            code: Vec::new(),
+            handlers: Vec::new(),
+        };
+        let main = Function {
+            symbol: "main".into(),
+            is_async: false,
+            native: None,
+            intrinsic: None,
+            registers: vec![TypeRef(0)],
+            params: Vec::new(),
+            result: Some(TypeRef(0)),
+            code: vec![
+                I::Call { dst: Some(Dst(Register(0))), function: FuncRef(0), args: Vec::new() },
+                I::Return { value: Some(Register(0)) },
+            ],
+            handlers: Vec::new(),
+        };
+        let program = Program {
+            module: "app".into(),
+            version: "1.0.0".into(),
+            types: vec![Type::Int],
+            functions: vec![native, main],
+            entry: Some(FuncRef(1)),
+            ..Program::default()
+        };
+        program.verify().unwrap();
+        Box::new(Runtime::new(Loaded::new(program)).unwrap())
+    }
+
+    #[test]
+    fn a_native_outside_the_permitted_groups_fails_the_program() {
+        let mut runtime = clock();
+        runtime.limits = Limits { natives: Some(vec![NativeGroup::Fs]), ..Limits::default() };
+        let error = runtime.run_function(1, 1 << 24).unwrap_err();
+        assert!(error.0.contains("Native runtime/time@1::wall_clock/0 needs the Clock permission"), "{}", error.0);
+        let mut runtime = clock();
+        runtime.limits = Limits { natives: Some(vec![NativeGroup::Clock]), ..Limits::default() };
+        assert!(runtime.run_function(1, 1 << 24).is_ok());
+    }
+
+    #[test]
+    fn a_panicking_native_is_an_internal_error_and_poisons_the_runtime() {
+        let mut runtime = clock();
+        crate::natives::PANIC_NEXT.with(|next| next.set(true));
+        let error = runtime.run_function(1, 1 << 24).unwrap_err();
+        assert!(error.0.contains("internal error in native runtime/time@1::wall_clock/0: provider failure"), "{}", error.0);
+        assert!(runtime.poisoned);
+        let again = runtime.run_function(1, 1 << 24).unwrap_err();
+        assert!(again.0.contains("unusable"), "{}", again.0);
+        // A fresh runtime in the same process works.
+        assert!(clock().run_function(1, 1 << 24).is_ok());
     }
 }

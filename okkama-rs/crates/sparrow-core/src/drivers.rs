@@ -102,6 +102,9 @@ fn native(runtime: &mut Runtime, ctx: *mut Ctx, frame: Word, function: usize, de
     let Some(native) = okkama_runtime_abi::Native::resolve(&symbol) else {
         return fail(runtime, FailureKind::Program(crate::natives::missing_native(&symbol)));
     };
+    if let Err(message) = runtime.limits.permits(native) {
+        return fail(runtime, FailureKind::Program(message));
+    }
     if native != okkama_runtime_abi::Native::TimeSleepNanoseconds {
         if !crate::host::supported(native) {
             let message = format!("native provider {symbol} is not available in sparrow-core yet");

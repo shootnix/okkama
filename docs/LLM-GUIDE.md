@@ -217,7 +217,7 @@ where regions are needed.
 |---|---|
 | `lib.rs` | entry points: `run_configured`, `run_reported` (OCS: `Uncaught`), `run_tests`, `run_worker`, `default_environment`; VM thread with a 1 GiB stack |
 | `program.rs` | loaded program facts: machine representation (`Kind`) of every type; Atomic and Event cells (descriptors their constructor intrinsics name) |
-| `budget.rs` | execution budgets (`Limits`: steps, memory, output, interrupt): fuel cell polled at entries and back-edges only when a budget is set, `EXHAUSTED` status, memory probe set by the embedder (CLIs: mimalloc committed) |
+| `budget.rs` | execution budgets and embedding policy (`Limits`: steps, memory, output, interrupt, native groups `NativeGroup` — checked in `natives::call` and the async native driver): fuel cell polled at entries and back-edges only when a budget is set, `EXHAUSTED` status, memory probe set by the embedder (CLIs: mimalloc committed) |
 | `contracts.rs` | load-time intrinsic contracts: arity, kinds, receiver layouts, related objects, timeout helpers (`sparrow check` runs them too) |
 | `word.rs` | one word per value; reprs Int/Raw/Ref |
 | `jit.rs` | whole-function Cranelift compilation on first call; stack maps (`maps`: frame-to-SP offset + live slots); safepoints; frames up to `MAX_FRAME` (a quarter of `runtime::STACK_HEADROOM`; one shared `spill` area per function); runtime helpers in one `helpers!` table: Rust signature checked at compile time, Cranelift signature derived from it, effects (`HELPERS`); a new helper needs a test reaching it (`okkama-cli/tests/helpers.rs`) |

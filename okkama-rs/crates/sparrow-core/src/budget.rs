@@ -39,6 +39,78 @@ pub struct Limits {
     pub output: Option<u64>,
     /// Set by the host to stop the run.
     pub interrupt: Option<Arc<AtomicBool>>,
+    /// Native groups the program may use; `None` allows every native (the
+    /// CLIs). Natives outside every group (pure computation, stdout and
+    /// stderr) are always allowed. Process workers need `Process`.
+    pub natives: Option<Vec<NativeGroup>>,
+}
+
+/// Natives that reach the host, by what they reach (H-14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeGroup {
+    /// Files, directories, file snapshots, SQLite databases.
+    Fs,
+    /// Sockets, TLS, PostgreSQL.
+    Net,
+    /// Child processes (and process workers).
+    Process,
+    /// Environment variables, users and groups, host facts, the local zone.
+    Env,
+    /// Wall and monotonic clocks, sleeping.
+    Clock,
+    /// Secure random bytes.
+    Random,
+    /// The controlling terminal and standard input.
+    Terminal,
+}
+
+impl NativeGroup {
+    /// The group of `native`, if it reaches the host.
+    pub fn of(native: okkama_runtime_abi::Native) -> Option<Self> {
+        static GROUPS: std::sync::OnceLock<Vec<Option<NativeGroup>>> = std::sync::OnceLock::new();
+        let groups = GROUPS.get_or_init(|| {
+            let size = okkama_runtime_abi::Native::ALL.iter().map(|&n| n as usize + 1).max().unwrap_or(0);
+            let mut groups = vec![None; size];
+            for &native in okkama_runtime_abi::Native::ALL {
+                groups[native as usize] = Self::classify(native);
+            }
+            groups
+        });
+        groups.get(native as usize).copied().flatten()
+    }
+
+    fn classify(native: okkama_runtime_abi::Native) -> Option<Self> {
+        let symbol = native.symbol();
+        let module = symbol.split('@').next().unwrap_or(symbol);
+        let name = symbol.split("::").nth(1).unwrap_or("");
+        Some(match module {
+            "runtime/fs" | "runtime/fs_root" | "runtime/snapshot" | "runtime/database" => Self::Fs,
+            "runtime/network" | "runtime/net" | "runtime/tls_transport" | "runtime/postgres" => Self::Net,
+            "runtime/process" => Self::Process,
+            "runtime/system" if name.starts_with("secure_random") => Self::Random,
+            "runtime/environment" | "runtime/account" | "runtime/system" => Self::Env,
+            "runtime/time_zone" if name.starts_with("timezone_local") => Self::Env,
+            "runtime/time" => Self::Clock,
+            "runtime/random" => Self::Random,
+            "runtime/application" | "runtime/input_state" => Self::Terminal,
+            "runtime/stdio" if name.starts_with("stdin") => Self::Terminal,
+            _ => return None,
+        })
+    }
+}
+
+impl Limits {
+    /// Is `native` allowed? The refusal names its group.
+    #[inline]
+    pub fn permits(&self, native: okkama_runtime_abi::Native) -> Result<(), String> {
+        let Some(allowed) = &self.natives else {
+            return Ok(());
+        };
+        match NativeGroup::of(native) {
+            Some(group) if !allowed.contains(&group) => Err(format!("Native {} needs the {group:?} permission", native.symbol())),
+            _ => Ok(()),
+        }
+    }
 }
 
 impl Limits {
