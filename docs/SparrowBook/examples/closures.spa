@@ -1,0 +1,27 @@
+; A closure value: `fn.closure` fills the leading parameters of its function
+; with captures; `call.fn` passes the rest.
+sparrow 9
+module "closures" "1.0.0"
+type t0 int
+type t1 fn [t0] -> t0
+
+function f0 "add" {
+    registers [t0, t0, t0]
+    params [r0, r1]
+    result t0
+    0: int.add r2, r0, r1
+    1: ret r2
+}
+
+function f1 "main" {
+    registers [t0, t1, t0, t0]
+    params []
+    result t0
+    0: const r0, int 40
+    1: fn.closure r1, f0, [r0]
+    2: const r2, int 2
+    3: call.fn r3, r1, [r2]
+    4: ret r3
+}
+
+entry f1

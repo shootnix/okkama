@@ -1,0 +1,33 @@
+; A test profile: `tests` lists parameterless functions; `sparrow test` runs
+; each on a fresh runtime and reports it. A failure fails the test.
+sparrow 9
+module "testing" "1.0.0"
+type t0 int
+type t1 bool
+type t2 str
+
+function f0 "double" {
+    registers [t0, t0]
+    params [r0]
+    result t0
+    0: int.add r1, r0, r0
+    1: ret r1
+}
+
+function f1 "doubles small numbers" {
+    registers [t0, t0, t0, t1, t2]
+    params []
+    result void
+    0: const r0, int 21
+    1: call r1, f0, [r0]
+    2: const r2, int 42
+    3: int.cmp eq, r3, r1, r2
+    4: br r3, @5, @6
+    5: ret _
+    6: const r4, str "double(21) is not 42"
+    7: panic r4
+}
+
+tests {
+    test "doubles small numbers" f1
+}

@@ -523,6 +523,8 @@ faster than Ruby 2.6, about twice the previous Sparrow.
 |---|---|
 | 📖 [The Okkama Book](docs/OkkamaBook.md) | The textbook: philosophy, every language construct, from first principles |
 | 📖 [Книга Okkama (RU)](docs/OkkamaBook-RU.md) | The book in Russian |
+| 🐦 [The Sparrow Book](docs/SparrowBook/SparrowBook.md) | Sparrow assembly (`.spa`) and SPB: every instruction, the verifier, how the core runs it |
+| 🐦 [Книга Sparrow (RU)](docs/SparrowBook/SparrowBook-RU.md) | The Sparrow book in Russian |
 | 🤖 [Guide for LLM agents](docs/LLM-GUIDE.md) | Working on this repository: layout, build, tests, benchmarks, architecture |
 | 🧪 [Conformance suite](conformance/README.md) | Executable specification: 787 cases with expected observations |
 
