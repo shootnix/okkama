@@ -5353,7 +5353,8 @@ VerifiedCertificateChain сохраняет явный выбор корней �
 certificate identity, Instant и purpose. result() возвращает проверенный leaf; path() возвращает
 выбранную цепочку от leaf до anchor. Для DNS используется DnsCertificateIdentity(HostName),
 для IP — IpCertificateIdentity(IpAddress). Время проверяется точно, с включёнными
-границами; SAN, подписи и ограничения цепочки проверяются совместно. Политика anchor
+границами; SAN, подписи и ограничения цепочки проверяются совместно. Поиск пути ограничен
+(1024 шага); неоднозначные издатели сверх него дают CertificateLimitExceeded. Политика anchor
 отделена от синтаксиса wire-сертификата. [Контракт](std/certificate-verification.md),
 [пример](../examples/std-v4/certificate-verification.ok).
 

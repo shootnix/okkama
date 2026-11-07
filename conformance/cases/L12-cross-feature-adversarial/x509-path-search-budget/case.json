@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L12.x509-path-search-budget",
+  "title": "certificate path search over ambiguous issuers is bounded and engine-independent",
+  "purpose": "Audit S02 (#17): ambiguous issuers must end in a defined refusal within the search budget while valid alternative chains still verify.",
+  "level": "L12",
+  "contracts": [
+    {
+      "contract": "STD.CRYPTO.X509.TRUST",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "unreachable anchor: CertificateVerificationFailed.because(CertificateFailure.invalid_chain)\ndead end: limit exceeded\nbudget 4 peers: CertificateVerificationFailed.because(CertificateFailure.invalid_chain)\nbudget 5 peers: limit exceeded\nsingle dead end: CertificateVerificationFailed.because(CertificateFailure.invalid_chain)\nforged issuers: path ca-leaf ca root\nvalid first: path ca-leaf ca root\nforged only: CertificateVerificationFailed.because(CertificateFailure.invalid_signature)\n"
+    }
+  },
+  "spec_refs": [
+    "std/crypto/x509/trust.ok",
+    "std/crypto/x509/certificate.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #17 from the audit 2026-11-01 S02 finding",
+    "expected_basis": "Issuers whose anchor is unreachable and links whose signature fails are skipped; a search spends at most 1024 steps (a considered issuer, or a link of a path validated at an anchor) and then fails with resource_exhausted (CertificateLimitExceeded). Self-issued peers that sign each other: 4 peers before a dead end exhaust the paths within the budget (invalid_chain), 5 do not (limit). Forged issuers with the anchor's name are skipped, leaving leaf, CA and root."
+  },
+  "status": "mandatory"
+}

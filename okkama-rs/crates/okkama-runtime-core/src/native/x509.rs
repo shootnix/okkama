@@ -1635,153 +1635,228 @@ fn satisfies(names: &[General], trees: &Subtrees) -> bool {
     true
 }
 
-/// Проверка пути PKIX (BasicChecker, AlgorithmChecker, KeyChecker,
-/// ConstraintsChecker, критические расширения): `path` — от листа к якорю
-/// не включительно, `anchor` — якорь.
-fn valid_path(pool: &[Candidate], path: &[usize], anchor: usize) -> Result<bool, Bad> {
-    if !key_permitted(&pool[anchor]) {
-        return Ok(false);
+/// Предел работы построителя пути: шаг — рассмотренный издатель-кандидат или
+/// звено пути, проверяемого у якоря. Сверх предела — `resource_exhausted`:
+/// неоднозначные издатели дают экспоненту путей (аудит S02).
+const PATH_STEPS: usize = 1024;
+
+/// Поиск пути от листа к якорю (`SunCertPathBuilder`) с общим бюджетом.
+/// Отсечения не меняют найденный путь: ветка без достижимого якоря или со
+/// звеном, подпись которого не сходится, не даёт верного пути.
+struct Builder<'a> {
+    pool: &'a [Candidate],
+    anchor: Vec<bool>,
+    /// Издатели-кандидаты: имя издателя и AKI/SKI, якоря первыми.
+    issuers: Vec<Vec<usize>>,
+    /// Якорь достижим по издателям-кандидатам.
+    reaches: Vec<bool>,
+    signatures: HashMap<(usize, usize), bool>,
+    steps: usize,
+}
+
+impl<'a> Builder<'a> {
+    fn new(pool: &'a [Candidate], anchors: &[usize], intermediates: &[usize]) -> Self {
+        let mut anchor = vec![false; pool.len()];
+        for &index in anchors {
+            anchor[index] = true;
+        }
+        let mut subjects: HashMap<&Vec<Vec<String>>, Vec<usize>> = HashMap::new();
+        for &index in anchors.iter().chain(intermediates) {
+            subjects.entry(&pool[index].subject).or_default().push(index);
+        }
+        let issuers: Vec<Vec<usize>> = (0..pool.len())
+            .map(|current| {
+                if anchor[current] {
+                    return Vec::new();
+                }
+                let aki = pool[current].aki.as_ref();
+                subjects
+                    .get(&pool[current].issuer)
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .filter(|&index| {
+                        index != current
+                            && match (aki, &pool[index].ski) {
+                                (Some(aki), Some(ski)) => aki == ski,
+                                _ => true,
+                            }
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut issued: Vec<Vec<usize>> = vec![Vec::new(); pool.len()];
+        for (current, candidates) in issuers.iter().enumerate() {
+            for &candidate in candidates {
+                issued[candidate].push(current);
+            }
+        }
+        let mut reaches = anchor.clone();
+        let mut queue: Vec<usize> = anchors.to_vec();
+        while let Some(index) = queue.pop() {
+            for &subject in &issued[index] {
+                if !reaches[subject] {
+                    reaches[subject] = true;
+                    queue.push(subject);
+                }
+            }
+        }
+        Self {
+            pool,
+            anchor,
+            issuers,
+            reaches,
+            signatures: HashMap::new(),
+            steps: 0,
+        }
     }
-    let length = path.len();
-    let mut maximum = length as i64;
-    let mut constraints: Vec<Subtrees> = Vec::new();
-    let mut previous = anchor;
-    for step in 1..=length {
-        let current = &pool[path[length - step]];
-        if current.issuer != pool[previous].subject || !current.signed_by(&pool[previous]) || !algorithm_permitted(current) {
+
+    fn spend(&mut self, steps: usize) -> Result<(), Bad> {
+        self.steps += steps;
+        if self.steps > PATH_STEPS { limit() } else { Ok(()) }
+    }
+
+    fn signed(&mut self, subject: usize, issuer: usize) -> bool {
+        let pool = self.pool;
+        *self
+            .signatures
+            .entry((subject, issuer))
+            .or_insert_with(|| pool[subject].signed_by(&pool[issuer]))
+    }
+
+    /// Поиск в глубину: найденный якорь, путь остаётся в `path`.
+    fn search(&mut self, path: &mut Vec<usize>) -> Result<Option<usize>, Bad> {
+        if path.len() > 30 {
+            return Ok(None);
+        }
+        let current = *path.last().expect("leaf");
+        for next in 0..self.issuers[current].len() {
+            let candidate = self.issuers[current][next];
+            if !self.reaches[candidate] {
+                continue;
+            }
+            let anchor = self.anchor[candidate];
+            if !anchor && path.iter().any(|&known| self.pool[known].der == self.pool[candidate].der) {
+                continue;
+            }
+            self.spend(1)?;
+            if !self.signed(current, candidate) {
+                continue;
+            }
+            if anchor {
+                self.spend(path.len())?;
+                if self.valid(path, candidate)? {
+                    return Ok(Some(candidate));
+                }
+                continue;
+            }
+            path.push(candidate);
+            if let Some(found) = self.search(path)? {
+                return Ok(Some(found));
+            }
+            path.pop();
+        }
+        Ok(None)
+    }
+
+    /// Проверка пути PKIX (BasicChecker, AlgorithmChecker, KeyChecker,
+    /// ConstraintsChecker, критические расширения): `path` — от листа к якорю
+    /// не включительно, `anchor` — якорь.
+    fn valid(&mut self, path: &[usize], anchor: usize) -> Result<bool, Bad> {
+        let pool = self.pool;
+        if !key_permitted(&pool[anchor]) {
             return Ok(false);
         }
-        let facts = current.facts();
-        if step < length {
-            if let Ok(usage) = usages(facts) {
-                if present(facts, "2.5.29.15") && !usage.contains(&5) {
-                    return Ok(false);
-                }
-            } else {
+        let length = path.len();
+        let mut maximum = length as i64;
+        let mut constraints: Vec<Subtrees> = Vec::new();
+        let mut previous = anchor;
+        for step in 1..=length {
+            let current = &pool[path[length - step]];
+            if current.issuer != pool[previous].subject || !self.signed(path[length - step], previous) || !algorithm_permitted(current) {
                 return Ok(false);
             }
-            let path_length = if current.parsed.version < 2 {
-                if step == 1 && current.self_issued() { i64::MAX } else { -1 }
-            } else {
-                match constraints_of(facts)? {
-                    (true, Some(depth)) => depth,
-                    (true, None) => i64::MAX,
-                    (false, _) => -1,
+            let facts = current.facts();
+            if step < length {
+                if let Ok(usage) = usages(facts) {
+                    if present(facts, "2.5.29.15") && !usage.contains(&5) {
+                        return Ok(false);
+                    }
+                } else {
+                    return Ok(false);
                 }
+                let path_length = if current.parsed.version < 2 {
+                    if step == 1 && current.self_issued() { i64::MAX } else { -1 }
+                } else {
+                    match constraints_of(facts)? {
+                        (true, Some(depth)) => depth,
+                        (true, None) => i64::MAX,
+                        (false, _) => -1,
+                    }
+                };
+                if path_length == -1 {
+                    return Ok(false);
+                }
+                if !current.self_issued() {
+                    if maximum <= 0 {
+                        return Ok(false);
+                    }
+                    maximum -= 1;
+                }
+                maximum = maximum.min(path_length);
+            }
+            if step == length || !current.self_issued() {
+                let names = names_for_constraints(current);
+                if constraints.iter().any(|trees| !satisfies(&names, trees)) {
+                    return Ok(false);
+                }
+            }
+            if let Some(trees) = name_constraints(facts)? {
+                constraints.push(trees);
+            }
+            let unresolved = facts
+                .extensions
+                .iter()
+                .any(|(oid, critical, _)| *critical == 1 && !PKIX_SUPPORTED.contains(&oid.as_str()));
+            if unresolved {
+                return Ok(false);
+            }
+            previous = path[length - step];
+        }
+        Ok(true)
+    }
+
+    /// Причина без пути: подпись найденного по имени издателя или недоверие.
+    fn reason(&mut self, leaf: usize, all: &[usize]) -> &'static str {
+        let pool = self.pool;
+        let mut current = leaf;
+        for _ in 0..32 {
+            let mut named = false;
+            let mut next = None;
+            for &candidate in all {
+                if candidate == current || pool[candidate].subject != pool[current].issuer {
+                    continue;
+                }
+                named = true;
+                if self.signed(current, candidate) {
+                    next = Some(candidate);
+                    break;
+                }
+            }
+            let Some(next) = next else {
+                return if named { "invalid_signature" } else { "untrusted" };
             };
-            if path_length == -1 {
-                return Ok(false);
+            if self.anchor[next] {
+                return "invalid_chain";
             }
-            if !current.self_issued() {
-                if maximum <= 0 {
-                    return Ok(false);
-                }
-                maximum -= 1;
-            }
-            maximum = maximum.min(path_length);
+            current = next;
         }
-        if step == length || !current.self_issued() {
-            let names = names_for_constraints(current);
-            if constraints.iter().any(|trees| !satisfies(&names, trees)) {
-                return Ok(false);
-            }
-        }
-        if let Some(trees) = name_constraints(facts)? {
-            constraints.push(trees);
-        }
-        let unresolved = facts
-            .extensions
-            .iter()
-            .any(|(oid, critical, _)| *critical == 1 && !PKIX_SUPPORTED.contains(&oid.as_str()));
-        if unresolved {
-            return Ok(false);
-        }
-        previous = path[length - step];
+        "invalid_chain"
     }
-    Ok(true)
 }
 
 fn constraints_of(facts: &Facts) -> Result<(bool, Option<i64>), Bad> {
     constraints(facts)
-}
-
-/// Кандидаты-издатели `current`: имя издателя и AKI/SKI, якоря первыми.
-fn issuers(pool: &[Candidate], current: usize, anchors: &[usize], intermediates: &[usize]) -> Vec<usize> {
-    let wanted = &pool[current].issuer;
-    let aki = pool[current].aki.as_ref();
-    anchors
-        .iter()
-        .chain(intermediates)
-        .copied()
-        .filter(|&index| {
-            index != current
-                && pool[index].subject == *wanted
-                && match (aki, &pool[index].ski) {
-                    (Some(aki), Some(ski)) => aki == ski,
-                    _ => true,
-                }
-        })
-        .collect()
-}
-
-/// Поиск в глубину от листа к якорю (`SunCertPathBuilder`).
-fn search(
-    pool: &[Candidate],
-    path: &mut Vec<usize>,
-    anchors: &[usize],
-    intermediates: &[usize],
-    found: &mut Option<(Vec<usize>, usize)>,
-) -> Result<(), Bad> {
-    if found.is_some() || path.len() > 30 {
-        return Ok(());
-    }
-    let current = *path.last().expect("leaf");
-    for candidate in issuers(pool, current, anchors, intermediates) {
-        if anchors.contains(&candidate) {
-            if valid_path(pool, path, candidate)? {
-                *found = Some((path.clone(), candidate));
-                return Ok(());
-            }
-            continue;
-        }
-        if path.iter().any(|&known| pool[known].der == pool[candidate].der) {
-            continue;
-        }
-        path.push(candidate);
-        search(pool, path, anchors, intermediates, found)?;
-        path.pop();
-        if found.is_some() {
-            return Ok(());
-        }
-    }
-    Ok(())
-}
-
-/// Причина без пути: подпись найденного по имени издателя или недоверие.
-fn reason(pool: &[Candidate], leaf: usize, all: &[usize], anchors: &[usize]) -> &'static str {
-    let mut current = leaf;
-    for _ in 0..32 {
-        let mut named = false;
-        let mut next = None;
-        for &candidate in all {
-            if candidate == current || pool[candidate].subject != pool[current].issuer {
-                continue;
-            }
-            named = true;
-            if pool[current].signed_by(&pool[candidate]) {
-                next = Some(candidate);
-                break;
-            }
-        }
-        let Some(next) = next else {
-            return if named { "invalid_signature" } else { "untrusted" };
-        };
-        if anchors.contains(&next) {
-            return "invalid_chain";
-        }
-        current = next;
-    }
-    "invalid_chain"
 }
 
 /// Профиль RFC 5280 под `X509_V_FLAG_X509_STRICT` OpenSSL.
@@ -1963,17 +2038,13 @@ fn verified(
     if anchors.iter().any(|&anchor| pool[anchor].der == pool[leaf].der) {
         path.push(leaf);
     } else {
-        let mut found = None;
-        let mut start = vec![leaf];
-        search(&pool, &mut start, &anchors, &intermediates, &mut found)?;
-        match found {
-            Some((built, anchor)) => {
-                path.extend(built);
-                path.push(anchor);
-            }
+        let mut builder = Builder::new(&pool, &anchors, &intermediates);
+        path.push(leaf);
+        match builder.search(&mut path)? {
+            Some(anchor) => path.push(anchor),
             None => {
                 let all: Vec<usize> = intermediates.iter().chain(&anchors).copied().collect();
-                return Err(Stop::Rejected(reason(&pool, leaf, &all, &anchors)));
+                return Err(Stop::Rejected(builder.reason(leaf, &all)));
             }
         }
     }
@@ -2071,5 +2142,91 @@ pub fn execute(native: Native, args: &[Value]) -> Result<Value, Error> {
         "system_certificates" => system_certificates(native),
         "verify_chain" => verify_chain(native, args),
         _ => Err(Error::Unsupported(format!("native provider is not implemented: {}", native.symbol()))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Сертификаты `okkama-runtime-core/tests/x509-search` (`gen.sh`); путь от
+    /// соседнего крейта, чтобы копия модуля в sparrow-runtime видела те же файлы.
+    fn der(name: &str) -> Vec<u8> {
+        let path = format!("{}/../okkama-runtime-core/tests/x509-search/{name}.der", env!("CARGO_MANIFEST_DIR"));
+        std::fs::read(&path).unwrap_or_else(|error| panic!("{path}: {error}"))
+    }
+
+    fn ders(names: &[String]) -> Vec<Vec<u8>> {
+        names.iter().map(|name| der(name)).collect()
+    }
+
+    fn numbered(prefix: &str, count: usize) -> Vec<String> {
+        (0..count).map(|index| format!("{prefix}{index:02}")).collect()
+    }
+
+    /// Проверка на сервер `host` в момент `at` с якорем `root`; отказ — его причина.
+    fn verify(chain: &[String], root: &str, host: &str, at: &str) -> (Result<Vec<String>, &'static str>, Duration) {
+        let start = Instant::now();
+        let all = ders(chain);
+        let roots = ders(&[root.to_string()]);
+        let names: Vec<(Vec<u8>, String)> = all.iter().cloned().zip(chain.iter().cloned()).chain([(roots[0].clone(), root.to_string())]).collect();
+        let result = match verified(&all, &roots, "DNS", host, &[], &rational(at), "1.3.6.1.5.5.7.3.1") {
+            Ok(path) => Ok(path.iter().map(|der| names.iter().find(|(known, _)| known == der).expect("known").1.clone()).collect()),
+            Err(Stop::Rejected(reason)) => Err(reason),
+            Err(Stop::Bad(Bad(kind))) => Err(kind),
+            Err(Stop::Unexpected) => Err("unexpected"),
+        };
+        (result, start.elapsed())
+    }
+
+    fn check(chain: &[String], host: &str, at: &str) -> (Result<Vec<String>, &'static str>, Duration) {
+        verify(chain, "root", host, at)
+    }
+
+    const AT: &str = "1893456000";
+
+    #[test]
+    fn ambiguous_issuers_end_in_a_defined_refusal_within_the_budget() {
+        // Аудит S02: 11 самовыпущенных с общим ключом и недостижимым якорем
+        // раньше перебирались больше 8 с; якорь недостижим — отказ сразу.
+        let mut audit = vec!["audit/leaf".to_string()];
+        audit.extend((0..12).map(|index| format!("audit/i{index}")));
+        let (result, spent) = verify(&audit, "audit/root", "audit.invalid", "1793600000");
+        assert_eq!(result, Err("invalid_chain"));
+        assert!(spent < Duration::from_secs(1), "{spent:?}");
+
+        let mut peers = vec!["leaf".to_string()];
+        peers.extend(numbered("peer-", 12));
+        let (result, spent) = check(&peers, "search.invalid", AT);
+        assert_eq!(result, Err("invalid_chain"));
+        assert!(spent < Duration::from_secs(1), "{spent:?}");
+
+        // Якорь достижим через тупик без keyCertSign: каждый путь неверен,
+        // перестановки издателей исчерпывают бюджет — определённый отказ.
+        peers.push("dead-end".to_string());
+        let (result, spent) = check(&peers, "search.invalid", AT);
+        assert_eq!(result, Err("limit"));
+        assert!(spent < Duration::from_secs(2), "{spent:?}");
+
+        // Без перестановок тот же тупик — обычный отказ цепочки.
+        let (result, _) = check(&["leaf".into(), "peer-00".into(), "dead-end".into()], "search.invalid", AT);
+        assert_eq!(result, Err("invalid_chain"));
+    }
+
+    #[test]
+    fn valid_alternative_chains_still_pass() {
+        let expected = Ok(vec!["ca-leaf".to_string(), "ca".to_string(), "root".to_string()]);
+        let mut chain = vec!["ca-leaf".to_string()];
+        chain.extend(numbered("ca-forged-", 8));
+        chain.push("ca".to_string());
+        let (result, spent) = check(&chain, "search.invalid", AT);
+        assert_eq!(result, expected);
+        assert!(spent < Duration::from_secs(1), "{spent:?}");
+
+        let mut first = vec!["ca-leaf".to_string(), "ca".to_string()];
+        first.extend(numbered("ca-forged-", 8));
+        assert_eq!(check(&first, "search.invalid", AT).0, expected);
+        assert_eq!(check(&["ca-leaf".into(), "ca-forged-00".into()], "search.invalid", AT).0, Err("invalid_signature"));
     }
 }

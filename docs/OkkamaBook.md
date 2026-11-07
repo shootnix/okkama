@@ -5212,7 +5212,8 @@ VerifiedCertificateChain snapshots explicit roots and takes a nominal certificat
 identity, Instant and purpose. result() returns the verified leaf; path() returns the
 selected leaf-to-anchor sequence. DNS uses DnsCertificateIdentity(HostName), IP
 uses IpCertificateIdentity(IpAddress). Time is exact and inclusive; SAN matching,
-signatures and path constraints are verified together. Trust-anchor payload policy
+signatures and path constraints are verified together. Path search is bounded
+(1024 steps); ambiguous issuers past it raise CertificateLimitExceeded. Trust-anchor payload policy
 stays separate from wire-certificate syntax. [Contract](std/certificate-verification.md),
 [example](../examples/std-v4/certificate-verification.ok).
 
