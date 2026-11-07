@@ -109,10 +109,11 @@ okkama exec x.spb      # SPB on the core inside okkama
 
 Environment: `OKKAMA_STDLIB_DIR` (std root), `OKKAMA_ENGINE`,
 `SPARROW_CORE_STATS=1` (= `--stats`: counts of natives, intrinsics, slow paths,
-regions, awaits, heap bytes), `SPARROW_CORE_GC_STRESS=1` (collect at every
+regions, awaits, heap bytes, compile time and code size per function),
+`SPARROW_CORE_DUMP`/`SPARROW_CORE_UNOPTIMIZED`/`SPARROW_CORE_PLAIN=symbol,…|*`
+(§9), `SPARROW_CORE_GC_STRESS=1` (collect at every
 safepoint and poison reclaimed cells: values kept alive by mistake fail at
-once), `OKKAMA_TRACE=off` (no stack in failures; the
-core prints none yet, #10), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
+once), `OKKAMA_TRACE=off` (no stack in failures), `OKKAMA_ICU_LIBDIR` (pinned ICU for collation;
 `tools/build-icu-collation.sh`). `OKKAMA_JIT*` switches belong to the previous
 VM only.
 
@@ -301,6 +302,12 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
   `SPARROW_CORE_GC_STRESS=1` and compare with `--engine ir`
   (`okkama-cli/tests/handlers.rs`, `sparrow-cli/tests/handlers/*.spa`).
 - Bytecode: `sparrow --disassemble x.spb`.
+- A wrong result on the core only (#44): run with `SPARROW_CORE_UNOPTIMIZED=*`
+  (no Cranelift passes) and `SPARROW_CORE_PLAIN=*` (no inline fast paths:
+  those instructions take the shared slow path). If either fixes it, bisect
+  the symbol list (symbols as in `--disassemble`) down to one function, then
+  read its CLIF and machine code with `SPARROW_CORE_DUMP=symbol`. A
+  function that is slow to compile shows in `--stats`.
 - Temporary instrumentation in the core: copy the file to the scratchpad,
   add counters (print them from `stats_report`), build in Docker into
   `okkama-core-dbg`, measure, then restore the copy.

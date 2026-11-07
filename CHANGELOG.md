@@ -22,6 +22,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   Sparrow core and the previous VM implement them; seven OCS cases
   ([#145](https://github.com/shootnix/okkama/issues/145)).
 
+- Sparrow core, debugging (H-21): a wrong result can be narrowed to one
+  compiled function without rebuilding. `SPARROW_CORE_UNOPTIMIZED=symbols`
+  compiles the chosen functions (`*`: all) without Cranelift's passes and
+  `SPARROW_CORE_PLAIN=symbols` without the core's inline fast paths (those
+  instructions take the shared slow path); bisecting the list finds the
+  function, and `SPARROW_CORE_DUMP=symbols` prints its CLIF before the passes
+  (with the helpers and functions it calls by name) and its machine code.
+  `--stats` adds the compile time and machine-code size of each function and
+  their totals ([#44](https://github.com/shootnix/okkama/issues/44)).
+
 - Docs: the trust model is back in the repository (`docs/security-model.md`,
   H-01): for source, bytecode on the Sparrow core, programs, packages and
   embedding it says what is guaranteed, what is not (each with its open
