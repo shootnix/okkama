@@ -37,10 +37,12 @@ jobs:
             platform: macos-aarch64
             smoke: true
           # Кросс-сборка на arm64-раннере: Intel-раннеры macOS уходят.
+          # Смоук — под Rosetta 2 (ядро генерирует x86_64-код, #27).
           - os: macos-latest
             target: x86_64-apple-darwin
             platform: macos-x86_64
-            smoke: false
+            smoke: true
+            emulate: arch -x86_64
           # glibc 2.35: пакет ставится на Ubuntu 22.04+, Debian 12+ и новее.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -79,17 +81,25 @@ jobs:
         run: >
           tools/package.sh --target ${{ matrix.target }} --installer
           --version ${{ steps.version.outputs.version }} --out dist
+      - name: Rosetta
+        if: matrix.smoke && matrix.emulate
+        run: softwareupdate --install-rosetta --agree-to-license
       - name: Smoke test
         if: matrix.smoke
         run: |
           mkdir smoke
           tar -C smoke -xzf dist/okkama-*-${{ matrix.platform }}.tar.gz
           bin="$(echo smoke/okkama-*/bin)"
-          "$bin/okkama" env
-          "$bin/okkama" okkama-rs/examples/hello.ok
-          "$bin/okkama" run --engine sparrow okkama-rs/tools/pgo/workloads/02-calls/main.ok
-          "$bin/sparrow" --version
-          "$bin/blade" --version
+          run() { ${{ matrix.emulate }} "$@"; }
+          run "$bin/okkama" env
+          run "$bin/okkama" okkama-rs/examples/hello.ok
+          run "$bin/okkama" run --engine sparrow okkama-rs/tools/pgo/workloads/02-calls/main.ok
+          # The core's frame walk and stack maps under a stressed collector,
+          # and budget polls in machine code.
+          run env SPARROW_CORE_GC_STRESS=1 "$bin/okkama" run --engine sparrow okkama-rs/examples/hello.ok
+          run "$bin/okkama" run --engine sparrow --max-steps 1000000000 okkama-rs/tools/pgo/workloads/02-calls/main.ok
+          run "$bin/sparrow" --version
+          run "$bin/blade" --version
       - uses: actions/upload-artifact@v5
         with:
           name: okkama-${{ matrix.platform }}

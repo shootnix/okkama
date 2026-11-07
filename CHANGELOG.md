@@ -56,6 +56,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sparrow core on x86_64: the macOS x86_64 package now has a smoke test (run
+  under Rosetta 2 on the arm64 runner: a program, the core under a stressed
+  collector and with budget polls), and CI runs the std inline tests on the IR
+  engine and the core on x86_64 Linux next to conformance. Checked locally
+  under Rosetta: the handler-liveness programs under collector stress, budget
+  polls and interruption, and all benchmarks print what arm64 prints
+  ([#27](https://github.com/shootnix/okkama/issues/27)).
+
 - Releases: packages were published without the release gate, which ran only
   by hand, judged steps by the last line of their logs and carried on after a
   failed build. A reusable `gate.yml` now runs the gate on the exact commit,
