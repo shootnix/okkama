@@ -1,6 +1,6 @@
-//! Execution budgets on the IR engine (#71): the same options, reports and
-//! exit status as the Sparrow core. Every run carries a timeout, so a budget
-//! that failed to stop a program cannot hang the test.
+//! Execution budgets on the IR engine (#71) and the JVM (#237): the same
+//! options, reports and exit status as the Sparrow core. Every run carries a
+//! timeout, so a budget that failed to stop a program cannot hang the test.
 
 use std::process::{Command, Output};
 
@@ -26,7 +26,7 @@ const PRINT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nmain
 const GROW: &str = "module app v1.0.0;\nobject Keep {\n    Keep();\n    grow(items is @@int, n is int) is int { if n < 0 { 0; } else { self.grow(items + [(0..1000).map() -> i { i; }], n + 1); } }\n}\nmain() is int { Keep().grow([], 0); }\n";
 
 #[test]
-fn every_budget_stops_the_ir_engine_as_it_stops_the_core() {
+fn every_budget_stops_the_ir_engine_and_the_jvm_as_it_stops_the_core() {
     let cases: [(&str, &[&str], &str); 5] = [
         (SPIN, &["--max-steps", "100000", "--timeout", "30"], "Execution budget exhausted: steps"),
         (RECURSE, &["--max-steps", "1000", "--timeout", "30"], "Execution budget exhausted: steps"),
@@ -35,7 +35,7 @@ fn every_budget_stops_the_ir_engine_as_it_stops_the_core() {
         (SPIN, &["--timeout", "1"], "Execution interrupted"),
     ];
     for (source, budget, report) in cases {
-        for engine in ["ir", "sparrow"] {
+        for engine in ["ir", "sparrow", "jvm"] {
             let output = run(engine, source, budget);
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert_eq!(output.status.code(), Some(1), "{engine} {budget:?}: {stderr}");
@@ -47,19 +47,65 @@ fn every_budget_stops_the_ir_engine_as_it_stops_the_core() {
     }
 }
 
-/// The JVM: output and timeout through the launcher; steps and memory
-/// refused until #237 decides how to count them.
+const DEEP: &str = "module app v1.0.0;\nobject Calc {\n    Calc();\n    down(n is int) is int { if n == 0 { 0; } else { self.down(n - 1) + 1; } }\n}\nmain() is int { if Calc().down(333) == 333 { 0; } else { 1; } }\n";
+const CAUGHT: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nobject Spin {\n    Spin();\n    run() is int { loop { } 0; }\n}\nmain() is int {\n    let out = Stdout();\n    defer out.writeln(\"defer ran\");\n    let result = try { Spin().run(); } catch e is Error { out.writeln(\"caught\"); 7; };\n    result;\n}\n";
+
+/// Steps are counted alike on every engine: a function entry and a branch
+/// back to the same or an earlier block. DEEP takes exactly 336 steps (main,
+/// the constructor, 334 calls of `down`); running out is not an error the
+/// program can catch, and its cleanup does not run.
 #[test]
-fn the_jvm_has_output_and_timeout_budgets() {
-    for (budget, report) in [(&["--max-output", "1K", "--timeout", "60"][..], "Execution budget exhausted: output"), (&["--timeout", "2"][..], "Execution interrupted")] {
-        let source = if report.ends_with("output") { PRINT } else { SPIN };
-        let output = run("jvm", source, budget);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert_eq!(output.status.code(), Some(1), "{budget:?}: {stderr}");
-        assert_eq!(stderr.trim_end(), report, "{budget:?}");
-        assert!(output.stdout.len() <= 1024);
+fn steps_are_counted_alike_and_running_out_cannot_be_caught() {
+    for engine in ["ir", "sparrow", "jvm"] {
+        let enough = run(engine, DEEP, &["--max-steps", "336", "--timeout", "60"]);
+        assert_eq!(enough.status.code(), Some(0), "{engine}: {}", String::from_utf8_lossy(&enough.stderr));
+        let short = run(engine, DEEP, &["--max-steps", "335", "--timeout", "60"]);
+        assert_eq!(String::from_utf8_lossy(&short.stderr).trim_end(), "Execution budget exhausted: steps", "{engine}");
+        let caught = run(engine, CAUGHT, &["--max-steps", "5000", "--timeout", "60"]);
+        assert_eq!(caught.status.code(), Some(1), "{engine}");
+        assert_eq!(String::from_utf8_lossy(&caught.stderr).trim_end(), "Execution budget exhausted: steps", "{engine}");
+        assert!(caught.stdout.is_empty(), "{engine}: {}", String::from_utf8_lossy(&caught.stdout));
     }
-    let output = run("jvm", SPIN, &["--max-steps", "10"]);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("#237"));
+}
+
+/// `build --target jvm --budgeted` counts steps; the limit comes from
+/// `-Dokkama.steps` when the JAR runs. A plain build pays nothing and has no
+/// step limit; the memory limit is the runtime's and works on either.
+#[test]
+fn budgeted_jvm_builds_take_the_limit_from_the_command_line() {
+    let dir = std::env::temp_dir().join(format!("budgets-build-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("deep.ok");
+    std::fs::write(&source, DEEP).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for (flag, jar) in [(Some("--budgeted"), "budgeted.jar"), (None, "plain.jar")] {
+        let built = Command::new(env!("CARGO_BIN_EXE_okkama"))
+            .args(["build", "--target", "jvm"])
+            .args(flag)
+            .arg(&source)
+            .arg("-o")
+            .arg(dir.join(jar))
+            .env("OKKAMA_STDLIB_DIR", root.join("std"))
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    }
+    let java = |properties: &[&str], jar: &str| {
+        Command::new("java").args(properties).arg("-jar").arg(dir.join(jar)).output().unwrap()
+    };
+    assert_eq!(java(&["-Dokkama.steps=336"], "budgeted.jar").status.code(), Some(0));
+    let short = java(&["-Dokkama.steps=335"], "budgeted.jar");
+    assert_eq!(short.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&short.stderr).trim_end(), "Execution budget exhausted: steps");
+    assert_eq!(java(&[], "budgeted.jar").status.code(), Some(0));
+    assert_eq!(java(&["-Dokkama.steps=10"], "plain.jar").status.code(), Some(0));
+    let sparrow = Command::new(env!("CARGO_BIN_EXE_okkama"))
+        .args(["build", "--target", "sparrow", "--budgeted"])
+        .arg(&source)
+        .arg("-o")
+        .arg(dir.join("x.spb"))
+        .output()
+        .unwrap();
+    assert_eq!(sparrow.status.code(), Some(2));
+    let _ = std::fs::remove_dir_all(dir);
 }

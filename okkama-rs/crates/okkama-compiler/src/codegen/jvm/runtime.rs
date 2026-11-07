@@ -64,13 +64,18 @@ include!(concat!(env!("OUT_DIR"), "/runtime_files.rs"));
 pub(super) struct ClassGen {
     pub pool: ConstantPool,
     pub layout: Layout,
+    /// `Some(n)`: программа собрана под `--max-steps` и считает шаги
+    /// (`Rt.step`, #237) так же, как IR: вход в функцию и обратный переход.
+    /// Функции `0..n` — исходные; вход в часть, вынесенную `outline`, не шаг.
+    pub steps: Option<usize>,
 }
 
 impl ClassGen {
-    pub fn new(layout: Layout) -> Self {
+    pub fn new(layout: Layout, steps: Option<usize>) -> Self {
         Self {
             pool: ConstantPool::default(),
             layout,
+            steps,
         }
     }
 

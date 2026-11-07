@@ -18,6 +18,7 @@ fn generate(module: &ir::Module) -> Result<Vec<u8>, CodegenError> {
         Backend::Jvm,
         &Options {
             artifact_name: "Arithmetic".to_string(),
+            ..Default::default()
         },
     )
     .map(|artifact| artifact.main().to_vec())
@@ -45,10 +46,24 @@ fn generates_a_deterministic_java_8_class_from_module_ir() {
             Backend::Jvm,
             &Options {
                 artifact_name: "Other".to_string(),
+                ..Default::default()
             },
         )
         .unwrap();
         assert_ne!(bytes, renamed.main());
+        // `--max-steps` (#237): only a budgeted build calls `Rt.step`.
+        let budgeted = codegen::generate(
+            &module,
+            Backend::Jvm,
+            &Options {
+                artifact_name: "Arithmetic".to_string(),
+                budgeted: true,
+            },
+        )
+        .unwrap();
+        let calls_step = |class: &[u8]| class.windows(4).any(|w| w == b"step");
+        assert!(calls_step(budgeted.main()));
+        assert!(!calls_step(&bytes));
     }
 }
 
@@ -113,6 +128,7 @@ fn invalid_class_names_and_jvm_size_limits_are_errors() {
             Backend::Jvm,
             &Options {
                 artifact_name: name.to_string(),
+                ..Default::default()
             },
         )
         .unwrap_err();
@@ -123,6 +139,7 @@ fn invalid_class_names_and_jvm_size_limits_are_errors() {
         Backend::Jvm,
         &Options {
             artifact_name: "a".repeat(65536),
+            ..Default::default()
         },
     )
     .unwrap_err();

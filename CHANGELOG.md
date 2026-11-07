@@ -8,6 +8,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- JVM: `--max-steps` and `--max-memory` (#237), so every budget now works on
+  every engine with the same reports. Steps are counted alike on the IR
+  engine, the core and the JVM — a function entry and a branch back to the
+  same or an earlier block — and a test checks the exact count on all three.
+  The JVM counts them in generated code (`okkama.rt.Rt.step`) emitted only
+  when a step limit is requested: without one the program classes are
+  byte-for-byte the same as before, and with one the ladder's 02-calls and
+  07-objects run within noise of the unlimited run. The
+  memory budget is the Java heap (`-Xmx`, which includes the runtime's own
+  objects) and the bound of every thread stack; running out of either is the
+  core's `Execution budget exhausted: memory`. Running out stops the JVM at
+  once: `catch` does not see it and cleanup does not run, as on the core.
+  `okkama build --target jvm --budgeted` writes classes that count steps; the
+  limit comes from `java -Dokkama.steps=N` (no property, no limit), and
+  `-Xmx` with `-Dokkama.memory=N` gives any JAR the memory report
+  ([#237](https://github.com/shootnix/okkama/issues/237)).
+
 - Language: names before one type share it in every parameter list, as they
   already do in field declarations — `full(separator, suffix is string)`,
   `Person(given, family is string, age is int)`, enum case payloads

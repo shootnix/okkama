@@ -29,9 +29,10 @@ for `--target`. `sparrow check out.spb` verifies without execution.
 See the [Rust implementation guide](../okkama-rs/README.md) for building the
 tools and current runtime coverage.
 
-The Sparrow core (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`)
-can bound a run, for untrusted programs or services. Every budget is off by
-default and costs nothing then:
+Every engine can bound a run, for untrusted programs or services: the Sparrow
+core (`okkama exec`, `okkama run --engine sparrow`, `sparrow run`), the IR
+engine (`okkama run`) and the JVM (`okkama run --engine jvm`). Every budget is
+off by default and costs nothing then:
 
 ```sh
 okkama exec --max-steps 100000000 --max-memory 256M --timeout 5 app.spb
@@ -51,6 +52,14 @@ exhausted: steps` (`memory`, `output`) or `Execution interrupted`. It is not a
 failure of the program: `catch` does not see it and `destroy` does not run. A
 single native operation (a long BigInt division, a sort) finishes before the
 run stops; a BigInt product that cannot fit is refused before it is computed.
+
+Steps are counted alike on every engine, so a limit that is enough on one is
+enough on the others. On the JVM the steps are counted by code generated only
+when `--max-steps` is given, and the memory budget is the Java heap (`-Xmx`,
+which includes the runtime's own objects) and the size of each thread stack.
+A JAR built with `okkama build --target jvm --budgeted` takes its step limit
+from `java -Dokkama.steps=N -jar app.jar`; `-Xmx` with `-Dokkama.memory=N`
+gives any JAR the memory report.
 
 ---
 

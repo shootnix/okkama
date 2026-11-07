@@ -73,15 +73,17 @@ separate process with an OS memory limit.
 ## 3. Programs
 
 **Guaranteed.**
-- On the core, `--max-steps`, `--max-memory`, `--max-output` and `--timeout`
-  stop a runaway program with its own report, which `catch` cannot intercept;
-  without them nothing changes and nothing is spent ([#21]).
+- On every engine (the core, IR and the JVM), `--max-steps`, `--max-memory`,
+  `--max-output` and `--timeout` stop a runaway program with its own report,
+  which `catch` cannot intercept; without them nothing changes and nothing is
+  spent ([#21], [#71], [#237]). Steps are counted alike on all three.
 - Value graphs of the IR engine are freed without recursion ([#28]).
 - A cancelled SQLite query never reaches a closed connection ([#18]); X.509
   path search is bounded ([#17]).
 
 **Not guaranteed.**
-- Budgets on the IR and JVM engines ([#71]).
+- On the JVM the memory budget is the Java heap and the thread stacks, not
+  the whole process ([#237]).
 - A single native operation (a long BigInt division, a sort) finishes before a
   budget stops the run; the memory budget measures the whole process ([#72]).
 - From the CLI a program has the host access of the user running it: files,
@@ -145,3 +147,4 @@ passed on the same commit ([#26]).
 [#71]: https://github.com/shootnix/okkama/issues/71
 [#72]: https://github.com/shootnix/okkama/issues/72
 [#73]: https://github.com/shootnix/okkama/issues/73
+[#237]: https://github.com/shootnix/okkama/issues/237
