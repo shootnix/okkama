@@ -538,3 +538,17 @@ fn value_objects_are_map_keys() {
     );
     assert_eq!(messages("main() is int { let a is %@int:int = [:]; 0; }"), ["Map key type @int is not a scalar key type"]);
 }
+
+/// An anonymous action's declared result fixes its type and supplies generic
+/// arguments (#214): `Keyed(origin:, key: (job is Job) is int { … })` infers
+/// `Keyed<Job, int>` without an annotation at the binding.
+#[test]
+fn anonymous_action_results_supply_generic_arguments() {
+    let declarations = "object Job { has weight is int; Job(weight is int) { self.weight = weight; } weight() is int { weight; } } \
+        object Keyed<T, K> { has origin is @T; has key is (T) is K; Keyed(origin is @T, key is (T) is K) { self.origin = origin; self.key = key; } first() is K { key(origin[0]); } }";
+    assert!(messages(&format!("{declarations} main() is int {{ let keyed = Keyed(origin: [Job(3)], key: (job is Job) is int {{ job.weight(); }}); let k is int = keyed.first(); k; }}")).is_empty());
+    assert_eq!(
+        messages(&format!("{declarations} main() is int {{ let keyed = Keyed(origin: [Job(3)], key: (job is Job) is int {{ job.weight(); }}); let k is string = keyed.first(); 0; }}")),
+        ["Cannot initialize variable \"k\" of type string with int"]
+    );
+}

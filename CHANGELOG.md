@@ -8,6 +8,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: an anonymous action's declared result (`(job is Job) is int {
+  … }`) fixes its type and supplies generic arguments, so
+  `SortedBy(origin: jobs, key: (job is Job) is int { job.priority(); })` needs
+  no `SortedBy<Job,int>` at the binding (#214). The checker already did this;
+  a test now pins it, and `collections/ordering`'s documentation no longer
+  asks for the annotation ([#214](https://github.com/shootnix/okkama/issues/214)).
+
 - Language: `any`, `all` and `find` with early exit (#150), in the block
   syntax of `map`/`filter`/`reduce`: `orders.any() -> order { order.overdue();
   }`, `items.all() -> x { … }`, `users.find() -> user { … }` (a `Maybe<T>`).
