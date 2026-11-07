@@ -3,6 +3,8 @@
 //! (Unicode 16, CLDR 46) из каталога `OKKAMA_ICU_LIBDIR`; языки платформы —
 //! `CFLocaleCopyPreferredLanguages` на macOS, пусто на прочих POSIX.
 #![allow(unsafe_code)]
+// Адреса dlsym приводятся к типу поля таблицы функций, который и есть тип цели.
+#![allow(clippy::missing_transmute_annotations)]
 
 use super::support::{byte_array, failure, int, string, string_array};
 use super::Error;
@@ -95,8 +97,7 @@ fn load() -> Result<Icu, (&'static str, &'static str)> {
             enum_close: std::mem::transmute::<*mut c_void, _>(find("uenum_close")?),
         }
     };
-    std::mem::forget(common);
-    std::mem::forget(library);
+    // Библиотеки остаются загруженными: `Library` не вызывает dlclose.
     let version = |info: [u8; 4]| format!("{}.{}.{}.{}", info[0], info[1], info[2], info[3]);
     let mut info = [0u8; 4];
     // SAFETY: буфер UVersionInfo из четырёх байтов.
@@ -186,11 +187,8 @@ fn collation_key(native: Native, args: &[Value]) -> Result<Value, Error> {
         }
         let mut found = false;
         let mut length = 0;
-        loop {
-            // SAFETY: перечисление ICU открыто.
-            let Some(value) = c_text(unsafe { (api.next)(values, &mut length, &mut status) }) else {
-                break;
-            };
+        // SAFETY: перечисление ICU открыто.
+        while let Some(value) = c_text(unsafe { (api.next)(values, &mut length, &mut status) }) {
             found |= value == kind;
         }
         unsafe { (api.enum_close)(values) };
@@ -275,7 +273,6 @@ fn preferred_language_tags(native: Native) -> Result<Value, Error> {
             std::mem::transmute::<*mut c_void, Release>(find("CFRelease")?),
         )
     };
-    std::mem::forget(library);
     let array = unsafe { copy() };
     if array.is_null() {
         return Err(locale_failure("unexpected", "No Apple language snapshot"));

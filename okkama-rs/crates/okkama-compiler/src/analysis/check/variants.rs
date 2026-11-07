@@ -119,6 +119,7 @@ impl Checker<'_, '_> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn variant_match(
         &mut self,
         body: &ast::MatchBody,

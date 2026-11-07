@@ -488,8 +488,11 @@ struct Template {
     source: String,
     input: IntValue,
     maximum_nodes: IntValue,
-    compiled: RefCell<Option<Result<Vec<(i64, String)>, TemplateError>>>,
+    compiled: RefCell<Option<Compiled>>,
 }
+
+/// Разобранный шаблон: части по позициям или отказ разбора.
+type Compiled = Result<Vec<(i64, String)>, TemplateError>;
 
 fn index_of(source: &[char], needle: &str, from: usize) -> Option<usize> {
     let needle: Vec<char> = needle.chars().collect();

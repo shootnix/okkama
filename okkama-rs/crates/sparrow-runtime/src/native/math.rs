@@ -690,7 +690,7 @@ pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Valu
                 seed
             };
             let low = u64::try_from(
-                u128::from_str_radix(&seed.to_string(), 10).expect("bounded seed"),
+                seed.to_string().parse::<u128>().expect("bounded seed"),
             )
             .expect("64-bit seed");
             pcg.state.set(pcg.state.get().wrapping_add(low));
@@ -794,10 +794,9 @@ pub fn execute(native: Native, args: &[Value], context: &Context) -> Result<Valu
             Ok(Value::Float(base.powf(float(&args[1])?)))
         }
         "distribution_angle" => {
-            const TAU: f64 = 6.283_185_307_179_586;
-            let mut angle = float(&args[0])? % TAU;
+            let mut angle = float(&args[0])? % std::f64::consts::TAU;
             if angle < 0.0 {
-                angle += TAU;
+                angle += std::f64::consts::TAU;
             }
             Ok(Value::Float(angle))
         }

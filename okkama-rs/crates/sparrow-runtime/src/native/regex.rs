@@ -697,6 +697,7 @@ impl Program {
     }
 
     /// Замыкание по ε-переходам в порядке приоритета (обход в глубину).
+    #[allow(clippy::too_many_arguments)]
     fn add_tagged(
         &self,
         states: &mut Vec<Tagged>,

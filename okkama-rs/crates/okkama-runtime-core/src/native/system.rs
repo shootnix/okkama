@@ -155,7 +155,7 @@ fn names(native: Native, entry: &Rooted, maximum: &crate::IntValue) -> Result<Va
     Ok(string_array(names))
 }
 
-fn snapshot_name<'a>(native: Native, text: &'a str) -> Result<&'a str, Error> {
+fn snapshot_name(native: Native, text: &str) -> Result<&str, Error> {
     if !component(text) {
         return Err(failure(
             SNAPSHOT,

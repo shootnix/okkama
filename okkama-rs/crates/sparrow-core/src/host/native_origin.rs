@@ -166,6 +166,7 @@ impl Heap {
         })
     }
 
+    #[allow(clippy::wrong_self_convention)] // converts into this heap
     fn from_origin(&mut self, value: Value, ty: &Type) -> Result<Slot, Error> {
         Ok(match (ty, value) {
             (Type::Void, _) => Slot::boolean(true),

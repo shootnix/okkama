@@ -622,6 +622,15 @@ impl Drop for Heap {
     }
 }
 
+impl std::fmt::Display for Integer<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Small(n) => write!(f, "{n}"),
+            Self::Big(n) => write!(f, "{n}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -773,14 +782,5 @@ mod tests {
         assert_eq!(heap.stats().large, 2);
         heap.collect(|_| {});
         assert_eq!(heap.stats().large, 0);
-    }
-}
-
-impl std::fmt::Display for Integer<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Small(n) => write!(f, "{n}"),
-            Self::Big(n) => write!(f, "{n}"),
-        }
     }
 }

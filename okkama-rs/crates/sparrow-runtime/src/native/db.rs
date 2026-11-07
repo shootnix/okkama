@@ -221,7 +221,7 @@ mod tests {
         ] {
             let c = execute(Native::DbInteger, &[text(s)]).unwrap();
             assert_eq!(
-                execute(Native::DbIntValid, &[c.clone()])
+                execute(Native::DbIntValid, std::slice::from_ref(&c))
                     .unwrap()
                     .as_bool()
                     .unwrap(),

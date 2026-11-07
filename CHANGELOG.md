@@ -122,6 +122,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Build: debug tests and clippy are green and part of the release gate (Q05).
+  The gate runs the whole workspace's tests unoptimized too (stack depth and
+  debug assertions show only there; it replaces the debug drop-test subset)
+  and `cargo clippy --workspace --all-targets -- -D warnings`. Clippy's one
+  error (`approx_constant`: a literal τ that is bit-for-bit
+  `std::f64::consts::TAU`) and its warnings are fixed or allowed where they
+  are by design, each with its reason: `transmute` of `dlsym` addresses to
+  their function-table types, the legacy VM's large public error, recursive
+  regex and pattern helpers with many arguments
+  ([#42](https://github.com/shootnix/okkama/issues/42)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the

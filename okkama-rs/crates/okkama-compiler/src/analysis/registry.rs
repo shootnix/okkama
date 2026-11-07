@@ -1009,7 +1009,7 @@ impl<'a> Registry<'a> {
             .types
             .get(name)
             .copied()
-            .or_else(|| match name {
+            .or(match name {
                 "Maybe" => Some(TypeRef::Enum(EnumId(0))),
                 "Presence" => Some(TypeRef::Enum(EnumId(1))),
                 _ => None,

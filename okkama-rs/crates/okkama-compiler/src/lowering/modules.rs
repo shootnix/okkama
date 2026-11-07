@@ -128,6 +128,7 @@ struct Walk<'l> {
 }
 
 /// Программа, импорты которой обходятся: файл корня или загруженный модуль.
+#[allow(clippy::large_enum_variant)] // один на кадр обхода импортов
 enum Owner<'a> {
     Root(&'a ast::Program, &'a str, Option<&'a SourceFile>),
     Loaded(LoadedModule),

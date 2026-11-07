@@ -857,6 +857,7 @@ impl Checker<'_, '_> {
 
     /// Образец catch: вариант error enum (`Enum.case`, `Enum.case(x, _)`) или
     /// тип ошибки; привязки payload — для тела.
+    #[allow(clippy::type_complexity)] // alternative and the enum case it binds
     fn catch_pattern(
         &mut self,
         pattern: &ast::Expr,

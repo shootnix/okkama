@@ -908,7 +908,7 @@ pub(crate) fn evaluate<'a>(
         }
         I::Bits { op, byte, dst, value, count } => {
             let code = sparrow_runtime::integer::BitOp::from_code(op.code()).ok_or_else(|| invalid("unknown bit operation"))?;
-            let count = count.map(|count| r(count)).transpose()?;
+            let count = count.map(&r).transpose()?;
             write(*dst, ops::bits(code, op.counts(), *byte, r(*value)?, count)?)
         }
         I::ByteAnd { dst, left, right } => byte_op(N::And, *dst, *left, *right),
@@ -1280,10 +1280,7 @@ fn fast(engine: &Rc<Engine>, frames: &mut Vec<Frame>, spare: &mut Vec<Vec<Value>
     let interpreted = engine.jit.is_none();
     let frame = frames.last_mut().expect("frame");
     let registers = &mut frame.registers;
-    let int = |value: Option<i64>| match value {
-        Some(value) => Some(Value::Int(IntValue::from_i64(value))),
-        None => None,
-    };
+    let int = |value: Option<i64>| value.map(|value| Value::Int(IntValue::from_i64(value)));
     let (dst, value) = match instruction {
         I::Const { dst, .. } => match engine.prepared(index) {
             Ok(prepared) => (dst, prepared.constants[pc].copied()),

@@ -732,8 +732,8 @@ fn ir_command(args: &[String]) -> Outcome {
                     let Some(at) = lowering::PASSES.iter().position(|pass| pass == value) else {
                         return Outcome::usage(&format!("unknown pass `{value}` (passes: {})", lowering::PASSES.join(", ")));
                     };
-                    let upto = lowering::PASSES[..=at].join(",");
-                    upto
+                    
+                    lowering::PASSES[..=at].join(",")
                 };
                 lowering::select_passes(&spec);
             }

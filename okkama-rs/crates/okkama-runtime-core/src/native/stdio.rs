@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn line_and_raw_reads_share_buffer_and_stable_eof() {
         let mut state = State::default();
-        let mut heap = ArrayHeap::default();
+        let mut heap = ArrayHeap;
         let mut input = Cursor::new(b"a\r\nb\0c\nlast".to_vec());
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn limits_are_positive_exact_and_bound_the_read_allocation() {
         let mut state = State::default();
-        let mut heap = ArrayHeap::default();
+        let mut heap = ArrayHeap;
         let mut input = Cursor::new(vec![42; 70000]);
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn writes_preserve_binary_prefix_counts_and_separate_streams() {
         let mut state = State::default();
-        let mut heap = ArrayHeap::default();
+        let mut heap = ArrayHeap;
         let data = heap.allocate([0, 255, 10, 42].map(Value::Byte).to_vec());
         let mut input = io::empty();
         let mut out = ShortWriter::default();
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn broken_output_is_a_structured_provider_failure() {
         let mut state = State::default();
-        let mut heap = ArrayHeap::default();
+        let mut heap = ArrayHeap;
         let data = heap.allocate(vec![Value::Byte(42)]);
         let result = state.execute(
             Native::StdoutWrite,

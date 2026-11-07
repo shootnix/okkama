@@ -3,6 +3,8 @@
 //! обслуживает свой рабочий поток; операции идут по очереди, их исход
 //! приходит событием цикла. Ответ — `ok` и данные либо отказ `kind`/`code`.
 #![allow(unsafe_code)]
+// Адреса dlsym приводятся к типу поля таблицы функций, который и есть тип цели.
+#![allow(clippy::missing_transmute_annotations)]
 
 use super::support::{byte_array, bytes, handle, int, items, java_long, map, new_handle, string, string_array, text};
 use super::Error;
@@ -177,10 +179,6 @@ fn c_bytes(pointer: *const c_char) -> Option<Vec<u8>> {
 
 fn strict(bytes: &[u8]) -> Option<String> {
     String::from_utf8(bytes.to_vec()).ok()
-}
-
-fn latin1(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| char::from(*b)).collect()
 }
 
 // ---- данные ответа ----
@@ -543,6 +541,7 @@ impl Engine {
     }
 
     fn rows(&mut self, mut statement: Statement, params: &[(&'static str, Param)]) -> Done<Data> {
+        #[allow(clippy::type_complexity)] // четыре столбца метаданных
         let outcome = (|| -> Done<(Vec<String>, Vec<String>, Vec<String>, Vec<String>)> {
             // SAFETY: подготовленный оператор этого соединения.
             statement.columns = statement.library.as_ref().ok_or(Stop::Unexpected)?.metadata().column_count() as c_int;
@@ -1820,7 +1819,7 @@ mod reply_lifetime_tests {
         let future = sched::resolved(Ok(value.clone()));
         sched::register(&future);
         let cells = execute(Native::DatabaseSqliteReplyCells, &[value.clone(), Value::Int(IntValue::from_i64(0))]).unwrap();
-        execute(Native::DatabaseSqliteReplyClose, &[value.clone()]).unwrap();
+        execute(Native::DatabaseSqliteReplyClose, std::slice::from_ref(&value)).unwrap();
         // The outcome is still cached, but its closed native resource owns no payload.
         let again = sched::await_future(&future).unwrap();
         assert!(Rc::ptr_eq(handle::<Rc<Reply>>(&again).unwrap(), &reply));
@@ -1828,7 +1827,7 @@ mod reply_lifetime_tests {
         assert!(data.rows.is_none() && data.bytes.is_none() && data.names.is_none());
         assert!(data.declarations.is_none() && data.executions.is_none());
         drop(data);
-        assert!(execute(Native::DatabaseSqliteReplyCount, &[again.clone()]).is_err());
+        assert!(execute(Native::DatabaseSqliteReplyCount, std::slice::from_ref(&again)).is_err());
         assert!(execute(Native::DatabaseSqliteReplyClose, &[again]).is_err());
         // Public row cells are owned snapshots, independent of the closed reply.
         let saved = items(&cells).unwrap();

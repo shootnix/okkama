@@ -96,16 +96,6 @@ impl std::fmt::Debug for Request {
     }
 }
 impl Request {
-    #[cfg(test)]
-    pub(crate) fn from_test_future(future: impl Future<Output = Outcome> + 'static) -> Rc<Self> {
-        let (cancelled, _) = tokio::sync::watch::channel(false);
-        Rc::new(Self {
-            body: RefCell::new(Some(Box::pin(future))),
-            result: RefCell::new(None),
-            cancelled,
-        })
-    }
-
     pub fn new(
         command: Vec<OsString>,
         input: Vec<u8>,

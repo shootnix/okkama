@@ -1179,7 +1179,7 @@ mod tests {
         let mut closing = first.begin_close(&[]);
         assert!(first.next_destroyed(&mut closing).is_none());
         // A cached seen-set must not suppress the same objects in a later walk.
-        let mut preserved = second.begin_close(&[root.clone()]);
+        let mut preserved = second.begin_close(std::slice::from_ref(&root));
         assert!(second.next_destroyed(&mut preserved).is_none());
         let third = Region::new();
         third.adopt(&root);

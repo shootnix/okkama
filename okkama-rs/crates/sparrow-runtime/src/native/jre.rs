@@ -168,21 +168,6 @@ pub fn encode(text: &str, encoding: &str) -> Option<Vec<u8>> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::split;
-
-    #[test]
-    fn split_follows_java_trailing_rules() {
-        assert_eq!(split("a/b//", "/", 0), vec!["a", "b"]);
-        assert_eq!(split("a/b//", "/", -1), vec!["a", "b", "", ""]);
-        assert_eq!(split("/a", "/", 0), vec!["", "a"]);
-        assert_eq!(split("", "/", 0), vec![""]);
-        assert_eq!(split("abc", "/", 0), vec!["abc"]);
-        assert_eq!(split("x,y,z", ",", 2), vec!["x", "y,z"]);
-    }
-}
-
 /// `Double.parseDouble` (без обрамляющих пробелов): знак, `NaN`,
 /// `Infinity`, десятичная или шестнадцатеричная запись, суффикс `fFdD`.
 pub fn parse_double(text: &str) -> Option<f64> {
@@ -263,4 +248,19 @@ fn scaled(value: u128, shift: i64) -> f64 {
     }
     let shift = shift + drop.max(0) - (-drop).max(0);
     (mantissa as f64) * 2f64.powi(shift as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split;
+
+    #[test]
+    fn split_follows_java_trailing_rules() {
+        assert_eq!(split("a/b//", "/", 0), vec!["a", "b"]);
+        assert_eq!(split("a/b//", "/", -1), vec!["a", "b", "", ""]);
+        assert_eq!(split("/a", "/", 0), vec!["", "a"]);
+        assert_eq!(split("", "/", 0), vec![""]);
+        assert_eq!(split("abc", "/", 0), vec!["abc"]);
+        assert_eq!(split("x,y,z", ",", 2), vec!["x", "y,z"]);
+    }
 }
