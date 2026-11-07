@@ -2,7 +2,7 @@
 
 use okkama_compiler::SourceFile;
 use okkama_compiler::ir::{
-    Attr, FuncId, InstKind, IntBinaryOp, ResultType, TermKind, Type, ValueId,
+    Attr, FuncId, InstKind, ResultType, TermKind, Type, ValueId,
 };
 use okkama_compiler::lowering::lower_program;
 use okkama_compiler::syntax::{self, ParseOptions};
@@ -33,13 +33,10 @@ fn return_and_instruction_spans_refer_to_original_source() {
         for (inst, spelling) in block.insts.iter().zip(["1", "2", "1 + 2"]) {
             assert_eq!(&source.text()[inst.span.range()], spelling);
         }
+        // `fold` (#56) computes the sum and keeps the span of `1 + 2`.
         assert_eq!(
             block.insts[2].kind,
-            InstKind::IntBinary {
-                op: IntBinaryOp::Add,
-                left: ValueId(0),
-                right: ValueId(1),
-            }
+            InstKind::Const(okkama_compiler::ir::Constant::Int(okkama_compiler::ir::IntValue::from_i64(3)))
         );
         assert_eq!(block.insts[2].result, Some(ValueId(2)));
         assert_eq!(block.term.kind, TermKind::Ret(Some(ValueId(2))));

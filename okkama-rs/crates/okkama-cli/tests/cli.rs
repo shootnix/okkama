@@ -645,7 +645,7 @@ fn ir_file_and_stdin_include_module_function_and_return() {
         "^b0:\n",
         "    %0: int = const 1\n",
         "    %1: int = const 1\n",
-        "    %2: int = int.add %0, %1\n",
+        "    %2: int = const 2\n",
         "    ret %2\n",
         "}\n",
     );
@@ -680,9 +680,9 @@ fn ir_keeps_all_statements_and_nested_additions() {
             "    %0: int = const 7\n",
             "    %1: int = const 1\n",
             "    %2: int = const 2\n",
-            "    %3: int = int.add %1, %2\n",
+            "    %3: int = const 3\n",
             "    %4: int = const 3\n",
-            "    %5: int = int.add %3, %4\n",
+            "    %5: int = const 6\n",
             "    ret %5\n",
             "}\n",
         )

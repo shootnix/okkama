@@ -50,7 +50,8 @@ object Work {
 async main() is int {
     let out = Stdout();
     let work = Work();
-    let base = 1000000000000000000000;
+    // Not a constant: `fold` would compute the big products at build time.
+    let base = 1000000000000000000000 + "".length();
     let big = base * base + 7;
     let bigger = big * 3;
     out.writeln((bigger > big).string() + " " + big.string());

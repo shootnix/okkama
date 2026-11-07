@@ -42,7 +42,7 @@ fn integer_addition_has_the_canonical_module_text() {
             "^b0:\n",
             "    %0: int = const 1\n",
             "    %1: int = const 1\n",
-            "    %2: int = int.add %0, %1\n",
+            "    %2: int = const 2\n",
             "    ret %2\n",
             "}\n",
         )
@@ -65,8 +65,8 @@ fn literals_are_exact_canonical_integers() {
     }
     assert_eq!(text.matches("const 42\n").count(), 3, "{text}");
     // Унарный минус перед литералом сворачивается, перед выражением — нет.
-    let negated = main_listing("let x = 5; -x;");
-    assert!(negated.contains("int.neg %0"), "{negated}");
+    let negated = main_listing("let x = \"xxxxx\".length(); -x;");
+    assert!(negated.contains("= int.neg %"), "{negated}");
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn let_bindings_reuse_values_and_check_declared_types() {
             "^b0:\n",
             "    %0: int = const 40\n",
             "    %1: int = const 2\n",
-            "    %2: int = int.add %0, %1\n",
+            "    %2: int = const 42\n",
             "    ret %2\n",
             "}\n",
         )
@@ -198,7 +198,7 @@ fn strings_concatenate_and_compare_and_print_escaped() {
 #[test]
 fn every_operator_maps_to_one_instruction_family() {
     let ops = main_listing(
-        "let a = 6; let b = 3; let s = a - b; let m = a * b; let r = a % b; let x = a & b; \
+        "let a = \"666666\".length(); let b = \"333\".length(); let s = a - b; let m = a * b; let r = a % b; let x = a & b; \
          let o = a | b; let y = a ^ b; let l = a << b; let h = a >> b; let u = a >>> b; \
          let n = ~a; let lt = a < b; let le = a <= b; let gt = a > b; let ge = a >= b; \
          let ne = a != b; let t = !(true == false); 0;",

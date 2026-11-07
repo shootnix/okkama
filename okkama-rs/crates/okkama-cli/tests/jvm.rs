@@ -103,7 +103,8 @@ fn run_main(dir: &WorkDir, name: &str, body: &str) -> (Option<i32>, String, Stri
 #[test]
 fn one_plus_one_builds_verifies_and_exits_with_two() {
     let dir = WorkDir::new();
-    let path = dir.build("Arithmetic", "1 + 1;");
+    // `"x".length()` keeps the addition from folding at build time.
+    let path = dir.build("Arithmetic", "\"x\".length() + 1;");
     let listing = disassemble(&path);
     assert!(listing.contains("major version: 52"));
     assert!(listing.contains("public static java.math.BigInteger okkamaMain()"));

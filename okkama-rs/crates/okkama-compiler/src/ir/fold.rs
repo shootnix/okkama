@@ -10,7 +10,8 @@
 //! computation, so folding cannot grow the program without bound.
 //!
 //! Values are SSA: a constant operand is a `const` anywhere in the function.
-//! The pass repeats until nothing changes, so chains fold completely.
+//! A folded result is a constant for the rest of the pass, so a chain folds
+//! in one pass; the pass repeats only while it still folds something.
 use super::{CompareOp, Constant, Function, InstKind, IntBinaryOp, IntUnaryOp, IntValue, Module, ValueId};
 use okkama_runtime_core::integer;
 use std::collections::HashMap;
@@ -25,22 +26,25 @@ pub fn fold_constants(module: &mut Module) -> usize {
 
 fn fold(function: &mut Function) -> usize {
     let mut folded = 0;
-    loop {
-        let mut constants: HashMap<ValueId, Constant> = HashMap::new();
-        for block in &function.blocks {
-            for inst in &block.insts {
-                if let (InstKind::Const(constant), Some(result)) = (&inst.kind, inst.result) {
-                    constants.insert(result, constant.clone());
-                }
+    // A folded result joins the constants at once, so a chain in block
+    // order folds in one pass; another pass only for uses that precede
+    // their definition in block order.
+    let mut constants: HashMap<ValueId, Constant> = HashMap::new();
+    for block in &function.blocks {
+        for inst in &block.insts {
+            if let (InstKind::Const(constant), Some(result)) = (&inst.kind, inst.result) {
+                constants.insert(result, constant.clone());
             }
         }
-        let int = |value: &ValueId| match constants.get(value) {
-            Some(Constant::Int(n)) => Some(n.clone()),
-            _ => None,
-        };
+    }
+    loop {
         let mut changed = 0;
         for block in &mut function.blocks {
             for inst in &mut block.insts {
+                let int = |value: &ValueId| match constants.get(value) {
+                    Some(Constant::Int(n)) => Some(n.clone()),
+                    _ => None,
+                };
                 let value = match &inst.kind {
                     InstKind::IntBinary { op, left, right } => match (int(left), int(right)) {
                         (Some(a), Some(b)) => binary(*op, &a, &b).map(Constant::Int),
@@ -53,15 +57,17 @@ fn fold(function: &mut Function) -> usize {
                     },
                     _ => None,
                 };
-                if let Some(value) = value {
-                    let small = match &value {
-                        Constant::Int(n) => n.to_string().len() <= MAX_DIGITS,
-                        _ => true,
-                    };
-                    if small {
-                        inst.kind = InstKind::Const(value);
-                        changed += 1;
+                let Some(value) = value else { continue };
+                let small = match &value {
+                    Constant::Int(n) => n.to_string().len() <= MAX_DIGITS,
+                    _ => true,
+                };
+                if small {
+                    if let Some(result) = inst.result {
+                        constants.insert(result, value.clone());
                     }
+                    inst.kind = InstKind::Const(value);
+                    changed += 1;
                 }
             }
         }

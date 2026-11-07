@@ -55,36 +55,37 @@ fn a_covering_enum_match_skips_the_last_test() {
 
 #[test]
 fn case_patterns_are_tested_lazily_left_to_right() {
+    // The subject is a parameter: constants would fold (`fold`, #56).
     let text = listing(
-        "module app v1.0.0; main() is int { let n = 2; match n { case 1, 2 { 5; } else { 6; } } }",
+        "module app v1.0.0; object M { M(); pick(n is int) is int { match n { case 1, 2 { 5; } else { 6; } } } } main() is int { M().pick(2); }",
     );
-    let start = text.find("func @main").expect("main is printed");
+    let start = text.find("func @M.pick").expect("pick is printed");
+    let end = start + text[start..].find("\n}\n").expect("end of pick") + 3;
     assert_eq!(
-        &text[start..],
+        &text[start..end],
         concat!(
-            "func @main() -> int [entry] {\n",
+            "func @M.pick(%0: M, %1: int) -> int [method M] {\n",
             "^b0:\n",
-            "    %0: int = const 2\n",
-            "    %1: int = const 1\n",
-            "    %2: bool = int.eq %0, %1\n",
-            "    cond %2, ^b1, ^b2\n",
+            "    %2: int = const 1\n",
+            "    %3: bool = int.eq %1, %2\n",
+            "    cond %3, ^b1, ^b2\n",
             "^b1:\n",
-            "    %3: bool = const true\n",
-            "    br ^b3(%3)\n",
+            "    %4: bool = const true\n",
+            "    br ^b3(%4)\n",
             "^b2:\n",
-            "    %4: int = const 2\n",
-            "    %5: bool = int.eq %0, %4\n",
-            "    br ^b3(%5)\n",
-            "^b3(%6: bool):\n",
-            "    cond %6, ^b4, ^b5\n",
+            "    %5: int = const 2\n",
+            "    %6: bool = int.eq %1, %5\n",
+            "    br ^b3(%6)\n",
+            "^b3(%7: bool):\n",
+            "    cond %7, ^b4, ^b5\n",
             "^b4:\n",
-            "    %7: int = const 5\n",
-            "    br ^b6(%7)\n",
-            "^b5:\n",
-            "    %8: int = const 6\n",
+            "    %8: int = const 5\n",
             "    br ^b6(%8)\n",
-            "^b6(%9: int):\n",
-            "    ret %9\n",
+            "^b5:\n",
+            "    %9: int = const 6\n",
+            "    br ^b6(%9)\n",
+            "^b6(%10: int):\n",
+            "    ret %10\n",
             "}\n",
         )
     );
