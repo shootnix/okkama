@@ -30,6 +30,7 @@ import "async/lock" take Lock;
 import "runtime/db" as native_db;
 import "runtime/postgres" as native_pg;
 import "db/read" take DbPage;
+import "cell" take Cell;
 
 // PostgreSQL driver over the frontend/backend protocol 3.0, written in
 // Okkama: framing (db/postgres/wire), SCRAM-SHA-256 and MD5 (db/postgres/auth)
@@ -345,7 +346,7 @@ object PgMechanisms {
     has origin is PgFields;
     PgMechanisms(origin is PgFields) { self.origin = origin; }
     names() is @string {
-        let names = Atomic(@string());
+        let names = Cell(@string());
         loop {
             let name = origin.cstring();
             if name == "" { last; }
@@ -883,7 +884,7 @@ object PgOutcome {
     // The data rows read so far as one result page of `description`.
     page(description is PgDescription) is DbPage {
         let count = runs.value();
-        let rest = Atomic(data.value());
+        let rest = Cell(data.value());
         let newest is @@byte = (0..count).map() -> index {
             let list = rest.value();
             rest.replace(list.tail());
@@ -943,8 +944,8 @@ object PgDescription {
 
     PgDescription(fields is PgFields) {
         let count = fields.int16();
-        let names = Atomic(@string());
-        let oids = Atomic(@int());
+        let names = Cell(@string());
+        let oids = Cell(@int());
         for 0..count -> index {
             names.replace(@string(names.value()..., fields.cstring()));
             fields.int32();
@@ -1059,7 +1060,7 @@ object PgError {
     PgError(message is PgMessage, operation is DbOperation) {
         self.operation = operation;
         let fields = message.fields();
-        let found = Atomic(@string());
+        let found = Cell(@string());
         loop {
             let code = fields.byte();
             if code == 0 { last; }

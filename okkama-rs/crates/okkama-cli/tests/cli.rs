@@ -1367,3 +1367,32 @@ fn functions_with_huge_frames_stay_interpreted_under_eager_jit() {
         }
     }
 }
+
+/// A `cell::Cell` stays in synchronous code (#152): a field cannot hold one
+/// and an async action cannot use one; a sync action that does may be called
+/// from async code.
+#[test]
+fn a_cell_stays_in_synchronous_code() {
+    let source = "module app v1.0.0;\nimport \"cell\" take Cell;\n\
+        object Counter { has count is @Cell<int>; Counter() { count = []; } }\n\
+        object Work {\n    Work();\n    async total(items is @int) is int { let sum = Cell(0); sum.value(); }\n\
+        sum(items is @int) is int { let sum = Cell(0); for items -> item { sum.replace(sum.value() + item); } sum.value(); }\n\
+        async fine(items is @int) is int { self.sum(items); }\n}\n\
+        async main() is int { await Work().fine([1]); }\n";
+    let std = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../std");
+    let mut child = okkama()
+        .args(["check", "-"])
+        .env("OKKAMA_STDLIB_DIR", std)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn okkama");
+    child.stdin.take().unwrap().write_all(source.as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stderr = stderr(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("Field \"count\" cannot hold a Cell"), "{stderr}");
+    assert!(stderr.contains("A Cell cannot be used in an async action"), "{stderr}");
+    assert_eq!(stderr.matches("error").count(), 2, "{stderr}");
+}

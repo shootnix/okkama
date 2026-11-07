@@ -8,6 +8,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- std `cell`: `Cell<T>`, the mutable value of synchronous code (#152) —
+  `Cell(value)`, `value()`, `replace(value)`, no `close()`. The compiler keeps
+  a cell in synchronous code: an async action cannot create, receive or use
+  one, and a field cannot hold one (`@Cell<T>` and other containers included),
+  so every operation is whole with respect to tasks; a sync action using a
+  cell may be called from async code. `Atomic` stays for state shared between
+  tasks. Thirteen local accumulators in std (`diff`, `db/postgres`,
+  `db/postgres/wire`) moved from `Atomic` with `defer close()` to `Cell`; the
+  four that live in async actions stay `Atomic`, as the new check requires.
+  Book §19.1 (EN/RU) ([#152](https://github.com/shootnix/okkama/issues/152)).
+
 - JVM: `--max-steps` and `--max-memory` (#237), so every budget now works on
   every engine with the same reports. Steps are counted alike on the IR
   engine, the core and the JVM — a function entry and a branch back to the

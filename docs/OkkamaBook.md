@@ -1058,7 +1058,8 @@ rebind-eligible. Eligibility is an explicit per-action opt-in by the type's
 author (`is ^Type`, Chapter 19), not something inferred from return-type
 shape; see `docs/todo/local-rebinding-22072026.md` for the earlier, broader
 rule that was tried and reverted. A plain scalar, array, map, or enum never
-qualifies either way — `let n = 1; n = 2;` stays illegal.
+qualifies either way — `let n = 1; n = 2;` stays illegal; a value that must
+change in synchronous code lives in a `Cell` (Section 19.1).
 
 The new value must satisfy the same declared type as the existing binding,
 using the same rules as `let`. A rebind always updates the scope that
@@ -2378,6 +2379,31 @@ object Door {
 This is the EO immutability discipline with runtime teeth: state transitions
 are explicit in signatures (`is ^Type`), visible at call sites (`let opened =
 bottle.open()`), and impossible to fake through hidden mutation.
+
+### 19.1 `Cell`: a mutable value in synchronous code
+
+Some state is genuinely a variable: a running total, a parser's position,
+headers gathered while reading. `reduce` covers most accumulations; where it
+reads badly, `cell::Cell` is the one explicit mutable container:
+
+```okkama
+import "cell" take Cell;
+
+let total = Cell(0);
+for items -> item { total.replace(total.value() + item.price()); }
+total.value();
+```
+
+- `Cell(value: initial)`, `value()`, `replace(value)`. It is not a resource:
+  no `close()`, nothing to destroy. Values read from it are ordinary immutable
+  values; cells compare by identity.
+- **A cell stays in synchronous code**, checked by the compiler: an async
+  action cannot create, receive or use one (`A Cell cannot be used in an async
+  action`), and an object's field cannot hold one. Synchronous code has no
+  suspension point, so every read and write is whole with respect to tasks; a
+  sync action that uses a cell may be called from async code.
+- State shared between tasks is `async/atomic`'s `Atomic`, with
+  `compare_and_replace` and an explicit `close()`.
 
 ## Chapter 20. Ownership, Scope, and `destroy`
 

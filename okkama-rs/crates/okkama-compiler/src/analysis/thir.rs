@@ -806,3 +806,198 @@ pub fn expr_mentions(expr: &Expr, local: LocalId) -> usize {
         ExprKind::CapRead { cap, .. } => one(cap),
     }
 }
+
+/// The span of the first expression of `block`, in source order, that
+/// `test` accepts; anonymous actions are their own bodies and are not
+/// entered. The walk names every form.
+pub fn first_expr(block: &Block, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
+    let mut found = None;
+    each_block_expr(block, &mut |expr| {
+        if found.is_none() {
+            found = first_in(expr, test);
+        }
+    });
+    found
+}
+
+fn first_in(expr: &Expr, test: &dyn Fn(&Expr) -> bool) -> Option<Span> {
+    if test(expr) {
+        return Some(expr.span);
+    }
+    let mut found = None;
+    each_child(expr, &mut |child| {
+        if found.is_none() {
+            found = first_in(child, test);
+        }
+    });
+    found
+}
+
+/// The expressions directly inside the statements of `block`.
+fn each_block_expr<'e>(block: &'e Block, visit: &mut dyn FnMut(&'e Expr)) {
+    for stmt in &block.stmts {
+        each_stmt_expr(stmt, visit);
+    }
+}
+
+fn each_stmt_expr<'e>(stmt: &'e Stmt, visit: &mut dyn FnMut(&'e Expr)) {
+    match &stmt.kind {
+        StmtKind::Let { value, .. }
+        | StmtKind::Expr(value)
+        | StmtKind::Throw(value)
+        | StmtKind::Defer(value)
+        | StmtKind::BindField { value, .. }
+        | StmtKind::StageField { value, .. }
+        | StmtKind::Rebind { value, .. } => visit(value),
+        StmtKind::Guarded { condition, stmt } => {
+            visit(condition);
+            each_stmt_expr(stmt, visit);
+        }
+        StmtKind::Return(value) | StmtKind::Last(value) => {
+            if let Some(value) = value {
+                visit(value);
+            }
+        }
+        StmtKind::Confirm { condition, fallback } => {
+            visit(condition);
+            if let Some(Fallback::Throw(value) | Fallback::Panic(value)) = fallback {
+                visit(value);
+            }
+        }
+        StmtKind::Rethrow | StmtKind::Next => {}
+    }
+}
+
+fn each_source_expr<'e>(source: &'e Source, visit: &mut dyn FnMut(&'e Expr)) {
+    match source {
+        Source::Range { start, end, .. } => {
+            visit(start);
+            visit(end);
+        }
+        Source::Array(value) | Source::Map(value) | Source::Iterating(value) => visit(value),
+        Source::Varargs(_) => {}
+    }
+}
+
+/// The direct sub-expressions of `expr` (statements of nested blocks
+/// included), except the body of an anonymous action.
+fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
+    match &expr.kind {
+        ExprKind::Local(_)
+        | ExprKind::Constant(_)
+        | ExprKind::SelfValue
+        | ExprKind::Field(_)
+        | ExprKind::PendingField(_)
+        | ExprKind::OwnerField(_)
+        | ExprKind::EnumCase { .. }
+        | ExprKind::TestCapability
+        | ExprKind::Unreachable
+        | ExprKind::Closure { .. } => {}
+        ExprKind::VariantNew { values, .. } => values.iter().for_each(&mut *visit),
+        ExprKind::VariantTag(value)
+        | ExprKind::VariantGet { value, .. }
+        | ExprKind::Unary { operand: value, .. }
+        | ExprKind::Coerce { value, .. }
+        | ExprKind::Cast { value, .. }
+        | ExprKind::Panic(value)
+        | ExprKind::Unpack(value)
+        | ExprKind::Await(value)
+        | ExprKind::Spawn(value) => visit(value),
+        ExprKind::Binary { left, right, .. }
+        | ExprKind::Logical { left, right, .. }
+        | ExprKind::RatNew { numerator: left, denominator: right }
+        | ExprKind::Range { start: left, end: right, .. }
+        | ExprKind::StreamWrite { sink: left, source: right, .. } => {
+            visit(left);
+            visit(right);
+        }
+        ExprKind::If { condition, then_block, else_block } => {
+            visit(condition);
+            each_block_expr(then_block, visit);
+            if let Some(block) = else_block {
+                each_block_expr(block, visit);
+            }
+        }
+        ExprKind::Match(found) => {
+            visit(&found.subject);
+            for (patterns, block) in &found.cases {
+                patterns.iter().for_each(&mut *visit);
+                each_block_expr(block, visit);
+            }
+            if let Some(block) = &found.else_block {
+                each_block_expr(block, visit);
+            }
+        }
+        ExprKind::Loop(block) | ExprKind::Block(block) => each_block_expr(block, visit),
+        ExprKind::For { source, body, .. } => {
+            each_source_expr(source, visit);
+            each_block_expr(body, visit);
+        }
+        ExprKind::Try(found) => {
+            each_block_expr(&found.body, visit);
+            for catch in &found.catches {
+                each_block_expr(&catch.body, visit);
+            }
+        }
+        ExprKind::Call { callee, args } => {
+            match callee {
+                Callee::Method { receiver, .. } | Callee::Role { receiver, .. } | Callee::Builtin { receiver, .. } => {
+                    visit(receiver)
+                }
+                Callee::FakeStorage(_) | Callee::Ctor { .. } | Callee::Native(_) | Callee::Test(_) => {}
+            }
+            args.iter().for_each(&mut *visit);
+        }
+        ExprKind::Array(parts) => {
+            for part in parts {
+                match part {
+                    ArrayPart::Value(value) => visit(value),
+                    ArrayPart::Range { start, end, .. } => {
+                        visit(start);
+                        visit(end);
+                    }
+                }
+            }
+        }
+        ExprKind::Map(entries) => {
+            for (key, value) in entries {
+                visit(key);
+                visit(value);
+            }
+        }
+        ExprKind::Index { object, index, fallback } => {
+            visit(object);
+            visit(index);
+            if let Some(fallback) = fallback {
+                visit(fallback);
+            }
+        }
+        ExprKind::Functional(found) => {
+            each_source_expr(&found.source, visit);
+            if let Some(initial) = &found.initial {
+                visit(initial);
+            }
+            each_block_expr(&found.body, visit);
+        }
+        ExprKind::ArrayCast { parts, .. } => {
+            for part in parts {
+                match part {
+                    CastPart::One(value) | CastPart::Spread(value) => visit(value),
+                }
+            }
+        }
+        ExprKind::Pack { items, spread } => {
+            items.iter().for_each(&mut *visit);
+            if let Some(spread) = spread {
+                visit(spread);
+            }
+        }
+        ExprKind::BoundRoleAction { receiver, .. } | ExprKind::BoundAction { receiver, .. } => visit(receiver),
+        ExprKind::CallValue { callee, args } => {
+            visit(callee);
+            args.iter().for_each(&mut *visit);
+        }
+        ExprKind::CapSelect { owner, .. } => visit(owner),
+        ExprKind::CapRead { cap, .. } => visit(cap),
+    }
+}
