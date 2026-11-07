@@ -16,7 +16,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # The container has no .git: gate.json names the commit from here.
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
 [[ -n "$COMMIT" && -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]] && COMMIT="$COMMIT+dirty"
-docker build -q -t okkama-dev "$ROOT/tools/docker" >/dev/null
+docker build -q --build-arg RUST_VERSION="$(cat "$ROOT/tools/release-toolchain.txt")" \
+    -t okkama-dev "$ROOT/tools/docker" >/dev/null
 mkdir -p "$ROOT/conformance/reports/runs"
 exec docker run --rm \
     --network "${OKKAMA_GATE_NETWORK:-none}" \

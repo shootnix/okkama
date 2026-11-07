@@ -150,6 +150,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   directory. A later `default_environment` for the same name replaces the
   earlier one ([#40](https://github.com/shootnix/okkama/issues/40)).
 
+- Build: the declared MSRV is true again — `rust-version` is 1.97 (Cranelift
+  0.137 needs it; it said 1.85), and a CI job *MSRV* checks every target on
+  exactly that version. Releases no longer build on a moving `stable`: the
+  gate image (`make gate`), the CI gate and the package builds install the
+  toolchain pinned in
+  `tools/release-toolchain.txt` (1.97.1), each package records its compiler
+  in `lib/okkama/TOOLCHAIN`, and `gate.json` records `rustc -V`
+  ([#41](https://github.com/shootnix/okkama/issues/41)).
+
 - Book: numeric operands never mix (owner decision, #230). The Book said that
   `rat` mixes with `int`/`byte` and that ordering promotes; the compiler has
   always rejected both (`1 + 1 / 2`, `1 / 2 < 1`, `byte(2) + 3`). §5 and the

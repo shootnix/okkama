@@ -20,8 +20,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "22"
+      # The pinned release toolchain (tools/release-toolchain.txt, #41).
       - name: Rust
-        run: rustup toolchain install stable --profile minimal && rustup default stable
+        run: |
+          toolchain="$(cat tools/release-toolchain.txt)"
+          rustup toolchain install "$toolchain" --profile minimal && rustup default "$toolchain"
       - uses: actions/cache@v4
         with:
           path: |

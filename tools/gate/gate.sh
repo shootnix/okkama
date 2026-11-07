@@ -48,6 +48,11 @@ def git(*args):
         return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True).stdout.strip() or None
     except OSError:
         return None
+def toolchain():
+    try:
+        return subprocess.run(["rustc", "-V"], capture_output=True, text=True, cwd=os.path.join(root, "okkama-rs")).stdout.strip() or None
+    except OSError:
+        return None
 steps = []
 with open(os.path.join(logs, "steps.tsv")) as rows:
     for row in rows:
@@ -64,6 +69,7 @@ if os.path.exists(std):
     known = [line.split("known:", 1)[1].strip() for line in open(std) if line.strip().startswith("known:")]
 report = {
     "commit": os.environ.get("GITHUB_SHA") or os.environ.get("GATE_COMMIT") or git("rev-parse", "HEAD"),
+    "toolchain": toolchain(),
     "passed": failed == 0,
     "steps": steps,
     "known_std_failures": known,

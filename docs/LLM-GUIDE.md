@@ -315,6 +315,13 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
    --offline` refreshes Cargo.lock); move CHANGELOG `[Unreleased]` to
    `## [X.Y.Z] — date` with a summary.
 3. `make gate` (Docker) must pass; write the benchmark report (§6).
+   Releases are built with the toolchain pinned in
+   `tools/release-toolchain.txt` (the gate image, the CI gate and
+   `packages.yml` install it;
+   each package carries `lib/okkama/TOOLCHAIN`, every `gate.json` its
+   `rustc -V`). The declared MSRV is `rust-version` in `okkama-rs/Cargo.toml`
+   — the oldest Rust the dependencies allow — and the CI job *MSRV* checks
+   every target on it. Raise both together with the dependency that needs it.
 4. Merge the release branch into `develop` (fast-forward history on
    `develop`), tag `vX.Y.Z` (annotated, must match Cargo.toml), push `develop`,
    the release branch and the tag: `.github/workflows/packages.yml` builds

@@ -7,7 +7,11 @@
 #
 # Rust (the base image), JDK 25 for the JVM engine, Python with psycopg2,
 # Perl and Ruby for benchmark ports, gdb for sampling profiles.
-FROM rust:latest
+# The release toolchain (tools/release-toolchain.txt; docker.sh passes it, #41).
+ARG RUST_VERSION=1.97.1
+FROM rust:${RUST_VERSION}
+# The gate runs clippy (#42); the slim toolchain of the image lacks it.
+RUN rustup component add clippy
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       openjdk-25-jdk-headless python3 python3-psycopg2 perl ruby gdb rsync \

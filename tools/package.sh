@@ -78,6 +78,8 @@ done
 install -m 644 "$RELEASE/$NATIVE" "$DEST/lib/okkama/native/$PLATFORM/$NATIVE"
 cp -R "$ROOT/std" "$DEST/lib/okkama/std"
 printf '%s\n' "$VERSION" > "$DEST/lib/okkama/VERSION"
+# The compiler the binaries were built with (#41).
+(cd "$ROOT/okkama-rs" && rustc -Vv) > "$DEST/lib/okkama/TOOLCHAIN"
 cp "$ROOT/README.md" "$ROOT/LICENSE" "$DEST/"
 
 cat > "$DEST/install.sh" <<'EOF'
