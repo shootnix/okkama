@@ -1,0 +1,41 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+// Names before one type share it in every parameter list (#232).
+enum Failure is Error = (declined(id, line is int), moved(from, to is string));
+
+role Scaling {
+    scaled(by, plus is int) is int;
+}
+
+object Person does Scaling {
+    has given, family is string;
+    has age is int;
+
+    Person(given, family is string, age is int) {
+        given = given;
+        family = family;
+        age = age;
+    }
+
+    full(separator, suffix is string) is string {
+        given + separator + family + suffix;
+    }
+
+    scaled(by, plus is int) is int { age * by + plus; }
+}
+
+main() is int {
+    let out = Stdout();
+    let ada = Person("Ada", "Lovelace", 36);
+    out.writeln(ada.full(" ", "!"));
+    let scaling is Scaling = ada;
+    out.writeln(scaling.scaled(2, 1).string());
+    let add = (a, b is int, c is string) is string { (a + b).string() + c; };
+    out.writeln(add(40, 2, "?"));
+    let failure = Failure.declined(7, 12);
+    let text = failure ?? .declined(id, line): id.string() + ":" + line.string() !! .moved(from, to): from + to;
+    out.writeln(text);
+    0;
+}

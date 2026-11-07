@@ -1866,7 +1866,11 @@ total_cents() is int {
 - Actions read fields directly (or as `self.field`) and call other actions
   through `self`, including private ones.
 - Parameters are typed and checked; the result is checked against the
-  declared return type.
+  declared return type. Names before one type share it, as fields do:
+  `full(separator, suffix is string)`. The grouping works in every
+  parameter list — constructors, actions, role signatures, natives, enum
+  case payloads (`declined(id, line is int)`) and anonymous actions — but
+  not for a variadic parameter, which takes its own type.
 - A caller's contextual expected type stops at the action boundary; it cannot
   retag a nested expression inside the callee.
 - A typed action returns its final statement's value or an explicit `return` value.

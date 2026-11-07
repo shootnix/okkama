@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L01.gram.params.grouped",
+  "title": "names before one type share it in every parameter list",
+  "purpose": "Parse and run grouped parameters.",
+  "level": "L01",
+  "contracts": [
+    {
+      "contract": "GRAM.ACTION-DECL",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "Ada Lovelace!\n73\n42?\n7:12\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS with issue #232",
+    "expected_basis": "fields already accept `has a, b is T`; parameter lists take the same grouping in enum payloads, constructors, actions, role signatures and anonymous actions."
+  },
+  "status": "mandatory"
+}

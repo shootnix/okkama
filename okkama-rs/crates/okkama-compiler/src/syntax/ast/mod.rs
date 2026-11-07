@@ -307,6 +307,9 @@ pub struct Param {
     pub variadic: bool,
     pub ty: TypeExpr,
     pub span: Span,
+    /// Written `a, b is T` (#232): this parameter's type is written once,
+    /// after the next one's name — kept so `okkama fmt` keeps the grouping.
+    pub shares_type: bool,
 }
 
 /// `role Name<T> { signatures, fake, tests }`
