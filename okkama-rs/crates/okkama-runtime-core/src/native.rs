@@ -60,6 +60,8 @@ pub enum Error {
     Unsupported(String),
     Trap(String),
     Failure(NativeFailure),
+    /// An execution budget ran out (`crate::budget`): the run stops.
+    Exhausted(crate::budget::Exhausted),
 }
 impl From<ValueError> for Error {
     fn from(error: ValueError) -> Self {

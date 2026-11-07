@@ -117,7 +117,9 @@ RUN OPTIONS:
                           tests (-t), program arguments and `spawn` workers.
                           OKKAMA_ENGINE=ir|sparrow|sparrow-origin|jvm sets the default.
     --max-steps N         Stop after N steps: function entries and loop
-                          iterations (sparrow and exec; off by default)
+                          iterations (off by default). All budgets work on
+                          sparrow, exec and ir; the jvm has --max-output and
+                          --timeout
     --max-memory SIZE     Stop when the run holds more than SIZE bytes
                           (K/M/G suffixes); also bounds recursion depth
     --max-output SIZE     Stop when stdout and stderr exceed SIZE bytes
@@ -309,6 +311,21 @@ fn core_described(
     }
 }
 
+/// Stop the process with the interrupt report one second after `flag` is
+/// raised, if the run has not stopped by itself by then (the IR engine polls
+/// the flag only while it runs code).
+fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    let _ = std::thread::Builder::new().name("okkama-timeout".into()).spawn(move || {
+        while !flag.load(std::sync::atomic::Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let _ = io::stdout().flush();
+        let _ = writeln!(io::stderr(), "{}", okkama_runtime::budget::Exhausted::Interrupted.message());
+        std::process::exit(1);
+    });
+}
+
 /// main's result on the core: the exit status, or the failure report (exit 1).
 fn core_outcome(result: Result<i64, sparrow_core::Error>) -> Outcome {
     match result {
@@ -402,6 +419,7 @@ fn main() -> ExitCode {
     let _allocation_report = allocation_stats::Report;
     #[cfg(not(feature = "allocation-stats"))]
     sparrow_core::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
+    okkama_runtime::budget::set_memory_probe(sparrow_core::budget::mimalloc_committed);
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Сервер языка владеет stdin/stdout сам.
     if args.first().map(String::as_str) == Some("lsp") {
@@ -1421,8 +1439,11 @@ fn run_command(args: &[String]) -> Outcome {
         }
         rest = &rest[1..];
     }
-    if budgeted && engine != "sparrow" {
-        return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow");
+    if budgeted && !matches!(engine, "sparrow" | "ir" | "jvm") {
+        return Outcome::usage("execution budgets (--max-*, --timeout) need --engine sparrow, ir or jvm");
+    }
+    if engine == "jvm" && (limits.steps.is_some() || limits.memory.is_some()) {
+        return Outcome::usage("--max-steps and --max-memory are not available on the JVM yet (#237): use --timeout and --max-output");
     }
     let Some((input, mut program_args)) = rest.split_first() else {
         return Outcome::usage("missing input file");
@@ -1477,7 +1498,18 @@ fn run_command(args: &[String]) -> Outcome {
             };
         }
         let arguments = program_args.to_vec();
-        let (result, trace) = okkama_runtime::execute_traced(&module, arguments);
+        let budget = okkama_runtime::budget::Limits {
+            steps: limits.steps,
+            memory: limits.memory,
+            output: limits.output,
+            interrupt: limits.interrupt.clone(),
+        };
+        if limits.interrupt.is_some() {
+            // A run blocked in a native (sleeping, waiting for input) does not
+            // step: it is stopped a second after the flag is raised.
+            watchdog(limits.interrupt.clone().expect("flag"));
+        }
+        let (result, trace) = okkama_runtime::execute_limited(&module, arguments, &budget);
         return with_trace(
             native_outcome(result),
             okkama_runtime::render_trace(&module, &trace),
@@ -1549,7 +1581,80 @@ fn run_command(args: &[String]) -> Outcome {
     };
     let args: Vec<&str> = program_args.iter().map(String::as_str).collect();
     let mut command = java_command(&classpath, "Main", &args);
+    if limits.output.is_some() || limits.interrupt.is_some() {
+        return jvm_budgeted(&mut command, limits.output, limits.interrupt.clone());
+    }
     exec_or_wait(&mut command)
+}
+
+/// The JVM under an output limit or a timeout (#71): `java` as a child whose
+/// stdout and stderr pass through counters; past the limit, or when the
+/// timer raises `interrupt`, it is killed with the core's report.
+fn jvm_budgeted(
+    command: &mut std::process::Command,
+    output: Option<u64>,
+    interrupt: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Outcome {
+    use std::io::Read;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
+    command.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => return Outcome::failure(format!("okkama: cannot start java: {error}\n"), EXIT_IO),
+    };
+    let left = Arc::new(AtomicU64::new(output.unwrap_or(u64::MAX)));
+    let exceeded = Arc::new(AtomicBool::new(false));
+    let copy = |mut from: Box<dyn Read + Send>, to: fn() -> Box<dyn Write>| {
+        let (left, exceeded) = (left.clone(), exceeded.clone());
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 8192];
+            while let Ok(count) = from.read(&mut buffer) {
+                if count == 0 {
+                    break;
+                }
+                let allowed = left.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| Some(n.saturating_sub(count as u64))).unwrap_or(0);
+                let shown = count.min(allowed as usize);
+                let mut out = to();
+                let _ = out.write_all(&buffer[..shown]).and_then(|()| out.flush());
+                if shown < count {
+                    exceeded.store(true, Ordering::SeqCst);
+                    break;
+                }
+            }
+        })
+    };
+    let stdout = copy(Box::new(child.stdout.take().expect("piped")), || Box::new(io::stdout()));
+    let stderr = copy(Box::new(child.stderr.take().expect("piped")), || Box::new(io::stderr()));
+    let report = loop {
+        if exceeded.load(Ordering::SeqCst) {
+            break Some(okkama_runtime::budget::Exhausted::Output);
+        }
+        if interrupt.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            break Some(okkama_runtime::budget::Exhausted::Interrupted);
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break None,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            Err(error) => return Outcome::failure(format!("okkama: java: {error}\n"), EXIT_IO),
+        }
+    };
+    if let Some(exhausted) = report {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = stdout.join();
+        let _ = stderr.join();
+        return Outcome::failure(format!("{}\n", exhausted.message()), 1);
+    }
+    let status = child.wait();
+    let _ = stdout.join();
+    let _ = stderr.join();
+    // The last bytes may have run past the limit after the program ended.
+    if exceeded.load(Ordering::SeqCst) {
+        return Outcome::failure(format!("{}\n", okkama_runtime::budget::Exhausted::Output.message()), 1);
+    }
+    let code = status.ok().and_then(|status| status.code()).map_or(1, |code| u8::try_from(code).unwrap_or(1));
+    Outcome { stdout: String::new(), stderr: String::new(), code }
 }
 
 /// Запуск программы: на Unix процесс заменяется `java` (сигналы и код выхода —

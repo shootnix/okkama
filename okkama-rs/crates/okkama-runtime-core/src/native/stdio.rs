@@ -38,6 +38,7 @@ impl State {
                 if bytes.is_empty() {
                     return Ok(Value::Int(IntValue::from_i64(0)));
                 }
+                crate::budget::output(bytes.len()).map_err(Error::Exhausted)?;
                 let (stream, message): (&mut dyn Write, _) = if native == Native::StdoutWrite {
                     (output, "Cannot write standard output")
                 } else {

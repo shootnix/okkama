@@ -133,6 +133,7 @@ impl State {
                 okkama_runtime_core::native::Error::Failure(failure) => {
                     RuntimeError::NativeFailure { span, failure }
                 }
+                okkama_runtime_core::native::Error::Exhausted(exhausted) => RuntimeError::Exhausted(exhausted),
             })
     }
     pub(crate) fn builder_new(&self) -> Value {

@@ -1107,6 +1107,8 @@ fn native_failure(error: Error) -> Rc<crate::failure::Failure> {
         Error::Trap(message) | Error::InvalidState(message) | Error::Unsupported(message) => {
             crate::failure::Failure::new(crate::failure::Kind::Program(message))
         }
+        // File watching writes no standard output; a budget cannot run out here.
+        Error::Exhausted(exhausted) => crate::failure::Failure::new(crate::failure::Kind::Program(exhausted.message().into())),
     }
 }
 
