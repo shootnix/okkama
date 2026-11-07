@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Blade: a package name is checked as a module path (identifiers separated by `/`)
+  before it becomes a directory of `pkg/`; `../../victim` as a name of a package
+  without `.ok` files replaced files outside the project. Names differing only in
+  letter case are refused, and a nested package cannot land on its parent's files
+  ([#15](https://github.com/shootnix/okkama/issues/15)).
+
 ## [0.4.0] — 2026-11-07
 
 Sparrow runs on a new core: every function is compiled to machine code

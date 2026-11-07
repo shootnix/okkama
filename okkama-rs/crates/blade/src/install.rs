@@ -699,8 +699,18 @@ fn swap_in(root: &Path, chosen: &BTreeMap<String, Package>) -> Result<(), String
         }
     }
     std::fs::create_dir_all(&staged).map_err(io(&staged))?;
-    for (name, package) in chosen {
-        copy_tree(&package.dir, &staged.join(name), false)?;
+    crate::manifest::check_distinct(chosen.keys().map(String::as_str))?;
+    // Shorter names first: a nested package (`acme/web`) goes into the
+    // directory of its parent (`acme`) and must not land on its files.
+    let mut names: Vec<&String> = chosen.keys().collect();
+    names.sort_by_key(|name| name.len());
+    for name in names {
+        crate::manifest::check_package_name(name)?;
+        let target = staged.join(name);
+        if !target.starts_with(&staged) || target.exists() {
+            return Err(format!("package \"{name}\" would overwrite files of another package in {PKG}/"));
+        }
+        copy_tree(&chosen[name].dir, &target, false)?;
     }
     if pkg.exists() {
         std::fs::rename(&pkg, &old).map_err(io(&pkg))?;
