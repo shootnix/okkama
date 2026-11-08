@@ -1,0 +1,44 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "compare" take Order;
+
+object Search {
+    Search();
+
+    // The first index whose element is not less than `x`.
+    lower(xs is @string, x is string, low is int, high is int) is int {
+        if low >= high {
+            low;
+        } else {
+            let middle = int((low + high) / 2);
+            if xs[middle].less(x) { self.lower(xs, x, middle + 1, high); } else { self.lower(xs, x, low, middle); }
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    // Equal lengths, prefixes, equal strings, the empty string.
+    out.writeln("a".less("b").string() + " " + "b".less("a").string());
+    out.writeln("ab".less("b").string() + " " + "a".less("ab").string() + " " + "ab".less("a").string());
+    out.writeln("ab".less("ab").string() + " " + "ab".less_or_equal("ab").string() + " " + "b".less_or_equal("ab").string());
+    out.writeln("".less("a").string() + " " + "".less_or_equal("").string() + " " + "a".less("").string());
+    // Code points: no case folding, no UTF-16 surrogate order.
+    out.writeln("Z".less("a").string() + " " + "é".less("z").string() + " " + "\u{FFFF}".less("😀").string());
+    // less and less_or_equal agree with order() on every pair.
+    let words = ["b", "ab", "abc", "", "Z", "é", "😀", "\u{FFFF}", "a"];
+    let disagreements = words.reduce(0) -> count, left {
+        count + words.reduce(0) -> inner, right {
+            let order = left.order(right);
+            let less = order == Order.less;
+            let less_or_equal = order != Order.greater;
+            inner + (if left.less(right) == less && left.less_or_equal(right) == less_or_equal { 0; } else { 1; });
+        };
+    };
+    out.writeln(disagreements.string());
+    // A binary search with less() finds every element of an array sorted by ordering().
+    let sorted = words.ordering();
+    out.writeln(sorted.map() -> word { Search().lower(sorted, word, 0, sorted.size()).string(); }.join(","));
+    0;
+}

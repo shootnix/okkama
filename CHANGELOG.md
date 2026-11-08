@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `string.less(other)` and `string.less_or_equal(other)`
+  compare lexicographically by Unicode code point, the order of
+  `string.order()` and `ordering()`. They compared lengths, so code that
+  mixed the two orders — a binary search with `less` over an array sorted by
+  `ordering()` — was silently wrong (#281). Compare lengths with `length()`.
+  Conformance: contract VAL.STRING-ORDER, case `L02.string.order-consistent`
+  (prefixes, equal strings, the empty string, no case folding, code points
+  past the BMP, agreement with `order()` on every pair, the binary search).
+
 ## [0.4.1] — 2026-11-09
 
 0.4.1 completes the language proof of concept and the first hardening

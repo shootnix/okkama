@@ -521,19 +521,15 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 let drop = *op == Builtin::ArrayDrop;
                 return Ok(Out::Value(self.array_take(&target, ids[0], drop, span)));
             }
-            // Сравнение строк по длине, как в Perl-интерпретаторе.
-            Builtin::StrCompare(compare) => {
-                let left = self.emit(str_op(StrOp::Len, receiver_id, &[]), Type::Int, span);
-                let right = self.emit(str_op(StrOp::Len, ids[0], &[]), Type::Int, span);
-                (
-                    InstKind::IntCompare {
-                        op: ir_compare(*compare),
-                        left: left.value,
-                        right: right.value,
-                    },
-                    Type::Bool,
-                )
-            }
+            // Лексикографически по code point, как `order()` (#281).
+            Builtin::StrCompare(compare) => (
+                InstKind::StrCompare {
+                    op: ir_compare(*compare),
+                    left: receiver_id,
+                    right: ids[0],
+                },
+                Type::Bool,
+            ),
             Builtin::MapSize => (InstKind::MapLen(receiver_id), Type::Int),
             Builtin::MapHas => match &target.ty {
                 // У `[:]` нет ключей: `has` — всегда `false` (ключ уже вычислен).

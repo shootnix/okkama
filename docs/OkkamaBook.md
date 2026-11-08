@@ -934,6 +934,12 @@ Rules:
   `.greater_or_equal` require the **exact same** numeric category on both
   sides: `1.less(2.0)` fails. (The operators `<`/`>` are broader; the builtin action
   form is deliberately strict.)
+- `string.less(other)` and `string.less_or_equal(other)` follow
+  `order(other)`: lexicographic by Unicode code point, a prefix before the
+  longer string, no case folding — `"ab".less("b")` and `"Z".less("a")` are
+  `true`. A string has one order, shared by `less`, `order` and `ordering()`;
+  compare lengths with `length()`. (Until 0.4.2 `less` and `less_or_equal`
+  compared lengths, #281.)
 - Builtin calls are positional-only and exact-arity.
 - Builtin dispatch activates only for non-object receivers, so an object's
   own action named `size` or `less` is never shadowed and never shadows.
