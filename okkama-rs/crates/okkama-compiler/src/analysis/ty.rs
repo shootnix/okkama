@@ -157,7 +157,7 @@ impl Ty {
     pub fn is_map_key(&self) -> bool {
         matches!(
             self,
-            Ty::Int | Ty::Bool | Ty::Char | Ty::Float | Ty::Str | Ty::Enum(_)
+            Ty::Int | Ty::Bool | Ty::Char | Ty::Float | Ty::Rat | Ty::Str | Ty::Enum(_)
         )
     }
 

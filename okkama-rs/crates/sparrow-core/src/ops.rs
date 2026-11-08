@@ -1108,6 +1108,7 @@ fn key_text(runtime: &Runtime, word: Word, kind: Kind, ty: Option<&Type>) -> Str
         (_, Some(Type::Str)) => format!("\"{}\"", runtime.heap.text(word)),
         (_, Some(Type::Char)) => format!("\"{}\"", char::from_u32(word as u32).unwrap_or('?')),
         (_, Some(Type::Bool)) => if word != 0 { "true" } else { "false" }.to_string(),
+        (_, Some(Type::Rat)) => runtime.rational(word).to_string(),
         (Kind::Float, _) => crate::scalar::float_text(f64::from_bits(word)),
         (Kind::Raw | Kind::Byte, _) => word.to_string(),
         _ => runtime.big_value(word).to_string(),

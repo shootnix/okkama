@@ -747,7 +747,11 @@ let empty_map = [:];
   (decision D-007: `Map key type byte is not a scalar key type`). A `byte`
   may still be a field of a key object. Map *values* may be any type
   including `any`.
-- A **value object** is a key when every field is a scalar (`byte` and `rat`
+- A `rat` key is its exact, reduced value: `rat(1, 2)`, `rat(2, 4)` and
+  `2 / 4` are one key, and `keys()` orders rat keys by value. Numeric
+  categories never mix, so `%rat:int` takes no `int` key — write `1.rat()`
+  (#296).
+- A **value object** is a key when every field is a scalar (`byte`
   included), an enum or another such object, and it has no `destroy` block and
   no capabilities. Objects are immutable, so a key compares by its fields
   exactly like `==`, and `keys()` orders object keys field by field in

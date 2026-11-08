@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.map.rat-keys",
+  "title": "rat map keys: one key per value, order by value, lookup, has, + and -, generic and object keys",
+  "purpose": "Observe that a rat is a map key whose identity is its exact value (#296).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "5 -7/2,0,1/3,1/2,100000000000000000000/3\nneg,zero,third,half,big\nhalf half none\ntrue false\n1 3 | 1 3\n2 9 1/3\n7 0\n1 2\nthird\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #296 from the owner's decision and the spec text",
+    "expected_basis": "spec 8.8 (#296): rat is a key type; a rat is reduced, so rat(1, 2), rat(2, 4) and 2 / 4 are one key; keys() is sorted by value; a later literal entry and the right operand of + replace an equal key's value, as for int keys (printed beside them); an object key compares its rat field by value."
+  },
+  "status": "mandatory"
+}

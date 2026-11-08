@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Added
+
+- `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
+  `has()`, `keys()`/`values()`, `+`/`-` and generic maps work on every
+  engine. A key is the reduced value, so `rat(1, 2)`, `rat(2, 4)` and `2 / 4`
+  are one key, and keys sort by value. Numeric categories stay apart:
+  `%rat:int` takes no `int` key. A missing rat key reads `Map key not found:
+  1/2` on Sparrow and the IR engine (it printed a debug form or failed). The
+  specification (8.8), the Book (EN/RU), the Bible (ch. 8) and the LLM
+  context say so. Conformance: case `L05.map.rat-keys`.
+
 ### Changed
 
 - **Breaking:** `string.less(other)` and `string.less_or_equal(other)`

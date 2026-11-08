@@ -540,7 +540,7 @@ fn map_keys_are_int_bool_or_str() {
             TermKind::Ret(Some(ValueId(1))),
         )],
     );
-    rejects(&module, "map key type array<int> is not int, bool or str");
+    rejects(&module, "map key type array<int> is not a key type");
 
     let never = Box::new(Type::Never);
     let good = module_with_map(Type::Map(never.clone(), never));

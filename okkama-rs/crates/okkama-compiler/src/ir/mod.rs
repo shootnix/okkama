@@ -196,6 +196,7 @@ impl Type {
                 | Type::Byte
                 | Type::Char
                 | Type::Float
+                | Type::Rat
                 | Type::Str
                 | Type::Enum(_)
                 | Type::Object(_)
