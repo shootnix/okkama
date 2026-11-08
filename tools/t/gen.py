@@ -1711,6 +1711,195 @@ def casts_family():
     return batch.programs
 
 
+# ----- family: lexical spellings ---------------------------------------------------
+
+# Every spelling of a value the lexer accepts (Book 3.2, 5.1, 5.4), canonical first.
+INT_SPELLINGS = {
+    0: ["0", "0x0", "0X0", "0b0", "0B0", "000", "0_0"],
+    31: ["31", "0x1F", "0x1f", "0X1F", "0b11111", "0B1_1111", "3_1", "031"],
+    65535: ["65535", "0xFFFF", "0xFF_FF", "0b1111_1111_1111_1111", "65_535"],
+    2 ** 63 - 1: ["9223372036854775807", "0x7FFF_FFFF_FFFF_FFFF", "0x7fffffffffffffff", "0b" + "1" * 63,
+                  "9_223_372_036_854_775_807"],
+    # Past the word only decimal spellings exist: hex and binary stop at INT64_MAX.
+    2 ** 63: ["9223372036854775808", "9_223_372_036_854_775_808"],
+    10 ** 30: ["1000000000000000000000000000000", "1_000_000_000_000_000_000_000_000_000_000"],
+}
+FLOAT_SPELLINGS = {
+    100000.0: ["100000.0", "1e5", "1E5", "1e+5", "1E+05", "1e05", "1.0e5", "0.1e6", "100_000.0", "1_0e4"],
+    1e13: ["10000000000000.0", "1e13", "1_000e1_0"],
+    0.0015: ["0.0015", "1.5e-3", "1.5E-3", "15e-4", "0.001_5"],
+    0.0: ["0.0", "0e0", "0.0e0", "0e-5", "0E+5", "0.000"],
+    0.1: ["0.1", "1e-1", "0.10", "0.01e1"],
+    5e-324: ["5e-324", "4.9e-324", "0.5e-323", "3e-324"],
+    1.7976931348623157e308: ["1.7976931348623157e308", "1.7976931348623157E+308", "179769313486231570e291"],
+}
+STRING_SPELLINGS = {
+    "A": ['"A"', '"\\u{41}"', '"\\u{041}"', '"\\u{000041}"', "```A```"],
+    "é": ['"é"', '"\\u{e9}"', '"\\u{E9}"', "```é```"],
+    "😀": ['"😀"', '"\\u{1F600}"', '"\\u{1f600}"', "```😀```"],
+    "\n": ['"\\n"', '"\\u{a}"', "```\n```"],
+    "\t": ['"\\t"', '"\\u{9}"', "```\t```"],
+    "\t\r": ['"\\t\\r"', '"\\u{9}\\u{D}"'],
+    "\\": ['"\\\\"', '"\\u{5c}"', "```\\```"],
+    '"': ['"\\""', '"\\u{22}"', '```"```'],
+    "'": ['"\'"', '"\\u{27}"', "```'```"],
+    "": ['""', "``````"],
+    "\x00": ['"\\u{0}"', '"\\u{00}"'],
+    "\U0010FFFF": ['"\\u{10FFFF}"', '"\\u{10ffff}"'],
+    "/* x */ // y": ['"/* x */ // y"', "```/* x */ // y```"],
+    "a`b": ['"a`b"', "```a`b```"],
+    "\\n is two": ['"\\\\n is two"', "```\\n is two```"],
+    "line1\n  line2\n": ['"line1\\n  line2\\n"', "```line1\n  line2\n```"],
+}
+CHAR_SPELLINGS = {
+    "A": ["'A'", "'\\u{41}'"],
+    "'": ["'\\''", "'\\u{27}'"],
+    '"': ["'\"'", "'\\u{22}'"],
+    "\\": ["'\\\\'", "'\\u{5C}'"],
+    "\n": ["'\\n'", "'\\u{a}'"],
+    "\t": ["'\\t'", "'\\u{9}'", "'\t'"],
+    "😀": ["'😀'", "'\\u{1F600}'"],
+    "\x00": ["'\\u{0}'", "'\\u{000}'"],
+}
+
+
+def spelling_contexts(kind, value, canonical):
+    """(context name, expression, expected) for one spelling `{s}`."""
+    contexts = [
+        ("bare", "{s}", canonical),
+        ("array element, trailing comma", "[{s},][0]", canonical),
+        ("between comments", "/* a */ {s} /* b */", canonical),
+        ("generic argument", "Box(value: {s}).get()", canonical),
+        ("module constant", "{const}", canonical),
+    ]
+    if kind in ("int", "string", "char"):
+        contexts.append(("map key", f"[{{s}}: 1][{canonical}] else 0", "1"))
+    if kind in ("int", "float"):
+        contexts.append(("map value", '["k": {s}]["k"] else ' + canonical, canonical))
+        contexts.append(("receiver", "{s}.string()",
+                         lit_str(str(value) if kind == "int" else text_float(value))))
+        contexts.append(("unary minus", "-{s}", lit_int(-value) if kind == "int" else lit_float(-value)))
+        contexts.append(("array cast", f"@{kind}({{s}})[0]", canonical))
+    if kind == "string":
+        contexts.append(("receiver", "{s}.length()", lit_int(len(value))))
+        contexts.append(("concatenation", "{s} + {s}", lit_str(value + value)))
+        contexts.append(("array cast", "@string({s})[0]", canonical))
+    if kind == "char":
+        contexts.append(("receiver", "{s}.code()", lit_int(ord(value))))
+        contexts.append(("string cast", "string({s})", lit_str(value)))
+    return contexts
+
+
+# Expressions as tokens, with their values; the layout family joins the
+# tokens with every kind of separator.
+LAYOUT_EXPRESSIONS = [
+    (["(", "1", "+", "2", ")", "*", "3"], "9"),
+    (["-", "2", "-", "-", "3"], "1"),
+    (["[", "1", ",", "2", ",", "]", ".", "size", "(", ")"], "2"),
+    (["Box", "(", "value", ":", "7", ")", ".", "get", "(", ")"], "7"),
+    (["(", "if", "1", "<", "2", "{", "10", ";", "}", "else", "{", "20", ";", "}", ")"], "10"),
+    (['"a"', "+", '"b"'], '"ab"'),
+    (["[", '"k"', ":", "1", "]", "[", '"k"', "]", "else", "0"], "1"),
+    (["(", "match", "2", "{", "case", "1", "{", "5", ";", "}", "case", "2", "{", "6", ";", "}",
+      "else", "{", "7", ";", "}", "}", ")"], "6"),
+    (["(", "[", "3", ",", "1", "]", ".", "map", "(", ")", "->", "v", "{", "v", "*", "2", ";", "}", ")",
+      "[", "1", "]"], "2"),
+    (["(", "1", "<<", "3", ")", "|", "1"], "9"),
+    (["0x1F", "&", "~", "0b1"], "30"),
+    (["1.5e1", "+", "0.5"], "15.5"),
+    (["'a'", ".", "code", "(", ")"], "97"),
+    (["true", "&&", "!", "false"], "true"),
+    (["rat", "(", "1", ",", "3", ")", "+", "rat", "(", "2", ",", "3", ")", "==", "1", ".", "rat", "(", ")"], "true"),
+    (["```a```", "+", "```b```"], '"ab"'),
+]
+LAYOUT_SEPARATORS = [
+    ("nothing", ""), ("a space", " "), ("a newline", "\n"), ("a tab", "\t"), ("CRLF", "\r\n"),
+    ("a block comment", "/* c */"), ("an empty block comment", "/**/"), ("a line comment", "// c\n"),
+    ("blank lines", "\n\n  \n"),
+]
+
+
+def layout(tokens, separator):
+    out = tokens[0]
+    for token in tokens[1:]:
+        glue = separator
+        # Words and numbers do not touch: `else0` is one name.
+        if not glue and (out[-1].isalnum() or out[-1] in "_'\"") and (token[0].isalnum() or token[0] in "_'\""):
+            glue = " "
+        out += glue + token
+    return out
+
+
+# Binding names: uppercase starts only where Book 3.1 allows them (let, for, catch).
+BINDING_NAMES = ["USER_NAME", "A", "Ab", "_x", "_Upper", "aB", "x1_2", "_", "__", "x__y",
+                 "iffy", "letter", "matches", "format", "loops", "nexts", "lasts", "trying", "catcher",
+                 "returned", "withdrawal", "is_x", "isa_x", "async_x", "awaits", "spawned", "deferred",
+                 "constant", "hidden_x", "it", "self_x", "selfie", "true_x", "nonex", "nullable", "var_x",
+                 "casey", "elsewhere", "forth", "throwable", "panicky", "confirmed", "objects", "enums",
+                 "roles", "imported", "takes", "modules", "has_x", "anyway", "rats", "bytes", "strings"]
+BINDING_POSITIONS = [
+    # (position, upper-case names allowed, helper body with {n}, value)
+    ("let", True, "let {n} = 7;\n{n} + 1;", 8),
+    ("for", True, "let acc = Cell(0);\nfor 3..5 -> {n} {{ acc.replace(acc.value() + {n}); }}\nacc.value();", 7),
+    ("catch", True, "try {{ self.fail(); }} catch {n} is Oops {{ if {n} == Oops.bad(4) {{ 9; }} else {{ 0; }} }}", 9),
+    ("closure parameter", False, "let m = [1, 2].map() -> {n} {{ {n} * 2; }};\nm[1];", 4),
+    ("reduce accumulator", False, "(1..=3).reduce(0) -> {n}, x {{ {n} + x; }};", 6),
+    ("reduce item", False, "(1..=3).reduce(0) -> acc, {n} {{ acc + {n}; }};", 6),
+    ("case binding", False, "match Held.full(5) {{ case Held.full({n}) {{ {n} + 1; }} else {{ 0; }} }}", 6),
+]
+
+
+def lexical_family():
+    batch = Batch("lexical spellings: literals through contexts, token separators, binding names",
+                  imports=['import "cell" take Cell;'],
+                  declarations="""enum Oops is Error = (bad(n is int));
+enum Held = (empty, full(n is int));
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}""".splitlines())
+    tables = [("int", INT_SPELLINGS, lit_int), ("float", FLOAT_SPELLINGS, lit_float),
+              ("string", STRING_SPELLINGS, lit_str), ("char", CHAR_SPELLINGS, lit_char)]
+    for kind, table, literal in tables:
+        for value, spellings in table.items():
+            canonical = literal(value)
+            for spelling in spellings:
+                # The oracle checks its own table.
+                if kind == "int":
+                    assert int(spelling.replace("_", ""), 0 if spelling[:2].lower() in ("0x", "0b") else 10) == value
+                if kind == "float":
+                    assert float(spelling.replace("_", "")) == value, spelling
+                for context, template, expected in spelling_contexts(kind, value, canonical):
+                    program = batch.program()
+                    expression = template.replace("{s}", spelling)
+                    if "{const}" in expression:
+                        name = program.fresh("LEX")
+                        program.declarations.append(f"const {name} = {spelling};")
+                        expression = expression.replace("{const}", name)
+                    program.is_(expression, expected, f"{kind} {spelling!r} as {context}")
+    for tokens, expected in LAYOUT_EXPRESSIONS:
+        for name, separator in LAYOUT_SEPARATORS:
+            batch.program().is_(layout(tokens, separator), expected, f"{' '.join(tokens)} separated by {name}")
+    for name in BINDING_NAMES:
+        upper = not (name[0].islower() or name[0] == "_")
+        for position, upper_ok, body, value in BINDING_POSITIONS:
+            if upper and not upper_ok:
+                continue
+            # In a pattern `_` ignores a field (Book 14.3); elsewhere it is a name.
+            if name == "_" and position == "case binding":
+                continue
+            program = batch.program()
+            if "fail() is int { throw Oops.bad(4); }" not in program.helpers:
+                program.helpers.append("fail() is int { throw Oops.bad(4); }")
+            helper = program.fresh("bind")
+            program.helpers.append(f"{helper}() is int {{\n" + "\n".join(
+                "    " + line for line in body.format(n=name).splitlines()) + "\n}")
+            program.is_(f"self.{helper}()", lit_int(value), f"{name} as a {position}")
+    return batch.programs
+
+
 FAMILIES = {
     "values": values_family,
     "int": int_family,
@@ -1727,6 +1916,7 @@ FAMILIES = {
     "structures": structures_family,
     "keys": keys_family,
     "casts": casts_family,
+    "lexical": lexical_family,
 }
 
 
