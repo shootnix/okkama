@@ -24,6 +24,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   spec §5.1.2, grammar, LLM context, Sparrow book (also `str.fn`), VS Code
   highlighting (EN/RU) ([#153](https://github.com/shootnix/okkama/issues/153)).
 
+- Language: generic map keys are checked (#242). A type parameter used as a
+  map key — `%T:V` in a field, a signature or a body, or a literal `[item: 1]`
+  keyed by a `T` — takes only key types: `Index<@int>` is a compile error
+  `Generic parameter "T" for object "Index" is a map key: Map key type @int
+  is not a scalar key type`, also through a parameter passed on
+  (`Wrap<U> { has inner is Index<U>; }`). The check runs once all bodies are
+  typed, so declaration order does not matter. The core and the JVM refuse a
+  non-key value under a key parameter at run time instead of comparing it by
+  identity. New std `KeyedSet<T>` (`collections/set`) and
+  `KeyedFrequencies<T>` (`collections/frequencies`): map-backed, O(log n)
+  membership and counting, traversal in key order. OCS contract
+  `GEN.KEY-PARAMS` with `L05.generic.key-param-values` and three rejected
+  forms; Book §8.2, spec §6.5, LLM context (EN/RU)
+  ([#242](https://github.com/shootnix/okkama/issues/242)).
+
 - Language: string builtins (#210) — `contains`, `starts_with`, `ends_with`,
   `find` and `find_last` (a `Maybe<int>` code point index; an empty part is
   found at the start, respectively the end), `trim_start`, `trim_end`,

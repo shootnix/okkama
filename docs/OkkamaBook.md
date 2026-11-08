@@ -762,6 +762,28 @@ let empty_map = [:];
 
   A type that is not a key is named with its reason: `Map key type Tagged
   cannot be a key: field "tags" is @string`.
+- A **type parameter** can be a key too. `%T:V` anywhere in a generic object
+  (a field, a signature, a body) or a literal keyed by a `T` value makes `T` a
+  *key parameter*: every specialization must pass a key type, and a parameter
+  passed on to a key parameter (`Wrap<U> { has inner is Index<U>; }`) is one
+  as well. The compiler checks it:
+
+  ```okkama
+  object Index<T> {
+      has entries is %T:int;
+      Index() { let empty is %T:int = [:]; entries = empty; }
+  }
+
+  let words is Index<string> = Index();   // a string is a key
+  let lists is Index<@int> = Index();     // compile error
+  ```
+
+  The error names the parameter: `Generic parameter "T" for object "Index"
+  is a map key: Map key type @int is not a scalar key type`. The standard
+  library's `KeyedSet<T>` (`collections/set`) and `KeyedFrequencies<T>`
+  (`collections/frequencies`) are built this way: logarithmic membership and
+  counting, traversal in key order. `OrderedSet` and `Frequencies` take any
+  `T` with equality, arrays included, and search linearly.
 
 ### 8.2a `+` and `-` on collections
 

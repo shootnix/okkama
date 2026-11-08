@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.key-param-values",
+  "title": "a parameter used as a map key accepts strings, enums and value objects, also passed on",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.KEY-PARAMS",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "2 2 0\n2\nhearts\nspades\n1:1\n3:3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5",
+    "docs/okkama-spec-11072026.md#8.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; generic map keys checked by #242",
+    "expected_basis": "Index<string> counts b twice; Wrap<Card> passes U to Index<T> and value-object keys compare by fields; KeyedSet and KeyedFrequencies traverse in key order (hearts before spades, 1 before 3)."
+  },
+  "status": "mandatory"
+}

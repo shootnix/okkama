@@ -1,0 +1,25 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Index<T> {
+    has entries is %T:int;
+    Index() {
+        let empty is %T:int = [:];
+        entries = empty;
+    }
+    size() is int { entries.size(); }
+}
+
+object Wrap<U> {
+    has inner is Index<U>;
+    Wrap() { inner = Index(); }
+    size() is int { inner.size(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let wrap is Wrap<@string> = Wrap();
+    out.writeln("unreachable " + wrap.size().string());
+    0;
+}

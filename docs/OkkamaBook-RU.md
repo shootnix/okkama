@@ -805,6 +805,29 @@ let empty_map = [:];
 
   Тип, который ключом быть не может, называется с причиной: `Map key type
   Tagged cannot be a key: field "tags" is @string`.
+- Ключом может быть и **параметр типа**. `%T:V` в любом месте generic-объекта
+  (в поле, сигнатуре, теле) или литерал с ключом типа `T` делают `T`
+  *ключевым параметром*: каждая специализация обязана передать тип ключа, а
+  параметр, переданный в ключевой параметр (`Wrap<U> { has inner is
+  Index<U>; }`), тоже становится ключевым. Это проверяет компилятор:
+
+  ```okkama
+  object Index<T> {
+      has entries is %T:int;
+      Index() { let empty is %T:int = [:]; entries = empty; }
+  }
+
+  let words is Index<string> = Index();   // строка — ключ
+  let lists is Index<@int> = Index();     // ошибка компиляции
+  ```
+
+  Ошибка называет параметр: `Generic parameter "T" for object "Index" is a
+  map key: Map key type @int is not a scalar key type`. Так устроены
+  `KeyedSet<T>` (`collections/set`) и `KeyedFrequencies<T>`
+  (`collections/frequencies`) стандартной библиотеки: логарифмические
+  проверка членства и подсчёт, обход в порядке ключей. `OrderedSet` и
+  `Frequencies` принимают любой `T` с равенством, включая массивы, и ищут
+  линейно.
 
 ### 8.2a `+` и `-` над коллекциями
 

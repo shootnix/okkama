@@ -1,0 +1,55 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.generic.key-param-forwarded-rejected",
+  "title": "a parameter passed on to a key parameter takes only key types",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "GEN.KEY-PARAMS",
+      "aspects": [
+        "invalid",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check",
+        "runtime"
+      ],
+      "categories": [
+        "semantic",
+        "runtime"
+      ],
+      "justification": "The contract makes this an error without fixing the detection stage (spec 6.3: a static pass may diagnose boundary mismatches before execution). The program must not complete."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5",
+    "docs/okkama-spec-11072026.md#8.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; generic map keys checked by #242",
+    "expected_basis": "Wrap<U> holds Index<U>, so U is a key parameter too and @string is rejected."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Single<T> {
+    has item is T;
+    Single(item is T) { self.item = item; }
+    count() is int { [item: 1].size(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let single = Single(item: [1, 2]);
+    out.writeln("unreachable " + single.count().string());
+    0;
+}

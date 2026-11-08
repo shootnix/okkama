@@ -139,6 +139,7 @@ pub(super) fn check_bodies(reg: &mut Registry<'_>) -> Vec<Body> {
                 bodies.push(checker.finish(BodyOwner::Entry, Vec::new(), block, entry.span));
             }
     }
+    reg.check_key_arguments();
     bodies
 }
 

@@ -60,7 +60,11 @@ public final class KeyOrder implements Comparator<Object>, Serializable {
             // Поле-дробь ключа-объекта.
             return ((Rat) left).compareTo((Rat) right);
         }
-        return ((Boolean) left).compareTo((Boolean) right);
+        if (left instanceof Boolean) {
+            return ((Boolean) left).compareTo((Boolean) right);
+        }
+        // Массив или словарь под generic-ключом, прошедший мимо проверки (#242).
+        throw Rt.trap("map key must be a scalar, enum, string or value object");
     }
 
     /** Порядок строк по code points: и ключи словаря, и {@code str.lt … ge}. */
