@@ -101,8 +101,17 @@ public final class TerminalNatives {
         final ArrayList<String> claims = new ArrayList<String>();
         final ArrayList<Resizes> resizes = new ArrayList<Resizes>();
         ExecutorService reader;
+        /** The waiting read and its limit. */
         Future reading;
+        int readingLimit;
+        /** Input read by a cancelled read that nobody has taken yet. */
         byte[] pending;
+        /**
+         * The blocking read in flight, if any (#12): a cancelled read cannot
+         * stop it, so the next read waits for its bytes instead of queueing
+         * another one behind it.
+         */
+        Scheduler.Op inFlight;
     }
 
     static final class Lease {
@@ -335,7 +344,33 @@ public final class TerminalNatives {
         }
         final Future promise = Future.promise();
         session.reading = promise;
+        session.readingLimit = limit;
+        final Scheduler.Op op;
+        if (session.inFlight != null) {
+            // A cancelled read still waits for input: its bytes come to this
+            // read (deliverInput), and its operation is awaited again.
+            op = session.inFlight;
+            op.attach();
+        } else {
+            op = startRead(session, operation);
+        }
+        promise.listen(new Runnable() {
+            public void run() {
+                session.reading = null;
+                op.detach();
+            }
+        });
+        return promise;
+    }
+
+    /**
+     * One blocking read on the session's reader thread. Its outcome goes to
+     * whichever read is waiting when it completes, which may not be the one
+     * that started it: that one may have been cancelled meanwhile (#12).
+     */
+    private static Scheduler.Op startRead(final Session session, final String operation) {
         final int fd = session.input;
+        final int limit = 65536;
         final Scheduler.Op op = Scheduler.offload(session.reader, new Callable<Object>() {
             public Object call() throws Exception {
                 try (Arena arena = Arena.ofConfined()) {
@@ -360,28 +395,43 @@ public final class TerminalNatives {
             }
         }, new Scheduler.Outcome() {
             public void deliver(Object value, Throwable error) {
-                if (promise.state != Future.RUNNING) {
-                    if (value != null && ((byte[]) value).length > 0) {
-                        session.pending = (byte[]) value;
-                    }
-                    return;
-                }
-                if (error != null) {
-                    Scheduler.settle(promise, null, session.closed
-                        ? failure("already_closed", operation, "Terminal session is closed") : caught(error, operation));
-                    return;
-                }
-                byte[] bytes = (byte[]) value;
-                Scheduler.settle(promise, Natives.fromBytes(bytes, bytes.length), null);
+                session.inFlight = null;
+                deliverInput(session, (byte[]) value, error, operation);
             }
         });
-        promise.listen(new Runnable() {
-            public void run() {
-                session.reading = null;
-                op.detach();
+        session.inFlight = op;
+        return op;
+    }
+
+    /** A read's outcome: to the waiting read, at most its limit, the rest kept; kept whole without one. */
+    private static void deliverInput(Session session, byte[] bytes, Throwable error, String operation) {
+        Future waiting = session.reading;
+        if (waiting == null || waiting.state != Future.RUNNING) {
+            if (bytes != null && bytes.length > 0) {
+                session.pending = append(session.pending, bytes, 0);
             }
-        });
-        return promise;
+            return;
+        }
+        if (error != null) {
+            Scheduler.settle(waiting, null, session.closed
+                ? failure("already_closed", operation, "Terminal session is closed") : caught(error, operation));
+            return;
+        }
+        int count = Math.min(session.readingLimit, bytes.length);
+        if (count < bytes.length) {
+            session.pending = append(session.pending, bytes, count);
+        }
+        Scheduler.settle(waiting, Natives.fromBytes(bytes, count), null);
+    }
+
+    private static byte[] append(byte[] kept, byte[] bytes, int from) {
+        int before = kept == null ? 0 : kept.length;
+        byte[] joined = new byte[before + bytes.length - from];
+        if (kept != null) {
+            System.arraycopy(kept, 0, joined, 0, before);
+        }
+        System.arraycopy(bytes, from, joined, before, bytes.length - from);
+        return joined;
     }
 
     public static boolean runtime_application__terminal_cleanup(Object handle, List<?> bytes) {
