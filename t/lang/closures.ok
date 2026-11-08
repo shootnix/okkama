@@ -1,0 +1,71 @@
+module t v1.0.0;
+
+// t/lang: anonymous actions — captures, currying, closures as values (Book ch. 18).
+import "tap" take Tap;
+import "cell" take Cell;
+
+role Shape { area() is int; }
+object Square does Shape { has side is int; Square(:side); area() is int { side * side; } }
+
+object Op {
+    has f is (int) is int;
+    Op(:f);
+    run(x is int) is int { f(x); }
+}
+
+object Kit {
+    has base is int = 100;
+    Kit();
+    // A closure that reads a field captures `self`.
+    adder() is (int) is int { (x is int) is int { x + base; }; }
+    apply(f is (int) is int, x is int) is int { f(x); }
+    make(k is int) is (int) is int { (x is int) is int { x * k; }; }
+    fact(n is int) is int { if n <= 1 { 1; } else { n * self.fact(n - 1); } }
+}
+
+main() is int {
+    let t = Tap(19);
+    let kit = Kit();
+    let n = 5;
+    let plus = (x is int) is int { x + n; };
+    t = t.is(plus(1), 6, "a closure captures a local");
+    let greeting = "hi ";
+    t = t.is(((name is string) is string { greeting + name; })("Ada"), "hi Ada", "an immediately called closure");
+    t = t.is(kit.adder()(1), 101, "a closure captures self through a field");
+    t = t.is(kit.apply(plus, 10), 15, "a closure as an argument");
+    t = t.is(kit.make(3)(7), 21, "a closure returned from an action keeps its parameter");
+    let add = (a is int) is (int) is int { (b is int) is int { a + b; }; };
+    t = t.is(add(2)(3), 5, "currying");
+    let three = (a is int) is (int) is (int) is int { (b is int) is (int) is int { (c is int) is int { a * 100 + b * 10 + c; }; }; };
+    t = t.is(three(1)(2)(3), 123, "three levels of closures");
+    let fns is @(int) is int = [plus, kit.make(2), (x is int) is int { -x; }];
+    t = t.ok((fns.map() -> f { f(4); }) == [9, 8, -4], "closures in an array");
+    let made is @(int) is int = (0..3).map() -> i { (x is int) is int { x * 10 + i; }; };
+    t = t.ok((made.map() -> f { f(1); }) == [10, 11, 12], "each iteration captures its own binding");
+    let ops is %string:(int) is int = ["dbl": (x is int) is int { x * 2; }, "neg": (x is int) is int { -x; }];
+    t = t.is(ops["dbl"](21), 42, "a closure in a map");
+    t = t.is(Op(f: plus).run(2), 7, "a closure in a field");
+    let counter = Cell(0);
+    let bump = () is void { counter.replace(counter.value() + 1); };
+    bump();
+    bump();
+    t = t.is(counter.value(), 2, "a closure changes a captured cell");
+    t = t.ok(plus == plus, "a closure equals itself");
+    let other = (x is int) is int { x + n; };
+    t = t.ok(plus != other, "two closures with the same code are different values");
+    let twice = (f is (int) is int, x is int) is int { f(f(x)); };
+    t = t.is(twice(plus, 0), 10, "a closure taking a closure");
+    let area = (s is Shape) is int { s.area(); };
+    t = t.is(area(Square(side: 3)), 9, "a closure taking a role");
+    let block = (x is int) is int {
+        let y = x * 2;
+        let z = y + 1;
+        z * z;
+    };
+    t = t.is(block(2), 25, "a closure with statements");
+    let recursive = (x is int) is int { kit.fact(x); };
+    t = t.is(recursive(5), 120, "recursion through an object");
+    let outer = (x is int) is int { plus(x) * 2; };
+    t = t.is(outer(1), 12, "a closure calls a captured closure");
+    t.done();
+}

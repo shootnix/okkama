@@ -1254,6 +1254,123 @@ def nesting_family():
     return batch.programs
 
 
+# ----- family: control flow with an oracle ---------------------------------------
+
+MATCH_CONFIGS = [
+    [[0], [1, 2], [3]],
+    [[5]],
+    [[-1, 1], [0]],
+    [[1, 2, 3, 4]],
+    [[100], [7], [0, 2]],
+    [[2], [3], [5], [7]],
+]
+SUBJECTS = [-1, 0, 1, 2, 3, 5, 7, 100]
+RANGES = [(0, 5, False), (0, 5, True), (3, 3, False), (3, 3, True), (-2, 2, False), (0, 0, True), (1, 10, True)]
+
+
+def control_family():
+    import itertools
+    batch = Batch("control flow: match, for with next and last, nested loops, loop values, early return",
+                  imports=['import "cell" take Cell;'])
+    # match over int case lists, with else.
+    for index, config in enumerate(MATCH_CONFIGS):
+        program = batch.program()
+        name = program.fresh("pick")
+        cases = " ".join(f"case {', '.join(lit_int(v) for v in values)} {{ {10 * (k + 1)}; }}" for k, values in enumerate(config))
+        program.helpers.append(f"{name}(v is int) is int {{ match v {{ {cases} else {{ 99; }} }} }}")
+        program.helpers.append(f"{name}_stmt(v is int) is int {{\n    let out = Cell(0);\n    match v {{ {' '.join(f'case {chr(44).join(lit_int(x) for x in values)} {{ out.replace({10 * (k + 1)}); }}' for k, values in enumerate(config))} else {{ out.replace(99); }} }}\n    out.value();\n}}")
+        for subject in SUBJECTS:
+            expected = next((10 * (k + 1) for k, values in enumerate(config) if subject in values), 99)
+            program.is_(f"self.{name}({lit_int(subject)})", lit_int(expected), f"match {config} on {subject}")
+            program.is_(f"self.{name}_stmt({lit_int(subject)})", lit_int(expected), f"statement match {config} on {subject}")
+    # for over ranges with next/last placed before or after the work.
+    variants = []
+    for (a, b, inclusive) in RANGES:
+        for skip in (None, (2, 0), (3, 1)):
+            for stop in (None, 2, 4):
+                for order in ("skip-first", "stop-first"):
+                    if skip is None and stop is None and order == "stop-first":
+                        continue
+                    variants.append((a, b, inclusive, skip, stop, order))
+    for a, b, inclusive, skip, stop, order in variants:
+        program = batch.program()
+        name = program.fresh("walk")
+        rng = f"{lit_int(a)}..{'=' if inclusive else ''}{lit_int(b)}"
+        lines = []
+        skip_line = f"next if i % {skip[0]} == {skip[1]};" if skip else None
+        stop_line = f"last if i == {stop};" if stop is not None else None
+        guards = [skip_line, stop_line] if order == "skip-first" else [stop_line, skip_line]
+        lines += [g for g in guards if g]
+        body = " ".join(lines + ["acc.replace(acc.value() * 10 + i + 3);"])
+        program.helpers.append(f"{name}() is int {{\n    let acc = Cell(0);\n    for {rng} -> i {{ {body} }}\n    acc.value();\n}}")
+        acc = 0
+        for i in range(a, b + (1 if inclusive else 0)):
+            stopped = False
+            for guard in ([("skip", skip), ("stop", stop)] if order == "skip-first" else [("stop", stop), ("skip", skip)]):
+                kind, value = guard
+                if kind == "skip" and value and trunc_mod(i, value[0]) == value[1]:
+                    break
+                if kind == "stop" and value is not None and i == value:
+                    stopped = True
+                    break
+            else:
+                acc = acc * 10 + i + 3
+                continue
+            if stopped:
+                break
+        program.is_(f"self.{name}()", lit_int(acc), f"for {rng}, next {skip}, last {stop}, {order}")
+    # Nested loops: last leaves the inner loop only; next skips an outer turn.
+    for outer, inner in itertools.product([(0, 3), (1, 4)], [(0, 3), (0, 5)]):
+        for limit in (0, 1, 2):
+            program = batch.program()
+            name = program.fresh("nest")
+            program.helpers.append(
+                f"{name}() is int {{\n    let acc = Cell(0);\n    for {outer[0]}..{outer[1]} -> i {{\n        next if i == {limit};\n"
+                f"        for {inner[0]}..{inner[1]} -> j {{ last if j > i; acc.replace(acc.value() + i * 10 + j); }}\n    }}\n    acc.value();\n}}")
+            acc = 0
+            for i in range(*outer):
+                if i == limit:
+                    continue
+                for j in range(*inner):
+                    if j > i:
+                        break
+                    acc += i * 10 + j
+            program.is_(f"self.{name}()", lit_int(acc), f"nested loops {outer} {inner}, next at {limit}")
+    # loop with a counter and `last value if`.
+    for start, step, bound in [(0, 1, 5), (1, 2, 10), (10, -3, -5), (0, 7, 0)]:
+        program = batch.program()
+        name = program.fresh("until")
+        program.helpers.append(
+            f"{name}() is int {{\n    let n = Cell({lit_int(start)});\n    loop {{\n        last n.value() if {'n.value() >= ' + lit_int(bound) if step > 0 else 'n.value() <= ' + lit_int(bound)};\n"
+            f"        n.replace(n.value() + {lit_int(step)});\n    }}\n}}")
+        n = start
+        while not (n >= bound if step > 0 else n <= bound):
+            n += step
+        program.is_(f"self.{name}()", lit_int(n), f"loop from {start} by {step} to {bound}")
+    # Early return from inside constructs.
+    for where in ("for", "match", "if", "nested"):
+        program = batch.program()
+        name = program.fresh("early")
+        bodies = {
+            "for": "for 0..10 -> i { return i * 2 if i * i > v; }\n    -1;",
+            "match": "match v { case 0 { return 100; } else { } }\n    v + 1;",
+            "if": "if v > 3 { return v - 3; } else if v < 0 { return 0 - v; }\n    v;",
+            "nested": "for 0..5 -> i { for 0..5 -> j { return i * 10 + j if i + j == v; } }\n    -1;",
+        }
+        program.helpers.append(f"{name}(v is int) is int {{\n    {bodies[where]}\n}}")
+        for v in (-2, 0, 3, 5, 9, 20):
+            if where == "for":
+                expected = next((i * 2 for i in range(10) if i * i > v), -1)
+            elif where == "match":
+                expected = 100 if v == 0 else v + 1
+            elif where == "if":
+                expected = v - 3 if v > 3 else (-v if v < 0 else v)
+            else:
+                expected = next((i * 10 + j for i in range(5) for j in range(5) if i + j == v), -1)
+            program.is_(f"self.{name}({lit_int(v)})", lit_int(expected), f"return from {where} with {v}")
+    return batch.programs
+
+
 FAMILIES = {
     "values": values_family,
     "int": int_family,
@@ -1266,6 +1383,7 @@ FAMILIES = {
     "strings": strings_family,
     "collections": collections_family,
     "nesting": nesting_family,
+    "control": control_family,
 }
 
 

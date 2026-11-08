@@ -1,0 +1,85 @@
+module t v1.0.0;
+
+// t/lang: deterministic cleanup — destroy and defer order, ownership
+// moving out of a scope, cleanup while unwinding (Book ch. 20).
+import "tap" take Tap;
+import "async/atomic" take Atomic;
+
+enum Stop is Error = (now);
+
+object Res {
+    has name is string;
+    has log is Atomic<string>;
+    Res(:name, :log);
+    label() is string { name; }
+    destroy { log.replace(log.value() + name); }
+}
+
+object Holder {
+    has res is Res;
+    Holder(:res);
+}
+
+object Maker {
+    Maker();
+    make(name is string, log is Atomic<string>) is Res { Res(name: name, log: log); }
+    fail(log is Atomic<string>) is int {
+        let r = Res(name: "F", log: log);
+        throw Stop.now;
+    }
+}
+
+main() is int {
+    let t = Tap(11);
+    let log = Atomic("");
+    defer log.close();
+    let maker = Maker();
+    // A bare block: an if branch that ends in a let keeps the resource (#308).
+    {
+        let a = Res(name: "A", log: log);
+        let b = Res(name: "B", log: log);
+    }
+    t = t.is(log.value(), "BA", "reverse construction order at scope exit");
+    log.replace("");
+    if true {
+        let outer = Res(name: "O", log: log);
+        { let inner = Res(name: "I", log: log); }
+        log.replace(log.value() + "|");
+    }
+    t = t.is(log.value(), "I|O", "an inner scope is cleaned first");
+    log.replace("");
+    if true {
+        let r = Res(name: "R", log: log);
+        defer log.replace(log.value() + "d");
+    }
+    t = t.is(log.value(), "dR", "a later defer runs before an earlier resource");
+    log.replace("");
+    if true {
+        defer log.replace(log.value() + "1");
+        defer log.replace(log.value() + "2");
+    }
+    t = t.is(log.value(), "21", "defers run last in, first out");
+    log.replace("");
+    {
+        let kept = maker.make("K", log);
+        t = t.is(log.value(), "", "a returned resource is not destroyed by its maker");
+        t = t.is(kept.label(), "K", "the caller owns it");
+    }
+    t = t.is(log.value(), "K", "and destroys it at its own scope's end");
+    log.replace("");
+    {
+        defer log.replace(log.value() + "d");
+        let late = Res(name: "L", log: log);
+    }
+    t = t.is(log.value(), "dL", "a block's defers run before its resources, whatever the order");
+    log.replace("");
+    let caught = try { maker.fail(log); } catch e is Stop { -1; };
+    t = t.ok(caught == -1 && log.value() == "F", "unwinding destroys the failing scope's resources");
+    log.replace("");
+    { let h = Holder(res: Res(name: "H", log: log)); }
+    t = t.is(log.value(), "H", "a field's resource goes with its holder");
+    log.replace("");
+    for ["x", "y"] -> name { let r = Res(name: name, log: log); }
+    t = t.is(log.value(), "xy", "every iteration cleans its own scope");
+    t.done();
+}

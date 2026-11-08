@@ -1,0 +1,48 @@
+module t v1.0.0;
+
+// t/lang: async actions, await, spawn, cancellation, collecting futures
+// (Book ch. 21).
+import "tap" take Tap;
+import "async/collect" take AllFutures;
+
+enum Bad is Error = (late);
+
+object Work {
+    Work();
+    async double(x is int) is int { x * 2; }
+    async chain(x is int) is int { await self.double(await self.double(x)); }
+    async fail() is int { throw Bad.late; }
+    async sum(items is @int) is int {
+        let total = items.reduce(0) -> s, v { s + v; };
+        total;
+    }
+    async label(x is int) is string { "n" + x.string(); }
+}
+
+async main() is int {
+    let t = Tap(9);
+    let work = Work();
+    t = t.is(await work.double(21), 42, "await an async action");
+    t = t.is(await work.chain(3), 12, "await inside await");
+    // A task starts from a direct object action (an async one; a synchronous
+    // action would start a worker process, which t/ does not run).
+    let task = spawn Work().double(5);
+    t = t.is(await task, 10, "spawn and await");
+    let failed = try { await work.fail(); } catch e is Bad { -1; };
+    t = t.is(failed, -1, "a failure crosses await");
+    let cancelled = spawn Work().double(1);
+    cancelled.cancel();
+    let outcome = try { await cancelled; "ran"; } catch e is Cancelled { "cancelled"; };
+    // `spawn` starts the task at once; one that never suspends has finished
+    // before `cancel()`, which then changes nothing.
+    t = t.is(outcome, "ran", "cancelling a finished task keeps its value");
+    let pending is @Future<int> = [work.double(1), work.double(2), work.double(3)];
+    let all is AllFutures<int> = AllFutures(origins: pending);
+    let results = await all.results();
+    t = t.ok(results.size() == 3 && results.item(0) == 2 && results.item(2) == 6, "AllFutures keeps input order");
+    t = t.is(await work.sum([1, 2, 3]), 6, "an async action with a collection");
+    t = t.is(await work.label(7), "n7", "an async string result");
+    let squares is @int = (1..=3).map() -> v { v * v; };
+    t = t.is(await work.sum(squares), 14, "await on data built before");
+    t.done();
+}
