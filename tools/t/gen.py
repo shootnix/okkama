@@ -1905,6 +1905,193 @@ object Box<T> {
     return batch.programs
 
 
+# ----- family: enums ---------------------------------------------------------------
+
+COLORS = ["red", "green", "blue"]
+
+# A payload field type: (literal of a value, an int measure of a binding `{a}`, the oracle's measure).
+ENUM_FIELDS = {
+    "int": (lit_int, "{a}", lambda v: v),
+    "string": (lit_str, "{a}.length()", len),
+    "@int": (lambda xs: "[" + ", ".join(map(lit_int, xs)) + "]", "{a}.size()", len),
+    "%string:int": (lambda m: "[" + ", ".join(f"{lit_str(k)}: {lit_int(v)}" for k, v in m) + "]", "{a}.size()", len),
+    "Color": (lambda c: f"Color.{c}",
+              "(match {a} { case Color.red { 1; } case Color.green { 2; } case Color.blue { 3; } })",
+              lambda c: COLORS.index(c) + 1),
+    "Maybe<int>": (lambda m: "Maybe<int>.none" if m is None else f"Maybe.some({lit_int(m)})", "({a} else -1)",
+                   lambda m: -1 if m is None else m),
+    "Point": (lambda p: f"Point(x: {lit_int(p[0])}, y: {lit_int(p[1])})", "{a}.sum()", lambda p: p[0] * 10 + p[1]),
+    "rat": (lit_rat, "int({a} * rat(6, 1))", lambda q: int(q * 6)),
+    "float": (lit_float, "int({a})", int),
+    "char": (lit_char, "{a}.code()", ord),
+    "byte": (lambda b: f"byte({b})", "{a}.int()", lambda b: b),
+    "bool": (lit_bool, "(if {a} { 1; } else { 0; })", int),
+}
+
+ENUM_DECLARATIONS = """enum Color = (red, green, blue);
+enum Lone = (only);
+enum Shape = (dot, circle(r is int), rect(w is int, h is int));
+enum Reading<T> = (empty, value(item is T), pair(left is T, right is T));
+enum Fault is Error = (minor, major(code is int));
+enum Mixed = (num(n is int), text(s is string), list(xs is @int), table(m is %string:int), tone(c is Color),
+    opt(m is Maybe<int>), spot(p is Point), ratio(q is rat), real(f is float), letter(c is char), octet(b is byte),
+    flag(b is bool), two(c is Color, p is Point));
+
+object Point {
+    has x is int;
+    has y is int;
+    Point(:x, :y);
+    sum() is int { x * 10 + y; }
+}
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}""".splitlines()
+
+P = fractions.Fraction
+
+
+def reading(t):
+    return [("empty", []), ("value", [t]), ("pair", [t, t])]
+
+
+# (type as written, the constructor's name, cases [(case, [field types])], values [(case, payload)]).
+ENUM_TYPES = [
+    ("Color", "Color", [(c, []) for c in COLORS], [(c, ()) for c in COLORS]),
+    ("Lone", "Lone", [("only", [])], [("only", ())]),
+    ("Shape", "Shape", [("dot", []), ("circle", ["int"]), ("rect", ["int", "int"])],
+     [("dot", ()), ("circle", (0,)), ("circle", (-3,)), ("rect", (2, 3)), ("rect", (3, 2))]),
+    ("Fault", "Fault", [("minor", []), ("major", ["int"])], [("minor", ()), ("major", (0,)), ("major", (-7,))]),
+    ("Reading<int>", "Reading", reading("int"),
+     [("empty", ()), ("value", (5,)), ("pair", (1, 2)), ("pair", (2, 1))]),
+    ("Reading<string>", "Reading", reading("string"),
+     [("empty", ()), ("value", ("",)), ("value", ("😀",)), ("pair", ("a", "bc"))]),
+    ("Reading<@int>", "Reading", reading("@int"), [("empty", ()), ("value", ((1,),)), ("pair", ((1, 2), (3,)))]),
+    ("Reading<Color>", "Reading", reading("Color"),
+     [("value", ("red",)), ("value", ("blue",)), ("pair", ("green", "red"))]),
+    ("Reading<Maybe<int>>", "Reading", reading("Maybe<int>"),
+     [("value", (None,)), ("value", (4,)), ("pair", (1, None))]),
+    ("Reading<Point>", "Reading", reading("Point"), [("value", ((1, 2),)), ("pair", ((1, 2), (2, 1)))]),
+    ("Mixed", "Mixed",
+     [("num", ["int"]), ("text", ["string"]), ("list", ["@int"]), ("table", ["%string:int"]), ("tone", ["Color"]),
+      ("opt", ["Maybe<int>"]), ("spot", ["Point"]), ("ratio", ["rat"]), ("real", ["float"]), ("letter", ["char"]),
+      ("octet", ["byte"]), ("flag", ["bool"]), ("two", ["Color", "Point"])],
+     [("num", (7,)), ("num", (-7,)), ("text", ("héllo",)), ("list", ((4, 5, 6),)), ("table", ((("a", 1), ("b", 2)),)),
+      ("tone", ("green",)), ("opt", (None,)), ("opt", (9,)), ("spot", ((3, 4),)), ("ratio", (P(7, 2),)),
+      ("ratio", (P(-7, 2),)), ("real", (2.75,)), ("real", (-2.75,)), ("letter", ("😀",)), ("octet", (255,)),
+      ("flag", (True,)), ("flag", (False,)), ("two", ("blue", (0, 1)))]),
+]
+
+
+def enum_literal(type_name, ctor, cases, value):
+    case, payload = value
+    fields = dict(cases)[case]
+    if not fields:
+        return f"{type_name}.{case}"
+    return f"{ctor}.{case}(" + ", ".join(ENUM_FIELDS[f][0](v) for f, v in zip(fields, payload)) + ")"
+
+
+def enum_measure(cases, value, style):
+    """The oracle's int for a match in `style` over `value`."""
+    case, payload = value
+    index = [c for c, _ in cases].index(case)
+    fields = dict(cases)[case]
+    if style in ("else", "choice wildcard") and index != 0:
+        return 0
+    used = range(len(fields)) if style != "underscore" else range(min(1, len(fields)))
+    return 1000 * (index + 1) + sum(ENUM_FIELDS[fields[i]][2](payload[i]) * (i + 1) for i in used)
+
+
+def enum_arm(ctor, type_name, case, fields, style, choice):
+    """A pattern and its int result for one case."""
+    names = [f"a{i}" for i in range(len(fields))]
+    if style == "underscore":
+        names = [n if i == 0 else "_" for i, n in enumerate(names)]
+    result = " + ".join([str(1000 * (case[0] + 1))] + [
+        f"{ENUM_FIELDS[f][1].replace('{a}', n)} * {i + 1}" for i, (f, n) in enumerate(zip(fields, names)) if n != "_"])
+    head = f".{case[1]}" if choice else (f"{ctor}.{case[1]}" if fields else f"{type_name}.{case[1]}")
+    if fields:
+        head += "(" + ", ".join(names) + ")"
+    return head, result
+
+
+def enum_match(type_name, ctor, cases, subject, style):
+    arms = [enum_arm(ctor, type_name, (i, c), f, style, style.startswith("choice")) for i, (c, f) in enumerate(cases)]
+    if style == "choice":
+        return f"({subject} ?? " + " !! ".join(f"{h}: {r}" for h, r in arms) + ")"
+    if style == "choice wildcard":
+        rest = " !! _: 0" if len(cases) > 1 else ""
+        return f"({subject} ?? {arms[0][0]}: {arms[0][1]}{rest})"
+    if style == "else":
+        return f"(match {subject} {{ case {arms[0][0]} {{ {arms[0][1]}; }} else {{ 0; }} }})"
+    return f"(match {subject} {{ " + " ".join(f"case {h} {{ {r}; }}" for h, r in arms) + " })"
+
+
+ENUM_SOURCES = ["literal", "variable", "array element", "map value", "generic box", "if", "action result",
+                "closure", "maybe else"]
+ENUM_STYLES = ["full", "else", "underscore", "choice", "choice wildcard"]
+
+
+def enums_family():
+    batch = Batch("enums: plain, payload, generic and error enums from every source, matched, chosen, compared and "
+                  "thrown", declarations=ENUM_DECLARATIONS)
+    for type_name, ctor, cases, values in ENUM_TYPES:
+        literals = [enum_literal(type_name, ctor, cases, v) for v in values]
+        for index, (value, literal) in enumerate(zip(values, literals)):
+            other = literals[(index + 1) % len(literals)]
+            # Pairs: every value of the same case, and one of another case.
+            same = [j for j, w in enumerate(values) if w[0] == value[0]]
+            different = [j for j, w in enumerate(values) if w[0] != value[0]][:1]
+            for source in ENUM_SOURCES:
+                program = batch.program()
+                setup = []
+                if source == "literal":
+                    subject = literal
+                elif source == "variable":
+                    subject = program.fresh("e")
+                    setup.append(f"let {subject} is {type_name} = {literal};")
+                elif source == "array element":
+                    subject = f"[{literal}, {other}][0]"
+                elif source == "map value":
+                    subject = f'(["k": {literal}]["k"] else {other})'
+                elif source == "generic box":
+                    subject = f"Box(value: {literal}).get()"
+                elif source == "if":
+                    subject = f"(if true {{ {literal}; }} else {{ {other}; }})"
+                elif source == "action result":
+                    helper = program.fresh("make")
+                    program.helpers.append(f"{helper}() is {type_name} {{ {literal}; }}")
+                    subject = f"self.{helper}()"
+                elif source == "closure":
+                    subject = f"([{literal}].map() -> e {{ e; }})[0]"
+                else:
+                    subject = f"(Maybe.some({literal}) else {other})"
+                desc = f"{literal} from {source}"
+                for style in ENUM_STYLES:
+                    program.is_(enum_match(type_name, ctor, cases, subject, style), lit_int(enum_measure(cases, value, style)),
+                                f"{desc}: {style}", setup)
+                    setup = []
+                for j in (same + different if source in ("literal", "variable") else different or same):
+                    program.is_(f"{subject} == {literals[j]}", lit_bool(values[j] == value), f"{desc} == {literals[j]}")
+                program.ok(f"[{subject}, {other}] == [{literal}, {other}]", f"{desc}: in an array")
+                if subject.startswith("("):
+                    # A map value cannot start with `(` (#263).
+                    program.skip(263)
+                else:
+                    program.ok(f'["k": {subject}] == ["k": {literal}]', f"{desc}: as a map value")
+                if type_name == "Fault":
+                    program.is_(f"(try {{ self.raise({subject}); }} catch Fault.minor {{ 1; }} catch Fault.major(c) {{ 2 + c; }})",
+                                lit_int(1 if value[0] == "minor" else 2 + value[1][0]), f"{desc}: thrown, caught by case")
+                    program.is_(f"(try {{ self.raise({subject}); }} catch failure is Fault {{ "
+                                f"{enum_match(type_name, ctor, cases, 'failure', 'full')}; }})",
+                                lit_int(enum_measure(cases, value, "full")), f"{desc}: thrown, caught by type")
+                    if "raise(e is Fault) is int { throw e; }" not in program.helpers:
+                        program.helpers.append("raise(e is Fault) is int { throw e; }")
+    return batch.programs
+
+
 FAMILIES = {
     "values": values_family,
     "int": int_family,
@@ -1922,6 +2109,7 @@ FAMILIES = {
     "keys": keys_family,
     "casts": casts_family,
     "lexical": lexical_family,
+    "enums": enums_family,
 }
 
 
