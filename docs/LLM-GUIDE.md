@@ -212,12 +212,13 @@ classes (`codegen/jvm` + runtime `okkama.rt` embedded in `okkama`). What each
 phase guarantees and what checks it: [phases.md](phases.md).
 
 **IR passes** (`lowering/mod.rs`, after lowering, before `ir::verify`), each
-on verified OIR and keeping it verifiable and meaning-preserving:
-`tail-calls` (self tail calls become loops; needs calls in tail position),
-`fold` (exact constant arithmetic and comparisons; never what may fail),
-`hoist` (loop-invariant constants to the entry block), `regions` (regions
-that own nothing are not opened), `jumps` (empty trampoline blocks are
-skipped), `undef` (unread `undef` removed). `OKKAMA_IR_PASSES=none|all|list`
+on verified OIR and keeping it verifiable and meaning-preserving, in this
+order: `regions` (regions that own nothing are not opened; first, so that
+an empty `region.leave` does not hide a tail call, #285), `tail-calls` (self
+tail calls become loops; needs calls in tail position, empty trampolines
+allowed), `fold` (exact constant arithmetic and comparisons; never what may
+fail), `hoist` (loop-invariant constants to the entry block), `jumps` (empty
+trampoline blocks are skipped), `undef` (unread `undef` removed). `OKKAMA_IR_PASSES=none|all|list`
 selects them; every engine runs the passed OIR, so the gate runs the IR
 conformance suite with the passes off as well (`tests/ir_passes.rs` checks
 each pass alone and that `sabotage-int-add` is caught). A new pass gets a

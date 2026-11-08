@@ -581,6 +581,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR: a self tail call stayed a call in any program with a `destroy`
+  anywhere, even in an imported std module (#285). Lowering then opens a
+  region in every scope, and the `tail-calls` pass, which ran first, saw the
+  empty `region.leave` after the call and gave up; the `regions` pass removed
+  the region only later. A 3 000 000-step tail recursion that imported
+  `os/environment` took 241 MB on the Sparrow core and 1.9 GB on the IR
+  engine instead of 10 MB. The passes now run `regions, tail-calls, fold,
+  hoist, jumps, undef`, and the tail-position check follows empty
+  trampoline blocks the result reaches `ret` through. A call before an owned
+  object's destroy is still not a tail call. LLM guide and phases.md updated
+  ([#285](https://github.com/shootnix/okkama/issues/285)).
+
 - Sort: a stopped or failing `ordering()` no longer crashes the engine
   (#283). Since #238 a budget that fired in the middle of a sort made the
   remaining comparisons answer `Equal`, and the IR engine answered `Equal`

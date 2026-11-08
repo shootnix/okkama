@@ -373,6 +373,12 @@ fn lower_modules(
         return Err((owners[func.0], LoweringError::invalid(module.functions[func.0].span, message)));
     }
     let passes = Passes::from_env();
+    // Регионы, которые ничем не владеют, не открываются и не закрываются.
+    // Раньше хвостовых вызовов: в программе с `destroy` пустой `region.leave`
+    // после вызова иначе оставляет его вызовом (#285).
+    if passes.on("regions") {
+        ir::regions::elide_unused_regions(&mut module);
+    }
     // Хвостовая рекурсия исполняется циклом на всех движках.
     if passes.on("tail-calls") {
         ir::recursion::eliminate_tail_calls(&mut module);
@@ -384,10 +390,6 @@ fn lower_modules(
     // Константы циклов вычисляются один раз, во входном блоке.
     if passes.on("hoist") {
         ir::hoist::hoist_loop_constants(&mut module);
-    }
-    // Регионы, которые ничем не владеют, не открываются и не закрываются.
-    if passes.on("regions") {
-        ir::regions::elide_unused_regions(&mut module);
     }
     // `undef`, которые никто не читает (от убранных регионов и блоков), — тоже.
     // Пустые блоки-трамплины пропускаются.
@@ -579,7 +581,7 @@ pub fn inspect(
 }
 
 /// The IR passes of a build (H-09): `OKKAMA_IR_PASSES` is `all` (the
-/// default), `none` or a comma list of `tail-calls`, `fold`, `hoist`, `regions`,
+/// default), `none` or a comma list of `regions`, `tail-calls`, `fold`, `hoist`,
 /// `jumps`, `undef`. Every engine runs the passed OIR, so only a run with the
 /// passes off shows whether a pass changed meaning; the release gate runs the
 /// IR conformance suite both ways. `sabotage-int-add` turns the first
@@ -591,7 +593,7 @@ struct Passes {
 }
 
 /// The IR passes in pipeline order.
-pub const PASSES: [&str; 6] = ["tail-calls", "fold", "hoist", "regions", "jumps", "undef"];
+pub const PASSES: [&str; 6] = ["regions", "tail-calls", "fold", "hoist", "jumps", "undef"];
 
 static SELECTED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
