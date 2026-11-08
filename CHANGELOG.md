@@ -584,6 +584,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR engine and JVM: a TLS read abandoned by a timeout or a cancellation
+  could lose the record it received (#12 follow-up). The abandoned read's
+  worker kept waiting on the socket, and what it got was put back into the
+  plaintext buffer only by the completion on the main thread, after the
+  reader lock was free. A next read that took the lock first found the
+  buffer empty, read on, and met the end of the stream: `TlsFailure`
+  `invalid_data`. Under the gate's load it failed
+  `L11.tls.cancelled-read-keeps-data` once (IR engine, passes off). The
+  worker now puts what it received into the buffer under the reader lock,
+  and a live read takes it from there. The Sparrow core reads in the task
+  itself and was not affected.
+
 - IR: a self tail call stayed a call in any program with a `destroy`
   anywhere, even in an imported std module (#285). Lowering then opens a
   region in every scope, and the `tail-calls` pass, which ran first, saw the
