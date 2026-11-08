@@ -580,17 +580,18 @@ let payload is @byte = @byte(0, 127, maximum);
   syntax. `byte(256)` fails.
 - `byte` satisfies the numeric umbrella `number`, but it does not satisfy
   `int`, and `int` does not satisfy `byte`.
-- Arithmetic accepts `byte` operands mixed with `byte`/`int`/`rat`/`float`,
-  but the *result* is never `byte` — it promotes to `int`, `rat` for exact
-  division, or `float`. So byte
-  arithmetic can never silently overflow within `0..255`; the result simply
-  becomes an ordinary number and must be re-checked with `byte(...)` if you
-  want a byte back.
-- Equality is exact-category: `byte(1) == 1` is a runtime error. Ordering
-  operators (`<`, `<=`, `>`, `>=`) are broader and accept mixed numeric
-  operands under the promotion rules.
-- A `byte` is a valid array index (interpreted by its integer value) and a
-  valid range bound (normalized to `int`). A `byte` is not a **map key**
+- Arithmetic takes two `byte` operands, and the *result* is never `byte`:
+  `+ - * %` give `int` and `/` gives the exact `rat`; unary `-` gives `int`.
+  So byte arithmetic can never silently overflow within `0..255`; the result
+  simply becomes an ordinary number and must be re-checked with `byte(...)`
+  if you want a byte back. Bitwise operators keep `byte` (5.4).
+- Numeric categories never mix (#230): `byte(2) + 3`, `byte(2) / 2` and
+  `byte(2) + 1.5` are compile errors. Convert one side explicitly:
+  `byte(2).int() + 3`.
+- Equality and ordering are exact-category too: `byte(1) == 1` and
+  `byte(1) < 2` are compile errors; `byte(1) < byte(2)` is `true`.
+- A `byte` is neither an array index nor a range bound — convert it:
+  `xs[b.int()]`, `0..b.int()`. A `byte` is not a **map key** either
   (`%byte:V` is a compile error; decision D-007).
 
 `@byte` is an ordinary immutable typed array of bytes — the language's raw
@@ -723,7 +724,8 @@ let empty = [];
 
 - Arrays are immutable values.
 - `@T` at a typed boundary validates every element recursively.
-- Indexing uses brackets and `int` (or `byte`) indexes:
+- Indexing uses brackets and `int` indexes (a `byte` is converted
+  explicitly, `xs[b.int()]`):
   `[10, 20, 30][1]` is `20`. Out-of-bounds indexing is a runtime error unless
   an `else` fallback is present: `xs[9] else 0;`
 - Ranges expand inside array literals: `[0, 2..=4, 9]` is `[0, 2, 3, 4, 9]`.
@@ -833,8 +835,8 @@ tag.
 1..=5    // inclusive: 1, 2, 3, 4, 5
 ```
 
-- Bounds must be integer-like (`int` or `byte`; byte bounds normalize to
-  `int`).
+- Bounds must be `int`; a `byte` bound is converted explicitly
+  (`0..b.int()`).
 - `start` must be `<=` `end`.
 - Chained ranges are forbidden.
 - Ranges are first-class values: they compare by `start`, `end`, and
@@ -936,8 +938,8 @@ Rules:
 - Every transformation is immutable: it returns a new string or array.
 - The numeric comparisons `.less`, `.less_or_equal`, `.greater`,
   `.greater_or_equal` require the **exact same** numeric category on both
-  sides: `1.less(2.0)` fails. (The operators `<`/`>` are broader; the builtin action
-  form is deliberately strict.)
+  sides: `1.less(2.0)` fails. The operators `<`, `<=`, `>`, `>=` follow the
+  same rule (§11.3).
 - `string.less(other)` and `string.less_or_equal(other)` follow
   `order(other)`: lexicographic by Unicode code point, a prefix before the
   longer string, no case folding — `"ab".less("b")` and `"Z".less("a")` are
