@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.equality.cyclic-graphs",
+  "title": "objects that refer to each other compare structurally without looping",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.EQUALITY",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true\nfalse\nfalse\ntrue\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #278 from the cited contract text",
+    "expected_basis": "spec 8.4: objects compare by concrete type and all fields. A constructor that hands out self (11.4) makes a cycle; two cycles are equal when no pair of corresponding fields differs."
+  },
+  "status": "mandatory"
+}

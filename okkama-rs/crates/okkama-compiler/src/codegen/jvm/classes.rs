@@ -148,8 +148,17 @@ pub(super) fn object_class(layout: &Layout, object: &ObjectLayout) -> Result<Vec
             methods.push(method(&mut pool, asm, 0x0001, "destroyAsync", &descriptor, 1)?);
         }
     }
-    methods.push(equals_method(&mut pool, object)?);
-    methods.push(hash_code_method(&mut pool, object)?);
+    if object.fields.iter().any(|(name, _)| name == "$pending") {
+        // Конструктор отдаёт `self`: объект может лежать на цикле, и
+        // `equals`/`hashCode` идут через охраняемый обход `Obj` (#278).
+        methods.push(equals_method(&mut pool, object, "okkamaEqualFields")?);
+        methods.push(hash_code_method(&mut pool, object, "okkamaHashFields")?);
+        methods.push(cyclic_equals_method(&mut pool, object)?);
+        methods.push(cyclic_hash_code_method(&mut pool)?);
+    } else {
+        methods.push(equals_method(&mut pool, object, "equals")?);
+        methods.push(hash_code_method(&mut pool, object, "hashCode")?);
+    }
 
     // Мост: метод экземпляра роли вызывает статическую реализацию с `this`.
     for bridge in &object.bridges {
@@ -239,7 +248,7 @@ fn okkama_fields_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Resul
 
 /// `equals(Object)`: тот же класс и равные поля в порядке объявления
 /// (`val.eq`, §16.3). Ссылочные поля сравнивает `Objects.equals`.
-fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Method> {
+fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> Result<Method> {
     let class = pool.class(&object.class)?;
     let any = pool.class("java/lang/Object")?;
     let objects_equals = pool.method_ref(
@@ -292,11 +301,51 @@ fn equals_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Metho
         );
         asm.op(&[0x03, 0xac], 0, 0); // iconst_0 ireturn
     }
-    method(pool, asm, 0x0001, "equals", "(Ljava/lang/Object;)Z", 3)
+    method(pool, asm, 0x0001, name, "(Ljava/lang/Object;)Z", 3)
+}
+
+/// `equals(Object)` объекта, который может лежать на цикле: тот же класс, затем
+/// `Obj.cyclicEquals` — пара, уже сравниваемая выше по стеку, равна (#278).
+fn cyclic_equals_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Method> {
+    let class = pool.class(&object.class)?;
+    let any = pool.class("java/lang/Object")?;
+    let guarded = pool.method_ref(
+        runtime::OBJ,
+        "cyclicEquals",
+        "(Lokkama/rt/Obj;Ljava/lang/Object;)Z",
+    )?;
+    let mut asm = Asm::default();
+    let same = asm.label();
+    asm.op(&[0x2b], 0, 1); // aload_1
+    asm.op_index(0xc1, class, 1, 1); // instanceof
+    asm.jump(0x9a, same, 1); // ifne
+    asm.op(&[0x03, 0xac], 0, 0); // iconst_0 ireturn
+    asm.place_with_frame(
+        same,
+        Frame {
+            locals: vec![VType::Object(class), VType::Object(any)],
+            stack: Vec::new(),
+        },
+    );
+    asm.op(&[0x2a], 0, 1); // aload_0
+    asm.op(&[0x2b], 0, 1); // aload_1
+    asm.op_index(0xb8, guarded, 2, 1); // invokestatic
+    asm.op(&[0xac], 1, 0); // ireturn
+    method(pool, asm, 0x0001, "equals", "(Ljava/lang/Object;)Z", 2)
+}
+
+/// `hashCode()` объекта, который может лежать на цикле: `Obj.cyclicHash` (#278).
+fn cyclic_hash_code_method(pool: &mut ConstantPool) -> Result<Method> {
+    let guarded = pool.method_ref(runtime::OBJ, "cyclicHash", "(Lokkama/rt/Obj;)I")?;
+    let mut asm = Asm::default();
+    asm.op(&[0x2a], 0, 1); // aload_0
+    asm.op_index(0xb8, guarded, 1, 1); // invokestatic
+    asm.op(&[0xac], 1, 0); // ireturn
+    method(pool, asm, 0x0001, "hashCode", "()I", 1)
 }
 
 /// `hashCode()`, согласованный с `equals`: `h = 31 * h + hash(поле)`.
-fn hash_code_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Method> {
+fn hash_code_method(pool: &mut ConstantPool, object: &ObjectLayout, name: &str) -> Result<Method> {
     let objects_hash = pool.method_ref("java/util/Objects", "hashCode", "(Ljava/lang/Object;)I")?;
     let mut asm = Asm::default();
     asm.op(&[0x04], 0, 1); // iconst_1
@@ -312,7 +361,7 @@ fn hash_code_method(pool: &mut ConstantPool, object: &ObjectLayout) -> Result<Me
         asm.op(&[0x60], 2, 1); // iadd
     }
     asm.op(&[0xac], 1, 0); // ireturn
-    method(pool, asm, 0x0001, "hashCode", "()I", 1)
+    method(pool, asm, 0x0001, name, "()I", 1)
 }
 
 /// Интерфейс роли: абстрактный метод на каждый слот.

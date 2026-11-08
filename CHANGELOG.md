@@ -503,6 +503,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- JVM: `==` on objects that refer to each other no longer overflows the
+  stack (#278). A constructor that hands its `self` to a collaborator makes a
+  cycle; the generated `equals` and `hashCode` recursed around it until
+  `StackOverflowError`, while the IR engine and the Sparrow core returned the
+  answer. Classes of such objects (those with the hidden `$pending` field,
+  #271) now compare through `Obj.cyclicEquals`, which assumes a pair already
+  being compared further up the stack equal, as the other engines do, and
+  hash through `Obj.cyclicHash`; other classes are unchanged. OCS
+  `L04.equality.cyclic-graphs`
+  ([#278](https://github.com/shootnix/okkama/issues/278)).
+
 - Objects: an action called on an object whose constructor has not returned
   is rejected on every engine (#271, spec §11.4). A constructor may hand its
   `self` to a collaborator; a call through that reference read fields the
