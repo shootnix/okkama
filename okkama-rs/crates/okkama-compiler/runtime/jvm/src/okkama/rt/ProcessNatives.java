@@ -25,7 +25,7 @@ public final class ProcessNatives {
     private static final String DOMAIN = "core.process";
     private static final int CHUNK = 64 * 1024;
 
-    /** Потомок с точным статусом {@code waitpid} (src22 {@code PosixSpawn}). */
+    /** Потомок с точным статусом {@code waitpid} ({@code PosixSpawn}). */
     public interface Exact {
         boolean signaled();
 
@@ -353,11 +353,10 @@ public final class ProcessNatives {
         return state(handle, symbol("process_state_started", 1)).process != null;
     }
 
-    /** {@code Process.pid()} (Java 9+) рефлексией: исходники собираются под Java 8. */
     private static long pid(Process process, String operation) {
         try {
-            return ((Number) Process.class.getMethod("pid").invoke(process)).longValue();
-        } catch (ReflectiveOperationException error) {
+            return process.pid();
+        } catch (UnsupportedOperationException error) {
             throw failure("unsupported", operation, "Process id is unavailable on this JVM");
         }
     }

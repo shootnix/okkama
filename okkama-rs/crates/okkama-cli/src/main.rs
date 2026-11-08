@@ -103,7 +103,7 @@ IR OPTIONS:
     --format text          Output format (default: text); see `okkama help ir`
 
 BUILD OPTIONS:
-    --target jvm          Select the backend (required; Java 8+ class files)
+    --target jvm          Select the backend (required; the JAR runs on JDK 22+)
     --target sparrow      Select Sparrow bytecode (.spb)
     --backend NAME        Compatibility alias for --target
     -o, --output FILE      Output artifact path (required)
@@ -1601,6 +1601,15 @@ fn run_command(args: &[String]) -> Outcome {
         Ok(classpath) => classpath,
         Err(text) => return Outcome::failure(text, EXIT_IO),
     };
+    // The runtime classes are Java 22 (FFM natives); an older `java` would
+    // only fail with UnsupportedClassVersionError.
+    let major = java_major();
+    if (1..22).contains(&major) {
+        return Outcome::failure(
+            format!("okkama: the JVM engine needs JDK 22 or newer; `java` is Java {major}\n"),
+            EXIT_IO,
+        );
+    }
     let args: Vec<&str> = program_args.iter().map(String::as_str).collect();
     let mut command = java_command(&classpath, "Main", &args, &jvm_limits(limits.steps, limits.memory));
     if limits.output.is_some() || limits.interrupt.is_some() {
@@ -1797,10 +1806,8 @@ fn java_command(
     options: &[String],
 ) -> std::process::Command {
     let mut command = std::process::Command::new("java");
-    // JDK 22+: natives на FFM (SQLite) без предупреждений о native access.
-    if java_major() >= 22 {
-        command.arg("--enable-native-access=ALL-UNNAMED");
-    }
+    // Natives на FFM (SQLite, crypto, терминал) без предупреждений о native access.
+    command.arg("--enable-native-access=ALL-UNNAMED");
     command
         .args(options)
         .arg("-cp")
@@ -1939,8 +1946,8 @@ USAGE:
 
 Prints the version, the executable, the std directory, the host crypto
 library, the pinned ICU used by locale/collation and the `java` that
-`okkama run` starts (JDK 22 or newer enables the FFM natives: crypto, SQLite,
-terminal, accounts, collation). OKKAMA_STDLIB_DIR, OKKAMA_NATIVE_LIB and
+`okkama run --engine jvm` starts (the JVM engine needs JDK 22 or newer).
+OKKAMA_STDLIB_DIR, OKKAMA_NATIVE_LIB and
 OKKAMA_ICU_LIBDIR override the installed locations.
 ";
 
@@ -1971,8 +1978,8 @@ fn env_command(args: &[String]) -> Outcome {
         .or_else(pinned_icu);
     let java = match java_major() {
         0 => "(not found: `okkama run` needs Java)".to_string(),
-        major if major >= 22 => format!("Java {major} (FFM natives enabled)"),
-        major => format!("Java {major} (JDK 22+ needed for crypto, SQLite and other FFM natives)"),
+        major if major >= 22 => format!("Java {major}"),
+        major => format!("Java {major} (too old: the JVM engine needs JDK 22+)"),
     };
     let exe = std::env::current_exe()
         .ok()
