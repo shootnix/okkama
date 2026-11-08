@@ -1,0 +1,21 @@
+module ocs/test_successor v1.0.0;
+
+object Bottle {
+    has opened is bool = false;
+    Bottle();
+    open() is ^Bottle { ^opened = true; }
+    close() is ^Bottle { ^opened = false; }
+}
+
+test "a successor straight into test.is" {
+    let bottle = Bottle();
+    test.is(bottle.open().close(), bottle);
+    test.isnt(bottle.open(), bottle);
+}
+
+test "a bound successor into test.is" {
+    let opened = Bottle().open();
+    test.is(opened, Bottle().open());
+}
+
+main() is int { 0; }

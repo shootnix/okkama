@@ -532,6 +532,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `L04.invariant.escaped-self-*` cases. Book §18.2 (EN/RU), OIR-1 §16.1,
   Sparrow book ([#271](https://github.com/shootnix/okkama/issues/271)).
 
+- Tests: a successor passed to `test.is` or `test.isnt` is an ordinary
+  argument (#275). Passed directly it crashed the compiler (`lowering
+  produced invalid IR: … parameter %0 cannot have a successor type`), and
+  passed through a binding it did not count as used. The checker now
+  consumes the argument as every call argument does. The Book's own example
+  `test.is(bottle.open().close(), bottle)` works. OCS
+  `L07.test-runner.successor-assertions`
+  ([#275](https://github.com/shootnix/okkama/issues/275)).
+
 - Terminal: input typed after a read was interrupted reaches the next read
   (#12). A terminal read that a timeout or a cancelled task gave up still
   had its blocking `read(2)` waiting on the reader thread, and every later
