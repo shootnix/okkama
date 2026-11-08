@@ -781,7 +781,7 @@ public final class Rt {
             return "\"" + key + "\"";
         }
         if (key instanceof Boolean) {
-            return ((Boolean) key) ? "1" : "0";
+            return ((Boolean) key) ? "true" : "false";
         }
         if (key instanceof Byte) {
             return Integer.toString(((Byte) key) & 0xFF);
