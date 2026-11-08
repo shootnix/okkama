@@ -160,9 +160,7 @@ public final class TlsNatives {
                 parameters.setServerNames(sni);
             }
             if (!names.isEmpty()) {
-                // ALPN: API Java 9+, исходники рантайма — под Java 8.
-                SSLParameters.class.getMethod("setApplicationProtocols", String[].class)
-                    .invoke(parameters, (Object) names.toArray(new String[0]));
+                parameters.setApplicationProtocols(names.toArray(new String[0]));
             }
             engine.setSSLParameters(parameters);
             state.engine = engine;

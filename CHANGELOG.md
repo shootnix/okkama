@@ -361,6 +361,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- JVM: the runtime (`okkama.rt`) is built for Java 22 as one source tree
+  (the FFM natives in `src22` joined the rest), so the JVM engine needs JDK
+  22+ — which the FFM natives already required in practice. `okkama run
+  --engine jvm` with an older `java` stops with a message instead of an
+  `UnsupportedClassVersionError`, and `okkama env` says the `java` is too
+  old. The Java 8 workarounds are gone: `Process.pid()` and TLS ALPN are
+  called directly, `repeat` uses `String.repeat`. Generated classes keep
+  class-file version 52.
+
 - Language: `int.pow(int)` is exact (#228): `(2).pow(100)` is
   `1267650600228229401496703205376`, not `1.2676506002282294e+30`. A negative
   exponent of an `int` is an error ("a rat base takes a negative one"); new

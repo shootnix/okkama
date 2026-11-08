@@ -21,7 +21,7 @@ CARGO  ?= cargo
 RS      := okkama-rs
 RUNTIME := $(RS)/crates/okkama-compiler/runtime/jvm
 STAMP   := $(RUNTIME)/classes/.built
-JAVA    := $(wildcard $(RUNTIME)/src/okkama/rt/*.java $(RUNTIME)/src22/okkama/rt/*.java)
+JAVA    := $(wildcard $(RUNTIME)/src/okkama/rt/*.java)
 VSIX    := vscode-okkama/okkama-vscode.vsix
 
 .PHONY: all build runtime pgo install install-pgo uninstall test gate gate-local dist vscode clean

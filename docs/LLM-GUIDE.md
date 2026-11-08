@@ -278,8 +278,8 @@ there ("native provider is not implemented"; the gate catches it):
 3. IR engine: `okkama-runtime-core/src/native/*.rs` (route the module in
    `native.rs` `route`).
 4. JVM: a `public static` method `runtime_<module>__<name>` in a class of
-   `okkama-compiler/runtime/jvm/src/okkama/rt` (Java 8; FFM code in `src22`,
-   Java 22); types: `int` → `BigInteger`, `bool` → `boolean`, `float` →
+   `okkama-compiler/runtime/jvm/src/okkama/rt` (Java 22, FFM natives
+   included); types: `int` → `BigInteger`, `bool` → `boolean`, `float` →
    `Double`, arrays → `List<Object>` (bytes as `Byte`), native objects →
    `Object`. Rebuild with `okkama-rs/tools/jvm-runtime/build.sh` and commit
    the classes (they are embedded in `okkama`).

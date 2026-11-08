@@ -708,11 +708,7 @@ public final class Rt {
         if (times != 0 && size > REPEAT_LIMIT / times) {
             throw trap("repeat result is too large");
         }
-        StringBuilder out = new StringBuilder();
-        for (long index = 0; index < times; index++) {
-            out.append(text);
-        }
-        return out.toString();
+        return text.repeat((int) times);
     }
 
     /** {@code @char} строки: code points (#231). */

@@ -19,8 +19,8 @@
 #
 # `okkama` находит std, native и ICU относительно себя: переменные окружения не
 # нужны (OKKAMA_STDLIB_DIR и др. по-прежнему переопределяют). Java-рантайм
-# (`okkama.rt`) встроен в сам `okkama`; для `okkama run` нужен `java`
-# (JDK 22+ — для crypto, SQLite, терминала и других FFM natives).
+# (`okkama.rt`) встроен в сам `okkama`; для `okkama run --engine jvm` нужен
+# `java` JDK 22+ (рантайм использует FFM: crypto, SQLite, терминал).
 #
 # Старые ссылки `okkama` на Perl-версию (`okkama-pl`) в PATH заменяются;
 # ссылки, которые может снять только root, печатаются командой `sudo rm`.
