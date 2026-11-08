@@ -182,6 +182,94 @@ pub fn thread_jumps(function: &mut Function) -> bool {
     changed
 }
 
+/// Слить блок с его единственным предшественником, который переходит к нему
+/// `br` (#292): после убранных регионов тело действия остаётся цепочкой
+/// блоков областей, и каждый переход в ней — лишняя инструкция движка IR.
+/// Блок сливается, если вход в него один, он не цель unwind и его цель
+/// unwind та же, что у предшественника (тогда её аргументы определены до
+/// начала предшественника). Параметры блока заменяются аргументами
+/// перехода; true — что-то изменилось.
+pub fn merge_blocks(function: &mut Function) -> bool {
+    let count = function.blocks.len();
+    let mut entries = vec![0usize; count];
+    let mut unwinds = vec![false; count];
+    for block in &function.blocks {
+        for target in block.term.kind.targets() {
+            entries[target.block.0] += 1;
+        }
+        if let Some(unwind) = &block.unwind {
+            unwinds[unwind.block.0] = true;
+        }
+    }
+    let mut merged = vec![false; count];
+    let mut renamed: std::collections::HashMap<ValueId, ValueId> = std::collections::HashMap::new();
+    for index in 0..count {
+        if merged[index] {
+            continue;
+        }
+        // Цепочка сливается в первый блок; число шагов не больше числа блоков.
+        for _ in 0..count {
+            let super::TermKind::Br(target) = &function.blocks[index].term.kind else {
+                break;
+            };
+            let next = target.block.0;
+            if next == 0
+                || next == index
+                || merged[next]
+                || entries[next] != 1
+                || unwinds[next]
+                || function.blocks[next].unwind != function.blocks[index].unwind
+            {
+                break;
+            }
+            let args = target.args.clone();
+            let block = std::mem::take(&mut function.blocks[next].insts);
+            let params = std::mem::take(&mut function.blocks[next].params);
+            renamed.extend(params.into_iter().zip(args));
+            let term = function.blocks[next].term.clone();
+            function.blocks[index].insts.extend(block);
+            function.blocks[index].term = term;
+            merged[next] = true;
+        }
+    }
+    if !merged.iter().any(|done| *done) {
+        return false;
+    }
+    if !renamed.is_empty() {
+        // Аргумент перехода сам может быть параметром слитого раньше блока.
+        let resolve = |value: &mut ValueId| {
+            while let Some(next) = renamed.get(value) {
+                *value = *next;
+            }
+        };
+        for block in &mut function.blocks {
+            for inst in &mut block.insts {
+                inst.kind.operands_mut().into_iter().for_each(resolve);
+            }
+            block.term.kind.operands_mut().into_iter().for_each(resolve);
+            for target in block.term.kind.targets_mut().into_iter().chain(block.unwind.as_mut()) {
+                target.args.iter_mut().for_each(resolve);
+            }
+        }
+        // Параметры слитых блоков объявлены: они определяются на входе и
+        // нигде не читаются.
+        let span = function.span;
+        function.blocks[0].insts.extend(
+            renamed.keys().map(|value| Inst { result: Some(*value), kind: InstKind::Undef, span }),
+        );
+    }
+    // Слитые блоки остались без входов: их терминаторы — копии, а сами они
+    // пусты, так что удаление не объявляет их значения заново.
+    for (block, done) in function.blocks.iter_mut().zip(&merged) {
+        if *done {
+            block.unwind = None;
+            block.term.kind = super::TermKind::Unreachable;
+        }
+    }
+    remove_unreachable_blocks(function);
+    true
+}
+
 /// Убрать `undef`, результат которых никто не читает, и сжать номера
 /// значений: остаются только определённые. Такие `undef` оставляют убранные
 /// регионы и удалённые блоки; машинный код исполнял бы каждый при каждом

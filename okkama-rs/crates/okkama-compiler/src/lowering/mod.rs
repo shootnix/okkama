@@ -392,13 +392,19 @@ fn lower_modules(
         ir::hoist::hoist_loop_constants(&mut module);
     }
     // `undef`, которые никто не читает (от убранных регионов и блоков), — тоже.
-    // Пустые блоки-трамплины пропускаются.
+    // Затем пропускаются пустые блоки-трамплины: блок, где остался лишь такой
+    // `undef` убранного `region.enter`, пуст только после этого (#292).
+    // Удалённые блоки могли быть единственными читателями других `undef`.
     for function in &mut module.functions {
-        if passes.on("jumps") {
-            ir::cfg::thread_jumps(function);
-        }
         if passes.on("undef") {
             ir::cfg::drop_unread_undef(function);
+        }
+        if passes.on("jumps") {
+            let threaded = ir::cfg::thread_jumps(function);
+            let merged = ir::cfg::merge_blocks(function);
+            if (threaded || merged) && passes.on("undef") {
+                ir::cfg::drop_unread_undef(function);
+            }
         }
     }
     if passes.sabotage {
@@ -582,7 +588,7 @@ pub fn inspect(
 
 /// The IR passes of a build (H-09): `OKKAMA_IR_PASSES` is `all` (the
 /// default), `none` or a comma list of `regions`, `tail-calls`, `fold`, `hoist`,
-/// `jumps`, `undef`. Every engine runs the passed OIR, so only a run with the
+/// `undef`, `jumps`. Every engine runs the passed OIR, so only a run with the
 /// passes off shows whether a pass changed meaning; the release gate runs the
 /// IR conformance suite both ways. `sabotage-int-add` turns the first
 /// `int.add` into `int.sub` — a self-test that the check catches a wrong
@@ -593,7 +599,7 @@ struct Passes {
 }
 
 /// The IR passes in pipeline order.
-pub const PASSES: [&str; 6] = ["regions", "tail-calls", "fold", "hoist", "jumps", "undef"];
+pub const PASSES: [&str; 6] = ["regions", "tail-calls", "fold", "hoist", "undef", "jumps"];
 
 static SELECTED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 

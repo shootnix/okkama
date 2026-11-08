@@ -154,10 +154,11 @@ fn statement_if_chains_and_early_returns_leave_no_dead_blocks() {
 
 #[test]
 fn loops_carry_last_values_and_ranges_check_their_bounds() {
-    // Единственный выход цикла не требует блока слияния.
+    // Единственный выход цикла не требует блока слияния, а тело без
+    // обратного перехода сливается со входом (#292).
     assert_eq!(
         main_listing("let n = loop { last 7; }; n;"),
-        "func @main() -> int [entry] {\n^b0:\n    br ^b1\n^b1:\n    %0: int = const 7\n    ret %0\n}\n"
+        "func @main() -> int [entry] {\n^b0:\n    %0: int = const 7\n    ret %0\n}\n"
     );
 
     let range = main_listing("for 1..=3 -> i { next if i == 2; } 0;");

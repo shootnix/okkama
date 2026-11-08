@@ -584,6 +584,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR: closures paid region tracking in any program with a `destroy` (#292).
+  Lowering judges plainness per type and treats every function value as
+  possibly owning a resource, since a closure's captures are not in its
+  type. So in a program that merely reads an environment variable
+  (`os/environment` imports `fs/directory`), every `fn.closure` was
+  tracked, every function parameter adopted, and every call of a composed
+  closure entered and left a region. `benchmarks/09-closures` with that
+  import ran 2× slower on the IR engine, 1.5× on the Sparrow core and 6× on
+  the JVM. The `regions` pass now recomputes plainness over the finished
+  module: an object is plain without a `destroy` and with plain fields, a
+  role when only plain objects do it, a function value when no closure
+  captures a non-plain value. It drops `adopt`/`track`/`transfer`/`keep` of
+  plain values before removing empty regions. The `jumps` pass now runs
+  after `undef`, and it also merges a block into its single predecessor, so
+  the scope blocks of removed regions no longer cost a jump each. The pass
+  order is `regions, tail-calls, fold, hoist, undef, jumps`. 09-closures
+  with `os/environment` now runs as fast as without it on every engine.
+  Tests in `lowering_ownership.rs`, including a closure that captures a
+  resource and stays tracked; LLM guide and phases.md updated
+  ([#292](https://github.com/shootnix/okkama/issues/292)).
+
 - IR: a self tail call stayed a call in any program with a `destroy`
   anywhere, even in an imported std module (#285). Lowering then opens a
   region in every scope, and the `tail-calls` pass, which ran first, saw the
