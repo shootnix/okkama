@@ -272,7 +272,14 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn host(runtime: &mut Runtime, native: Native, arguments: &[Word]) -> Result<(Word, Repr), Refusal> {
-    match crate::host::call(runtime, native, arguments) {
+    // A long host operation (PBKDF2) stops for the interrupt flag (#238), and
+    // the run then ends interrupted whatever the operation answered.
+    let flag = runtime.limits.interrupt.clone();
+    let outcome = okkama_native::interruptible(flag, || crate::host::call(runtime, native, arguments));
+    if runtime.limits.interrupted() {
+        return Err(Refusal::Exhausted(crate::budget::Exhausted::Interrupted));
+    }
+    match outcome {
         crate::host::Result2::Value(word, repr) => Ok((word, repr)),
         crate::host::Result2::Raise(failure) => Err(Refusal::Raise(failure)),
         crate::host::Result2::Refused(message) => Err(Refusal::Failure(FailureKind::Program(message))),

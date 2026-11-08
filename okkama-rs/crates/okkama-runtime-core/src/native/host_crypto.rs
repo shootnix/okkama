@@ -67,9 +67,13 @@ pub fn execute(native: Native, args: &[Value], arrays: &mut ArrayHeap) -> Result
                 .map(|part| bytes(part, arrays))
                 .collect::<Result<_, _>>()?;
             let slices: Vec<&[u8]> = parts.iter().map(Vec::as_slice).collect();
-            let result = okkama_native::call(&operation, &slices)
-                .map_err(|error| failure(native, &error))?;
-            Ok(byte_array(result, arrays))
+            // A long operation (PBKDF2) stops for the run's interrupt flag
+            // (#238); the interpreter then reports the interruption.
+            let result = okkama_native::interruptible(crate::budget::interrupt_flag(), || {
+                okkama_native::call(&operation, &slices)
+            });
+            crate::budget::check_now().map_err(Error::Exhausted)?;
+            Ok(byte_array(result.map_err(|error| failure(native, &error))?, arrays))
         }
         Native::DigestCreate => {
             let algorithm = args[0].as_string()?.to_string();

@@ -105,6 +105,31 @@ fn macs_and_key_derivation_match_rfc_vectors() {
     ));
 }
 
+/// RFC 7914 §11: two output blocks, and 80 000 chained rounds.
+#[test]
+fn pbkdf2_chains_rounds_and_blocks() {
+    assert_eq!(
+        call("pbkdf2-sha256", &[b"passwd", b"salt", b"1", b"64"]).unwrap(),
+        hex("55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783")
+    );
+    assert_eq!(
+        call("pbkdf2-sha256", &[b"Password", b"NaCl", b"80000", b"64"]).unwrap(),
+        hex("4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56a1d425a1225833549adb841b51c9b3176a272bdebba1d078478f62b397f33c8d")
+    );
+}
+
+/// A raised interrupt flag stops a long PBKDF2 between rounds (#238).
+#[test]
+fn pbkdf2_stops_for_the_interrupt_flag() {
+    let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let started = std::time::Instant::now();
+    let derived = okkama_native::interruptible(Some(flag), || call("pbkdf2-sha512", &[b"p", b"s", b"4294967295", b"64"]));
+    assert!(matches!(derived, Err(Error::Failed(_))), "{derived:?}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    // Outside `interruptible` nothing is watched.
+    assert!(call("pbkdf2-sha256", &[b"p", b"s", b"4096", b"32"]).is_ok());
+}
+
 #[test]
 fn argon2id_hashes_verify_and_reject_wrong_passwords() {
     let phc = call(
