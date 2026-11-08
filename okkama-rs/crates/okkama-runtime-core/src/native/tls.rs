@@ -208,9 +208,23 @@ impl Engine {
         plain.extend(rest);
     }
 
-    /// Следующий открытый текст; пусто — `close_notify` пира.
-    fn receive(&self, limit: usize) -> Result<Vec<u8>, Result<std::io::Error, Truncated>> {
+    /// Принять следующий открытый текст в буфер `plain`; `false` —
+    /// `close_notify` пира. Принятое кладётся в буфер под замком читателя:
+    /// чтение, брошенное отменой, ничего не теряет, даже если следующее
+    /// возьмёт замок раньше, чем главный поток узнает, что первое брошено.
+    fn receive_into_plain(&self, limit: usize) -> Result<bool, Result<std::io::Error, Truncated>> {
         let _gate = self.reader.lock().expect("TLS reader lock");
+        let bytes = self.receive(limit)?;
+        if bytes.is_empty() {
+            return Ok(false);
+        }
+        self.return_plain(bytes);
+        Ok(true)
+    }
+
+    /// Следующий открытый текст; пусто — `close_notify` пира. Вызывается под
+    /// замком читателя.
+    fn receive(&self, limit: usize) -> Result<Vec<u8>, Result<std::io::Error, Truncated>> {
         if let Some(ready) = self.take_plain(limit) {
             return Ok(ready);
         }
@@ -562,17 +576,16 @@ fn read(value: &Value, limit: &crate::IntValue) -> Result<Value, Error> {
     let delivered = state.clone();
     let worker = engine.clone();
     let op = sched::offload(
-        move || worker.receive(limit),
+        move || worker.receive_into_plain(limit),
         move |outcome| {
+            // Брошенное чтение: принятое уже в буфере, его получит следующее.
             if target.state() != sched::State::Running {
-                if let Ok(bytes) = outcome {
-                    engine.return_plain(bytes);
-                }
                 return;
             }
             let closed = delivered.borrow().closed;
             let result = match outcome {
-                Ok(bytes) => Ok(byte_array(bytes)),
+                Ok(true) => Ok(byte_array(engine.take_plain(limit).unwrap_or_default())),
+                Ok(false) => Ok(byte_array(Vec::new())),
                 Err(Err(Truncated)) => Err(fail("invalid_data", &operation, "TLS peer truncated input")),
                 Err(Ok(_)) => Err(io_failure(closed, &operation, "TLS I/O readiness closed")),
             };

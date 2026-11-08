@@ -524,16 +524,22 @@ public final class TlsNatives {
         }
         final Future promise = Future.promise();
         state.reading = promise;
+        // Принятое кладётся в буфер открытого текста ещё в исполнителе чтения:
+        // чтение, брошенное отменой, ничего не теряет, даже если следующее
+        // начнётся раньше, чем планировщик узнает, что первое брошено.
         final Scheduler.Op op = Scheduler.offload(state.reader, new Callable<Object>() {
             public Object call() throws IOException {
-                return receive(state, limit);
+                byte[] bytes = receive(state, limit);
+                if (bytes.length == 0) {
+                    return Boolean.FALSE;
+                }
+                returnPlain(state, bytes);
+                return Boolean.TRUE;
             }
         }, new Scheduler.Outcome() {
             public void deliver(Object value, Throwable error) {
+                // Брошенное чтение: принятое уже в буфере, его получит следующее.
                 if (promise.state != Future.RUNNING) {
-                    if (value != null) {
-                        returnPlain(state, (byte[]) value);
-                    }
                     return;
                 }
                 if (error instanceof Truncated) {
@@ -542,7 +548,10 @@ public final class TlsNatives {
                     Scheduler.settle(promise, null, state.closed ? failure("already_closed", operation,
                         "TLS I/O readiness closed") : failure("invalid_data", operation, "TLS I/O failed"));
                 } else {
-                    byte[] bytes = (byte[]) value;
+                    byte[] bytes = Boolean.TRUE.equals(value) ? takePlain(state, limit) : null;
+                    if (bytes == null) {
+                        bytes = new byte[0];
+                    }
                     Scheduler.settle(promise, Natives.fromBytes(bytes, bytes.length), null);
                 }
             }
