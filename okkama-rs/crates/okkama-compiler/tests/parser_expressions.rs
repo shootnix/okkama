@@ -258,8 +258,8 @@ fn functional_suffixes() {
         "(map (group (..= 1 5)) -> [number] {(* number number)})"
     );
     assert_eq!(
-        expr_sexpr("mapping.filter() -> key, value { value.more(0); }"),
-        "(filter mapping -> [key value] {(call (. value more) 0)})"
+        expr_sexpr("mapping.filter() -> key, value { value.greater(0); }"),
+        "(filter mapping -> [key value] {(call (. value greater) 0)})"
     );
     // Chains nest through the receiver.
     assert_eq!(

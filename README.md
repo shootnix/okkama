@@ -368,7 +368,7 @@ See the role example and
 
 ```okkama
 let total = [0, 2..=4, 9]                     // ranges expand in literals
-    .filter() -> value { value.more(1); }
+    .filter() -> value { value.greater(1); }
     .map()    -> value { value * 2; }
     .reduce(0) -> sum, value { sum + value; };
 ```

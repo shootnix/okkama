@@ -873,7 +873,7 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         }
     };
     let compare = |out: &mut Vec<Completion>| {
-        for name in ["less", "less_or_equal", "more", "more_or_equal"] {
+        for name in ["less", "less_or_equal", "greater", "greater_or_equal"] {
             out.push(method(name, &["other is Self"], "bool", ""));
         }
         out.push(method(

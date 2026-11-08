@@ -480,6 +480,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   unchanged and are thrown by the call. Std modules and OCS cases that used
   the objects are rewritten ([#215](https://github.com/shootnix/okkama/issues/215)).
 
+- Language: the builtin comparisons `more` and `more_or_equal` are renamed
+  `greater` and `greater_or_equal` (#284), the pair to `less` that `Order`
+  already uses (`less, equal, greater`): `3.greater(1)`,
+  `2.greater_or_equal(2)`. The old names are gone, with no alias. LSP
+  completion, OCS `VAL.NUMERIC-METHODS`, Book §10 (EN/RU), spec, LLM context
+  and OASM follow ([#284](https://github.com/shootnix/okkama/issues/284)).
+
 - Async: await is structured (#147). Cancelling a task cancels the future it
   awaits — a lazy future its `await` started, a spawned task, a runtime
   request — unless another task also awaits it, and the task resumes with
