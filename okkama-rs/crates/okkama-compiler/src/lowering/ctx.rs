@@ -87,13 +87,12 @@ pub(super) enum Task {
     AdapterNew {
         object: ObjectId,
     },
-    VariantGet {
-        object: ObjectId,
-        field: usize,
-    },
-    /// Текст значения варианта `Enum.case(payload, ...)`; у error enum — слот
-    /// `text()` роли Error.
+    /// Текст значения варианта `Enum.case(payload, ...)` (#290).
     VariantText {
+        variant: ir::VariantId,
+    },
+    /// Слот `text()` роли Error у случая error enum: текст его варианта.
+    CaseText {
         object: ObjectId,
     },
     /// Текст `bool` или case enum без payload внутри текста варианта.
@@ -192,7 +191,11 @@ pub(super) struct Ctx<'r, 'a> {
     body_index: HashMap<BodyOwner, usize>,
     pub objects: Vec<Instance>,
     object_map: HashMap<(DeclObject, Vec<Ty>), ObjectId>,
-    variant_map: HashMap<Ty, ObjectId>,
+    variant_map: HashMap<Ty, ir::VariantId>,
+    /// Варианты по `ir::VariantId`: случаи — объекты из `objects` (#290).
+    pub variants: Vec<ir::Variant>,
+    /// Модуль объявления каждого варианта.
+    variant_modules: Vec<usize>,
     pub roles: Vec<RoleInstance>,
     role_map: HashMap<(DeclRole, Vec<Ty>), RoleId>,
     /// Функции в порядке выделения: задача и символ.
@@ -259,6 +262,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
             objects: Vec::new(),
             object_map: HashMap::new(),
             variant_map: HashMap::new(),
+            variants: Vec::new(),
+            variant_modules: Vec::new(),
             roles: Vec::new(),
             role_map: HashMap::new(),
             tasks: Vec::new(),
@@ -500,12 +505,12 @@ impl<'r, 'a> Ctx<'r, 'a> {
             | Task::Default { object, .. }
             | Task::Destroy { object }
             | Task::AdapterNew { object }
-            | Task::VariantGet { object, .. }
-            | Task::VariantText { object }
+            | Task::CaseText { object }
             | Task::Witness { object, .. }
             | Task::WorkerEntry { object, .. }
             | Task::WorkerBind { object, .. }
             | Task::CapField { object, .. } => self.objects[object.0].module,
+            Task::VariantText { variant } => self.variant_modules[variant.0],
             Task::Closure { index } => self.closures[*index].body.module,
             Task::Test { index } => self.reg.tests[*index].module,
             Task::Runtime { .. } | Task::Member { .. } | Task::Describe { .. } => self.reg.root(),
@@ -795,41 +800,23 @@ impl<'r, 'a> Ctx<'r, 'a> {
         )
     }
 
-    pub fn variant_field_case(&self, object: ObjectId, field: usize) -> Option<usize> {
-        if field == 0 {
-            return None;
-        }
-        let (Ty::Variant(id, _), _) = self
-            .variant_map
-            .iter()
-            .find(|(_, value)| **value == object)?
-        else {
-            return None;
-        };
-        let mut offset = 1;
-        for (case, fields) in self.reg.enums[id.0].payloads.iter().enumerate() {
-            if field < offset + fields.len() {
-                return Some(case);
-            }
-            offset += fields.len();
-        }
-        None
-    }
-
-    pub fn variant_getter(&mut self, object: ObjectId, field: usize) -> FuncId {
-        let task = Task::VariantGet { object, field };
+    /// Функция текста значения варианта: `(variant) -> str`.
+    pub fn variant_text(&mut self, variant: ir::VariantId) -> FuncId {
+        let task = Task::VariantText { variant };
         if let Some(func) = self.task_map.get(&task) {
             return *func;
         }
-        self.allocate(task, self.symbol(object, &format!(".$field{field}")))
+        let symbol = format!("{}.$text", self.variants[variant.0].name);
+        self.allocate(task, symbol)
     }
 
-    pub fn variant_text(&mut self, object: ObjectId) -> FuncId {
-        let task = Task::VariantText { object };
+    /// Слот `text()` роли Error у объекта случая error enum.
+    fn case_text(&mut self, object: ObjectId, symbol: String) -> FuncId {
+        let task = Task::CaseText { object };
         if let Some(func) = self.task_map.get(&task) {
             return *func;
         }
-        self.allocate(task, self.symbol(object, ".text"))
+        self.allocate(task, symbol)
     }
 
     /// Функция текста `bool` (`true`/`false`) или case enum без payload.
@@ -845,15 +832,26 @@ impl<'r, 'a> Ctx<'r, 'a> {
         self.allocate(task, symbol)
     }
 
-    /// Тип анализа объекта варианта.
-    pub fn variant_ty(&self, object: ObjectId) -> Option<Ty> {
+    /// Тип анализа варианта.
+    pub fn variant_ty(&self, variant: ir::VariantId) -> Option<Ty> {
         self.variant_map
             .iter()
-            .find(|(_, value)| **value == object)
+            .find(|(_, value)| **value == variant)
             .map(|(ty, _)| ty.clone())
     }
 
-    fn variant_instance(&mut self, ty: &Ty, span: Span) -> Result<ObjectId> {
+    /// Вариант и номер случая объекта `object`, если это раскладка случая.
+    pub fn case_of(&self, object: ObjectId) -> Option<(ir::VariantId, usize)> {
+        self.variants.iter().enumerate().find_map(|(id, variant)| {
+            let case = variant.cases.iter().position(|(_, case)| *case == object)?;
+            Some((ir::VariantId(id), case))
+        })
+    }
+
+    /// Вариант (#290): по объекту раскладки на каждый случай, поля объекта —
+    /// payload этого случая. Значение создаёт `variant.new`, поэтому у
+    /// объектов случаев нет конструкторов.
+    fn variant_instance(&mut self, ty: &Ty, span: Span) -> Result<ir::VariantId> {
         if let Some(id) = self.variant_map.get(ty) {
             return Ok(*id);
         }
@@ -864,43 +862,52 @@ impl<'r, 'a> Ctx<'r, 'a> {
         let decl = &reg.enums[decl_id.0];
         let env: Vec<_> = decl.params.iter().copied().zip(args.clone()).collect();
         let module = decl.module;
-        let payloads = decl.payloads.clone();
         let error = decl.error;
-        let id = ObjectId(self.objects.len());
+        let id = ir::VariantId(self.variants.len());
         self.variant_map.insert(ty.clone(), id);
-        self.objects.push(Instance {
-            decl: DeclObject(usize::MAX),
-            env: env.clone(),
-            // Error enum не generic: одно объявление — одна специализация, и имя
-            // объекта — имя типа ошибки в сообщениях о неперехваченном отказе.
-            name: if error {
-                decl.name.clone()
-            } else {
-                format!("$variant_{}_{}", decl.name, id.0)
-            },
-            module,
-            fields: Vec::new(),
-            methods: Vec::new(),
-            pending: None,
-            destroy: None,
-            does: Vec::new(),
+        // Error enum не generic: одно объявление — одна специализация, и имя
+        // объекта случая — имя типа ошибки в сообщениях о неперехваченном отказе.
+        let name = if error {
+            decl.name.clone()
+        } else {
+            format!("$variant_{}_{}", decl.name, id.0)
+        };
+        self.variants.push(ir::Variant {
+            name: format!("{}{name}", self.prefixes[module]),
+            cases: Vec::new(),
             span,
         });
-        let mut fields = vec![("$tag".into(), Type::Int, None)];
-        for (case, payload) in payloads.iter().enumerate() {
-            for (name, ty) in payload {
-                fields.push((
-                    format!("${case}_{name}"),
-                    Type::Array(Box::new(self.ir_type(&ty.subst(&env), span)?)),
-                    None,
-                ));
-            }
+        self.variant_modules.push(module);
+        let mut cases = Vec::new();
+        for case in &decl.cases {
+            let object = ObjectId(self.objects.len());
+            self.objects.push(Instance {
+                decl: DeclObject(usize::MAX),
+                env: env.clone(),
+                name: if error { name.clone() } else { format!("{name}.{case}") },
+                module,
+                fields: Vec::new(),
+                methods: Vec::new(),
+                pending: None,
+                destroy: None,
+                does: Vec::new(),
+                span,
+            });
+            cases.push((case.clone(), object));
         }
-        self.objects[id.0].fields = fields;
-        if error {
-            let text = self.variant_text(id);
-            let role = self.role_instance(self.reg.system.error, Vec::new(), span)?;
-            self.objects[id.0].does = vec![(role, vec![text])];
+        self.variants[id.0].cases = cases.clone();
+        for ((case, object), payload) in cases.iter().zip(&decl.payloads) {
+            let mut fields = Vec::new();
+            for (field, field_ty) in payload {
+                fields.push((field.clone(), self.ir_type(&field_ty.subst(&env), span)?, None));
+            }
+            self.objects[object.0].fields = fields;
+            if error {
+                let symbol = format!("{}{name}.{case}.text", self.prefixes[module]);
+                let text = self.case_text(*object, symbol);
+                let role = self.role_instance(self.reg.system.error, Vec::new(), span)?;
+                self.objects[object.0].does = vec![(role, vec![text])];
+            }
         }
         // A payload may own resources. Publish its plainness before callers emit
         // region keep/track operations for the returned variant value.
@@ -930,7 +937,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             Ty::Object(id, args) => Type::Object(self.object_instance(*id, args.clone(), span)?),
             Ty::Role(id, args) => Type::Role(self.role_instance(*id, args.clone(), span)?),
             Ty::Enum(id) => Type::Enum(self.enum_id(*id)),
-            Ty::Variant(..) => Type::Object(self.variant_instance(ty, span)?),
+            Ty::Variant(..) => Type::Variant(self.variant_instance(ty, span)?),
             Ty::Successor(inner) => match self.ir_type(inner, span)? {
                 Type::Object(object) => Type::Successor(object),
                 // `^R` роли: обязательство проверил анализ; в OIR — ссылка роли.
@@ -1356,6 +1363,12 @@ impl<'r, 'a> Ctx<'r, 'a> {
                             })
                     })
             }
+            Type::Variant(id) => self.variants.get(id.0).is_none_or(|variant| {
+                variant
+                    .cases
+                    .iter()
+                    .all(|(_, object)| self.plain_objects.get(object.0).copied().unwrap_or(true))
+            }),
             Type::Array(element) | Type::Builder(element) => self.is_plain(element),
             Type::Map(_, value) | Type::MapBuilder(_, value) => self.is_plain(value),
             // В box и в захватах может лежать объект: владение отслеживается.
@@ -1466,6 +1479,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             enums,
             roles,
             objects,
+            variants: self.variants.clone(),
             handles,
             caps,
             globals: self.globals.clone(),

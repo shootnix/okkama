@@ -411,7 +411,7 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                     }
                 }
             }
-            Some(Type::Object(_) | Type::Successor(_) | Type::Role(_)) => {
+            Some(Type::Object(_) | Type::Successor(_) | Type::Role(_) | Type::Variant(_)) => {
                 let (ha, hb) = (runtime.heap.header_of(a), runtime.heap.header_of(b));
                 if heap::kind(ha) != heap::OBJECT || heap::kind(hb) != heap::OBJECT {
                     if a != b {

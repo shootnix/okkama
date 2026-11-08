@@ -664,6 +664,36 @@ pub(crate) fn execute_function(
                     InstKind::ObjGet { object, field } => {
                         state.object_get(read(slots, *object, inst.span)?, *field, inst.span)?
                     }
+                    // Вариант (#290): значение — объект своего случая.
+                    InstKind::VariantNew { case, fields } => {
+                        let Some(ir::Type::Variant(id)) = inst.result.map(|value| &function.values[value.0]) else {
+                            return Err(invalid_state(inst.span, "variant.new result type is missing"));
+                        };
+                        let object = module.variants[id.0].cases[*case].1;
+                        state.object_new(
+                            object,
+                            &module.objects[object.0],
+                            fields
+                                .iter()
+                                .map(|id| read(slots, *id, inst.span).cloned())
+                                .collect::<Result<Vec<_>, _>>()?,
+                            inst.span,
+                        )?
+                    }
+                    InstKind::VariantTag(value) => {
+                        let tag = variant_case(state, module, function, slots, *value, inst.span)?;
+                        Value::Int(IntValue::from_i64(tag as i64))
+                    }
+                    InstKind::VariantGet { value, case, field } => {
+                        if variant_case(state, module, function, slots, *value, inst.span)? != *case {
+                            return Err(RuntimeError::Trap {
+                                span: inst.span,
+                                message: "Variant payload of an inactive case".into(),
+                            });
+                        }
+                        state.object_get(read(slots, *value, inst.span)?, *field, inst.span)?
+                    }
+                    InstKind::VariantOf(value) => read(slots, *value, inst.span)?.clone(),
                     // Несвязанное `$pending` — создание не завершено (#271).
                     InstKind::ObjPending { object, field } => Value::Bool(!matches!(
                         state.object_get(read(slots, *object, inst.span)?, *field, inst.span)?,
@@ -1063,6 +1093,7 @@ pub(crate) fn execute_function(
                     let matches = match ty {
                         ir::CatchType::Object(id) => module.objects[id.0].is_native_failure(),
                         ir::CatchType::Role(id) => module.roles[id.0].is_error(),
+                        ir::CatchType::Variant(_) => false,
                     };
                     if matches {
                         payload = Some(Value::NativeFailure(failure.clone()));
@@ -1075,6 +1106,10 @@ pub(crate) fn execute_function(
                     let matches = match ty {
                         ir::CatchType::Object(id) => {
                             state.object_declaration(module, &value, span)? == id.0
+                        }
+                        ir::CatchType::Variant(id) => {
+                            let declaration = state.object_declaration(module, &value, span)?;
+                            module.variants[id.0].cases.iter().any(|(_, case)| case.0 == declaration)
                         }
                         ir::CatchType::Role(id) => {
                             state.role_witness(module, &value, *id, span)?.is_some()
@@ -1494,4 +1529,29 @@ pub(crate) fn describe_failure(
         .collect::<Result<_, _>>()?);
     // Causes are retained as records; diagnostics currently print primary and cleanup failures.
     Ok(Rc::new(described))
+}
+
+/// Номер активного случая значения варианта `value`: позиция объекта его
+/// раскладки среди случаев (обычно они идут подряд).
+fn variant_case(
+    state: &State,
+    module: &ir::Module,
+    function: &ir::Function,
+    slots: &[Option<Value>],
+    value: ir::ValueId,
+    span: Span,
+) -> Result<usize, RuntimeError> {
+    let ir::Type::Variant(id) = &function.values[value.0] else {
+        return Err(invalid_state(span, "variant operand has no variant type"));
+    };
+    let cases = &module.variants[id.0].cases;
+    let declaration = state.object_declaration(module, read(slots, value, span)?, span)?;
+    let first = cases[0].1.0;
+    match declaration.checked_sub(first).filter(|case| cases.get(*case).is_some_and(|(_, o)| o.0 == declaration)) {
+        Some(case) => Ok(case),
+        None => cases
+            .iter()
+            .position(|(_, object)| object.0 == declaration)
+            .ok_or_else(|| invalid_state(span, "variant value is not one of its cases")),
+    }
 }

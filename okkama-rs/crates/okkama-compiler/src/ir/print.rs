@@ -93,6 +93,7 @@ fn write_term(f: &mut Formatter<'_>, module: Option<&Module>, kind: &TermKind) -
                 match ty {
                     CatchType::Object(object) => write_object(f, module, object.0)?,
                     CatchType::Role(role) => write_role(f, module, role.0)?,
+                    CatchType::Variant(id) => write_variant(f, module, id.0)?,
                 }
                 write!(f, ", {handler}, {next}")
             }
@@ -152,6 +153,18 @@ impl Display for Module {
         for decl in &self.handles {
             writeln!(f)?;
             writeln!(f, "native object {}", decl.name)?;
+        }
+        for variant in &self.variants {
+            writeln!(f)?;
+            write!(f, "variant {} = (", variant.name)?;
+            for (index, (name, object)) in variant.cases.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{name}: ")?;
+                write_object(f, Some(self), object.0)?;
+            }
+            writeln!(f, ")")?;
         }
         for (index, global) in self.globals.iter().enumerate() {
             writeln!(f)?;
@@ -249,6 +262,7 @@ fn write_type(f: &mut Formatter<'_>, module: Option<&Module>, ty: &Type) -> fmt:
             write_object(f, module, object.0)
         }
         Type::Role(role) => write_role(f, module, role.0),
+        Type::Variant(id) => write_variant(f, module, id.0),
         Type::Enum(id) => match module.and_then(|module| module.enum_decl(*id)) {
             Some(decl) => f.write_str(&decl.name),
             None => write!(f, "enum#{}", id.0),
@@ -319,6 +333,16 @@ fn write_role(f: &mut Formatter<'_>, module: Option<&Module>, index: usize) -> f
             None => f.write_str("<invalid>"),
         },
         None => write!(f, "role#{index}"),
+    }
+}
+
+fn write_variant(f: &mut Formatter<'_>, module: Option<&Module>, index: usize) -> fmt::Result {
+    match module {
+        Some(module) => match module.variants.get(index) {
+            Some(variant) => f.write_str(&variant.name),
+            None => f.write_str("<invalid>"),
+        },
+        None => write!(f, "variant#{index}"),
     }
 }
 
@@ -484,6 +508,19 @@ fn write_inst(
         InstKind::SuccTake(operand) => write!(f, "succ.take {operand}"),
         InstKind::Cvt(operand) => write!(f, "cvt {operand}"),
         InstKind::RoleWrap(operand) => write!(f, "role.wrap {operand}"),
+        InstKind::VariantNew { case, fields } => {
+            write!(f, "variant.new {case} (")?;
+            for (index, value) in fields.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{value}")?;
+            }
+            f.write_char(')')
+        }
+        InstKind::VariantTag(value) => write!(f, "variant.tag {value}"),
+        InstKind::VariantGet { value, case, field } => write!(f, "variant.get {value}, {case}.{field}"),
+        InstKind::VariantOf(value) => write!(f, "variant.of {value}"),
         InstKind::AnyBox(operand) => write!(f, "any.box {operand}"),
         InstKind::RoleNarrow { value, message } => {
             write!(f, "role.narrow {value}, ")?;

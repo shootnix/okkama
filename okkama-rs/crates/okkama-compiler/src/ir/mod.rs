@@ -45,6 +45,8 @@ pub enum Type {
     Role(RoleId),
     /// Значение enum модуля.
     Enum(EnumId),
+    /// Значение варианта (#290): ровно один из его случаев.
+    Variant(VariantId),
     /// Служебный: активный отказ (§6).
     Failure,
     /// Неизменяемый массив (§12.1).
@@ -223,6 +225,8 @@ pub struct Module {
     pub enums: Vec<Enum>,
     pub roles: Vec<Role>,
     pub objects: Vec<Object>,
+    /// Варианты — enum с payload (#290).
+    pub variants: Vec<Variant>,
     /// Native objects (`native object H`, §14.1).
     pub handles: Vec<Handle>,
     /// Caps объектов (§8.5).
@@ -374,6 +378,18 @@ impl Module {
     }
 
     /// Делает ли объект роль (по объявлению `does`).
+    pub fn variant(&self, id: VariantId) -> Option<&Variant> {
+        self.variants.get(id.0)
+    }
+
+    /// Вариант и номер случая, раскладка которого — `object`.
+    pub fn variant_case(&self, object: ObjectId) -> Option<(VariantId, usize)> {
+        self.variants.iter().enumerate().find_map(|(id, variant)| {
+            let case = variant.cases.iter().position(|(_, case)| *case == object)?;
+            Some((VariantId(id), case))
+        })
+    }
+
     pub fn does(&self, object: ObjectId, role: RoleId) -> bool {
         self.object(object)
             .is_some_and(|object| object.does.iter().any(|witness| witness.role == role))
@@ -389,6 +405,12 @@ impl Module {
                     .any(|witness| self.role(witness.role).is_some_and(Role::is_error))
             }),
             Type::Role(role) => self.role(*role).is_some_and(Role::is_error),
+            Type::Variant(id) => self.variant(*id).is_some_and(|variant| {
+                variant
+                    .cases
+                    .iter()
+                    .all(|(_, case)| self.throwable(&Type::Object(*case)))
+            }),
             _ => false,
         }
     }
@@ -409,6 +431,22 @@ pub struct EnumId(pub usize);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct HandleId(pub usize);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct VariantId(pub usize);
+
+/// Вариант — enum с payload (#290): значение — ровно один из случаев. У
+/// каждого случая своя раскладка — объект модуля, поля которого — payload
+/// этого случая, и только они: ни тега, ни полей других случаев. Создание,
+/// номер случая и чтение payload — инструкции `variant.new`, `variant.tag`,
+/// `variant.get`; как хранить значение, решает бэкенд.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Variant {
+    pub name: String,
+    /// Случаи в порядке объявления: имя и объект раскладки.
+    pub cases: Vec<(String, ObjectId)>,
+    pub span: Span,
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CapId(pub usize);
@@ -1003,6 +1041,23 @@ pub enum InstKind {
     /// Произвольное значение типа результата: заглушка поля на пути, где оно
     /// не связано; читать его можно только под проверкой признака связывания.
     Undef,
+    /// Значение варианта (тип — из результата, #290): случай `case`, поля —
+    /// по порядку полей его объекта.
+    VariantNew {
+        case: usize,
+        fields: Vec<ValueId>,
+    },
+    /// Номер активного случая варианта (`int`).
+    VariantTag(ValueId),
+    /// Поле `field` случая `case`. Другой активный случай — ошибка программы:
+    /// поле не читается.
+    VariantGet {
+        value: ValueId,
+        case: usize,
+        field: usize,
+    },
+    /// Объект случая → значение его варианта (тип — из результата).
+    VariantOf(ValueId),
     /// Ссылка роли → ссылка другой роли (тип — из результата); если исходное
     /// значение её не делает — программная ошибка с текстом `message` (§9).
     RoleNarrow {
@@ -1349,12 +1404,16 @@ impl InstKind {
             | InstKind::RoleWrap(operand)
             | InstKind::AnyBox(operand)
             | InstKind::RoleNarrow { value: operand, .. }
+            | InstKind::VariantTag(operand)
+            | InstKind::VariantOf(operand)
+            | InstKind::VariantGet { value: operand, .. }
             | InstKind::ObjGet {
                 object: operand, ..
             }
             | InstKind::ObjPending {
                 object: operand, ..
             } => vec![*operand],
+            InstKind::VariantNew { fields, .. } => fields.clone(),
             InstKind::CallRole { receiver, args, .. } => std::iter::once(*receiver)
                 .chain(args.iter().copied())
                 .collect(),
@@ -1469,12 +1528,16 @@ impl InstKind {
             | InstKind::RoleWrap(operand)
             | InstKind::AnyBox(operand)
             | InstKind::RoleNarrow { value: operand, .. }
+            | InstKind::VariantTag(operand)
+            | InstKind::VariantOf(operand)
+            | InstKind::VariantGet { value: operand, .. }
             | InstKind::ObjGet {
                 object: operand, ..
             }
             | InstKind::ObjPending {
                 object: operand, ..
             } => vec![operand],
+            InstKind::VariantNew { fields, .. } => fields.iter_mut().collect(),
             InstKind::CallRole { receiver, args, .. } => {
                 std::iter::once(receiver).chain(args.iter_mut()).collect()
             }
@@ -1659,6 +1722,8 @@ pub enum TermKind {
 pub enum CatchType {
     Object(ObjectId),
     Role(RoleId),
+    /// Значение error enum с payload: любой его случай (#290).
+    Variant(VariantId),
 }
 
 impl CatchType {
@@ -1666,6 +1731,7 @@ impl CatchType {
         match self {
             CatchType::Object(object) => Type::Object(object),
             CatchType::Role(role) => Type::Role(role),
+            CatchType::Variant(id) => Type::Variant(id),
         }
     }
 }

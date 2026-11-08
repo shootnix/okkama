@@ -60,6 +60,7 @@ impl<'a> Typing<'a> {
             ),
             Type::Future(result) => format!("future<{}>", result.as_ref().map(r).unwrap_or_else(|| "void".into())),
             Type::Cap(c) => self.program.caps.get(c.0 as usize).map_or("cap".into(), |d| d.name.clone()),
+            Type::Variant(v) => self.program.variants.get(v.0 as usize).map_or("variant".into(), |d| d.name.clone()),
         }
     }
 
@@ -125,6 +126,23 @@ impl<'a> Typing<'a> {
         }
     }
 
+    fn variant(&self, register: Register) -> Result<crate::VariantRef, String> {
+        match self.ty(register) {
+            Type::Variant(v) => Ok(*v),
+            other => Err(format!("r{} has type {}, expected a variant", register.0, self.name(other))),
+        }
+    }
+
+    /// Объект раскладки случая `case` варианта.
+    fn case_object(&self, variant: crate::VariantRef, case: u32) -> Result<crate::ObjectRef, String> {
+        self.program
+            .variants
+            .get(variant.0 as usize)
+            .and_then(|declared| declared.cases.get(case as usize))
+            .map(|(_, object)| *object)
+            .ok_or_else(|| format!("variant variant{} has no case {case}", variant.0))
+    }
+
     fn object(&self, register: Register) -> Result<crate::ObjectRef, String> {
         match self.ty(register) {
             Type::Object(o) => Ok(*o),
@@ -169,6 +187,9 @@ impl<'a> Typing<'a> {
                 .get(o.0 as usize)
                 .is_some_and(|d| d.does.iter().any(|w| error_role(&w.role))),
             Type::Role(r) => error_role(r),
+            Type::Variant(v) => self.program.variants.get(v.0 as usize).is_some_and(|declared| {
+                declared.cases.iter().all(|(_, o)| self.throwable(&Type::Object(*o)))
+            }),
             _ => false,
         }
     }
@@ -550,12 +571,46 @@ impl<'a> Typing<'a> {
                 self.define(dst.0, &Type::Object(owner), "obj.next")
             }
             I::RoleWrap { dst, source, role } => {
-                let object = self.object(*source)?;
-                let does = self.program.objects[object.0 as usize].does.iter().any(|w| w.role == *role);
-                if !does {
-                    return Err(format!("object obj{} does not do role role{}", object.0, role.0));
+                // Вариант делает роль, если её делает объект каждого случая.
+                let objects: Vec<crate::ObjectRef> = match self.ty(*source) {
+                    Type::Variant(v) => self.program.variants[v.0 as usize].cases.iter().map(|(_, o)| *o).collect(),
+                    _ => vec![self.object(*source)?],
+                };
+                for object in objects {
+                    let does = self.program.objects[object.0 as usize].does.iter().any(|w| w.role == *role);
+                    if !does {
+                        return Err(format!("object obj{} does not do role role{}", object.0, role.0));
+                    }
                 }
                 self.define(dst.0, &Type::Role(*role), "role.wrap")
+            }
+            I::VariantNew { dst, variant, case, fields } => {
+                let object = self.case_object(*variant, *case)?;
+                let declared = &self.program.objects[object.0 as usize];
+                if declared.fields.len() != fields.len() {
+                    return Err(format!("variant.new case {case} lists {} fields, the case has {}", fields.len(), declared.fields.len()));
+                }
+                for (value, (_, ty)) in fields.iter().zip(&declared.fields) {
+                    self.expect_ref(*value, *ty)?;
+                }
+                self.define(dst.0, &Type::Variant(*variant), "variant.new")
+            }
+            I::VariantTag { dst, value } => {
+                self.variant(*value)?;
+                self.define(dst.0, &Type::Int, "variant.tag")
+            }
+            I::VariantGet { dst, value, case, field } => {
+                let variant = self.variant(*value)?;
+                let object = self.case_object(variant, *case)?;
+                self.define_ref(dst.0, self.field(object, *field)?, "variant.get")
+            }
+            I::VariantOf { dst, source, variant } => {
+                let object = self.object(*source)?;
+                let case = self.program.variants[variant.0 as usize].cases.iter().any(|(_, o)| *o == object);
+                if !case {
+                    return Err(format!("object obj{} is not a case of variant variant{}", object.0, variant.0));
+                }
+                self.define(dst.0, &Type::Variant(*variant), "variant.of")
             }
             I::RoleNarrow { dst, source, role, .. } => {
                 if !matches!(self.ty(*source), Type::Role(_)) {
@@ -910,6 +965,7 @@ impl<'a> Typing<'a> {
                 let caught = match kind {
                     CatchKind::Object => Type::Object(crate::ObjectRef(*ty)),
                     CatchKind::Role => Type::Role(crate::RoleRef(*ty)),
+                    CatchKind::Variant => Type::Variant(crate::VariantRef(*ty)),
                 };
                 self.define(value.0, &caught, "catch")?;
                 self.target(handler)?;

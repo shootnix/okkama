@@ -42,6 +42,7 @@ fn module(values: Vec<Type>, blocks: Vec<Block>) -> Module {
         enums: Vec::new(),
         roles: Vec::new(),
         objects: Vec::new(),
+        variants: Vec::new(),
         handles: Vec::new(),
         caps: Vec::new(),
         globals: Vec::new(),
@@ -415,12 +416,12 @@ fn unwind_arguments_must_exist_before_the_source_block_starts() {
 fn catch_handlers_receive_the_caught_type_and_throw_requires_error() {
     let mut module = lowered(FAILURES);
     let main = symbol(&module, "main");
-    // Последний параметр handler должен иметь тип пойманного объекта.
+    // Последний параметр handler должен иметь тип пойманного значения (error enum — вариант).
     let handler = module.functions[main].blocks[4].params[2];
     module.functions[main].values[handler.0] = Type::Int;
     rejects(
         &module,
-        &format!("the last parameter {handler} of ^b4 must have type object#1"),
+        &format!("the last parameter {handler} of ^b4 must have type variant#0"),
     );
 
     let mut module = lowered(FAILURES);
@@ -558,4 +559,72 @@ fn module_with_map(ty: Type) -> Module {
             TermKind::Ret(Some(ValueId(1))),
         )],
     )
+}
+
+/// `variant Reading = (empty, value(item: int))`: `main` builds `value(7)`,
+/// reads its tag and its payload (#290).
+fn variant_module() -> Module {
+    let object = |name: &str, fields: Vec<ir::Field>| ir::Object {
+        name: name.to_string(),
+        fields,
+        does: Vec::new(),
+        destroy: None,
+        builtin: false,
+        span: Span::empty(0),
+    };
+    let reading = Type::Variant(ir::VariantId(0));
+    let mut module = module(
+        vec![Type::Int, reading, Type::Int, Type::Int],
+        vec![block(
+            vec![
+                inst(0, int(7)),
+                inst(1, InstKind::VariantNew { case: 1, fields: vec![ValueId(0)] }),
+                inst(2, InstKind::VariantTag(ValueId(1))),
+                inst(3, InstKind::VariantGet { value: ValueId(1), case: 1, field: 0 }),
+            ],
+            TermKind::Ret(Some(ValueId(3))),
+        )],
+    );
+    module.objects = vec![
+        object("Reading.empty", Vec::new()),
+        object(
+            "Reading.value",
+            vec![ir::Field { name: "item".to_string(), ty: Type::Int, default: None }],
+        ),
+    ];
+    module.variants = vec![ir::Variant {
+        name: "Reading".to_string(),
+        cases: vec![
+            ("empty".to_string(), ir::ObjectId(0)),
+            ("value".to_string(), ir::ObjectId(1)),
+        ],
+        span: Span::empty(0),
+    }];
+    module
+}
+
+#[test]
+fn variant_instructions_follow_the_case_layouts() {
+    ir::verify(&variant_module()).unwrap();
+
+    let mut module = variant_module();
+    module.functions[0].blocks[0].insts[1].kind = InstKind::VariantNew { case: 2, fields: vec![ValueId(0)] };
+    rejects(&module, "variant Reading has no case #2");
+
+    let mut module = variant_module();
+    module.functions[0].blocks[0].insts[1].kind = InstKind::VariantNew { case: 0, fields: vec![ValueId(0)] };
+    rejects(&module, "variant.new case 0 lists 1 fields, the case has 0");
+
+    let mut module = variant_module();
+    module.functions[0].blocks[0].insts[3].kind = InstKind::VariantGet { value: ValueId(1), case: 0, field: 0 };
+    rejects(&module, "field");
+
+    let mut module = variant_module();
+    module.functions[0].blocks[0].insts[2].kind = InstKind::VariantTag(ValueId(0));
+    rejects(&module, "expected a variant");
+
+    // Каждый случай — своя раскладка: общий объект двух случаев отвергается.
+    let mut module = variant_module();
+    module.variants[0].cases[0].1 = ir::ObjectId(1);
+    rejects(&module, "must be a plain layout of one case");
 }
