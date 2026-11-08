@@ -6,6 +6,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Packages: the publish job downloads only the package artifacts
+  (`okkama-*`). Since 0.4.1 the release gate uploads its report as an
+  artifact too, and `gh release create dist/*` failed on that directory, so
+  neither the v0.4.1 release nor the nightly was published.
+
 ## [0.4.1] — 2026-11-09
 
 0.4.1 completes the language proof of concept and the first hardening
