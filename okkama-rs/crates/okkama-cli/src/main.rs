@@ -182,7 +182,7 @@ USAGE:
 OPTIONS:
     --format text     Output format (default: text)
     --passes LIST     Run only these IR passes: none, all, or a comma list of
-                      tail-calls, fold, hoist, regions, jumps, undef (in that order)
+                      regions, tail-calls, fold, hoist, jumps, undef (in that order)
     --after PASS      The IR after PASS: the passes up to it in that order
 
 Input is a complete Okkama program: one or several source files of one module

@@ -71,6 +71,31 @@ fn self_tail_calls_become_loops() {
 }
 
 #[test]
+fn a_destroy_elsewhere_keeps_tail_calls_loops() {
+    // С `destroy` в программе lowering открывает регион в каждой области;
+    // пустой `region.leave` после вызова не мешает циклу (#285).
+    let module = lower(
+        "object Guard { Guard() {} destroy {} } object C { C() {} count(n is int, acc is int) is int { if n == 0 { acc; } else { self.count(n - 1, acc + n); } } }",
+        "let guard = Guard(); C().count(10, 0);",
+    )
+    .expect("lowers");
+    ir::verify(&module).expect("verifies");
+    assert_eq!(self_calls(&module, "C.count"), 0, "tail call is a loop");
+}
+
+#[test]
+fn a_call_before_an_owned_destroy_is_not_a_tail_call() {
+    // Владеемый объект уничтожается после возврата вызова: вызов не хвостовой.
+    let module = lower(
+        "object Guard { Guard() {} destroy {} } object D { D() {} down(n is int) is int { let guard = Guard(); if n == 0 { 0; } else { self.down(n - 1); } } }",
+        "D().down(3);",
+    )
+    .expect("lowers");
+    ir::verify(&module).expect("verifies");
+    assert_eq!(self_calls(&module, "D.down"), 1, "the region leaves after the call");
+}
+
+#[test]
 fn tail_calls_in_both_branches_leave_no_unreachable_join() {
     // Обе ветви — хвостовые вызовы: блок, где сходились их результаты, удаляется.
     let module = lower(

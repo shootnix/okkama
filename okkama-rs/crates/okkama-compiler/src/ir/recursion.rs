@@ -166,20 +166,26 @@ fn tail_call(function: &Function, self_id: FuncId, block: &Block) -> Option<Vec<
     if *func != self_id {
         return None;
     }
-    // Возврат результата: прямо или через блок, который только возвращает параметр.
+    // Возврат результата: прямо или через пустые блоки, которые передают его
+    // параметром или пропускают (тогда он доходит до `ret` по доминированию,
+    // как после убранного `region.leave`, #285).
     let mut returned: Vec<ValueId> = last.result.into_iter().collect();
     let mut term = &block.term.kind;
-    for _ in 0..4 {
+    for _ in 0..function.blocks.len() {
         match term {
             TermKind::Ret(value) => {
                 return (value.iter().copied().collect::<Vec<_>>() == returned).then(|| args.clone());
             }
             TermKind::Br(Target { block: next, args: passed }) => {
                 let next = &function.blocks[next.0];
-                if !next.insts.is_empty() || next.unwind.is_some() || *passed != returned {
+                if !next.insts.is_empty() || next.unwind.is_some() {
                     return None;
                 }
-                returned = next.params.clone();
+                if *passed == returned {
+                    returned = next.params.clone();
+                } else if !(passed.is_empty() && next.params.is_empty()) {
+                    return None;
+                }
                 term = &next.term.kind;
             }
             _ => return None,
