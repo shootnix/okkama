@@ -3,7 +3,7 @@ use crate::asm::Parser;
 use crate::codec::{Reader, Writer};
 use crate::{
     AsmError, BitOp, CapRef, CatchKind, Cmp, CodecError, Constant, Dst, EnumRef, FuncRef, FutOp,
-    ObjectRef, Register, RoleRef, Target, TrapCode,
+    ObjectRef, Register, RoleRef, StrFn, Target, TrapCode,
 };
 
 /// Что видит обход операнда.
@@ -426,6 +426,7 @@ macro_rules! op_operand {
 
 op_operand!(Cmp);
 op_operand!(BitOp);
+op_operand!(StrFn);
 op_operand!(FutOp);
 op_operand!(CatchKind);
 op_operand!(TrapCode);

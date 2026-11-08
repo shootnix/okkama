@@ -1394,6 +1394,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             CastTarget::Float => Type::Float,
             CastTarget::Str => Type::Str,
             CastTarget::Rat => return Err(unsupported(span, "`rat` values")),
+            CastTarget::Char => return Err(unsupported(span, "`char` values")),
         };
         // Сначала все операнды слева направо, затем преобразования по порядку.
         enum Operand {

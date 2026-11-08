@@ -1,0 +1,26 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show() {}
+    index(found is Maybe<int>) is string {
+        found ?? .some(i): i.string() !! .none: "none";
+    }
+    flag(value is bool) is string {
+        value ?? "yes" !! "no";
+    }
+    ints(values is @int) is string {
+        "[" + values.map() -> v { v.string(); }.join(" ") + "]";
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    let letters = "Жук🐞".characters();
+    out.writeln(letters.size().string() + " " + letters.map() -> c { c.code().string(); }.join(","));
+    out.writeln(letters.map() -> c { c.string(); }.join("-") + " " + string('Ж') + char(1046).string());
+    out.writeln(show.flag(char(128030) == letters[3]));
+    0;
+}

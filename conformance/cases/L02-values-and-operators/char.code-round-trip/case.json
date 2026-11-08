@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.char.code-round-trip",
+  "title": "a char converts to its code point and text and back",
+  "purpose": "characters() gives the code points of a string; code(), string() and char(code) convert both ways, outside the BMP too.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.CHAR",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "4 1046,1091,1082,128030\nЖ-у-к-🐞 ЖЖ\nyes\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6",
+    "docs/okkama-spec-11072026.md#6.6.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #210, #211, #231",
+    "expected_basis": "spec 6.6 and 6.6.1: char.code(), char.string(), char(code), string(char)."
+  },
+  "status": "mandatory"
+}

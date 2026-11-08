@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show() {}
+    index(found is Maybe<int>) is string {
+        found ?? .some(i): i.string() !! .none: "none";
+    }
+    flag(value is bool) is string {
+        value ?? "yes" !! "no";
+    }
+    ints(values is @int) is string {
+        "[" + values.map() -> v { v.string(); }.join(" ") + "]";
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    let text = "  Привет, мир! мир  ";
+    out.writeln(show.flag(text.contains("мир")) + " " + show.flag(text.contains("war")));
+    out.writeln(show.flag("okkama.ok".starts_with("okkama")) + " " + show.flag("okkama.ok".ends_with(".ok")) + " " + show.flag("ok".ends_with("okkama")));
+    // Indexes count code points, not bytes.
+    out.writeln(show.index(text.find("мир")) + " " + show.index(text.find_last("мир")) + " " + show.index(text.find("x")));
+    // An empty part is found at the start, and last at the end.
+    out.writeln(show.index("abc".find("")) + " " + show.index("abc".find_last("")));
+    0;
+}

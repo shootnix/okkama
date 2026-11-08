@@ -470,6 +470,49 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             Builtin::StrReplaceFirst => (str_op(StrOp::ReplaceFirst, receiver_id, &ids), Type::Str),
             Builtin::StrTrim => (str_op(StrOp::Trim, receiver_id, &ids), Type::Str),
             Builtin::StrChomp => (str_op(StrOp::Chomp, receiver_id, &ids), Type::Str),
+            // Searches give an index or -1 (#210); `contains` is a found index.
+            Builtin::StrContains => {
+                let index = self.emit(str_op(StrOp::Find, receiver_id, &ids), Type::Int, span);
+                let zero = self.constant(Constant::Int(IntValue::from_i64(0)), span);
+                (
+                    InstKind::IntCompare { op: IrCompare::Ge, left: index.value, right: zero.value },
+                    Type::Bool,
+                )
+            }
+            Builtin::StrFind | Builtin::StrFindLast => {
+                let op = if *op == Builtin::StrFind { StrOp::Find } else { StrOp::FindLast };
+                let index = self.emit(str_op(op, receiver_id, &ids), Type::Int, span);
+                return self.maybe_index(index.value, expr, span);
+            }
+            Builtin::StrStartsWith => (str_op(StrOp::StartsWith, receiver_id, &ids), Type::Bool),
+            Builtin::StrEndsWith => (str_op(StrOp::EndsWith, receiver_id, &ids), Type::Bool),
+            Builtin::StrTrimStart => (str_op(StrOp::TrimStart, receiver_id, &ids), Type::Str),
+            Builtin::StrTrimEnd => (str_op(StrOp::TrimEnd, receiver_id, &ids), Type::Str),
+            Builtin::StrLower => (str_op(StrOp::Lower, receiver_id, &ids), Type::Str),
+            Builtin::StrUpper => (str_op(StrOp::Upper, receiver_id, &ids), Type::Str),
+            Builtin::StrRepeat => (str_op(StrOp::Repeat, receiver_id, &ids), Type::Str),
+            Builtin::StrCharacters => (
+                str_op(StrOp::Characters, receiver_id, &ids),
+                Type::Array(Box::new(Type::Char)),
+            ),
+            Builtin::CharCode => (InstKind::Cvt(receiver_id), Type::Int),
+            Builtin::ArrayContains(kind) => {
+                let index = self.array_search(&target, ids[0], *kind, span);
+                let zero = self.constant(Constant::Int(IntValue::from_i64(0)), span);
+                (
+                    InstKind::IntCompare { op: IrCompare::Ge, left: index, right: zero.value },
+                    Type::Bool,
+                )
+            }
+            Builtin::ArrayIndexOf(kind) => {
+                let index = self.array_search(&target, ids[0], *kind, span);
+                return self.maybe_index(index, expr, span);
+            }
+            Builtin::ArrayReversed => return Ok(Out::Value(self.array_reversed(&target, span))),
+            Builtin::ArrayTake | Builtin::ArrayDrop => {
+                let drop = *op == Builtin::ArrayDrop;
+                return Ok(Out::Value(self.array_take(&target, ids[0], drop, span)));
+            }
             // Сравнение строк по длине, как в Perl-интерпретаторе.
             Builtin::StrCompare(compare) => {
                 let left = self.emit(str_op(StrOp::Len, receiver_id, &[]), Type::Int, span);
@@ -692,10 +735,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             | (CastTarget::Str, Type::Str)
             | (CastTarget::Byte, Type::Byte)
             | (CastTarget::Float, Type::Float)
-            | (CastTarget::Rat, Type::Rat) => value,
-            (CastTarget::Str, Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat) => {
-                self.emit(InstKind::Cvt(value.value), Type::Str, span)
-            }
+            | (CastTarget::Rat, Type::Rat)
+            | (CastTarget::Char, Type::Char) => value,
+            (
+                CastTarget::Str,
+                Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat | Type::Char,
+            ) => self.emit(InstKind::Cvt(value.value), Type::Str, span),
+            // A code point outside the Unicode scalar values fails at run time (#231).
+            (CastTarget::Char, Type::Int) => self.emit(InstKind::Cvt(value.value), Type::Char, span),
             (CastTarget::Float, Type::Int | Type::Byte | Type::Rat) => {
                 self.emit(InstKind::Cvt(value.value), Type::Float, span)
             }

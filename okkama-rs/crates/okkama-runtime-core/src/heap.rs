@@ -545,6 +545,10 @@ impl ArrayHeap {
         self.allocate(text.bytes().map(Value::Byte).collect())
     }
 
+    pub fn characters(&self, text: &str) -> Value {
+        self.allocate(text.chars().map(Value::Char).collect())
+    }
+
     pub fn split(&self, text: &str, separator: &str) -> Value {
         self.allocate(
             crate::strings::split(text, separator)

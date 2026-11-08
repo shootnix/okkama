@@ -643,7 +643,8 @@ Strings concatenate with `+`, and only with other strings:
 "n = " + 1;      // runtime error: no implicit stringification
 ```
 
-There is no string repetition operator and no interpolation in 1.0.
+There is no string repetition operator (`"ab".repeat(3)` is an action) and
+no interpolation in 1.0.
 
 Portable builtin behaviors are available on every string (Chapter 10):
 
@@ -654,6 +655,20 @@ Portable builtin behaviors are available on every string (Chapter 10):
 "banana".replace("na", "NA");       // "baNANA"
 "banana".replace_first("na", "NA"); // "baNAna"
 ["red", "green"].join(","); // "red,green"
+"okkama.ok".ends_with(".ok");        // true; also contains, starts_with
+"мир и мир".find_last("мир");        // Maybe.some(6): a code point index
+"Straße".upper();                    // "STRASSE": full Unicode case, no locale
+```
+
+A `char` is one code point. `"Жук".characters()` is the `@char` of a string,
+`letter.code()` its code point, `letter.string()` (or `string(letter)`) its
+text, and `char(1046)` the character back — a value outside the Unicode scalar
+values (above `0x10FFFF` or a surrogate) is a runtime error:
+
+```okkama
+for "Жук".characters() -> letter {
+    out.writeln(letter.string() + " " + letter.code().string());
+}
 ```
 
 Text meets binary data only through explicit, fallible conversion at the
@@ -903,14 +918,15 @@ Complete list (a test checks it against the compiler's table, `analysis/check/bu
 
 | Receiver | Builtin actions |
 |---|---|
-| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (elements that do `Comparing<T>`; needs `import "compare" take Comparing`), `join(separator)` on `@string` |
+| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (elements that do `Comparing<T>`; needs `import "compare" take Comparing`), `join(separator)` on `@string`; `contains(value)`, `index_of(value)` (a `Maybe<int>`; equality as `==`), `reversed()`, `take(count)`, `drop(count)` (at most `count` elements; a negative count is an error) |
 | `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
-| `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)` |
+| `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `trim_start()`, `trim_end()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)`; `contains(part)`, `starts_with(part)`, `ends_with(part)`, `find(part)`, `find_last(part)` (a `Maybe<int>` code point index; an empty part is found at the start or the end), `lower()`, `upper()` (full Unicode case mapping, no locale), `repeat(count)` (a negative count is an error; at most 1 GiB), `characters()` (an `@char` of code points) |
 | `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (a `float`) — `int.pow(int)` is the exact `int` (a negative exponent is an error), `float.pow(float)` a `float` |
 | `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (decimal strings), `pow(exponent)` — the exact `rat`; a negative exponent inverts it |
-| numbers, `char`, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` with the same category |
+| numbers, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` with the same category |
+| `char` | `order(other)`, `code()` (the code point, an `int`), `string()`; `char(code)` and `code.char()` make one from an `int` (a Unicode scalar value, else an error) |
 | `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
-| scalars | conversions `int()`, `float()`, `rat()`, `byte()`, `string()` (Chapter 5) |
+| scalars | conversions `int()`, `float()`, `rat()`, `byte()`, `string()` (Chapter 5); `char()` on `int` |
 | `Future<T>` | `cancel()`, `done()`, `cancelled()` |
 
 ---

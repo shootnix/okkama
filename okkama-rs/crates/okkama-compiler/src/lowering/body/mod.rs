@@ -13,6 +13,7 @@
 //! проверены анализом, и тип параметра слияния — `C`.
 
 mod adapters;
+mod builtins;
 mod calls;
 mod collections;
 mod matching;

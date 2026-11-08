@@ -81,6 +81,16 @@ fn str_op(op: ir::StrOp) -> ops::StrOp {
         ir::StrOp::Trim => ops::StrOp::Trim,
         ir::StrOp::Chomp => ops::StrOp::Chomp,
         ir::StrOp::Utf8 => ops::StrOp::Utf8,
+        ir::StrOp::Find => ops::StrOp::Find,
+        ir::StrOp::FindLast => ops::StrOp::FindLast,
+        ir::StrOp::StartsWith => ops::StrOp::StartsWith,
+        ir::StrOp::EndsWith => ops::StrOp::EndsWith,
+        ir::StrOp::TrimStart => ops::StrOp::TrimStart,
+        ir::StrOp::TrimEnd => ops::StrOp::TrimEnd,
+        ir::StrOp::Lower => ops::StrOp::Lower,
+        ir::StrOp::Upper => ops::StrOp::Upper,
+        ir::StrOp::Repeat => ops::StrOp::Repeat,
+        ir::StrOp::Characters => ops::StrOp::Characters,
     }
 }
 
@@ -90,6 +100,7 @@ pub(crate) fn scalar(target: &ir::Type) -> ops::Scalar {
         ir::Type::Float => ops::Scalar::Float,
         ir::Type::Rat => ops::Scalar::Rat,
         ir::Type::Str => ops::Scalar::Str,
+        ir::Type::Char => ops::Scalar::Char,
         _ => ops::Scalar::Other,
     }
 }

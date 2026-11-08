@@ -1214,6 +1214,7 @@ impl<'a> FunctionVerifier<'a> {
                         self.expect_int(args[1])?;
                         self.expect_int(args[2])?;
                     }
+                    StrOp::Repeat => self.expect_int(args[1])?,
                     _ => {
                         for arg in &args[1..] {
                             self.expect_type(*arg, &Type::Str)?;
@@ -1221,9 +1222,11 @@ impl<'a> FunctionVerifier<'a> {
                     }
                 }
                 match op {
-                    StrOp::Len => Type::Int,
+                    StrOp::Len | StrOp::Find | StrOp::FindLast => Type::Int,
+                    StrOp::StartsWith | StrOp::EndsWith => Type::Bool,
                     StrOp::Split => Type::Array(Box::new(Type::Str)),
                     StrOp::Utf8 => Type::Array(Box::new(Type::Byte)),
+                    StrOp::Characters => Type::Array(Box::new(Type::Char)),
                     _ => Type::Str,
                 }
             }
@@ -1676,10 +1679,11 @@ impl<'a> FunctionVerifier<'a> {
                 let to = result.map(|result| self.ty(result)).transpose()?;
                 return match (from, to) {
                     (
-                        Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat,
+                        Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat | Type::Char,
                         Some(Type::Str),
                     )
-                    | (Type::Byte | Type::Rat, Some(Type::Int))
+                    | (Type::Byte | Type::Rat | Type::Char, Some(Type::Int))
+                    | (Type::Int, Some(Type::Char))
                     | (Type::Int | Type::Byte | Type::Rat, Some(Type::Float))
                     | (Type::Float, Some(Type::Int))
                     | (Type::Int | Type::Byte | Type::Float, Some(Type::Rat)) => Ok(()),

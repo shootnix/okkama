@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.case-and-repeat",
+  "title": "trim edges, Unicode case and repetition",
+  "purpose": "trim_start and trim_end keep the other edge; lower and upper use full Unicode case mapping without a locale; repeat(0) is empty.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-CASE-REPEAT",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "[a b  ][  a b][a b]\nstraße σας STRASSE ΣΑΣ\nababab||\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #210, #211, #231",
+    "expected_basis": "spec 6.6: lower/upper are full Unicode case mappings independent of locale."
+  },
+  "status": "mandatory"
+}

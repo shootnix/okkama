@@ -679,7 +679,8 @@ let rotated = byte(128).rotate_left(1); // byte(1)
 "n = " + 1;      // ошибка времени выполнения: нет неявной стрингификации
 ```
 
-Оператора повторения строк и интерполяции в 1.0 нет.
+Оператора повторения строк (`"ab".repeat(3)` — это действие) и интерполяции
+в 1.0 нет.
 
 Каждой строке доступны портируемые встроенные поведения (глава 10):
 
@@ -690,6 +691,20 @@ let rotated = byte(128).rotate_left(1); // byte(1)
 "banana".replace("na", "NA");       // "baNANA"
 "banana".replace_first("na", "NA"); // "baNAna"
 ["red", "green"].join(",");         // "red,green"
+"okkama.ok".ends_with(".ok");        // true; также contains, starts_with
+"мир и мир".find_last("мир");        // Maybe.some(6): индекс кодовой точки
+"Straße".upper();                    // "STRASSE": полный Unicode-регистр, без локали
+```
+
+`char` — одна кодовая точка. `"Жук".characters()` — `@char` строки,
+`letter.code()` — его кодовая точка, `letter.string()` (или `string(letter)`) —
+текст, а `char(1046)` — символ обратно; значение вне скалярных значений
+Unicode (больше `0x10FFFF` или суррогат) — ошибка времени выполнения:
+
+```okkama
+for "Жук".characters() -> letter {
+    out.writeln(letter.string() + " " + letter.code().string());
+}
 ```
 
 Текст встречается с двоичными данными только через явное, потенциально
@@ -957,14 +972,15 @@ prices.values();             // @V, тот же порядок пар, что у
 
 | Получатель | Встроенные действия |
 |---|---|
-| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (элементы делают `Comparing<T>`; нужен `import "compare" take Comparing`), `join(separator)` у `@string` |
+| `@T` | `size()`, `slice(start, end)`, `item(index)`, `first()`, `last()`, `cursor()`, `ordering()` (элементы делают `Comparing<T>`; нужен `import "compare" take Comparing`), `join(separator)` у `@string`; `contains(value)`, `index_of(value)` (`Maybe<int>`; равенство как у `==`), `reversed()`, `take(count)`, `drop(count)` (не больше `count` элементов; отрицательное число — ошибка) |
 | `%K:V` | `size()`, `has(key)`, `keys()`, `values()` |
-| `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)` |
+| `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `trim_start()`, `trim_end()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)`; `contains(part)`, `starts_with(part)`, `ends_with(part)`, `find(part)`, `find_last(part)` (`Maybe<int>` — индекс code point; пустая часть находится в начале или в конце), `lower()`, `upper()` (полное Unicode-отображение регистра, без локали), `repeat(count)` (отрицательное число — ошибка; не больше 1 ГиБ), `characters()` (`@char` из code points) |
 | `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (это `float`) — `int.pow(int)` даёт точный `int` (отрицательная степень — ошибка), `float.pow(float)` — `float` |
 | `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (десятичные строки), `pow(exponent)` — точный `rat`, отрицательная степень его обращает |
-| числа, `char`, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` с той же категорией |
+| числа, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` с той же категорией |
+| `char` | `order(other)`, `code()` (code point, `int`), `string()`; `char(code)` и `code.char()` строят его из `int` (скалярное значение Unicode, иначе ошибка) |
 | `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
-| скаляры | преобразования `int()`, `float()`, `rat()`, `byte()`, `string()` (глава 5) |
+| скаляры | преобразования `int()`, `float()`, `rat()`, `byte()`, `string()` (глава 5); `char()` у `int` |
 | `Future<T>` | `cancel()`, `done()`, `cancelled()` |
 
 ---

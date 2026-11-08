@@ -1,0 +1,37 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Show {
+    Show() {}
+    index(found is Maybe<int>) is string {
+        found ?? .some(i): i.string() !! .none: "none";
+    }
+    flag(value is bool) is string {
+        value ?? "yes" !! "no";
+    }
+    ints(values is @int) is string {
+        "[" + values.map() -> v { v.string(); }.join(" ") + "]";
+    }
+}
+
+object Card {
+    has rank is int;
+    Card(:rank);
+}
+
+main() is int {
+    let out = Stdout();
+    let show = Show();
+    let primes = [2, 3, 5, 7, 11];
+    out.writeln(show.flag(primes.contains(7)) + " " + show.flag(primes.contains(4)) + " " + show.index(primes.index_of(11)) + " " + show.index(primes.index_of(1)));
+    // A count past the end takes everything and drops everything.
+    out.writeln(show.ints(primes.reversed()) + " " + show.ints(primes.take(2)) + " " + show.ints(primes.drop(2)) + " " + show.ints(primes.take(9)) + " " + show.ints(primes.drop(9)));
+    // Objects compare by their fields, as with ==.
+    let cards = [Card(rank: 3), Card(rank: 9)];
+    out.writeln(show.flag(cards.contains(Card(rank: 9))) + " " + show.index(cards.index_of(Card(rank: 4))));
+    out.writeln(["a", "b"].reversed().join(","));
+    let empty is @int = [];
+    out.writeln(show.ints(empty.reversed()) + " " + show.flag(empty.contains(1)) + " " + show.index(empty.index_of(1)));
+    0;
+}

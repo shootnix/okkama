@@ -5,6 +5,7 @@
 //! только позиционные аргументы.
 
 use super::Checker;
+use super::expr::equality_kind;
 use crate::analysis::thir::{
     Builtin, Callee, CastPart, CastTarget, CompareKind, CompareOp, Expr, ExprKind,
 };
@@ -20,6 +21,8 @@ enum Param {
     Exact(Ty),
     /// Любой скалярный ключ словаря.
     Key,
+    /// Элемент массива-получателя (`contains`, `index_of`).
+    Element,
 }
 
 /// Битовые действия `int`/`byte`.
@@ -55,6 +58,11 @@ fn ordering(name: &str) -> Option<CompareOp> {
     }
 }
 
+/// `Maybe<T>`: the enum of the prelude, first in the registry.
+fn maybe(ty: Ty) -> Ty {
+    Ty::Variant(crate::analysis::ty::EnumId(0), vec![ty])
+}
+
 fn cast_target(name: &str) -> Option<CastTarget> {
     match name {
         "int" => Some(CastTarget::Int),
@@ -62,6 +70,7 @@ fn cast_target(name: &str) -> Option<CastTarget> {
         "float" => Some(CastTarget::Float),
         "rat" => Some(CastTarget::Rat),
         "string" => Some(CastTarget::Str),
+        "char" => Some(CastTarget::Char),
         _ => None,
     }
 }
@@ -117,6 +126,22 @@ impl Checker<'_, '_> {
                 )
             }
             (Ty::Array(_), "ordering") => (Builtin::ArrayOrdering, vec![], Some(receiver.clone())),
+            // Search and shape (#211): equality is that of `==`.
+            (Ty::Array(element), "contains" | "index_of") => {
+                let kind = if **element == Ty::Never {
+                    CompareKind::Value
+                } else {
+                    equality_kind(element)?
+                };
+                if name == "contains" {
+                    (Builtin::ArrayContains(kind), vec![Param::Element], Some(Ty::Bool))
+                } else {
+                    (Builtin::ArrayIndexOf(kind), vec![Param::Element], Some(maybe(Ty::Int)))
+                }
+            }
+            (Ty::Array(_), "reversed") => (Builtin::ArrayReversed, vec![], Some(receiver.clone())),
+            (Ty::Array(_), "take") => (Builtin::ArrayTake, vec![int()], Some(receiver.clone())),
+            (Ty::Array(_), "drop") => (Builtin::ArrayDrop, vec![int()], Some(receiver.clone())),
             (Ty::Map(..), "size") => (Builtin::MapSize, vec![], Some(Ty::Int)),
             (Ty::Map(..), "has") => (Builtin::MapHas, vec![Param::Key], Some(Ty::Bool)),
             (Ty::Map(key, _), "keys") => {
@@ -147,6 +172,19 @@ impl Checker<'_, '_> {
             ),
             (Ty::Str, "trim") => (Builtin::StrTrim, vec![], Some(Ty::Str)),
             (Ty::Str, "chomp") => (Builtin::StrChomp, vec![], Some(Ty::Str)),
+            // Search, edges, case and repetition (#210); characters (#231).
+            (Ty::Str, "contains") => (Builtin::StrContains, vec![Param::Same], Some(Ty::Bool)),
+            (Ty::Str, "starts_with") => (Builtin::StrStartsWith, vec![Param::Same], Some(Ty::Bool)),
+            (Ty::Str, "ends_with") => (Builtin::StrEndsWith, vec![Param::Same], Some(Ty::Bool)),
+            (Ty::Str, "find") => (Builtin::StrFind, vec![Param::Same], Some(maybe(Ty::Int))),
+            (Ty::Str, "find_last") => (Builtin::StrFindLast, vec![Param::Same], Some(maybe(Ty::Int))),
+            (Ty::Str, "trim_start") => (Builtin::StrTrimStart, vec![], Some(Ty::Str)),
+            (Ty::Str, "trim_end") => (Builtin::StrTrimEnd, vec![], Some(Ty::Str)),
+            (Ty::Str, "lower") => (Builtin::StrLower, vec![], Some(Ty::Str)),
+            (Ty::Str, "upper") => (Builtin::StrUpper, vec![], Some(Ty::Str)),
+            (Ty::Str, "repeat") => (Builtin::StrRepeat, vec![int()], Some(Ty::Str)),
+            (Ty::Str, "characters") => (Builtin::StrCharacters, vec![], Some(Ty::array(Ty::Char))),
+            (Ty::Char, "code") => (Builtin::CharCode, vec![], Some(Ty::Int)),
             // Строки упорядочиваются по длине (как Perl); `more` у строк нет.
             (Ty::Str, "less" | "less_or_equal") => (
                 Builtin::StrCompare(ordering(name)?),
@@ -167,13 +205,16 @@ impl Checker<'_, '_> {
                 vec![Param::Same],
                 Some(Ty::Bool),
             ),
-            (Ty::Int | Ty::Float | Ty::Rat | Ty::Byte | Ty::Bool, cast)
+            (Ty::Int | Ty::Float | Ty::Rat | Ty::Byte | Ty::Bool | Ty::Char, cast)
                 if cast_target(cast).is_some() =>
             {
                 let target = cast_target(cast)?;
+                // `bool` and `char` become text only; a `char` comes from an
+                // `int` code point (#231).
                 let allowed = match receiver {
-                    Ty::Bool => target == CastTarget::Str,
-                    _ => true,
+                    Ty::Bool | Ty::Char => target == CastTarget::Str,
+                    Ty::Int => true,
+                    _ => target != CastTarget::Char,
                 };
                 if !allowed {
                     return None;
@@ -184,6 +225,7 @@ impl Checker<'_, '_> {
                     CastTarget::Float => Ty::Float,
                     CastTarget::Rat => Ty::Rat,
                     CastTarget::Str => Ty::Str,
+                    CastTarget::Char => Ty::Char,
                 };
                 (Builtin::Convert(target), vec![], Some(ty))
             }
@@ -304,10 +346,15 @@ impl Checker<'_, '_> {
         let mut values = Vec::new();
         let mut diverges = target.diverges;
         for (arg, param) in args.iter().zip(&params) {
+            let element = match &receiver {
+                Ty::Array(element) if **element != Ty::Never => Some((**element).clone()),
+                _ => None,
+            };
             let hint = match param {
                 Param::Same => Some(receiver.clone()),
                 Param::Exact(ty) => Some(ty.clone()),
                 Param::Key => None,
+                Param::Element => element.clone(),
             };
             let value = self.value(&arg.value, hint.as_ref());
             diverges |= value.diverges;
@@ -315,6 +362,7 @@ impl Checker<'_, '_> {
             let expected = match param {
                 Param::Same => Some(receiver.clone()),
                 Param::Exact(ty) => Some(ty.clone()),
+                Param::Element => element,
                 Param::Key => match &receiver {
                     Ty::Map(key, _) if **key != Ty::Never => Some((**key).clone()),
                     _ => {
@@ -449,9 +497,10 @@ impl Checker<'_, '_> {
                 Ty::Str,
                 matches!(
                     actual,
-                    Ty::Str | Ty::Int | Ty::Byte | Ty::Float | Ty::Rat | Ty::Bool
+                    Ty::Str | Ty::Int | Ty::Byte | Ty::Float | Ty::Rat | Ty::Bool | Ty::Char
                 ),
             ),
+            CastTarget::Char => (Ty::Char, matches!(actual, Ty::Int | Ty::Char)),
         };
         if !accepted && !actual.is_error() && !value.diverges {
             let name = match target {
@@ -460,6 +509,7 @@ impl Checker<'_, '_> {
                 CastTarget::Float => "float",
                 CastTarget::Rat => "rat",
                 CastTarget::Str => "string",
+                CastTarget::Char => "char",
             };
             let message = format!("Cannot convert {} to {name}", self.type_name(&actual));
             let message = match position {
@@ -537,6 +587,7 @@ impl Checker<'_, '_> {
             CastTarget::Float => Ty::Float,
             CastTarget::Rat => Ty::Rat,
             CastTarget::Str => Ty::Str,
+            CastTarget::Char => Ty::Char,
         };
         let mut out = Self::typed(
             ExprKind::ArrayCast { element, parts },

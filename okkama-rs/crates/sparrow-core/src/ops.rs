@@ -14,7 +14,7 @@ use num_bigint::BigInt;
 use num_integer::Integer as _;
 use num_rational::BigRational;
 use num_traits::{Signed, ToPrimitive, Zero};
-use okkama_sparrow::{Access, Cmp, Instruction as I, Type, TypeRef};
+use okkama_sparrow::{Access, Cmp, Instruction as I, StrFn, Type, TypeRef};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -656,6 +656,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let bytes = runtime.heap.text(value(text)).as_bytes().to_vec();
             Ok(runtime.heap.allocate_bytes(&bytes))
         }
+        I::StrFn { op, args, .. } => str_fn(runtime, *op, args.iter().map(value).collect()),
         I::StrReplaceFirst { text, pattern, replacement, .. } => {
             let replaced = runtime
                 .heap
@@ -1128,6 +1129,16 @@ fn convert(runtime: &mut Runtime, function: usize, source: okkama_sparrow::Regis
         }
         (Some(Type::Rat), Some(Type::Float)) => rational_to_float(runtime.rational(word)).map(f64::to_bits),
         (Some(Type::Byte), Some(Type::Int)) => Ok(runtime.heap.int(word as i64)),
+        // `char` ↔ text and code point (#231).
+        (Some(Type::Char), Some(Type::Int)) => Ok(runtime.heap.int(word as i64)),
+        (Some(Type::Char), Some(Type::Str)) => {
+            let text = char::from_u32(word as u32).map(String::from).unwrap_or_default();
+            Ok(runtime.text_new(&text))
+        }
+        (Some(Type::Int), Some(Type::Char)) => {
+            let code = int_value(runtime, word);
+            Ok(u64::from(u32::from(okkama_runtime_core::strings::character(&code)?)))
+        }
         (Some(Type::Int), Some(Type::Float)) => {
             let n = runtime.big_value(word).to_f64().unwrap_or(f64::INFINITY);
             finite(n)
@@ -1145,6 +1156,48 @@ fn convert(runtime: &mut Runtime, function: usize, source: okkama_sparrow::Regis
             Ok(runtime.heap.int(truncated as i64))
         }
         _ => Err("unsupported scalar conversion".into()),
+    }
+}
+
+/// An `int` word as the IR engine's integer, for the shared string contracts.
+fn int_value(runtime: &Runtime, word: Word) -> okkama_runtime_core::IntValue {
+    match runtime.small_or_big(word) {
+        Some(n) => okkama_runtime_core::IntValue::from_i64(n),
+        None => okkama_runtime_core::IntValue::parse(&runtime.big_value(word).to_string()).expect("decimal digits"),
+    }
+}
+
+/// `str.fn` (#210, #231): the same contracts as the IR engine's
+/// `okkama_runtime_core::strings`.
+fn str_fn(runtime: &mut Runtime, op: StrFn, args: Vec<Word>) -> Outcome {
+    use okkama_runtime_core::strings;
+    let text = runtime.heap.text(args[0]);
+    match op {
+        StrFn::Find | StrFn::FindLast => {
+            let part = runtime.heap.text(args[1]);
+            let found = if op == StrFn::Find { strings::find(text, part) } else { strings::find_last(text, part) };
+            Ok(runtime.heap.int(found.map_or(-1, |index| index as i64)))
+        }
+        StrFn::StartsWith => Ok(bool_word(text.starts_with(runtime.heap.text(args[1])))),
+        StrFn::EndsWith => Ok(bool_word(text.ends_with(runtime.heap.text(args[1])))),
+        StrFn::TrimStart | StrFn::TrimEnd | StrFn::Lower | StrFn::Upper => {
+            let result = match op {
+                StrFn::TrimStart => strings::trim_start(text).to_owned(),
+                StrFn::TrimEnd => strings::trim_end(text).to_owned(),
+                StrFn::Lower => text.to_lowercase(),
+                _ => text.to_uppercase(),
+            };
+            Ok(runtime.text_new(&result))
+        }
+        StrFn::Repeat => {
+            let count = int_value(runtime, args[1]);
+            let repeated = strings::repeat(runtime.heap.text(args[0]), &count)?;
+            Ok(runtime.text_new(&repeated))
+        }
+        StrFn::Characters => {
+            let codes: Vec<Word> = text.chars().map(|c| u64::from(u32::from(c))).collect();
+            Ok(runtime.heap.allocate_array(Repr::Raw, &codes))
+        }
     }
 }
 

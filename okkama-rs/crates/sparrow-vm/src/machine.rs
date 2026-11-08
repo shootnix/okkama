@@ -953,6 +953,8 @@ pub(crate) fn evaluate<'a>(
         I::StrTrim { dst, text } => string_op(S::Trim, *dst, &[*text]),
         I::StrChomp { dst, text } => string_op(S::Chomp, *dst, &[*text]),
         I::StrUtf8 { dst, text } => string_op(S::Utf8, *dst, &[*text]),
+        // The previous VM is not extended any more (#14).
+        I::StrFn { op, .. } => Err(Stop::Unsupported(format!("str.fn {} is not supported by sparrow-origin", op.name()))),
         I::ValCmp { op, dst, left, right } => {
             let equal = ops::equal(r(*left)?, r(*right)?)?;
             write(*dst, Value::Bool(if *op == Cmp::Eq { equal } else { !equal }))

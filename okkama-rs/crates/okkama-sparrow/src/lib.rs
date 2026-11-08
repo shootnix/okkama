@@ -101,6 +101,22 @@ op_enum! {
 }
 
 op_enum! {
+    /// Строковая функция `str.fn` (#210, #231): поиск, края, регистр, повтор.
+    StrFn {
+        Find = 0, "find",
+        FindLast = 1, "find_last",
+        StartsWith = 2, "starts_with",
+        EndsWith = 3, "ends_with",
+        TrimStart = 4, "trim_start",
+        TrimEnd = 5, "trim_end",
+        Lower = 6, "lower",
+        Upper = 7, "upper",
+        Repeat = 8, "repeat",
+        Characters = 9, "characters",
+    }
+}
+
+op_enum! {
     /// Битовое действие над словом `int` или `byte` (§16.2).
     BitOp {
         BitCount = 0, "bit_count",
@@ -284,6 +300,8 @@ instructions! {
     StrTrim = 77, "str.trim" { dst: Dst, text: Register }
     StrChomp = 78, "str.chomp" { dst: Dst, text: Register }
     StrUtf8 = 79, "str.utf8" { dst: Dst, text: Register }
+    /// Строковая функция `op` над `args` (первый — строка, #210).
+    StrFn = 86, "str.fn" { op: StrFn, dst: Dst, args: Vec<Register> }
 
     /// Глубокое равенство (§16.3), только `eq`/`ne`.
     ValCmp = 80, "val.cmp" { op: Cmp, dst: Dst, left: Register, right: Register }

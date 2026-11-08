@@ -575,30 +575,7 @@ impl Checker<'_, '_> {
             }
         } else {
             let compare = compare.expect("binary operators are arithmetic, bitwise or comparisons");
-            // `any` не распаковывается: коллекция из `any` не сравнима никогда.
-            let kind = if left == right && !holds_any(&left) {
-                match &left {
-                    Ty::Int => Some(CompareKind::Int),
-                    Ty::Byte => Some(CompareKind::Byte),
-                    Ty::Float => Some(CompareKind::Float),
-                    Ty::Rat => Some(CompareKind::Rat),
-                    Ty::Bool => Some(CompareKind::Bool),
-                    Ty::Char => Some(CompareKind::Char),
-                    Ty::Str => Some(CompareKind::Str),
-                    Ty::Enum(_) => Some(CompareKind::Enum),
-                    Ty::Object(..)
-                    | Ty::Role(..)
-                    | Ty::Array(_)
-                    | Ty::Map(..)
-                    | Ty::Range
-                    | Ty::Param(_)
-                    | Ty::Future(_)
-                    | Ty::Action(_) => Some(CompareKind::Value),
-                    _ => None,
-                }
-            } else {
-                None
-            };
+            let kind = if left == right { equality_kind(&left) } else { None };
             match kind {
                 Some(kind) if compare.is_equality() => {
                     Ok((BinaryOp::Compare(kind, compare), Ty::Bool))
@@ -1902,6 +1879,33 @@ fn expr_path(expr: &ast::Expr) -> Option<Vec<ast::Name>> {
             path.push(name.clone());
             Some(path)
         }
+        _ => None,
+    }
+}
+
+/// Как сравниваются на равенство два значения типа `ty` (`==`, `contains`).
+/// `any` не распаковывается: коллекция из `any` не сравнима никогда.
+pub(super) fn equality_kind(ty: &Ty) -> Option<CompareKind> {
+    if holds_any(ty) {
+        return None;
+    }
+    match ty {
+        Ty::Int => Some(CompareKind::Int),
+        Ty::Byte => Some(CompareKind::Byte),
+        Ty::Float => Some(CompareKind::Float),
+        Ty::Rat => Some(CompareKind::Rat),
+        Ty::Bool => Some(CompareKind::Bool),
+        Ty::Char => Some(CompareKind::Char),
+        Ty::Str => Some(CompareKind::Str),
+        Ty::Enum(_) => Some(CompareKind::Enum),
+        Ty::Object(..)
+        | Ty::Role(..)
+        | Ty::Array(_)
+        | Ty::Map(..)
+        | Ty::Range
+        | Ty::Param(_)
+        | Ty::Future(_)
+        | Ty::Action(_) => Some(CompareKind::Value),
         _ => None,
     }
 }

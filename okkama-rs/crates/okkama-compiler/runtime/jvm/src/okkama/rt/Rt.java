@@ -651,6 +651,93 @@ public final class Rt {
         return text.substring(start, end);
     }
 
+    public static String trimStart(String text) {
+        int start = 0;
+        while (start < text.length() && space(text.codePointAt(start))) {
+            start += Character.charCount(text.codePointAt(start));
+        }
+        return text.substring(start);
+    }
+
+    public static String trimEnd(String text) {
+        int end = text.length();
+        while (end > 0 && space(text.codePointBefore(end))) {
+            end -= Character.charCount(text.codePointBefore(end));
+        }
+        return text.substring(0, end);
+    }
+
+    /** Индекс code point первого вхождения или -1 (#210); пустая часть — в 0. */
+    public static BigInteger find(String text, String part) {
+        int found = text.indexOf(part);
+        return BigInteger.valueOf(found < 0 ? -1 : text.codePointCount(0, found));
+    }
+
+    /** Индекс code point последнего вхождения или -1; пустая часть — в конце. */
+    public static BigInteger findLast(String text, String part) {
+        int found = text.lastIndexOf(part);
+        return BigInteger.valueOf(found < 0 ? -1 : text.codePointCount(0, found));
+    }
+
+    public static boolean startsWith(String text, String part) {
+        return text.startsWith(part);
+    }
+
+    public static boolean endsWith(String text, String part) {
+        return text.endsWith(part);
+    }
+
+    /** Полное Unicode-отображение регистра, без учёта локали (как Rust). */
+    public static String lower(String text) {
+        return text.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    public static String upper(String text) {
+        return text.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** Самый длинный результат {@code repeat} в байтах UTF-8, как в Rust-движках. */
+    private static final long REPEAT_LIMIT = 1L << 30;
+
+    public static String repeat(String text, BigInteger count) {
+        if (count.signum() < 0 || count.bitLength() > 62) {
+            throw count.signum() < 0 ? trap("repeat needs a non-negative count") : trap("repeat result is too large");
+        }
+        long size = (long) text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        long times = count.longValue();
+        if (times != 0 && size > REPEAT_LIMIT / times) {
+            throw trap("repeat result is too large");
+        }
+        StringBuilder out = new StringBuilder();
+        for (long index = 0; index < times; index++) {
+            out.append(text);
+        }
+        return out.toString();
+    }
+
+    /** {@code @char} строки: code points (#231). */
+    public static List<Object> characters(String text) {
+        List<Object> out = new ArrayList<Object>();
+        text.codePoints().forEach(codePoint -> out.add(Integer.valueOf(codePoint)));
+        return out;
+    }
+
+    public static String charText(int codePoint) {
+        return new String(Character.toChars(codePoint));
+    }
+
+    /** {@code char(code)}: скалярное значение Unicode (без суррогатов). */
+    public static int charFrom(BigInteger code) {
+        if (code.signum() < 0 || code.bitLength() > 21) {
+            throw trap("char needs a Unicode scalar value (0..0x10FFFF, not a surrogate)");
+        }
+        int value = code.intValue();
+        if (value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+            throw trap("char needs a Unicode scalar value (0..0x10FFFF, not a surrogate)");
+        }
+        return value;
+    }
+
     /** Ровно один завершающий CRLF или LF; одиночный CR остаётся (D-033). */
     public static String chomp(String text) {
         if (text.endsWith("\r\n")) {

@@ -18,6 +18,53 @@ pub fn trim(text: &str) -> &str {
     text.trim_matches(char::is_whitespace)
 }
 
+pub fn trim_start(text: &str) -> &str {
+    text.trim_start_matches(char::is_whitespace)
+}
+
+pub fn trim_end(text: &str) -> &str {
+    text.trim_end_matches(char::is_whitespace)
+}
+
+/// Code point index of the first occurrence of `part` (#210); an empty part
+/// is found at 0.
+pub fn find(text: &str, part: &str) -> Option<usize> {
+    text.find(part).map(|byte| text[..byte].chars().count())
+}
+
+/// Code point index of the last occurrence of `part`; an empty part is found
+/// at the end.
+pub fn find_last(text: &str, part: &str) -> Option<usize> {
+    text.rfind(part).map(|byte| text[..byte].chars().count())
+}
+
+/// The longest result `repeat` builds, in bytes: past it the program fails
+/// instead of exhausting memory.
+pub const REPEAT_LIMIT: usize = 1 << 30;
+
+/// `text` `count` times; a negative count or a result over [`REPEAT_LIMIT`]
+/// is an error.
+pub fn repeat(text: &str, count: &IntValue) -> Result<String, &'static str> {
+    let count = integer::word(count)
+        .ok()
+        .filter(|count| *count >= 0)
+        .ok_or("repeat needs a non-negative count")?;
+    let size = usize::try_from(count).ok().and_then(|count| text.len().checked_mul(count));
+    match size {
+        Some(size) if size <= REPEAT_LIMIT => Ok(text.repeat(count as usize)),
+        _ => Err("repeat result is too large"),
+    }
+}
+
+/// A Unicode scalar value from a code point: `char(code)` (#231).
+pub fn character(code: &IntValue) -> Result<char, &'static str> {
+    integer::word(code)
+        .ok()
+        .and_then(|code| u32::try_from(code).ok())
+        .and_then(char::from_u32)
+        .ok_or("char needs a Unicode scalar value (0..0x10FFFF, not a surrogate)")
+}
+
 /// D-033: remove exactly one CRLF or LF suffix; a lone CR stays.
 pub fn chomp(text: &str) -> &str {
     text.strip_suffix("\r\n")

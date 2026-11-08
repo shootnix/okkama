@@ -14,7 +14,7 @@ use crate::{ir, source::Span};
 use okkama_sparrow::{
     BitOp, CapDecl, CapRef, CatchKind, Cmp, Constant, Dst, EnumDecl, EnumRef, FuncRef, FutOp, Function,
     Handler, Instruction as I, Intrinsic, ObjectDecl, ObjectRef, Program, Register, RoleDecl, RoleMethod,
-    RoleRef, Target, TrapCode, Type, TypeRef, Witness,
+    RoleRef, StrFn, Target, TrapCode, Type, TypeRef, Witness,
 };
 use std::{collections::HashMap, fmt};
 
@@ -287,6 +287,7 @@ impl FunctionGen<'_> {
                 if args.len() != op.arity() {
                     return Err(error(span, "string operation argument count mismatch"));
                 }
+                let str_fn = |op| I::StrFn { op, dst, args: args.iter().map(|value| reg(*value)).collect() };
                 match op {
                     ir::StrOp::Len => I::StrLen { dst, text: arg(0)? },
                     ir::StrOp::Slice => I::StrSlice { dst, text: arg(0)?, start: arg(1)?, end: arg(2)? },
@@ -296,6 +297,16 @@ impl FunctionGen<'_> {
                     ir::StrOp::Trim => I::StrTrim { dst, text: arg(0)? },
                     ir::StrOp::Chomp => I::StrChomp { dst, text: arg(0)? },
                     ir::StrOp::Utf8 => I::StrUtf8 { dst, text: arg(0)? },
+                    ir::StrOp::Find => str_fn(StrFn::Find),
+                    ir::StrOp::FindLast => str_fn(StrFn::FindLast),
+                    ir::StrOp::StartsWith => str_fn(StrFn::StartsWith),
+                    ir::StrOp::EndsWith => str_fn(StrFn::EndsWith),
+                    ir::StrOp::TrimStart => str_fn(StrFn::TrimStart),
+                    ir::StrOp::TrimEnd => str_fn(StrFn::TrimEnd),
+                    ir::StrOp::Lower => str_fn(StrFn::Lower),
+                    ir::StrOp::Upper => str_fn(StrFn::Upper),
+                    ir::StrOp::Repeat => str_fn(StrFn::Repeat),
+                    ir::StrOp::Characters => str_fn(StrFn::Characters),
                 }
             }
             K::ValCompare { op, left, right } => I::ValCmp { op: cmp(*op), dst: dst()?, left: reg(*left), right: reg(*right) },
