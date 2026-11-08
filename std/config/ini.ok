@@ -1,11 +1,10 @@
 module config/ini v1.0.0;
 
 import "collections/sequence" take Sequencing;
-import "runtime/ini" take IniParseState, IniWriteState, ini_parse_state,
-    ini_parse_valid, ini_parse_line, ini_parse_column, ini_parse_message,
-    ini_section_count, ini_section_name, ini_entry_count, ini_entry_name,
-    ini_entry_value, ini_write_state, ini_write_section, ini_write_entry,
-    ini_write_status, ini_write_name, ini_write_parent, ini_write_string;
+import "collections/list" take List, EmptyList;
+import "compare" take Comparing, Order;
+import "async/atomic" take Atomic;
+import "cell" take Cell;
 
 // Immutable INI bindings, sections and documents with a bounded text codec.
 // The model never infers grammar from a name/value.
@@ -29,14 +28,15 @@ import "runtime/ini" take IniParseState, IniWriteState, ini_parse_state,
 // through the snapshot, while the original sequence is not revisited. Failures
 // from size/item and observers propagate unchanged. No owned resource/destroy.
 //
-// Duplicate checking is O(n²) within the bound, lookup O(n). Strings are retained
-// coordinates; container budgets do not limit string length. Parsing and
-// rendering have independent text budgets (docs/std/ini-guide.md).
+// Duplicate checking sorts the names (O(n log n)); only a document that has a
+// duplicate is scanned again to name the first one. Lookup is O(n). Strings
+// are retained coordinates; container budgets do not limit string length.
+// Parsing and rendering have independent text budgets (docs/std/ini-guide.md).
+// The codec is written in Okkama (#13): no native state, nothing to release.
 //
 // print() emits each section header followed by entries in order. Empty sections
 // still emit section(name); an empty document emits nothing. Every call repeats
 // the same protocol. Observer errors stop emission. No JSON, reflection or casts.
-// Run: OKKAMA_STDLIB_DIR=std perl okkama-pl/bin/okkama -t std/config/ini.ok
 
 role IniContent {
     print(to is IniWriting) is void;
@@ -72,12 +72,9 @@ object IniSection does IniContent {
         confirm size <= 1024 else throw IniLimitExceeded.exceeded;
         let snapshot is @IniEntry = (0..size).map() -> index { entries.item(index); };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniEntry.detailed(name, snapshot[index].name());
-            }
-        }
+        let names is @string = snapshot.map() -> entry { entry.name(); };
+        let repeated = IniRepeated(names).first();
+        confirm repeated < 0 else throw DuplicateIniEntry.detailed(name, names[repeated]);
     }
     IniSection(name is string, entries is Sequencing<IniEntry>, maximum_entries is int) {
         confirm maximum_entries >= 0 else throw InvalidIniLimit.invalid;
@@ -87,12 +84,9 @@ object IniSection does IniContent {
         confirm size <= maximum_entries else throw IniLimitExceeded.exceeded;
         let snapshot is @IniEntry = (0..size).map() -> index { entries.item(index); };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniEntry.detailed(name, snapshot[index].name());
-            }
-        }
+        let names is @string = snapshot.map() -> entry { entry.name(); };
+        let repeated = IniRepeated(names).first();
+        confirm repeated < 0 else throw DuplicateIniEntry.detailed(name, names[repeated]);
     }
     name() is string { label; }
     entries() is Sequencing<IniEntry> { origin; }
@@ -122,12 +116,9 @@ object IniDocument does IniContent {
         confirm size <= 128 else throw IniLimitExceeded.exceeded;
         let snapshot is @IniSection = (0..size).map() -> index { sections.item(index); };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniSection.name(snapshot[index].name());
-            }
-        }
+        let names is @string = snapshot.map() -> section { section.name(); };
+        let repeated = IniRepeated(names).first();
+        confirm repeated < 0 else throw DuplicateIniSection.name(names[repeated]);
     }
     IniDocument(sections is Sequencing<IniSection>, maximum_sections is int) {
         confirm maximum_sections >= 0 else throw InvalidIniLimit.invalid;
@@ -136,12 +127,9 @@ object IniDocument does IniContent {
         confirm size <= maximum_sections else throw IniLimitExceeded.exceeded;
         let snapshot is @IniSection = (0..size).map() -> index { sections.item(index); };
         origin = snapshot;
-        for (0..snapshot.size()) -> index {
-            for (0..index) -> previous {
-                confirm snapshot[previous].name() != snapshot[index].name()
-                    else throw DuplicateIniSection.name(snapshot[index].name());
-            }
-        }
+        let names is @string = snapshot.map() -> section { section.name(); };
+        let repeated = IniRepeated(names).first();
+        confirm repeated < 0 else throw DuplicateIniSection.name(names[repeated]);
     }
     sections() is Sequencing<IniSection> { origin; }
     section(name is string) is IniSection {
@@ -162,25 +150,28 @@ object IniDocument does IniContent {
 // Bare tokens trim ASCII space/tab. Double quotes support backslash/quote,
 // b/t/n/f/r, uXXXX/UXXXXXXXX scalar escapes. No multiline or inline comments.
 // Raw controls except tab, duplicate decoded names and trailing material fail.
-// Failures retain one-based original scalar line/column, cached across calls.
-// Returned values own their coordinates and outlive this parser. No file I/O.
+// Failures carry the one-based line and column, in Unicode scalars, of the
+// first problem in the document. Each value() parses the text again; the
+// result is the same document or the same failure. No file I/O.
 object ParsedIni does IniContent {
-    has state is IniParseState;
-    ParsedIni(origin is string) { state = ini_parse_state(origin, 1048576, 128, 10000); }
+    has origin is string;
+    has maximum_input, maximum_sections, maximum_entries is int;
+    ParsedIni(origin is string) {
+        self.origin = origin;
+        maximum_input = 1048576;
+        maximum_sections = 128;
+        maximum_entries = 10000;
+    }
     ParsedIni(origin is string, maximum_input is int, maximum_sections is int, maximum_entries is int) {
         confirm maximum_input >= 0 && maximum_sections >= 0 && maximum_entries >= 0
             else throw InvalidIniLimit.invalid;
-        state = ini_parse_state(origin, maximum_input, maximum_sections, maximum_entries);
+        self.origin = origin;
+        self.maximum_input = maximum_input;
+        self.maximum_sections = maximum_sections;
+        self.maximum_entries = maximum_entries;
     }
     value() is IniDocument {
-        confirm ini_parse_valid(state) else throw InvalidIni.located(ini_parse_line(state), ini_parse_column(state), ini_parse_message(state));
-        let sections is @IniSection = (0..ini_section_count(state)).map() -> section {
-            let entries is @IniEntry = (0..ini_entry_count(state, section)).map() -> entry {
-                IniEntry(ini_entry_name(state, section, entry), ini_entry_value(state, section, entry));
-            };
-            IniSection(ini_section_name(state, section), entries);
-        };
-        IniDocument(sections, sections.size());
+        IniParse(origin, maximum_input, maximum_sections, maximum_entries).document();
     }
     print(to is IniWriting) is void { self.value().print(to); }
 }
@@ -208,19 +199,89 @@ object IniString {
     }
 }
 
-// Internal protocol adapter: public domain exceptions shield the private ABI.
+// The emission of one string(): text pieces in reverse order, their length in
+// Unicode scalars, the names seen so far, and the first failure, which is
+// sticky. Status: 0 valid, 1 entry before section, 2 duplicate section,
+// 3 duplicate entry, 4 output limit.
 object IniTextEmission does IniWriting {
-    has state is IniWriteState;
-    IniTextEmission(maximum is int) { state = ini_write_state(maximum); }
-    section(name is string) is void { ini_write_section(state, name); self.valid(); }
-    entry(name is string, value is string) is void { ini_write_entry(state, name, value); self.valid(); }
-    string() is string { self.valid(); ini_write_string(state); }
+    has maximum is int;
+    has pieces is Atomic<List<string>>;
+    has length, status, entries is Atomic<int>;
+    has failed, parent is Atomic<string>;
+    has sections, names is Atomic<IniNames>;
+    IniTextEmission(maximum is int) {
+        self.maximum = maximum;
+        let empty is List<string> = EmptyList();
+        pieces = Atomic(empty);
+        length = Atomic(0);
+        status = Atomic(0);
+        entries = Atomic(-1);
+        failed = Atomic("");
+        parent = Atomic("");
+        sections = Atomic(IniNames());
+        names = Atomic(IniNames());
+    }
+    section(name is string) is void {
+        if status.value() == 0 {
+            let quoted = IniQuoted(name).string();
+            if sections.value().has(quoted) {
+                self.fail(2, name);
+            } else {
+                self.append("[" + quoted + "]\n");
+                if status.value() == 0 {
+                    sections.replace(sections.value().added(quoted));
+                    parent.replace(name);
+                    names.replace(IniNames());
+                    entries.replace(0);
+                }
+            }
+        }
+        self.valid();
+    }
+    entry(name is string, value is string) is void {
+        if status.value() == 0 {
+            if entries.value() < 0 {
+                self.fail(1, "");
+            } else if names.value().has(IniQuoted(name).string()) {
+                self.fail(3, name);
+            } else {
+                let quoted = IniQuoted(name).string();
+                self.append(quoted + "=" + IniQuoted(value).string() + "\n");
+                if status.value() == 0 {
+                    names.replace(names.value().added(quoted));
+                    entries.replace(entries.value() + 1);
+                }
+            }
+        }
+        self.valid();
+    }
+    string() is string {
+        self.valid();
+        let reversed is @string = pieces.value().map() -> piece { piece; };
+        reversed.reversed().join("");
+    }
     private:
+    append(text is string) is void {
+        let size = text.length();
+        if size > maximum - length.value() {
+            self.fail(4, "");
+        } else {
+            pieces.replace(pieces.value().prefix(text));
+            length.replace(length.value() + size);
+        }
+    }
+    fail(code is int, name is string) is void {
+        status.replace(code);
+        failed.replace(name);
+        let empty is List<string> = EmptyList();
+        pieces.replace(empty);
+        length.replace(0);
+    }
     valid() is void {
-        match ini_write_status(state) {
+        match status.value() {
             case 0 {}
-            case 2 { throw DuplicateIniSection.name(ini_write_name(state)); }
-            case 3 { throw DuplicateIniEntry.detailed(ini_write_parent(state), ini_write_name(state)); }
+            case 2 { throw DuplicateIniSection.name(failed.value()); }
+            case 3 { throw DuplicateIniEntry.detailed(parent.value(), failed.value()); }
             case 4 { throw IniOutputLimitExceeded.exceeded; }
             else { throw InvalidIniEmission.invalid; }
         }
@@ -238,57 +299,439 @@ enum InvalidIniLimit is Error = (invalid);
 enum InvalidIniSize is Error = (invalid);
 enum IniLimitExceeded is Error = (exceeded);
 
+// ---- the codec ----
 
-test "INI ordered section and binding coordinates" {
-    let section = IniSection("settings", [IniEntry("name", "Ada"), IniEntry("enabled", "true")]);
-    let document = IniDocument([section]);
-    test.is(document.sections().size(), 1);
-    test.is(document.section("settings").name(), "settings");
-    test.is(section.entries().first().name(), "name");
-    test.is(section.entries().last().value(), "true");
-    test.ok(section.membership("name"));
-    test.is(section.membership("Name"), false);
-    test.is(section.value("name"), "Ada");
-    document.print(IniWriting.fake());
-}
-test "INI literal names have no normalization or ambient default" {
-    let document = IniDocument([IniSection("", []), IniSection("DEFAULT", []), IniSection("a.b", [])]);
-    test.is(document.section("").name(), "");
-    test.is(document.section("a.b").entries().size(), 0);
-    let section = IniSection("settings", [IniEntry("A", "1"), IniEntry("a", "2"), IniEntry("é", "3"), IniEntry("é", "4")]);
-    test.is(section.entries().size(), 4);
-    test.is(section.value("A"), "1");
-    test.is(section.value("a"), "2");
-}
-test "INI missing and duplicate coordinates remain typed" {
-    test.is(try {IniDocument([]).section("lost"); "";} catch MissingIniSection.name(name) {name;}, "lost");
-    test.is(try {IniSection("s", []).value("lost"); "";} catch MissingIniEntry.detailed(section, name) {section+":"+name;}, "s:lost");
-    test.is(try {IniDocument([IniSection("", []), IniSection("", [])]); "bad";} catch DuplicateIniSection.name(name) {name;}, "");
-    test.is(try {IniSection("s", [IniEntry("k", "1"), IniEntry("k", "2")]); "";} catch DuplicateIniEntry.detailed(section, name) {section+":"+name;}, "s:k");
-}
-test "INI container budgets and empty emission" {
-    test.is(IniDocument([], 0).sections().size(), 0);
-    test.is(IniSection("", [], 0).entries().size(), 0);
-    test.ok(try {IniDocument([], -1); false;} catch error is InvalidIniLimit {true;});
-    test.ok(try {IniSection("", [], -1); false;} catch error is InvalidIniLimit {true;});
-    test.ok(try {IniDocument([IniSection("s", [])], 0); false;} catch error is IniLimitExceeded {true;});
-    test.ok(try {IniSection("", [IniEntry("", "")], 0); false;} catch error is IniLimitExceeded {true;});
-    IniDocument([]).print(IniWriting.fake());
-}
-
-test "INI parser and canonical renderer round trip through content protocol" {
-    let parsed = ParsedIni("[settings]\nname=Ada\nenabled=true");
-    test.is(parsed.value().section("settings").value("name"), "Ada");
-    parsed.print(IniWriting.fake());
-    let text = IniString(parsed).string();
-    test.is(text, "[\"settings\"]\n\"name\"=\"Ada\"\n\"enabled\"=\"true\"\n");
-    test.is(ParsedIni(text).value().section("settings").value("enabled"), "true");
-    test.is(IniString(IniDocument([]), 0).string(), "");
-}
-test "INI syntax and codec budgets remain typed failures" {
-    for ["orphan=x", "[s]\nx=1\nx=2", "[s]\n[s]", "[s]\nx=\"unterminated"] -> source {
-        test.ok(try {ParsedIni(source).value();false;} catch error is InvalidIni {true;});
+// The quoted names a writer has emitted, as text: each one follows a NUL. A
+// quoted name has no raw control, so a NUL-delimited search is exact, and a
+// native contains() replaces a loop. New names go to a short second text
+// that joins the first every 16 additions.
+hidden object IniNames {
+    has settled is string;
+    has recent is string;
+    has count is int;
+    IniNames() {
+        settled = char(0).string();
+        recent = char(0).string();
+        count = 0;
     }
-    test.ok(try {ParsedIni("[s]\nx=y", 6, 1, 1).value();false;} catch error is InvalidIni {true;});
-    test.ok(try {IniString(IniSection("s", []), 1).string();false;} catch error is IniOutputLimitExceeded {true;});
+    IniNames(settled is string, recent is string, count is int) {
+        self.settled = settled;
+        self.recent = recent;
+        self.count = count;
+    }
+    has(quoted is string) is bool {
+        let token = char(0).string() + quoted + char(0).string();
+        recent.contains(token) || settled.contains(token);
+    }
+    added(quoted is string) is IniNames {
+        let joined = recent + quoted + char(0).string();
+        if count < 15 {
+            IniNames(settled, joined, count + 1);
+        } else {
+            IniNames(settled + joined.slice(1, joined.length()), char(0).string(), 0);
+        }
+    }
+}
+
+// A double-quoted coordinate: backslash, quote and ASCII controls escaped
+// (b/t/n/f/r by name, the rest as \u00XX), everything else literal.
+hidden object IniQuoted {
+    has origin is string;
+    IniQuoted(origin is string) { self.origin = origin; }
+    string() is string {
+        let points = origin.characters();
+        let plain = points.size() == 0
+            || (points.ordering()[0].code() >= 32 && !points.contains('"') && !points.contains('\\') && !points.contains(char(127)));
+        if plain { "\"" + origin + "\""; } else { "\"" + self.escaped() + "\""; }
+    }
+    private:
+    escaped() is string {
+        let pieces is @string = origin.characters().map() -> point {
+            let code = point.code();
+            if point == '"' { "\\\""; }
+            else if point == '\\' { "\\\\"; }
+            else if code == 8 { "\\b"; }
+            else if code == 9 { "\\t"; }
+            else if code == 10 { "\\n"; }
+            else if code == 12 { "\\f"; }
+            else if code == 13 { "\\r"; }
+            else if code < 32 || code == 127 { "\\u00" + IniHex(code).string(); }
+            else { point.string(); }
+        };
+        pieces.join("");
+    }
+}
+
+// Two lower-case hexadecimal digits of a byte value.
+hidden object IniHex {
+    has value is int;
+    IniHex(value is int) { self.value = value; }
+    string() is string {
+        let digits = "0123456789abcdef";
+        let high = (value / 16).int();
+        digits.slice(high, high + 1) + digits.slice(value - high * 16, value - high * 16 + 1);
+    }
+}
+
+// The first ASCII control of a line (tab is allowed raw).
+hidden object IniControls {
+    has origin is string;
+    IniControls(origin is string) { self.origin = origin; }
+    // The scalar index of the first control, tab included when `tab` is true.
+    first(tab is bool) is int {
+        let points = origin.characters();
+        let found = (0..points.size()).filter() -> at {
+            let code = points[at].code();
+            (code < 32 && (tab || code != 9)) || code == 127;
+        };
+        if found.size() > 0 { found[0]; } else { -1; }
+    }
+}
+
+// The index of the first name that repeats an earlier one, or -1. A sort
+// finds out whether any name repeats; only then are the names scanned.
+hidden object IniRepeated {
+    has names is @string;
+    IniRepeated(names is @string) { self.names = names; }
+    first() is int {
+        if names.size() < 2 { return -1; }
+        let sorted = names.ordering();
+        let any = (1..sorted.size()).filter() -> at { sorted[at] == sorted[at - 1]; }.size() > 0;
+        if !any { -1; } else { self.scan(); }
+    }
+    private:
+    scan() is int {
+        let found = Cell(-1);
+        for 0..names.size() -> index {
+            if found.value() < 0 {
+                for 0..index -> previous {
+                    if found.value() < 0 && names[previous] == names[index] { found.replace(index); }
+                }
+            }
+        }
+        found.value();
+    }
+}
+
+// One line, classified on its own (the first pass of IniParse). Columns are
+// one-based scalar positions; `start` is where the line's content begins.
+hidden enum IniLine = (
+    blank,
+    control(column is int),
+    header(name is string, column is int),
+    broken_header(column is int, message is string),
+    binding(name is string, value is string, column is int),
+    broken_binding(start is int, column is int, message is string)
+);
+
+// A syntax failure inside a line: the zero-based scalar position and the text.
+hidden enum IniFault is Error = (at(position is int, message is string));
+
+// A decoded token and the position just after it.
+hidden object IniToken {
+    has text is string;
+    has end is int;
+    IniToken(:text, :end);
+    text() is string { text; }
+    end() is int { end; }
+}
+
+hidden object IniLineScan {
+    has line is string;
+    has points is @char;
+    IniLineScan(line is string) {
+        self.line = line;
+        points = line.characters();
+    }
+
+    outcome() is IniLine {
+        let control = IniControls(line).first(false);
+        let position = self.space(0);
+        if control >= 0 {
+            IniLine.control(control + 1);
+        } else if position == points.size() || points[position] == '#' || points[position] == ';' {
+            IniLine.blank;
+        } else if points[position] == '[' {
+            try { self.header(position); }
+            catch IniFault.at(at, message) { IniLine.broken_header(at + 1, message); }
+        } else {
+            try { self.binding(position); }
+            catch IniFault.at(at, message) { IniLine.broken_binding(position + 1, at + 1, message); }
+        }
+    }
+
+    private:
+    header(position is int) is IniLine {
+        let name = self.name(position + 1, ']');
+        let end = name.end();
+        confirm end < points.size() && points[end] == ']' else throw IniFault.at(end, "expected closing bracket");
+        confirm self.space(end + 1) == points.size() else throw IniFault.at(end + 1, "trailing section material");
+        IniLine.header(name.text(), position + 1);
+    }
+
+    binding(position is int) is IniLine {
+        let name = self.name(position, '=');
+        let end = name.end();
+        confirm end < points.size() && points[end] == '=' else throw IniFault.at(end, "expected equals");
+        let start = self.space(end + 1);
+        let value = if start < points.size() && points[start] == '"' {
+            let quoted = self.quoted(start);
+            confirm self.space(quoted.end()) == points.size() else throw IniFault.at(quoted.end(), "trailing value material");
+            quoted.text();
+        } else {
+            self.trimmed(start, points.size());
+        };
+        IniLine.binding(name.text(), value, position + 1);
+    }
+
+    name(from is int, delimiter is char) is IniToken {
+        let position = self.space(from);
+        if position < points.size() && points[position] == '"' {
+            let quoted = self.quoted(position);
+            IniToken(text: quoted.text(), end: self.space(quoted.end()));
+        } else {
+            let end = self.find(position, delimiter);
+            confirm end >= 0 else throw IniFault.at(points.size(), "missing " + delimiter.string());
+            let name = self.trimmed(position, end);
+            confirm name != "" else throw IniFault.at(position, "empty bare name");
+            IniToken(text: name, end: end);
+        }
+    }
+
+    // A quoted string starting at `start` (the opening quote).
+    quoted(start is int) is IniToken {
+        let at = Cell(start + 1);
+        let run = Cell(start + 1);
+        let empty is List<string> = EmptyList();
+        let parts = Cell(empty);
+        let closed = Cell(-1);
+        loop {
+            last if closed.value() >= 0;
+            confirm at.value() < points.size() else throw IniFault.at(at.value(), "unterminated quoted string");
+            let point = points[at.value()];
+            if point == '"' {
+                parts.replace(parts.value().prefix(line.slice(run.value(), at.value())));
+                closed.replace(at.value() + 1);
+            } else if point != '\\' {
+                at.replace(at.value() + 1);
+            } else {
+                parts.replace(parts.value().prefix(line.slice(run.value(), at.value())));
+                let escape = at.value() + 1;
+                confirm escape < points.size() else throw IniFault.at(escape, "unfinished escape");
+                let decoded = self.escape(escape);
+                parts.replace(parts.value().prefix(decoded.text()));
+                at.replace(decoded.end());
+                run.replace(decoded.end());
+            }
+        }
+        let reversed is @string = parts.value().map() -> part { part; };
+        IniToken(text: reversed.reversed().join(""), end: closed.value());
+    }
+
+    // The escape whose letter is at `at`; the token ends after it.
+    escape(at is int) is IniToken {
+        let letter = points[at];
+        let named = if letter == '"' { "\""; }
+            else if letter == '\\' { "\\"; }
+            else if letter == 'b' { char(8).string(); }
+            else if letter == 't' { char(9).string(); }
+            else if letter == 'n' { char(10).string(); }
+            else if letter == 'f' { char(12).string(); }
+            else if letter == 'r' { char(13).string(); }
+            else { ""; };
+        if named != "" {
+            IniToken(text: named, end: at + 1);
+        } else {
+            confirm letter == 'u' || letter == 'U' else throw IniFault.at(at, "unknown escape");
+            let width = if letter == 'u' { 4; } else { 8; };
+            let first = at + 1;
+            confirm first + width <= points.size() && (first..first + width).filter() -> index { IniDigit(points[index]).value() < 0; }.size() == 0
+                else throw IniFault.at(first, "invalid Unicode escape");
+            let code = (first..first + width).reduce(0) -> sum, index { sum * 16 + IniDigit(points[index]).value(); };
+            confirm code <= 1114111 && (code < 55296 || code > 57343) else throw IniFault.at(first, "escape is not a Unicode scalar");
+            IniToken(text: char(code).string(), end: first + width);
+        }
+    }
+
+    space(from is int) is int {
+        let at = Cell(from);
+        loop {
+            last if at.value() >= points.size();
+            let point = points[at.value()];
+            last if point != ' ' && point != '\t';
+            at.replace(at.value() + 1);
+        }
+        at.value();
+    }
+
+    find(from is int, delimiter is char) is int {
+        let at = Cell(from);
+        loop {
+            last if at.value() >= points.size() || points[at.value()] == delimiter;
+            at.replace(at.value() + 1);
+        }
+        if at.value() < points.size() { at.value(); } else { -1; }
+    }
+
+    // line[from, to) without trailing spaces and tabs.
+    trimmed(from is int, to is int) is string {
+        let end = Cell(to);
+        loop {
+            last if end.value() <= from;
+            let point = points[end.value() - 1];
+            last if point != ' ' && point != '\t';
+            end.replace(end.value() - 1);
+        }
+        line.slice(from, end.value());
+    }
+}
+
+// A hexadecimal digit's value, or -1.
+hidden object IniDigit {
+    has point is char;
+    IniDigit(point is char) { self.point = point; }
+    value() is int {
+        let code = point.code();
+        if code >= 48 && code <= 57 { code - 48; }
+        else if code >= 97 && code <= 102 { code - 87; }
+        else if code >= 65 && code <= 70 { code - 55; }
+        else { -1; }
+    }
+}
+
+// The two passes: every line classified on its own, then the document rules
+// in line order (an entry needs a section, names are unique, the budgets). The
+// first failing line wins, with the rule the native order checks first.
+hidden object IniParse {
+    has origin is string;
+    has maximum_input, maximum_sections, maximum_entries is int;
+    IniParse(origin is string, maximum_input is int, maximum_sections is int, maximum_entries is int) {
+        self.origin = origin;
+        self.maximum_input = maximum_input;
+        self.maximum_sections = maximum_sections;
+        self.maximum_entries = maximum_entries;
+    }
+
+    document() is IniDocument {
+        confirm origin.length() <= maximum_input else throw InvalidIni.located(1, 1, "maximum INI input exceeded");
+        let texts = self.lines();
+        let lines is @IniLine = texts.map() -> text { IniLineScan(text).outcome(); };
+        let headers is @int = (0..lines.size()).filter() -> at { self.is_header(lines[at]); };
+        let bounds is @int = (0..headers.size() + 1).map() -> index {
+            if index < headers.size() { headers[index]; } else { lines.size(); }
+        };
+        let repeated_section = self.first_repeated(headers.map() -> at { self.name(lines[at]); }, headers);
+        let repeated_entry = (0..headers.size()).reduce(lines.size()) -> earliest, section {
+            let members is @int = ((bounds[section] + 1)..bounds[section + 1]).filter() -> at { self.is_binding(lines[at]); };
+            let found = self.first_repeated(members.map() -> at { self.name(lines[at]); }, members);
+            if found < earliest { found; } else { earliest; }
+        };
+        self.check(lines, repeated_section, repeated_entry);
+        let sections is @IniSection = (0..headers.size()).map() -> section {
+            let entries is @IniEntry = ((bounds[section] + 1)..bounds[section + 1]).filter() -> at { self.is_binding(lines[at]); }.map() -> at {
+                match lines[at] {
+                    case IniLine.binding(name, value, column) { IniEntry(name, value); }
+                    else { IniEntry("", ""); }
+                }
+            };
+            IniSection(self.name(lines[headers[section]]), entries);
+        };
+        IniDocument(sections, sections.size());
+    }
+
+    private:
+    // LF-separated lines; CRLF loses its CR; no line after a final LF.
+    lines() is @string {
+        let pieces = origin.split("\n");
+        let count = if origin == "" || origin.ends_with("\n") { pieces.size() - 1; } else { pieces.size(); };
+        (0..count).map() -> index {
+            let piece = pieces[index];
+            if index < pieces.size() - 1 && piece.ends_with("\r") { piece.slice(0, piece.length() - 1); } else { piece; }
+        };
+    }
+
+    // The line of the first name that repeats an earlier one, or the end.
+    first_repeated(names is @string, at is @int) is int {
+        let index = IniRepeated(names).first();
+        if index < 0 { 2147483647; } else { at[index]; }
+    }
+
+    // The document rules, line by line, up to the first failure.
+    check(lines is @IniLine, repeated_section is int, repeated_entry is int) is void {
+        let sections = Cell(0);
+        let entries = Cell(0);
+        let in_section = Cell(0);
+        for 0..lines.size() -> at {
+            let line = at + 1;
+            match lines[at] {
+                case IniLine.blank {}
+                case IniLine.control(column) {
+                    throw InvalidIni.located(line, column, "invalid scalar or raw control character");
+                }
+                case IniLine.broken_header(column, message) { throw InvalidIni.located(line, column, message); }
+                case IniLine.header(name, column) {
+                    confirm at != repeated_section else throw InvalidIni.located(line, column, "duplicate INI section");
+                    confirm sections.value() < maximum_sections else throw InvalidIni.located(line, column, "maximum INI sections exceeded");
+                    sections.replace(sections.value() + 1);
+                    in_section.replace(0);
+                }
+                case IniLine.broken_binding(start, column, message) {
+                    confirm sections.value() > 0 else throw InvalidIni.located(line, start, "entry requires a section");
+                    throw InvalidIni.located(line, column, message);
+                }
+                case IniLine.binding(name, value, column) {
+                    confirm sections.value() > 0 else throw InvalidIni.located(line, column, "entry requires a section");
+                    confirm at != repeated_entry else throw InvalidIni.located(line, column, "duplicate INI entry");
+                    confirm entries.value() < maximum_entries && in_section.value() < 1024
+                        else throw InvalidIni.located(line, column, "maximum INI entries exceeded");
+                    entries.replace(entries.value() + 1);
+                    in_section.replace(in_section.value() + 1);
+                }
+            }
+        }
+    }
+
+    is_header(line is IniLine) is bool {
+        match line { case IniLine.header(name, column) { true; } else { false; } }
+    }
+    is_binding(line is IniLine) is bool {
+        match line { case IniLine.binding(name, value, column) { true; } else { false; } }
+    }
+    name(line is IniLine) is string {
+        match line {
+            case IniLine.header(name, column) { name; }
+            case IniLine.binding(name, value, column) { name; }
+            else { ""; }
+        }
+    }
+}
+
+test "a document reads back in order" {
+    let document = ParsedIni("[s]\nx=y\n[t]\n  \"a b\" = \"c\\td\"  \n").value();
+    test.is(document.section("s").value("x"), "y");
+    test.is(document.section("t").value("a b"), "c\td");
+    test.is(IniString(document).string(), "[\"s\"]\n\"x\"=\"y\"\n[\"t\"]\n\"a b\"=\"c\\td\"\n");
+}
+
+test "a failure names the first problem" {
+    let unterminated = test.throws(InvalidIni) { ParsedIni("[s]\r\nx=\"").value(); };
+    test.is(unterminated, InvalidIni.located(2, 4, "unterminated quoted string"));
+    let orphan = test.throws(InvalidIni) { ParsedIni("x=y").value(); };
+    test.is(orphan, InvalidIni.located(1, 1, "entry requires a section"));
+    let repeated = test.throws(InvalidIni) { ParsedIni("[s]\n[t]\n[s]").value(); };
+    test.is(repeated, InvalidIni.located(3, 1, "duplicate INI section"));
+    let twice = test.throws(InvalidIni) { ParsedIni("[s]\na=1\n b = 2\nb=3").value(); };
+    test.is(twice, InvalidIni.located(4, 1, "duplicate INI entry"));
+}
+
+test "the writer enforces order, duplicates and its budget" {
+    let emission = IniTextEmission(14);
+    emission.section("é");
+    emission.entry("a", "😀");
+    test.is(emission.string(), "[\"é\"]\n\"a\"=\"😀\"\n");
+    let duplicate = test.throws(DuplicateIniSection) { emission.section("é"); };
+    test.is(duplicate, DuplicateIniSection.name("é"));
+    test.throws(DuplicateIniSection) { emission.section("other"); };
+    test.throws(InvalidIniEmission) { IniTextEmission(100).entry("x", "y"); };
+    test.throws(IniOutputLimitExceeded) { IniTextEmission(1).section("s"); };
 }

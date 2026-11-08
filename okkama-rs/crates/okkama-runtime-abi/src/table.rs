@@ -242,23 +242,6 @@ natives! {
     HtmlHtmlAttributeValue = 239, "runtime/html@1::html_attribute_value/3", "(HtmlEventsState, int, int) -> string";
     IdnaHostnameAscii = 240, "runtime/idna@1::hostname_ascii/1", "(string) -> string";
     IdnaHostnameUnicode = 241, "runtime/idna@1::hostname_unicode/1", "(string) -> string";
-    IniIniParseState = 242, "runtime/ini@1::ini_parse_state/4", "(string, int, int, int) -> IniParseState";
-    IniIniParseValid = 243, "runtime/ini@1::ini_parse_valid/1", "(IniParseState) -> bool";
-    IniIniParseLine = 244, "runtime/ini@1::ini_parse_line/1", "(IniParseState) -> int";
-    IniIniParseColumn = 245, "runtime/ini@1::ini_parse_column/1", "(IniParseState) -> int";
-    IniIniParseMessage = 246, "runtime/ini@1::ini_parse_message/1", "(IniParseState) -> string";
-    IniIniSectionCount = 247, "runtime/ini@1::ini_section_count/1", "(IniParseState) -> int";
-    IniIniSectionName = 248, "runtime/ini@1::ini_section_name/2", "(IniParseState, int) -> string";
-    IniIniEntryCount = 249, "runtime/ini@1::ini_entry_count/2", "(IniParseState, int) -> int";
-    IniIniEntryName = 250, "runtime/ini@1::ini_entry_name/3", "(IniParseState, int, int) -> string";
-    IniIniEntryValue = 251, "runtime/ini@1::ini_entry_value/3", "(IniParseState, int, int) -> string";
-    IniIniWriteState = 252, "runtime/ini@1::ini_write_state/1", "(int) -> IniWriteState";
-    IniIniWriteSection = 253, "runtime/ini@1::ini_write_section/2", "(IniWriteState, string) -> bool";
-    IniIniWriteEntry = 254, "runtime/ini@1::ini_write_entry/3", "(IniWriteState, string, string) -> bool";
-    IniIniWriteStatus = 255, "runtime/ini@1::ini_write_status/1", "(IniWriteState) -> int";
-    IniIniWriteName = 256, "runtime/ini@1::ini_write_name/1", "(IniWriteState) -> string";
-    IniIniWriteParent = 257, "runtime/ini@1::ini_write_parent/1", "(IniWriteState) -> string";
-    IniIniWriteString = 258, "runtime/ini@1::ini_write_string/1", "(IniWriteState) -> string";
     InputStateInputStateCreate = 259, "runtime/input_state@1::input_state_create/0", "() -> Utf8InputState";
     InputStateInputStateAppend = 260, "runtime/input_state@1::input_state_append/2", "(Utf8InputState, @byte) -> int";
     InputStateInputStateSize = 261, "runtime/input_state@1::input_state_size/1", "(Utf8InputState) -> int";
@@ -563,7 +546,6 @@ natives! {
     JsonJsonMemberValues = 560, "runtime/json@1::json_member_values/1", "(JsonNodeState) -> @JsonNodeState";
     JsonJsonNodeItems = 561, "runtime/json@1::json_node_items/1", "(JsonNodeState) -> @JsonNodeState";
     JsonJsonMemberNames = 562, "runtime/json@1::json_member_names/1", "(JsonNodeState) -> @string";
-
     DbNull = 563, "runtime/db@1::db_null/0", "() -> DbCellState";
     DbBoolean = 564, "runtime/db@1::db_boolean/1", "(bool) -> DbCellState";
     DbInteger = 565, "runtime/db@1::db_integer/1", "(string) -> DbCellState";
@@ -624,3 +606,4 @@ natives! {
     PostgresPgPageTexts = 620, "runtime/postgres@1::pg_page_texts/1", "(PgPageState) -> @string";
     PostgresPgPageBlobs = 621, "runtime/postgres@1::pg_page_blobs/1", "(PgPageState) -> @@byte";
 }
+// retired: 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258
