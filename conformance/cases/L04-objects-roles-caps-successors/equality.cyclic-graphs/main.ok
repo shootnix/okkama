@@ -1,0 +1,42 @@
+module ocs/cyclic_equality v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Leaf {
+    has up is Tree;
+    has tag is int;
+    Leaf(:up, :tag);
+}
+
+object Tree {
+    has name is string;
+    has leaves is @Leaf;
+    Tree(name is string, tags is @int) {
+        self.name = name;
+        let me = self;
+        leaves = tags.map() -> tag { Leaf(up: me, tag: tag); };
+    }
+}
+
+object Twin {
+    has name is string;
+    has other is Maybe<Pair>;
+    Twin(name is string) {
+        self.name = name;
+        other = Maybe.some(Pair(back: self));
+    }
+}
+
+object Pair {
+    has back is Twin;
+    Pair(:back);
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln((Tree("oak", [1, 2]) == Tree("oak", [1, 2])).string());
+    out.writeln((Tree("oak", [1, 2]) == Tree("oak", [1, 3])).string());
+    out.writeln((Tree("oak", [1]) == Tree("elm", [1])).string());
+    out.writeln((Twin("a") == Twin("a")).string());
+    0;
+}
