@@ -1740,6 +1740,8 @@ STRING_SPELLINGS = {
     "\n": ['"\\n"', '"\\u{a}"', "```\n```"],
     "\t": ['"\\t"', '"\\u{9}"', "```\t```"],
     "\t\r": ['"\\t\\r"', '"\\u{9}\\u{D}"'],
+    # A fenced raw string drops its CRs (#310).
+    "\r\n": ['"\\r\\n"', '"\\u{d}\\u{a}"', "```\r\n```"],
     "\\": ['"\\\\"', '"\\u{5c}"', "```\\```"],
     '"': ['"\\""', '"\\u{22}"', '```"```'],
     "'": ['"\'"', '"\\u{27}"', "```'```"],
@@ -1873,6 +1875,9 @@ object Box<T> {
                     assert float(spelling.replace("_", "")) == value, spelling
                 for context, template, expected in spelling_contexts(kind, value, canonical):
                     program = batch.program()
+                    if spelling.startswith("```") and "\r" in spelling:
+                        program.skip(310)
+                        continue
                     expression = template.replace("{s}", spelling)
                     if "{const}" in expression:
                         name = program.fresh("LEX")
