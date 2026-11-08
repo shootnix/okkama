@@ -787,7 +787,7 @@ main() is int {
     for (index, (body, expected)) in [
         ("let m = [\"a\": 1]; m[\"z\"];", "Map key not found: \"z\""),
         ("let m = [1: 1]; m[-5];", "Map key not found: -5"),
-        ("let m = [true: 1]; m[false];", "Map key not found: 0"),
+        ("let m = [true: 1]; m[false];", "Map key not found: false"),
     ]
     .into_iter()
     .enumerate()
