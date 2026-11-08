@@ -8,7 +8,9 @@
 //!
 //! All state lives on the VM thread. Received ciphertext and plaintext go to
 //! the shared buffers in the same poll that reads them, and outgoing records
-//! queue in wire order, so a cancelled operation loses no bytes.
+//! queue in wire order, so a cancelled operation loses no bytes. A read that
+//! completed but is cancelled before its result reaches the program puts
+//! its plaintext back (`Received`).
 use crate::host::native_network::Transport;
 use crate::host::*;
 use okkama_runtime_abi::{Native, NativeFailure};
@@ -243,6 +245,14 @@ impl Tls {
         Ok(())
     }
 
+    /// Plaintext that a read took but could not deliver goes back in front.
+    fn return_plain(&self, bytes: Vec<u8>) {
+        let mut plain = self.plain.borrow_mut();
+        let rest = std::mem::take(&mut *plain);
+        plain.extend(bytes);
+        plain.extend(rest);
+    }
+
     fn take_plain(&self, limit: usize) -> Option<Vec<u8>> {
         let mut plain = self.plain.borrow_mut();
         if plain.is_empty() {
@@ -325,6 +335,28 @@ impl Tls {
             }
         }
         Ok(())
+    }
+}
+
+/// The plaintext of one read. A cancellation after the read completed and
+/// before the program got its result drops the result unpublished: the bytes
+/// then go back to the front of the plaintext buffer for the next read.
+struct Received {
+    bytes: Option<Vec<u8>>,
+    state: Rc<Tls>,
+}
+
+impl Output for Received {
+    fn publish(mut self: Box<Self>, heap: &mut Heap) -> Result<Slot, Error> {
+        heap.native_byte_array(self.bytes.take().unwrap_or_default())
+    }
+}
+
+impl Drop for Received {
+    fn drop(&mut self) {
+        if let Some(bytes) = self.bytes.take() {
+            self.state.return_plain(bytes);
+        }
     }
 }
 
@@ -512,11 +544,12 @@ impl Heap {
                     return Ok(self.future_with_state(State::Ready(Ok(ready)))?);
                 }
                 let changed = state.changed.subscribe();
+                let keeper = state.clone();
                 Ok(self.native_io(async move {
                     let _busy = busy;
                     interruptible(changed, async {
                         // A failed read closes the state; a cancelled one does not.
-                        state.receive(limit).await.map_err(|stop| {
+                        state.receive(limit).await.map(|bytes| Received { bytes: Some(bytes), state: keeper }).map_err(|stop| {
                             let failure = match stop {
                                 Stop::Truncated => fail(n, "invalid_data", "TLS peer truncated input"),
                                 Stop::Io => io_failure(&state, n),
