@@ -1371,6 +1371,164 @@ def control_family():
     return batch.programs
 
 
+# ----- family: nested data structures over leaves of every kind -----------------
+
+STRUCT_DECLARATIONS = """role Shape {
+    area() is int;
+}
+
+object Square does Shape {
+    has side is int;
+    Square(:side);
+    area() is int { side * side; }
+}
+
+object Point {
+    has x is int;
+    has y is int;
+    Point(:x, :y);
+}
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}
+
+enum Slot<T> = (vacant, full(item is T));""".splitlines()
+
+# A leaf: its type, a literal, another literal of the type, and how to check
+# the leaf an access reaches.
+STRUCT_LEAVES = [
+    ("int", "7", "8", lambda e, v: ("is", e, v)),
+    ("string", lit_str("s😀"), lit_str("t"), lambda e, v: ("is", e, v)),
+    ("Point", "Point(x: 1, y: -2)", "Point(x: 0, y: 0)", lambda e, v: ("ok", f"{e} == {v}")),
+    ("Shape", "Square(side: 3)", "Square(side: 4)", lambda e, v: ("is", f"{e}.area()", "9" if v == "Square(side: 3)" else "16")),
+]
+# A container: how its type, literal and access are written around the inner ones.
+STRUCT_CONTAINERS = {
+    "array": (lambda t: f"@{t}", lambda inner: f"[{inner}]", lambda e: f"{e}[0]"),
+    "map": (lambda t: f"%string:{t}", lambda inner: f'["k": {inner}]', lambda e: f'{e}["k"]'),
+    "maybe": (lambda t: f"Maybe<{t}>", lambda inner: f"Maybe.some({inner})",
+              lambda e: f'(match {e} {{ case Maybe.some(x) {{ x; }} case Maybe.none {{ panic "none"; }} }})'),
+    "box": (lambda t: f"Box<{t}>", lambda inner: f"Box(value: {inner})", lambda e: f"{e}.get()"),
+    "slot": (lambda t: f"Slot<{t}>", lambda inner: f"Slot.full({inner})",
+             lambda e: f'(match {e} {{ case Slot.full(x) {{ x; }} case Slot.vacant {{ panic "vacant"; }} }})'),
+}
+
+
+def structures_family():
+    import itertools
+    batch = Batch("nested data structures of depth one to three over int, string, object and role leaves",
+                  declarations=STRUCT_DECLARATIONS)
+    names = list(STRUCT_CONTAINERS)
+    for depth in (1, 2, 3):
+        for chain in itertools.product(names, repeat=depth):
+            for leaf_type, leaf, other, check in STRUCT_LEAVES:
+                type_name, literal, changed = leaf_type, leaf, other
+                for container in reversed(chain):
+                    wrap_type, wrap_literal, _ = STRUCT_CONTAINERS[container]
+                    type_name = wrap_type(type_name)
+                    literal = wrap_literal(literal)
+                    changed = wrap_literal(changed)
+                # The access goes from the outside in.
+                expr = "{v}"
+                for container in chain:
+                    expr = STRUCT_CONTAINERS[container][2](expr)
+                program = batch.program()
+                v, same, diff = program.fresh("v"), program.fresh("same"), program.fresh("diff")
+                setup = [f"let {v} is {type_name} = {literal};", f"let {same} is {type_name} = {literal};",
+                         f"let {diff} is {type_name} = {changed};"]
+                kind = check(expr.replace("{v}", v), leaf)
+                label = f"{type_name}"
+                if kind[0] == "is":
+                    program.is_(kind[1], kind[2], f"{label}: the leaf", setup)
+                else:
+                    program.ok(kind[1], f"{label}: the leaf", setup)
+                program.ok(f"{v} == {same}", f"{label}: equal to the same structure")
+                program.ok(f"{v} != {diff}", f"{label}: a different leaf")
+    return batch.programs
+
+
+# ----- family: value objects as map keys --------------------------------------------
+
+KEY_DECLARATIONS = """enum Level = (low, mid, high);
+
+object KeyA {
+    has a is int;
+    has b is string;
+    KeyA(:a, :b);
+}
+
+object KeyB {
+    has r is rat;
+    has c is char;
+    KeyB(:r, :c);
+}
+
+object KeyC {
+    has level is Level;
+    has inner is KeyA;
+    KeyC(:level, :inner);
+}
+
+object KeyD {
+    has small is byte;
+    has flag is bool;
+    KeyD(:small, :flag);
+}
+
+object KeyE {
+    has f is float;
+    KeyE(:f);
+}""".splitlines()
+
+LEVELS = ["low", "mid", "high"]
+# (type, values as Python tuples, literal, sort key)
+KEY_OBJECTS = [
+    ("KeyA", [(2, "b"), (1, "z"), (2, "a")], lambda v: f"KeyA(a: {lit_int(v[0])}, b: {lit_str(v[1])})", lambda v: v),
+    ("KeyB", [(F(1, 2), "x"), (F(-1, 3), "😀"), (F(1, 2), "A")], lambda v: f"KeyB(r: {lit_rat(v[0])}, c: {lit_char(v[1])})",
+     lambda v: (v[0], ord(v[1]))),
+    ("KeyC", [("high", (1, "a")), ("low", (9, "q")), ("high", (0, "z"))],
+     lambda v: f"KeyC(level: Level.{v[0]}, inner: KeyA(a: {lit_int(v[1][0])}, b: {lit_str(v[1][1])}))",
+     lambda v: (LEVELS.index(v[0]), v[1])),
+    ("KeyD", [(255, False), (0, True), (255, True)], lambda v: f"KeyD(small: byte({v[0]}), flag: {lit_bool(v[1])})", lambda v: v),
+    ("KeyE", [(2.5,), (-1.0,), (1e16,)], lambda v: f"KeyE(f: {lit_float(v[0])})", lambda v: v),
+]
+
+
+def keys_family():
+    import itertools
+    batch = Batch("value objects as map keys: key order, lookups with equal objects, + and -", declarations=KEY_DECLARATIONS)
+    for type_name, values, literal, key in KEY_OBJECTS:
+        shapes = [(), (0,), (1, 0), (0, 1, 2), (2, 0, 1)]
+        for shape in shapes:
+            program = batch.program()
+            m, ks = program.fresh("m"), program.fresh("ks")
+            order = sorted(set(shape), key=lambda i: key(values[i]))
+            entries = ", ".join(f"{literal(values[i])}: {i + 1}" for i in shape) if shape else ":"
+            setup = [f"let {m} is %{type_name}:int = [{entries}];",
+                     f"let {ks} is @{type_name} = [{', '.join(literal(values[i]) for i in order)}];"]
+            desc = f"%{type_name}:int of {len(shape)}"
+            program.ok(f"{m}.keys() == {ks}", f"{desc}: keys in field order", setup)
+            for i, v in enumerate(values):
+                program.is_(f"{m}[{literal(v)}] else -1", lit_int(i + 1 if i in shape else -1), f"{desc}: lookup {literal(v)}")
+                program.is_(f"{m}.has({literal(v)})", lit_bool(i in shape), f"{desc}: has {literal(v)}")
+        for left, right in itertools.product([(0,), (1, 2), (0, 1, 2)], repeat=2):
+            program = batch.program()
+            a, b, plus, minus = program.fresh("a"), program.fresh("b"), program.fresh("plus"), program.fresh("minus")
+            def mapping(sh):
+                return "[" + (", ".join(f"{literal(values[i])}: {i + 1}" for i in sh) if sh else ":") + "]"
+            merged = tuple(dict.fromkeys(left + right))
+            kept = tuple(i for i in left if i not in right)
+            setup = [f"let {a} is %{type_name}:int = {mapping(left)};", f"let {b} is %{type_name}:int = {mapping(right)};",
+                     f"let {plus} is %{type_name}:int = {mapping(merged)};", f"let {minus} is %{type_name}:int = {mapping(kept)};"]
+            desc = f"%{type_name}:int {left} and {right}"
+            program.ok(f"{a} + {b} == {plus}", f"{desc}: +", setup)
+            program.ok(f"{a} - {b} == {minus}", f"{desc}: -")
+    return batch.programs
+
+
 FAMILIES = {
     "values": values_family,
     "int": int_family,
@@ -1384,6 +1542,8 @@ FAMILIES = {
     "collections": collections_family,
     "nesting": nesting_family,
     "control": control_family,
+    "structures": structures_family,
+    "keys": keys_family,
 }
 
 
