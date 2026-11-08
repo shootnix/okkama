@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- Sparrow core: a map lookup with `else` on a `float` key failed JIT
+  verification (`arg has type f64, expected i64`): the key went to the
+  runtime helper as a float register instead of its word (#301). The other
+  helper calls were checked for the same mistake; none takes a float.
+  Conformance case `L05.map.float-key-fallback`.
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,

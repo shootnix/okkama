@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.map.float-key-fallback",
+  "title": "float map keys: lookup with else, plain lookup and has, literal and variable keys, -0.0, subnormal and huge keys",
+  "purpose": "Observe float-keyed lookups with a fallback on every engine (#301: the Sparrow JIT passed the key as f64).",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.MAP",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1 1 -1\n2 3 4\n1 true false true\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#8.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #301 from the spec text",
+    "expected_basis": "spec 8.8: float is a key type; float keys compare numerically, so -0.0 and 0.0 are one key; a present key's else fallback is not evaluated (the fallback panics), a missing key's is."
+  },
+  "status": "mandatory"
+}
