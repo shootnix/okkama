@@ -162,8 +162,9 @@ zsh does not split `$var`; use `${=var}` or a function when passing commands.
 | Generated programs | `tools/gen/okgen.py run --seeds N` (`show SEED`) | terminating deterministic programs (BigInt, strings, arrays, objects, roles, closures, try/catch, recursion) on ir/sparrow/jvm; a disagreement is minimized (ddmin over `main`) into `conformance/reports/runs/okgen/<seed>`; `tools/gen/mutants.sh` checks it finds a seeded defect in each engine. Containers only |
 | Release gate | `make gate` (= `tools/gate/docker.sh`, ~40 min) | Rust tests (release and debug), clippy with `-D warnings`, conformance ir/jvm/sparrow (+ sparrow-origin, informative), std tests ir/sparrow vs `tools/gate/known-failures.txt`; logs in `conformance/reports/runs/gate-*`, statuses from exit codes in `gate.json`; a failed build stops it. On GitHub `gate.yml` runs it on the tagged commit and `packages.yml` publishes only after it passes. The Docker VM has ~8 GB: the container gets 7 GB and 2 cargo jobs (fat LTO) |
 
-Last known state (0.4.0): conformance 420/420 on core-compare + 13 core-only
-DB cases matching their spec; std 238 modules pass on the core.
+Last known state (0.4.1): conformance 927/927 on ir, jvm, sparrow, ir with
+passes off and ir under GC stress; std 232 modules pass on ir and sparrow
+(collation is a known failure).
 
 ## 6. Benchmarks
 
@@ -198,9 +199,11 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   lines; compare medians of several alternating rounds with checksums.
 - PGO workloads are copies of the ladder in `okkama-rs/tools/pgo/workloads`.
 
-Reference numbers (0.4.0, Apple M2 Max / Docker arm64): the core is ~2× the
-previous VM, 5.4× Python, 6.1× Perl, 4.0× Ruby on the ladder (geometric
-mean). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
+Reference numbers (0.4.1, Apple M2 Max / Docker arm64): the core is 5.5×
+Python, 8.2× Perl, 4.0× Ruby and 4.4× the JVM on the ladder (geometric mean of
+cold runs over 01–10; report `okkama-docs/benchmarks/reports/2026-11-09-v0.4.1`).
+Warmed up (`--steady`), the JVM beats the core only on 09-closures; 11-ownership
+is 2.7× slower than Python/Perl/Ruby (region tracking). PostgreSQL vs psycopg2: scans 1.3–1.7× slower, inserts faster; a
 point query is one round trip since #11 (68 µs vs psycopg2's 73 µs, Docker
 arm64). Driver checks against a live server:
 `okkama-docs/examples/std-v4/db-postgres*.ok` (`-stream-check` covers paging,
