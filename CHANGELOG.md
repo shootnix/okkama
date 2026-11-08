@@ -6,6 +6,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-09
+
+0.4.1 completes the language proof of concept and the first hardening
+roadmap. The language gains `async destroy`, module constants (`const`),
+operator roles (`+ - * / %` and unary `-` on objects through the std
+`operators` module), structured `await`, `Cell<T>`, value objects as map
+keys, checked generic map keys, default parameters, string and array
+builtins, `else if` expressions and postfix conditions on `return` and
+`throw`. `more`/`more_or_equal` became `greater`/`greater_or_equal`, and
+`bool.string()` prints `true`/`false`. Hardening:01 is done: budgets on every
+engine, bounded verification, decoding and region walks, constant-time RSA,
+linear compilation of very large functions, and a containerized release gate
+over five engine configurations. `config/ini` is the first std module
+rewritten in Okkama. The benchmarks now also measure steady state. Tail
+calls and closures no longer pay for a `destroy` elsewhere in the program
+(#285, #292).
+
 ### Added
 
 - Benchmarks: steady state is measured (#236). `run.py --steady N` runs every
@@ -2024,7 +2041,9 @@ First release of the Rust implementation: the compiler (lexer, parser, analysis,
 IR, Sparrow (VM with JIT) and JVM engines, the standard library, LSP, `fmt`, `lint`, the
 `blade` project manager, and packages for macOS and Linux.
 
-[Unreleased]: https://github.com/shootnix/okkama/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/shootnix/okkama/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/shootnix/okkama/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/shootnix/okkama/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/shootnix/okkama/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/shootnix/okkama/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/shootnix/okkama/compare/v0.2.0...v0.3.0
