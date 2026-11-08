@@ -1,0 +1,32 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has n is int;
+    Res(:n);
+    key() is int { n; }
+    destroy { Stdout().writeln("destroy " + n.string()); }
+}
+
+object Maker {
+    Maker();
+    fresh(count is int) is @Res {
+        (0..count).reduce([]) -> found, i { found + [Res(n: i)]; };
+    }
+    bound(count is int) is %int:Res {
+        (0..count).reduce([:]) -> found, i {
+            let item = Res(n: 10 + i);
+            found + [item.key(): item];
+        };
+    }
+}
+
+main() is int {
+    let maker = Maker();
+    let items = maker.fresh(3);
+    Stdout().writeln("fresh " + items.size().string() + " " + items[2].key().string());
+    let index = maker.bound(2);
+    Stdout().writeln("bound " + index.size().string() + " " + (index[11] else items[0]).key().string());
+    0;
+}

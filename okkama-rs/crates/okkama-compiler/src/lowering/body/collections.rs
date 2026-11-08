@@ -1032,14 +1032,17 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
         let bindings = &functional.bindings;
         let body = &functional.body;
-        let (out, state) = self.traverse(source, vec![state], body, span, |lowerer, items, state| {
+        self.builder_homes.push(self.cleanups.len() - 1);
+        let traversed = self.traverse(source, vec![state], body, span, |lowerer, items, state| {
             let mut values = vec![state[0].clone()];
             values.extend(items);
             let Some(value) = lowerer.functional_body(bindings, values, body)? else {
                 return Ok(None);
             };
             Ok(Some(vec![value.value]))
-        })?;
+        });
+        self.builder_homes.pop();
+        let (out, state) = traversed?;
         self.finish_builder(out, &state[0], span)
     }
 

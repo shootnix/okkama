@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.ownership.reduce-builder",
+  "title": "resources gathered by reduce into an array or a map live as long as the result",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "fresh 3 2\nbound 2 11\ndestroy 11\ndestroy 10\ndestroy 2\ndestroy 1\ndestroy 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; reduce into a builder by #243, ownership of what it gathers by #266",
+    "expected_basis": "spec 11.6: the resources a reduce gathers — made in its block, or bound there with let — belong to the result; returned, they are destroyed at main's exit, newest first, as with map."
+  },
+  "status": "mandatory"
+}

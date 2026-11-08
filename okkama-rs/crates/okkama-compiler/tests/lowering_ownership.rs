@@ -184,3 +184,32 @@ fn async_destroys_are_settled_in_async_functions() {
     ));
     assert!(!plain.to_string().contains("region.settle"));
 }
+
+/// A `reduce` that grows a builder (#243) hands what it pushes to the scope
+/// of the `reduce` and never tracks, adopts or keeps the builder (#266).
+#[test]
+fn reduce_builders_hand_pushed_resources_to_their_scope() {
+    let built = module(&format!(
+        "{RES} object Maker {{ Maker(); \
+         fresh(count is int) is @Res {{ (0..count).reduce([]) -> found, i {{ found + [Res(n: i + 1)]; }}; }} \
+         bound(count is int) is %int:Res {{ (0..count).reduce([:]) -> found, i {{ let r = Res(n: i + 1); found + [i: r]; }}; }} }} \
+         main() is int {{ let m = Maker(); m.fresh(2).size() + m.bound(2).size(); }}"
+    ));
+    let text = built.to_string();
+    for symbol in ["Maker.fresh", "Maker.bound"] {
+        let body = function(&built, symbol);
+        let builders: std::collections::HashSet<ir::ValueId> =
+            (0..body.values.len()).map(ir::ValueId).filter(|value| body.values[value.0].is_builder()).collect();
+        let touches_builder = |kind: &InstKind| match kind {
+            InstKind::RegionTrack { value, .. } | InstKind::RegionAdopt { value, .. } | InstKind::RegionTransfer { value, .. } => {
+                builders.contains(value)
+            }
+            InstKind::RegionLeave { keep: Some(value), .. } => builders.contains(value),
+            _ => false,
+        };
+        assert_eq!(count(body, touches_builder), 0, "{symbol}: {text}");
+        assert!(count(body, |kind| matches!(kind, InstKind::RegionAdopt { .. })) >= 1, "{symbol}: {text}");
+    }
+    let bound = function(&built, "Maker.bound");
+    assert!(count(bound, |kind| matches!(kind, InstKind::RegionTransfer { .. })) >= 1, "{text}");
+}

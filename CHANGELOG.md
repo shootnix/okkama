@@ -539,6 +539,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   without PGO both versions run the same instructions)
   ([#265](https://github.com/shootnix/okkama/issues/265)).
 
+- Compiler: a `reduce` into an array or a map (#243) whose elements reach a
+  `destroy` compiles (#266). It was an internal error (`region.track …:
+  builder<Res> has no identities to own`): lowering tracked the builder
+  itself, and closed each step keeping it. A builder is never walked, so
+  each value pushed onto it is now handed to the scope of the `reduce` (the
+  step's regions transfer what they own, that scope adopts what is free),
+  and a builder is never tracked, adopted or kept. What the block gathers —
+  made there or bound with `let` — lives as long as the result, as with
+  `map`. Lowering test and OCS `L07.ownership.reduce-builder`
+  ([#266](https://github.com/shootnix/okkama/issues/266)).
+
 - Compiler: one function of many sequential loops compiles in linear time
   (#239). Three phases were quadratic on it. Lowering copied the value of
   every local at every branch; it now snapshots only the variables that can
