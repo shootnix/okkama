@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.cancel.awaited-spawned",
+  "title": "cancelling a task cancels the spawned task only it awaits and waits for it",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.STRUCTURED-AWAIT",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "cancel requested\nchild settled\nparent cleanup\n-1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18",
+    "docs/async-guide.md#4.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; structured await by #147",
+    "expected_basis": "The child is spawned by the parent and awaited only by it, so the parent's cancellation reaches the child; the parent resumes once the child's async cleanup has settled."
+  },
+  "status": "mandatory"
+}

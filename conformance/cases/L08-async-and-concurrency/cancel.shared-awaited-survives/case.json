@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.cancel.shared-awaited-survives",
+  "title": "a future another task still awaits survives the cancellation of one awaiter",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.STRUCTURED-AWAIT",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "cancel requested\n-1\nchild settled\n1\n1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18",
+    "docs/async-guide.md#4.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; structured await by #147",
+    "expected_basis": "The watcher also awaits the child, so cancelling the parent only withdraws its wait; the child completes with 1 for the watcher and for main."
+  },
+  "status": "mandatory"
+}

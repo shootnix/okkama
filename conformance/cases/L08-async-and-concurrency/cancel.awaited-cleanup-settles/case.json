@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.cancel.awaited-cleanup-settles",
+  "title": "a cancelled task waits for the future it started to finish its async cleanup",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "ASYNC.STRUCTURED-AWAIT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "cancel requested\nchild settled\nparent cleanup\n-1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#18",
+    "docs/async-guide.md#4.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; structured await by #147",
+    "expected_basis": "The parent awaits child.run(); cancelling the parent cancels the child, whose deferred cleanup suspends on release; the parent runs its own defer and fails with Cancelled only after the child has settled."
+  },
+  "status": "mandatory"
+}

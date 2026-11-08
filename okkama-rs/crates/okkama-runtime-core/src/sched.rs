@@ -587,27 +587,23 @@ pub fn cancel(future: &Future) {
         .borrow()
         .as_ref()
         .is_some_and(|starter| Rc::ptr_eq(starter, &task));
-    if started_here && inner.state.get() == State::Running {
-        // Отмена идёт вглубь цепочки: внутренний завершится отменой и
-        // продолжит эту задачу как ожидающую.
+    let shared = inner
+        .waiters
+        .borrow()
+        .iter()
+        .any(|waiter| matches!(waiter, Waiter::Task(other) if !Rc::ptr_eq(other, &task)));
+    if inner.state.get() == State::Running && (started_here || !shared) {
+        // Structured await (#147): the awaited future — one this task
+        // started, a spawned task or a native request no other task awaits —
+        // is cancelled with its awaiter, which keeps waiting and raises
+        // Cancelled once it has settled.
         cancel(&inner);
-        if future.state.get() != State::Running || task.awaiting.borrow().is_none() {
-            return;
-        }
+        return;
     }
     inner
         .waiters
         .borrow_mut()
         .retain(|waiter| !matches!(waiter, Waiter::Task(other) if Rc::ptr_eq(other, &task)));
-    // A runtime promise (a native request) that no other task awaits is
-    // cancelled with its awaiter, as on the Sparrow core: its provider then
-    // interrupts the work and releases what a late reply opened.
-    let orphaned = inner.task.borrow().is_none()
-        && inner.body.borrow().is_none()
-        && !inner.waiters.borrow().iter().any(|waiter| matches!(waiter, Waiter::Task(_)));
-    if orphaned && inner.state.get() == State::Running {
-        cancel(&inner);
-    }
     transfer(&task);
 }
 
@@ -894,6 +890,78 @@ mod tests {
         cancel(&outer);
         assert!(outer.cancelled());
         assert!(inner.cancelled());
+        reset();
+    }
+
+    /// Structured await (#147): a cancelled awaiter resumes only after the
+    /// awaited future has settled, even when its cleanup suspends.
+    #[test]
+    fn cancellation_waits_for_the_awaited_future_to_settle() {
+        reset();
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let (gate, cleanup) = (promise(), promise());
+        let (inner_gate, inner_cleanup, inner_log) = (gate.clone(), cleanup.clone(), log.clone());
+        let inner = cold(
+            Box::new(move || {
+                let outcome = await_future(&inner_gate);
+                inner_log.borrow_mut().push("inner cancelled");
+                await_future(&inner_cleanup)?;
+                inner_log.borrow_mut().push("inner settled");
+                outcome
+            }),
+            Vec::new(),
+        );
+        let (awaited, outer_log) = (inner.clone(), log.clone());
+        let outer = cold(
+            Box::new(move || {
+                let outcome = await_future(&awaited);
+                outer_log.borrow_mut().push("outer resumed");
+                outcome
+            }),
+            Vec::new(),
+        );
+        spawn(&outer);
+        cancel(&outer);
+        assert_eq!(*log.borrow(), ["inner cancelled"]);
+        assert_eq!(outer.state(), State::Running);
+        complete(&cleanup, Ok(int(0)));
+        assert_eq!(*log.borrow(), ["inner cancelled", "inner settled", "outer resumed"]);
+        assert!(inner.cancelled());
+        assert!(outer.cancelled());
+        reset();
+    }
+
+    /// A spawned future that only the cancelled task awaits is cancelled
+    /// with it (#147); one that another task also awaits is left running.
+    #[test]
+    fn cancellation_reaches_a_spawned_future_unless_another_task_awaits_it() {
+        reset();
+        let gate = promise();
+        let child_gate = gate.clone();
+        let child = cold(Box::new(move || await_future(&child_gate)), Vec::new());
+        spawn(&child);
+        let awaited = child.clone();
+        let outer = cold(Box::new(move || await_future(&awaited)), Vec::new());
+        spawn(&outer);
+        cancel(&outer);
+        assert!(outer.cancelled());
+        assert!(child.cancelled());
+        reset();
+
+        let gate = promise();
+        let child_gate = gate.clone();
+        let child = cold(Box::new(move || await_future(&child_gate)), Vec::new());
+        spawn(&child);
+        let (first, second) = (child.clone(), child.clone());
+        let outer = cold(Box::new(move || await_future(&first)), Vec::new());
+        let watcher = cold(Box::new(move || await_future(&second)), Vec::new());
+        spawn(&outer);
+        spawn(&watcher);
+        cancel(&outer);
+        assert!(outer.cancelled());
+        assert_eq!(child.state(), State::Running);
+        complete(&gate, Ok(int(7)));
+        assert!(matches!(watcher.outcome(), Ok(Value::Int(v)) if v.to_i64() == Some(7)));
         reset();
     }
 

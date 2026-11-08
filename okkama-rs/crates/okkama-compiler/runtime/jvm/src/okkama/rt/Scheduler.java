@@ -305,25 +305,19 @@ public final class Scheduler {
             return;
         }
         Future inner = task.awaiting;
-        if (inner.starter == task && inner.state == Future.RUNNING) {
-            // Отмена идёт вглубь цепочки: внутренний завершится отменой и
-            // продолжит эту задачу как ожидающую.
+        boolean shared = false;
+        for (Object waiter : inner.waiters) {
+            if (waiter instanceof Task && waiter != task) shared = true;
+        }
+        if (inner.state == Future.RUNNING && (inner.starter == task || !shared)) {
+            // Structured await (#147): the awaited future — one this task
+            // started, a spawned task or a native request no other task
+            // awaits — is cancelled with its awaiter, which keeps waiting and
+            // throws Cancelled once it has settled.
             cancel(inner);
-            if (future.state != Future.RUNNING || task.awaiting == null) {
-                return;
-            }
+            return;
         }
         inner.waiters.remove(task);
-        // A runtime promise (a native request) that no other task awaits is
-        // cancelled with its awaiter, as on the Sparrow core: its provider then
-        // interrupts the work and releases what a late reply opened.
-        if (inner.task == null && inner.body == null && inner.state == Future.RUNNING) {
-            boolean awaited = false;
-            for (Object waiter : inner.waiters) {
-                if (waiter instanceof Task) awaited = true;
-            }
-            if (!awaited) cancel(inner);
-        }
         transfer(task);
     }
 
