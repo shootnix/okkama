@@ -41,6 +41,31 @@ main() is int {
 }
 
 #[test]
+fn else_if_in_if_expressions_and_postfix_exits_keep_their_form() {
+    let text = "module app v1.0.0;\nmain() is int {\nlet s = if a { 1 } else if b { 2 } else { 3 };\nreturn s if s > 1;\nthrow Bad.x if s == 0;\n0;\n}\n";
+    assert_eq!(
+        fmt(text),
+        "module app v1.0.0;
+
+main() is int {
+    let s = if a {
+        1
+    }
+    else if b {
+        2
+    }
+    else {
+        3
+    };
+    return s if s > 1;
+    throw Bad.x if s == 0;
+    0;
+}
+"
+    );
+}
+
+#[test]
 fn else_and_catch_start_their_own_line() {
     let text = "module app v1.0.0;\nmain() is int{if a{x();}else if b{y();}else{z();}let v=try{f();}catch e is Error{0;};return v;}\n";
     assert_eq!(

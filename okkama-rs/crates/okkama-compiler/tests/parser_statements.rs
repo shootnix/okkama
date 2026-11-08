@@ -198,6 +198,38 @@ fn postfix_if_on_expression_statements() {
 }
 
 #[test]
+fn postfix_if_on_return_and_throw() {
+    assert_eq!(
+        body_sexpr("return x if found; return if done; throw Empty.list if empty; throw if again;"),
+        "(ReturnStatement value=x condition=found); (ReturnStatement value=_ condition=done); \
+         (ThrowStatement value=(. Empty list) condition=empty); (ThrowStatement value=_ condition=again)"
+    );
+    // Right after the keyword, an `if` whose condition is followed by a
+    // block is an `if` expression value, which may carry its own condition.
+    let value = body_sexpr("return if a { 1; } else { 2; };");
+    assert!(value.starts_with("(ReturnStatement value=(") && !value.contains("condition="), "{value}");
+    let guarded = body_sexpr("return if a { 1; } else { 2; } if b;");
+    assert!(guarded.ends_with(" condition=b)"), "{guarded}");
+}
+
+#[test]
+fn constructs_of_other_languages_name_the_okkama_form() {
+    for (body, expected) in [
+        ("while i < 3 { }", "Okkama has no `while`"),
+        ("while (i < 3) { }", "Okkama has no `while`"),
+        ("do { } while i < 3;", "Okkama has no `do ... while`"),
+        ("i += 1;", "Okkama has no compound assignment"),
+        ("i <<= 1;", "Okkama has no compound assignment"),
+        ("i++;", "Okkama has no `++` or `--`"),
+        ("i--;", "Okkama has no `++` or `--`"),
+    ] {
+        assert_rejects(&wrap(body), expected);
+    }
+    // The words stay names, and `x - -y` stays a subtraction.
+    parse_ok(&wrap("let while = 1; let y = while - -1; let z = y--1; z;"));
+}
+
+#[test]
 fn try_throw_and_return() {
     assert_eq!(
         body_sexpr(

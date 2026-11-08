@@ -29,10 +29,17 @@ pub enum StmtKind {
     Defer { value: Expr },
     /// `try { } catch e is T { } ...` in statement position.
     Try(TryBody),
-    /// `throw expr;` or the bare rethrow `throw;`.
-    Throw { value: Option<Expr> },
-    /// `return expr;` or `return;`.
-    Return { value: Option<Expr> },
+    /// `throw expr;` or the bare rethrow `throw;`, either with an optional
+    /// postfix `if cond`.
+    Throw {
+        value: Option<Expr>,
+        condition: Option<Expr>,
+    },
+    /// `return expr;` or `return;`, either with an optional postfix `if cond`.
+    Return {
+        value: Option<Expr>,
+        condition: Option<Expr>,
+    },
     /// `confirm cond;` with an optional `else throw expr` / `else panic expr`.
     Confirm {
         condition: Expr,

@@ -1,0 +1,63 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+enum Empty is Error = (list);
+
+object Probe {
+    has out is Stdout;
+    Probe(:out);
+
+    first_over(values is @int, limit is int) is int {
+        for values -> value {
+            return value if value > limit;
+        }
+        -1;
+    }
+
+    // `if` right after `return` with a block after the condition is a value.
+    pick(a is bool) is int {
+        return if a { 1; } else { 2; };
+    }
+
+    pick_if(a is bool, b is bool) is int {
+        return if a { 10; } else { 20; } if b;
+        30;
+    }
+
+    note(n is int) is void {
+        return if n < 0;
+        out.writeln("note " + n.string());
+    }
+
+    head(values is @int) is int {
+        throw Empty.list if values.size() == 0;
+        values[0];
+    }
+
+    // The value is evaluated after the condition, and only when it holds.
+    lazy(flag is bool) is int {
+        return self.loud(7) if flag;
+        0;
+    }
+
+    loud(n is int) is int {
+        out.writeln("evaluated " + n.string());
+        n;
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let p = Probe(out: out);
+    out.writeln(p.first_over([1, 4, 9], 3).string() + " " + p.first_over([1], 3).string());
+    out.writeln(p.pick(true).string() + " " + p.pick(false).string());
+    out.writeln(p.pick_if(true, true).string() + " " + p.pick_if(false, true).string() + " " + p.pick_if(true, false).string());
+    p.note(-1);
+    p.note(2);
+    let caught = try { p.head([]); } catch e is Empty { -9; };
+    out.writeln(p.head([5]).string() + " " + caught.string());
+    out.writeln(p.lazy(false).string());
+    out.writeln(p.lazy(true).string());
+    0;
+}

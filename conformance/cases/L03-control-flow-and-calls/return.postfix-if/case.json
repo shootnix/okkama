@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.return.postfix-if",
+  "title": "return and throw take a postfix condition",
+  "purpose": "return value if c, return if c in a void action and throw value if c run only when c holds; the value is evaluated after the condition and only then; return if a {...} else {...}; still returns an if expression.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CTRL.RETURN",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "GRAM.RETURN",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "4 -1\n1 2\n10 20 30\nnote 2\n5 -9\n0\nevaluated 7\n7\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-grammar-1.0.ebnf",
+    "docs/okkama-spec-11072026.md#explicit-early-return"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #258",
+    "expected_basis": "grammar exit_value = \"if\" expr | expr postfix_if?; spec: the condition is evaluated first, the value only when it holds."
+  },
+  "status": "mandatory"
+}

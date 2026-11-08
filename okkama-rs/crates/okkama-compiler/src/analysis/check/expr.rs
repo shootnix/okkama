@@ -310,7 +310,13 @@ impl Checker<'_, '_> {
         if name.text == "test" {
             return Self::typed(ExprKind::TestCapability, Ty::Test, name.span);
         }
-        self.error(name.span, format!("Undefined variable \"{}\"", name.text));
+        // Выходы из цикла в других языках здесь читаются как имена (#256).
+        let hint = match name.text.as_str() {
+            "break" => "; Okkama leaves a loop with `last`",
+            "continue" => "; Okkama starts the next iteration with `next`",
+            _ => "",
+        };
+        self.error(name.span, format!("Undefined variable \"{}\"{hint}", name.text));
         Self::poisoned(name.span)
     }
 

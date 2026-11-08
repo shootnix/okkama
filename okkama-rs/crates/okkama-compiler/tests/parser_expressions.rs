@@ -486,9 +486,14 @@ fn if_match_loop_and_try_expressions() {
         "module app v1.0.0; main() is int { let x = if c { 1; }; }",
         "If expression requires else branch.",
     );
+    // An `else if` link is an else block holding the nested `if` (#257).
+    assert_eq!(
+        body_sexpr("let x = if a { 1; } else if b { 2; } else { 3; };"),
+        "(LetStatement name=x type=_ value=(if a {1} {(if b {2} {3})}))"
+    );
     assert_rejects(
-        "module app v1.0.0; main() is int { let x = if a { 1; } else if b { 2; } else { 3; }; }",
-        "Expect \"{\" before block.",
+        "module app v1.0.0; main() is int { let x = if a { 1; } else if b { 2; }; }",
+        "If expression requires else branch.",
     );
     assert_eq!(
         body_sexpr("let v = match x { case 1, 2 { a; } else { b; } };"),

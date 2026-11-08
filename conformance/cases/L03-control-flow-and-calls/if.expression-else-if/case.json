@@ -1,20 +1,21 @@
 {
   "schema": "ocs-case/1",
   "id": "L03.if.expression-else-if",
-  "title": "if expressions take a block after else",
-  "purpose": "The expression form of if has no else-if chain.",
+  "title": "if expressions chain else if",
+  "purpose": "An else-if chain in expression position is one value; each link has its else and every branch one type.",
   "level": "L03",
   "contracts": [
     {
       "contract": "CTRL.IF",
       "aspects": [
+        "normal",
         "boundary"
       ]
     },
     {
       "contract": "GRAM.IF",
       "aspects": [
-        "invalid"
+        "normal"
       ]
     }
   ],
@@ -29,17 +30,10 @@
     ]
   },
   "expect": {
-    "outcome": "reject",
-    "rejection": {
-      "stages": [
-        "parse",
-        "check"
-      ],
-      "categories": [
-        "syntax",
-        "semantic"
-      ],
-      "justification": "grammar if_expr = \"if\" expr block \"else\" block; only if_stmt chains else-if. Detection while parsing or analysing is conforming."
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "big\nsmall\nhuge\nmedium\n"
     }
   },
   "spec_refs": [
@@ -50,8 +44,8 @@
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "grammar: if_expr requires a block after else; `else if` chains belong to if_stmt only."
+    "origin": "authored for OCS 0.1.0 from the cited contract text; reversed by #257",
+    "expected_basis": "grammar: if_expr = \"if\" expr block \"else\" (if_expr | block); spec 8.11: an else-if chain is an expression."
   },
   "status": "mandatory"
 }

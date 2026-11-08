@@ -2,9 +2,22 @@ module app v1.0.0;
 
 import "io/stdout" take Stdout;
 
+object Sizes {
+    Sizes() {}
+    label(size is int) is string {
+        let label = if size > 10 { "huge"; } else if size > 5 { "big"; } else { "small"; };
+        label;
+    }
+}
+
 main() is int {
     let out = Stdout();
-    let size = 7;
-    let label = if size > 10 { "huge"; } else if size > 5 { "big"; } else { "small"; };
+    let sizes = Sizes();
+    out.writeln(sizes.label(7));
+    out.writeln(sizes.label(2));
+    // A chain as an argument, with a nested chain in its last else.
+    out.writeln(if true { "huge" } else if false { "big" } else { "small" });
+    let n = 4;
+    out.writeln(if n > 5 { "large" } else if n > 3 { if n == 4 { "medium" } else { "other" } } else { "small" });
     0;
 }

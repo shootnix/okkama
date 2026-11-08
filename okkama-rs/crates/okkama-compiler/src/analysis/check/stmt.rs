@@ -78,7 +78,13 @@ impl Checker<'_, '_> {
                 let flow = Flow::of(&value);
                 (StmtKind::Expr(value), flow)
             }),
-            ast::StmtKind::Return { value } => self.return_stmt(value.as_ref(), span),
+            ast::StmtKind::Return { value, condition: None } => self.return_stmt(value.as_ref(), span),
+            ast::StmtKind::Return {
+                value,
+                condition: Some(condition),
+            } => self.guarded(condition, "Return condition", span, |checker| {
+                checker.return_stmt(value.as_ref(), span)
+            }),
             ast::StmtKind::Confirm {
                 condition,
                 fallback,
@@ -178,7 +184,13 @@ impl Checker<'_, '_> {
                 let value = self.expr(value, false, None);
                 (StmtKind::Defer(value), Flow::unit())
             }
-            ast::StmtKind::Throw { value } => self.throw(value.as_ref(), span),
+            ast::StmtKind::Throw { value, condition: None } => self.throw(value.as_ref(), span),
+            ast::StmtKind::Throw {
+                value,
+                condition: Some(condition),
+            } => self.guarded(condition, "Throw condition", span, |checker| {
+                checker.throw(value.as_ref(), span)
+            }),
         };
         (Stmt { kind, span }, flow)
     }

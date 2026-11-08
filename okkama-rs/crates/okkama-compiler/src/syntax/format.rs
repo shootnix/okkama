@@ -893,20 +893,22 @@ impl<'s> Printer<'s> {
                 self.word(";");
             }
             StmtKind::Try(body) => self.try_body(body),
-            StmtKind::Throw { value } => {
+            StmtKind::Throw { value, condition } => {
                 self.word("throw");
                 if let Some(value) = value {
                     self.word(" ");
                     self.expr(value);
                 }
+                self.postfix_if(condition.as_ref());
                 self.word(";");
             }
-            StmtKind::Return { value } => {
+            StmtKind::Return { value, condition } => {
                 self.word("return");
                 if let Some(value) = value {
                     self.word(" ");
                     self.expr(value);
                 }
+                self.postfix_if(condition.as_ref());
                 self.word(";");
             }
             StmtKind::Confirm {
@@ -1390,7 +1392,10 @@ impl<'s> Printer<'s> {
                 self.block(then_block);
                 self.else_line(else_block.span.start);
                 self.word("else ");
-                self.block(else_block);
+                match else_if(else_block) {
+                    Some(next) => self.expr(next),
+                    None => self.block(else_block),
+                }
             }
             ExprKind::Match(body) => self.match_body(body),
             ExprKind::Loop { body } => {
@@ -1469,6 +1474,20 @@ impl<'s> Printer<'s> {
             }
             self.expr(operand);
         }
+    }
+}
+
+/// Вложенный `if` звена `else if` в if-выражении: парсер хранит его как
+/// else-блок из одного этого `if` с его же span, а написанный блок включает
+/// ещё и фигурные скобки.
+fn else_if(block: &Block) -> Option<&Expr> {
+    match block.stmts.as_slice() {
+        [Stmt { kind: StmtKind::Expr { expr, condition: None }, span }]
+            if *span == block.span && matches!(expr.kind, ExprKind::If { .. }) =>
+        {
+            Some(expr)
+        }
+        _ => None,
     }
 }
 

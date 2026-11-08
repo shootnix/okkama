@@ -571,3 +571,11 @@ fn trailing_parameters_take_default_values() {
     );
     assert_eq!(messages("role Named { name(prefix is string = \"x\") is string; } main() is int { 0; }"), ["Role actions cannot declare default values"]);
 }
+
+#[test]
+fn break_and_continue_point_to_last_and_next() {
+    let found = messages("main() is int { loop { break; } 0; }");
+    assert!(found.iter().any(|m| m.ends_with("Okkama leaves a loop with `last`")), "{found:?}");
+    let found = messages("main() is int { for [1] -> n { continue; } 0; }");
+    assert!(found.iter().any(|m| m.contains("next iteration with `next`")), "{found:?}");
+}
