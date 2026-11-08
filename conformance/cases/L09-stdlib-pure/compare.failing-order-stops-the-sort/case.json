@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.compare.failing-order-stops-the-sort",
+  "title": "an order() that throws in the middle of a sort stops it with that error",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.COMPARE",
+      "aspects": [
+        "invalid",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "refused\n1 999972\n"
+    }
+  },
+  "spec_refs": [
+    "std/compare.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #283",
+    "expected_basis": "A failure of Comparing.order() propagates out of ordering() as its typed error; the sort neither crashes nor returns a partly ordered array, and a later sort still works. 1 and 999972 are the least and greatest of (i * 7919 + 13) % 1000003 for i < 100000."
+  },
+  "status": "mandatory"
+}
