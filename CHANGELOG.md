@@ -8,6 +8,28 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: string builtins (#210) — `contains`, `starts_with`, `ends_with`,
+  `find` and `find_last` (a `Maybe<int>` code point index; an empty part is
+  found at the start, respectively the end), `trim_start`, `trim_end`,
+  `lower` and `upper` (full Unicode case mapping without a locale: `"ß"` →
+  `"SS"`, a final sigma → `ς`) and `repeat(count)` (a negative count or a
+  result over 1 GiB is a runtime error). Array builtins (#211) — `contains`
+  and `index_of` (equality as `==`; element types `==` rejects are rejected),
+  `reversed`, `take(count)` and `drop(count)` (at most `count`; a negative
+  count is an error); they are loops in lowering, so every engine runs them
+  unchanged. `char` becomes usable (#231): `c.code()`, `c.string()` and
+  `string(c)`, `char(code)` and `code.char()` (a Unicode scalar value, else a
+  runtime error), and `text.characters()`, the `@char` of a string. The new
+  string functions are one Sparrow instruction, `str.fn` (opcode 86, the
+  function as an operand), on the core; sparrow-origin reports it as
+  unsupported (#14). OCS `L02.string.search`, `L02.string.case-and-repeat`,
+  `L02.char.code-round-trip`, `L05.array.search-and-shape` and their invalid
+  forms; `L02.char.string-cast` now expects the text. Book chapters 6 and 10,
+  spec §6.6/§6.6.1, LSP completion (EN/RU)
+  ([#210](https://github.com/shootnix/okkama/issues/210),
+  [#211](https://github.com/shootnix/okkama/issues/211),
+  [#231](https://github.com/shootnix/okkama/issues/231)).
+
 - Language: `else if` chains in an `if` expression (#257): `let size = if n
   > 5 { "large" } else if n > 2 { "medium" } else { "small" };`, as an
   argument or a value anywhere. Every link has its `else` and all branches
@@ -402,6 +424,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   ([#70](https://github.com/shootnix/okkama/issues/70)).
 
 ### Fixed
+
+- Docs and LSP: chapter 10 of the Book listed `less`/`more` for `char`, which
+  has only `order`; LSP completion offered `int.pow` as a `float` (it is the
+  exact `int` since #228) and described `bool.string()` as `"true"`/`"false"`
+  (it is `"1"`/`"0"`).
 
 - Docs: the Book (EN/RU) said that ordering accepts mixed numeric operands;
   it needs one category on both sides, like equality — `1 < 2.5` is an error

@@ -1,20 +1,20 @@
 {
   "schema": "ocs-case/1",
   "id": "L02.char.string-cast",
-  "title": "string('a') is not a supported cast",
-  "purpose": "The operation must fail instead of producing a value.",
+  "title": "string('a') is the character's text",
+  "purpose": "A char converts to a one-character string (#231).",
   "level": "L02",
   "contracts": [
     {
       "contract": "VAL.CHAR",
       "aspects": [
-        "boundary"
+        "normal"
       ]
     },
     {
       "contract": "VAL.SCALAR-CASTS",
       "aspects": [
-        "invalid"
+        "normal"
       ]
     }
   ],
@@ -29,20 +29,10 @@
     ]
   },
   "expect": {
-    "outcome": "error",
-    "failure": {
-      "stages": [
-        "check",
-        "runtime"
-      ],
-      "categories": [
-        "semantic",
-        "runtime"
-      ],
-      "justification": "The contract makes the operation an error but leaves the detection stage open: a static pass may reject it when operand categories are known, otherwise it fails at runtime. It must never yield a value."
-    },
+    "outcome": "success",
+    "exit_status": 0,
     "stdout": {
-      "text": ""
+      "text": "a\n"
     }
   },
   "spec_refs": [
@@ -52,8 +42,8 @@
     "timeout_s": 30
   },
   "provenance": {
-    "origin": "authored for OCS 0.1.0 from the cited contract text",
-    "expected_basis": "spec 6.6.1: string() accepts string, int, byte, float, rat and bool only."
+    "origin": "authored for OCS 0.1.0 from the cited contract text; reversed by #231",
+    "expected_basis": "spec 6.6.1: string() accepts char and gives the character's text."
   },
   "status": "mandatory"
 }

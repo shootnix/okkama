@@ -903,6 +903,11 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
             key,
             "elements sorted by compare.Comparing",
         ));
+        out.push(method("contains", &["value is T"], "bool", "an element equal to value"));
+        out.push(method("index_of", &["value is T"], "Maybe<int>", "the first equal element"));
+        out.push(method("reversed", &[], key, "last element first"));
+        out.push(method("take", &["count is int"], key, "at most count from the start"));
+        out.push(method("drop", &["count is int"], key, "all but the first count"));
         out.push(functional(
             "map",
             "${2:item}",
@@ -957,6 +962,17 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
             "",
         ));
         out.push(method("trim", &[], "string", ""));
+        out.push(method("trim_start", &[], "string", ""));
+        out.push(method("trim_end", &[], "string", ""));
+        out.push(method("contains", &["part is string"], "bool", ""));
+        out.push(method("starts_with", &["part is string"], "bool", ""));
+        out.push(method("ends_with", &["part is string"], "bool", ""));
+        out.push(method("find", &["part is string"], "Maybe<int>", "code point index of the first occurrence"));
+        out.push(method("find_last", &["part is string"], "Maybe<int>", "code point index of the last occurrence"));
+        out.push(method("lower", &[], "string", "Unicode lower case"));
+        out.push(method("upper", &[], "string", "Unicode upper case"));
+        out.push(method("repeat", &["count is int"], "string", ""));
+        out.push(method("characters", &[], "@char", "code points"));
         out.push(method(
             "chomp",
             &[],
@@ -973,7 +989,8 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         if key == "int" {
             out.push(method("abs", &[], "int", ""));
             out.push(method("sign", &[], "int", ""));
-            out.push(method("pow", &["exponent is int"], "float", ""));
+            out.push(method("pow", &["exponent is int"], "int", "exact; a negative exponent is an error"));
+            out.push(method("char", &[], "char", "the code point as a char"));
             out.push(method("sqrt", &[], "float", ""));
         }
         for bits in ["bit_count", "leading_zeros", "trailing_zeros"] {
@@ -997,9 +1014,11 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         out.push(method("numerator", &[], "string", ""));
         out.push(method("denominator", &[], "string", ""));
     } else if key == "bool" {
-        out.push(method("string", &[], "string", "\"true\" or \"false\""));
+        out.push(method("string", &[], "string", "\"1\" or \"0\""));
     } else if key == "char" {
         out.push(method("order", &["other is char"], "Order", ""));
+        out.push(method("code", &[], "int", "the code point"));
+        out.push(method("string", &[], "string", ""));
     } else if key.starts_with("Future<") {
         out.push(method("cancel", &[], key, "cooperative cancellation"));
         out.push(method("done", &[], "bool", ""));

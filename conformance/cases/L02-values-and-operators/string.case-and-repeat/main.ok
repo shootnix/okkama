@@ -1,0 +1,13 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    let text = "  a b  ";
+    out.writeln("[" + text.trim_start() + "][" + text.trim_end() + "][" + text.trim() + "]");
+    // ß upper-cases to SS; a final sigma lower-cases to ς.
+    out.writeln("Straße ΣΑΣ".lower() + " " + "Straße ΣΑΣ".upper());
+    out.writeln("ab".repeat(3) + "|" + "x".repeat(0) + "|");
+    0;
+}

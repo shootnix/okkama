@@ -99,7 +99,8 @@ fn byte_and_char_rule_violations_are_semantic_errors() {
             "let c = 'a'; if c < 'b' { 1; } else { 2; }",
             "Operator < cannot be applied to char and char",
         ),
-        ("let s = string('a'); 0;", "Cannot convert char to string"),
+        // A char becomes text (#231) but not a number: `code()` is explicit.
+        ("let n = int('a'); 0;", "Cannot convert char to int"),
         ("let b = byte(true); 0;", "Cannot convert bool to byte"),
         ("let b = byte(\"1\"); 0;", "Cannot convert string to byte"),
         // Концептуально разные типы взаимодействуют только после явного каста.

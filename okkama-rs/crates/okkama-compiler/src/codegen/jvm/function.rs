@@ -961,7 +961,12 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     return Ok(());
                 }
                 match (&self.function.values[value.0], target) {
-                    (Type::Byte, Type::Int) => self.int_to_big()?,
+                    (Type::Byte | Type::Char, Type::Int) => self.int_to_big()?,
+                    // `char` ↔ text and code point (#231).
+                    (Type::Char, _) => self.class.call_rt(&mut self.asm, "charText", "(I)Ljava/lang/String;", 1, 1)?,
+                    (Type::Int, Type::Char) => {
+                        self.class.call_rt(&mut self.asm, "charFrom", "(Ljava/math/BigInteger;)I", 1, 1)?
+                    }
                     (Type::Int, _) => self.class.invoke_virtual(
                         &mut self.asm,
                         BIG,
@@ -1099,6 +1104,16 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     StrOp::Trim => ("trim", "(Ljava/lang/String;)Ljava/lang/String;"),
                     StrOp::Chomp => ("chomp", "(Ljava/lang/String;)Ljava/lang/String;"),
                     StrOp::Utf8 => ("utf8", "(Ljava/lang/String;)Ljava/util/List;"),
+                    StrOp::Find => ("find", "(Ljava/lang/String;Ljava/lang/String;)Ljava/math/BigInteger;"),
+                    StrOp::FindLast => ("findLast", "(Ljava/lang/String;Ljava/lang/String;)Ljava/math/BigInteger;"),
+                    StrOp::StartsWith => ("startsWith", "(Ljava/lang/String;Ljava/lang/String;)Z"),
+                    StrOp::EndsWith => ("endsWith", "(Ljava/lang/String;Ljava/lang/String;)Z"),
+                    StrOp::TrimStart => ("trimStart", "(Ljava/lang/String;)Ljava/lang/String;"),
+                    StrOp::TrimEnd => ("trimEnd", "(Ljava/lang/String;)Ljava/lang/String;"),
+                    StrOp::Lower => ("lower", "(Ljava/lang/String;)Ljava/lang/String;"),
+                    StrOp::Upper => ("upper", "(Ljava/lang/String;)Ljava/lang/String;"),
+                    StrOp::Repeat => ("repeat", "(Ljava/lang/String;Ljava/math/BigInteger;)Ljava/lang/String;"),
+                    StrOp::Characters => ("characters", "(Ljava/lang/String;)Ljava/util/List;"),
                 };
                 self.class
                     .call_rt(&mut self.asm, name, descriptor, args.len() as i32, 1)?;

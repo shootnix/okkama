@@ -141,9 +141,11 @@
     },
     {
       "id": "VAL.CHAR",
-      "title": "char is distinct from string and compares only with char",
+      "title": "char is distinct from string, compares only with char, and converts to its code point and text",
       "spec_refs": [
         "docs/okkama-spec-11072026.md#6.1",
+        "docs/okkama-spec-11072026.md#6.6",
+        "docs/okkama-spec-11072026.md#6.6.1",
         "docs/okkama-spec-11072026.md#8.4"
       ],
       "status": "mandatory",
@@ -227,6 +229,36 @@
         "normal": "required",
         "boundary": "n/a: the exact whitespace set and CR LF handling are tracked separately as VAL.STRING-WHITESPACE (unresolved)",
         "invalid": "n/a: the contract defines no rejected or failing form",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-SEARCH",
+      "title": "contains, starts_with, ends_with, find and find_last search by code point",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
+        "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+      },
+      "family": "Values and operators"
+    },
+    {
+      "id": "VAL.STRING-CASE-REPEAT",
+      "title": "trim_start, trim_end, lower, upper (full Unicode, no locale) and repeat return new strings",
+      "spec_refs": [
+        "docs/okkama-spec-11072026.md#6.6"
+      ],
+      "status": "mandatory",
+      "aspects": {
+        "normal": "required",
+        "boundary": "required",
+        "invalid": "required",
         "interaction": "n/a: no fragile cross-feature interaction is identified in the audited sources"
       },
       "family": "Values and operators"

@@ -275,6 +275,8 @@ pub enum CastTarget {
     Float,
     Rat,
     Str,
+    /// `char(code)`: проверенное скалярное значение Unicode (#231).
+    Char,
 }
 
 #[derive(Clone, Debug)]
@@ -484,6 +486,13 @@ pub enum Builtin {
     ArrayCursor,
     /// `@T.ordering()` по `compare.Comparing<T>` элементов.
     ArrayOrdering,
+    /// `contains(x)` и `index_of(x)` (`Maybe<int>`) по `==` элементов (#211).
+    ArrayContains(CompareKind),
+    ArrayIndexOf(CompareKind),
+    /// `reversed()`, `take(n)`, `drop(n)` (#211).
+    ArrayReversed,
+    ArrayTake,
+    ArrayDrop,
     StrLength,
     StrEmpty,
     StrSlice,
@@ -492,6 +501,23 @@ pub enum Builtin {
     StrReplaceFirst,
     StrTrim,
     StrChomp,
+    /// Поиск подстроки (#210): `contains`, `starts_with`, `ends_with`,
+    /// `find`/`find_last` (`Maybe<int>`, индекс code point).
+    StrContains,
+    StrStartsWith,
+    StrEndsWith,
+    StrFind,
+    StrFindLast,
+    StrTrimStart,
+    StrTrimEnd,
+    /// Unicode-регистр (#210).
+    StrLower,
+    StrUpper,
+    StrRepeat,
+    /// `characters()`: `@char` строки (#231).
+    StrCharacters,
+    /// `c.code()`: code point символа (#231).
+    CharCode,
     /// Строки упорядочиваются по длине (как Perl): `less`, `less_or_equal`.
     StrCompare(CompareOp),
     MapSize,

@@ -124,13 +124,38 @@ pub enum StrOp {
     Trim,
     Chomp,
     Utf8,
+    /// Code point index of `part`, or -1 (#210).
+    Find,
+    FindLast,
+    StartsWith,
+    EndsWith,
+    TrimStart,
+    TrimEnd,
+    Lower,
+    Upper,
+    Repeat,
+    /// The `@char` of a string (#231).
+    Characters,
 }
 
 impl StrOp {
     pub fn arity(self) -> usize {
         match self {
-            StrOp::Len | StrOp::Trim | StrOp::Chomp | StrOp::Utf8 => 1,
-            StrOp::Split => 2,
+            StrOp::Len
+            | StrOp::Trim
+            | StrOp::Chomp
+            | StrOp::Utf8
+            | StrOp::TrimStart
+            | StrOp::TrimEnd
+            | StrOp::Lower
+            | StrOp::Upper
+            | StrOp::Characters => 1,
+            StrOp::Split
+            | StrOp::Find
+            | StrOp::FindLast
+            | StrOp::StartsWith
+            | StrOp::EndsWith
+            | StrOp::Repeat => 2,
             StrOp::Slice | StrOp::Replace | StrOp::ReplaceFirst => 3,
         }
     }
@@ -143,6 +168,7 @@ pub enum Scalar {
     Float,
     Rat,
     Str,
+    Char,
     /// Любой другой тип: преобразование не поддержано.
     Other,
 }
@@ -262,6 +288,10 @@ pub fn convert(value: &Value, target: Scalar) -> Result<Value> {
         (Value::Rat(value), Scalar::Int) => Ok(Value::Int(value.to_int())),
         (Value::Rat(value), Scalar::Float) => value.to_float().map(Value::Float).map_err(trap),
         (Value::Rat(value), Scalar::Str) => Ok(Value::Str(Rc::from(value.to_string()))),
+        // `char` ↔ text and code point (#231).
+        (Value::Char(value), Scalar::Str) => Ok(Value::Str(Rc::from(value.to_string()))),
+        (Value::Char(value), Scalar::Int) => Ok(Value::Int(IntValue::from_i64(i64::from(u32::from(*value))))),
+        (Value::Int(value), Scalar::Char) => strings::character(value).map(Value::Char).map_err(trap),
         (_, target) => Err(Fault::Unsupported(format!("conversion to {target:?} is not supported yet"))),
     }
 }
@@ -378,6 +408,19 @@ pub fn string(op: StrOp, args: &[&Value]) -> Result<Value> {
         ))),
         StrOp::Split => Ok(ArrayHeap.split(args[0].as_string()?, args[1].as_string()?)),
         StrOp::Utf8 => Ok(ArrayHeap.utf8(args[0].as_string()?)),
+        StrOp::Find | StrOp::FindLast => {
+            let (text, part) = (args[0].as_string()?, args[1].as_string()?);
+            let found = if op == StrOp::Find { strings::find(text, part) } else { strings::find_last(text, part) };
+            Ok(Value::Int(found.map_or(IntValue::from_i64(-1), |index| IntValue::from_u128(index as u128))))
+        }
+        StrOp::StartsWith => Ok(Value::Bool(args[0].as_string()?.starts_with(args[1].as_string()?))),
+        StrOp::EndsWith => Ok(Value::Bool(args[0].as_string()?.ends_with(args[1].as_string()?))),
+        StrOp::TrimStart => Ok(Value::Str(Rc::from(strings::trim_start(args[0].as_string()?)))),
+        StrOp::TrimEnd => Ok(Value::Str(Rc::from(strings::trim_end(args[0].as_string()?)))),
+        StrOp::Lower => Ok(Value::Str(Rc::from(args[0].as_string()?.to_lowercase()))),
+        StrOp::Upper => Ok(Value::Str(Rc::from(args[0].as_string()?.to_uppercase()))),
+        StrOp::Repeat => Ok(Value::Str(Rc::from(strings::repeat(args[0].as_string()?, args[1].as_int()?).map_err(trap)?))),
+        StrOp::Characters => Ok(ArrayHeap.characters(args[0].as_string()?)),
     }
 }
 

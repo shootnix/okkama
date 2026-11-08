@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.search-and-shape",
+  "title": "array search uses ==; reversed, take and drop make new arrays",
+  "purpose": "contains/index_of on ints and value objects, reversed, take and drop past the end, and an empty typed array.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-SEARCH-SHAPE",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "yes no 4 none\n[11 7 5 3 2] [2 3] [5 7 11] [2 3 5 7 11] []\nyes none\nb,a\n[] no none\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #210, #211, #231",
+    "expected_basis": "spec 6.6: contains/index_of compare with ==; take/drop give at most count elements."
+  },
+  "status": "mandatory"
+}

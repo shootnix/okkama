@@ -1236,6 +1236,20 @@ pub enum StrOp {
     Chomp,
     /// Строгий UTF-8 строки: `array<byte>` (строка как `ByteSource`, §15).
     Utf8,
+    /// `find(part)`/`find_last(part)`: индекс code point или -1 (#210).
+    Find,
+    FindLast,
+    StartsWith,
+    EndsWith,
+    TrimStart,
+    TrimEnd,
+    /// Unicode-регистр.
+    Lower,
+    Upper,
+    /// `repeat(count)`: отрицательное число — ошибка.
+    Repeat,
+    /// `characters()`: `array<char>` (#231).
+    Characters,
 }
 
 impl StrOp {
@@ -1249,14 +1263,37 @@ impl StrOp {
             StrOp::Trim => "str.trim",
             StrOp::Chomp => "str.chomp",
             StrOp::Utf8 => "str.utf8",
+            StrOp::Find => "str.find",
+            StrOp::FindLast => "str.find_last",
+            StrOp::StartsWith => "str.starts_with",
+            StrOp::EndsWith => "str.ends_with",
+            StrOp::TrimStart => "str.trim_start",
+            StrOp::TrimEnd => "str.trim_end",
+            StrOp::Lower => "str.lower",
+            StrOp::Upper => "str.upper",
+            StrOp::Repeat => "str.repeat",
+            StrOp::Characters => "str.characters",
         }
     }
 
     /// Число операндов, включая строку-receiver.
     pub fn arity(self) -> usize {
         match self {
-            StrOp::Len | StrOp::Trim | StrOp::Chomp | StrOp::Utf8 => 1,
-            StrOp::Split => 2,
+            StrOp::Len
+            | StrOp::Trim
+            | StrOp::Chomp
+            | StrOp::Utf8
+            | StrOp::TrimStart
+            | StrOp::TrimEnd
+            | StrOp::Lower
+            | StrOp::Upper
+            | StrOp::Characters => 1,
+            StrOp::Split
+            | StrOp::Find
+            | StrOp::FindLast
+            | StrOp::StartsWith
+            | StrOp::EndsWith
+            | StrOp::Repeat => 2,
             StrOp::Slice | StrOp::Replace | StrOp::ReplaceFirst => 3,
         }
     }

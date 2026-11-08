@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.array.contains-type-rejected",
+  "title": "contains takes an element of the array type",
+  "purpose": "Searching an @int for a string is rejected.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.ARRAY-SEARCH-SHAPE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #210, #211, #231",
+    "expected_basis": "spec 6.6: contains(value is T)."
+  },
+  "status": "mandatory"
+}

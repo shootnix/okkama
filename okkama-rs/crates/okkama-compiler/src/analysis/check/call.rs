@@ -475,7 +475,7 @@ impl Checker<'_, '_> {
             ast::ExprKind::Name(name)
                 if matches!(
                     name.text.as_str(),
-                    "int" | "string" | "byte" | "float" | "rat"
+                    "int" | "string" | "byte" | "float" | "rat" | "char"
                 ) =>
             {
                 self.primitive_cast(&name.text, args, span)
@@ -1917,6 +1917,7 @@ impl Checker<'_, '_> {
             "int" => CastTarget::Int,
             "byte" => CastTarget::Byte,
             "float" => CastTarget::Float,
+            "char" => CastTarget::Char,
             _ => CastTarget::Str,
         };
         self.convert(value, cast, arg.value.span, None, span)

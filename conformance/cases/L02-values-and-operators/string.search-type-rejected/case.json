@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.search-type-rejected",
+  "title": "a string search takes a string",
+  "purpose": "Passing an int to contains is rejected.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-SEARCH",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #210, #211, #231",
+    "expected_basis": "spec 6.6: contains(part is string)."
+  },
+  "status": "mandatory"
+}

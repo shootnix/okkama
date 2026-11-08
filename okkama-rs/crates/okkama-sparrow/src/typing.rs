@@ -5,7 +5,7 @@
 //! параметров. Ядро Sparrow выбирает машинное представление регистра по его
 //! типу, поэтому программа с ложными типами отвергается до исполнения.
 use crate::{
-    CatchKind, Constant, FutOp, Function, Instruction, Program, Register, Target, Type, TypeRef,
+    CatchKind, Constant, FutOp, Function, Instruction, Program, Register, StrFn, Target, Type, TypeRef,
 };
 
 type Rule = Result<(), String>;
@@ -285,8 +285,9 @@ impl<'a> Typing<'a> {
             I::Convert { dst, source } => {
                 let ok = matches!(
                     (self.ty(*source), self.ty(dst.0)),
-                    (Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat, Type::Str)
-                        | (Type::Byte | Type::Rat, Type::Int)
+                    (Type::Int | Type::Bool | Type::Byte | Type::Float | Type::Rat | Type::Char, Type::Str)
+                        | (Type::Byte | Type::Rat | Type::Char, Type::Int)
+                        | (Type::Int, Type::Char)
                         | (Type::Int | Type::Byte | Type::Rat, Type::Float)
                         | (Type::Float, Type::Int)
                         | (Type::Int | Type::Byte | Type::Float, Type::Rat)
@@ -432,6 +433,28 @@ impl<'a> Typing<'a> {
                 match self.ty(dst.0) {
                     Type::Array(e) if *self.resolve(*e) == Type::Byte => Ok(()),
                     other => Err(format!("str.utf8 defines @byte, not {}", self.name(other))),
+                }
+            }
+            I::StrFn { op, dst, args } => {
+                let binary = matches!(
+                    op,
+                    StrFn::Find | StrFn::FindLast | StrFn::StartsWith | StrFn::EndsWith | StrFn::Repeat
+                );
+                if args.len() != 1 + usize::from(binary) {
+                    return Err(format!("str.fn {} takes {} operands", op.name(), 1 + usize::from(binary)));
+                }
+                self.expect(args[0], &str_)?;
+                if binary {
+                    self.expect(args[1], if *op == StrFn::Repeat { &int } else { &str_ })?;
+                }
+                match op {
+                    StrFn::Find | StrFn::FindLast => self.define(dst.0, &int, "str.fn"),
+                    StrFn::StartsWith | StrFn::EndsWith => self.define(dst.0, &bool_, "str.fn"),
+                    StrFn::Characters => match self.ty(dst.0) {
+                        Type::Array(e) if *self.resolve(*e) == Type::Char => Ok(()),
+                        other => Err(format!("str.fn characters defines @char, not {}", self.name(other))),
+                    },
+                    _ => self.define(dst.0, &str_, "str.fn"),
                 }
             }
             I::ValCmp { dst, left, right, .. } => {

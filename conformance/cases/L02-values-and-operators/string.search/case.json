@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.search",
+  "title": "string searches by code point",
+  "purpose": "contains, starts_with, ends_with, find and find_last on non-ASCII text, with missing and empty parts.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-SEARCH",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "yes no\nyes yes no\n10 15 none\n0 3\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #210, #211, #231",
+    "expected_basis": "spec 6.6: find/find_last give a Maybe<int> code point index; an empty part is found at 0, respectively at length()."
+  },
+  "status": "mandatory"
+}

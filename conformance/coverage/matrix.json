@@ -1512,6 +1512,52 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.array.search-and-shape"
+     ],
+     "mandatory_cases": [
+      "L05.array.search-and-shape"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L05.array.contains-type-rejected",
+      "L05.array.take-negative"
+     ],
+     "mandatory_cases": [
+      "L05.array.contains-type-rejected",
+      "L05.array.take-negative"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.array.search-and-shape"
+     ],
+     "mandatory_cases": [
+      "L05.array.search-and-shape"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "COLL.ARRAY-SEARCH-SHAPE",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+   ],
+   "status": "mandatory",
+   "title": "contains and index_of use ==; reversed, take and drop return new arrays"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
       "L05.iterable.empty-and-last"
      ],
      "mandatory_cases": [
@@ -27237,10 +27283,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.char.string-cast"
+      "L02.char.code-round-trip"
      ],
      "mandatory_cases": [
-      "L02.char.string-cast"
+      "L02.char.code-round-trip"
      ],
      "requirement": "required"
     },
@@ -27252,20 +27298,26 @@
     "invalid": {
      "cases": [
       "L02.char.equal-string",
+      "L02.char.surrogate-rejected",
       "L02.string.plus-char"
      ],
      "mandatory_cases": [
       "L02.char.equal-string",
+      "L02.char.surrogate-rejected",
       "L02.string.plus-char"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
-      "L01.lex.char.basic-and-escapes"
+      "L01.lex.char.basic-and-escapes",
+      "L02.char.code-round-trip",
+      "L02.char.string-cast"
      ],
      "mandatory_cases": [
-      "L01.lex.char.basic-and-escapes"
+      "L01.lex.char.basic-and-escapes",
+      "L02.char.code-round-trip",
+      "L02.char.string-cast"
      ],
      "requirement": "required"
     }
@@ -27275,10 +27327,12 @@
    "family": "Values and operators",
    "spec_refs": [
     "docs/okkama-spec-11072026.md#6.1",
+    "docs/okkama-spec-11072026.md#6.6",
+    "docs/okkama-spec-11072026.md#6.6.1",
     "docs/okkama-spec-11072026.md#8.4"
    ],
    "status": "mandatory",
-   "title": "char is distinct from string and compares only with char"
+   "title": "char is distinct from string, compares only with char, and converts to its code point and text"
   },
   {
    "aspects": {
@@ -27993,8 +28047,7 @@
       "L02.cast.reject-int-from-bool",
       "L02.cast.reject-int-from-string",
       "L02.cast.reject-named-argument",
-      "L02.cast.reject-scalar-unpack",
-      "L02.char.string-cast"
+      "L02.cast.reject-scalar-unpack"
      ],
      "mandatory_cases": [
       "L02.byte.too-large",
@@ -28002,19 +28055,20 @@
       "L02.cast.reject-int-from-bool",
       "L02.cast.reject-int-from-string",
       "L02.cast.reject-named-argument",
-      "L02.cast.reject-scalar-unpack",
-      "L02.char.string-cast"
+      "L02.cast.reject-scalar-unpack"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
       "L02.byte.construction",
-      "L02.cast.scalar-calls"
+      "L02.cast.scalar-calls",
+      "L02.char.string-cast"
      ],
      "mandatory_cases": [
       "L02.byte.construction",
-      "L02.cast.scalar-calls"
+      "L02.cast.scalar-calls",
+      "L02.char.string-cast"
      ],
      "requirement": "required"
     }
@@ -28129,6 +28183,50 @@
    ],
    "status": "mandatory",
    "title": "`sink <- source` writes through the Writing/ByteSource roles, left-associative, returns the sink"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L02.string.case-and-repeat"
+     ],
+     "mandatory_cases": [
+      "L02.string.case-and-repeat"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L02.string.repeat-negative"
+     ],
+     "mandatory_cases": [
+      "L02.string.repeat-negative"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L02.string.case-and-repeat"
+     ],
+     "mandatory_cases": [
+      "L02.string.case-and-repeat"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "VAL.STRING-CASE-REPEAT",
+   "discrepancies": [],
+   "family": "Values and operators",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+   ],
+   "status": "mandatory",
+   "title": "trim_start, trim_end, lower, upper (full Unicode, no locale) and repeat return new strings"
   },
   {
    "aspects": {
@@ -28264,6 +28362,50 @@
    ],
    "status": "mandatory",
    "title": "replace / replace_first are literal, left-to-right, non-overlapping; empty target means code-point boundaries"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L02.string.search"
+     ],
+     "mandatory_cases": [
+      "L02.string.search"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L02.string.search-type-rejected"
+     ],
+     "mandatory_cases": [
+      "L02.string.search-type-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L02.string.search"
+     ],
+     "mandatory_cases": [
+      "L02.string.search"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "VAL.STRING-SEARCH",
+   "discrepancies": [],
+   "family": "Values and operators",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+   ],
+   "status": "mandatory",
+   "title": "contains, starts_with, ends_with, find and find_last search by code point"
   },
   {
    "aspects": {
@@ -30525,5 +30667,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "dd07e74708bc507d91d2be312cdd7daf8bae2a67fa736fe91ef5c0210d1f2db2"
+ "suite_tree_sha256": "d2c46ac717a714fb82fbad14bb891de4bfa007af1a83bc313c5eb3eabb8e49ab"
 }
