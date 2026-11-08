@@ -604,6 +604,25 @@ calls and closures no longer pay for a `destroy` elsewhere in the program
 
 ### Fixed
 
+- Sparrow core: a TLS read that completed and was then cancelled before its
+  result reached the program lost the plaintext it had taken (the core's
+  part of the abandoned-read fix below; `L11.tls.cancelled-read-keeps-data`
+  failed on CI). The read's result now puts undelivered bytes back in front
+  of the plaintext buffer when it is dropped unpublished.
+
+- JVM: splitting a large function no longer panics (`unwind targets take a
+  failure`, #305). When the moved part of a function over the method limit
+  held the handler of its own root — a `try` handler is dominated by the
+  block that enters the `try` — the remaining call kept an unwind edge into
+  the moved code, which the renumbering turned into the entry block. The
+  call now keeps its handler only when the handler stays outside. Exposed in
+  0.4.1 by block merging (#292); found by the generated t/ suite (#245).
+
+- Gate: the `ir-passes-off` and `ir-gc-stress` conformance runs get four
+  times the case budgets. Without the IR passes tail calls are real calls,
+  and `L03.recursion.tail-constant-stack` (10^7 of them in the adapter's
+  debug build) timed out on the CI runner.
+
 - IR: closures paid region tracking in any program with a `destroy` (#292).
   Lowering judges plainness per type and treats every function value as
   possibly owning a resource, since a closure's captures are not in its
