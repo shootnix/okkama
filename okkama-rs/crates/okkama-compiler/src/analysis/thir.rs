@@ -535,7 +535,8 @@ pub enum Builtin {
     StrCharacters,
     /// `c.code()`: code point символа (#231).
     CharCode,
-    /// Строки упорядочиваются по длине (как Perl): `less`, `less_or_equal`.
+    /// `less`, `less_or_equal` строк: тот же порядок по code point, что у
+    /// `order()` (#281).
     StrCompare(CompareOp),
     MapSize,
     MapHas,

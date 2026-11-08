@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L02.string.order-consistent",
+  "title": "string less/less_or_equal follow order(): code points, prefixes, a binary search over ordering()",
+  "purpose": "Observe that a string has one natural order shared by less, less_or_equal, order and ordering.",
+  "level": "L02",
+  "contracts": [
+    {
+      "contract": "VAL.STRING-ORDER",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true false\ntrue true false\nfalse true false\ntrue true false\ntrue false true\n0\n0,1,2,3,4,5,6,7,8\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #281 from the owner's decision and the spec text",
+    "expected_basis": "spec 6.6 (#281): less is order() == Order.less and less_or_equal is order() != Order.greater, order compares code points; the lines follow by hand from the code points (Z=0x5A < a=0x61, e-acute=0xE9 > z=0x7A, U+FFFF < U+1F600, a prefix precedes the longer string); the search over ordering() of nine distinct words finds index i for the i-th word."
+  },
+  "status": "mandatory"
+}
