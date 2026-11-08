@@ -442,7 +442,7 @@ impl<'a> Registry<'a> {
     /// Почему `ty` не может быть ключом словаря; `None` — может (#212).
     /// Ключ — скаляр, enum, параметр типа (проверяется при исполнении) или
     /// объект-значение: без `destroy` и cap, все поля которого — скаляры
-    /// (также `byte` и `rat`), enum или такие же объекты. Объекты
+    /// (также `byte`), enum или такие же объекты. Объекты
     /// неизменяемы, поэтому равенство и порядок ключа — по полям, как `==`.
     pub fn key_problem(&self, ty: &Ty) -> Option<String> {
         if ty.is_map_key() || matches!(ty, Ty::Param(_)) || ty.is_error() {
@@ -544,7 +544,7 @@ impl<'a> Registry<'a> {
         visiting.push(*id);
         let problem = info.fields.iter().find_map(|field| {
             let field_ty = field.ty.subst(&env);
-            let fits = field_ty.is_map_key() || matches!(field_ty, Ty::Byte | Ty::Rat | Ty::Error);
+            let fits = field_ty.is_map_key() || matches!(field_ty, Ty::Byte | Ty::Error);
             if fits {
                 return None;
             }

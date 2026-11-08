@@ -222,7 +222,7 @@ fn check_type(module: &Module, ty: &Type) -> std::result::Result<(), String> {
         Type::Map(key, value) | Type::MapBuilder(key, value) => {
             let untagged = **key == Type::Never && **value == Type::Never;
             if !untagged && !key.is_map_key() {
-                return Err(format!("map key type {key} is not int, bool or str"));
+                return Err(format!("map key type {key} is not a key type"));
             }
             check_type(module, value)
         }
