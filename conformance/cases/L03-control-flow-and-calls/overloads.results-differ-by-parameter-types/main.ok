@@ -1,0 +1,16 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Mixer {
+    Mixer();
+    mix(a is int) is int { a; }
+    mix(a is string) is string { a + "2"; }
+}
+
+main() is int {
+    let number is int = Mixer().mix(1);
+    let text is string = Mixer().mix("");
+    Stdout().writeln(number.string() + " " + text);
+    0;
+}

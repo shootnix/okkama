@@ -1,0 +1,12 @@
+module ocs/undeclared_operator v1.0.0;
+
+object Plain {
+    has n is int;
+    Plain(:n);
+    plus(other is Plain) is Plain { Plain(n: n + other.n()); }
+    n() is int { n; }
+}
+
+main() is int {
+    (Plain(n: 1) + Plain(n: 2)).n();
+}

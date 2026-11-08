@@ -5,7 +5,7 @@ import "fs/file" take FileError;
 import "io/stream" take ByteSource,Writing,Closing;
 import "io/decorators" take ByteSnapshot;
 import "async/atomic" take Atomic;
-import "numbers/bigint" take BigInt,BigSum,InvalidBigInt;
+import "numbers/bigint" take BigInt, InvalidBigInt;
 import "compare" take Order;
 import "collections/list" take List,EmptyList;
 import "collections/ordering" take SortedBy;
@@ -60,7 +60,7 @@ object LogArchiveCatalog{
     }
     next(records is @LogArchive) is BigInt{
         let latest=records.reduce(BigInt("0"))->old,item{if item.generation().order(old)==Order.greater{item.generation();}else{old;}};
-        BigSum(left:latest,right:BigInt("1")).value();
+        (latest + BigInt("1"));
     }
     trim(records is @LogArchive,retained is int) is void{
         let ordered is SortedBy<LogArchive,BigInt>=SortedBy(origin:records,key:(item is LogArchive) is BigInt{item.generation();});

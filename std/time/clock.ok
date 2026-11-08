@@ -1,6 +1,7 @@
 module time/clock v1.0.0;
 
 import "compare" take Comparing, Order;
+import "operators" take Adding, Subtracting;
 import "time/duration" take Duration, DurationUnit;
 import "runtime/time" take
     wall_clock,
@@ -22,7 +23,8 @@ import "runtime/time" take
 // The one-argument constructor binds explicitly supplied readings to the
 // "explicit" domain and never claims compatibility with a live clock.
 
-object Instant does Comparing<Instant> {
+object Instant does Comparing<Instant>, Adding<Duration, Instant>, Subtracting<Duration, Instant>,
+        Subtracting<Instant, Duration> {
     has origin is Duration;
 
     Instant(origin is Duration) {
@@ -37,6 +39,10 @@ object Instant does Comparing<Instant> {
         Instant(origin: origin.plus(duration));
     }
 
+    minus(duration is Duration) is Instant {
+        Instant(origin: origin.minus(duration));
+    }
+
     minus(other is Instant) is Duration {
         origin.minus(other.unix_duration());
     }
@@ -46,7 +52,8 @@ object Instant does Comparing<Instant> {
     }
 }
 
-object MonotonicInstant does Comparing<MonotonicInstant> {
+object MonotonicInstant does Comparing<MonotonicInstant>, Adding<Duration, MonotonicInstant>,
+        Subtracting<Duration, MonotonicInstant>, Subtracting<MonotonicInstant, Duration> {
     has origin is Duration;
     has domain is string;
 
@@ -69,6 +76,10 @@ object MonotonicInstant does Comparing<MonotonicInstant> {
 
     plus(duration is Duration) is MonotonicInstant {
         MonotonicInstant(origin: origin.plus(duration), domain: domain);
+    }
+
+    minus(duration is Duration) is MonotonicInstant {
+        MonotonicInstant(origin: origin.minus(duration), domain: domain);
     }
 
     minus(other is MonotonicInstant) is Duration {

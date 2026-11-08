@@ -1,6 +1,7 @@
 module time/duration v1.0.0;
 
 import "compare" take Comparing, Order;
+import "operators" take Adding, Subtracting, Negating;
 import "numbers/bigint" take BigInt;
 
 // Exact immutable durations with nanosecond resolution.
@@ -29,7 +30,7 @@ enum DurationUnit = (
     day
 );
 
-object Duration does Comparing<Duration> {
+object Duration does Comparing<Duration>, Adding<Duration, Duration>, Subtracting<Duration, Duration>, Negating<Duration> {
     has origin is rat;
 
     Duration(value is rat, unit is DurationUnit) {
@@ -69,6 +70,11 @@ object Duration does Comparing<Duration> {
             value: origin - other.seconds(),
             unit: DurationUnit.second,
         );
+    }
+
+    // -a
+    negated() is Duration {
+        Duration(value: -origin, unit: DurationUnit.second);
     }
 
     order(other is Duration) is Order {

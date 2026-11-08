@@ -7,7 +7,7 @@ import "http/message" take InvalidHttpMessage;
 import "http/internal/trailers" take HttpTrailerRules;
 import "regex/pattern" take Regex;
 import "regex/search" take RegexMatches,EntireRegexMatch;
-import "numbers/bigint" take BigInt,BigProduct,BigSum;
+import "numbers/bigint" take BigInt;
 import "encoding/single_byte" take Latin1Encoded;
 import "runtime/single_byte" take latin1_representable_prefix;
 import "compare" take Order;
@@ -30,7 +30,7 @@ object ParsedHttp1ChunkLine {
         confirm hex.length()<=16 else throw Http1LimitExceeded.kind("chunk_digits");
         let value=Latin1Encoded(hex).bytes().reduce(BigInt("0"))->size,octet {
             let code=octet.int();let digit=if code<=57 {code-48;}else{if code<=70 {code-55;}else{code-87;}};
-            BigSum(left:BigProduct(left:size,right:BigInt("16")).value(),right:BigInt(digit.string())).value();
+            ((size * BigInt("16")) + BigInt(digit.string()));
         };
         confirm value.order(BigInt(limits.body_bytes().string()))!=Order.greater else throw Http1LimitExceeded.kind("body_bytes");value;
     }

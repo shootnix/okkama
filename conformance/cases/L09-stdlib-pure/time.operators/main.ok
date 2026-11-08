@@ -1,0 +1,15 @@
+module ocs/time_operators v1.0.0;
+
+import "io/stdout" take Stdout;
+import "time/duration" take Duration, DurationUnit;
+import "time/clock" take Instant;
+
+main() is int {
+    let out = Stdout();
+    let minute = Duration(value: 60.rat(), unit: DurationUnit.second);
+    let start = Instant(origin: Duration(value: 1000.rat(), unit: DurationUnit.second));
+    let later = start + minute + minute;
+    out.writeln((later - start).seconds().string() + " " + (later - minute).unix_duration().seconds().string() + " " + (-minute).seconds().string());
+    out.writeln((start < later).string() + " " + (minute + minute > minute).string());
+    0;
+}

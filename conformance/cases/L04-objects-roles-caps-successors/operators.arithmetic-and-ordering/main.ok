@@ -1,0 +1,50 @@
+module ocs/operator_roles v1.0.0;
+
+import "io/stdout" take Stdout;
+import "operators" take Adding, Subtracting, Negating;
+import "compare" take Comparing, Order;
+
+object Money does Adding<Money, Money>, Subtracting<Money, Money>, Negating<Money>, Comparing<Money> {
+    has cents is int;
+    Money(:cents);
+    cents() is int { cents; }
+    plus(other is Money) is Money { Money(cents: cents + other.cents()); }
+    minus(other is Money) is Money { Money(cents: cents - other.cents()); }
+    negated() is Money { Money(cents: -cents); }
+    order(other is Money) is Order { cents.order(other.cents()); }
+}
+
+object Span does Adding<Span, Span> {
+    has length is int;
+    Span(:length);
+    length() is int { length; }
+    plus(other is Span) is Span { Span(length: length + other.length()); }
+}
+
+object Moment does Adding<Span, Moment>, Subtracting<Span, Moment>, Subtracting<Moment, Span> {
+    has at is int;
+    Moment(:at);
+    at() is int { at; }
+    plus(other is Span) is Moment { Moment(at: at + other.length()); }
+    minus(other is Span) is Moment { Moment(at: at - other.length()); }
+    minus(other is Moment) is Span { Span(length: at - other.at()); }
+}
+
+object Totals<T: Adding<T, T>> {
+    Totals();
+    sum(first is T, rest is @T) is T { rest.reduce(first) -> total, item { total + item; }; }
+}
+
+main() is int {
+    let out = Stdout();
+    let a = Money(cents: 250);
+    let b = Money(cents: 75);
+    out.writeln((a + b).cents().string() + " " + (a - b).cents().string() + " " + (-a).cents().string());
+    out.writeln((a < b).string() + " " + (a <= a).string() + " " + (a > b).string() + " " + (b >= a).string());
+    let start = Moment(at: 100);
+    let later = start + Span(length: 30);
+    out.writeln(later.at().string() + " " + (later - start).length().string() + " " + (later - Span(length: 5)).at().string());
+    let totals is Totals<Money> = Totals();
+    out.writeln(totals.sum(a, [b, b]).cents().string());
+    0;
+}

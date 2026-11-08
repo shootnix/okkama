@@ -9,7 +9,7 @@ import "async/channel" take Channel, Sending;
 import "async/lock" take Lock;
 import "async/event" take Event;
 import "async/scope" take FutureScope, Supervising;
-import "numbers/bigint" take BigInt, BigSum;
+import "numbers/bigint" take BigInt;
 import "encoding/utf" take Utf8Encoded;
 import "error" take InvalidState;
 
@@ -50,7 +50,7 @@ object ImapCommandChannel does Closing {
         let logout=command.name()=="LOGOUT";
         await output.write(ByteSnapshot(command.bytes(tag)));
         let result=await ImapCommandInput(input,tag,state.prefix(),limits,ImapReplyMode(continuation,logout)).read();
-        let following=ImapExchangeState(result.remainder(),BigSum(left:state.serial(),right:BigInt("1")).value());
+        let following=ImapExchangeState(result.remainder(),(state.serial() + BigInt("1")));
         await states.sending().send(following);completed.set();
         if logout {self.close();}
         result;
@@ -65,7 +65,7 @@ object ImapCommandChannel does Closing {
         let action=ImapIdleWireInput(input,output,tag,state.prefix(),limits,stop,observer);
         let scope is FutureScope<int,ImapCommandRead>=FutureScope(action:action.run);
         let result=await scope.result();
-        await states.sending().send(ImapExchangeState(result.remainder(),BigSum(left:state.serial(),right:BigInt("1")).value()));
+        await states.sending().send(ImapExchangeState(result.remainder(),(state.serial() + BigInt("1"))));
         completed.set();[result];
     }
     destroy {self.abort();}

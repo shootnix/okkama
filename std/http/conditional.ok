@@ -4,7 +4,7 @@ import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
 import "encoding/single_byte" take Latin1Encoded, UnrepresentableLatin1Character;
 import "error" take InvalidArgument;
-import "numbers/bigint" take BigInt, BigDifference, BigSum;
+import "numbers/bigint" take BigInt;
 import "collections/ordering" take SortedBy;
 import "compare" take Order;
 import "http/header" take HttpAsciiLowercase;
@@ -170,7 +170,7 @@ object ByteRange {
     }
     start() is BigInt {start;}
     end() is BigInt {end;}
-    size() is BigInt {BigSum(left:BigDifference(left:end,right:start).value(),right:BigInt("1")).value();}
+    size() is BigInt {((end - start) + BigInt("1"));}
     string() is string {start.string()+"-"+end.string();}
 }
 object ByteRanges {
@@ -219,9 +219,9 @@ object ByteRangeSpec {
     ranges(size is BigInt) is @ByteRange {
         confirm size.sign()>=0 else throw InvalidRange.because("negative representation size");
         if size.sign()==0 || !self.satisfiable(size) {let empty is @ByteRange=[];return empty;}
-        let end=BigDifference(left:size,right:BigInt("1")).value();
+        let end=(size - BigInt("1"));
         if lower.size()==0 {
-            let start=if upper[0].order(size)==Order.less {BigDifference(left:size,right:upper[0]).value();}else{BigInt("0");};
+            let start=if upper[0].order(size)==Order.less {(size - upper[0]);}else{BigInt("0");};
             return [ByteRange(start,end)];
         }
         let clipped=if upper.size()==1 && upper[0].order(end)==Order.less {upper[0];}else{end;};
@@ -283,7 +283,7 @@ object CoalescedByteRanges {
         else {
             let previous=reversed.first();
             confirm range.start().order(previous.start())!=Order.less else throw InvalidRange.because("coalescing requires sorted intervals");
-            let after=BigSum(left:previous.end(),right:BigInt("1")).value();
+            let after=(previous.end() + BigInt("1"));
             if range.start().order(after)!=Order.greater {
                 let end=if range.end().order(previous.end())==Order.greater {range.end();}else{previous.end();};
                 ^reversed=reversed.tail().prefix(ByteRange(previous.start(),end));

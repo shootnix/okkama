@@ -23,6 +23,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   baseline. Docs: `okkama-docs/benchmarks/README.md`, LLM guide §6
   ([#236](https://github.com/shootnix/okkama/issues/236)).
 
+- Language: operator roles (#215). The std module `operators` declares
+  `Adding<T, R>` (`plus`), `Subtracting<T, R>` (`minus`), `Multiplying<T, R>`
+  (`times`), `Dividing<T, R>` (`divided`), `Remaindering<T, R>` (`remainder`)
+  and `Negating<R>` (`negated`). An object that names one of them in `does`
+  can be an operand of `+ - * / %` or of unary `-`: `a + b` calls
+  `a.plus(b)`, chosen by the type of `b` among the role instances the object
+  declares; `< <= > >=` call `Comparing.order`. Roles are nominal — an action
+  named `plus` without `does Adding<…>` does not make `+` work (`Operator +
+  cannot be applied to Money and Money: Money does not do Adding`). The checker rewrites the operator into an
+  ordinary call, so no engine changes. `BigInt` does all six and `Comparing`;
+  `Duration` does `Adding`, `Subtracting`, `Negating`; `Instant` and
+  `MonotonicInstant` add or subtract a `Duration` and subtract each other.
+  OCS contract `OBJ.OPERATOR-ROLES` with `L04.operators.*` and
+  `L09.time.operators`, std contract `STD.OPERATORS`; Book §22.3, spec §12.2,
+  LLM context, BigInt guide (EN/RU)
+  ([#215](https://github.com/shootnix/okkama/issues/215)).
+
 - Language: `async destroy { … }` (#154). The block may await; it is awaited
   where its owner's scope ends — normal end, `return`, `last`, a failure or a
   cancellation — in reverse construction order, and a cancellation that
@@ -441,6 +458,27 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   203 instead of 9 on the IR engine, 36 instead of 8 on the JVM. Benchmark:
   `okkama-docs/benchmarks/ini/bench.ok`; guide: `docs/std/ini-guide.md`
   ([#13](https://github.com/shootnix/okkama/issues/13)).
+
+- Language: overloads may differ in their results (#215). Two actions with
+  the same name and arity are compatible when their parameter types differ;
+  their result types no longer have to match (`plus(int) is Duration` beside
+  `plus(Duration) is Instant`). Calls that the parameter types cannot tell
+  apart are still rejected. A role may also appear in `does` more than once
+  with different type arguments (`does Subtracting<Duration, Instant>,
+  Subtracting<Instant, Duration>`); the same instance twice is an error. OCS
+  `L03.overloads.results-differ-by-parameter-types` replaces
+  `overloads.incompatible-returns`; Book §11 rule 8, spec §11.8 (EN/RU)
+  ([#215](https://github.com/shootnix/okkama/issues/215)).
+
+- Std: `BigInt` arithmetic is operators (#215). The expression objects
+  `BigSum`, `BigDifference`, `BigProduct`, `BigQuotient`, `BigRemainder`,
+  `BigGcd`, `BigLcm` and `BigPower` are removed: write `a + b`, `a - b`,
+  `a * b`, `a / b` (truncates toward zero), `a % b` (sign of the dividend),
+  `-a`, and the actions `a.gcd(b)`, `a.lcm(b)`, `a.power(exponent)` and
+  `a.power(exponent, maximum_bits)`. The errors (`BigDivisionByZero`,
+  `InvalidBigExponent`, `InvalidBigPowerLimit`, `BigPowerLimitExceeded`) are
+  unchanged and are thrown by the call. Std modules and OCS cases that used
+  the objects are rewritten ([#215](https://github.com/shootnix/okkama/issues/215)).
 
 - Async: await is structured (#147). Cancelling a task cancels the future it
   awaits — a lazy future its `await` started, a spawned task, a runtime

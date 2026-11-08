@@ -20,7 +20,7 @@ import "db/value" take DbValue,DbValueKind,ObservedDbValue,DbNativeValue,DbNull,
 import "db/error" take DbFailure,DbFailureKind,DbOperation,DbClosed,DbBusy,TransactionEnded,IndeterminateCommit;
 import "collections/sequence" take Sequencing;
 import "encoding/utf" take Utf8Encoded;
-import "numbers/bigint" take BigInt,BigSum;
+import "numbers/bigint" take BigInt;
 import "strings/parse" take ParsedInt,ParsedFloat;
 import "time/duration" take Duration,DurationUnit;
 import "async/atomic" take Atomic;
@@ -342,7 +342,7 @@ object SqliteBlobHandle does SqliteBlob,Closing{
     SqliteBlobHandle(owner is SqliteSession,id is int,size is int,writable is bool,token is int){self.owner=owner;self.id=id;self.size=size;self.writable=writable;self.token=token;stopped=Event();}
     size() is int{size;}closed() is bool{stopped.ready() || !owner.blob_active(id,token);}
     close() is void{if !stopped.ready(){stopped.set();owner.blob_close(id);}}
-    bounds(offset is BigInt,limit is int) is void{confirm offset.order(BigInt("0"))!=Order.less && offset.order(BigInt(size.string()))!=Order.greater && limit>=0 && limit<=65536 && BigSum(left:offset,right:BigInt(limit.string())).value().order(BigInt(size.string()))!=Order.greater else throw InvalidSqliteBlob.invalid;}
+    bounds(offset is BigInt,limit is int) is void{confirm offset.order(BigInt("0"))!=Order.less && offset.order(BigInt(size.string()))!=Order.greater && limit>=0 && limit<=65536 && (offset + BigInt(limit.string())).order(BigInt(size.string()))!=Order.greater else throw InvalidSqliteBlob.invalid;}
     async bytes(offset is BigInt,limit is int) is @byte{confirm !self.closed() else throw DbClosed.closed;confirm limit>0 else throw InvalidSqliteBlob.invalid;self.bounds(offset,limit);await owner.blob_bytes(id,offset,limit,token);}
     async write(offset is BigInt,source is @byte) is SqliteBlob{confirm !self.closed() else throw DbClosed.closed;confirm writable else throw DbFailure.detailed(DbFailureKind.permission, DbOperation.writing_blob, "SQLITE_BLOB_READ_ONLY", "SQLite blob is read-only");self.bounds(offset,source.size());await owner.blob_write(id,offset,source,token);self;}
     destroy{self.close();}

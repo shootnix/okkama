@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.operators.arithmetic-and-ordering",
+  "title": "arithmetic, negation and ordering operators on objects go through operator roles",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.OPERATOR-ROLES",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    },
+    {
+      "contract": "STD.OPERATORS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "325 175 -250\nfalse true true false\n130 30 125\n400\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #215",
+    "expected_basis": "spec 12.2: a + b calls plus of the Adding<T, R> the left type does, - and unary - likewise; <, <=, >, >= compare order() with an Order case; a type may do Subtracting twice with different operands (Moment - Span gives a Moment, Moment - Moment a Span); a role-bounded type parameter dispatches through its bound."
+  },
+  "status": "mandatory"
+}

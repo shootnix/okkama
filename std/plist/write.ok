@@ -2,7 +2,7 @@ module plist/write v1.0.0;
 import "plist/value" take PlistValue, PlistWriting, PlistMember, DuplicatePlistMember;
 import "collections/sequence" take Sequencing;
 import "collections/list" take List, EmptyList;
-import "numbers/bigint" take BigInt, BigSum, BigQuotient, BigRemainder, BigPower;
+import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "strings/parse" take ParsedInt;
 import "encoding/utf" take Utf8Encoded, Utf16Encoded, Utf32Encoded, ByteOrder;
@@ -280,11 +280,11 @@ object PlistWireInteger {
     width() is int {size;}
     power() is int {if size==1 {0;} else {if size==2 {1;} else {if size==4 {2;} else {if size==8 {3;} else {4;}}}}}
     bytes() is @byte {
-        let magnitude=if origin.sign()<0 {BigSum(left: origin,right: BigPower(BigInt("256"),size,129).value()).value();} else {origin;};
+        let magnitude=if origin.sign()<0 {(origin + BigInt("256").power(size, 129));} else {origin;};
         let result is @byte=(0..size).map() -> index {
-            let divisor=BigPower(BigInt("256"),size-index-1,129).value();
-            let quotient=BigQuotient(left: magnitude,right: divisor).value();
-            let remainder=BigRemainder(left: quotient,right: BigInt("256")).value();
+            let divisor=BigInt("256").power(size-index-1, 129);
+            let quotient=(magnitude / divisor);
+            let remainder=(quotient % BigInt("256"));
             ParsedInt(remainder.string()).value().byte();
         };
         result;

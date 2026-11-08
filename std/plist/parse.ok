@@ -1,7 +1,7 @@
 module plist/parse v1.0.0;
 import "plist/value" take PlistValue, PlistBoolean, PlistInteger, PlistReal, PlistString, PlistData, PlistDate, PlistUid, PlistArray, PlistDictionary, PlistMember;
 import "collections/list" take List, EmptyList;
-import "numbers/bigint" take BigInt, BigSum, BigProduct, BigDifference, BigPower;
+import "numbers/bigint" take BigInt;
 import "math/decimal" take Decimal, InvalidDecimal;
 import "compare" take Order;
 import "encoding/utf" take Utf8Decoded, Utf8Encoded, Utf16Decoded, Utf32Decoded, Utf32Encoded, ByteOrder, InvalidUtf8, InvalidUtf16;
@@ -441,8 +441,8 @@ object PlistBinaryDocument {
           catch error is Error {throw InvalidPlist.located(start, error.text());}
     }
     integer(payload is @byte, signed is bool) is BigInt {
-        let value=payload.reduce(BigInt("0")) -> number,part {BigSum(left: BigProduct(left: number,right: BigInt("256")).value(),right: BigInt(part.int().string())).value();};
-        if signed && payload[0].int()>=128 {BigDifference(left: value,right: BigPower(BigInt("256"),payload.size(),129).value()).value();} else {value;}
+        let value=payload.reduce(BigInt("0")) -> number,part {((number * BigInt("256")) + BigInt(part.int().string()));};
+        if signed && payload[0].int()>=128 {(value - BigInt("256").power(payload.size(), 129));} else {value;}
     }
     read(index is int,depth is int,remaining is int,path is List<int>) is PlistParsedNode {
         let start=offsets[index];let end=self.limit(start);let marker=origin[start].int();let category=(marker/16).int();

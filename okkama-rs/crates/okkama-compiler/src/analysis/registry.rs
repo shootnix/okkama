@@ -271,6 +271,19 @@ pub struct Standard {
     pub writing: Option<RoleId>,
     /// `cell::Cell`: stays in synchronous code (#152).
     pub cell: Option<ObjectId>,
+    /// Operator roles of module `operators` (#215), by operator.
+    pub operators: Operators,
+}
+
+/// The roles that give `+ - * / %` and unary `-` a meaning for objects.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Operators {
+    pub adding: Option<RoleId>,
+    pub subtracting: Option<RoleId>,
+    pub multiplying: Option<RoleId>,
+    pub dividing: Option<RoleId>,
+    pub remaindering: Option<RoleId>,
+    pub negating: Option<RoleId>,
 }
 
 #[derive(Debug)]
@@ -2140,19 +2153,6 @@ impl<'a> Registry<'a> {
                 );
                 continue;
             }
-            if let Some(other) = methods
-                .iter()
-                .find(|other| other.name == signature.name.text)
-                && other.result != result {
-                    self.error(
-                        signature.span,
-                        format!(
-                            "Role action \"{}\" overloads on \"{}\" must declare the same return type",
-                            signature.name.text, decl.name.text
-                        ),
-                    );
-                    continue;
-                }
             methods.push(RoleMethod {
                 name: signature.name.text.clone(),
                 params,
@@ -2491,7 +2491,10 @@ impl<'a> Registry<'a> {
                         continue;
                     }
                 };
-                if does.iter().any(|(declared, _)| *declared == role) {
+                // A generic role may be declared again with other arguments
+                // (`Subtracting<Duration, Instant>` and `Subtracting<Instant,
+                // Duration>`, #215); the same instance twice is an error.
+                if does.iter().any(|(declared, known)| *declared == role && *known == args) {
                     self.error(
                         role_type.span,
                         format!("Role \"{}\" is listed twice", self.roles[role.0].name),
@@ -2702,6 +2705,14 @@ impl<'a> Registry<'a> {
             cell: match lookup(self, "cell", "Cell") {
                 Some(TypeRef::Object(id)) => Some(id),
                 _ => None,
+            },
+            operators: Operators {
+                adding: role(lookup(self, "operators", "Adding")),
+                subtracting: role(lookup(self, "operators", "Subtracting")),
+                multiplying: role(lookup(self, "operators", "Multiplying")),
+                dividing: role(lookup(self, "operators", "Dividing")),
+                remaindering: role(lookup(self, "operators", "Remaindering")),
+                negating: role(lookup(self, "operators", "Negating")),
             },
         };
     }
@@ -3120,12 +3131,6 @@ fn overload_conflict(
         if same_types && same_names {
             return Some(format!(
                 "Action \"{}\" on object \"{object}\" is declared twice with the same signature",
-                method.name
-            ));
-        }
-        if method.params.len() == other.params.len() && method.result != other.result {
-            return Some(format!(
-                "Overloads of action \"{}\" on object \"{object}\" must declare the same result",
                 method.name
             ));
         }

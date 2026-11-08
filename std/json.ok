@@ -1,7 +1,7 @@
 module local/json v1.0.0;
 
 import "math/decimal" take Decimal;
-import "numbers/bigint" take BigInt, BigProduct, BigPower, BigPowerLimitExceeded;
+import "numbers/bigint" take BigInt, BigPowerLimitExceeded;
 import "compare" take Order;
 import "runtime/number_text" take int_parse_valid, int_parse;
 import "runtime/json" take
@@ -547,12 +547,12 @@ object JsonInteger {
         }
         else {
             let scale = try {
-                BigPower(BigInt("10"), exact.exponent(), 4096).value();
+                BigInt("10").power(exact.exponent(), 4096);
             }
             catch failure is BigPowerLimitExceeded {
                 throw InvalidJsonNumber.detailed(origin.pointer(), exact.string(), "integer exceeds 4096 bits");
             };
-            BigProduct(left: exact.coefficient(), right: scale).value();
+            (exact.coefficient() * scale);
         }
     }
 }

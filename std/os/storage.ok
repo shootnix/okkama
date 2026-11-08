@@ -1,7 +1,7 @@
 module os/storage v1.0.0;
 
 import "fs/path" take Path;
-import "numbers/bigint" take BigInt, BigDifference;
+import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "runtime/system" take storage_usage;
 
@@ -54,7 +54,7 @@ object StorageUsage {
     }
 
     capacity() is BigInt { total_capacity; }
-    used() is BigInt { BigDifference(left: total_capacity, right: available_capacity).value(); }
+    used() is BigInt { (total_capacity - available_capacity); }
     available() is BigInt { available_capacity; }
     fits(amount is BigInt) is bool {
         confirm amount.sign() >= 0 else throw InvalidStorageUsage.invalid;

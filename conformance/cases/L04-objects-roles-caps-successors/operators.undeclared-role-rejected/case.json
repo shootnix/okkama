@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.operators.undeclared-role-rejected",
+  "title": "an object with a plus action but no Adding role has no +",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.OPERATOR-ROLES",
+      "aspects": [
+        "invalid"
+      ]
+    },
+    {
+      "contract": "STD.OPERATORS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "Operator roles are nominal: the analyzer rejects + when the type does not do Adding."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #215",
+    "expected_basis": "spec 12.2: an action with the right name is not enough; the type must declare the role."
+  },
+  "status": "mandatory"
+}
