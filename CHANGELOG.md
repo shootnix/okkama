@@ -6,6 +6,14 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Documentation
+
+- `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
+  `rat` sources are exact at any size (a `rat` truncates toward zero); only a
+  `float` source is checked against the signed-64 range. The specification
+  (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
+  the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
+
 ### Added
 
 - `rat` is a map key type (#296): `%rat:V`, rat-key literals, indexing,
