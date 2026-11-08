@@ -44,6 +44,18 @@ pub struct RegionValue {
     entries: Vec<Word>,
     /// The entries as a set: membership checks stay constant-time.
     members: HashSet<Word>,
+    /// A `region.settle` that waits (#154): the async destroy it awaits and
+    /// the failure gathered so far.
+    settling: Option<Word>,
+    settled: Option<Word>,
+}
+
+/// Where a region close stopped (#154).
+pub(crate) enum Closed {
+    /// Every identity is destroyed; the primary failure, if any.
+    Done(Option<Word>),
+    /// `object`, already dead, has an async destroy to await.
+    Async(Word, Option<Word>),
 }
 
 /// A region is an array `[overflow, slot × REGION_SLOTS]`: identities fill the
@@ -52,7 +64,7 @@ pub struct RegionValue {
 pub const REGION_SLOTS: usize = 4;
 impl Payload for RegionValue {
     fn trace(&self, visit: &mut dyn FnMut(Word, Repr)) {
-        for &entry in &self.entries {
+        for &entry in self.entries.iter().chain(&self.settling).chain(&self.settled) {
             visit(entry, Repr::Ref);
         }
     }
@@ -351,7 +363,7 @@ impl Runtime {
     }
 
     /// Thrown payloads of a failure, its causes and secondaries.
-    fn failure_payloads(&self, failure: Word) -> Vec<Word> {
+    pub(crate) fn failure_payloads(&self, failure: Word) -> Vec<Word> {
         let mut roots = Vec::new();
         let mut pending = vec![failure];
         let mut seen = HashSet::default();
@@ -396,9 +408,50 @@ impl Runtime {
 
     /// Close `region`, keeping `keep` (and its graph) alive, running destroys.
     /// Returns the primary failure (the given one, a destroy's, or none).
-    fn region_close(&mut self, ctx: *mut Ctx, region: Word, keep: &[Word], mut primary: Option<Word>) -> Option<Word> {
+    fn region_close(&mut self, ctx: *mut Ctx, region: Word, keep: &[Word], primary: Option<Word>) -> Option<Word> {
+        match self.region_close_until(ctx, region, keep, primary, false) {
+            Closed::Done(primary) => primary,
+            Closed::Async(..) => unreachable!("a synchronous close awaits nothing"),
+        }
+    }
+
+    /// The pending async destroy of a settling region and the failure so far.
+    pub(crate) fn region_settling(&self, region: Word) -> (Option<Word>, Option<Word>) {
+        match self.heap.field(region, 0) {
+            UNBOUND => (None, None),
+            overflow => {
+                let value = self.heap.payload::<RegionValue>(overflow).expect("region");
+                (value.settling, value.settled)
+            }
+        }
+    }
+
+    pub(crate) fn set_region_settling(&mut self, region: Word, settling: Option<Word>, settled: Option<Word>) {
+        if self.heap.field(region, 0) == UNBOUND {
+            if settling.is_none() && settled.is_none() {
+                return;
+            }
+            let overflow = self.heap.allocate_payload(Box::new(RegionValue::default()));
+            self.heap.set_field(region, 0, overflow);
+        }
+        let overflow = self.heap.field(region, 0);
+        let value = self.heap.payload_mut::<RegionValue>(overflow).expect("region");
+        value.settling = settling;
+        value.settled = settled;
+    }
+
+    /// Destroy the region's identities from the last; with `awaits`, stop at
+    /// one whose destroy is async (#154), otherwise that one is a failure.
+    pub(crate) fn region_close_until(
+        &mut self,
+        ctx: *mut Ctx,
+        region: Word,
+        keep: &[Word],
+        mut primary: Option<Word>,
+        awaits: bool,
+    ) -> Closed {
         if self.region_len(region) == 0 {
-            return primary;
+            return Closed::Done(primary);
         }
         let kept: HashSet<Word> =
             if keep.is_empty() { HashSet::default() } else { self.resource_graph(keep, Some(region)).into_iter().collect() };
@@ -421,6 +474,26 @@ impl Runtime {
             identity.owner = Owner::Dead;
             let descriptor = heap::payload(self.heap.header_of(object)) as usize;
             let Some(destroy) = self.loaded.program.objects[descriptor].destroy else { continue };
+            if self.loaded.program.functions[destroy.0 as usize].is_async {
+                if awaits {
+                    self.roots.pop();
+                    return Closed::Async(object, primary);
+                }
+                if let Some(primary) = primary {
+                    self.roots.push((primary, Repr::Ref));
+                }
+                let failure = self.failure_new(FailureKind::Program(
+                    "an object with an async destroy was released in a synchronous scope".into(),
+                ));
+                if primary.is_some() {
+                    self.roots.pop();
+                }
+                primary = Some(match primary {
+                    Some(primary) => self.failure_link(primary, failure, true),
+                    None => failure,
+                });
+                continue;
+            }
             let code = match crate::jit::compile(self, destroy.0 as usize) {
                 Ok(code) => code,
                 Err(error) => {
@@ -450,7 +523,7 @@ impl Runtime {
         }
         self.roots.pop();
         self.region_clear(region);
-        primary
+        Closed::Done(primary)
     }
 
     /// Text of a failure that reached the top, running `Error.text` for

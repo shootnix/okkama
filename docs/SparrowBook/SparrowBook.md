@@ -55,7 +55,7 @@ uncaught failure is printed on stderr and the exit status is 1.
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 10
+sparrow 11
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 10                      ; format version
+sparrow 11                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -171,7 +171,7 @@ Integer operations never overflow: results that leave 64 bits become BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 10
+sparrow 11
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -230,7 +230,7 @@ taken, all at once — every source is read before any destination is written.
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 10
+sparrow 11
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -279,7 +279,7 @@ scalar values. String constants use `\n`, `\t`, `\"`, `\\` and `\u{…}`.
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 10
+sparrow 11
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -361,7 +361,7 @@ $ sparrow run shapes.spb; echo $?
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 10
+sparrow 11
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -432,7 +432,7 @@ maps (a repeated key takes the rightmost value).
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 10
+sparrow 11
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -478,7 +478,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 10
+sparrow 11
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -564,7 +564,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 10
+sparrow 11
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -638,7 +638,7 @@ keeps what is reachable from `rK` (a value being returned).
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 10
+sparrow 11
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -685,7 +685,7 @@ or observes one. An async function is compiled as a resumable state machine;
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 10
+sparrow 11
 module "testing" "1.0.0"
 type t0 int
 type t1 bool
@@ -886,6 +886,8 @@ edge moves; `[…]` a list.
 | 133 | `region.track rX, rX` | record a new identity in the region |
 | 134 | `region.leave rX, rX/_` | close: run `destroy` of what it owns, except what the kept value reaches |
 | 135 | `region.unwind rD, rX, rX` | close on the failure path; the failure with secondaries of `destroy` |
+| 138 | `region.settle rX, rX/_` | close a region in an async function: destroys run from the last identity, each async destroy is awaited, a cancellation waits until the close ends |
+| 139 | `region.settle_unwind rD, rX, rX` | `region.settle` on a failure path; the result is the failure with destroy failures as secondary |
 | 136 | `fail.secondary rD, rX, rX` | attach a cleanup failure to a primary one |
 | 137 | `fail.caused rD, rX, rX` | a new failure caused by a handled one |
 | 140 | `jmp @T` | jump, with edge moves |

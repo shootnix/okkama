@@ -121,6 +121,8 @@ enum Kind {
 struct BodyLowerer<'c, 'r, 'a> {
     ctx: &'c mut Ctx<'r, 'a>,
     body: &'r thir::Body,
+    /// Scope exits await async destroys: `region.settle` (#154).
+    settles: bool,
     kind: Kind,
     object: Option<ObjectId>,
     /// Подстановка параметров типа специализации.
@@ -267,6 +269,7 @@ fn lowerer_for<'c, 'r, 'a>(
     result: ResultType,
 ) -> BodyLowerer<'c, 'r, 'a> {
     BodyLowerer {
+        settles: ctx.settles && body.is_async,
         body,
         kind,
         object,
@@ -1095,7 +1098,11 @@ fn lower_destroy(ctx: &mut Ctx<'_, '_>, symbol: String, object: ObjectId) -> Res
     lowerer.params.push(receiver);
     lowerer.open_root(span);
     lowerer.body_block()?;
-    finish(lowerer, symbol, vec![ir::Attr::Destroy(object)], span)
+    let mut attrs = vec![ir::Attr::Destroy(object)];
+    if lowerer.body.is_async {
+        attrs.push(ir::Attr::Async);
+    }
+    finish(lowerer, symbol, attrs, span)
 }
 
 fn lower_default(

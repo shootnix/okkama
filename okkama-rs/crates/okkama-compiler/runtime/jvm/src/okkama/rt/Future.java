@@ -28,6 +28,8 @@ public final class Future {
     Task starter;
     boolean observed;
     boolean cancelRequested;
+    /** Закрытие области ждёт его без отмены: {@code async destroy} (#154). */
+    boolean shielded;
 
     private Future() {}
 

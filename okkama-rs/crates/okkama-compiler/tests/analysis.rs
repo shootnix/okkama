@@ -564,6 +564,27 @@ fn generic_map_keys_take_key_types() {
     );
 }
 
+/// An object with an async destroy, or one holding it in a field, is owned
+/// only where the end of its scope can be awaited (#154): async bodies, and
+/// constructors of objects that have such a destroy themselves.
+#[test]
+fn async_destroys_need_an_async_owner() {
+    let declarations = "object Conn { has n is int; Conn(:n); async destroy { confirm n > 0; } } \
+        object Holder { has conn is Conn; Holder(n is int) { conn = Conn(n: n); } } \
+        object Pool { has conns is @Conn; Pool(:conns); }";
+    assert!(messages(&format!("{declarations} async main() is int {{ let c = Conn(n: 1); let h = Holder(1); let p = Pool(conns: [Conn(n: 2)]); 0; }}")).is_empty());
+    assert_eq!(
+        messages(&format!("{declarations} main() is int {{ let c = Conn(n: 1); let h = Holder(1); let p = Pool(conns: []); 0; }}")),
+        [
+            "Conn has an async destroy; own it in an async action",
+            "Holder has an async destroy; own it in an async action",
+            "Pool has an async destroy; own it in an async action",
+        ]
+    );
+    assert!(messages("object Conn { has n is int; Conn(:n); async destroy { await Conn(n: 1).wait(); } async wait() is void { confirm n > 0; } } async main() is int { 0; }").is_empty());
+    assert!(!messages("object Conn { has n is int; Conn(:n); destroy { await Conn(n: 1).wait(); } async wait() is void { confirm n > 0; } } main() is int { 0; }").is_empty());
+}
+
 /// An anonymous action's declared result fixes its type and supplies generic
 /// arguments (#214): `Keyed(origin:, key: (job is Job) is int { … })` infers
 /// `Keyed<Job, int>` without an annotation at the binding.

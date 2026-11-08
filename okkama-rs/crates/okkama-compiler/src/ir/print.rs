@@ -629,6 +629,16 @@ fn write_inst(
         InstKind::RegionUnwind { region, failure } => {
             write!(f, "region.unwind {region}, {failure}")
         }
+        InstKind::RegionSettle { region, keep } => {
+            write!(f, "region.settle {region}")?;
+            if let Some(keep) = keep {
+                write!(f, ", keep {keep}")?;
+            }
+            Ok(())
+        }
+        InstKind::RegionSettleUnwind { region, failure } => {
+            write!(f, "region.settle_unwind {region}, {failure}")
+        }
         InstKind::FailSecondary { primary, cleanup } => {
             write!(f, "fail.secondary {primary}, {cleanup}")
         }

@@ -1,0 +1,44 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Conn {
+    has gate is Event;
+    has closing is Event;
+    Conn(:gate, :closing);
+    async destroy {
+        closing.set();
+        await gate.wait();
+        Stdout().writeln("conn closed");
+    }
+}
+
+object Opener {
+    has gate is Event;
+    has closing is Event;
+    has never is Event;
+    Opener(:gate, :closing, :never);
+    async run() is int {
+        await self.scoped();
+        Stdout().writeln("after scope");
+        await never.wait();
+        1;
+    }
+    async scoped() is void {
+        let c = Conn(gate: gate, closing: closing);
+        Stdout().writeln("scope ends");
+    }
+}
+
+async main() is int {
+    let gate = Event();
+    let closing = Event();
+    let task = spawn Opener(gate: gate, closing: closing, never: Event()).run();
+    await closing.wait();
+    task.cancel();
+    gate.set();
+    let r = try { await task; } catch e is Cancelled { -1; };
+    Stdout().writeln("result " + r.string());
+    0;
+}

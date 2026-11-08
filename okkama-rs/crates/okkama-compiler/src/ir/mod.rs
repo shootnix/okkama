@@ -1131,6 +1131,18 @@ pub enum InstKind {
         region: ValueId,
         failure: ValueId,
     },
+    /// `region.leave` в async-функции программы с `async destroy` (#154):
+    /// точка приостановки — async destroy ожидаются по порядку, отмена до
+    /// конца закрытия не доставляется.
+    RegionSettle {
+        region: ValueId,
+        keep: Option<ValueId>,
+    },
+    /// `region.unwind` в async-функции: то же на пути отказа.
+    RegionSettleUnwind {
+        region: ValueId,
+        failure: ValueId,
+    },
     /// Отказ cleanup `cleanup` при идущем отказе `primary`: вторичный.
     FailSecondary {
         primary: ValueId,
@@ -1404,10 +1416,11 @@ impl InstKind {
                 vec![*region, *value]
             }
             InstKind::RegionTransfer { from, to, value } => vec![*from, *to, *value],
-            InstKind::RegionLeave { region, keep } => std::iter::once(*region)
-                .chain(keep.iter().copied())
-                .collect(),
-            InstKind::RegionUnwind { region, failure } => vec![*region, *failure],
+            InstKind::RegionLeave { region, keep } | InstKind::RegionSettle { region, keep } => {
+                std::iter::once(*region).chain(keep.iter().copied()).collect()
+            }
+            InstKind::RegionUnwind { region, failure }
+            | InstKind::RegionSettleUnwind { region, failure } => vec![*region, *failure],
             InstKind::FailSecondary { primary, cleanup } => vec![*primary, *cleanup],
             InstKind::ByteNot(value) | InstKind::ByteFrom { value, .. } => vec![*value],
             InstKind::Bits { value, count, .. } => std::iter::once(*value)
@@ -1518,10 +1531,11 @@ impl InstKind {
                 vec![region, value]
             }
             InstKind::RegionTransfer { from, to, value } => vec![from, to, value],
-            InstKind::RegionLeave { region, keep } => {
+            InstKind::RegionLeave { region, keep } | InstKind::RegionSettle { region, keep } => {
                 std::iter::once(region).chain(keep.iter_mut()).collect()
             }
-            InstKind::RegionUnwind { region, failure } => vec![region, failure],
+            InstKind::RegionUnwind { region, failure }
+            | InstKind::RegionSettleUnwind { region, failure } => vec![region, failure],
             InstKind::FailSecondary { primary, cleanup } => vec![primary, cleanup],
             InstKind::ByteNot(value) | InstKind::ByteFrom { value, .. } => vec![value],
             InstKind::Bits { value, count, .. } => {

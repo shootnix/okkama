@@ -174,6 +174,8 @@ fn movable(inst: &Inst) -> bool {
             | InstKind::FutSpawn(_)
             | InstKind::RegionLeave { .. }
             | InstKind::RegionUnwind { .. }
+            | InstKind::RegionSettle { .. }
+            | InstKind::RegionSettleUnwind { .. }
     )
 }
 

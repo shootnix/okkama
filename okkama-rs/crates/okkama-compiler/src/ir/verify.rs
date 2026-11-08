@@ -1551,6 +1551,24 @@ impl<'a> FunctionVerifier<'a> {
                 self.expect_type(*failure, &Type::Failure)?;
                 Type::Failure
             }
+            InstKind::RegionSettle { region, .. } => {
+                if !self.function.is_async() {
+                    return Err("`region.settle` is allowed only in async functions".to_string());
+                }
+                self.expect_type(*region, &Type::Region)?;
+                return match result {
+                    None => Ok(()),
+                    Some(_) => Err("`region.settle` defines no value".to_string()),
+                };
+            }
+            InstKind::RegionSettleUnwind { region, failure } => {
+                if !self.function.is_async() {
+                    return Err("`region.settle_unwind` is allowed only in async functions".to_string());
+                }
+                self.expect_type(*region, &Type::Region)?;
+                self.expect_type(*failure, &Type::Failure)?;
+                Type::Failure
+            }
             InstKind::FailSecondary { primary, cleanup } => {
                 self.expect_type(*primary, &Type::Failure)?;
                 self.expect_type(*cleanup, &Type::Failure)?;

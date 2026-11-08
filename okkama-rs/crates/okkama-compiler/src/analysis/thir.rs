@@ -64,6 +64,8 @@ pub struct Body {
     /// Значение последнего оператора — результат тела (не successor, не
     /// конструктор и не `void`).
     pub returns_value: bool,
+    /// An async body: its scope exits may await async destroys (#154).
+    pub is_async: bool,
     pub span: Span,
 }
 

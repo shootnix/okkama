@@ -281,6 +281,24 @@ public final class Scheduler {
         return future.outcome();
     }
 
+    /**
+     * Ожидание {@code async destroy} при закрытии области (#154): отмена задачи
+     * его не прерывает и остаётся отложенной до следующего {@code await}.
+     */
+    static Object awaitShielded(Future future) {
+        future.shielded = true;
+        observe(future);
+        Task me = current;
+        start(future, me);
+        while (future.state == Future.RUNNING) {
+            future.waiters.add(me);
+            me.awaiting = future;
+            suspend();
+            me.awaiting = null;
+        }
+        return future.outcome();
+    }
+
     /** {@code fut.cancel}: идемпотентная кооперативная отмена. */
     static void cancel(Future future) {
         if (future.state == Future.COLD) {
@@ -301,7 +319,7 @@ public final class Scheduler {
             return;
         }
         task.cancelPending = true;
-        if (task == current || task.awaiting == null) {
+        if (task == current || task.awaiting == null || task.awaiting.shielded) {
             return;
         }
         Future inner = task.awaiting;

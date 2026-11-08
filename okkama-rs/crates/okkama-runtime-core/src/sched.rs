@@ -49,6 +49,8 @@ pub struct FutureCell {
     starter: RefCell<Option<Rc<Task>>>,
     observed: Cell<bool>,
     cancel_requested: Cell<bool>,
+    /// Закрытие области ждёт его без отмены: `async destroy` (#154).
+    shielded: Cell<bool>,
 }
 
 pub type Future = Rc<FutureCell>;
@@ -254,6 +256,7 @@ impl FutureCell {
             starter: RefCell::new(None),
             observed: Cell::new(false),
             cancel_requested: Cell::new(false),
+            shielded: Cell::new(false),
         })
     }
 
@@ -549,6 +552,25 @@ pub fn await_future(future: &Future) -> Outcome {
     future.outcome()
 }
 
+/// Ожидание `async destroy` при закрытии области (#154): отмена задачи его не
+/// прерывает и остаётся отложенной до её следующего `await`.
+pub fn await_shielded(future: &Future) -> Outcome {
+    future.shielded.set(true);
+    future.observe();
+    let me = current();
+    start(future, Some(me.clone()));
+    while future.state.get() == State::Running {
+        future
+            .waiters
+            .borrow_mut()
+            .push_back(Waiter::Task(me.clone()));
+        *me.awaiting.borrow_mut() = Some(future.clone());
+        suspend();
+        me.awaiting.borrow_mut().take();
+    }
+    future.outcome()
+}
+
 /// `fut.spawn`: запустить сейчас (до первой приостановки).
 pub fn spawn(future: &Future) {
     register(future);
@@ -579,7 +601,7 @@ pub fn cancel(future: &Future) {
     let Some(inner) = awaiting else {
         return;
     };
-    if Rc::ptr_eq(&task, &current()) {
+    if Rc::ptr_eq(&task, &current()) || inner.shielded.get() {
         return;
     }
     let started_here = inner

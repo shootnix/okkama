@@ -830,3 +830,23 @@ fn module_constants_parse_and_print() {
     assert_rejects("module app v1.0.0; const = 1; main() is int { 0; }", "Expect constant name after \"const\".");
     assert_rejects("module app v1.0.0; const X 1; main() is int { 0; }", "Expect \"=\" after constant name.");
 }
+
+/// `async destroy { … }` (#154).
+#[test]
+fn async_destroy_parses() {
+    let program = parse_ok("module app v1.0.0; object Conn { has n is int; Conn(:n); async destroy { n; } } object Res { destroy { 1; } } main() is int { 0; }");
+    let destroys: Vec<bool> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            okkama_compiler::syntax::ast::Item::Object(object) => Some(object),
+            _ => None,
+        })
+        .flat_map(|object| &object.members)
+        .filter_map(|member| match member {
+            okkama_compiler::syntax::ast::ObjectMember::Destroy(destroy) => Some(destroy.is_async),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(destroys, [true, false]);
+}

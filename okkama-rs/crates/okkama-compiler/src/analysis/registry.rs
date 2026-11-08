@@ -486,6 +486,33 @@ impl<'a> Registry<'a> {
         }
     }
 
+    /// The object, or one it holds in a field, has an async destroy (#154):
+    /// it may be owned only where the end of its scope can be awaited.
+    pub fn async_destroy(&self, ty: &Ty) -> bool {
+        self.async_destroy_in(ty, &mut Vec::new())
+    }
+
+    fn async_destroy_in(&self, ty: &Ty, visiting: &mut Vec<ObjectId>) -> bool {
+        let (id, args) = match ty {
+            Ty::Object(id, args) => (id, args),
+            Ty::Array(element) => return self.async_destroy_in(element, visiting),
+            Ty::Map(_, value) => return self.async_destroy_in(value, visiting),
+            _ => return false,
+        };
+        if visiting.contains(id) {
+            return false;
+        }
+        let info = &self.objects[id.0];
+        if info.destroy.is_some_and(|destroy| destroy.is_async) {
+            return true;
+        }
+        let env: Vec<(ParamId, Ty)> = info.params.iter().copied().zip(args.iter().cloned()).collect();
+        visiting.push(*id);
+        let found = info.fields.iter().any(|field| self.async_destroy_in(&field.ty.subst(&env), visiting));
+        visiting.pop();
+        found
+    }
+
     fn object_key_problem(&self, ty: &Ty, visiting: &mut Vec<ObjectId>) -> Option<String> {
         let Ty::Object(id, args) = ty else {
             return Some(format!("{} is not a key type", self.type_name(ty)));

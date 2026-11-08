@@ -335,6 +335,10 @@ impl FunctionGen<'_> {
             K::RegionTrack { region, value } => I::RegionTrack { region: reg(*region), value: reg(*value) },
             K::RegionLeave { region, keep } => I::RegionLeave { region: reg(*region), keep: keep.map(reg) },
             K::RegionUnwind { region, failure } => I::RegionUnwind { dst: dst()?, region: reg(*region), failure: reg(*failure) },
+            K::RegionSettle { region, keep } => I::RegionSettle { region: reg(*region), keep: keep.map(reg) },
+            K::RegionSettleUnwind { region, failure } => {
+                I::RegionSettleUnwind { dst: dst()?, region: reg(*region), failure: reg(*failure) }
+            }
             K::FailSecondary { primary, cleanup } => I::FailSecondary { dst: dst()?, primary: reg(*primary), cleanup: reg(*cleanup) },
             K::EnumCase { ty, case } => I::EnumCase { dst: dst()?, ty: EnumRef(ty.0 as u32), case: *case as u32 },
             K::EnumCompare { op, left, right } => I::EnumCmp { op: cmp(*op), dst: dst()?, left: reg(*left), right: reg(*right) },

@@ -342,10 +342,17 @@ impl Parser<'_> {
         if self.eat(TokenKind::Has) {
             return Ok(ObjectMember::Has(self.has_declaration()?));
         }
+        // `async destroy { … }` is awaited where its owner's scope ends (#154).
+        let start = self.peek().span;
+        let is_async = self.check(TokenKind::Async) && self.check_next(TokenKind::Destroy);
+        if is_async {
+            self.advance();
+        }
         if self.eat(TokenKind::Destroy) {
-            let keyword = self.previous().span;
+            let keyword = if is_async { start } else { self.previous().span };
             let body = self.block()?;
             return Ok(ObjectMember::Destroy(DestroyDecl {
+                is_async,
                 span: keyword.to(body.span),
                 body,
             }));

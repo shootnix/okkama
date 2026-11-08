@@ -1055,6 +1055,19 @@ impl Checker<'_, '_> {
         self.construct_values(object, resolved, call, span)
     }
 
+    /// The end of this body can await an async destroy (#154): an async body,
+    /// or a constructor or field default of an object that has one itself.
+    fn awaits_destroys(&self) -> bool {
+        if self.is_async {
+            return true;
+        }
+        let Some(owner) = self.object.filter(|_| matches!(self.kind, Kind::Ctor | Kind::Default)) else {
+            return false;
+        };
+        let params = self.reg.objects[owner.0].params.iter().map(|param| Ty::Param(*param)).collect();
+        self.reg.async_destroy(&Ty::Object(owner, params))
+    }
+
     /// Конструирование по вычисленным аргументам.
     pub(super) fn construct_values(
         &mut self,
@@ -1072,6 +1085,10 @@ impl Checker<'_, '_> {
         let shapes = self.ctor_shapes(object, &env);
         let object_ty = Ty::Object(object, type_args.clone());
         let name = self.type_name(&object_ty);
+        if self.reg.async_destroy(&object_ty) && !self.awaits_destroys() {
+            self.error(span, format!("{name} has an async destroy; own it in an async action"));
+            return Self::poisoned(span);
+        }
         let names = call.names();
         let (by_shape, typed) = self.ctor_candidates(object, &shapes, &call, &env);
         // Типам не подошёл никто, а по форме — ровно один: его ошибку типа

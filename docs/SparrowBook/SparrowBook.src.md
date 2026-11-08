@@ -68,7 +68,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 10                      ; format version
+sparrow 11                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
