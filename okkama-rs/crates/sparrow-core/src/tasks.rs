@@ -267,13 +267,23 @@ impl Runtime {
                 break;
             }
             let header = self.heap.header_of(awaited);
-            let inner = heap::kind(header) == heap::FRAME
-                && get(awaited, STATE) == RUNNING
-                && get(awaited, FLAGS) & SPAWNED == 0;
-            if !inner {
+            if heap::kind(header) != heap::FRAME || get(awaited, STATE) != RUNNING {
                 break;
             }
-            frame = awaited;
+            if get(awaited, FLAGS) & SPAWNED == 0 {
+                frame = awaited;
+                continue;
+            }
+            // Structured await (#147): a spawned task that no other frame
+            // awaits is cancelled with its awaiter, which keeps waiting and
+            // raises Cancelled once that task has settled.
+            if !self.is_driver(frame) && self.sole_awaiter(awaited, frame) {
+                set(task, FLAGS, get(task, FLAGS) | CANCEL_DELIVERED);
+                set(frame, FLAGS, get(frame, FLAGS) | DELIVER_NOW);
+                self.cancel_running(awaited);
+                return;
+            }
+            break;
         }
         let awaited = get(frame, AWAITING);
         if awaited != UNBOUND {
@@ -288,6 +298,21 @@ impl Runtime {
         set(task, FLAGS, get(task, FLAGS) | CANCEL_DELIVERED);
         set(frame, FLAGS, get(frame, FLAGS) | DELIVER_NOW);
         self.ready.push_back(frame);
+    }
+
+    /// True when no frame but `frame` awaits `future` (frames that only
+    /// listen to it, such as a group's, do not count).
+    fn sole_awaiter(&self, future: Word, frame: Word) -> bool {
+        let waiters = get(future, WAITER);
+        if waiters == UNBOUND || heap::kind(self.heap.header_of(waiters)) == heap::FRAME {
+            return true;
+        }
+        self.heap
+            .payload::<Waiters>(waiters)
+            .expect("waiters")
+            .0
+            .iter()
+            .all(|&waiter| waiter == frame || get(waiter, AWAITING) != future)
     }
 
     /// Resume ready frames until `root` settles (or nothing can run).
@@ -391,16 +416,18 @@ impl Runtime {
                 let failure = self.cancelled_failure();
                 self.settle(future, FAILURE_STATE, failure);
             }
-            RUNNING => {
-                let flags = get(future, FLAGS);
-                if flags & CANCEL_REQUESTED == 0 {
-                    set(future, FLAGS, flags | CANCEL_REQUESTED);
-                    if get(future, AWAITING) != UNBOUND || Self::parked(future) {
-                        self.deliver_cancel(future);
-                    }
-                }
-            }
+            RUNNING => self.cancel_running(future),
             _ => {}
+        }
+    }
+
+    fn cancel_running(&mut self, future: Word) {
+        let flags = get(future, FLAGS);
+        if flags & CANCEL_REQUESTED == 0 {
+            set(future, FLAGS, flags | CANCEL_REQUESTED);
+            if get(future, AWAITING) != UNBOUND || Self::parked(future) {
+                self.deliver_cancel(future);
+            }
         }
     }
 }

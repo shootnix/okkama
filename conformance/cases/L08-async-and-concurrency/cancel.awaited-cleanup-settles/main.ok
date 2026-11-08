@@ -1,0 +1,44 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Child {
+    has started is Event;
+    has never is Event;
+    has release is Event;
+    Child(:started, :never, :release);
+    async run() is int {
+        defer await self.settle();
+        started.set();
+        await never.wait();
+        1;
+    }
+    async settle() is void {
+        await release.wait();
+        Stdout().writeln("child settled");
+    }
+}
+
+object Parent {
+    has child is Child;
+    Parent(:child);
+    async run() is int {
+        defer Stdout().writeln("parent cleanup");
+        await child.run();
+    }
+}
+
+async main() is int {
+    let started = Event();
+    let never = Event();
+    let release = Event();
+    let parent = spawn Parent(child: Child(started: started, never: never, release: release)).run();
+    await started.wait();
+    parent.cancel();
+    Stdout().writeln("cancel requested");
+    release.set();
+    let r = try { await parent; } catch e is Cancelled { -1; };
+    Stdout().writeln(r.string());
+    0;
+}

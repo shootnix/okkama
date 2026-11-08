@@ -6033,6 +6033,14 @@ contract. Future cancellation and the std `async/*` modules provide structured
 cleanup and composition. Spawning an async action instead starts cooperative
 work in the current runtime; it does not move that work to a process.
 
+Await is structured (#147). Cancelling a task cancels the future it is
+awaiting — a lazy future its `await` started, a task it spawned, a native
+request — and the task resumes only once that future has settled, deferred
+cleanup included; then its own `await` throws `Cancelled`. A future that
+another task still awaits is left running: the cancelled awaiter only stops
+waiting for it. One awaited child therefore needs no group; `FutureGroup` and
+`FutureScope` are for real fan-out.
+
 ### 31.5.1 Process-parallel `spawn`
 
 `spawn` eagerly starts a synchronous object action in an isolated worker

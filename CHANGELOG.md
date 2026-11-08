@@ -392,6 +392,20 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Async: await is structured (#147). Cancelling a task cancels the future it
+  awaits — a lazy future its `await` started, a spawned task, a runtime
+  request — unless another task also awaits it, and the task resumes with
+  `Cancelled` only after that future has settled, deferred async cleanup
+  included. Before, a spawned task survived the cancellation of its only
+  awaiter, and on the IR engine and the JVM the awaiter resumed while the
+  awaited future was still cleaning up; the IR engine could even crash
+  (`a resumed task is suspended`) when that cleanup awaited. One rule on the
+  IR engine, the Sparrow core and the JVM; OCS contract
+  `ASYNC.STRUCTURED-AWAIT` with `L08.cancel.awaited-cleanup-settles`,
+  `.awaited-spawned` and `.shared-awaited-survives`; scheduler tests; Book
+  §31.5, spec §18, async guide §4.6, LLM context (EN/RU)
+  ([#147](https://github.com/shootnix/okkama/issues/147)).
+
 - Language: `bool.string()` (and `string(flag)`, `@string(..., flag)`) is
   `"true"` or `"false"`, no longer the `"1"`/`"0"` inherited from the Perl
   implementation; map keys in error messages read the same way, on every
