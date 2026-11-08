@@ -119,9 +119,12 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Only the packages: the gate uploads its report as an artifact too, and
+      # `gh release create dist/*` cannot upload a directory.
       - uses: actions/download-artifact@v5
         with:
           path: dist
+          pattern: okkama-*
           merge-multiple: true
       - name: Release ${{ github.ref_name }}
         if: github.ref_type == 'tag'

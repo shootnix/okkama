@@ -28,6 +28,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   (prefixes, equal strings, the empty string, no case folding, code points
   past the BMP, agreement with `order()` on every pair, the binary search).
 
+### Fixed
+
+- Packages: the publish job downloads only the package artifacts
+  (`okkama-*`). Since 0.4.1 the release gate uploads its report as an
+  artifact too, and `gh release create dist/*` failed on that directory, so
+  neither the v0.4.1 release nor the nightly was published.
+
 ### Documentation
 
 - `byte` no longer mixes with other numbers in the documents either (#294,
