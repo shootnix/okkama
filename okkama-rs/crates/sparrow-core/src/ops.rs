@@ -159,6 +159,33 @@ impl Runtime {
     fn kind_of(&self, ty: TypeRef) -> Kind {
         Kind::of(&self.loaded.program, ty)
     }
+    /// A map key (#242): a value whose type is not a key type — an array, a
+    /// map, an object holding one — is refused instead of being compared by
+    /// identity; a generic map could otherwise reach one at run time.
+    pub(crate) fn checked_key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> Result<Key, String> {
+        if self.is_key(word, kind, ty) {
+            Ok(self.key(word, kind, ty))
+        } else {
+            Err("map key must be a scalar, enum, string or value object".into())
+        }
+    }
+
+    fn is_key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> bool {
+        match (kind, ty) {
+            (Kind::Int | Kind::Float | Kind::Raw | Kind::Byte, _) | (_, Some(Type::Str | Type::Rat)) => true,
+            (_, Some(Type::Object(_))) if heap::kind(self.heap.header_of(word)) == heap::OBJECT => {
+                let declaration = heap::payload(self.heap.header_of(word));
+                let program = &self.loaded.program;
+                program.objects[declaration as usize]
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .all(|(index, &(_, field))| self.is_key(self.heap.field(word, index), self.kind_of(field), program.ty(field)))
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> Key {
         match (kind, ty) {
             (Kind::Int, _) => Key::Int(self.big_value(word)),
@@ -897,7 +924,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let (key_kind, key_type) = map_key(runtime, function, dst.0);
             for (key, item) in entries {
                 let (key, item) = (value(key), value(item));
-                let k = runtime.key(key, key_kind, key_type.as_ref());
+                let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
                 map.entries.entry(k).and_modify(|e| e.1 = item).or_insert((key, item));
             }
             Ok(runtime.heap.allocate_payload(Box::new(map)))
@@ -990,7 +1017,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapBuilderPut { builder, key, value: item, .. } => {
             let (builder, key, item) = (value(builder), value(key), value(item));
             let (key_kind, key_type) = map_key(runtime, function, *builder_register(instruction));
-            let k = runtime.key(key, key_kind, key_type.as_ref());
+            let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
             let map = runtime.heap.payload_mut::<MapValue>(builder).expect("map builder");
             map.entries.entry(k).and_modify(|e| e.1 = item).or_insert((key, item));
             Ok(builder)
@@ -1011,7 +1038,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         I::MapHas { map, key, .. } | I::MapGet { map, key, .. } => {
             let (key_kind, key_type) = map_key(runtime, function, *map);
             let key_word = value(key);
-            let k = runtime.key(key_word, key_kind, key_type.as_ref());
+            let k = runtime.checked_key(key_word, key_kind, key_type.as_ref())?;
             let found = runtime.heap.payload::<MapValue>(value(map)).expect("map").entries.get(&k).map(|e| e.1);
             if matches!(instruction, I::MapHas { .. }) {
                 return Ok(bool_word(found.is_some()));

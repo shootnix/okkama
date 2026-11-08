@@ -39,8 +39,9 @@ import "size" take Sizing;
 // pretending to be a hash table. Construction reads the input once and makes
 // O(n*d) equality comparisons, where d is the number of distinct values,
 // without rebuilding intermediate lists; amount(value) is O(d). For map keys —
-// scalars, enums, value objects (#212) — a map `%T:int` counts in O(n log d).
-// Native opaque handles have no equality.
+// scalars, enums, value objects (#212) — KeyedFrequencies counts in a map in
+// O(n log d) and traverses in key order; the compiler checks that its T is a
+// key type (#242). Native opaque handles have no equality.
 
 object Frequency<T> {
     has origin is T;
@@ -91,6 +92,45 @@ object Frequencies<T> does Iterating<Frequency<T>>, Sizing {
                 0;
             }
         }
+    }
+
+    total() is int {
+        quantity;
+    }
+}
+
+// Frequency counts of map keys in key order (#242): construction is
+// O(n log d) and amount(value) is O(log d).
+//
+//     let counts = KeyedFrequencies(values: ["red", "blue", "red"]);
+//     counts.amount("red");          // 2; traversal: blue:1, red:2
+object KeyedFrequencies<T> does Iterating<Frequency<T>>, Sizing {
+    has counts is %T:int;
+    has quantity is int;
+
+    KeyedFrequencies(values is Iterating<T>) {
+        let empty is %T:int = [:];
+        let items = values.map() -> value { value; };
+        counts = items.reduce(empty) -> found, value {
+            let seen = found[value] else 0;
+            found + [value: seen + 1];
+        };
+        quantity = items.size();
+    }
+
+    cursor() is Cursor<Frequency<T>> {
+        let frequencies = counts.keys().map() -> key {
+            Frequency(item: key, amount: counts[key]);
+        };
+        frequencies.cursor();
+    }
+
+    size() is int {
+        counts.size();
+    }
+
+    amount(value is T) is int {
+        counts[value] else 0;
     }
 
     total() is int {
@@ -254,4 +294,17 @@ test "empty input" {
     test.is(counts.size(), 0);
     test.is(counts.total(), 0);
     test.is(counts.amount(7), 0);
+}
+
+test "keyed counts in key order" {
+    let counts = KeyedFrequencies(values: ["blue", "red", "blue", "green", "blue", "red"]);
+    test.is(counts.size(), 3);
+    test.is(counts.total(), 6);
+    test.is(counts.amount("blue"), 3);
+    test.is(counts.amount("red"), 2);
+    test.is(counts.amount("missing"), 0);
+    let order = counts.map() -> frequency { frequency.item() + ":" + frequency.amount().string(); };
+    test.is(order, ["blue:3", "green:1", "red:2"]);
+    let nothing is @int = [];
+    test.is(KeyedFrequencies(values: nothing).size(), 0);
 }

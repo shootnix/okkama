@@ -1,0 +1,19 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Index<T> {
+    has entries is %T:int;
+    Index() {
+        let empty is %T:int = [:];
+        entries = empty;
+    }
+    size() is int { entries.size(); }
+}
+
+main() is int {
+    let out = Stdout();
+    let index is Index<@int> = Index();
+    out.writeln("unreachable " + index.size().string());
+    0;
+}

@@ -539,6 +539,31 @@ fn value_objects_are_map_keys() {
     assert_eq!(messages("main() is int { let a is %@int:int = [:]; 0; }"), ["Map key type @int is not a scalar key type"]);
 }
 
+/// A generic parameter used as a map key takes only key types (#242): the
+/// specialization is rejected at compile time, also through a parameter
+/// passed on to another generic object and through a key used only in a body.
+#[test]
+fn generic_map_keys_take_key_types() {
+    let declarations = "object Card { has rank is int; Card(rank is int) { self.rank = rank; } } \
+        object File { has path is string; File(path is string) { self.path = path; } destroy { path; } } \
+        object Index<T> { has entries is %T:int; Index() { let empty is %T:int = [:]; entries = empty; } size() is int { entries.size(); } } \
+        object Wrap<U> { has inner is Index<U>; Wrap() { inner = Index(); } } \
+        object Late<T> { has items is @T; Late(items is @T) { self.items = items; } distinct() is int { let seen is %T:bool = [:]; seen.size(); } } \
+        object Plain<T> { has items is @T; Plain(items is @T) { self.items = items; } } \
+        object Literal<T> { has item is T; Literal(item is T) { self.item = item; } count() is int { [item: 1].size(); } }";
+    assert!(messages(&format!("{declarations} main() is int {{ let a is Index<string> = Index(); let b is Index<Card> = Index(); let c is Wrap<int> = Wrap(); let d = Plain(items: [[1]]); let e = Late(items: [1]); let f = Literal(item: \"x\"); a.size() + b.size(); }}")).is_empty());
+    assert_eq!(
+        messages(&format!("{declarations} main() is int {{ let a is Index<@int> = Index(); let b is Index<File> = Index(); let c is Wrap<@string> = Wrap(); let d = Late(items: [[1]]); let e = Literal(item: [1]); 0; }}")),
+        [
+            "Generic parameter \"T\" for object \"Index\" is a map key: Map key type @int is not a scalar key type",
+            "Generic parameter \"T\" for object \"Index\" is a map key: Map key type File cannot be a key: File has a destroy block",
+            "Generic parameter \"U\" for object \"Wrap\" is a map key: Map key type @string is not a scalar key type",
+            "Generic parameter \"T\" for object \"Late\" is a map key: Map key type @int is not a scalar key type",
+            "Generic parameter \"T\" for object \"Literal\" is a map key: Map key type @int is not a scalar key type",
+        ]
+    );
+}
+
 /// An anonymous action's declared result fixes its type and supplies generic
 /// arguments (#214): `Keyed(origin:, key: (job is Job) is int { … })` infers
 /// `Keyed<Job, int>` without an annotation at the binding.

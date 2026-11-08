@@ -1432,14 +1432,11 @@ impl Checker<'_, '_> {
                 (key, value)
             }
         };
-        let problem = if matches!(key_type, Ty::Object(..)) {
-            self.reg.key_problem(&key_type)
-        } else if !key_type.is_error() && !key_type.is_map_key() {
-            Some(format!("Map key type {} is not a scalar key type", self.type_name(&key_type)))
-        } else {
-            None
-        };
-        if let Some(message) = problem {
+        // A literal keyed by a parameter bounds its argument like `%T:V` (#242).
+        if let Ty::Param(param) = key_type {
+            self.reg.params[param.0].key = true;
+        }
+        if let Some(message) = self.reg.key_problem(&key_type) {
             let at = entries.first().map_or(span, |entry| entry.key.span);
             self.error(at, message);
             return Self::poisoned(span);

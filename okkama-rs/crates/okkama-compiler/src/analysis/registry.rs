@@ -66,6 +66,8 @@ pub struct ParamInfo {
     pub name: String,
     /// `T: Comparing<T>` — роль-ограничение.
     pub bound: Option<Ty>,
+    /// `%T:V` в объявлении: аргумент должен быть типом ключа (#242).
+    pub key: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -277,6 +279,8 @@ pub struct Registry<'a> {
     /// Объекты-ключи словарей в объявлениях — проверяются, когда известны
     /// поля всех объектов (#212).
     pending_keys: Vec<(usize, Ty, Span)>,
+    /// Specializations whose key parameters are checked after the bodies (#242).
+    pub key_uses: Vec<(usize, ObjectId, Vec<Ty>, Span)>,
 }
 
 /// Объекты std без конструктора: их создаёт только рантайм.
@@ -341,6 +345,7 @@ impl<'a> Registry<'a> {
             current: 0,
             pending_bounds: Vec::new(),
             pending_keys: Vec::new(),
+            key_uses: Vec::new(),
         };
         registry.entry_module = registry.root();
         registry.add_system();
@@ -401,6 +406,50 @@ impl<'a> Registry<'a> {
         };
         self.object_key_problem(ty, &mut Vec::new())
             .map(|reason| format!("Map key type {} cannot be a key: {reason}", self.type_name(ty)))
+    }
+
+    /// The argument of a parameter used as a map key must be a key type (#242).
+    fn key_argument_problem(&self, object: ObjectId, param: ParamId, arg: &Ty) -> Option<String> {
+        if !self.params[param.0].key {
+            return None;
+        }
+        self.key_problem(arg).map(|problem| {
+            format!(
+                "Generic parameter \"{}\" for object \"{}\" is a map key: {problem}",
+                self.params[param.0].name, self.objects[object.0].name
+            )
+        })
+    }
+
+    /// Key arguments (#242), checked once every body is known: a parameter
+    /// passed on as a key argument — `Wrap<U> { has inner is Index<U>; }` —
+    /// is a key parameter too, so `Wrap<@int>` fails like `Index<@int>`.
+    pub fn check_key_arguments(&mut self) {
+        let uses = std::mem::take(&mut self.key_uses);
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (_, object, args, _) in &uses {
+                for (param, arg) in self.objects[object.0].params.iter().zip(args) {
+                    if let Ty::Param(inner) = arg
+                        && self.params[param.0].key
+                        && !self.params[inner.0].key
+                    {
+                        self.params[inner.0].key = true;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for (module, object, args, span) in uses {
+            let params = self.objects[object.0].params.clone();
+            for (param, arg) in params.iter().zip(&args) {
+                if let Some(message) = self.key_argument_problem(object, *param, arg) {
+                    self.set_module(module);
+                    self.error(span, message);
+                }
+            }
+        }
     }
 
     fn object_key_problem(&self, ty: &Ty, visiting: &mut Vec<ObjectId>) -> Option<String> {
@@ -571,6 +620,7 @@ impl<'a> Registry<'a> {
             self.params.push(ParamInfo {
                 name: "T".into(),
                 bound: None,
+                key: false,
             });
             let mut payloads = vec![Vec::new(); cases.len()];
             payloads[0] = vec![("value".into(), Ty::Param(param))];
@@ -665,6 +715,7 @@ impl<'a> Registry<'a> {
                 self.params.push(ParamInfo {
                     name: param.name.text.clone(),
                     bound: None,
+                    key: false,
                 });
                 ParamId(self.params.len() - 1)
             })
@@ -1139,6 +1190,10 @@ impl<'a> Registry<'a> {
             ast::TypeKind::Map { key, value } => {
                 let key_type = self.resolve(key, params);
                 let value_type = self.resolve(value, params);
+                // A parameter used as a key bounds its argument to key types (#242).
+                if let Ty::Param(param) = key_type {
+                    self.params[param.0].key = true;
+                }
                 if matches!(key_type, Ty::Object(..)) {
                     // Поля объекта ещё могут быть не собраны: проверка в конце.
                     self.pending_keys.push((self.current, key_type.clone(), key.span));
@@ -1364,6 +1419,7 @@ impl<'a> Registry<'a> {
         let Ty::Object(id, args) = ty else {
             return;
         };
+        self.key_uses.push((self.current, *id, args.clone(), span));
         let params = self.objects[id.0].params.clone();
         let env: Vec<(ParamId, Ty)> = params.iter().copied().zip(args.iter().cloned()).collect();
         for (param, arg) in params.iter().zip(args) {
@@ -2568,6 +2624,7 @@ impl<'a> Registry<'a> {
             registry.params.push(ParamInfo {
                 name: name.to_string(),
                 bound: None,
+                key: false,
             });
             ParamId(registry.params.len() - 1)
         };
