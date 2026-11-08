@@ -793,6 +793,30 @@ pub(crate) fn call_function(ctx: *mut Ctx, runtime: &mut Runtime, function: usiz
 /// in a sort of scalars or text (#238); a comparison costs nanoseconds.
 const SORT_POLL: u32 = 4096;
 
+/// `sort_by` with a comparison that may stop (#283). A stop leaves the sort by
+/// unwinding with a private marker (`resume_unwind` runs no panic hook) and
+/// is caught here, before any `extern "C"` frame. Answering the remaining
+/// comparisons with `Equal` instead contradicts earlier answers, and Rust's
+/// sort may detect that and panic.
+fn sort_or_stop<T, E>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> Result<Ordering, E>) -> Result<(), E> {
+    struct Stop;
+    let mut error = None;
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        items.sort_by(|a, b| match compare(a, b) {
+            Ok(order) => order,
+            Err(stop) => {
+                error = Some(stop);
+                std::panic::resume_unwind(Box::new(Stop))
+            }
+        })
+    }));
+    match outcome {
+        Ok(()) => Ok(()),
+        Err(payload) if payload.is::<Stop>() => Err(error.expect("a stop records its reason")),
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 /// Stable ordering of an array: natural order for scalars and text, otherwise
 /// a bottom-up merge sort over `compare::Comparing<T>.order`.
 fn ordering(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, source: Word) -> Word {
@@ -811,30 +835,26 @@ fn ordering(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, source: Word)
     let repr = kind.repr();
     if builtin {
         // A long sort stops for the interrupt flag or the memory budget
-        // (#238): every few thousand comparisons look at them, and once one
-        // fires the rest compare as equal, so the sort ends at once.
+        // (#238): every few thousand comparisons look at them, and a stop
+        // leaves the sort at once (#283).
         let mut compared = 0u32;
-        let mut stopped = None;
-        items.sort_by(|&a, &b| {
-            if stopped.is_some() {
-                return Ordering::Equal;
-            }
+        let sorted = sort_or_stop(&mut items, |&a, &b| {
             compared = compared.wrapping_add(1);
-            if compared.is_multiple_of(SORT_POLL) && runtime.limits.polled() {
-                stopped = runtime.over_budget();
-                if stopped.is_some() {
-                    return Ordering::Equal;
-                }
+            if compared.is_multiple_of(SORT_POLL)
+                && runtime.limits.polled()
+                && let Some(what) = runtime.over_budget()
+            {
+                return Err(what);
             }
-            match element_type {
+            Ok(match element_type {
                 Some(Type::Int) => runtime.big_value(a).cmp(&runtime.big_value(b)),
                 Some(Type::Float) => f64::from_bits(a).partial_cmp(&f64::from_bits(b)).unwrap_or(Ordering::Equal),
                 Some(Type::Rat) => runtime.rational(a).cmp(runtime.rational(b)),
                 Some(Type::Str) => runtime.heap.text(a).cmp(runtime.heap.text(b)),
                 _ => a.cmp(&b),
-            }
+            })
         });
-        if let Some(what) = stopped {
+        if let Err(what) = sorted {
             return runtime.exhaust(unsafe { &mut *ctx }, what);
         }
         if kind == Kind::Byte {
@@ -926,4 +946,36 @@ fn comparing(runtime: &Runtime, element: okkama_sparrow::TypeRef) -> Option<(u32
 /// `left.order(right)` through the role; None when it failed.
 fn order(ctx: *mut Ctx, runtime: &mut Runtime, role: u32, slot: u32, left: Word, right: Word) -> Option<Word> {
     call_role(ctx, runtime, left, role, slot, &[right])
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use super::sort_or_stop;
+
+    /// A stop in the middle of a long sort ends it with the stop, at once and
+    /// without a panic, wherever it lands (#283).
+    #[test]
+    fn a_stop_leaves_the_sort_without_a_panic() {
+        for stop_at in [1u32, 7, 500, 4096, 30_000] {
+            let mut items: Vec<u64> = (0..100_000u64).map(|i| (i * 7919 + 13) % 1_000_003).collect();
+            let mut compared = 0u32;
+            let outcome = sort_or_stop(&mut items, |a, b| {
+                compared += 1;
+                if compared == stop_at {
+                    return Err(stop_at);
+                }
+                Ok(a.cmp(b))
+            });
+            assert_eq!(outcome, Err(stop_at));
+            assert_eq!(compared, stop_at, "no comparison after the stop");
+            assert_eq!(items.len(), 100_000, "the slice stays a permutation");
+        }
+    }
+
+    #[test]
+    fn without_a_stop_the_sort_is_stable() {
+        let mut items: Vec<(u32, u32)> = (0..10_000u32).map(|i| (i % 7, i)).collect();
+        sort_or_stop(&mut items, |a, b| Ok::<_, ()>(a.0.cmp(&b.0))).expect("no stop");
+        assert!(items.windows(2).all(|w| w[0].0 < w[1].0 || (w[0].0 == w[1].0 && w[0].1 < w[1].1)));
+    }
 }

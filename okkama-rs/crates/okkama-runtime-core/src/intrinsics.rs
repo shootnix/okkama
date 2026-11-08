@@ -1048,29 +1048,45 @@ fn array_ordering(host: &HostRef, array: &Value) -> Result<Value> {
         .elements(array)
         .map_err(|e| trap(e.message))?
         .to_vec();
-    let mut failure = None;
     let mut compared = 0u32;
-    sorted.sort_by(|left, right| {
-        if failure.is_some() {
-            return std::cmp::Ordering::Equal;
-        }
+    sort_or_stop(&mut sorted, |left, right| {
         // A long sort stops for the interrupt flag or the memory budget
-        // (#238); the rest of the comparisons are then free.
+        // (#238), and a failing `order()` stops it too (#283).
         compared = compared.wrapping_add(1);
         if compared.is_multiple_of(4096)
             && let Err(exhausted) = crate::budget::check_now()
         {
-            failure = Some(trap(exhausted.message()));
-            return std::cmp::Ordering::Equal;
+            return Err(trap(exhausted.message()));
         }
-        order(host, left, right).unwrap_or_else(|error| {
-            failure = Some(error);
-            std::cmp::Ordering::Equal
+        order(host, left, right)
+    })?;
+    Ok(crate::heap::ArrayHeap.allocate(sorted))
+}
+
+/// `sort_by` with a comparison that may stop or fail (#283). A stop leaves the
+/// sort by unwinding with a private marker (`resume_unwind` runs no panic
+/// hook) and is caught here. Answering the remaining comparisons with `Equal`
+/// instead contradicts earlier answers, and Rust's sort may detect that and
+/// panic.
+fn sort_or_stop<T, E>(
+    items: &mut [T],
+    mut compare: impl FnMut(&T, &T) -> std::result::Result<std::cmp::Ordering, E>,
+) -> std::result::Result<(), E> {
+    struct Stop;
+    let mut error = None;
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        items.sort_by(|a, b| match compare(a, b) {
+            Ok(order) => order,
+            Err(stop) => {
+                error = Some(stop);
+                std::panic::resume_unwind(Box::new(Stop))
+            }
         })
-    });
-    match failure {
-        Some(failure) => Err(failure),
-        None => Ok(crate::heap::ArrayHeap.allocate(sorted)),
+    }));
+    match outcome {
+        Ok(()) => Ok(()),
+        Err(payload) if payload.is::<Stop>() => Err(error.expect("a stop records its reason")),
+        Err(payload) => std::panic::resume_unwind(payload),
     }
 }
 
@@ -1654,4 +1670,36 @@ fn helper(helpers: &[usize], index: usize) -> Result<usize> {
         .get(index)
         .copied()
         .ok_or_else(|| trap(format!("intrinsic helper {index} is missing")))
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use super::sort_or_stop;
+
+    /// A stop in the middle of a long sort ends it with the stop, at once and
+    /// without a panic, wherever it lands (#283).
+    #[test]
+    fn a_stop_leaves_the_sort_without_a_panic() {
+        for stop_at in [1u32, 7, 500, 4096, 30_000] {
+            let mut items: Vec<u64> = (0..100_000u64).map(|i| (i * 7919 + 13) % 1_000_003).collect();
+            let mut compared = 0u32;
+            let outcome = sort_or_stop(&mut items, |a, b| {
+                compared += 1;
+                if compared == stop_at {
+                    return Err(stop_at);
+                }
+                Ok(a.cmp(b))
+            });
+            assert_eq!(outcome, Err(stop_at));
+            assert_eq!(compared, stop_at, "no comparison after the stop");
+            assert_eq!(items.len(), 100_000, "the slice stays a permutation");
+        }
+    }
+
+    #[test]
+    fn without_a_stop_the_sort_is_stable() {
+        let mut items: Vec<(u32, u32)> = (0..10_000u32).map(|i| (i % 7, i)).collect();
+        sort_or_stop(&mut items, |a, b| Ok::<_, ()>(a.0.cmp(&b.0))).expect("no stop");
+        assert!(items.windows(2).all(|w| w[0].0 < w[1].0 || (w[0].0 == w[1].0 && w[0].1 < w[1].1)));
+    }
 }

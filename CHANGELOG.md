@@ -503,6 +503,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Sort: a stopped or failing `ordering()` no longer crashes the engine
+  (#283). Since #238 a budget that fired in the middle of a sort made the
+  remaining comparisons answer `Equal`, and the IR engine answered `Equal`
+  after a `Comparing.order()` of the program threw. Both contradict earlier
+  answers; Rust's sort may detect that and panic, and on the Sparrow core the
+  panic happens inside an intrinsic and aborts the process (seen once in the
+  wave-17 gate, `budgets::a_long_sort_stops_for_the_timeout`). The stop now
+  leaves the sort by unwinding with a private marker, caught inside the
+  intrinsic, and the sort stays Rust's stable sort. Unit tests stop it at
+  several fixed comparisons. OCS `L09.compare.failing-order-stops-the-sort`
+  ([#283](https://github.com/shootnix/okkama/issues/283)).
+
 - JVM: `==` on objects that refer to each other no longer overflows the
   stack (#278). A constructor that hands its `self` to a collaborator makes a
   cycle; the generated `equals` and `hashCode` recursed around it until

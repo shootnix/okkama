@@ -1,0 +1,22 @@
+module ocs/failing_order v1.0.0;
+import "io/stdout" take Stdout;
+import "compare" take Comparing, Order;
+enum Refused is Error = (late);
+object Item does Comparing<Item> {
+    has value is int;
+    Item(:value);
+    value() is int { value; }
+    order(other is Item) is Order {
+        confirm value != 777 && other.value() != 777 else throw Refused.late;
+        value.order(other.value());
+    }
+}
+main() is int {
+    let items is @Item = (0..5000).map() -> i { Item(value: (i * 7919 + 13) % 1000); };
+    let out = Stdout();
+    out.writeln(try { items.ordering()[0].value().string(); } catch e is Refused { "refused"; });
+    let fine is @int = (0..100000).map() -> i { (i * 7919 + 13) % 1000003; };
+    let sorted = fine.ordering();
+    out.writeln(sorted[0].string() + " " + sorted[99999].string());
+    0;
+}
