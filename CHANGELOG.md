@@ -8,6 +8,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Benchmarks: steady state is measured (#236). `run.py --steady N` runs every
+  configuration once more with `BENCH_REPEAT=N`, and the program repeats its
+  work N times in one process, timing each repetition with its own
+  monotonic clock (`iteration <ns>` on stderr; stdout must still match the
+  cold runs). The ladder's Okkama programs repeat through a `Repeat` object
+  (`10-app` through a loop in its async `main`). The Python, Perl and Ruby
+  ports are unchanged; `steady/repeat.{py,pl,rb}` drive them. Results carry
+  the first repetition and the median of the second half for each pair.
+  `export.py` writes `steady.csv` and a REPORT.md section, and the HTML
+  report has a "steady state" table. On `02-calls` the JVM's warm-up shows:
+  cold 0.201 s, first repetition 0.121 s, steady 0.075 s. The ladder
+  programs changed (sha256 of inputs), so a release report needs a new
+  baseline. Docs: `okkama-docs/benchmarks/README.md`, LLM guide §6
+  ([#236](https://github.com/shootnix/okkama/issues/236)).
+
 - Language: `async destroy { … }` (#154). The block may await; it is awaited
   where its owner's scope ends — normal end, `return`, `last`, a failure or a
   cancellation — in reverse construction order, and a cancellation that

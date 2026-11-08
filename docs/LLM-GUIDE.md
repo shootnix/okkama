@@ -181,7 +181,13 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   build parameters, sha256 of inputs and binaries, timer bounds, `startup`
   (00-hello per configuration) and `reference_outdated` interpreters.
   `sparrow-core-compile` is compile+run in one process (`okkama run --engine
-  sparrow`); steady state is not measured yet (#236).
+  sparrow`). Steady state (#236): `--steady N` adds one run per configuration
+  with `BENCH_REPEAT=N`. The program repeats its work N times in-process and
+  prints `iteration <ns>` per repetition to stderr. Okkama programs do this
+  through a `Repeat` object; the Python, Perl and Ruby ports are driven by
+  `steady/repeat.{py,pl,rb}`. Results carry `steady` per pair: the first
+  repetition and the median of the second half. `export.py` writes
+  `steady.csv`, and the HTML report shows them next to the cold time.
 - DB: `db/main.ok` + `db/main.py` (SQLite), `db/postgres.ok` +
   `db/postgres.py` (PostgreSQL, Docker). Env: `DB_BENCH_ROWS=5000
   DB_BENCH_LOOKUPS=500 DB_BENCH_WARMUPS=6`. Each prints `kind nanos checksum`
