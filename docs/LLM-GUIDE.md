@@ -184,10 +184,11 @@ Benchmarks live outside the repository in `../okkama-docs/benchmarks`
   sparrow`). Steady state (#236): `--steady N` adds one run per configuration
   that repeats the work N times in-process and prints `iteration <ns>` per
   repetition to stderr. Okkama programs do this through a `Repeat` object
-  and get N as their first argument (`cli/arguments`); reading
-  `BENCH_REPEAT` through `os/environment` would bring a `destroy` into the
-  measured program and change how its closures and tail calls compile
-  (#285, #292). The Python, Perl and Ruby ports are driven by
+  and get N as their first argument, read with the runtime's primitives
+  (`runtime/process`, `runtime/time`): `os/environment` would bring a
+  `destroy` into the measured program and change how its closures and tail
+  calls compile (#285, #292), and `cli/arguments`/`time/clock` add
+  milliseconds of start-up. A cold run never reads the clock. The Python, Perl and Ruby ports are driven by
   `steady/repeat.{py,pl,rb}`, which read `BENCH_REPEAT`. Results carry `steady` per pair: the first
   repetition and the median of the second half. `export.py` writes
   `steady.csv`, and the HTML report shows them next to the cold time.
