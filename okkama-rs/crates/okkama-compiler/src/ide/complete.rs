@@ -1014,7 +1014,7 @@ pub fn builtin_members(key: &str) -> Vec<Completion> {
         out.push(method("numerator", &[], "string", ""));
         out.push(method("denominator", &[], "string", ""));
     } else if key == "bool" {
-        out.push(method("string", &[], "string", "\"1\" or \"0\""));
+        out.push(method("string", &[], "string", "\"true\" or \"false\""));
     } else if key == "char" {
         out.push(method("order", &["other is char"], "Order", ""));
         out.push(method("code", &[], "int", "the code point"));
