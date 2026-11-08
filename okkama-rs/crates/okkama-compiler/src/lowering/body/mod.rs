@@ -64,16 +64,23 @@ struct Var {
     /// `None` — поле ещё не связано или не staged.
     value: Option<Typed>,
     rebindable: bool,
+    /// Значение может смениться после объявления: поля, staged-поля, признаки
+    /// связывания, rebind-локальные и `^C` (его гасит `succ.take`).
+    mutable: bool,
     kind: VarKind,
     /// Область объявления: rebind принимает значение в её регион.
     scope: usize,
 }
 
+/// Значения изменяемых переменных (`Var::mutable`) по возрастанию индекса:
+/// остальные одинаковы на всех путях, и снимок стоит число изменяемых (#239).
+type Env = Vec<(usize, Option<Typed>)>;
+
 /// Незавершённая ветвь: блок, итог и значения переменных в её конце.
 struct Arm {
     end: BlockId,
     out: Out,
-    env: Vec<Option<Typed>>,
+    env: Env,
 }
 
 struct LoopFrame {
@@ -121,6 +128,8 @@ struct BodyLowerer<'c, 'r, 'a> {
     self_value: Option<ValueId>,
     b: FnBuilder,
     vars: Vec<Var>,
+    /// Индексы изменяемых переменных по возрастанию: `vars` только растёт.
+    mutables: Vec<usize>,
     /// Переменная каждой локальной THIR.
     local_vars: Vec<Option<usize>>,
     /// Переменные каждой открытой области.
@@ -264,6 +273,7 @@ fn lowerer_for<'c, 'r, 'a>(
         self_value: None,
         b: FnBuilder::new(),
         vars: Vec::new(),
+        mutables: Vec::new(),
         local_vars: vec![None; body.locals.len()],
         scopes: vec![Vec::new()],
         field_vars: Vec::new(),
@@ -810,13 +820,14 @@ fn lower_method(
     }
     if successor {
         for field in 0..lowerer.ctx.objects[object.0].fields.len() {
-            lowerer.vars.push(Var {
+            let var = lowerer.push_var(Var {
                 value: None,
                 rebindable: false,
+                mutable: true,
                 kind: VarKind::Staged(field),
                 scope: 0,
             });
-            lowerer.field_vars.push(lowerer.vars.len() - 1);
+            lowerer.field_vars.push(var);
         }
         let block = &lowerer.body.block;
         let out = lowerer.block(block, false)?;
@@ -929,29 +940,31 @@ fn lower_ctor(
         ResultType::Value(Type::Object(object)),
     );
     for _ in &fields {
-        lowerer.vars.push(Var {
+        let var = lowerer.push_var(Var {
             value: None,
             rebindable: false,
+            mutable: true,
             kind: VarKind::Field,
             scope: 0,
         });
-        lowerer.field_vars.push(lowerer.vars.len() - 1);
+        lowerer.field_vars.push(var);
     }
     // Признаки связывания полей: `false` на входе, `true` после связывания.
     let yes = lowerer.constant(Constant::Bool(true), span).value;
     let no = lowerer.constant(Constant::Bool(false), span).value;
     lowerer.flag_values = Some((yes, no));
     for _ in &fields {
-        lowerer.vars.push(Var {
+        let var = lowerer.push_var(Var {
             value: Some(Typed {
                 value: no,
                 ty: Type::Bool,
             }),
             rebindable: false,
+            mutable: true,
             kind: VarKind::Local,
             scope: 0,
         });
-        lowerer.field_flags.push(lowerer.vars.len() - 1);
+        lowerer.field_flags.push(var);
     }
     // Параметры — значения вызывающего, определены на входе.
     let param_values: Vec<ValueId> = if full {
@@ -1165,13 +1178,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     /// Новая переменная локальной THIR в текущей области.
     fn bind_local(&mut self, local: LocalId, value: Typed) {
         let rebindable = self.body.locals[local.0].rebindable;
-        self.vars.push(Var {
+        let mutable = rebindable || matches!(value.ty, Type::Successor(_));
+        let var = self.push_var(Var {
             value: Some(value),
             rebindable,
+            mutable,
             kind: VarKind::Local,
             scope: self.scopes.len() - 1,
         });
-        let var = self.vars.len() - 1;
         self.local_vars[local.0] = Some(var);
         self.scopes
             .last_mut()
@@ -1446,13 +1460,22 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
 
     // ----- слияние ветвей -----
 
-    fn snapshot(&self) -> Vec<Option<Typed>> {
-        self.vars.iter().map(|var| var.value.clone()).collect()
+    fn push_var(&mut self, var: Var) -> usize {
+        let index = self.vars.len();
+        if var.mutable {
+            self.mutables.push(index);
+        }
+        self.vars.push(var);
+        index
     }
 
-    fn restore(&mut self, env: &[Option<Typed>]) {
-        for (var, value) in self.vars.iter_mut().zip(env) {
-            var.value = value.clone();
+    fn snapshot(&self) -> Env {
+        self.mutables.iter().map(|&var| (var, self.vars[var].value.clone())).collect()
+    }
+
+    fn restore(&mut self, env: &[(usize, Option<Typed>)]) {
+        for (var, value) in env {
+            self.vars[*var].value = value.clone();
         }
         self.sync_unwind();
     }
@@ -1598,9 +1621,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             });
         }
         let mut merged: Vec<(usize, Option<Typed>)> = Vec::new();
+        // Ячейки снимков ветвей с переменными, объявленными до ветвления:
+        // каждая ветвь сняла их в одном порядке.
         let mut params: Vec<usize> = Vec::new();
-        for var in 0..base {
-            let values: Vec<Option<Typed>> = arms.iter().map(|arm| arm.env[var].clone()).collect();
+        let slots = arms[0].env.iter().take_while(|(var, _)| *var < base).count();
+        for slot in 0..slots {
+            let var = arms[0].env[slot].0;
+            debug_assert!(arms.iter().all(|arm| arm.env[slot].0 == var), "arms snapshot the same variables");
+            let values: Vec<Option<Typed>> = arms.iter().map(|arm| arm.env[slot].1.clone()).collect();
             if values.iter().all(|value| *value == values[0]) {
                 merged.push((var, values[0].clone()));
                 continue;
@@ -1612,13 +1640,13 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     VarKind::Field => {
                         let ty = arms
                             .iter()
-                            .find_map(|arm| arm.env[var].as_ref().map(|value| value.ty.clone()))
+                            .find_map(|arm| arm.env[slot].1.as_ref().map(|value| value.ty.clone()))
                             .expect("some arm binds the field");
                         for arm in arms.iter_mut() {
-                            if arm.env[var].is_none() {
+                            if arm.env[slot].1.is_none() {
                                 self.b.switch_to(arm.end);
                                 let value = self.b.emit(InstKind::Undef, ty.clone(), span);
-                                arm.env[var] = Some(Typed {
+                                arm.env[slot].1 = Some(Typed {
                                     value,
                                     ty: ty.clone(),
                                 });
@@ -1629,10 +1657,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     VarKind::Staged(field) => {
                         // Ветвь без `^field` передаёт исходное значение поля.
                         for arm in arms.iter_mut() {
-                            if arm.env[var].is_none() {
+                            if arm.env[slot].1.is_none() {
                                 self.b.switch_to(arm.end);
                                 let original = self.read_field(field, span);
-                                arm.env[var] = Some(original);
+                                arm.env[slot].1 = Some(original);
                             }
                         }
                         self.b.close();
@@ -1642,21 +1670,21 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
             let types: Vec<Type> = arms
                 .iter()
-                .map(|arm| arm.env[var].as_ref().expect("filled above").ty.clone())
+                .map(|arm| arm.env[slot].1.as_ref().expect("filled above").ty.clone())
                 .collect();
             let ty = Self::join_type(&types);
             for arm in arms.iter_mut() {
-                let value = arm.env[var].clone().expect("filled above");
+                let value = arm.env[slot].1.clone().expect("filled above");
                 if value.ty != ty {
                     self.b.switch_to(arm.end);
                     let normalized = self.normalize(&value, &ty, span);
-                    arm.env[var] = Some(normalized);
+                    arm.env[slot].1 = Some(normalized);
                     arm.end = self.b.current().expect("normalizing keeps the arm open");
                 }
             }
             self.b.close();
             let param = self.b.add_param(join, ty.clone());
-            params.push(var);
+            params.push(slot);
             merged.push((var, Some(Typed { value: param, ty })));
         }
         for arm in &arms {
@@ -1664,8 +1692,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             if let (Some(_), Out::Value(value)) = (&result, &arm.out) {
                 args.push(value.value);
             }
-            for var in &params {
-                args.push(arm.env[*var].as_ref().expect("checked").value);
+            for slot in &params {
+                args.push(arm.env[*slot].1.as_ref().expect("checked").value);
             }
             self.b
                 .terminate_block(arm.end, TermKind::Br(Target { block: join, args }), span);

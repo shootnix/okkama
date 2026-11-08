@@ -396,16 +396,23 @@ impl Dominators {
 }
 
 /// Which nodes of the graph `edges` lie on a cycle (a strongly connected
-/// component of two or more nodes, or a self edge): Tarjan's algorithm with
-/// an explicit stack, linear in nodes and edges.
+/// component of two or more nodes, or a self edge).
 pub(crate) fn on_cycles(edges: &[Vec<usize>]) -> Vec<bool> {
+    cycles(edges).iter().map(Option::is_some).collect()
+}
+
+/// The cycle each node lies on — the number of its strongly connected
+/// component of two or more nodes, or with a self edge — or `None`: Tarjan's
+/// algorithm with an explicit stack, linear in nodes and edges.
+pub(crate) fn cycles(edges: &[Vec<usize>]) -> Vec<Option<usize>> {
     let count = edges.len();
     let mut index = vec![usize::MAX; count];
     let mut low = vec![0; count];
     let mut on_stack = vec![false; count];
     let mut stack = Vec::new();
     let mut next = 0;
-    let mut result = vec![false; count];
+    let mut components = 0;
+    let mut result = vec![None; count];
     for root in 0..count {
         if index[root] != usize::MAX {
             continue;
@@ -448,13 +455,82 @@ pub(crate) fn on_cycles(edges: &[Vec<usize>]) -> Vec<bool> {
                 }
                 if component.len() > 1 || edges[node].contains(&node) {
                     for member in component {
-                        result[member] = true;
+                        result[member] = Some(components);
                     }
+                    components += 1;
                 }
             }
         }
     }
     result
+}
+
+/// Immediate dominators of the graph `edges` from node 0 (Cooper, Harvey and
+/// Kennedy), with each node's reverse postorder number; `None` — unreachable.
+pub(crate) fn dominators(edges: &[Vec<usize>]) -> (Vec<Option<usize>>, Vec<usize>) {
+    let count = edges.len();
+    let mut order = Vec::new();
+    let mut seen = vec![false; count];
+    let mut stack = vec![(0usize, 0usize)];
+    seen[0] = true;
+    while let Some((node, next)) = stack.pop() {
+        if let Some(&target) = edges[node].get(next) {
+            stack.push((node, next + 1));
+            if !seen[target] {
+                seen[target] = true;
+                stack.push((target, 0));
+            }
+        } else {
+            order.push(node);
+        }
+    }
+    order.reverse();
+    let mut rpo = vec![usize::MAX; count];
+    for (index, node) in order.iter().enumerate() {
+        rpo[*node] = index;
+    }
+    let mut preds = vec![Vec::new(); count];
+    for &node in &order {
+        for &target in &edges[node] {
+            preds[target].push(node);
+        }
+    }
+    let mut idom: Vec<Option<usize>> = vec![None; count];
+    idom[0] = Some(0);
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for &node in order.iter().skip(1) {
+            let mut new = None;
+            for &pred in &preds[node] {
+                if idom[pred].is_none() {
+                    continue;
+                }
+                new = Some(match new {
+                    None => pred,
+                    Some(current) => common_dominator(&idom, &rpo, pred, current),
+                });
+            }
+            if new.is_some() && idom[node] != new {
+                idom[node] = new;
+                changed = true;
+            }
+        }
+    }
+    (idom, rpo)
+}
+
+/// The nearest node dominating both `a` and `b` (both reachable).
+pub(crate) fn common_dominator(idom: &[Option<usize>], rpo: &[usize], mut a: usize, mut b: usize) -> usize {
+    while a != b {
+        while rpo[a] > rpo[b] {
+            a = idom[a].expect("reachable");
+        }
+        while rpo[b] > rpo[a] {
+            b = idom[b].expect("reachable");
+        }
+    }
+    a
 }
 
 #[cfg(test)]

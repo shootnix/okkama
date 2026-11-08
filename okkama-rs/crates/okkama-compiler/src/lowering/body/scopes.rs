@@ -32,7 +32,7 @@ pub(super) struct FailBlock {
     params: Vec<ValueId>,
     tracked: Vec<usize>,
     types: Vec<Type>,
-    env: Vec<Option<Typed>>,
+    env: super::Env,
 }
 
 impl FailBlock {

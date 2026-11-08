@@ -441,6 +441,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler: one function of many sequential loops compiles in linear time
+  (#239). Three phases were quadratic on it. Lowering copied the value of
+  every local at every branch; it now snapshots only the variables that can
+  change (fields, staged fields, rebindable locals and `^C` values). Loop
+  constants were hoisted to the function's entry block, so thousands of them
+  lived at once and register liveness and colouring went quadratic — the
+  Sparrow verifier even refused 25 000 loops (45 001 blocks × 97 503
+  registers); they now go to the nearest block before their loop. And the
+  successor flow check scanned every outer local at each scope exit; it now
+  looks outside only when the scope's bindings hold an obligation. 25 000
+  `reduce` blocks (10⁵ instructions): codegen 4.1 s at 2 500 blocks before,
+  0.15 s at 25 000 now; the whole pipeline is about 0.5 s and grows linearly.
+  `tests/large_functions.rs` gains the `loops` shape
+  ([#239](https://github.com/shootnix/okkama/issues/239)).
+
 - Docs and LSP: chapter 10 of the Book listed `less`/`more` for `char`, which
   has only `order`; LSP completion offered `int.pow` as a `float` (it is the
   exact `int` since #228) and described `bool.string()` as `"true"`/`"false"`
