@@ -47,6 +47,9 @@ role TerminalResizeOpening {
     closed() is bool;
 }
 
+// Terminal geometry over time: the first size() reports the geometry when
+// the source opened, and each later call waits for the next change (SIGWINCH)
+// and reports the new geometry.
 role TerminalResizeReading {
     async size() is TerminalSize;
     closed() is bool;

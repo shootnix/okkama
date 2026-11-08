@@ -1,0 +1,54 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.tls.cancelled-read-keeps-data",
+  "title": "a TLS read interrupted by a timeout or a cancelled task does not lose the data that arrives later",
+  "purpose": "Exercise a protocol boundary against a suite-owned loopback fixture.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.NET.TLS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "args": [
+    "{fixture.tls-late-echo.port}"
+  ],
+  "requires": {
+    "environment": [
+      "stdout",
+      "args",
+      "loopback-network",
+      "tls"
+    ],
+    "fixtures": [
+      "tls-late-echo"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "timed out\ncancelled\nlate!\n"
+    }
+  },
+  "spec_refs": [
+    "std/net/tls.ok",
+    "std/async/timeout.ok",
+    "conformance/fixtures/tls-late-echo/server.py"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0 by #12",
+    "expected_basis": "The fixture sends `late!` 0.8 s after the handshake. A read bounded to 0.1 s times out, a read in a cancelled task ends Cancelled, and the next read receives the 5 bytes: TLS keeps received records, and a cancelled read gives up nothing it already took."
+  },
+  "status": "mandatory"
+}

@@ -1,0 +1,45 @@
+module app v1.0.0;
+
+// A TLS read that is interrupted, by a timeout and by a cancelled task, must
+// not lose the record the server sends afterwards: the next read gets it.
+import "io/stdout" take Stdout;
+import "net/tcp" take TcpConnecting;
+import "net/endpoint" take IpEndpoint;
+import "net/ip" take IpAddress;
+import "net/tls" take TlsClientHandshake, TlsClientPolicy, TlsConnection;
+import "crypto/x509/trust" take PemTrustStore, IpCertificateIdentity;
+import "cli/arguments" take ProcessArguments, Utf8Arguments;
+import "strings/parse" take ParsedInt;
+import "encoding/utf" take Utf8Decoded;
+import "async/timeout" take Within, TimedOut;
+import "time/duration" take Duration, DurationUnit;
+import "time/clock" take SystemClock;
+
+const TEST_CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBkjCCATegAwIBAgIURogIt07I0D7JGwXcWzLXBEXMjFgwCgYIKoZIzj0EAwIw\nFDESMBAGA1UEAwwJMTI3LjAuMC4xMCAXDTI2MTEwODEwNTczN1oYDzIxMjYxMDE1\nMTA1NzM3WjAUMRIwEAYDVQQDDAkxMjcuMC4wLjEwWTATBgcqhkjOPQIBBggqhkjO\nPQMBBwNCAARtv8NBHb8FCIcSNROLXUTbsmedM4zLM/nzkiCHbR6uOtZt1Dn7DYWz\nphxuVo/0sBXDWs68/dfEbRw8Qx5Xm0gKo2UwYzAdBgNVHQ4EFgQUNSNKTCL3aw0z\nRFM0cMELBtD4vbMwDwYDVR0RBAgwBocEfwAAATAMBgNVHRMBAf8EAjAAMA4GA1Ud\nDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNJADBG\nAiEAlr+j/XjeJ84d2yqb8L+H+ua47q10bh1HOTfdQxBNitkCIQDi5vE7gPeWyE+p\n0ENI/qirX6TILGuU7wubSq0FYu3Lmw==\n-----END CERTIFICATE-----\n";
+
+object Reader {
+    has connection is TlsConnection;
+    Reader(:connection);
+    async bytes() is @byte { await connection.read_bytes(16); }
+}
+
+async main() is int {
+    let out = Stdout();
+    let port = ParsedInt(Utf8Arguments(ProcessArguments()).item(0)).value();
+    let tcp = await TcpConnecting(IpEndpoint(IpAddress("127.0.0.1"), port)).connection();
+    let policy = TlsClientPolicy(PemTrustStore(TEST_CERTIFICATE));
+    let connection = await TlsClientHandshake(tcp, IpCertificateIdentity(IpAddress("127.0.0.1")), policy).connection();
+    defer connection.close();
+    let timed = try {
+        await Within(Reader(connection: connection).bytes(), Duration(1.rat() / 10.rat(), DurationUnit.second), SystemClock()).result();
+        "read early";
+    } catch TimedOut.elapsed { "timed out"; };
+    out.writeln(timed);
+    let task = spawn Reader(connection: connection).bytes();
+    task.cancel();
+    let cancelled = try { await task; "read early"; } catch e is Cancelled { "cancelled"; };
+    out.writeln(cancelled);
+    let late = await Reader(connection: connection).bytes();
+    out.writeln(Utf8Decoded(origin: late).string());
+    0;
+}

@@ -1,0 +1,42 @@
+module app v1.0.0;
+
+// Run under a pseudo-terminal by pty_driver.py (#12). A terminal read that a
+// timeout and a cancelled task interrupt must give its late bytes back to the
+// session. A resize source first reports the geometry it opened with, then
+// waits for the next change and reports the new geometry.
+import "terminal/session" take OpenedControllingTerminal, TerminalInput;
+import "terminal/capability" take ColorPolicy;
+import "async/timeout" take Within, TimedOut;
+import "time/duration" take Duration, DurationUnit;
+import "time/clock" take SystemClock;
+
+object Reader {
+    has input is TerminalInput;
+    Reader(:input);
+    async line() is string { await input.line(64); }
+}
+
+async main() is int {
+    let session = await OpenedControllingTerminal(ColorPolicy.never).session();
+    defer session.close();
+    let out = session.output();
+    let resizes = await session.resizes();
+    let timed = try {
+        await Within(Reader(input: session.input()).line(), Duration(1.rat() / 5.rat(), DurationUnit.second), SystemClock()).result();
+        "read early";
+    } catch TimedOut.elapsed { "timed out"; };
+    out.writeln(timed);
+    let task = spawn Reader(input: session.input()).line();
+    task.cancel();
+    let cancelled = try { await task; "read early"; } catch e is Cancelled { "cancelled"; };
+    out.writeln(cancelled);
+    out.writeln("waiting for a line");
+    let line = await Reader(input: session.input()).line();
+    out.writeln("line: " + line);
+    let initial = await resizes.size();
+    out.writeln("initial: " + initial.columns().string() + "x" + initial.rows().string());
+    out.writeln("waiting for a resize");
+    let size = await resizes.size();
+    out.writeln("size: " + size.columns().string() + "x" + size.rows().string());
+    0;
+}

@@ -503,6 +503,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Terminal: input typed after a read was interrupted reaches the next read
+  (#12). A terminal read that a timeout or a cancelled task gave up still
+  had its blocking `read(2)` waiting on the reader thread, and every later
+  read queued another one behind it. The cancelled one took the input and
+  kept it, while the new read waited on an empty terminal: the program hung.
+  The IR engine and the Sparrow core (`runtime-core`) and the JVM now keep
+  one `read(2)` in flight, and its bytes go to whichever read is waiting
+  (at most its limit, the rest kept). A pseudo-terminal test
+  (`terminal_pty`, Python driver under `okkama-cli/tests/terminal`) covers
+  this and the resize stream on all three engines: the first observation
+  is the geometry the source opened with, the next waits for a change
+  (now said in `terminal/screen`). OCS `L11.tls.cancelled-read-keeps-data`
+  with the `tls-late-echo` fixture shows that a TLS read interrupted the
+  same two ways loses nothing
+  ([#12](https://github.com/shootnix/okkama/issues/12)).
+
 - Runtime: cleanup regions no longer walk a large structure again for every
   value that points into it (#9). A region learns which resources to destroy
   by walking what a value reaches; the walk stopped at objects owned
