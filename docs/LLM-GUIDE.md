@@ -369,7 +369,6 @@ drivers `std/db/sqlite.ok` (worker thread in Rust) and `std/db/postgres.ok`
   `new-runtime/core-rebuild.md` (journal of the core rebuild, stages 0–6).
 - `benchmarks/`, `examples/` (to be reworked), `experiments/`, `archive/`.
 
-Open issues worth knowing: #7 inline blocking natives, #9 region tracking
-cost, #10 source locations on the core, #12 TLS and terminal cancellation
-tests, #13 format natives in Okkama, #14 removal of the
-previous VM.
+Open issues worth knowing: #7 inline blocking natives, #12 TLS and terminal
+cancellation tests, #13 format natives in Okkama, #14 removal of the
+previous VM, #270 uncaught-failure reports differ between engines.
