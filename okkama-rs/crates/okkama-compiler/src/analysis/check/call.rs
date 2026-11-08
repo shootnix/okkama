@@ -1506,7 +1506,9 @@ impl Checker<'_, '_> {
                     arg.value.span,
                     &format!("test.{} argument", name.text),
                 ),
-                None => value,
+                // An assertion argument consumes a successor like any call
+                // argument; the intrinsic is specialized for its object (#275).
+                None => Self::consume(value),
             };
             values.push(value);
         }

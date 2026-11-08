@@ -1,0 +1,39 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.test-runner.successor-assertions",
+  "title": "a successor passed to test.is is compared and counts as used",
+  "purpose": "Run embedded tests and observe the exit status.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "TEST.RUNNER",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "test",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": "ignore",
+    "justification": "The embedded test runner's report format is not normative (spec 14 fixes only the exit status); exit 0 means every assertion held."
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#14",
+    "docs/okkama-spec-11072026.md#11.9"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #275 from the cited contract text",
+    "expected_basis": "spec 11.1 (call arguments consume successors) and 14: test.is compares with structural equality; a successor passed directly or through a binding is an ordinary argument."
+  },
+  "status": "mandatory"
+}
