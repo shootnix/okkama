@@ -211,7 +211,9 @@ impl FunctionGen<'_> {
             K::StrCompare { op, left, right } => I::StrCmp { op: cmp(*op), dst: dst()?, left: reg(*left), right: reg(*right) },
             K::ObjNew { object, fields } => I::ObjNew { dst: dst()?, object: ObjectRef(object.0 as u32), fields: regs(fields) },
             K::ObjInit { object, field, value } => I::ObjInit { object: reg(*object), field: *field as u32, value: reg(*value) },
-            K::ObjGet { object, field } => I::ObjGet { dst: dst()?, object: reg(*object), field: *field as u32 },
+            K::ObjGet { object, field } | K::ObjPending { object, field } => {
+                I::ObjGet { dst: dst()?, object: reg(*object), field: *field as u32 }
+            }
             K::ObjNext { object, updates } => I::ObjNext {
                 dst: dst()?,
                 object: reg(*object),
@@ -435,6 +437,7 @@ impl FunctionGen<'_> {
                     ir::TrapCode::Empty => TrapCode::Empty,
                     ir::TrapCode::Unbound => TrapCode::Unbound,
                     ir::TrapCode::Unreachable => TrapCode::Unreachable,
+                    ir::TrapCode::Pending => TrapCode::Pending,
                 },
                 message: message.clone(),
             },

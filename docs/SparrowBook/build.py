@@ -145,7 +145,7 @@ DESCRIPTIONS = {
     "br": ("branch on a bool", "ветвление по bool"),
     "ret": ("return (`_` from a void function)", "возврат (`_` из void-функции)"),
     "panic": ("fail with a str message", "отказ с сообщением str"),
-    "trap": ("program error: `confirm`, `range`, `empty`, `unbound`, `unreachable` with a message", "программная ошибка: `confirm`, `range`, `empty`, `unbound`, `unreachable` с сообщением"),
+    "trap": ("program error: `confirm`, `range`, `empty`, `unbound`, `unreachable`, `pending` (an action on an object under construction) with a message", "программная ошибка: `confirm`, `range`, `empty`, `unbound`, `unreachable`, `pending` (действие у недостроенного объекта) с сообщением"),
     "unreachable": ("control never gets here", "управление сюда не приходит"),
     "throw": ("throw an object that does the builtin Error role", "бросить объект, делающий встроенную роль Error"),
     "raise": ("send a failure on", "передать отказ дальше"),

@@ -148,7 +148,7 @@ op_enum! {
 
 op_enum! {
     /// Код программной ошибки `trap` (§5.3).
-    TrapCode { Confirm = 0, "confirm", Range = 1, "range", Empty = 2, "empty", Unbound = 3, "unbound", Unreachable = 4, "unreachable" }
+    TrapCode { Confirm = 0, "confirm", Range = 1, "range", Empty = 2, "empty", Unbound = 3, "unbound", Unreachable = 4, "unreachable", Pending = 5, "pending" }
 }
 
 macro_rules! instructions {

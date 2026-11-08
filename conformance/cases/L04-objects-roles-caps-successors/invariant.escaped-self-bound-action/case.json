@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.invariant.escaped-self-bound-action",
+  "title": "a bound action of an unfinished receiver fails when invoked during construction",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTOR-INVARIANTS",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "runtime"
+      ],
+      "categories": [
+        "runtime"
+      ],
+      "justification": "The bound action is an ordinary callable value; only execution can see that its receiver's construction is pending."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #271 from the cited contract text",
+    "expected_basis": "spec 11.4: the restriction follows receiver identity through bound actions."
+  },
+  "status": "mandatory"
+}

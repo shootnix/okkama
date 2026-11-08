@@ -2126,6 +2126,15 @@ fields and validate invariants directly with `confirm`; they may read initialize
 fields and inspect parameters or other completed objects. A captured callback
 may invoke `self` after construction finishes. Private actions cannot be exported
 as values.
+
+The compiler rejects a direct `self.` call. A constructor may still hand `self`
+to a collaborator, and every engine rejects an action called through it while
+the constructor has not returned, including calls through a role or a bound
+action. A direct call is rejected before its arguments are evaluated (#271):
+`Action "describe" on object "Tree" was called before its construction completed`.
+If the constructor fails after `self` escaped, the escaped object never
+completes, and every later call on it fails the same way. Only objects whose
+constructor uses `self` as a value pay for the check.
 External calls fail *after* signature selection (so overload
 resolution is uniform): `Action "secret" on object "Cash" is private`.
 

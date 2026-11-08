@@ -664,6 +664,11 @@ pub(crate) fn execute_function(
                     InstKind::ObjGet { object, field } => {
                         state.object_get(read(slots, *object, inst.span)?, *field, inst.span)?
                     }
+                    // Несвязанное `$pending` — создание не завершено (#271).
+                    InstKind::ObjPending { object, field } => Value::Bool(!matches!(
+                        state.object_get(read(slots, *object, inst.span)?, *field, inst.span)?,
+                        Value::Bool(false)
+                    )),
                     InstKind::ObjNext { object, updates } => {
                         let updates = updates
                             .iter()

@@ -503,6 +503,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Objects: an action called on an object whose constructor has not returned
+  is rejected on every engine (#271, spec §11.4). A constructor may hand its
+  `self` to a collaborator; a call through that reference read fields the
+  constructor had not bound yet, and the result depended on the engine: an
+  invalid-state error on the IR engine, a `NullPointerException` on the JVM,
+  and a segmentation fault on the Sparrow core. Now it is
+  `Action "describe" on object "Tree" was called before its construction
+  completed`, through a collaborator, a role or a bound action. A direct
+  call is rejected before its arguments are evaluated. An object whose
+  constructor failed after `self` escaped never completes. Lowering gives
+  only objects whose constructor uses `self` as a value a hidden last field
+  `$pending` (unbound until the constructor returns) and checks it with the
+  new OIR instruction `obj.pending` and trap code `pending` (Sparrow trap
+  code 5, SPB format 12); other objects are unchanged. In std this concerns
+  `Http2ServerStream` and `MultipartFormPart`. OCS: five
+  `L04.invariant.escaped-self-*` cases. Book §18.2 (EN/RU), OIR-1 §16.1,
+  Sparrow book ([#271](https://github.com/shootnix/okkama/issues/271)).
+
 - Terminal: input typed after a read was interrupted reaches the next read
   (#12). A terminal read that a timeout or a cancelled task gave up still
   had its blocking `read(2)` waiting on the reader thread, and every later

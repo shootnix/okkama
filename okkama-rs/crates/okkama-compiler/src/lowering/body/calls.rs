@@ -237,6 +237,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     ));
                 };
                 let target = self.take(target, receiver.span);
+                // Действие объекта, чьё создание не завершено, отвергается до
+                // вычисления аргументов (§11.4, #271); `self` уже проверен на
+                // входе в действие.
+                if Some(target.value) != self.self_value {
+                    let decl = self.ctx.objects[object.0].decl;
+                    let name = self.ctx.reg.objects[decl.0].methods[*method].name.clone();
+                    self.check_constructed(target.value, object, &name, span);
+                }
                 if self.ctx.is_intrinsic(object, *method) {
                     let name = self.ctx.objects[object.0].name.clone();
                     return Err(unsupported(span, &format!("VM intrinsics of `{name}`")));

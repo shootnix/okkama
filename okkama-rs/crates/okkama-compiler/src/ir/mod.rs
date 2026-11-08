@@ -928,6 +928,14 @@ pub enum InstKind {
         object: ValueId,
         field: usize,
     },
+    /// Создание объекта не завершено (#271): его скрытое поле `$pending`
+    /// ещё не связано (ранний `self`) или не `false`. В отличие от `obj.get` —
+    /// в любой функции: место вызова проверяет получателя до аргументов
+    /// (§11.4).
+    ObjPending {
+        object: ValueId,
+        field: usize,
+    },
     /// Новый объект из полей `object` с заменами (successor).
     ObjNext {
         object: ValueId,
@@ -1342,6 +1350,9 @@ impl InstKind {
             | InstKind::RoleNarrow { value: operand, .. }
             | InstKind::ObjGet {
                 object: operand, ..
+            }
+            | InstKind::ObjPending {
+                object: operand, ..
             } => vec![*operand],
             InstKind::CallRole { receiver, args, .. } => std::iter::once(*receiver)
                 .chain(args.iter().copied())
@@ -1458,6 +1469,9 @@ impl InstKind {
             | InstKind::AnyBox(operand)
             | InstKind::RoleNarrow { value: operand, .. }
             | InstKind::ObjGet {
+                object: operand, ..
+            }
+            | InstKind::ObjPending {
                 object: operand, ..
             } => vec![operand],
             InstKind::CallRole { receiver, args, .. } => {
@@ -1578,6 +1592,8 @@ pub enum TrapCode {
     Unbound,
     /// Исполнение достигло `unreachable`-точки lowering.
     Unreachable,
+    /// Действие вызвано у объекта, чьё создание не завершено (§11.4, #271).
+    Pending,
 }
 
 impl TrapCode {
@@ -1588,6 +1604,7 @@ impl TrapCode {
             TrapCode::Empty => "empty",
             TrapCode::Unbound => "unbound",
             TrapCode::Unreachable => "unreachable",
+            TrapCode::Pending => "pending",
         }
     }
 }

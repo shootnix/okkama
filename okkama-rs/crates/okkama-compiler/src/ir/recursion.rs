@@ -76,6 +76,7 @@ fn total(kind: &InstKind) -> bool {
         | InstKind::StrCompare { .. }
         | InstKind::ObjNew { .. }
         | InstKind::ObjGet { .. }
+        | InstKind::ObjPending { .. }
         | InstKind::AnyBox(_)
         | InstKind::FnClosure { .. }
         | InstKind::EnumCase { .. }

@@ -457,6 +457,11 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             InstKind::Undef => {
                 let result = result.expect("verified: undef defines a value");
                 match self.types[result.0] {
+                    // Несвязанный bool читается только `obj.pending`: `true` —
+                    // создание не завершено (#271).
+                    VType::Integer if self.function.values[result.0] == Type::Bool => {
+                        self.asm.op(&[0x04], 0, 1) // iconst_1
+                    }
                     VType::Integer => self.asm.op(&[0x03], 0, 1), // iconst_0
                     _ => self.asm.op(&[0x01], 0, 1),              // aconst_null
                 }
@@ -686,7 +691,7 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     Ok(())
                 })?;
             }
-            InstKind::ObjGet { object, field } => {
+            InstKind::ObjGet { object, field } | InstKind::ObjPending { object, field } => {
                 let owner = object_of(&self.function.values[object.0]);
                 self.get_field(*object, owner, *field)?;
             }

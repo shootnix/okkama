@@ -338,3 +338,55 @@ fn a_field_bound_on_some_paths_is_checked_after_the_body() {
         "{text}"
     );
 }
+
+const ESCAPE: &str = "
+module app v1.0.0;
+object Leaf {
+    has up is Tree;
+    Leaf(:up);
+    describe() is string { up.name(); }
+}
+object Tree {
+    has name is string;
+    has leaf is Maybe<Leaf>;
+    Tree(name is string) { self.name = name; leaf = Maybe.some(Leaf(up: self)); }
+    name() is string { name; }
+    label() is string { self.name(); }
+}
+main() is int { let tree = Tree(\"oak\"); tree.label(); C().value(); }
+";
+
+#[test]
+fn an_escaping_self_is_pending_until_its_constructor_returns() {
+    let text = format!("{ESCAPE}{COUNTER}");
+    let module = lower(&text).unwrap_or_else(|error| panic!("{error}"));
+    ir::verify(&module).expect("lowering output verifies");
+    // Only `Tree` hands out `self`: it alone gets the hidden field.
+    let fields = |name: &str| -> Vec<String> {
+        let object = module.objects.iter().find(|object| object.name == name).expect("object exists");
+        object.fields.iter().map(|field| field.name.clone()).collect()
+    };
+    assert_eq!(fields("Tree"), ["name", "leaf", "$pending"]);
+    assert_eq!(fields("Leaf"), ["up"]);
+    assert_eq!(fields("C"), ["n", "m"]);
+    // Built unbound by the early `self`, bound to false when the constructor returns.
+    let ctor = function(&module, "Tree.new#0");
+    assert!(ctor.contains("obj.new Tree { name: %0, leaf: %"), "{ctor}");
+    assert!(ctor.contains("obj.init %"), "{ctor}");
+    assert!(ctor.contains(", $pending, %"), "{ctor}");
+    // Checked on entry to Tree's actions; a call on `self` inside them is not checked again.
+    let label = function(&module, "Tree.label");
+    assert_eq!(label.matches("obj.pending").count(), 1, "{label}");
+    assert!(label.contains("trap pending"), "{label}");
+    // A collaborator checks the receiver before the call.
+    assert!(function(&module, "Leaf.describe").contains("obj.pending"));
+    // Objects that never hand out `self` pay nothing.
+    for symbol in ["C.value", "Leaf.new#0", "main"] {
+        let listing = function(&module, symbol);
+        if symbol == "main" {
+            assert_eq!(listing.matches("obj.pending").count(), 1, "{listing}");
+        } else {
+            assert!(!listing.contains("obj.pending"), "{listing}");
+        }
+    }
+}

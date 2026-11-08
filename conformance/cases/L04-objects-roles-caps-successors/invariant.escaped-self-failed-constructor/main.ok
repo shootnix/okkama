@@ -1,0 +1,28 @@
+module ocs/escaped_self_failed v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+
+enum Refused is Error = (empty);
+
+object Tree {
+    has name is string;
+    Tree(name is string, sink is Atomic<Maybe<Tree>>) {
+        self.name = name;
+        sink.replace(Maybe.some(self));
+        confirm name != "" else throw Refused.empty;
+    }
+    name() is string { name; }
+}
+
+main() is int {
+    let out = Stdout();
+    let sink is Atomic<Maybe<Tree>> = Atomic(Maybe.none);
+    defer sink.close();
+    out.writeln(try { Tree("", sink).name(); } catch e is Refused { e.text(); });
+    match sink.value() {
+        case Maybe.some(tree) { out.writeln(tree.name()); }
+        case Maybe.none { out.writeln("nothing escaped"); }
+    }
+    0;
+}

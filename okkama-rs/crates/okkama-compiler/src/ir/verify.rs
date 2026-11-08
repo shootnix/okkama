@@ -943,6 +943,18 @@ impl<'a> FunctionVerifier<'a> {
                 self.require_owner(owner, "obj.get")?;
                 self.field_type(owner, *field)?.clone()
             }
+            InstKind::ObjPending { object, field } => {
+                let owner = self.object_of(*object)?;
+                let named = self
+                    .module
+                    .object(owner)
+                    .and_then(|declared| declared.fields.get(*field))
+                    .is_some_and(|declared| declared.name == "$pending" && declared.ty == Type::Bool);
+                if !named {
+                    return Err(format!("obj.pending reads field #{field}, which is not `$pending`"));
+                }
+                Type::Bool
+            }
             InstKind::ObjNext { object, updates } => {
                 let owner = self.object_of(*object)?;
                 if !self.function.attrs.contains(&Attr::Successor(owner)) {
