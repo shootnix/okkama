@@ -963,8 +963,8 @@ prices.keys();               // @K, отсортированы по ключу
 prices.values();             // @V, тот же порядок пар, что у keys()
 1.less(2);                   // true
 2.less_or_equal(2);          // true
-3.more(1);                   // true
-3.more_or_equal(4);          // false
+3.greater(1);                // true
+3.greater_or_equal(4);       // false
 ```
 
 Правила:
@@ -981,7 +981,7 @@ prices.values();             // @V, тот же порядок пар, что у
   пустой массив; соединение пустого массива возвращает `""`. Удаление — это
   `text.replace(target, "")`, а не отдельное встроенное действие.
 - Все преобразования неизменяемы: они возвращают новую строку или массив.
-- Числовые сравнения `.less`, `.less_or_equal`, `.more`, `.more_or_equal`
+- Числовые сравнения `.less`, `.less_or_equal`, `.greater`, `.greater_or_equal`
   требуют **точно одинаковой** числовой категории с обеих сторон:
   `1.less(2.0)` падает. (Операторы `<`/`>` шире; форма встроенного действия
   намеренно строга.)
@@ -1002,7 +1002,7 @@ prices.values();             // @V, тот же порядок пар, что у
 | `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `trim_start()`, `trim_end()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)`; `contains(part)`, `starts_with(part)`, `ends_with(part)`, `find(part)`, `find_last(part)` (`Maybe<int>` — индекс code point; пустая часть находится в начале или в конце), `lower()`, `upper()` (полное Unicode-отображение регистра, без локали), `repeat(count)` (отрицательное число — ошибка; не больше 1 ГиБ), `characters()` (`@char` из code points) |
 | `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (это `float`) — `int.pow(int)` даёт точный `int` (отрицательная степень — ошибка), `float.pow(float)` — `float` |
 | `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (десятичные строки), `pow(exponent)` — точный `rat`, отрицательная степень его обращает |
-| числа, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` с той же категорией |
+| числа, `byte` | `less`, `less_or_equal`, `greater`, `greater_or_equal`, `order` с той же категорией |
 | `char` | `order(other)`, `code()` (code point, `int`), `string()`; `char(code)` и `code.char()` строят его из `int` (скалярное значение Unicode, иначе ошибка) |
 | `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
 | скаляры | преобразования `int()`, `float()`, `rat()`, `byte()`, `string()` (глава 5); `char()` у `int` |
@@ -1385,7 +1385,7 @@ let doubled = values.map() -> value {
 };
 
 let selected = values.filter() -> value {
-    value.more(0);
+    value.greater(0);
 };
 
 let total = values.reduce(0) -> accumulator, value {
@@ -1397,7 +1397,7 @@ let total = values.reduce(0) -> accumulator, value {
 
 ```okkama
 let total = values
-    .filter() -> value { value.more(0); }
+    .filter() -> value { value.greater(0); }
     .map() -> value { value * 2; }
     .reduce(0) -> sum, value { sum + value; };
 ```
@@ -6612,7 +6612,7 @@ keyword-shaped сегменты пути вроде `test` в `test/more`, об�
 actions вроде `is`, `fake` в `Role.fake()`, имена утверждений в
 `test.ok(...)` и имена встроенных действий: `size`, `slice`, `length`, `trim`,
 `chomp`, `split`, `join`, `replace`, `replace_first`, `keys`, `values`, `has`,
-`less`, `more`.
+`less`, `greater`.
 
 ## Приложение B. Статус реализации
 

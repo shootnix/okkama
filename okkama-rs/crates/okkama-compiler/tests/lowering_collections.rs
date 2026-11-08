@@ -93,12 +93,12 @@ fn first_and_last_trap_with_the_empty_sequence_text() {
 fn collection_rule_violations_are_semantic_errors() {
     for (body, expected) in [
         (
-            "\"ab\".more(\"a\"); 0;",
-            "Type \"string\" has no builtin action \"more\"",
+            "\"ab\".greater(\"a\"); 0;",
+            "Type \"string\" has no builtin action \"greater\"",
         ),
         (
-            "\"ab\".more_or_equal(\"a\"); 0;",
-            "Type \"string\" has no builtin action \"more_or_equal\"",
+            "\"ab\".greater_or_equal(\"a\"); 0;",
+            "Type \"string\" has no builtin action \"greater_or_equal\"",
         ),
         (
             "let xs = [3, 1]; let ys = @int(0, xs..., \"9\"); 0;",

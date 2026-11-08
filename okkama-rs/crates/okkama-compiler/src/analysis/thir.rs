@@ -541,7 +541,7 @@ pub enum Builtin {
     MapHas,
     MapKeys,
     MapValues,
-    /// `less`/`more`/... одной категории.
+    /// `less`/`greater`/... одной категории.
     Compare(CompareKind, CompareOp),
     /// `order(other)` → `compare.Order`.
     Order(CompareKind),

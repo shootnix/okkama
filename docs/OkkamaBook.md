@@ -912,8 +912,8 @@ prices.keys();               // @K, sorted by key
 prices.values();             // @V, same pairing order as keys()
 1.less(2);                   // true
 2.less_or_equal(2);          // true
-3.more(1);                   // true
-3.more_or_equal(4);          // false
+3.greater(1);                // true
+3.greater_or_equal(4);       // false
 ```
 
 Rules:
@@ -930,9 +930,9 @@ Rules:
   joining an empty array returns `""`. Removal is
   `text.replace(target, "")`, not a separate builtin.
 - Every transformation is immutable: it returns a new string or array.
-- The numeric comparisons `.less`, `.less_or_equal`, `.more`,
-  `.more_or_equal` require the **exact same** numeric category on both sides:
-  `1.less(2.0)` fails. (The operators `<`/`>` are broader; the builtin action
+- The numeric comparisons `.less`, `.less_or_equal`, `.greater`,
+  `.greater_or_equal` require the **exact same** numeric category on both
+  sides: `1.less(2.0)` fails. (The operators `<`/`>` are broader; the builtin action
   form is deliberately strict.)
 - Builtin calls are positional-only and exact-arity.
 - Builtin dispatch activates only for non-object receivers, so an object's
@@ -950,7 +950,7 @@ Complete list (a test checks it against the compiler's table, `analysis/check/bu
 | `string` | `length()`, `empty()`, `slice(start, end)`, `split(separator)`, `replace(from, to)`, `replace_first(from, to)`, `trim()`, `trim_start()`, `trim_end()`, `chomp()`, `string()`, `less(other)`, `less_or_equal(other)`, `order(other)`; `contains(part)`, `starts_with(part)`, `ends_with(part)`, `find(part)`, `find_last(part)` (a `Maybe<int>` code point index; an empty part is found at the start or the end), `lower()`, `upper()` (full Unicode case mapping, no locale), `repeat(count)` (a negative count is an error; at most 1 GiB), `characters()` (an `@char` of code points) |
 | `int`, `float` | `abs()`, `sign()`, `pow(exponent)`, `sqrt()` (a `float`) — `int.pow(int)` is the exact `int` (a negative exponent is an error), `float.pow(float)` a `float` |
 | `rat` | `abs()`, `sign()`, `numerator()`, `denominator()` (decimal strings), `pow(exponent)` — the exact `rat`; a negative exponent inverts it |
-| numbers, `byte` | `less`, `less_or_equal`, `more`, `more_or_equal`, `order` with the same category |
+| numbers, `byte` | `less`, `less_or_equal`, `greater`, `greater_or_equal`, `order` with the same category |
 | `char` | `order(other)`, `code()` (the code point, an `int`), `string()`; `char(code)` and `code.char()` make one from an `int` (a Unicode scalar value, else an error) |
 | `int`, `byte` | `bit_count()`, `leading_zeros()`, `trailing_zeros()`, `rotate_left(n)`, `rotate_right(n)`, `reverse_bits()`, `swap_bytes()` |
 | scalars | conversions `int()`, `float()`, `rat()`, `byte()`, `string()` (Chapter 5); `char()` on `int` |
@@ -1320,7 +1320,7 @@ let doubled = values.map() -> value {
 };
 
 let selected = values.filter() -> value {
-    value.more(0);
+    value.greater(0);
 };
 
 let total = values.reduce(0) -> accumulator, value {
@@ -1332,7 +1332,7 @@ They chain naturally:
 
 ```okkama
 let total = values
-    .filter() -> value { value.more(0); }
+    .filter() -> value { value.greater(0); }
     .map() -> value { value * 2; }
     .reduce(0) -> sum, value { sum + value; };
 ```
@@ -6286,7 +6286,7 @@ module path segments such as `test` in `test/more`, declared action labels such
 as `is`, `fake` in `Role.fake()`, assertion names in `test.ok(...)`, and
 builtin action names such as `size`, `slice`, `length`, `trim`, `chomp`,
 `split`, `join`, `replace`, `replace_first`, `keys`, `values`, `has`, `less`,
-`more`.
+`greater`.
 
 ## Appendix B. Implementation Status
 

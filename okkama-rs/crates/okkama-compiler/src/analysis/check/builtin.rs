@@ -52,8 +52,8 @@ fn ordering(name: &str) -> Option<CompareOp> {
     match name {
         "less" => Some(CompareOp::Lt),
         "less_or_equal" => Some(CompareOp::Le),
-        "more" => Some(CompareOp::Gt),
-        "more_or_equal" => Some(CompareOp::Ge),
+        "greater" => Some(CompareOp::Gt),
+        "greater_or_equal" => Some(CompareOp::Ge),
         _ => None,
     }
 }
@@ -199,7 +199,7 @@ impl Checker<'_, '_> {
             ),
             (
                 Ty::Int | Ty::Float | Ty::Rat | Ty::Byte,
-                "less" | "less_or_equal" | "more" | "more_or_equal",
+                "less" | "less_or_equal" | "greater" | "greater_or_equal",
             ) => (
                 Builtin::Compare(compare_kind(receiver)?, ordering(name)?),
                 vec![Param::Same],
