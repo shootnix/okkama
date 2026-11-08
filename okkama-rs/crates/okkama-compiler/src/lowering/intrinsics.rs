@@ -84,15 +84,19 @@ fn related(name: &str) -> &'static [&'static str] {
 }
 
 /// Действия программы, которые вызывает intrinsic: (значение, действие,
-/// арность). Значение — поле receiver или `^N`: тип результата N-го.
-fn helpers(name: &str) -> &'static [(&'static str, &'static str, usize)] {
+/// арность, типы аргументов). Значение — поле receiver или `^N`: тип
+/// результата N-го. Типы аргументов (те же ссылки) выбирают перегрузку:
+/// `minus(MonotonicInstant)` даёт `Duration`, `minus(Duration)` — момент (#215).
+type Helper = (&'static str, &'static str, usize, &'static [&'static str]);
+
+fn helpers(name: &str) -> &'static [Helper] {
     match name {
-        "okkama.timeout.Within.result" => &[("limit", "seconds", 0), ("clock", "wait", 1)],
+        "okkama.timeout.Within.result" => &[("limit", "seconds", 0, &[]), ("clock", "wait", 1, &[])],
         "okkama.timeout.Before.result" => &[
-            ("clock", "monotonic_instant", 0),
-            ("deadline", "minus", 1),
-            ("^1", "seconds", 0),
-            ("clock", "wait", 1),
+            ("clock", "monotonic_instant", 0, &[]),
+            ("deadline", "minus", 1, &["^0"]),
+            ("^1", "seconds", 0, &[]),
+            ("clock", "wait", 1, &[]),
         ],
         _ => &[],
     }
@@ -215,33 +219,39 @@ impl Ctx<'_, '_> {
         let reg = self.reg;
         let info = &reg.objects[decl.0];
         let mut found: Vec<(ir::FuncId, Type)> = Vec::new();
-        for (path, action, arity) in helpers(name) {
-            let receiver = if let Some(index) = path.strip_prefix('^') {
-                let index: usize = index.parse().expect("helper index");
-                found[index].1.clone()
-            } else {
+        for (path, action, arity, args) in helpers(name) {
+            let resolve = |this: &mut Self, path: &str| -> Result<Type> {
+                if let Some(index) = path.strip_prefix('^') {
+                    let index: usize = index.parse().expect("helper index");
+                    return Ok(found[index].1.clone());
+                }
                 let field = info
                     .fields
                     .iter()
-                    .find(|field| field.name == *path)
+                    .find(|field| field.name == path)
                     .ok_or_else(|| {
                         LoweringError::invalid(
                             span,
                             format!("internal compiler error: no field {path}"),
                         )
                     })?;
-                self.ir_type(&field.ty.subst(&env), span)?
+                this.ir_type(&field.ty.subst(&env), span)
             };
-            let func = self.member_thunk(receiver.clone(), action, *arity, false);
+            let receiver = resolve(self, path)?;
+            let params = if args.is_empty() {
+                None
+            } else {
+                Some(args.iter().map(|arg| resolve(self, arg)).collect::<Result<Vec<_>>>()?)
+            };
+            let func = self.member_thunk(receiver.clone(), action, *arity, params.clone(), false);
             // Тип результата действия: для цепочки `^N`.
             let result = match &receiver {
                 Type::Object(target) => {
                     let target_env = self.objects[target.0].env.clone();
                     let target_info = &reg.objects[self.objects[target.0].decl.0];
-                    let method = target_info
-                        .methods
-                        .iter()
-                        .find(|method| method.name == *action && method.params.len() == *arity);
+                    let method = self
+                        .member_method(*target, action, *arity, params.as_deref(), span)?
+                        .map(|method| &target_info.methods[method]);
                     match method.map(|method| method.result.clone()) {
                         Some(result) => match self.ir_result(&result, &target_env, span)? {
                             ResultType::Value(ty) => ty,

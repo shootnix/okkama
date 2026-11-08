@@ -224,8 +224,9 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
             receiver,
             name,
             arity,
+            params,
             bound,
-        } => lower_member(ctx, symbol, receiver, &name, arity, bound),
+        } => lower_member(ctx, symbol, receiver, &name, arity, params.as_deref(), bound),
         Task::WorkerEntry {
             object,
             ctor,
@@ -419,6 +420,7 @@ fn lower_member(
     receiver: Type,
     name: &str,
     arity: usize,
+    params: Option<&[Type]>,
     bound: bool,
 ) -> Result<ir::Function> {
     let span = Span::empty(0);
@@ -434,11 +436,7 @@ fn lower_member(
             let env = ctx.objects[object.0].env.clone();
             let reg = ctx.reg;
             let info = &reg.objects[ctx.objects[object.0].decl.0];
-            let method = info
-                .methods
-                .iter()
-                .position(|method| method.name == name && method.params.len() == arity)
-                .ok_or_else(missing)?;
+            let method = ctx.member_method(*object, name, arity, params, span)?.ok_or_else(missing)?;
             let target = &info.methods[method];
             let mut types = vec![receiver.clone()];
             for (_, ty) in &target.params {
@@ -2686,7 +2684,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 "bound action values of overloaded role actions",
             ));
         }
-        let func = self.ctx.member_thunk(target.ty.clone(), &name, arity, true);
+        let func = self.ctx.member_thunk(target.ty.clone(), &name, arity, None, true);
         let ty = self.expr_type(expr)?;
         Ok(Out::Value(self.emit(
             InstKind::FnClosure {
