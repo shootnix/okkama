@@ -50,8 +50,11 @@ okkama exec --max-steps 100000000 --max-memory 256M --timeout 5 app.spb
 Running out ends the program with exit status 1 and `Execution budget
 exhausted: steps` (`memory`, `output`) or `Execution interrupted`. It is not a
 failure of the program: `catch` does not see it and `destroy` does not run. A
-single native operation (a long BigInt division, a sort) finishes before the
-run stops; a BigInt product that cannot fit is refused before it is computed.
+long sort stops for the timeout and the memory budget, and PBKDF2 for the
+timeout; another single native operation (a long BigInt division, an Argon2
+hash) finishes first, but with `--timeout` the command line ends the run at
+most a second after the time is up. A BigInt product that cannot fit is
+refused before it is computed.
 
 Steps are counted alike on every engine, so a limit that is enough on one is
 enough on the others. On the JVM the steps are counted by code generated only

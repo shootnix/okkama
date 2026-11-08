@@ -550,6 +550,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `map`. Lowering test and OCS `L07.ownership.reduce-builder`
   ([#266](https://github.com/shootnix/okkama/issues/266)).
 
+- Budgets: a long host operation no longer outlives `--timeout` (#238). On
+  the Sparrow core a PBKDF2 derivation of 10⁹ rounds ran on after the time
+  was up (the IR engine's command line already stopped it a second later).
+  PBKDF2 now counts its rounds itself and looks at the run's interrupt flag
+  every 4096 of them, on every engine (`okkama_native::interruptible`; RFC
+  7914 vectors), and the run then ends interrupted, unseen by `catch`.
+  Argon2 cannot look at the flag, so `okkama run --engine sparrow` and
+  `sparrow run` now also end the run a second after the deadline, as the
+  IR engine's run did; SQLite queries already stopped (they run on the
+  connection's thread while the scheduler waits). CLI test
+  `long_host_operations_stop_for_the_timeout`; Book, toolchain commands (EN/RU)
+  ([#238](https://github.com/shootnix/okkama/issues/238)).
+
 - Compiler: one function of many sequential loops compiles in linear time
   (#239). Three phases were quadratic on it. Lowering copied the value of
   every local at every branch; it now snapshots only the variables that can

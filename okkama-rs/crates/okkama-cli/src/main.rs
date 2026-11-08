@@ -317,8 +317,9 @@ fn core_described(
 }
 
 /// Stop the process with the interrupt report one second after `flag` is
-/// raised, if the run has not stopped by itself by then (the IR engine polls
-/// the flag only while it runs code).
+/// raised, if the run has not stopped by itself by then: the engines poll the
+/// flag while they run code and in long natives that can look at it, not in
+/// one that cannot (Argon2, a blocking read; #238).
 fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
     let _ = std::thread::Builder::new().name("okkama-timeout".into()).spawn(move || {
         while !flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1554,6 +1555,9 @@ fn run_command(args: &[String]) -> Outcome {
             Err(message) => return Outcome::failure(format!("okkama: {message}\n"), EXIT_IO),
         };
         let arguments = program_args.iter().map(|a| a.clone().into_bytes()).collect();
+        if let Some(flag) = &limits.interrupt {
+            watchdog(flag.clone());
+        }
         // Номера функций и инструкций ядра совпадают с OIR: место — по исходнику.
         let (outcome, trace) = core_described(sparrow_core::run_described(bytes, arguments, false, command, limits));
         return with_trace(outcome, || okkama_runtime::render_trace(&module, &trace));

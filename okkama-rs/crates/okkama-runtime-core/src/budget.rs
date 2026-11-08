@@ -163,6 +163,15 @@ pub fn check_now() -> Result<(), Exhausted> {
     })
 }
 
+/// The run's interrupt flag, for work outside this thread's polls: a long
+/// host operation watches it (#238).
+pub fn interrupt_flag() -> Option<Arc<AtomicBool>> {
+    if !ACTIVE.with(std::cell::Cell::get) {
+        return None;
+    }
+    BUDGET.with(|budget| budget.borrow().as_ref().and_then(|state| state.interrupt.clone()))
+}
+
 /// Exhaustion a long intrinsic found (see [`check_now`]), once.
 pub fn take_pending() -> Option<Exhausted> {
     if !ACTIVE.with(std::cell::Cell::get) {

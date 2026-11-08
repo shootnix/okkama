@@ -383,6 +383,70 @@ fn hkdf(hash: &str, args: &[&[u8]]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// Rounds between two looks at the interrupt flag (#238): a round is one
+/// HMAC, well under a microsecond.
+const PBKDF2_POLL: u32 = 4096;
+
+/// PBKDF2 (RFC 8018 §5.2) over the keyed MAC `M`, as `pbkdf2::pbkdf2_hmac`
+/// computes it, but up to 2^32 rounds can take minutes: between rounds it
+/// gives up once the run's interrupt flag is raised (see [`interruptible`]).
+fn pbkdf2_rounds<M: Mac + hmac::digest::KeyInit + Clone>(
+    password: &[u8],
+    salt: &[u8],
+    rounds: u32,
+    out: &mut [u8],
+) -> Result<()> {
+    let prf: M = hmac_key(password)?;
+    let size = <M as hmac::digest::OutputSizeUser>::output_size();
+    for (index, block) in out.chunks_mut(size).enumerate() {
+        let mut mac = prf.clone();
+        mac.update(salt);
+        mac.update(&(index as u32 + 1).to_be_bytes());
+        let mut chained = mac.finalize().into_bytes();
+        let mut sum = chained.clone();
+        for round in 1..rounds {
+            if round.is_multiple_of(PBKDF2_POLL) && interrupted() {
+                return Err(Error::Failed("PBKDF2 interrupted".into()));
+            }
+            let mut mac = prf.clone();
+            mac.update(&chained);
+            chained = mac.finalize().into_bytes();
+            for (total, byte) in sum.iter_mut().zip(chained.iter()) {
+                *total ^= byte;
+            }
+        }
+        block.copy_from_slice(&sum[..block.len()]);
+    }
+    Ok(())
+}
+
+thread_local! {
+    /// The interrupt flag of the run a host operation serves (#238).
+    static INTERRUPT: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `body` with long operations watching the run's interrupt `flag`
+/// (#238): PBKDF2 gives up between rounds once it is raised, with an error
+/// the caller replaces by the run's interruption.
+pub fn interruptible<R>(flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>, body: impl FnOnce() -> R) -> R {
+    struct Restore(Option<std::sync::Arc<std::sync::atomic::AtomicBool>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            INTERRUPT.with(|slot| *slot.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(INTERRUPT.with(|slot| slot.replace(flag)));
+    body()
+}
+
+fn interrupted() -> bool {
+    INTERRUPT.with(|slot| {
+        slot.borrow().as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+    })
+}
+
 fn pbkdf2(hash: &str, args: &[&[u8]]) -> Result<Vec<u8>> {
     arity(args, 4, "pbkdf2")?;
     let (password, salt) = (args[0], args[1]);
@@ -397,9 +461,9 @@ fn pbkdf2(hash: &str, args: &[&[u8]]) -> Result<Vec<u8>> {
     let rounds = rounds as u32;
     let mut out = vec![0; length];
     match hash {
-        "sha256" => pbkdf2::pbkdf2_hmac::<sha2::Sha256>(password, salt, rounds, &mut out),
-        "sha384" => pbkdf2::pbkdf2_hmac::<sha2::Sha384>(password, salt, rounds, &mut out),
-        "sha512" => pbkdf2::pbkdf2_hmac::<sha2::Sha512>(password, salt, rounds, &mut out),
+        "sha256" => pbkdf2_rounds::<hmac::Hmac<sha2::Sha256>>(password, salt, rounds, &mut out)?,
+        "sha384" => pbkdf2_rounds::<hmac::Hmac<sha2::Sha384>>(password, salt, rounds, &mut out)?,
+        "sha512" => pbkdf2_rounds::<hmac::Hmac<sha2::Sha512>>(password, salt, rounds, &mut out)?,
         "sha1" => {
             return Err(Error::Unsupported(
                 "PBKDF2-HMAC-SHA1 is not provided".into(),

@@ -163,3 +163,24 @@ fn a_long_sort_stops_for_the_timeout() {
         assert!(started.elapsed().as_secs() < 10, "{engine}: {:?}", started.elapsed());
     }
 }
+
+// 2^32 - 1 PBKDF2 rounds take minutes; Argon2 over 64 MiB for 1000 passes
+// takes tens of seconds and cannot look at the flag.
+const PBKDF2: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimport \"crypto/kdf\" take Pbkdf2Secret, KdfHash;\nimport \"crypto/secret\" take SecretBytes;\nmain() is int {\n    let key = try { Pbkdf2Secret(KdfHash.sha256, SecretBytes([1.byte()]), [2.byte()], 4294967295, 32).secret().size(); } catch e is Error { Stdout().writeln(\"caught\"); 0; };\n    Stdout().writeln(key.string());\n    0;\n}\n";
+const ARGON2: &str = "module app v1.0.0;\nimport \"io/stdout\" take Stdout;\nimport \"crypto/password\" take PasswordHash, Argon2Policy;\nimport \"crypto/nonce\" take SystemEntropy;\nimport \"crypto/secret\" take SecretBytes;\nmain() is int {\n    Stdout().writeln(PasswordHash(SecretBytes([1.byte()]), Argon2Policy(65536, 1000, 1), SystemEntropy()).string());\n    0;\n}\n";
+
+/// A long host operation stops for the timeout (#238): PBKDF2 looks at the
+/// interrupt flag between rounds, and the program's `catch` does not see
+/// the stop; Argon2 cannot, and the CLI ends the run a second later.
+#[test]
+fn long_host_operations_stop_for_the_timeout() {
+    for (name, source) in [("pbkdf2", PBKDF2), ("argon2", ARGON2)] {
+        for engine in ["ir", "sparrow"] {
+            let started = std::time::Instant::now();
+            let output = run(engine, source, &["--timeout", "1"]);
+            assert_eq!(String::from_utf8_lossy(&output.stderr).trim_end(), "Execution interrupted", "{name} {engine}");
+            assert!(output.stdout.is_empty(), "{name} {engine}: {}", String::from_utf8_lossy(&output.stdout));
+            assert!(started.elapsed().as_secs() < 10, "{name} {engine}: {:?}", started.elapsed());
+        }
+    }
+}

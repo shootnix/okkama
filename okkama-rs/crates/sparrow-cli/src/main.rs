@@ -89,8 +89,26 @@ fn report(error: sparrow_core::Error) -> Result<u8, Failure> {
     Ok(1)
 }
 
+/// Stop the process with the interrupt report one second after `flag` is
+/// raised, if the run has not stopped by then: a native that cannot look at
+/// the flag (Argon2, a blocking read) still ends (#238).
+fn watchdog(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    let _ = std::thread::Builder::new().name("sparrow-watchdog".into()).spawn(move || {
+        while !flag.load(std::sync::atomic::Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        eprintln!("{}", sparrow_core::budget::Exhausted::Interrupted.message());
+        std::process::exit(1);
+    });
+}
+
 fn execute(path: &Path, arguments: &[String], stats: bool, limits: sparrow_core::budget::Limits) -> Result<u8, Failure> {
     let (bytes, program) = load(path)?;
+    if let Some(flag) = &limits.interrupt {
+        watchdog(flag.clone());
+    }
     let arguments = arguments.iter().map(|a| a.clone().into_bytes()).collect();
     match sparrow_core::run_described(bytes, arguments, stats, worker_command(path), limits) {
         Ok(Ok(code)) => u8::try_from(code).map_err(|_| (1, format!("main() must return an int in 0..255, got {code}"))),
