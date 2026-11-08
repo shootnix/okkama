@@ -6,6 +6,16 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Fixed
+
+- JVM: splitting a large function no longer panics (`unwind targets take a
+  failure`, #305). When the moved part of a function over the method limit
+  held the handler of its own root — a `try` handler is dominated by the
+  block that enters the `try` — the remaining call kept an unwind edge into
+  the moved code, which the renumbering turned into the entry block. The
+  call now keeps its handler only when the handler stays outside. Exposed in
+  0.4.1 by block merging (#292); found by the generated t/ suite (#245).
+
 ## [0.4.1] — 2026-11-09
 
 0.4.1 completes the language proof of concept and the first hardening
