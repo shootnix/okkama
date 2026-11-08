@@ -1,4 +1,4 @@
-//! Compiler phases on very large functions (#50): the whole pipeline — parse,
+//! Compiler phases on very large functions (#50, #239): the whole pipeline — parse,
 //! analysis, lowering, IR passes, Sparrow codegen with its verification —
 //! grows linearly with the size of one function. Four times the instructions
 //! may cost at most eight times the time (linear gives four, quadratic
@@ -20,6 +20,15 @@ fn lets(n: usize) -> String {
 fn branches(n: usize) -> String {
     let body: Vec<String> = (0..n).map(|i| format!("    if x == {i} {{ return {}; }}", i % 200)).collect();
     format!("module app v1.0.0;\nmain() is int {{\n    let x = 3;\n{}\n    0;\n}}\n", body.join("\n"))
+}
+
+/// Sequential loops (#239): every branch used to copy the value of every
+/// local, and constants hoisted to the entry block lived to their loop.
+fn loops(n: usize) -> String {
+    let body: Vec<String> = (0..n / 4)
+        .map(|i| format!("    let s{i} = (0..3).reduce(0) -> sum, k {{ sum + k + {}; }};", i % 5))
+        .collect();
+    format!("module app v1.0.0;\nmain() is int {{\n{}\n    s0 % 256;\n}}\n", body.join("\n"))
 }
 
 fn literal(n: usize) -> String {
@@ -50,7 +59,7 @@ fn one_large_function_compiles_in_linear_time() {
     if cfg!(debug_assertions) {
         return;
     }
-    for (name, shape) in [("lets", lets as fn(usize) -> String), ("branches", branches), ("literal", literal)] {
+    for (name, shape) in [("lets", lets as fn(usize) -> String), ("branches", branches), ("literal", literal), ("loops", loops)] {
         let (small, large) = (compile(&shape(5_000)), compile(&shape(20_000)));
         let growth = large.as_secs_f64() / small.as_secs_f64().max(1e-4);
         assert!(growth < 8.0, "{name}: 5 000 → 20 000 took {small:?} → {large:?} (×{growth:.1})");

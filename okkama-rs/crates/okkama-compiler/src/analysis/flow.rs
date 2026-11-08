@@ -213,8 +213,18 @@ impl<'r> Flow<'r, '_> {
     /// пережить (кроме значения `kept`). Как Perl, называется самая поздняя
     /// привязка.
     fn check_scopes(&mut self, state: &mut State, depth: usize, kept: &Obligations, span: Span) {
+        // Обычно привязки области ничего не держат: тогда внешние области не
+        // перебираются, и выход из области стоит её размера, а не функции (#239).
+        let mut locals: Vec<LocalId> = self.scopes[depth..]
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|local| !state.holds.get(local.0).is_empty())
+            .collect();
+        if locals.is_empty() {
+            return;
+        }
         let outer = self.held_outside(state, depth);
-        let mut locals: Vec<LocalId> = self.scopes[depth..].iter().flatten().copied().collect();
         locals.sort_by_key(|local| std::cmp::Reverse(local.0));
         for local in locals {
             let leaking: Obligations = state.holds.get(local.0)

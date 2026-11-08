@@ -494,69 +494,8 @@ fn successors(block: &Block) -> Vec<usize> {
 
 /// Непосредственные доминаторы (Cooper–Harvey–Kennedy); `None` — недостижим.
 fn dominators(function: &Function) -> Vec<Option<usize>> {
-    let count = function.blocks.len();
-    let mut order = Vec::new();
-    let mut seen = vec![false; count];
-    let mut stack = vec![(0usize, 0usize)];
-    seen[0] = true;
-    while let Some((block, next)) = stack.pop() {
-        let succ = successors(&function.blocks[block]);
-        if next < succ.len() {
-            stack.push((block, next + 1));
-            let target = succ[next];
-            if !seen[target] {
-                seen[target] = true;
-                stack.push((target, 0));
-            }
-        } else {
-            order.push(block);
-        }
-    }
-    order.reverse();
-    let mut rpo = vec![usize::MAX; count];
-    for (index, block) in order.iter().enumerate() {
-        rpo[*block] = index;
-    }
-    let mut preds = vec![Vec::new(); count];
-    for &block in &order {
-        for target in successors(&function.blocks[block]) {
-            preds[target].push(block);
-        }
-    }
-    let mut idom: Vec<Option<usize>> = vec![None; count];
-    idom[0] = Some(0);
-    let intersect = |idom: &Vec<Option<usize>>, mut a: usize, mut b: usize| {
-        while a != b {
-            while rpo[a] > rpo[b] {
-                a = idom[a].expect("processed");
-            }
-            while rpo[b] > rpo[a] {
-                b = idom[b].expect("processed");
-            }
-        }
-        a
-    };
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for &block in order.iter().skip(1) {
-            let mut new = None;
-            for &pred in &preds[block] {
-                if idom[pred].is_none() {
-                    continue;
-                }
-                new = Some(match new {
-                    None => pred,
-                    Some(current) => intersect(&idom, pred, current),
-                });
-            }
-            if new.is_some() && idom[block] != new {
-                idom[block] = new;
-                changed = true;
-            }
-        }
-    }
-    idom
+    let edges: Vec<Vec<usize>> = function.blocks.iter().map(successors).collect();
+    crate::ir::cfg::dominators(&edges).0
 }
 
 /// Вынести одну замкнутую область функции `index`; `false` — нечего.
