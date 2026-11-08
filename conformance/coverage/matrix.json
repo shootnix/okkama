@@ -720,6 +720,51 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L08.cancel.shared-awaited-survives"
+     ],
+     "mandatory_cases": [
+      "L08.cancel.shared-awaited-survives"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L08.cancel.awaited-spawned"
+     ],
+     "mandatory_cases": [
+      "L08.cancel.awaited-spawned"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the contract defines no rejected or failing form"
+    },
+    "normal": {
+     "cases": [
+      "L08.cancel.awaited-cleanup-settles"
+     ],
+     "mandatory_cases": [
+      "L08.cancel.awaited-cleanup-settles"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "ASYNC.STRUCTURED-AWAIT",
+   "discrepancies": [],
+   "family": "Async and concurrency",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#18",
+    "docs/async-guide.md#4.6"
+   ],
+   "status": "mandatory",
+   "title": "Cancelling a task cancels the future it awaits unless another task awaits it, and the task resumes only once that future has settled"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -3506,6 +3551,57 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
+    },
+    "interaction": {
+     "cases": [
+      "L05.generic.key-param-forwarded-rejected",
+      "L05.generic.key-param-values"
+     ],
+     "mandatory_cases": [
+      "L05.generic.key-param-forwarded-rejected",
+      "L05.generic.key-param-values"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L05.generic.key-param-forwarded-rejected",
+      "L05.generic.key-param-literal-rejected",
+      "L05.generic.key-param-rejected"
+     ],
+     "mandatory_cases": [
+      "L05.generic.key-param-forwarded-rejected",
+      "L05.generic.key-param-literal-rejected",
+      "L05.generic.key-param-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L05.generic.key-param-values"
+     ],
+     "mandatory_cases": [
+      "L05.generic.key-param-values"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "GEN.KEY-PARAMS",
+   "discrepancies": [],
+   "family": "Types, generics and collections",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.5",
+    "docs/okkama-spec-11072026.md#8.8"
+   ],
+   "status": "mandatory",
+   "title": "A type parameter used as a map key takes only key types, checked at specialization and through parameters passed on"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [
       "L05.generic.fake-target",
       "L05.generic.role-evidence-from-field"
@@ -6131,6 +6227,57 @@
   {
    "aspects": {
     "boundary": {
+     "cases": [
+      "L07.destroy.async-not-interrupted"
+     ],
+     "mandatory_cases": [
+      "L07.destroy.async-not-interrupted"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [
+      "L07.destroy.async-on-cancel",
+      "L07.destroy.async-on-failure"
+     ],
+     "mandatory_cases": [
+      "L07.destroy.async-on-cancel",
+      "L07.destroy.async-on-failure"
+     ],
+     "requirement": "required"
+    },
+    "invalid": {
+     "cases": [
+      "L07.destroy.async-in-sync-rejected"
+     ],
+     "mandatory_cases": [
+      "L07.destroy.async-in-sync-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L07.destroy.async-scope-exit"
+     ],
+     "mandatory_cases": [
+      "L07.destroy.async-scope-exit"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "LIFE.ASYNC-DESTROY",
+   "discrepancies": [],
+   "family": "Errors, cleanup and lifetimes",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#18"
+   ],
+   "status": "mandatory",
+   "title": "async destroy is awaited at the owning async scope's exit in reverse order, also on failure paths, without being interrupted by cancellation; sync code cannot own such an object"
+  },
+  {
+   "aspects": {
+    "boundary": {
      "cases": [],
      "mandatory_cases": [],
      "requirement": "n/a: the contract defines no boundary values distinct from its normal behaviour"
@@ -6237,10 +6384,12 @@
     },
     "interaction": {
      "cases": [
+      "L07.ownership.reduce-builder",
       "L07.ownership.returned-object-survives",
       "L07.ownership.successor-independent"
      ],
      "mandatory_cases": [
+      "L07.ownership.reduce-builder",
       "L07.ownership.returned-object-survives",
       "L07.ownership.successor-independent"
      ],
@@ -30725,5 +30874,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "7a6cc27b9c958459e23d8e2b9ae800df10c8b676c84f66be8886a826c14712bd"
+ "suite_tree_sha256": "31c5bc052f79553bf44b79f1ce1985dc07b7fd735d428d98047bcf7cc56cdae8"
 }

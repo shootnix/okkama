@@ -271,6 +271,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                             return Ok(Out::Diverged);
                         };
                         let value = self.normalize(&value, &element, span);
+                        self.hand_to_builder_home(&value, span);
                         builder = self.emit(InstKind::BuilderPush { builder: builder.value, value: value.value }, builder.ty.clone(), span);
                     }
                 }
@@ -278,6 +279,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     let Some(array) = self.value(part)? else {
                         return Ok(Out::Diverged);
                     };
+                    self.hand_to_builder_home(&array, span);
                     builder = self.emit(InstKind::BuilderAppend { builder: builder.value, array: array.value }, builder.ty.clone(), span);
                 }
                 (Type::MapBuilder(key_type, value_type), thir::ExprKind::Map(entries)) => {
@@ -291,6 +293,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                             return Ok(Out::Diverged);
                         };
                         let value = self.normalize(&value, &value_type, span);
+                        self.hand_to_builder_home(&value, span);
                         builder = self.emit(
                             InstKind::MapBuilderPut { builder: builder.value, key: key.value, value: value.value },
                             builder.ty.clone(),
@@ -307,6 +310,14 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
         }
         Ok(Out::Value(builder))
+    }
+
+    /// A value pushed onto a `reduce` builder belongs to the scope of that
+    /// `reduce` (#266).
+    fn hand_to_builder_home(&mut self, value: &Typed, span: Span) {
+        if let Some(&home) = self.builder_homes.last() {
+            self.hand_to(home, value, span);
+        }
     }
 
     fn binary_values(&mut self, op: BinaryOp, lhs: Typed, rhs: Typed, span: Span) -> Result<Typed> {

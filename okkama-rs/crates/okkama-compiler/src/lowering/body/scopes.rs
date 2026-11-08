@@ -103,7 +103,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     }
 
     pub(super) fn adopt(&mut self, region: ValueId, value: &Typed, span: Span) {
-        if !self.ctx.is_plain(&value.ty) {
+        // A builder is never walked: what it holds is handed over on push.
+        if !self.ctx.is_plain(&value.ty) && !value.ty.is_builder() {
             self.b.emit_void(
                 InstKind::RegionAdopt {
                     region,
@@ -132,7 +133,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
     /// Передать корню идентичности `value`, принятые открытыми вложенными
     /// областями (как Perl при выходе из области строящегося объекта).
     pub(super) fn transfer_to_root(&mut self, value: &Typed, span: Span) {
-        if self.ctx.is_plain(&value.ty) {
+        if self.ctx.is_plain(&value.ty) || value.ty.is_builder() {
             return;
         }
         let Some(root) = self.region_at(0) else {
@@ -157,9 +158,32 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
     }
 
+    /// Hand what `value` reaches to scope `scope` (#266): a value pushed onto
+    /// the builder of a `reduce` (#243) outlives the step that made it, but a
+    /// step's region keeps only what its result reaches, and a builder is
+    /// never walked. The nested regions transfer what they own, and the
+    /// scope's region adopts what is free.
+    pub(super) fn hand_to(&mut self, scope: usize, value: &Typed, span: Span) {
+        if self.ctx.is_plain(&value.ty) {
+            return;
+        }
+        let Some(home) = self.region_at(scope) else {
+            return;
+        };
+        let nested: Vec<ValueId> = self.cleanups[scope + 1..]
+            .iter()
+            .filter_map(|cleanup| cleanup.region)
+            .filter(|region| *region != home)
+            .collect();
+        for from in nested.into_iter().rev() {
+            self.b.emit_void(InstKind::RegionTransfer { from, to: home, value: value.value }, span);
+        }
+        self.adopt(home, value, span);
+    }
+
     /// Учитывать свежее значение в текущей области без владения.
     pub(super) fn track(&mut self, value: &Typed, span: Span) {
-        if self.ctx.is_plain(&value.ty) {
+        if self.ctx.is_plain(&value.ty) || value.ty.is_builder() {
             return;
         }
         if let Some(region) = self.region_at(self.cleanups.len() - 1) {
@@ -267,8 +291,10 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 self.retarget();
             }
             if let Some(region) = region {
+                // A builder is linear and never walked: what it holds was
+                // handed over when pushed (#266).
                 let keep = payload
-                    .filter(|value| !self.ctx.is_plain(&value.ty))
+                    .filter(|value| !self.ctx.is_plain(&value.ty) && !value.ty.is_builder())
                     .map(|value| value.value);
                 let close = if self.settles {
                     InstKind::RegionSettle { region, keep }

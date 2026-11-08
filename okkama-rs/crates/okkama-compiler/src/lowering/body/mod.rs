@@ -159,6 +159,9 @@ struct BodyLowerer<'c, 'r, 'a> {
     /// построенный в этой точке, и значения его полей; конец конструктора
     /// возвращает его же.
     early_self: Option<(ValueId, Vec<ValueId>)>,
+    /// Scope of each `reduce` whose accumulator is a builder (#243), innermost
+    /// last: what its block pushes is handed to that scope (#266).
+    builder_homes: Vec<usize>,
 }
 
 /// Lowering одной выделенной функции модуля.
@@ -291,6 +294,7 @@ fn lowerer_for<'c, 'r, 'a>(
         field_flags: Vec::new(),
         flag_values: None,
         early_self: None,
+        builder_homes: Vec::new(),
         ctx,
     }
 }
@@ -2946,7 +2950,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         // область, содержащая цикл.
         if let Some(value) = &payload
             && let Some(region) = self.region_at(depth.saturating_sub(1))
-                && !self.ctx.is_plain(&value.ty) {
+                && !self.ctx.is_plain(&value.ty) && !value.ty.is_builder() {
                     self.b.emit_void(
                         InstKind::RegionTrack {
                             region,
@@ -2971,6 +2975,7 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         }
         if let Some(region) = self.region_at(depth.saturating_sub(1))
             && !self.ctx.is_plain(&value.ty)
+            && !value.ty.is_builder()
         {
             self.b.emit_void(InstKind::RegionTrack { region, value: value.value }, span);
         }
