@@ -621,7 +621,7 @@ main() is int {
             5,
         ),
         (
-            "let ys = @string(1, true, \"x\"); if ys.join(\"\") == \"11x\" { 3; } else { 4; }",
+            "let ys = @string(1, true, \"x\"); if ys.join(\"\") == \"1truex\" { 3; } else { 4; }",
             3,
         ),
         (
@@ -754,7 +754,7 @@ main() is int {
         ("let m = [1: \"x\", 1: \"y\"]; m[1].length();", 1),
         (
             "let m = [\"a\": 1]; m.has(\"a\").string().length() + m.has(\"q\").string().length();",
-            2,
+            9,
         ),
         // Ключи `str` — по code points: U+FFEE раньше U+1F600 (в UTF-16 — наоборот).
         (
@@ -768,7 +768,7 @@ main() is int {
         ),
         (
             "let e = [:]; e.keys().size() + e.has(\"a\").string().length();",
-            1,
+            5,
         ),
         ("let e = [:]; e[\"a\"] else 3;", 3),
         (
@@ -835,7 +835,7 @@ fn byte_and_char_programs_compute_the_same_results_as_the_interpreter() {
             "let b = byte(1); (b ^ byte(3)).int() + (b | byte(4)).int();",
             7,
         ),
-        ("let b = byte(7); b.less(byte(9)).string().length();", 1),
+        ("let b = byte(7); b.less(byte(9)).string().length();", 4),
         ("let b = byte(200); b.string().length();", 3),
         ("let n = 300; n.bit_count();", 4),
         ("let n = 300; n.leading_zeros();", 55),
@@ -1502,7 +1502,7 @@ fn rat_values_are_exact_fractions_on_the_jvm() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "3/2\n1\n-3/2 3/4\n1/8 3.5\n-3/2 2/3\n2/3\n1 1\n"
+        "3/2\n1\n-3/2 3/4\n1/8 3.5\n-3/2 2/3\n2/3\ntrue true\n"
     );
 }
 
@@ -1688,7 +1688,7 @@ fn arrays_and_scalars_cross_standard_role_boundaries_through_adapters() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "3465 ab0 0 1 6 8\n"
+        "3465 abfalse 0 true 6 8\n"
     );
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
@@ -1834,7 +1834,7 @@ fn range_values_compare_and_iterate() {
     );
     let output = dir.java("Ranges", &[]);
     assert_eq!(output.status.code(), Some(1));
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "9 10\n");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "9 truefalse\n");
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
         "RuntimeError: Range start must be less than or equal to range end\n"
@@ -1885,7 +1885,7 @@ fn anonymous_and_bound_actions_are_fn_values() {
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "say hi\n15 3 18 21 1\n"
+        "say hi\n15 3 18 21 true\n"
     );
 }
 
@@ -1937,7 +1937,7 @@ fn async_futures_are_lazy_cached_and_spawned_eagerly() {
     let output = dir.java("Futures", &[]);
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "created\nrunning a\nrunning b\nspawned 14\nfailing c\n-1 -2 -3 7 1\nfailing e\n"
+        "created\nrunning a\nrunning b\nspawned 14\nfailing c\n-1 -2 -3 7 true\nfailing e\n"
     );
     // Ненаблюдённый отказ задачи `spawn` — отказ программы (D-034).
     assert_eq!(output.status.code(), Some(1));
@@ -2012,7 +2012,7 @@ fn async_intrinsics_run_in_the_jvm_runtime() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "1 2 -1 0 10 6 10 20\n"
+        "1 2 -1 0 truefalse 6 10 20\n"
     );
 }
 
@@ -2364,7 +2364,7 @@ fn worker_receivers_are_destroyed_and_cancelled_workers_stop() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "destroy 1\n3\n1\n"
+        "destroy 1\n3\ntrue\n"
     );
     assert!(started.elapsed() < std::time::Duration::from_secs(20));
 }
