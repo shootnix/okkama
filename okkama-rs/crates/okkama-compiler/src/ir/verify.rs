@@ -59,6 +59,14 @@ pub fn verify(module: &Module) -> Result<()> {
             )));
         }
     }
+    for (index, global) in module.globals.iter().enumerate() {
+        let valid = module.functions.get(global.init.0).is_some_and(|function| {
+            function.params.is_empty() && function.result == ResultType::Value(global.ty.clone())
+        });
+        if !valid {
+            return Err(module_error(format!("global g{index} needs an init function () -> {}", global.ty)));
+        }
+    }
     if let Some(entry) = module.entry {
         let Some(function) = module.functions.get(entry.0) else {
             return Err(module_error(format!(
@@ -843,6 +851,10 @@ impl<'a> FunctionVerifier<'a> {
             InstKind::Const(constant) => {
                 constant.ty()
             }
+            InstKind::Global(index) => match self.module.globals.get(*index) {
+                Some(global) => global.ty.clone(),
+                None => return Err(format!("global g{index} does not exist")),
+            },
             InstKind::IntBinary { left, right, .. } => {
                 self.expect_type(*left, &Type::Int)?;
                 self.expect_type(*right, &Type::Int)?;

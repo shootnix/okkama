@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.const.values",
+  "title": "constants of every kind, computed by the compiler",
+  "purpose": "Scalars, rationals, big integers, arrays, maps, enum cases and ranges; a constant may use one declared later; upper-case names.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.CONST",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "en 1048576 1/2 okkama-en\n4 7 9\n18446744073709551614 3.14 Ж\ngreen 0,1,2,10\nokkama-en 42 11\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #153",
+    "expected_basis": "spec 5.1.2: a constant is computed by the compiler from literals, enum cases, operators, arrays, maps and other constants."
+  },
+  "status": "mandatory"
+}

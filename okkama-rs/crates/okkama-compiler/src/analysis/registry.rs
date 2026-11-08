@@ -35,6 +35,35 @@ pub enum TypeRef {
 pub struct Names {
     pub types: HashMap<String, TypeRef>,
     pub natives: HashMap<String, usize>,
+    /// `const` модулей: индекс в `Registry::consts` (#153).
+    pub consts: HashMap<String, usize>,
+}
+
+/// Вычисленная константа (#153): тип, значение для lowering и то же
+/// значение в представлении рантайма (из него строятся зависящие константы).
+#[derive(Clone, Debug)]
+pub struct ConstResult {
+    pub ty: Ty,
+    pub value: super::thir::ConstValue,
+    pub runtime: okkama_runtime_core::Value,
+}
+
+/// Состояние вычисления константы.
+#[derive(Clone, Debug)]
+pub enum ConstState {
+    Pending,
+    /// Вычисляется: ссылка на неё сейчас — цикл.
+    Busy,
+    /// `None` — ошибка уже сообщена.
+    Done(Option<ConstResult>),
+}
+
+/// `const NAME = value;` модуля (#153); значение вычисляет анализ.
+#[derive(Clone, Debug)]
+pub struct ConstInfo<'a> {
+    pub name: String,
+    pub module: usize,
+    pub decl: &'a ast::ConstDecl,
 }
 
 /// Пространство имён `import "p" [as alias] [take …]`.
@@ -250,6 +279,9 @@ pub struct Registry<'a> {
     pub enums: Vec<EnumInfo>,
     pub handles: Vec<HandleInfo>,
     pub natives: Vec<NativeInfo<'a>>,
+    pub consts: Vec<ConstInfo<'a>>,
+    /// По одному на `consts`, заполняется при проверке тел.
+    pub const_state: Vec<ConstState>,
     pub params: Vec<ParamInfo>,
     pub system: System,
     pub standard: Standard,
@@ -322,6 +354,8 @@ impl<'a> Registry<'a> {
             enums: Vec::new(),
             handles: Vec::new(),
             natives: Vec::new(),
+            consts: Vec::new(),
+            const_state: Vec::new(),
             params: Vec::new(),
             system: System {
                 error: RoleId(0),
@@ -531,6 +565,9 @@ impl<'a> Registry<'a> {
                 }
                 for (name, found) in own.natives {
                     scope.natives.entry(name).or_insert(found);
+                }
+                for (name, found) in own.consts {
+                    scope.consts.entry(name).or_insert(found);
                 }
             }
         }
@@ -887,6 +924,21 @@ impl<'a> Registry<'a> {
                     });
                     self.modules[module].own.natives.insert(name.clone(), index);
                 }
+                ast::Item::Const(decl) => {
+                    let name = &decl.name.text;
+                    let own = &self.modules[module].own;
+                    if own.consts.contains_key(name) || own.natives.contains_key(name) {
+                        self.error(decl.name.span, format!("Constant \"{name}\" is already declared"));
+                        continue;
+                    }
+                    let index = self.consts.len();
+                    self.consts.push(ConstInfo {
+                        name: name.clone(),
+                        module,
+                        decl,
+                    });
+                    self.modules[module].own.consts.insert(name.clone(), index);
+                }
                 ast::Item::Action(_) | ast::Item::Test(_) | ast::Item::Cap(_) => {}
             }
         }
@@ -979,7 +1031,10 @@ impl<'a> Registry<'a> {
                     continue;
                 }
                 let own = &self.modules[dependency].own;
-                if !own.types.contains_key(&name.text) && !own.natives.contains_key(&name.text) {
+                if !own.types.contains_key(&name.text)
+                    && !own.natives.contains_key(&name.text)
+                    && !own.consts.contains_key(&name.text)
+                {
                     self.error(
                         name.span,
                         format!("Import \"{path}\" has no declaration \"{}\"", name.text),
@@ -1060,6 +1115,13 @@ impl<'a> Registry<'a> {
                 .natives
                 .insert(text.to_string(), *found);
         }
+        if let Some(found) = own.consts.get(text) {
+            if self.modules[module].scope.consts.get(text).is_some_and(|existing| existing != found) {
+                self.error(span, format!("Constant \"{text}\" is already visible"));
+                return;
+            }
+            self.modules[module].scope.consts.insert(text.to_string(), *found);
+        }
     }
 
     // ----- разрешение имён -----
@@ -1104,6 +1166,22 @@ impl<'a> Registry<'a> {
                 owner.name
             )
         })
+    }
+
+    /// `NAME`: константа модуля или взятая импортом (#153).
+    pub fn find_const(&self, module: usize, name: &str) -> Option<usize> {
+        self.modules[module].scope.consts.get(name).copied()
+    }
+
+    /// `ns.NAME`: открытая константа модуля пространства имён.
+    pub fn find_qualified_const(&self, module: usize, namespace: &str, name: &str) -> Option<usize> {
+        let space = self.modules[module].namespaces.get(namespace)?;
+        if self.modules[space.module].hidden.contains(name)
+            || space.only.as_ref().is_some_and(|only| !only.iter().any(|taken| taken == name))
+        {
+            return None;
+        }
+        self.modules[space.module].own.consts.get(name).copied()
     }
 
     pub fn find_native(&self, module: usize, name: &str) -> Option<usize> {
@@ -3006,6 +3084,7 @@ fn hidden_names(program: &ast::Program) -> HashSet<String> {
             ast::Item::Object(decl) if decl.hidden => Some(decl.name.text.clone()),
             ast::Item::Role(decl) if decl.hidden => Some(decl.name.text.clone()),
             ast::Item::Enum(decl) if decl.hidden => Some(decl.name.text.clone()),
+            ast::Item::Const(decl) if decl.hidden => Some(decl.name.text.clone()),
             _ => None,
         })
         .collect()

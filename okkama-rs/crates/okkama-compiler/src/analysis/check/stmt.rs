@@ -424,7 +424,7 @@ impl Checker<'_, '_> {
                 self.error(span, "return is only allowed inside an action");
                 return (StmtKind::Return(None), Flow::diverged());
             }
-            Kind::Entry | Kind::Method | Kind::Default | Kind::CapField | Kind::Closure => {}
+            Kind::Entry | Kind::Method | Kind::Default | Kind::CapField | Kind::Closure | Kind::Const => {}
         }
         let result = self.result.clone();
         let checked = match (value, &result) {

@@ -428,6 +428,20 @@ impl<'s> Printer<'s> {
             }
             Item::Cap(decl) => self.cap(decl),
             Item::Action(decl) => self.action(decl),
+            Item::Const(decl) => {
+                if decl.hidden {
+                    self.word("hidden ");
+                }
+                self.word("const ");
+                self.word(&decl.name.text);
+                if let Some(ty) = &decl.ty {
+                    self.word(" is ");
+                    self.ty(ty);
+                }
+                self.word(" = ");
+                self.expr(&decl.value);
+                self.word(";");
+            }
         }
     }
 

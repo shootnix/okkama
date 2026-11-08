@@ -1,0 +1,47 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.const.import",
+  "title": "constants cross module boundaries by take and by namespace",
+  "purpose": "A public constant is taken by name and read through its namespace.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.CONST",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "support": [
+    "lib/settings.ok"
+  ],
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "10 11 okkama\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #153",
+    "expected_basis": "spec 5.1.2: constants are public unless hidden; take and namespaces reach them like other declarations."
+  },
+  "status": "mandatory"
+}

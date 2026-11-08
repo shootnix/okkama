@@ -485,6 +485,8 @@ pub extern "C" fn rt_exec(ctx: *mut Ctx, function: u64, pc: u64, uses: *const Wo
                 _ => crate::worker::spawn(runtime, &mut *ctx, value(entry), &arguments, *direct),
             }
         }
+        // The init of a constant runs machine code: it needs the context.
+        I::GlobalGet { global, .. } => crate::intrinsics::global(ctx, runtime, *global as usize),
         _ => execute(runtime, function, instruction, &value),
     };
     match outcome {

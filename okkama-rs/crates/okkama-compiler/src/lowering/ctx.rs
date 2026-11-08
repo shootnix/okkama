@@ -72,6 +72,10 @@ pub(super) enum Task {
     Native {
         native: usize,
     },
+    /// Функция, строящая значение массива или словаря `const` (#153).
+    Global {
+        constant: usize,
+    },
     /// Конструктор адаптера встроенного значения: параметры — поля.
     AdapterNew {
         object: ObjectId,
@@ -185,6 +189,9 @@ pub(super) struct Ctx<'r, 'a> {
     /// Функции в порядке выделения: задача и символ.
     pub tasks: Vec<(Task, String)>,
     task_map: HashMap<Task, FuncId>,
+    /// `const` модуля (#153) по индексу `Registry::consts`: номер в `globals`.
+    global_map: HashMap<usize, usize>,
+    pub globals: Vec<ir::Global>,
     /// Задача, тело которой сейчас понижается: она запрашивает новые.
     pub current: Option<usize>,
     /// Кто запросил каждую задачу и глубина цепочки запросов (H-15).
@@ -243,6 +250,8 @@ impl<'r, 'a> Ctx<'r, 'a> {
             role_map: HashMap::new(),
             tasks: Vec::new(),
             task_map: HashMap::new(),
+            global_map: HashMap::new(),
+            globals: Vec::new(),
             current: None,
             requested_by: Vec::new(),
             depths: Vec::new(),
@@ -487,6 +496,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             Task::Test { index } => self.reg.tests[*index].module,
             Task::Runtime { .. } | Task::Member { .. } | Task::Describe { .. } => self.reg.root(),
             Task::Native { native } => self.reg.natives[*native].module,
+            Task::Global { constant } => self.reg.consts[*constant].module,
         }
     }
 
@@ -658,6 +668,24 @@ impl<'r, 'a> Ctx<'r, 'a> {
     }
 
     /// Конструктор адаптера `object` (`obj.new` из полей по порядку).
+    /// The global of constant `constant` (#153): its init function is lowered
+    /// once, and every use reads the value built at program start.
+    pub fn global(&mut self, constant: usize, span: Span) -> Result<usize> {
+        if let Some(index) = self.global_map.get(&constant) {
+            return Ok(*index);
+        }
+        let Some(crate::analysis::registry::ConstState::Done(Some(result))) = self.reg.const_state.get(constant) else {
+            return Err(LoweringError::invalid(span, "internal compiler error: a constant without a value"));
+        };
+        let ty = self.ir_type(&result.ty.clone(), span)?;
+        let symbol = format!("{}const.{}", self.prefixes[self.reg.consts[constant].module], self.reg.consts[constant].name);
+        let init = self.allocate(Task::Global { constant }, symbol);
+        let index = self.globals.len();
+        self.globals.push(ir::Global { ty, init });
+        self.global_map.insert(constant, index);
+        Ok(index)
+    }
+
     pub fn adapter_ctor(&mut self, object: ObjectId) -> FuncId {
         let task = Task::AdapterNew { object };
         if let Some(func) = self.task_map.get(&task) {
@@ -1377,6 +1405,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             objects,
             handles,
             caps,
+            globals: self.globals.clone(),
             tests: self.tests.clone(),
             functions,
             entry: self.entry,

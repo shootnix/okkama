@@ -153,6 +153,10 @@ impl Display for Module {
             writeln!(f)?;
             writeln!(f, "native object {}", decl.name)?;
         }
+        for (index, global) in self.globals.iter().enumerate() {
+            writeln!(f)?;
+            writeln!(f, "global g{index}: {} = @{}()", global.ty, self.functions[global.init.0].symbol)?;
+        }
         for cap in &self.caps {
             writeln!(f)?;
             writeln!(f, "cap {} {{", cap.name)?;
@@ -375,6 +379,7 @@ fn write_inst(
     };
     match kind {
         InstKind::Const(constant) => write!(f, "const {constant}"),
+        InstKind::Global(index) => write!(f, "global g{index}"),
         InstKind::IntBinary { op, left, right } => {
             write!(f, "{} {left}, {right}", op.mnemonic())
         }

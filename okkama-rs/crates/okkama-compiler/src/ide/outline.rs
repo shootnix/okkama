@@ -125,6 +125,14 @@ fn item_outline(entry: &ast::Item, lines: &LineIndex<'_>) -> Option<OutlineItem>
             decl.span,
             Vec::new(),
         ),
+        ast::Item::Const(decl) => item(
+            lines,
+            &decl.name,
+            decl.ty.as_ref().map(type_text).unwrap_or_default(),
+            OutlineKind::Constant,
+            decl.span,
+            Vec::new(),
+        ),
     })
 }
 

@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.const.call-rejected",
+  "title": "a constant cannot call an action",
+  "purpose": "The compiler cannot compute a call; global objects are not constants.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.CONST",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "The initializer must be computable by the compiler."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #153",
+    "expected_basis": "spec 5.1.2: no action calls and no objects in a constant."
+  },
+  "status": "mandatory"
+}

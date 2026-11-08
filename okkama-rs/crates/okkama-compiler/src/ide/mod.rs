@@ -151,6 +151,8 @@ pub enum OutlineKind {
     Native,
     Test,
     Main,
+    /// `const` модуля (#153).
+    Constant,
 }
 
 /// Элемент структуры файла (`textDocument/documentSymbol`).

@@ -530,7 +530,7 @@ fn walk_expr(expr: &thir::Expr, visit: &mut dyn FnMut(&thir::Expr)) {
                 walk_expr(value, visit);
             }
         }
-        ExprKind::Constant(_)
+        ExprKind::Constant(_) | ExprKind::Global(_)
         | ExprKind::Local(_)
         | ExprKind::SelfValue
         | ExprKind::Field(_)

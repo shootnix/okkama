@@ -152,6 +152,9 @@ fn check_tables(program: &Program) -> Result<(), VerifyError> {
             check_function_ref(program, function.0)?;
         }
     }
+    for global in &program.globals {
+        check_function_ref(program, global.init.0)?;
+    }
     if let Some(entry) = program.entry {
         check_function_ref(program, entry.0)?;
     }

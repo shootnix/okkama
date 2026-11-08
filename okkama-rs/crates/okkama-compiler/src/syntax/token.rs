@@ -122,6 +122,8 @@ pub enum TokenKind {
     Test,
     Fake,
     Destroy,
+    /// `const NAME = value;` at module level (#153).
+    Const,
 
     // Removed or deferred words (reserved: always rejected by the parser).
     Isa,
@@ -184,6 +186,7 @@ impl TokenKind {
             "test" => Test,
             "fake" => Fake,
             "destroy" => Destroy,
+            "const" => Const,
             "isa" => Isa,
             "super" => Super,
             "none" => None,
@@ -307,6 +310,7 @@ impl TokenKind {
             Test => "TEST",
             Fake => "FAKE",
             Destroy => "DESTROY",
+            Const => "CONST",
             Isa => "ISA",
             Super => "SUPER",
             None => "NONE",

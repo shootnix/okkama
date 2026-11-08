@@ -91,6 +91,9 @@ pub struct Runtime {
     pub constants: Vec<(Word, Repr)>,
     /// Values held by Rust while machine code runs (entry arguments, results).
     pub roots: Vec<(Word, Repr)>,
+    /// `const` arrays and maps (#153), built at their first read; each is
+    /// then also in `constants`, so it stays a root.
+    pub globals: Vec<Option<Word>>,
     pub fatal: Option<String>,
     /// The last failure `describe` reported, as the OCS protocol sees it.
     pub uncaught: Option<crate::Uncaught>,
@@ -203,6 +206,7 @@ impl Runtime {
             heap,
             jit: crate::jit::Jit::new()?,
             code: vec![0; functions].into_boxed_slice(),
+            globals: vec![None; loaded.program.globals.len()],
             loaded,
             constants: Vec::new(),
             roots: Vec::new(),

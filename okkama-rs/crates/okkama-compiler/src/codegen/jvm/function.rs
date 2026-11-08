@@ -544,6 +544,13 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     1,
                 )?;
             }
+            InstKind::Global(index) => {
+                let ty = &self.function.values[result.expect("verified: global defines a value").0];
+                let descriptor = self.class.layout.descriptor(ty);
+                let main = self.class.layout.main.clone();
+                let field = self.class.pool.field_ref(&main, &format!("G{index}"), &descriptor)?;
+                self.asm.op_index(0xb2, field, 0, 1); // getstatic
+            }
             InstKind::EnumCase { ty, case } => {
                 let decl = &self.class.layout.enums[ty.0];
                 let (class, name) = (decl.class.clone(), decl.cases[*case].clone());

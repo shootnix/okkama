@@ -189,6 +189,7 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
         }
         Task::VariantText { object } => adapters::lower_variant_text(ctx, symbol, object),
         Task::Describe { ty } => adapters::lower_describe(ctx, symbol, &ty),
+        Task::Global { constant } => adapters::lower_global(ctx, symbol, constant),
         Task::Closure { index } => lower_closure(ctx, symbol, index),
         Task::Test { index } => lower_test(ctx, symbol, index),
         Task::Runtime {
@@ -2009,6 +2010,11 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                     thir::Constant::Byte(value) => Constant::Byte(*value),
                 };
                 Ok(Out::Value(self.constant(constant, span)))
+            }
+            ExprKind::Global(constant) => {
+                let index = self.ctx.global(*constant, span)?;
+                let ty = self.expr_type(expr)?;
+                Ok(Out::Value(self.emit(InstKind::Global(index), ty, span)))
             }
             ExprKind::Local(local) => {
                 let var = self.local_var(*local, span)?;

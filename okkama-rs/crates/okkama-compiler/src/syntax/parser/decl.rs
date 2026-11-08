@@ -4,7 +4,7 @@ use super::{PResult, Parser};
 use crate::source::Span;
 use crate::syntax::ParseMode;
 use crate::syntax::ast::{
-    ActionDecl, ActionSignature, CapDecl, ComputedField, ConstructorDecl, ConstructorForm,
+    ActionDecl, ActionSignature, CapDecl, ComputedField, ConstDecl, ConstructorDecl, ConstructorForm,
     DestroyDecl, EnumDecl, FakeBody, FakeDecl, HasDecl, Item, Name, NativeActionDecl,
     NativeObjectDecl, ObjectDecl, ObjectMember, Param, PrivateSection, RoleDecl, RoleMember,
     TestBody, TestDecl, Visibility,
@@ -57,12 +57,12 @@ impl Parser<'_> {
                 _ => {}
             }
         }
-        // `hidden` is contextual: only before `object`, `role` or `enum`.
+        // `hidden` is contextual: only before `object`, `role`, `enum` or `const`.
         if self.check_name()
             && self.lexeme(self.peek()) == "hidden"
             && matches!(
                 self.nth(1).kind,
-                TokenKind::Object | TokenKind::Role | TokenKind::Enum
+                TokenKind::Object | TokenKind::Role | TokenKind::Enum | TokenKind::Const
             )
         {
             let start = self.advance().span;
@@ -80,9 +80,16 @@ impl Parser<'_> {
                     decl.hidden = true;
                     decl.span = start.to(decl.span);
                 }
+                Item::Const(decl) => {
+                    decl.hidden = true;
+                    decl.span = start.to(decl.span);
+                }
                 _ => {}
             }
             return Ok(item);
+        }
+        if self.eat(TokenKind::Const) {
+            return Ok(Item::Const(self.const_declaration()?));
         }
         if self.eat(TokenKind::Object) {
             return Ok(Item::Object(self.object_declaration()?));
@@ -828,6 +835,27 @@ impl Parser<'_> {
     }
 
     // ===== enums and tests ===================================================
+
+    /// After `const`: `NAME ("is" type)? "=" expr ";"`.
+    fn const_declaration(&mut self) -> PResult<ConstDecl> {
+        let start = self.previous().span;
+        let name = self.consume_binding_name("Expect constant name after \"const\".")?;
+        let ty = if self.eat(TokenKind::Is) {
+            Some(self.type_expr()?)
+        } else {
+            None
+        };
+        self.consume(TokenKind::Equal, "Expect \"=\" after constant name.")?;
+        let value = self.expression()?;
+        let end = self.consume(TokenKind::Semicolon, "Expect \";\" after constant declaration.")?;
+        Ok(ConstDecl {
+            hidden: false,
+            name,
+            ty,
+            value,
+            span: start.to(end.span),
+        })
+    }
 
     /// After `enum`: `Name = (a, b);` or `Name is Error = (a(message is string));`
     fn enum_declaration(&mut self) -> PResult<EnumDecl> {

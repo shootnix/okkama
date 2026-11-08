@@ -759,6 +759,19 @@ pub(crate) fn call_role(ctx: *mut Ctx, runtime: &mut Runtime, receiver: Word, ro
     call_function(ctx, runtime, function, &words)
 }
 
+/// `globals[index]` (#153): built by its init function at the first read,
+/// then a root for the rest of the run.
+pub(crate) fn global(ctx: &mut Ctx, runtime: &mut Runtime, index: usize) -> Result<Word, String> {
+    if let Some(Some(word)) = runtime.globals.get(index) {
+        return Ok(*word);
+    }
+    let init = runtime.loaded.program.globals[index].init.0 as usize;
+    let word = call_function(ctx, runtime, init, &[]).ok_or("the init of a constant failed")?;
+    runtime.constants.push((word, Repr::Ref));
+    runtime.globals[index] = Some(word);
+    Ok(word)
+}
+
 /// Call a synchronous function (an async one makes its cold Future).
 pub(crate) fn call_function(ctx: *mut Ctx, runtime: &mut Runtime, function: usize, args: &[Word]) -> Option<Word> {
     if runtime.loaded.program.functions[function].is_async {

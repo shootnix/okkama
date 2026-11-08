@@ -3335,6 +3335,34 @@ in bodies defined there — and nowhere else.
 
 `hidden` is a contextual keyword: `has hidden is int` is still a field.
 
+### 26.3.2 Module constants
+
+```okkama
+module settings v1.0.0;
+
+const LANG = "en";
+const MB = 1024 * 1024;
+const NAME = "okkama-" + LANG;
+const PRIMES is @int = [2, 3, 5, 7];
+const LIMITS = ["upload": 10 * MB, "header": 64 * 1024];
+hidden const SALT = "x";
+```
+
+`const NAME = value;` names a value the compiler computes (#153). It is made
+of literals, payload-free enum cases, `rat(n, d)`, scalar casts, operators,
+other constants (declared in any order) and arrays and maps of such values;
+a call, a constructor, an object or a local is an error. The computation has
+the semantics of the running program — a big integer stays exact, `1 / 2` is
+a `rat` — and a failing one (`1 % 0`) or a cycle between constants is a
+compile error. A constant is public like an object: `take LANG` or
+`settings.LANG` reaches it, and `hidden const` keeps it in its module. A
+scalar is a literal where it is used; an array or a map is built once per run
+and shared without copies.
+
+Constants are not a way to share objects: an expensive object (a compiled
+regex, a database) is built once where the program starts and passed to the
+objects that need it, so its lifetime and its users stay visible.
+
 ### 26.4 Hygiene rules
 
 - Duplicate bare names introduced by `take` or by local declarations are
@@ -6169,8 +6197,8 @@ Keyword inventory in active use: `module`, `import`, `as`, `take`, `object`,
 `role`, `enum`, `has`, `is`, `does`, `self`, `let`, `if`, `else`, `match`,
 `case`, `for`, `loop`, `next`, `last`, `return`, `confirm`, `throw`, `panic`, `try`, `catch`, `defer`,
 `test`, `fake`, `destroy`, `private`, `native`, `async`,
-`await`, `spawn`, `true`, `false`, `main` (contextually), `hidden`
-(contextually, before `object`, `role` or `enum`).
+`await`, `spawn`, `const`, `true`, `false`, `main` (contextually), `hidden`
+(contextually, before `object`, `role`, `enum` or `const`).
 
 Contextual namespace names (not ordinary identifiers) include keyword-shaped
 module path segments such as `test` in `test/more`, declared action labels such

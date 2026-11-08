@@ -4,7 +4,7 @@ Sparrow — байткод Okkama: его пишет `okkama build --target spar
 Sparrow (`sparrow`, `okkama exec`) проверяет его и исполняет как машинный код.
 Книга учит текстовой форме байткода — ассемблеру Sparrow (`.spa`) — настолько,
 чтобы читать то, что выдаёт компилятор, и писать программы вручную. Описана
-версия SPB 9, формат Okkama 0.4.
+версия SPB 10, формат Okkama 0.4.1.
 
 Все примеры лежат в [examples/](examples/); при сборке книги каждый из них
 ассемблируется, проверяется и запускается, а показанный после примера
@@ -68,7 +68,7 @@ Hello, Sparrow!
 ## 3. Устройство файла
 
 ```text
-sparrow 9                       ; версия формата
+sparrow 10                      ; версия формата
 module "name" "version"         ; имя и версия модуля (можно "")
 type t0 …                       ; таблица типов по порядку
 enum enum0 "Name" ["a", "b"]    ; enum и его варианты
@@ -76,6 +76,7 @@ role role0 "Name" { method "m" [t…] -> t… … }
 object obj0 "Name" { field "f" t… … does role0 [f…] destroy f… }
 handle "Name"                   ; непрозрачные типы хоста (handle)
 cap cap0 "Name" obj0 { field "f" f… }
+global g0 t3 f2                ; константа модуля: тип и init (#153)
 function f0 "symbol" [async] [native "…"] [intrinsic "…" [obj…] [f…]] { … }
 entry f3                        ; main программы
 tests { test "name" f5 … }      ; или тестовый профиль
@@ -175,7 +176,8 @@ $ sparrow run fibonacci.spb; echo $?
 
 `str.concat`, `str.len`, `str.slice`, `str.split`, `str.replace`,
 `str.replace_first`, `str.trim`, `str.chomp`, `str.cmp` и `str.utf8` (в
-`array byte`) работают с неизменяемым текстом. Длины и позиции считаются в
+`array byte`) работают с неизменяемым текстом; остальное — поиск, края,
+регистр, повтор и символы строки — называет `str.fn`. Длины и позиции считаются в
 скалярных значениях Unicode. В строковых константах есть `\n`, `\t`, `\"`,
 `\\` и `\u{…}`.
 

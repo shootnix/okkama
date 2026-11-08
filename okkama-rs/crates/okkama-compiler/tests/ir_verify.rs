@@ -44,6 +44,7 @@ fn module(values: Vec<Type>, blocks: Vec<Block>) -> Module {
         objects: Vec::new(),
         handles: Vec::new(),
         caps: Vec::new(),
+        globals: Vec::new(),
         tests: None,
         functions: vec![Function {
             symbol: "main".to_string(),

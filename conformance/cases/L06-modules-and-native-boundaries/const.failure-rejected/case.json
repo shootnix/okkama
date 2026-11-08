@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L06.const.failure-rejected",
+  "title": "a constant whose computation fails is a compile error",
+  "purpose": "Modulo by zero in a constant is reported by the compiler, not at run time.",
+  "level": "L06",
+  "contracts": [
+    {
+      "contract": "MOD.CONST",
+      "aspects": [
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "The compiler computes the value and reports its failure."
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#5.1.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #153",
+    "expected_basis": "spec 5.1.2: a computation that fails is a compile error."
+  },
+  "status": "mandatory"
+}

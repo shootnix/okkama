@@ -138,7 +138,8 @@ pub fn strip_test_items(mut program: Program) -> Program {
             | Item::NativeAction(_)
             | Item::NativeObject(_)
             | Item::Cap(_)
-            | Item::Action(_) => {}
+            | Item::Action(_)
+            | Item::Const(_) => {}
         }
     }
     program

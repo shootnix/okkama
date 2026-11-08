@@ -5,7 +5,7 @@ Sparrow is the bytecode of Okkama: `okkama build --target sparrow` writes it,
 the Sparrow core (`sparrow`, `okkama exec`) verifies it and runs it as machine
 code. This book teaches its text form, Sparrow assembly (`.spa`), well enough
 to read what the compiler produces and to write programs by hand. It describes
-SPB version 9, the format of Okkama 0.4.
+SPB version 10, the format of Okkama 0.4.1.
 
 Every example lives in [examples/](examples/) and is assembled, checked and
 run as part of writing this book; the result shown after each one is what
@@ -55,7 +55,7 @@ uncaught failure is printed on stderr and the exit status is 1.
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 9
+sparrow 10
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 9                       ; format version
+sparrow 10                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -105,6 +105,7 @@ role role0 "Name" { method "m" [t…] -> t… … }
 object obj0 "Name" { field "f" t… … does role0 [f…] destroy f… }
 handle "Name"                   ; opaque host types (handles)
 cap cap0 "Name" obj0 { field "f" f… }
+global g0 t3 f2                ; a module constant: type and init (#153)
 function f0 "symbol" [async] [native "…"] [intrinsic "…" [obj…] [f…]] { … }
 entry f3                        ; the program's main
 tests { test "name" f5 … }      ; or a test profile
@@ -170,7 +171,7 @@ Integer operations never overflow: results that leave 64 bits become BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 9
+sparrow 10
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -229,7 +230,7 @@ taken, all at once — every source is read before any destination is written.
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 9
+sparrow 10
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -269,7 +270,8 @@ reading them is the key to reading compiled code.
 
 `str.concat`, `str.len`, `str.slice`, `str.split`, `str.replace`,
 `str.replace_first`, `str.trim`, `str.chomp`, `str.cmp` and `str.utf8` (to
-`array byte`) work on immutable text. Lengths and offsets count Unicode
+`array byte`) work on immutable text; `str.fn` names the rest — searches,
+edges, case, repetition and the characters of a string. Lengths and offsets count Unicode
 scalar values. String constants use `\n`, `\t`, `\"`, `\\` and `\u{…}`.
 
 ## 9. Objects, successors and roles
@@ -277,7 +279,7 @@ scalar values. String constants use `\n`, `\t`, `\"`, `\\` and `\u{…}`.
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 9
+sparrow 10
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -359,7 +361,7 @@ $ sparrow run shapes.spb; echo $?
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 9
+sparrow 10
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -430,7 +432,7 @@ maps (a repeated key takes the rightmost value).
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 9
+sparrow 10
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -476,7 +478,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 9
+sparrow 10
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -562,7 +564,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 9
+sparrow 10
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -636,7 +638,7 @@ keeps what is reachable from `rK` (a value being returned).
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 9
+sparrow 10
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -683,7 +685,7 @@ or observes one. An async function is compiled as a resumable state machine;
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 9
+sparrow 10
 module "testing" "1.0.0"
 type t0 int
 type t1 bool
@@ -831,6 +833,8 @@ edge moves; `[…]` a list.
 | 76 | `str.replace_first rD, rX, rX, rX` | replace the first occurrence |
 | 77 | `str.trim rD, rX` | strip surrounding white space |
 | 78 | `str.chomp rD, rX` | strip one trailing line end |
+| 86 | `str.fn FN, rD, [rX, …]` | a string function: `find`, `find_last`, `starts_with`, `ends_with`, `trim_start`, `trim_end`, `lower`, `upper`, `repeat`, `characters` |
+| 87 | `global.get rD, N` | the value of a module constant, built once by its init function |
 | 80 | `val.cmp CMP, rD, rX, rX` | deep equality, `eq` or `ne` only |
 | 81 | `enum.case rD, enumN, N` | a case of an enum by number |
 | 82 | `enum.cmp CMP, rD, rX, rX` | compare enum cases |

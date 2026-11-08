@@ -606,7 +606,7 @@ impl<'r, 'a> Builder<'r, 'a> {
             ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
                 self.expr(value, body, object)
             }
-            ExprKind::Constant(_) | ExprKind::TestCapability | ExprKind::Unreachable => {}
+            ExprKind::Constant(_) | ExprKind::Global(_) | ExprKind::TestCapability | ExprKind::Unreachable => {}
             ExprKind::SelfValue => {
                 if let Some(object) = object {
                     let name = self.registry.objects[object.0].name.clone();

@@ -2052,6 +2052,7 @@ fn generic(instruction: &I) -> bool {
             | I::RangePart { .. }
             | I::StrUtf8 { .. }
             | I::StrFn { .. }
+            | I::GlobalGet { .. }
             | I::StrReplaceFirst { .. }
             | I::IntAnd { .. }
             | I::IntOr { .. }

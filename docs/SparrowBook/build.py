@@ -84,6 +84,8 @@ DESCRIPTIONS = {
     "str.trim": ("strip surrounding white space", "обрезка пробелов по краям"),
     "str.chomp": ("strip one trailing line end", "удаление одного конца строки"),
     "str.utf8": ("the UTF-8 bytes (`array byte`)", "байты UTF-8 (`array byte`)"),
+    "str.fn": ("a string function: `find`, `find_last`, `starts_with`, `ends_with`, `trim_start`, `trim_end`, `lower`, `upper`, `repeat`, `characters`", "строковая функция: `find`, `find_last`, `starts_with`, `ends_with`, `trim_start`, `trim_end`, `lower`, `upper`, `repeat`, `characters`"),
+    "global.get": ("the value of a module constant, built once by its init function", "значение константы модуля, построенное один раз её функцией init"),
     "val.cmp": ("deep equality, `eq` or `ne` only", "глубокое равенство, только `eq` и `ne`"),
     "enum.case": ("a case of an enum by number", "вариант enum по номеру"),
     "enum.cmp": ("compare enum cases", "сравнение вариантов enum"),
@@ -156,7 +158,7 @@ SHAPES = {
     "Option<Register>": "rX/_", "EnumRef": "enumN", "ObjectRef": "objN", "RoleRef": "roleN", "CapRef": "capN",
     "FuncRef": "fN", "Vec<Register>": "[rX, …]", "Vec<(u32, Register)>": "[N: rX, …]",
     "Vec<(Register, Register)>": "[rK: rV, …]", "Target": "@T", "FutOp": "OP", "CatchKind": "object/role",
-    "TrapCode": "CODE",
+    "TrapCode": "CODE", "StrFn": "FN",
 }
 
 

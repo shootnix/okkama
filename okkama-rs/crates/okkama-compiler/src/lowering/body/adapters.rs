@@ -12,7 +12,7 @@ use super::matching::compare_inst;
 use crate::analysis::thir::CompareKind;
 use crate::analysis::ty::Ty;
 use crate::ir::{
-    self, Attr, CompareOp, Constant, InstKind, IntBinaryOp, IntValue, ObjectId, ResultType, StrOp,
+    self, Attr, CompareOp, Constant, InstKind, IntBinaryOp, IntValue, ObjectId, RatOp, ResultType, StrOp,
     Target, TermKind, TrapCode, Type, ValueId,
 };
 use crate::source::Span;
@@ -751,4 +751,85 @@ fn append(b: &mut FnBuilder, left: ValueId, text: &str, span: Span) -> ValueId {
 fn append_to(b: &mut FnBuilder, text: &str, right: ValueId, span: Span) -> ValueId {
     let left = text_const(b, text, span);
     concat(b, left, right, span)
+}
+
+/// The init function of a constant array or map (#153): the value the
+/// compiler computed, built from constants, rats, enum cases, arrays and maps.
+pub(super) fn lower_global(ctx: &mut Ctx<'_, '_>, symbol: String, constant: usize) -> Result<ir::Function> {
+    let span = ctx.reg.consts[constant].decl.span;
+    let Some(crate::analysis::registry::ConstState::Done(Some(result))) = ctx.reg.const_state.get(constant).cloned() else {
+        return Err(internal(span, "a constant without a value"));
+    };
+    let ty = ctx.ir_type(&result.ty, span)?;
+    let mut b = FnBuilder::new();
+    let value = build_constant(ctx, &mut b, &result.value, &result.ty, span)?;
+    b.terminate(TermKind::Ret(Some(value)), span);
+    let (values, blocks, params) = b.finish(&[]).map_err(|message| internal(span, &message))?;
+    Ok(ir::Function {
+        symbol,
+        params,
+        result: ResultType::Value(ty),
+        attrs: Vec::new(),
+        values,
+        blocks,
+        span,
+    })
+}
+
+fn build_constant(
+    ctx: &mut Ctx<'_, '_>,
+    b: &mut FnBuilder,
+    value: &crate::analysis::thir::ConstValue,
+    ty: &Ty,
+    span: Span,
+) -> Result<ValueId> {
+    use crate::analysis::thir::{ConstValue, Constant as Literal};
+    let int = |text: &str| IntValue::parse(text).ok_or_else(|| internal(span, "a malformed integer constant"));
+    Ok(match value {
+        ConstValue::Scalar(literal) => {
+            let constant = match literal {
+                Literal::Int(text) => Constant::Int(int(text)?),
+                Literal::Float(bits) => Constant::Float(*bits),
+                Literal::Str(text) => Constant::Str(text.clone()),
+                Literal::Char(ch) => Constant::Char(*ch),
+                Literal::Bool(flag) => Constant::Bool(*flag),
+                Literal::Byte(byte) => Constant::Byte(*byte),
+            };
+            let ty = constant.ty();
+            b.emit(InstKind::Const(constant), ty, span)
+        }
+        ConstValue::Rat(numerator, denominator) => {
+            let numerator = b.emit(InstKind::Const(Constant::Int(int(numerator)?)), Type::Int, span);
+            let denominator = b.emit(InstKind::Const(Constant::Int(int(denominator)?)), Type::Int, span);
+            b.emit(InstKind::Rat { op: RatOp::New, args: vec![numerator, denominator] }, Type::Rat, span)
+        }
+        ConstValue::Enum(id, case) => {
+            let ir_enum = ctx.enum_id(*id);
+            b.emit(InstKind::EnumCase { ty: ir_enum, case: *case }, Type::Enum(ir_enum), span)
+        }
+        ConstValue::Array(items) => {
+            let element = match ty {
+                Ty::Array(element) => (**element).clone(),
+                _ => return Err(internal(span, "a constant array without an array type")),
+            };
+            let mut values = Vec::new();
+            for item in items {
+                values.push(build_constant(ctx, b, item, &element, span)?);
+            }
+            let array = ctx.ir_type(ty, span)?;
+            b.emit(InstKind::ArrayNew(values), array, span)
+        }
+        ConstValue::Map(entries) => {
+            let (key, entry) = match ty {
+                Ty::Map(key, value) => ((**key).clone(), (**value).clone()),
+                _ => return Err(internal(span, "a constant map without a map type")),
+            };
+            let mut pairs = Vec::new();
+            for (k, v) in entries {
+                pairs.push((build_constant(ctx, b, k, &key, span)?, build_constant(ctx, b, v, &entry, span)?));
+            }
+            let map = ctx.ir_type(ty, span)?;
+            b.emit(InstKind::MapNew(pairs), map, span)
+        }
+    })
 }

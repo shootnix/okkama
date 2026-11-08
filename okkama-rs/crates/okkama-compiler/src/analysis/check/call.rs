@@ -1563,6 +1563,9 @@ impl Checker<'_, '_> {
         }
         if let ast::ExprKind::Name(space) = &strip_grouping(receiver).kind
             && self.local(&space.text).is_none() {
+                if let Some(id) = self.reg.find_qualified_const(self.module, &space.text, &name.text) {
+                    return self.const_value(id, span);
+                }
                 if self.reg.is_namespace(self.module, &space.text) {
                     let message = self
                         .reg
