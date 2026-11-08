@@ -940,6 +940,320 @@ def roles_family():
     return batch.programs
 
 
+# ----- family: string builtins over classes of input ------------------------------
+
+STRING_CLASSES = ["", "a", "abc", "héllo", "Жук", "😀x😀", "a\tb\nc", " pad ", "\u00a0nbsp\u2003", "x\r\n",
+                  "aaa", "a,b,,c,", "e\u0301", "ǆ", "ß", "İ", "ab😀ab"]
+PART_CLASSES = ["", "a", ",", "aa", "😀", "\n", "zz", "b", "ab"]
+REPLACEMENTS = ["", "-", "XY", "😀"]
+
+
+def chomp(s):
+    for end in ("\r\n", "\n", "\r"):
+        if s.endswith(end):
+            return s[: -len(end)]
+    return s
+
+
+def okkama_split(s, sep):
+    return list(s) if sep == "" else s.split(sep)
+
+
+def strings_family():
+    batch = Batch("string builtins over classes of input", imports=['import "compare" take Order;'])
+    for text in STRING_CLASSES:
+        S = lit_str(text)
+        R = receiver(S)
+        n = len(text)
+        batch.is_(f"{R}.length()", lit_int(n), f"{S}.length()")
+        batch.is_(f"{R}.empty()", lit_bool(n == 0), f"{S}.empty()")
+        batch.is_(f"{R}.trim()", lit_str(text.strip()), f"{S}.trim()")
+        batch.is_(f"{R}.trim_start()", lit_str(text.lstrip()), f"{S}.trim_start()")
+        batch.is_(f"{R}.trim_end()", lit_str(text.rstrip()), f"{S}.trim_end()")
+        batch.is_(f"{R}.chomp()", lit_str(chomp(text)), f"{S}.chomp()")
+        batch.is_(f"{R}.upper()", lit_str(text.upper()), f"{S}.upper()")
+        batch.is_(f"{R}.lower()", lit_str(text.lower()), f"{S}.lower()")
+        batch.is_(f"{R}.string()", S, f"{S}.string()")
+        batch.is_(f"string({S})", S, f"string({S})")
+        batch.is_(f"{R}.characters().size()", lit_int(n), f"{S}.characters().size()")
+        if n:
+            batch.is_(f"{R}.characters()[{n - 1}]", lit_char(text[-1]), f"{S}: the last character")
+            batch.is_(f"{R}.characters()[0].code()", lit_int(ord(text[0])), f"{S}: the first code point")
+        for count in (0, 1, 3):
+            batch.is_(f"{R}.repeat({count})", lit_str(text * count), f"{S}.repeat({count})")
+        for i, j in sorted({(0, 0), (0, n), (0, min(1, n)), (min(1, n), n), (max(n - 1, 0), n), (n, n)}):
+            batch.is_(f"{R}.slice({i}, {j})", lit_str(text[i:j]), f"{S}.slice({i}, {j})")
+        for part in PART_CLASSES:
+            P = lit_str(part)
+            label = f"{S} / {P}"
+            batch.is_(f"{R}.contains({P})", lit_bool(part in text), f"{label}: contains")
+            batch.is_(f"{R}.starts_with({P})", lit_bool(text.startswith(part)), f"{label}: starts_with")
+            batch.is_(f"{R}.ends_with({P})", lit_bool(text.endswith(part)), f"{label}: ends_with")
+            batch.is_(f"{R}.find({P}) else -1", lit_int(text.find(part)), f"{label}: find")
+            batch.is_(f"{R}.find_last({P}) else -1", lit_int(text.rfind(part)), f"{label}: find_last")
+            pieces = okkama_split(text, part)
+            batch.is_(f"{R}.split({P}).size()", lit_int(len(pieces)), f"{label}: split size")
+            batch.is_(f'{R}.split({P}).join("|")', lit_str("|".join(pieces)), f"{label}: split")
+            for replacement in REPLACEMENTS:
+                W = lit_str(replacement)
+                batch.is_(f"{R}.replace({P}, {W})", lit_str(text.replace(part, replacement)), f"{label}: replace with {W}")
+                batch.is_(f"{R}.replace_first({P}, {W})", lit_str(text.replace(part, replacement, 1)), f"{label}: replace_first with {W}")
+    for left in STRING_CLASSES:
+        for right in STRING_CLASSES:
+            L, Rr = lit_str(left), lit_str(right)
+            label = f"{L} vs {Rr}"
+            batch.is_(f"{L} + {Rr}", lit_str(left + right), f"{label}: +")
+            batch.is_(f"{L} == {Rr}", lit_bool(left == right), f"{label}: ==")
+            batch.ok(f"{receiver(L)}.order({Rr}) == {ORDER[cmp(left, right)]}", f"{label}: order by code point")
+            batch.is_(f"{receiver(L)}.less({Rr})", lit_bool(len(left) < len(right)), f"{label}: less compares lengths (#281)")
+            batch.is_(f"{receiver(L)}.less_or_equal({Rr})", lit_bool(len(left) <= len(right)), f"{label}: less_or_equal")
+            batch.is_(f"[{L}, {Rr}].join({lit_str(',')})", lit_str(left + "," + right), f"{label}: join")
+    return batch.programs
+
+
+# ----- family: arrays and maps over element types and shapes ---------------------
+
+F = fractions.Fraction
+# (type, values, literal, sort key)
+ELEMENTS = [
+    ("int", [3, -1, 10 ** 20], lit_int, lambda v: v),
+    ("string", ["b", "", "😀"], lit_str, lambda v: v),
+    ("float", [0.5, -2.0, 1e16], lit_float, lambda v: v),
+    ("bool", [True, False], lit_bool, lambda v: v),
+    ("char", ["x", "😀", "A"], lit_char, lambda v: ord(v)),
+    ("rat", [F(1, 3), F(-7, 2), F(5)], lit_rat, lambda v: v),
+    ("byte", [0, 255, 7], lambda v: f"byte({v})", lambda v: v),
+    ("@int", [(1,), (), (2, 3)], lambda v: "[" + ", ".join(map(lit_int, v)) + "]", lambda v: v),
+    ("Point", [(1, 2), (0, 0), (-1, 5)], lambda v: f"Point(x: {lit_int(v[0])}, y: {lit_int(v[1])})", lambda v: v),
+    ("Status", ["ready", "done", "failed"], lambda v: f"Status.{v}", lambda v: ["ready", "failed", "done"].index(v)),
+    ("Maybe<int>", [1, None, -2], lambda v: "Maybe<int>.none" if v is None else f"Maybe.some({lit_int(v)})", None),
+    ("Reading", [("empty",), ("value", 1), ("pair", 1, 2)],
+     lambda v: "Reading.empty" if v[0] == "empty" else f"Reading.{v[0]}({', '.join(map(lit_int, v[1:]))})", None),
+]
+MAP_KEYS = ["int", "string", "bool", "char", "Status", "float", "Point"]
+SHAPES_ARRAY = [(), (0,), (0, 1), (0, 1, 0), (2, 1, 0, 1)]
+SHAPES_MAP = [(), (0,), (1, 0), (0, 1, 2), (2, 0)]
+
+
+def collections_family():
+    batch = Batch("arrays and maps over element types and shapes", declarations=VALUE_DECLARATIONS)
+    for type_name, values, literal, key in ELEMENTS:
+        def array(shape):
+            return "[" + ", ".join(literal(values[i % len(values)]) for i in shape) + "]"
+
+        def items(shape):
+            return [values[i % len(values)] for i in shape]
+
+        for shape in SHAPES_ARRAY:
+            program = batch.program()
+            xs = program.fresh("xs")
+            setup = [f"let {xs} is @{type_name} = {array(shape)};"]
+            vals = items(shape)
+            desc = f"@{type_name} {array(shape)}"
+            n = len(vals)
+
+            def expect(sub_shape, prefix="e"):
+                name = program.fresh(prefix)
+                setup.append(f"let {name} is @{type_name} = {array(sub_shape)};")
+                return name
+
+            # Expected arrays are declared up front, in the group's setup.
+            sliced = expect(shape[1:]) if n else None
+            taken = {k: expect(shape[:k]) for k in (0, 1, n + 1)}
+            dropped = {k: expect(shape[k:]) for k in (0, 1, n + 1)}
+            backwards = expect(tuple(reversed(shape)))
+            nothing = expect(())
+            program.is_(f"{xs}.size()", lit_int(n), f"{desc}.size()", setup)
+            if n:
+                program.ok(f"{xs}.first() == {literal(vals[0])}", f"{desc}.first()")
+                program.ok(f"{xs}.last() == {literal(vals[-1])}", f"{desc}.last()")
+                program.ok(f"{xs}[{n - 1}] == {literal(vals[-1])}", f"{desc}[{n - 1}]")
+                program.ok(f"{xs}.item(0) == {literal(vals[0])}", f"{desc}.item(0)")
+                program.ok(f"{xs}.slice(1, {n}) == {sliced}", f"{desc}.slice(1, {n})")
+            program.ok(f"({xs}[{n}] else {literal(values[0])}) == {literal(values[0])}", f"{desc}[{n}] else")
+            for k in (0, 1, n + 1):
+                program.ok(f"{xs}.take({k}) == {taken[k]}", f"{desc}.take({k})")
+                program.ok(f"{xs}.drop({k}) == {dropped[k]}", f"{desc}.drop({k})")
+            program.ok(f"{xs}.reversed() == {backwards}", f"{desc}.reversed()")
+            for v in values:
+                if type_name in ("Maybe<int>", "Reading"):
+                    program.skip(300)
+                    program.skip(300)
+                    continue
+                program.is_(f"{xs}.contains({literal(v)})", lit_bool(v in vals), f"{desc}.contains({literal(v)})")
+                program.is_(f"{xs}.index_of({literal(v)}) else -1", lit_int(vals.index(v) if v in vals else -1), f"{desc}.index_of({literal(v)})")
+            program.ok(f"({xs}.map() -> v {{ v; }}) == {xs}", f"{desc}: map identity")
+            program.ok(f"({xs}.filter() -> v {{ false; }}) == {nothing}", f"{desc}: filter nothing")
+            program.is_(f"{xs}.reduce(0) -> count, v {{ count + 1; }}", lit_int(n), f"{desc}: reduce counts")
+            program.is_(f"{xs}.any() -> v {{ v == {literal(values[0])}; }}", lit_bool(values[0] in vals), f"{desc}: any")
+            program.is_(f"{xs}.all() -> v {{ v == {literal(values[0])}; }}", lit_bool(all(v == values[0] for v in vals)), f"{desc}: all")
+            if type_name == "string":
+                program.is_(f'{xs}.join(",")', lit_str(",".join(vals)), f"{desc}.join")
+        for left in SHAPES_ARRAY:
+            for right in SHAPES_ARRAY:
+                program = batch.program()
+                a, b, plus, minus = program.fresh("a"), program.fresh("b"), program.fresh("plus"), program.fresh("minus")
+                lv, rv = items(left), items(right)
+                kept = tuple(i for i in left if values[i % len(values)] not in rv)
+                setup = [f"let {a} is @{type_name} = {array(left)};", f"let {b} is @{type_name} = {array(right)};",
+                         f"let {plus} is @{type_name} = {array(left + right)};",
+                         f"let {minus} is @{type_name} = {array(kept)};"]
+                desc = f"@{type_name} {array(left)} and {array(right)}"
+                program.ok(f"{a} + {b} == {plus}", f"{desc}: +", setup)
+                program.ok(f"{a} - {b} == {minus}", f"{desc}: - removes every equal element")
+                program.is_(f"{a} == {b}", lit_bool(lv == rv), f"{desc}: ==")
+    for type_name in MAP_KEYS:
+        _, values, literal, key = next(e for e in ELEMENTS if e[0] == type_name)
+
+        def mapping(shape):
+            return "[" + ", ".join(f"{literal(values[i])}: {i + 1}" for i in shape) + "]" if shape else "[:]"
+
+        def ordered(shape):
+            return sorted(set(shape), key=lambda i: key(values[i]))
+
+        shapes = sorted({tuple(i for i in shape if i < len(values)) for shape in SHAPES_MAP})
+        for shape in shapes:
+            program = batch.program()
+            m, ks, vs = program.fresh("m"), program.fresh("ks"), program.fresh("vs")
+            order = ordered(shape)
+            setup = [f"let {m} is %{type_name}:int = {mapping(shape)};",
+                     f"let {ks} is @{type_name} = [{', '.join(literal(values[i]) for i in order)}];",
+                     f"let {vs} is @int = [{', '.join(str(i + 1) for i in order)}];"]
+            desc = f"%{type_name}:int {mapping(shape)}"
+            program.is_(f"{m}.size()", lit_int(len(set(shape))), f"{desc}.size()", setup)
+            program.ok(f"{m}.keys() == {ks}", f"{desc}.keys() in key order")
+            program.ok(f"{m}.values() == {vs}", f"{desc}.values() follow the keys")
+            for i, v in enumerate(values):
+                program.is_(f"{m}.has({literal(v)})", lit_bool(i in shape), f"{desc}.has({literal(v)})")
+                if type_name == "float":
+                    program.skip(301)
+                else:
+                    program.is_(f"{m}[{literal(v)}] else -1", lit_int(i + 1 if i in shape else -1), f"{desc}[{literal(v)}] else")
+            program.is_(f"{m}.reduce(0) -> sum, k, v {{ sum + v; }}", lit_int(sum(i + 1 for i in set(shape))), f"{desc}: reduce over values")
+            program.is_(f"({m}.filter() -> k, v {{ v > 1; }}).size()", lit_int(sum(1 for i in set(shape) if i + 1 > 1)), f"{desc}: filter")
+            program.ok(f"({m}.map() -> k, v {{ v; }}) == {vs}", f"{desc}: map visits keys in order")
+        for left in shapes:
+            for right in shapes:
+                program = batch.program()
+                a, b, plus, minus = program.fresh("a"), program.fresh("b"), program.fresh("plus"), program.fresh("minus")
+                merged = {i: i + 1 for i in left}
+                merged.update({i: i + 1 for i in right})
+                remaining = tuple(i for i in left if i not in right)
+                setup = [f"let {a} is %{type_name}:int = {mapping(left)};", f"let {b} is %{type_name}:int = {mapping(right)};",
+                         f"let {plus} is %{type_name}:int = {mapping(tuple(merged))};",
+                         f"let {minus} is %{type_name}:int = {mapping(remaining)};"]
+                desc = f"%{type_name}:int {mapping(left)} and {mapping(right)}"
+                program.ok(f"{a} + {b} == {plus}", f"{desc}: + (the right map wins)", setup)
+                program.ok(f"{a} - {b} == {minus}", f"{desc}: - removes keys")
+                program.is_(f"{a} == {b}", lit_bool(set(left) == set(right)), f"{desc}: ==")
+    return batch.programs
+
+
+# ----- family: constructs nested in each other ------------------------------------
+
+# A wrapper takes the inner expression, its type, an alternative value of the
+# type and a depth (for unique binding names) and returns an expression with
+# the inner value.
+def tail(e):
+    """The last statement of a block: `match` and `try` take no `;` (#302)."""
+    return e if e.startswith(("match ", "try ")) else e + ";"
+
+
+WRAPPERS = {
+    "paren": lambda e, t, alt, d: f"({e})",
+    "if-then": lambda e, t, alt, d: f"if 1 < 2 {{ {tail(e)} }} else {{ {alt}; }}",
+    "if-else": lambda e, t, alt, d: f"if 2 < 1 {{ {alt}; }} else {{ {tail(e)} }}",
+    "else-if": lambda e, t, alt, d: f"if false {{ {alt}; }} else if true {{ {tail(e)} }} else {{ {alt}; }}",
+    "match-int": lambda e, t, alt, d: f"match 2 {{ case 1 {{ {alt}; }} case 2, 3 {{ {tail(e)} }} else {{ {alt}; }} }}",
+    "match-enum": lambda e, t, alt, d: f"match Status.done {{ case Status.ready {{ {alt}; }} case Status.done {{ {tail(e)} }} case Status.failed {{ {alt}; }} }}",
+    "choice-bool": lambda e, t, alt, d: f"(true ?? {e} !! {alt})",
+    "choice-maybe": lambda e, t, alt, d: f"(Maybe.some(1) ?? .some(n{d}): {e} !! .none: {alt})",
+    # `last if …` is read as a postfix condition (#303): an `if` goes in parentheses.
+    "loop-last": lambda e, t, alt, d: f"loop {{ last {f'({e})' if e.startswith('if ') else e}; }}",
+    "closure": lambda e, t, alt, d: f"(() is {t} {{ {tail(e)} }})()",
+    "closure-arg": lambda e, t, alt, d: f"((v{d} is {t}) is {t} {{ v{d}; }})({e})",
+    "maybe-else": lambda e, t, alt, d: f"(Maybe.some({e}) else {alt})",
+    "array": lambda e, t, alt, d: f"[{alt}, {e}][1]",
+    "map": lambda e, t, alt, d: f'["k": {e}]["k"]',
+    "box": lambda e, t, alt, d: f"Box(value: {e}).get()",
+    "reduce": lambda e, t, alt, d: f"(0..1).reduce({alt}) -> acc{d}, i{d} {{ {tail(e)} }}",
+    "map-op": lambda e, t, alt, d: f"((0..1).map() -> i{d} {{ {tail(e)} }})[0]",
+    "try": lambda e, t, alt, d: f"try {{ {tail(e)} }} catch e{d} is Error {{ {alt}; }}",
+    "variant": lambda e, t, alt, d: f"match Slot.full({e}) {{ case Slot.full(x{d}) {{ x{d}; }} case Slot.vacant {{ {alt}; }} }}",
+    "block-let": lambda e, t, alt, d: f"if true {{ let w{d} = {e}; w{d}; }} else {{ {alt}; }}",
+}
+
+NEST_TYPES = [
+    ("int", "42", "0", "is"),
+    ("string", lit_str("s😀"), lit_str(""), "is"),
+    ("@int", "[1, 2]", "[9]", "eq"),
+    ("Point", "Point(x: 1, y: 2)", "Point(x: 0, y: 0)", "eq"),
+    ("Maybe<int>", "Maybe.some(7)", "Maybe<int>.none", "eq"),
+]
+
+
+def nesting_family():
+    import itertools
+    batch = Batch("constructs nested in each other: every pair for five types, every triple for int",
+                  declarations=VALUE_DECLARATIONS)
+    names = list(WRAPPERS)
+
+    def build(chain, value, type_name, alt):
+        expr = value
+        for depth, name in enumerate(reversed(chain)):
+            expr = WRAPPERS[name](expr, type_name, alt, depth)
+        return expr
+
+    starts_with_paren = {name for name in WRAPPERS if WRAPPERS[name]("x", "int", "0", 0).startswith("(")}
+
+    def held_back(chain):
+        """The open issue a chain runs into, or None."""
+        for outer, inner in zip(chain, chain[1:]):
+            # A map value cannot start with `(` (#263).
+            if outer == "map" and inner in starts_with_paren:
+                return 263
+        # A generic enum case passes T down to loop/last, else and reduce, through
+        # the constructs that hand their expected type on (#304).
+        passing = {"paren", "if-then", "if-else", "else-if", "match-int", "match-enum", "choice-bool",
+                   "choice-maybe", "try", "loop-last", "maybe-else", "variant"}
+        for start, outer in enumerate(chain):
+            if outer not in ("variant", "maybe-else"):
+                continue
+            for inner in chain[start + 1:]:
+                if inner in ("loop-last", "maybe-else", "reduce"):
+                    return 304
+                if inner not in passing:
+                    break
+        return None
+
+    def forbidden(chain):
+        # Compact choices never nest, not even through other constructs (Book §24.3).
+        return sum(1 for name in chain if name.startswith("choice")) > 1
+
+    for type_name, value, alt, compare in NEST_TYPES:
+        for chain in itertools.product(names, repeat=2):
+            if forbidden(chain):
+                continue
+            if held_back(chain):
+                batch.program().skip(held_back(chain))
+                continue
+            expr = build(chain, value, type_name, alt)
+            label = f"{type_name}: " + " > ".join(chain)
+            if compare == "is":
+                batch.is_(f"({expr})", value, label)
+            else:
+                batch.ok(f"({expr}) == {value}", label)
+    for chain in itertools.product(names, repeat=3):
+        if forbidden(chain):
+            continue
+        if held_back(chain):
+            batch.program().skip(held_back(chain))
+            continue
+        expr = build(chain, "42", "int", "0")
+        batch.is_(f"({expr})", "42", "int: " + " > ".join(chain))
+    return batch.programs
+
+
 FAMILIES = {
     "values": values_family,
     "int": int_family,
@@ -949,6 +1263,9 @@ FAMILIES = {
     "bits": bits_family,
     "precedence": precedence_family,
     "roles": roles_family,
+    "strings": strings_family,
+    "collections": collections_family,
+    "nesting": nesting_family,
 }
 
 
