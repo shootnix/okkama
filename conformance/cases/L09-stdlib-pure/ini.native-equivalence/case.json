@@ -1,0 +1,46 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.ini.native-equivalence",
+  "title": "config/ini parses 220 documents exactly as the former native codec",
+  "purpose": "Verify the public library contract with exact, independently derived values.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.CONFIG.INI",
+      "aspects": [
+        "normal",
+        "boundary",
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "ini native equivalence: 220 cases, 0 mismatches\n"
+    }
+  },
+  "spec_refs": [
+    "std/config/ini.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #13: inputs generated at random, expected values recorded from the native runtime/ini parser of release/0.4.1 (4a246919) before it was removed",
+    "expected_basis": "The Okkama codec replaced the native one with identical behaviour: each document gives the same sections and entries, or the same line, column and message of the first failure. 10 cases per failure class, 30 valid documents."
+  },
+  "status": "mandatory"
+}

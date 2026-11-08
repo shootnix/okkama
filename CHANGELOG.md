@@ -409,6 +409,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- std: `config/ini` is written in Okkama (#13, first module). The parser and
+  the writer no longer use natives; `runtime/ini` and its 17 natives are gone
+  from the IR engine, the Sparrow core and the JVM (ABI IDs 242–258 retired).
+  The public API and the behaviour are unchanged. A differential test against
+  the native codec, run on 3 000 generated documents and 2 000 emissions,
+  found no difference. 220 of the native results, 10 per failure class and
+  30 valid documents, stay as OCS `L09.ini.native-equivalence`, which passes
+  on all three engines. Parsing is two passes: lines classified on their own,
+  then the document rules in line order, with duplicates found by sorting.
+  On 10 × 1 000 entries it takes 15 ms on the core instead of 3.3 s, 344 ms
+  on the IR engine instead of 4.8 s, and 38 ms on the JVM instead of 117 ms.
+  The old time went into copying the parsed document on every entry read and
+  into the O(n²) duplicate check of `IniSection`, which now sorts as well.
+  Rendering is slower than the native writer: 37 ms instead of 4 on the core,
+  203 instead of 9 on the IR engine, 36 instead of 8 on the JVM. Benchmark:
+  `okkama-docs/benchmarks/ini/bench.ok`; guide: `docs/std/ini-guide.md`
+  ([#13](https://github.com/shootnix/okkama/issues/13)).
+
 - Async: await is structured (#147). Cancelling a task cancels the future it
   awaits — a lazy future its `await` started, a spawned task, a runtime
   request — unless another task also awaits it, and the task resumes with

@@ -223,7 +223,7 @@ fn route(native: Native) -> Provider {
         "runtime/process" => return Provider::Process,
         "runtime/time_format" | "runtime/time_zone" => return Provider::Time,
         "runtime/io_decorators" | "runtime/testing" | "runtime/csv_state" | "runtime/pem"
-        | "runtime/template" | "runtime/ini" => return Provider::Formats,
+        | "runtime/template" => return Provider::Formats,
         "runtime/binary" | "runtime/hpack" | "runtime/collections" | "runtime/number_text" => {
             return Provider::Text;
         }
