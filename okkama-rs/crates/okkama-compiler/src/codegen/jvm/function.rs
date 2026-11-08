@@ -503,7 +503,7 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     0,
                 )?;
             }
-            InstKind::RegionLeave { region, keep } => {
+            InstKind::RegionLeave { region, keep } | InstKind::RegionSettle { region, keep } => {
                 self.load(*region);
                 match keep {
                     Some(keep) => {
@@ -512,22 +512,24 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     }
                     None => self.asm.op(&[0x01], 0, 1), // aconst_null
                 }
+                let name = if matches!(kind, InstKind::RegionLeave { .. }) { "leave" } else { "settle" };
                 self.class.invoke_virtual(
                     &mut self.asm,
                     runtime::REGION,
-                    "leave",
+                    name,
                     "(Ljava/lang/Object;)V",
                     2,
                     0,
                 )?;
             }
-            InstKind::RegionUnwind { region, failure } => {
+            InstKind::RegionUnwind { region, failure } | InstKind::RegionSettleUnwind { region, failure } => {
                 self.load(*region);
                 self.load(*failure);
+                let name = if matches!(kind, InstKind::RegionUnwind { .. }) { "unwind" } else { "settleUnwind" };
                 self.class.invoke_virtual(
                     &mut self.asm,
                     runtime::REGION,
-                    "unwind",
+                    name,
                     "(Lokkama/rt/Failure;)Lokkama/rt/Failure;",
                     2,
                     1,

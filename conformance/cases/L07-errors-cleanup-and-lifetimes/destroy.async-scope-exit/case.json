@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.destroy.async-scope-exit",
+  "title": "async destroys are awaited at scope exit in reverse construction order",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.ASYNC-DESTROY",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "work\nb closing\nrelease\nb closed\na closing\na closed\nresult 1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; async destroy by #154",
+    "expected_basis": "b, built last, is destroyed first; its destroy suspends until the releaser sets the gate, and a's destroy starts only after b's has finished; the task's result follows both."
+  },
+  "status": "mandatory"
+}

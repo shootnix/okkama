@@ -248,9 +248,10 @@ pub enum ConstructorForm {
     },
 }
 
-/// `destroy { ... }`
+/// `destroy { ... }` or `async destroy { ... }` (#154).
 #[derive(Clone, Debug, PartialEq)]
 pub struct DestroyDecl {
+    pub is_async: bool,
     pub body: Block,
     pub span: Span,
 }

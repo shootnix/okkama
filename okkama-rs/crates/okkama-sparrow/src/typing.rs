@@ -851,6 +851,20 @@ impl<'a> Typing<'a> {
                 self.expect(*failure, &Type::Failure)?;
                 self.define(dst.0, &Type::Failure, "region.unwind")
             }
+            I::RegionSettle { region, .. } => {
+                if !self.function.is_async {
+                    return Err("region.settle is allowed only in async functions".into());
+                }
+                self.expect(*region, &Type::Region)
+            }
+            I::RegionSettleUnwind { dst, region, failure } => {
+                if !self.function.is_async {
+                    return Err("region.settle_unwind is allowed only in async functions".into());
+                }
+                self.expect(*region, &Type::Region)?;
+                self.expect(*failure, &Type::Failure)?;
+                self.define(dst.0, &Type::Failure, "region.settle_unwind")
+            }
             I::FailSecondary { dst, primary, cleanup } => {
                 self.expect(*primary, &Type::Failure)?;
                 self.expect(*cleanup, &Type::Failure)?;
@@ -1013,7 +1027,8 @@ pub(crate) fn tables(program: &Program) -> Result<(), String> {
         }
         if let Some(destroy) = object.destroy {
             let (function, params) = signature(destroy);
-            if params.len() != 1 || !first(function, &params) || function.is_async {
+            // An async destroy (#154) is awaited by `region.settle`.
+            if params.len() != 1 || !first(function, &params) {
                 return Err(format!("@{} is not a destroy of {}", function.symbol, object.name));
             }
         }

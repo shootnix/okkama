@@ -143,7 +143,9 @@ fn member_node(member: &ObjectMember) -> Node {
         ObjectMember::Cap(decl) => cap_node(decl),
         ObjectMember::Constructor(decl) => constructor_node(decl),
         ObjectMember::Destroy(decl) => {
-            Node::new("DestroyDecl", decl.span).field("body", Value::node(block_node(&decl.body)))
+            Node::new("DestroyDecl", decl.span)
+                .field("async", Value::Bool(decl.is_async))
+                .field("body", Value::node(block_node(&decl.body)))
         }
         ObjectMember::Test(decl) => test_node(decl),
         ObjectMember::Action(decl) => action_node(decl),

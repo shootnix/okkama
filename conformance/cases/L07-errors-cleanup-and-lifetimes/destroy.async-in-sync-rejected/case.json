@@ -1,0 +1,52 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.destroy.async-in-sync-rejected",
+  "title": "an object with an async destroy cannot be owned in synchronous code",
+  "purpose": "The construct is invalid and must not complete.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.ASYNC-DESTROY",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "An object with an async destroy can be owned only where the end of its scope can be awaited; a synchronous main cannot."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; async destroy by #154",
+    "expected_basis": "Conn has an async destroy; constructing it in a synchronous main is a compile-time error."
+  },
+  "status": "mandatory"
+}

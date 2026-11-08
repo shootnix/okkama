@@ -1,0 +1,29 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Conn {
+    has name is string;
+    has gate is Event;
+    Conn(:name, :gate);
+    async destroy {
+        Stdout().writeln(name + " closing");
+        await gate.wait();
+        Stdout().writeln(name + " closed");
+    }
+}
+
+object Releaser {
+    has gate is Event;
+    Releaser(:gate);
+    async run() is void {
+        Stdout().writeln("release");
+        gate.set();
+    }
+}
+
+main() is int {
+    let c = Conn(name: "x", gate: Event());
+    0;
+}

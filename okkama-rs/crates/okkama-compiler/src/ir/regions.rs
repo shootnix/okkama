@@ -104,8 +104,12 @@ fn elide(function: &mut Function) -> usize {
     for block in &function.blocks {
         for inst in &block.insts {
             let operands = match &inst.kind {
-                InstKind::RegionLeave { keep, .. } => keep.iter().copied().collect(),
-                InstKind::RegionUnwind { failure, .. } => vec![*failure],
+                InstKind::RegionLeave { keep, .. } | InstKind::RegionSettle { keep, .. } => {
+                    keep.iter().copied().collect()
+                }
+                InstKind::RegionUnwind { failure, .. } | InstKind::RegionSettleUnwind { failure, .. } => {
+                    vec![*failure]
+                }
                 kind => kind.operands(),
             };
             used.extend(operands.into_iter().filter(|value| regions.contains(value)));
@@ -122,13 +126,17 @@ fn elide(function: &mut Function) -> usize {
     // Результат `region.unwind` пустого региона — его отказ как есть.
     let mut replaced: HashMap<ValueId, ValueId> = HashMap::new();
     for block in &mut function.blocks {
-        block.insts.retain(|inst| !matches!(&inst.kind, InstKind::RegionLeave { region, .. } if unused.contains(region)));
+        block.insts.retain(|inst| {
+            !matches!(&inst.kind, InstKind::RegionLeave { region, .. } | InstKind::RegionSettle { region, .. } if unused.contains(region))
+        });
         for inst in &mut block.insts {
             match &inst.kind {
                 InstKind::RegionEnter if inst.result.is_some_and(|region| unused.contains(&region)) => {
                     inst.kind = InstKind::Undef;
                 }
-                InstKind::RegionUnwind { region, failure } if unused.contains(region) => {
+                InstKind::RegionUnwind { region, failure } | InstKind::RegionSettleUnwind { region, failure }
+                    if unused.contains(region) =>
+                {
                     if let Some(result) = inst.result {
                         replaced.insert(result, *failure);
                     }

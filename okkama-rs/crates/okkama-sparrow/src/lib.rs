@@ -380,6 +380,11 @@ instructions! {
     RegionLeave = 134, "region.leave" { region: Register, keep: Option<Register> }
     /// Закрыть регион на пути отказа; результат — отказ с вторичными отказами destroy.
     RegionUnwind = 135, "region.unwind" { dst: Dst, region: Register, failure: Register }
+    /// `region.leave` в async-функции: точка приостановки, async destroy
+    /// ожидаются, отмена до конца закрытия не доставляется (#154).
+    RegionSettle = 138, "region.settle" { region: Register, keep: Option<Register> }
+    /// `region.unwind` в async-функции (#154).
+    RegionSettleUnwind = 139, "region.settle_unwind" { dst: Dst, region: Register, failure: Register }
     FailSecondary = 136, "fail.secondary" { dst: Dst, primary: Register, cleanup: Register }
     FailCaused = 137, "fail.caused" { dst: Dst, new: Register, handled: Register }
 

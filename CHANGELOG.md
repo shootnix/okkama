@@ -8,6 +8,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: `async destroy { … }` (#154). The block may await; it is awaited
+  where its owner's scope ends — normal end, `return`, `last`, a failure or a
+  cancellation — in reverse construction order, and a cancellation that
+  arrives meanwhile waits for it and reaches the task's next await. An object
+  with an async destroy, or one holding it in a field, an array or a map, can
+  be owned only in async code: constructing it in a synchronous body is a
+  compile error (`Conn has an async destroy; own it in an async action`); an
+  engine that meets one in a synchronous scope through a role value reports a
+  failure. In async functions of a program with an async destroy, scope exits
+  lower to `region.settle` / `region.settle_unwind` (OIR, and Sparrow
+  instructions 138/139, SPB format 11; the core re-enters the instruction
+  while each destroy runs, the IR engine and the JVM await it in place);
+  sparrow-origin reports it unsupported. OCS contract `LIFE.ASYNC-DESTROY`
+  with five `L07.destroy.async-*` cases; Book §20.1.1, spec §11.5.1, grammar,
+  async guide §7.2, LLM context, Sparrow book (EN/RU)
+  ([#154](https://github.com/shootnix/okkama/issues/154)).
+
 - Language: module constants (#153). `const NAME = value;` (optionally
   `is Type`) at module scope names a value the compiler computes from
   literals, payload-free enum cases, `rat(n, d)`, casts, operators, other

@@ -1,0 +1,44 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/event" take Event;
+
+object Conn {
+    has name is string;
+    has gate is Event;
+    Conn(:name, :gate);
+    async destroy {
+        Stdout().writeln(name + " closing");
+        await gate.wait();
+        Stdout().writeln(name + " closed");
+    }
+}
+
+object Releaser {
+    has gate is Event;
+    Releaser(:gate);
+    async run() is void {
+        Stdout().writeln("release");
+        gate.set();
+    }
+}
+
+object Opener {
+    has gate is Event;
+    Opener(:gate);
+    async run() is int {
+        let a = Conn(name: "a", gate: gate);
+        let b = Conn(name: "b", gate: gate);
+        Stdout().writeln("work");
+        1;
+    }
+}
+
+async main() is int {
+    let gate = Event();
+    let task = spawn Opener(gate: gate).run();
+    spawn Releaser(gate: gate).run();
+    let r = await task;
+    Stdout().writeln("result " + r.string());
+    0;
+}

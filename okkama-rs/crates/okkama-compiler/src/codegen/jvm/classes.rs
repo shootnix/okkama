@@ -136,9 +136,17 @@ pub(super) fn object_class(layout: &Layout, object: &ObjectLayout) -> Result<Vec
         let target = pool.method_ref(&layout.main, name, descriptor)?;
         let mut asm = Asm::default();
         asm.op(&[0x2a], 0, 1); // aload_0
-        asm.op_index(0xb8, target, 1, 0); // invokestatic destroy-функции
-        asm.op(&[0xb1], 0, 0); // return
-        methods.push(method(&mut pool, asm, 0x0001, "destroyBody", "()V", 1)?);
+        if descriptor.ends_with(")V") {
+            asm.op_index(0xb8, target, 1, 0); // invokestatic destroy-функции
+            asm.op(&[0xb1], 0, 0); // return
+            methods.push(method(&mut pool, asm, 0x0001, "destroyBody", "()V", 1)?);
+        } else {
+            // `async destroy` (#154): Future, который ожидает закрытие области.
+            asm.op_index(0xb8, target, 1, 1); // invokestatic destroy-функции
+            asm.op(&[0xb0], 1, 0); // areturn
+            let descriptor = format!("()L{};", super::runtime::FUTURE);
+            methods.push(method(&mut pool, asm, 0x0001, "destroyAsync", &descriptor, 1)?);
+        }
     }
     methods.push(equals_method(&mut pool, object)?);
     methods.push(hash_code_method(&mut pool, object)?);

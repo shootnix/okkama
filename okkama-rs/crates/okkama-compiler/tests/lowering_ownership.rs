@@ -158,3 +158,29 @@ fn regions_without_identities_are_elided() {
     assert!(count(main, |kind| matches!(kind, InstKind::RegionAdopt { .. })) >= 1);
     assert!(count(main, |kind| matches!(kind, InstKind::RegionLeave { .. })) >= 1);
 }
+
+/// `async destroy` (#154): scopes of async functions close with
+/// `region.settle`, so the destroy is awaited; synchronous ones keep
+/// `region.leave`, and a program without an async destroy never settles.
+#[test]
+fn async_destroys_are_settled_in_async_functions() {
+    let conn = "module app v1.0.0; object Conn { has n is int; Conn(:n); ok() is bool { n > 0; } async destroy { confirm n > 0; } } \
+        object Res { has n is int; Res(:n); destroy { confirm n > 0; } }";
+    let settled = module(&format!(
+        "{conn} object Job {{ Job(); async run() is int {{ let c = Conn(n: 1); confirm c.ok(); 1; }} work() is int {{ let r = Res(n: 1); 2; }} }} \
+         async main() is int {{ await Job().run(); }}"
+    ));
+    let text = settled.to_string();
+    let run = function(&settled, "Job.run");
+    assert!(count(run, |kind| matches!(kind, InstKind::RegionSettle { .. })) >= 1, "{text}");
+    assert!(count(run, |kind| matches!(kind, InstKind::RegionSettleUnwind { .. })) >= 1, "{text}");
+    assert_eq!(count(run, |kind| matches!(kind, InstKind::RegionLeave { .. } | InstKind::RegionUnwind { .. })), 0);
+    let work = function(&settled, "Job.work");
+    assert_eq!(count(work, |kind| matches!(kind, InstKind::RegionSettle { .. } | InstKind::RegionSettleUnwind { .. })), 0);
+    assert!(count(work, |kind| matches!(kind, InstKind::RegionLeave { .. })) >= 1, "{text}");
+
+    let plain = module(&format!(
+        "{RES} object Job {{ Job(); async run() is int {{ let r = Res(n: 1); 1; }} }} async main() is int {{ await Job().run(); }}"
+    ));
+    assert!(!plain.to_string().contains("region.settle"));
+}

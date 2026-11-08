@@ -270,8 +270,12 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 let keep = payload
                     .filter(|value| !self.ctx.is_plain(&value.ty))
                     .map(|value| value.value);
-                self.b
-                    .emit_void(InstKind::RegionLeave { region, keep }, span);
+                let close = if self.settles {
+                    InstKind::RegionSettle { region, keep }
+                } else {
+                    InstKind::RegionLeave { region, keep }
+                };
+                self.b.emit_void(close, span);
             }
         }
         self.tries = saved;
@@ -305,12 +309,12 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
                 self.bind_tracked(&fail.tracked, &fail.types, &fail.params);
                 let failure = match cleanup.region {
                     Some(region) => {
-                        self.emit(
-                            InstKind::RegionUnwind { region, failure },
-                            Type::Failure,
-                            span,
-                        )
-                        .value
+                        let close = if self.settles {
+                            InstKind::RegionSettleUnwind { region, failure }
+                        } else {
+                            InstKind::RegionUnwind { region, failure }
+                        };
+                        self.emit(close, Type::Failure, span).value
                     }
                     None => failure,
                 };

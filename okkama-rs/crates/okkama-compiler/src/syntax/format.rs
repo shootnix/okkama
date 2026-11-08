@@ -564,6 +564,9 @@ impl<'s> Printer<'s> {
                 }
             }
             ObjectMember::Destroy(destroy) => {
+                if destroy.is_async {
+                    self.word("async ");
+                }
                 self.word("destroy ");
                 self.block(&destroy.body);
             }

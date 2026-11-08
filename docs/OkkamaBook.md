@@ -2511,6 +2511,43 @@ main() is int {
 - If a destroy block fails, the runtime reports it as a runtime error; a body
   failure that triggered the unwind takes precedence over cleanup failures.
 
+### 20.1.1 `async destroy`
+
+A resource whose cleanup must wait — flush a socket, let a server drain —
+declares `async destroy` (#154). It is awaited where its owner's scope ends,
+in the same reverse order, also on `return` and on a failure:
+
+```okkama
+object Connection {
+    has socket is Socket;
+    Connection(:socket);
+
+    async destroy {
+        await socket.flush();
+        socket.close();
+    }
+}
+
+object Server {
+    Server();
+
+    async serve(socket is Socket) is void {
+        let connection = Connection(socket: socket);
+        await connection.handle();
+    }   // the destroy is awaited here, before serve's Future settles
+}
+```
+
+- Such an object — or one holding it in a field, an array or a map — can be
+  owned only in an async action (or a constructor of an object that has an
+  async destroy itself). In synchronous code it is a compile error:
+  `Connection has an async destroy; own it in an async action`. Borrowing it
+  as an argument of a synchronous action is fine.
+- A cancellation that arrives while the destroy awaits does not interrupt it:
+  the task receives `Cancelled` at its next await, after the scope has closed.
+- This replaces a `defer close` plus a `defer await settled` pair and helper
+  objects that exist only to await in cleanup.
+
 ### 20.2 Ownership follows identity, not names
 
 A lazy ordinary async call retains its receiver and evaluated arguments in the

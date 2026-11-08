@@ -23,6 +23,11 @@ public abstract class Obj {
     /** Тело {@code destroy} объекта; без блока {@code destroy} — ничего. */
     public void destroyBody() {}
 
+    /** Future блока {@code async destroy} (#154); null — блок синхронный или его нет. */
+    public Future destroyAsync() {
+        return null;
+    }
+
     /** Значения полей, которые могут достигать идентичностей. */
     public void refs(List<Object> out) {}
 

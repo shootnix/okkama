@@ -137,7 +137,7 @@ public final class Region {
 
     /** Закрыть регион; идентичности, достижимые из {@code keep}, освобождаются. */
     public void leave(Object keep) {
-        Failure primary = close(keep == null ? new Object[0] : new Object[] {keep}, null);
+        Failure primary = close(keep == null ? new Object[0] : new Object[] {keep}, null, false);
         if (primary != null) {
             throw primary;
         }
@@ -147,7 +147,23 @@ public final class Region {
     public Failure unwind(Failure failure) {
         ArrayList<Object> errors = new ArrayList<Object>();
         collectErrors(failure, errors);
-        close(errors.toArray(), failure);
+        close(errors.toArray(), failure, false);
+        return failure;
+    }
+
+    /** {@code region.settle} async-функции: {@code async destroy} ожидаются (#154). */
+    public void settle(Object keep) {
+        Failure primary = close(keep == null ? new Object[0] : new Object[] {keep}, null, true);
+        if (primary != null) {
+            throw primary;
+        }
+    }
+
+    /** {@code region.settle_unwind}: то же на пути отказа. */
+    public Failure settleUnwind(Failure failure) {
+        ArrayList<Object> errors = new ArrayList<Object>();
+        collectErrors(failure, errors);
+        close(errors.toArray(), failure, true);
         return failure;
     }
 
@@ -167,7 +183,7 @@ public final class Region {
      * отказа ({@code active}) отказы destroy становятся вторичными; иначе
      * первый — основной, остальные — вторичные к нему.
      */
-    private Failure close(Object[] keep, Failure active) {
+    private Failure close(Object[] keep, Failure active, boolean awaits) {
         if (entries == null || entries.isEmpty()) {
             return null;
         }
@@ -200,7 +216,14 @@ public final class Region {
                 System.err.println(text);
             }
             try {
-                obj.destroyBody();
+                Future pending = obj.destroyAsync();
+                if (pending == null) {
+                    obj.destroyBody();
+                } else if (awaits) {
+                    Scheduler.awaitShielded(pending);
+                } else {
+                    throw Rt.trap("an object with an async destroy was released in a synchronous scope");
+                }
             } catch (Failure failure) {
                 if (active != null) {
                     active.secondary.add(failure);

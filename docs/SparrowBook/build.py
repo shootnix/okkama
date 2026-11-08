@@ -86,6 +86,8 @@ DESCRIPTIONS = {
     "str.utf8": ("the UTF-8 bytes (`array byte`)", "байты UTF-8 (`array byte`)"),
     "str.fn": ("a string function: `find`, `find_last`, `starts_with`, `ends_with`, `trim_start`, `trim_end`, `lower`, `upper`, `repeat`, `characters`", "строковая функция: `find`, `find_last`, `starts_with`, `ends_with`, `trim_start`, `trim_end`, `lower`, `upper`, `repeat`, `characters`"),
     "global.get": ("the value of a module constant, built once by its init function", "значение константы модуля, построенное один раз её функцией init"),
+    "region.settle": ("close a region in an async function: destroys run from the last identity, each async destroy is awaited, a cancellation waits until the close ends", "закрыть регион в async-функции: destroy идут с последней идентичности, каждый async destroy ожидается, отмена ждёт конца закрытия"),
+    "region.settle_unwind": ("`region.settle` on a failure path; the result is the failure with destroy failures as secondary", "`region.settle` на пути отказа; результат — отказ с отказами destroy как вторичными"),
     "val.cmp": ("deep equality, `eq` or `ne` only", "глубокое равенство, только `eq` и `ne`"),
     "enum.case": ("a case of an enum by number", "вариант enum по номеру"),
     "enum.cmp": ("compare enum cases", "сравнение вариантов enum"),

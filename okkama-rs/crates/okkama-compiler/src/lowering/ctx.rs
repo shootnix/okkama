@@ -205,6 +205,9 @@ pub(super) struct Ctx<'r, 'a> {
     pub prefixes: Vec<String>,
     /// В программе есть `destroy`: lowering выпускает регионы владения (§7).
     pub ownership: bool,
+    /// В программе есть `async destroy`: области async-функций закрываются
+    /// `region.settle` (#154).
+    pub settles: bool,
     plain_objects: Vec<bool>,
     plain_roles: Vec<bool>,
     /// Plain-ность объявлений ролей по всем объявлениям объектов программы
@@ -234,6 +237,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             })
             .collect();
         let ownership = reg.objects.iter().any(|object| object.destroy.is_some());
+        let settles = reg.objects.iter().any(|object| object.destroy.is_some_and(|destroy| destroy.is_async));
         let decl_plain_roles = decl_plain_roles(reg);
         let decl_plain_objects = decl_plain_objects(reg, &decl_plain_roles);
         Ctx {
@@ -260,6 +264,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             entry: None,
             prefixes,
             ownership,
+            settles,
             plain_objects: Vec::new(),
             plain_roles: Vec::new(),
             decl_plain_roles,

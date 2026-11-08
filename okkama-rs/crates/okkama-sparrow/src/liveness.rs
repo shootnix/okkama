@@ -176,7 +176,7 @@ mod tests {
     fn values_live_across_a_chain_cost_quadratically() {
         // k values defined one after another and all read at the end.
         let chain = |k: usize| {
-            let mut text = String::from("sparrow 10\nmodule \"m\" \"v1.0.0\"\ntype t0 int\nfunction f0 \"main\" {\n registers [");
+            let mut text = String::from("sparrow 11\nmodule \"m\" \"v1.0.0\"\ntype t0 int\nfunction f0 \"main\" {\n registers [");
             text.push_str(&vec!["t0"; k + 1].join(", "));
             text.push_str("]\n params []\n result t0\n");
             let mut pc = 0;
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn loops_and_handlers_keep_values_live() {
-        let source = "sparrow 10\nmodule \"m\" \"v1.0.0\"\ntype t0 int\ntype t1 bool\ntype t2 failure\n\
+        let source = "sparrow 11\nmodule \"m\" \"v1.0.0\"\ntype t0 int\ntype t1 bool\ntype t2 failure\n\
             function f0 \"main\" {\n registers [t0, t0, t1, t2]\n params []\n result t0\n\
             \x20handler 2 4 @5 r3\n\
             \x200: const r0, int 1\n 1: const r1, int 0\n 2: int.add r1, r1, r0\n 3: jmp @2\n 4: ret r1\n 5: ret r0\n}\nentry f0\n";

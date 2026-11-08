@@ -242,6 +242,7 @@ fn check_object(reg: &mut Registry<'_>, object: ObjectId, bodies: &mut Vec<Body>
     }
     if let Some(destroy) = reg.objects[object.0].destroy {
         let mut checker = Checker::new(reg, Kind::Destroy, Some(object), None);
+        checker.is_async = destroy.is_async;
         let block = checker.body(&destroy.body, "destroy");
         bodies.push(checker.finish(
             BodyOwner::Destroy { object },
@@ -377,6 +378,7 @@ impl<'r, 'a> Checker<'r, 'a> {
             params,
             block,
             returns_value,
+            is_async: self.is_async,
             span,
         };
         super::flow::check(self.reg, &body);

@@ -110,6 +110,7 @@ helpers! {
     int_text = crate::ops::rt_int_text as (ctx, word: Word) -> Word; [Allocates, Collects];
     future_new = crate::tasks::rt_future_new as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
     await_ = crate::tasks::rt_await as (ctx, this: Word, future: Word) -> u64; [Collects, Reenters, Fails];
+    region_settle = crate::tasks::rt_region_settle as (ctx, this: Word, region: Word, keep: Word, failure: Word) -> u64; [Allocates, Collects, Reenters, Fails];
     complete = crate::tasks::rt_complete as (ctx, frame: Word, value: Word); [Collects, Reenters];
     spawn = crate::tasks::rt_spawn as (ctx, future: Word) -> Word; [Reenters, Fails];
     fut = crate::tasks::rt_fut as (ctx, op: u64, future: Word) -> Word; [Reenters, Fails];
@@ -364,7 +365,7 @@ fn leaders(source: &okkama_sparrow::Function) -> Vec<bool> {
         mark(&handler.target);
     }
     for (pc, instruction) in source.code.iter().enumerate() {
-        if matches!(instruction, I::Await { .. }) {
+        if suspends(instruction) {
             leaders[pc] = true;
         }
     }
@@ -999,7 +1000,7 @@ impl Emitter<'_, '_> {
         let mut switch = cranelift_frontend::Switch::new();
         let mut reloads = Vec::new();
         for (pc, instruction) in source.code.iter().enumerate() {
-            if matches!(instruction, I::Await { .. }) {
+            if suspends(instruction) {
                 let block = self.builder.create_block();
                 switch.set_entry(pc as u128 + 1, block);
                 reloads.push((pc, block));
@@ -1031,6 +1032,39 @@ impl Emitter<'_, '_> {
     }
 
     /// Emit one instruction; true when it ends its block.
+    /// After an await-like helper: continue when ready (its value, if any, in
+    /// `scratch`), or save every register and return pending; the resumed
+    /// frame re-enters the instruction at `pc`.
+    fn suspend_unless_ready(&mut self, pc: usize, outcome: Value, dst: Option<okkama_sparrow::Dst>) {
+        let ctx = self.ctx();
+        let suspend = self.builder.create_block();
+        let ready = self.builder.create_block();
+        let pending = self.builder.ins().icmp_imm_u(IntCC::Equal, outcome, crate::tasks::AWAIT_PENDING as i64);
+        self.builder.ins().brif(pending, suspend, &[], ready, &[]);
+        // Save every register and re-enter this await when resumed.
+        self.builder.switch_to_block(suspend);
+        let frame = self.builder.use_var(self.frame.expect("frame"));
+        for register in 0..self.kinds.len() {
+            let value = self.word(&okkama_sparrow::Register(register as u32));
+            let offset = crate::tasks::REGISTERS as i32 + register as i32 * 8;
+            self.builder.ins().store(MEMORY, value, frame, offset);
+        }
+        let resume = self.iconst(pc as i64 + 1);
+        self.builder.ins().store(MEMORY, resume, frame, crate::tasks::RESUME as i32);
+        let one = self.iconst(1);
+        self.builder.ins().return_(&[one]);
+        self.builder.switch_to_block(ready);
+        if let Some(dst) = dst {
+            let value = self.builder.ins().load(
+                types::I64,
+                MEMORY,
+                ctx,
+                std::mem::offset_of!(Ctx, scratch) as i32,
+            );
+            self.set_word(&dst.0, value);
+        }
+    }
+
     fn instruction(&mut self, pc: usize) -> Result<bool, Error> {
         let program = &self.loaded.program;
         let source = &program.functions[self.function];
@@ -1465,37 +1499,27 @@ impl Emitter<'_, '_> {
                 }
                 return Ok(true);
             }
+            I::RegionSettle { .. } | I::RegionSettleUnwind { .. } if self.frame.is_some() => {
+                let this = self.builder.use_var(self.frame.expect("frame"));
+                let unbound = self.iconst(word::UNBOUND as i64);
+                let (region, keep, failure, dst) = match instruction {
+                    I::RegionSettle { region, keep } => {
+                        let keep = keep.map(|keep| self.word(&keep)).unwrap_or(unbound);
+                        (self.get(region), keep, unbound, None)
+                    }
+                    I::RegionSettleUnwind { dst, region, failure } => (self.get(region), unbound, self.get(failure), Some(*dst)),
+                    _ => unreachable!("matched above"),
+                };
+                let outcome = self.helper(|h| h.region_settle, &[ctx, this, region, keep, failure]).expect("result");
+                self.check(pc);
+                self.suspend_unless_ready(pc, outcome, dst);
+            }
             I::Await { dst, future } if self.frame.is_some() => {
                 let this = self.builder.use_var(self.frame.expect("frame"));
                 let future = self.get(future);
                 let outcome = self.helper(|h| h.await_, &[ctx, this, future]).expect("result");
                 self.check(pc);
-                let suspend = self.builder.create_block();
-                let ready = self.builder.create_block();
-                let pending = self.builder.ins().icmp_imm_u(IntCC::Equal, outcome, crate::tasks::AWAIT_PENDING as i64);
-                self.builder.ins().brif(pending, suspend, &[], ready, &[]);
-                // Save every register and re-enter this await when resumed.
-                self.builder.switch_to_block(suspend);
-                let frame = self.builder.use_var(self.frame.expect("frame"));
-                for register in 0..self.kinds.len() {
-                    let value = self.word(&okkama_sparrow::Register(register as u32));
-                    let offset = crate::tasks::REGISTERS as i32 + register as i32 * 8;
-                    self.builder.ins().store(MEMORY, value, frame, offset);
-                }
-                let resume = self.iconst(pc as i64 + 1);
-                self.builder.ins().store(MEMORY, resume, frame, crate::tasks::RESUME as i32);
-                let one = self.iconst(1);
-                self.builder.ins().return_(&[one]);
-                self.builder.switch_to_block(ready);
-                if let Some(dst) = dst {
-                    let value = self.builder.ins().load(
-                        types::I64,
-                        MEMORY,
-                        ctx,
-                        std::mem::offset_of!(Ctx, scratch) as i32,
-                    );
-                    self.set_word(&dst.0, value);
-                }
+                self.suspend_unless_ready(pc, outcome, *dst);
             }
             I::FutSpawn { dst, future } => {
                 let future = self.get(future);
@@ -2005,6 +2029,12 @@ impl Emitter<'_, '_> {
 }
 
 /// Instructions executed by `failures::rt_failure_op`.
+/// An instruction that may suspend its async frame and is re-entered on
+/// resumption: `await` and the region closes that await async destroys (#154).
+fn suspends(instruction: &I) -> bool {
+    matches!(instruction, I::Await { .. } | I::RegionSettle { .. } | I::RegionSettleUnwind { .. })
+}
+
 fn failure_or_region(instruction: &I) -> bool {
     matches!(
         instruction,

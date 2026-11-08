@@ -68,7 +68,7 @@ Hello, Sparrow!
 ## 3. Устройство файла
 
 ```text
-sparrow 10                      ; версия формата
+sparrow 11                      ; версия формата
 module "name" "version"         ; имя и версия модуля (можно "")
 type t0 …                       ; таблица типов по порядку
 enum enum0 "Name" ["a", "b"]    ; enum и его варианты

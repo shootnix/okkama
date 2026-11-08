@@ -278,16 +278,25 @@ pub(crate) fn execute_function(
                     .collect::<Result<Vec<_>, _>>()?;
                 role_call = Some((callee, arguments));
             }
-            if let InstKind::RegionLeave { region, .. } | InstKind::RegionUnwind { region, .. } =
-                &inst.kind
+            if let InstKind::RegionLeave { region, .. }
+            | InstKind::RegionUnwind { region, .. }
+            | InstKind::RegionSettle { region, .. }
+            | InstKind::RegionSettleUnwind { region, .. } = &inst.kind
             {
+                // `region.settle`: async destroy ожидаются на месте (#154).
+                let settles = matches!(
+                    inst.kind,
+                    InstKind::RegionSettle { .. } | InstKind::RegionSettleUnwind { .. }
+                );
                 let Value::Region(region) = read(slots, *region, inst.span)? else {
                     return Err(invalid_state(inst.span, "expected region value"));
                 };
                 let region = region.clone();
                 // Пустой регион: уничтожать нечего, отказ уходит дальше как есть.
                 if frame.closing.is_none() && region.is_empty() {
-                    if let InstKind::RegionUnwind { failure: id, .. } = &inst.kind {
+                    if let InstKind::RegionUnwind { failure: id, .. }
+                    | InstKind::RegionSettleUnwind { failure: id, .. } = &inst.kind
+                    {
                         let active = failure(read(slots, *id, inst.span)?, inst.span)?.clone();
                         let result = inst
                             .result
@@ -298,12 +307,13 @@ pub(crate) fn execute_function(
                 }
                 if frame.closing.is_none() {
                     let keep = match &inst.kind {
-                        InstKind::RegionLeave { keep, .. } => keep
+                        InstKind::RegionLeave { keep, .. } | InstKind::RegionSettle { keep, .. } => keep
                             .map(|id| read(slots, id, inst.span).cloned())
                             .into_iter()
                             .collect::<Result<Vec<_>, _>>()?,
                         // Error-объекты отказа освобождаются (`Region.unwind`).
-                        InstKind::RegionUnwind { failure: id, .. } => {
+                        InstKind::RegionUnwind { failure: id, .. }
+                        | InstKind::RegionSettleUnwind { failure: id, .. } => {
                             thrown_errors(failure(read(slots, *id, inst.span)?, inst.span)?)
                         }
                         _ => unreachable!("matched above"),
@@ -316,9 +326,22 @@ pub(crate) fn execute_function(
                 let pending = frame.closing.as_mut().expect("closing started above");
                 let mut destroy = None;
                 while let Some(object) = region.next_destroyed(&mut pending.closing) {
-                    if let Some(body) = module.objects.get(object.declaration).and_then(|o| o.destroy) {
+                    let Some(body) = module.objects.get(object.declaration).and_then(|o| o.destroy) else {
+                        continue;
+                    };
+                    if !module.functions[body.0].is_async() {
                         destroy = Some((body, object));
                         break;
+                    }
+                    if !settles {
+                        pending.failures.push(Failure::new(FailureKind::Program(
+                            "an object with an async destroy was released in a synchronous scope".into(),
+                        )));
+                        continue;
+                    }
+                    let settling = cold_call(engine, body, vec![Value::Object(object)]);
+                    if let Err(failure) = sched::await_shielded(&settling) {
+                        pending.failures.push(failure);
                     }
                 }
                 if let Some((body, object)) = destroy {
@@ -332,7 +355,8 @@ pub(crate) fn execute_function(
                 }
                 let failures = frame.closing.take().expect("closing started above").failures;
                 match &inst.kind {
-                    InstKind::RegionUnwind { failure: id, .. } => {
+                    InstKind::RegionUnwind { failure: id, .. }
+                    | InstKind::RegionSettleUnwind { failure: id, .. } => {
                         // Отказы destroy на пути отказа — вторичные к нему.
                         let mut active = failure(read(slots, *id, inst.span)?, inst.span)?.clone();
                         for cleanup in failures {

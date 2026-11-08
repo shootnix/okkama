@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.destroy.async-not-interrupted",
+  "title": "a cancellation that arrives during an async destroy waits until the destroy has finished",
+  "purpose": "Accept the construct and observe its result.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.ASYNC-DESTROY",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "scope ends\nconn closed\nresult -1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#19",
+    "docs/okkama-spec-11072026.md#18"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; async destroy by #154",
+    "expected_basis": "The task is cancelled while Conn's destroy awaits the gate; the destroy still prints, and the cancellation reaches the task's await only after it."
+  },
+  "status": "mandatory"
+}
