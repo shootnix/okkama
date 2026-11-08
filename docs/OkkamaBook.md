@@ -590,8 +590,8 @@ let payload is @byte = @byte(0, 127, maximum);
   operators (`<`, `<=`, `>`, `>=`) are broader and accept mixed numeric
   operands under the promotion rules.
 - A `byte` is a valid array index (interpreted by its integer value) and a
-  valid range bound (normalized to `int`). Byte-valued **map keys** are
-  currently unsupported.
+  valid range bound (normalized to `int`). A `byte` is not a **map key**
+  (`%byte:V` is a compile error; decision D-007).
 
 `@byte` is an ordinary immutable typed array of bytes — the language's raw
 binary sequence. It is not a mutable buffer and not a second string type.
@@ -744,8 +744,9 @@ let empty_map = [:];
 - Missing keys are runtime errors unless an `else` fallback is given:
   `prices["fig"] else 0;`
 - Map keys are scalar values or value objects. Keys cannot be `any` or `byte`
-  (the current map backend cannot preserve typed key identity for them). Map
-  *values* may be any type including `any`.
+  (decision D-007: `Map key type byte is not a scalar key type`). A `byte`
+  may still be a field of a key object. Map *values* may be any type
+  including `any`.
 - A **value object** is a key when every field is a scalar (`byte` and `rat`
   included), an enum or another such object, and it has no `destroy` block and
   no capabilities. Objects are immutable, so a key compares by its fields
@@ -5975,9 +5976,10 @@ The fixed rules follow the language's existing philosophy:
   available in direct expressions too (`Dump([1, 2, 3])`, generic inference
   from literals, overload resolution).
 
-Map keys preserve exact scalar or enum identity, including `byte`, `char` and
-`bool`. A same-spelled key of another type is distinct. Native/worker transport
-retains these identities; objects, handles and Any boxes are not map keys.
+Map keys preserve exact scalar or enum identity, including `char` and `bool`.
+A same-spelled key of another type is distinct. Native/worker transport
+retains these identities. Value objects are keys (§8.2); `byte`
+values (D-007), handles and Any boxes are not.
 An action's own declared `@U` return also supplies its `.map()` result target,
 including empty, mixed concrete role implementations, branches and await paths.
 

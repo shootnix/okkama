@@ -541,6 +541,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `L07.test-runner.successor-assertions`
   ([#275](https://github.com/shootnix/okkama/issues/275)).
 
+- Docs: map keys follow decision D-007 everywhere (#274). The spec (§6.3),
+  the LLM context and the Book (§5.3, §8.2, §31.1, EN/RU) no longer say that
+  `byte` values are map keys; `%byte:V` stays a compile error, as the OCS
+  case `L05.map.byte-keys-rejected` requires. Book §31.1 also no longer says
+  that objects are not keys: value objects are keys since #212
+  ([#274](https://github.com/shootnix/okkama/issues/274)).
+
 - Terminal: input typed after a read was interrupted reaches the next read
   (#12). A terminal read that a timeout or a cancelled task gave up still
   had its blocking `read(2)` waiting on the reader thread, and every later
