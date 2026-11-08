@@ -1,0 +1,37 @@
+module t v1.0.0;
+
+// t/op: arrays (Book ch. 8.1 and 10).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(21);
+    let xs = [10, 20, 30];
+    t = t.is(xs[1], 20, "indexing");
+    t = t.is(xs[9] else 0, 0, "else on an index out of bounds");
+    t = t.is(xs.size(), 3, "size");
+    t = t.is(xs.first(), 10, "first");
+    t = t.is(xs.last(), 30, "last");
+    t = t.is(xs.item(2), 30, "item");
+    t = t.is(xs.slice(1, 3).size(), 2, "slice");
+    t = t.ok(xs.slice(1, 3) == [20, 30], "slice is end-exclusive");
+    let typed is @int = [1, 2, 3,];
+    t = t.is(typed.size(), 3, "a trailing comma");
+    let spread = [0, 2..=4, 9];
+    t = t.ok(spread == [0, 2, 3, 4, 9], "ranges expand in a literal");
+    t = t.ok(xs.contains(20) && !xs.contains(25), "contains");
+    t = t.ok((xs.index_of(30) else -1) == 2, "index_of");
+    t = t.ok(xs.reversed() == [30, 20, 10], "reversed");
+    t = t.ok(xs.take(2) == [10, 20], "take");
+    t = t.ok(xs.drop(2) == [30], "drop");
+    t = t.ok(xs.take(9) == xs, "take more than there is");
+    let empty = [];
+    t = t.is(empty.size(), 0, "the empty array");
+    t = t.ok([[1], [2, 3]] != [[1], [3, 2]], "deep equality keeps order");
+    let nested is @@int = [[1], [2, 3]];
+    t = t.is(nested[1][0], 2, "nested arrays");
+    let original = [1, 2];
+    let longer = original + [3];
+    t = t.ok(original == [1, 2] && longer == [1, 2, 3], "arrays are immutable");
+    t = t.is(@string("a", "b").size(), 2, "@string(...)");
+    t.done();
+}

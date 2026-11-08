@@ -1,0 +1,11 @@
+module t v1.0.0;
+
+// t/base (#245): Stdout and `if` only — t/tap.ok is not trusted yet.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..1");
+    out.writeln("ok 1 - writeln prints a line");
+    0;
+}

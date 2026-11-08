@@ -1,0 +1,39 @@
+module t v1.0.0;
+
+// t/op: precedence and evaluation order (Book ch. 11).
+import "tap" take Tap;
+import "cell" take Cell;
+
+// A cell stays in synchronous code and is not a field: the trace gets it as
+// an argument.
+object Trace {
+    Trace();
+    value(log is Cell<string>, mark is string, result is int) is int {
+        log.replace(log.value() + mark);
+        result;
+    }
+}
+
+main() is int {
+    let t = Tap(12);
+    t = t.is(2 + 3 * 4 - 1, 13, "* before + and -");
+    t = t.is(10 - 4 - 3, 3, "- is left-associative");
+    t = t.is((10 / 4 / 5.rat()).string(), "1/2", "/ is left-associative");
+    t = t.is(-2 * 3, -6, "unary minus binds tightest");
+    t = t.ok(1 + 1 == 2 && 2 * 2 == 4, "== before &&");
+    t = t.ok(false && true || true, "&& before ||");
+    t = t.ok((6 & 3) | 8 == 10, "& before |");
+    t = t.is(1 << 1 + 1, 4, "+ before <<");
+    let log = Cell("");
+    let trace = Trace();
+    let sum = trace.value(log, "a", 1) + trace.value(log, "b", 2) * trace.value(log, "c", 3);
+    t = t.is(sum, 7, "an expression with calls");
+    t = t.is(log.value(), "abc", "operands evaluate left to right");
+    log.replace("");
+    let skipped = trace.value(log, "x", 0) > 1 && trace.value(log, "y", 1) > 0;
+    t = t.ok(!skipped && log.value() == "x", "&& skips its right operand");
+    log.replace("");
+    let pair = [trace.value(log, "p", 1), trace.value(log, "q", 2)];
+    t = t.ok(pair.size() == 2 && log.value() == "pq", "array elements evaluate in order");
+    t.done();
+}

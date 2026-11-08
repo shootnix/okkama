@@ -1,0 +1,28 @@
+module t v1.0.0;
+
+// t/op: if and else if as statements and expressions (Book ch. 11.6, 12.3).
+import "tap" take Tap;
+
+object Sizes {
+    Sizes();
+    size(n is int) is string {
+        if n > 5 { "large" } else if n > 2 { "medium" } else { "small" }
+    }
+    early(n is int) is string {
+        return "negative" if n < 0;
+        "non-negative";
+    }
+}
+
+main() is int {
+    let t = Tap(7);
+    let sizes = Sizes();
+    t = t.is(sizes.size(9), "large", "first branch");
+    t = t.is(sizes.size(3), "medium", "else if");
+    t = t.is(sizes.size(0), "small", "else");
+    t = t.is(if true { 1; } else { 0; }, 1, "if expression");
+    t = t.is(if false { 1 } else { 2 }, 2, "branches without a semicolon");
+    t = t.is(sizes.early(-1), "negative", "return with a postfix if");
+    t = t.is(sizes.early(1), "non-negative", "a false postfix condition");
+    t.done();
+}

@@ -1,0 +1,18 @@
+module t v1.0.0;
+
+// t/base: string literals, escapes and concatenation, compared with ==.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..8");
+    out.writeln(if "ab" + "c" == "abc" { "ok 1 - concatenation"; } else { "not ok 1 - concatenation"; });
+    out.writeln(if "" + "x" == "x" { "ok 2 - empty string"; } else { "not ok 2 - empty string"; });
+    out.writeln(if "\u{41}" == "A" { "ok 3 - unicode escape"; } else { "not ok 3 - unicode escape"; });
+    out.writeln(if "\"" == "\u{22}" { "ok 4 - escaped quote"; } else { "not ok 4 - escaped quote"; });
+    out.writeln(if "\\" == "\u{5c}" { "ok 5 - escaped backslash"; } else { "not ok 5 - escaped backslash"; });
+    out.writeln(if "a\tb" == "a\u{9}b" { "ok 6 - tab escape"; } else { "not ok 6 - tab escape"; });
+    out.writeln(if ```raw \n``` == "raw \\n" { "ok 7 - fenced raw string"; } else { "not ok 7 - fenced raw string"; });
+    out.writeln(if "é" == "\u{e9}" { "ok 8 - UTF-8 source text"; } else { "not ok 8 - UTF-8 source text"; });
+    0;
+}

@@ -1,0 +1,26 @@
+module t v1.0.0;
+
+// t/op: bitwise operators on 64-bit ints and 8-bit bytes (Book ch. 5.4).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(16);
+    let enabled = 0b1010 | (1 << 2);
+    t = t.is(enabled, 14, "|");
+    t = t.is(enabled & ~(1 << 2), 10, "& and ~");
+    t = t.is(enabled ^ (1 << 2), 10, "^ is xor");
+    t = t.ok((enabled & (1 << 2)) != 0, "a set bit");
+    t = t.is(-1 >>> 1, 9223372036854775807, ">>> fills with zeros");
+    t = t.is(-8 >> 1, -4, ">> keeps the sign");
+    t = t.is(1 << 63, -9223372036854775808, "<< discards bits shifted out");
+    t = t.is(-1 >>> 0, -1, "a zero shift");
+    t = t.is(~0, -1, "~0");
+    t = t.is(~byte(0), byte(255), "~ on a byte");
+    t = t.is(byte(128).rotate_left(1), byte(1), "rotate_left on a byte");
+    t = t.is(0b1011.bit_count(), 3, "bit_count");
+    t = t.is(1.leading_zeros(), 63, "leading_zeros");
+    t = t.is(0.trailing_zeros(), 64, "trailing_zeros of zero is the width");
+    t = t.is(1 << 2 + 1, 8, "+ binds tighter than <<");
+    t = t.ok((6 & 3) == 2, "& on ints");
+    t.done();
+}

@@ -1,0 +1,27 @@
+module t v1.0.0;
+
+// t/op: maps (Book ch. 8.2).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(12);
+    let prices is %string:int = ["pear": 140, "apple": 120];
+    t = t.is(prices["apple"], 120, "lookup");
+    t = t.is(prices["fig"] else -1, -1, "else on a missing key");
+    t = t.is(prices.size(), 2, "size");
+    t = t.ok(prices.has("pear") && !prices.has("fig"), "has");
+    t = t.is(prices.keys().join(","), "apple,pear", "keys are sorted");
+    t = t.ok(prices.values() == [120, 140], "values follow the keys");
+    let empty = [:];
+    t = t.is(empty.size(), 0, "the empty map");
+    let name = "Alex";
+    let keyed = [name: 1];
+    t = t.ok(keyed.has("Alex"), "a key is an expression, not a word");
+    let numbers = [3: "c", 1: "a", 2: "b"];
+    t = t.ok(numbers.keys() == [1, 2, 3], "int keys sort numerically");
+    t = t.ok(["a": 1, "b": 2] == ["b": 2, "a": 1], "maps compare by key set and values");
+    t = t.ok(["a": 1] != ["a": 2], "different values");
+    let flags = [true: "yes", false: "no"];
+    t = t.is(flags[true], "yes", "bool keys");
+    t.done();
+}

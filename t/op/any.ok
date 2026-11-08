@@ -1,0 +1,18 @@
+module t v1.0.0;
+
+// t/op: the top type `any` — an opaque box (Book ch. 9).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(4);
+    let value is any = 42;
+    let values is @any = [1, "two", 3.0];
+    t = t.is(values.size(), 3, "an @any holds mixed values");
+    let row is %string:any = ["id": 7, "name": "Ada"];
+    t = t.ok(row.has("name"), "a map of any");
+    let again is any = value;
+    t = t.is([again, value].size(), 2, "boxes pass and store");
+    let mixed = [1, "two"];
+    t = t.is(mixed.size(), 2, "a heterogeneous literal without any");
+    t.done();
+}

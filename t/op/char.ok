@@ -1,0 +1,20 @@
+module t v1.0.0;
+
+// t/op: char — one code point (Book ch. 6).
+import "tap" take Tap;
+import "compare" take Order;
+
+main() is int {
+    let t = Tap(9);
+    let letters = "Жук".characters();
+    t = t.is(letters[0], 'Ж', "the first character");
+    t = t.is(letters[0].code(), 1046, "code()");
+    t = t.is(char(1046), 'Ж', "char(code)");
+    t = t.is(1046.char(), 'Ж', "int.char()");
+    t = t.is('x'.string(), "x", "char.string()");
+    t = t.is('\n'.code(), 10, "escape in a char literal");
+    t = t.is('\u{e9}', 'é', "unicode escape in a char literal");
+    t = t.ok('a'.order('b') == Order.less, "order");
+    t = t.ok('a' != 'b', "equality");
+    t.done();
+}
