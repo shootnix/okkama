@@ -127,22 +127,69 @@ object PostgresOptions {
 }
 
 // Byte transport of one connection: the startup conversation and everything
-// after it run over input/output; close() ends the connection.
+// after it run over input/output; close() ends the connection. A transport
+// with a cancel route lets the session stop a long answer whose reader
+// closed early (#240); without one, the rest of that answer is read through.
 object PgTransport does Closing {
     has input is AsyncReading;
     has output is AsyncWriting;
     has origin is Closing;
+    has cancel is PgCancelRoute;
 
     PgTransport(input is AsyncReading, output is AsyncWriting, origin is Closing) {
         self.input = input;
         self.output = output;
         self.origin = origin;
+        cancel = PgNoCancelRoute();
+    }
+
+    PgTransport(input is AsyncReading, output is AsyncWriting, origin is Closing, cancel is PgCancelRoute) {
+        self.input = input;
+        self.output = output;
+        self.origin = origin;
+        self.cancel = cancel;
     }
 
     input() is AsyncReading { input; }
     output() is AsyncWriting { output; }
+    cancel_route() is PgCancelRoute { cancel; }
     closed() is bool { origin.closed(); }
     close() is void { origin.close(); }
+}
+
+// Where a CancelRequest for this connection's backend goes: a separate
+// connection to the same server (protocol "Canceling Requests in Progress").
+// cancel() returns once the server has taken the request, so a later
+// statement on the connection can no longer be hit by it.
+role PgCancelRoute {
+    routed() is bool;
+    async cancel(process is int, secret is @byte) is void;
+}
+
+hidden object PgNoCancelRoute does PgCancelRoute {
+    PgNoCancelRoute();
+    routed() is bool { false; }
+    async cancel(process is int, secret is @byte) is void {}
+}
+
+// A plain TCP connection to the server's endpoint; the server reads a cancel
+// packet before TLS and authentication, as libpq relies on.
+object PgCancelTcp does PgCancelRoute {
+    has endpoint is IpEndpoint;
+    PgCancelTcp(endpoint is IpEndpoint) { self.endpoint = endpoint; }
+
+    routed() is bool { true; }
+
+    async cancel(process is int, secret is @byte) is void {
+        let tcp = await TcpConnecting(endpoint, TcpOptions(true, true)).connection();
+        defer tcp.close();
+        await PgOutput(tcp.output()).send(PgUntypedFrame(@byte(PgInt32(80877102).bytes()..., PgInt32(process).bytes()..., secret...)).bytes());
+        // The server answers nothing and closes the connection once the
+        // backend has been signalled.
+        loop {
+            last if (await tcp.input().bytes(64)).size() == 0;
+        }
+    }
 }
 
 role PostgresTransporting {
@@ -154,7 +201,7 @@ object PostgresTcp does PostgresTransporting {
     PostgresTcp(endpoint is IpEndpoint) { self.endpoint = endpoint; }
     async transport() is PgTransport {
         let tcp = await TcpConnecting(endpoint, TcpOptions(true, true)).connection();
-        PgTransport(tcp.input(), tcp.output(), tcp);
+        PgTransport(tcp.input(), tcp.output(), tcp, PgCancelTcp(endpoint));
     }
 }
 
@@ -181,7 +228,7 @@ object PostgresTls does PostgresTransporting {
         confirm answer.size() == 1 && answer[0] == 83.byte() else throw DbFailure.detailed(DbFailureKind.connection, DbOperation.connecting, "PG_TLS_REFUSED", "PostgreSQL server refused TLS");
         let tls = await TlsClientHandshake(tcp, server, policy).connection();
         published.set();
-        PgTransport(tls.input(), tls.output(), tls);
+        PgTransport(tls.input(), tls.output(), tls, PgCancelTcp(endpoint));
     }
 }
 
@@ -221,6 +268,8 @@ object PostgresDatabase {
         await PgAuthentication(input, output, credentials, options, entropy).completed();
         let version = Atomic("");
         let status = Atomic("");
+        let process = Atomic(0);
+        let secret is Atomic<@byte> = Atomic(@byte());
         loop {
             let message = await input.message();
             let kind = message.kind();
@@ -235,9 +284,16 @@ object PostgresDatabase {
                 let value = fields.cstring();
                 if name == "server_version" { version.replace(value); }
             }
+            if kind == "K" {
+                // BackendKeyData: the process id and the secret key a
+                // CancelRequest must quote (#240).
+                let fields = message.fields();
+                process.replace(fields.int32());
+                secret.replace(fields.take(fields.remaining()));
+            }
             confirm kind == "Z" || kind == "S" || kind == "K" || kind == "N" else throw PgWireFailure.because("unexpected message after authentication");
         }
-        let connection = PostgresConnection(PgSession(channel, input, output, options.batch(), version.value(), status.value()));
+        let connection = PostgresConnection(PgSession(channel, input, output, options.batch(), version.value(), status.value(), process.value(), secret.value()));
         published.set();
         connection;
     }
@@ -408,6 +464,30 @@ object PgSession does Closing {
     has reader_statement is Atomic<string>;
     has streaming, rollback is Atomic<bool>;
     has closing, transaction_prepared is Atomic<@string>;
+    // BackendKeyData of the server process; 0 and empty when the server sent none.
+    has process is int = 0;
+    has secret is @byte = @byte();
+
+    PgSession(transport is PgTransport, input is PgInput, output is PgOutput, batch is int, version is string, status is string, process is int, secret is @byte) {
+        self.transport = transport;
+        self.input = input;
+        self.output = output;
+        self.batch = batch;
+        self.version = version;
+        self.process = process;
+        self.secret = secret;
+        lock = Lock();
+        stopped = Event();
+        self.status = Atomic(status);
+        serial = Atomic(0);
+        reader = Atomic(0);
+        transaction = Atomic(0);
+        reader_statement = Atomic("");
+        streaming = Atomic(false);
+        rollback = Atomic(false);
+        closing = Atomic(@string());
+        transaction_prepared = Atomic(@string());
+    }
 
     PgSession(transport is PgTransport, input is PgInput, output is PgOutput, batch is int, version is string, status is string) {
         self.transport = transport;
@@ -507,11 +587,29 @@ object PgSession does Closing {
 
     // The rest of an answer whose reader closed early, discarded through
     // ReadyForQuery. Its failures belong to nobody; fatal ones still close
-    // the connection.
+    // the connection. Past 8192 rows or 1 MiB of discarded rows, a transport
+    // with a cancel route asks the server to stop the statement (#240): the
+    // short remainder then ends with SQLSTATE 57014, which is dropped like any
+    // other failure here.
     async drain(operation is DbOperation) is void {
         let outcome = PgOutcome(operation);
+        let rows = Atomic(0);
+        let bytes = Atomic(0);
+        let asked = Atomic(false);
+        defer rows.close();
+        defer bytes.close();
+        defer asked.close();
         loop {
-            self.data_rows(operation, 1073741824);
+            let run = self.data_rows(operation, 1073741824);
+            rows.replace(rows.value() + run.count());
+            bytes.replace(bytes.value() + run.bytes().size());
+            if !asked.value() && (rows.value() > 8192 || bytes.value() > 1048576) && process != 0 && transport.cancel_route().routed() {
+                asked.replace(true);
+                // A failed cancel only means the rest is read through.
+                try { await transport.cancel_route().cancel(process, secret); }
+                catch e is Cancelled { throw; }
+                catch e is Error {}
+            }
             let ready = self.buffered(operation);
             let message = if ready.size() == 1 { ready[0]; } else { await self.message(operation); };
             let kind = message.kind();

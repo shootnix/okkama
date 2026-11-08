@@ -548,6 +548,25 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   that objects are not keys: value objects are keys since #212
   ([#274](https://github.com/shootnix/okkama/issues/274)).
 
+- db/postgres: closing a reader early no longer costs the rest of a long
+  answer (#240). Since #11 a query streams its whole answer, so a reader
+  closed after a few rows of millions left the rest for the next operation to
+  read and discard. The session now keeps the backend's `BackendKeyData`.
+  Past 8192 discarded rows or 1 MiB, a connection with a cancel route sends a
+  CancelRequest over a separate plain TCP connection and waits until the
+  server closes it, so the signal reaches the backend before anything new is
+  sent. It then drops the short remainder and its `57014`. New public API,
+  additive: role `PgCancelRoute`, `PgCancelTcp(endpoint)` (passed by
+  `PostgresTcp` and `PostgresTls`) and
+  `PgTransport(input, output, origin, cancel)`; the three-argument
+  constructor means no route, and the answer is read through as before.
+  Checked against PostgreSQL in Docker
+  (`okkama-docs/examples/std-v4/db-postgres-cancel-check.ok`): 10⁷ rows
+  closed after the first one settle in 18 ms on the core, where reading 10⁶
+  through takes 182 ms. The IR engine's drain itself is slow (#280).
+  std guide `db-postgres.md`
+  ([#240](https://github.com/shootnix/okkama/issues/240)).
+
 - Terminal: input typed after a read was interrupted reaches the next read
   (#12). A terminal read that a timeout or a cancelled task gave up still
   had its blocking `read(2)` waiting on the reader thread, and every later
