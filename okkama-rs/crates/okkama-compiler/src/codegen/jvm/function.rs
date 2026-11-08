@@ -975,7 +975,15 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                         1,
                         1,
                     )?,
-                    // bool.string(): "1" или "0", как в Perl-интерпретаторе.
+                    // bool.string(): "true" или "false" (#262).
+                    (Type::Bool, _) => self.class.invoke_static(
+                        &mut self.asm,
+                        STRING,
+                        "valueOf",
+                        "(Z)Ljava/lang/String;",
+                        1,
+                        1,
+                    )?,
                     _ => self.class.invoke_static(
                         &mut self.asm,
                         STRING,

@@ -1078,6 +1078,7 @@ fn key_text(runtime: &Runtime, word: Word, kind: Kind, ty: Option<&Type>) -> Str
         }
         (_, Some(Type::Str)) => format!("\"{}\"", runtime.heap.text(word)),
         (_, Some(Type::Char)) => format!("\"{}\"", char::from_u32(word as u32).unwrap_or('?')),
+        (_, Some(Type::Bool)) => if word != 0 { "true" } else { "false" }.to_string(),
         (Kind::Float, _) => crate::scalar::float_text(f64::from_bits(word)),
         (Kind::Raw | Kind::Byte, _) => word.to_string(),
         _ => runtime.big_value(word).to_string(),
@@ -1111,7 +1112,8 @@ fn convert(runtime: &mut Runtime, function: usize, source: okkama_sparrow::Regis
     let to = runtime.ty(function, dst).cloned();
     match (from, to) {
         (Some(Type::Int), Some(Type::Str)) => Ok(int_text(runtime, word)),
-        (Some(Type::Bool | Type::Byte), Some(Type::Str)) => Ok(runtime.text_new(&word.to_string())),
+        (Some(Type::Bool), Some(Type::Str)) => Ok(runtime.text_new(if word != 0 { "true" } else { "false" })),
+        (Some(Type::Byte), Some(Type::Str)) => Ok(runtime.text_new(&word.to_string())),
         (Some(Type::Float), Some(Type::Str)) => Ok(runtime.text_new(&crate::scalar::float_text(f64::from_bits(word)))),
         (Some(Type::Rat), Some(Type::Str)) => {
             let text = runtime.rational(word).to_string();
