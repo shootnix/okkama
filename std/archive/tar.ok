@@ -14,7 +14,7 @@ import "io/stream" take Writing, Reading, Closing;
 import "io/buffer" take ByteBuffer;
 import "encoding/utf" take Utf8Encoded, Utf8Decoded, InvalidUtf8, ByteOrder;
 import "encoding/binary" take IntegerBytes, IntegerFromBytes, Signedness;
-import "numbers/bigint" take BigInt, BigSum, BigProduct, BigDifference, BigPower;
+import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "strings/parse" take ParsedInt;
 import "fs/stat" take Permissions, PermissionMode;
@@ -542,10 +542,10 @@ object TarNumericField {
         confirm origin.size() > 0 else throw InvalidTar.because("empty numeric field");
         if (origin[0].int() & 128) != 0 {
             let result = (1..origin.size()).reduce(BigInt((origin[0].int() & 127).string())) -> value, i {
-                BigSum(left:BigProduct(left:value,right:BigInt("256")).value(),right:BigInt(origin[i].int().string())).value();
+                ((value * BigInt("256")) + BigInt(origin[i].int().string()));
             };
             if (origin[0].int() & 64) != 0 {
-                BigDifference(left:result,right:BigPower(base:BigInt("2"),exponent:origin.size()*8-1).value()).value();
+                (result - BigInt("2").power(origin.size()*8-1));
             } else { result; }
         }
         else {
@@ -555,7 +555,7 @@ object TarNumericField {
                 (digits[0]..digits[digits.size()-1]+1).reduce(BigInt("0")) -> value, i {
                     let code = origin[i].int();
                     confirm code >= 48 && code <= 55 else throw InvalidTar.because("invalid octal field");
-                    BigSum(left:BigProduct(left:value,right:BigInt("8")).value(),right:BigInt((code-48).string())).value();
+                    ((value * BigInt("8")) + BigInt((code-48).string()));
                 };
             }
         }

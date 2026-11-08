@@ -1,7 +1,7 @@
 module i18n/plural v1.0.0;
 import "locale/tag" take Locale;
 import "math/decimal" take Decimal;
-import "numbers/bigint" take BigInt, BigRemainder;
+import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "encoding/utf" take Utf8Encoded;
 import "i18n/operands" take PluralOperands;
@@ -43,7 +43,7 @@ object PluralNumber does PluralOperands {
         // a member even of 0..1; its negated relation is compiled by the table.
         if name=="n" && fraction.sign()!=0 {return false;}
         let value=if name=="n" {integer;} else {self.operand(name);};
-        let selected=if modulus==0 {value;} else {BigRemainder(left:value,right:BigInt(modulus.string())).value();};
+        let selected=if modulus==0 {value;} else {(value % BigInt(modulus.string()));};
         selected.order(BigInt(minimum.string()))!=Order.less && selected.order(BigInt(maximum.string()))!=Order.greater;
     }
 }

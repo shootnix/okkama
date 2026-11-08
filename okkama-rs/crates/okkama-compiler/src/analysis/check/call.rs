@@ -1320,7 +1320,7 @@ impl Checker<'_, '_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn object_method(
+    pub(super) fn object_method(
         &mut self,
         target: Expr,
         object: ObjectId,

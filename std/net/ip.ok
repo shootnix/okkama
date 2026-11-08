@@ -4,7 +4,7 @@ import "runtime/net" take ip_parse, ip_format;
 import "compare" take Comparing, Order;
 import "collections/set" take Set, OrderedSet;
 import "net/ip_registry" take IpClassification;
-import "numbers/bigint" take BigInt, BigPower;
+import "numbers/bigint" take BigInt;
 import "error" take InvalidArgument;
 import "collections/iteration" take Cursor, Iterating, IterationEnded;
 
@@ -114,7 +114,7 @@ object IpNetwork {
         else {IpNetworkBytes(address.bytes(),length,false).bytes()==base.bytes();}
     }
     size() is BigInt {
-        BigPower(base:BigInt("2"),exponent:base.bytes().size()*8-length,maximum_bits:129).value();
+        BigInt("2").power(base.bytes().size()*8-length, 129);
     }
 }
 

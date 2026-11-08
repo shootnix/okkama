@@ -2,7 +2,7 @@ module numbers/float v1.0.0;
 import "encoding/binary" take FloatBytes,IntegerFromBytes,FloatWidth,Signedness;
 import "encoding/utf" take ByteOrder;
 import "runtime/format" take sprintf_values;
-import "numbers/bigint" take BigInt,BigPower,BigDifference,BigProduct;
+import "numbers/bigint" take BigInt;
 import "numbers/bigrational" take BigRational;
 import "math/decimal" take Decimal;
 import "compare" take Order;
@@ -49,20 +49,20 @@ object BinaryPowerRatio {
     value() is BigRational {
         let numerator=BigInt(coefficient.string());
         if shift>=0{
-            let power=BigPower(base:BigInt("2"),exponent:shift,maximum_bits:1100).value();
-            BigRational(BigProduct(left:numerator,right:power).value(),BigInt("1"));
-        }else{BigRational(numerator,BigPower(base:BigInt("2"),exponent:-shift,maximum_bits:1100).value());}
+            let power=BigInt("2").power(shift, 1100);
+            BigRational((numerator * power),BigInt("1"));
+        }else{BigRational(numerator,BigInt("2").power(-shift, 1100));}
     }
 }
 object FloatDecimalCandidate {
     has numerator,denominator is BigInt;
     FloatDecimalCandidate(origin is Decimal){
-        let coefficient=origin.coefficient();let absolute=if coefficient.sign()<0{BigDifference(left:BigInt("0"),right:coefficient).value();}else{coefficient;};
+        let coefficient=origin.coefficient();let absolute=if coefficient.sign()<0{(BigInt("0") - coefficient);}else{coefficient;};
         let exponent=origin.exponent();confirm exponent>=-400 && exponent<=400 else throw InvalidFloatRepresentation.invalid;
         if exponent>=0{
-            let power=BigPower(base:BigInt("10"),exponent:exponent,maximum_bits:1400).value();
-            numerator=BigProduct(left:absolute,right:power).value();denominator=BigInt("1");
-        }else{numerator=absolute;denominator=BigPower(base:BigInt("10"),exponent:-exponent,maximum_bits:1400).value();}
+            let power=BigInt("10").power(exponent, 1400);
+            numerator=(absolute * power);denominator=BigInt("1");
+        }else{numerator=absolute;denominator=BigInt("10").power(-exponent, 1400);}
     }
     inside(lower is BigRational,upper is BigRational,inclusive is bool) is bool {
         let low=self.order(lower);let high=self.order(upper);
@@ -70,7 +70,7 @@ object FloatDecimalCandidate {
     }
     private:
     order(other is BigRational) is Order {
-        BigProduct(left:numerator,right:other.denominator()).value().order(BigProduct(left:other.numerator(),right:denominator).value());
+        (numerator * other.denominator()).order((other.numerator() * denominator));
     }
 }
 enum InvalidFloatRepresentation is Error = (invalid);

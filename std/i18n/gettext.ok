@@ -3,7 +3,7 @@ import "locale/tag" take Locale;
 import "i18n/catalog" take MessageKey,MissingMessage,WrongMessageEntry,Translating;
 import "i18n/plural" take PluralNumber;
 import "math/decimal" take Decimal;
-import "numbers/bigint" take BigInt,BigSum,BigDifference,BigProduct,BigQuotient,BigRemainder;
+import "numbers/bigint" take BigInt;
 import "strings/parse" take ParsedInt;
 import "encoding/utf" take Utf8Encoded,Utf8Decoded;
 import "encoding/single_byte" take Latin1Encoded,Latin1Decoded,AsciiEncoded,AsciiDecoded;
@@ -90,9 +90,9 @@ object GettextBinary does GettextExpression {
         let predicate=match operation{case "=="{comparison==Order.equal;}case "!="{comparison!=Order.equal;}case "<"{comparison==Order.less;}case "<="{comparison!=Order.greater;}case ">"{comparison==Order.greater;}case ">="{comparison!=Order.less;}else{false;}};
         if operation=="==" || operation=="!=" || operation=="<" || operation=="<=" || operation==">" || operation==">="{return BigInt(if predicate{"1";}else{"0";});}
         if operation=="/" || operation=="%"{confirm second.sign()!=0 else throw InvalidCatalog.located(offset, "plural expression divides by zero");}
-        let value=match operation{case "+"{BigSum(left:first,right:second).value();}case "-"{BigDifference(left:first,right:second).value();}case "*"{BigProduct(left:first,right:second).value();}case "/"{BigQuotient(left:first,right:second).value();}else{BigRemainder(left:first,right:second).value();}};
-        let modulus=BigInt("18446744073709551616");let remainder=BigRemainder(left:value,right:modulus).value();
-        if remainder.sign()<0{BigSum(left:remainder,right:modulus).value();}else{remainder;}
+        let value=match operation{case "+"{(first + second);}case "-"{(first - second);}case "*"{(first * second);}case "/"{(first / second);}else{(first % second);}};
+        let modulus=BigInt("18446744073709551616");let remainder=(value % modulus);
+        if remainder.sign()<0{(remainder + modulus);}else{remainder;}
     }
 }
 object GettextToken {

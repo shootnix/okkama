@@ -5,7 +5,7 @@ import "collections/deque" take Deque;
 import "async/atomic" take Atomic;
 import "async/event" take Event;
 import "async/scope" take Supervising;
-import "numbers/bigint" take BigInt,BigSum;
+import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "io/stream" take Closing;
 
@@ -47,7 +47,7 @@ object LogQueueState{
             if options.overflow()==LogOverflow.drop_newest{return false;}
             queued.replace(items.front().remainder());
         }
-        let sequence=BigSum(left:accepted.value(),right:BigInt("1")).value();accepted.replace(sequence);
+        let sequence=(accepted.value() + BigInt("1"));accepted.replace(sequence);
         queued.replace(queued.value().back().addition(QueuedLogRecord(record,sequence)));self.signal();true;
     }
     start(scope is Supervising<int>) is void{
@@ -98,7 +98,7 @@ object LogQueueState{
     private:
     check() is void{if failures.value().size()>0{throw failures.value()[0];}}
     signal() is void{let previous=changed.value();changed.replace(Event());previous.set();}
-    loss(count is int) is void{dropped.replace(BigSum(left:dropped.value(),right:BigInt(count.string())).value());}
+    loss(count is int) is void{dropped.replace((dropped.value() + BigInt(count.string())));}
     completed() is void{let empty is @QueuedLogRecord=[];inflight.replace(empty);let futures is @Future<int>=[];delivery.replace(futures);self.signal();}
     failed(error is Error) is void{
         if failures.value().size()==0{failures.replace([error]);}

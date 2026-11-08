@@ -1,0 +1,39 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.overloads.results-differ-by-parameter-types",
+  "title": "overloads with different parameter types may return different types",
+  "purpose": "The declaration is invalid and the program must not complete.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.OVERLOADS",
+      "aspects": [
+        "normal",
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "1 2\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.8"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #215 (owner decision 2026-11-08), replacing overloads.incompatible-returns",
+    "expected_basis": "spec 11.8: the overload is chosen from the argument types, so overloads that differ in parameter types may declare different results; the result type of a call is the chosen overload's."
+  },
+  "status": "mandatory"
+}

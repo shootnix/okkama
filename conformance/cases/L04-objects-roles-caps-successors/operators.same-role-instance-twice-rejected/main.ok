@@ -1,0 +1,11 @@
+module ocs/role_twice v1.0.0;
+
+import "operators" take Adding;
+
+object Money does Adding<Money, Money>, Adding<Money, Money> {
+    has cents is int;
+    Money(:cents);
+    plus(other is Money) is Money { Money(cents: cents); }
+}
+
+main() is int { 0; }

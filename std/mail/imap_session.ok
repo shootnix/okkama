@@ -16,7 +16,7 @@ import "mail/imap_uid" take ImapUidSet, ImapUidSetLimits, ImapUidValidity, ImapU
 import "mail/mailbox" take MailFlags;
 import "collections/sequence" take Sequencing;
 import "mime/media_type" take MimeItems;
-import "numbers/bigint" take BigInt, BigSum;
+import "numbers/bigint" take BigInt;
 import "compare" take Order;
 import "async/lock" take Lock, LockGuard;
 import "async/channel" take Channel, Sending, ChannelClosed;
@@ -198,7 +198,7 @@ object ImapSessionState {
         ^selection=[];
     }
     selected(name is ImapMailboxName, value is ImapMailboxState) is ^ImapSessionState {
-        let following=BigSum(left:serial,right:BigInt("1")).value();let token=ImapSelectionToken(name,following);
+        let following=(serial + BigInt("1"));let token=ImapSelectionToken(name,following);
         ^serial=following;^selection=[ImapSelectedState(token,value)];
     }
     observed(response is ImapResponse) is ^ImapSessionState {

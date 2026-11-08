@@ -2169,7 +2169,9 @@ Resolution:
    during selection.
 7. Named calls additionally filter by parameter names, so same-type
    signatures can be distinguished by name where a positional call cannot.
-8. Overloads of one name and arity must declare the same return type.
+8. Overloads of one name and arity may declare different results when their
+   parameter types differ (#215): the result of a call is that of the
+   selected overload.
 9. A variadic tail compares its element type with every tail value. A call
    with an empty tail is ambiguous between `f(xs is ...int)` and
    `f(xs is ...string)`; declare `f()` to give it a meaning.
@@ -2789,6 +2791,54 @@ Because a successor declared on a role returns the *next role*, roles can
 describe the states of a protocol: each role exposes only what is valid in
 that state, and an invalid transition does not type-check. Section 30.6 shows
 the full pattern.
+
+### 22.3 Operator roles
+
+Module `operators` gives arithmetic operators a meaning for objects (#215).
+Each operator has a role; the first type parameter is the right operand, the
+second the result:
+
+| Role | Action | Operator |
+|---|---|---|
+| `Adding<T, R>` | `plus(other is T) is R` | `a + b` |
+| `Subtracting<T, R>` | `minus(other is T) is R` | `a - b` |
+| `Multiplying<T, R>` | `times(other is T) is R` | `a * b` |
+| `Dividing<T, R>` | `divided(other is T) is R` | `a / b` |
+| `Remaindering<T, R>` | `remainder(other is T) is R` | `a % b` |
+| `Negating<R>` | `negated() is R` | `-a` |
+
+```okkama
+import "operators" take Adding, Subtracting;
+import "compare" take Comparing, Order;
+
+object Money does Adding<Money, Money>, Subtracting<Money, Money>, Comparing<Money> {
+    has cents is int;
+    Money(:cents);
+    cents() is int { cents; }
+    plus(other is Money) is Money { Money(cents: cents + other.cents()); }
+    minus(other is Money) is Money { Money(cents: cents - other.cents()); }
+    order(other is Money) is Order { cents.order(other.cents()); }
+}
+
+let total = Money(cents: 250) + Money(cents: 75);   // total.plus(...)
+total > Money(cents: 300);                           // order() == Order.greater
+```
+
+- With an object, a role reference or a role-bounded type parameter on the
+  left, `a + b` is `a.plus(b)`. The type must declare the role: an action
+  named `plus` without `does Adding<…>` gives no `+`
+  (`Operator + cannot be applied to Plain and Plain: Plain does not do Adding`).
+- The right operand is checked like any argument, with no implicit
+  conversion, and the selected overload must be a role instance the type
+  declares. One role may be declared several times with different
+  arguments: `Instant` does `Subtracting<Duration, Instant>` and
+  `Subtracting<Instant, Duration>`, so `later - minute` is an `Instant` and
+  `later - start` a `Duration`.
+- `<`, `<=`, `>`, `>=` go through `compare.Comparing<T>`: `a < b` is
+  `a.order(b) == Order.less`. `==` stays structural.
+- In std: `BigInt` (`+ - * / %`, `-a`, ordering; `/` truncates toward zero),
+  `Duration` (`+ -`, `-a`, ordering), `Instant` and `MonotonicInstant`
+  (`+ Duration`, `- Duration`, `- Instant`, ordering), `Decimal` (ordering).
 
 ## Chapter 23. Role Fakes and Testing
 

@@ -9,7 +9,7 @@ import "io/stream" take AsyncWriting,ByteSource;
 import "io/decorators" take ByteSnapshot,InvalidReading;
 import "io/buffer" take ByteBuffer;
 import "encoding/single_byte" take Latin1Encoded,Latin1Decoded;
-import "numbers/bigint" take BigInt,BigQuotient,BigRemainder;
+import "numbers/bigint" take BigInt;
 import "strings/parse" take ParsedInt;
 import "compare" take Order;
 import "async/atomic" take Atomic;
@@ -111,8 +111,8 @@ object Http1HexSize {
         let digits=Http1HexDigits(BigInt(origin.string()),"");
         loop {
             let value=digits.number();last if value.sign()==0;
-            let remainder=BigRemainder(left:value,right:BigInt("16")).value();let index=ParsedInt(remainder.string()).value();
-            digits=digits.following(BigQuotient(left:value,right:BigInt("16")).value(),"0123456789abcdef".slice(index,index+1)+digits.string());
+            let remainder=(value % BigInt("16"));let index=ParsedInt(remainder.string()).value();
+            digits=digits.following((value / BigInt("16")),"0123456789abcdef".slice(index,index+1)+digits.string());
         }
         digits.string();
     }

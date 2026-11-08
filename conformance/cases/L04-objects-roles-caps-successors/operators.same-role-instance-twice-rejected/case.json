@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.operators.same-role-instance-twice-rejected",
+  "title": "a role instance listed twice in does is an error",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.OPERATOR-ROLES",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "error",
+    "failure": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ],
+      "justification": "The same role with the same arguments twice is a declaration error; other arguments are allowed."
+    },
+    "stdout": {
+      "text": ""
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #215",
+    "expected_basis": "spec 12.2: a generic role may be declared again with other arguments, never with the same ones."
+  },
+  "status": "mandatory"
+}

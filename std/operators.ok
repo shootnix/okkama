@@ -1,0 +1,46 @@
+module operators v1.0.0;
+
+// Operator roles (#215). An object that declares one of these roles gives the
+// matching operator a meaning for its values:
+//
+//     object Money does Adding<Money, Money>, Comparing<Money> { ... }
+//     total + fee;            // total.plus(fee)
+//     total < limit;          // total.order(limit) == Order.less
+//
+// The first parameter is the type of the right operand, the second the type
+// of the result, so `Instant + Duration` can give an Instant and
+// `Instant - Instant` a Duration: one object may declare a role several times
+// with different operands. The right operand must have exactly that type;
+// nothing converts implicitly. `<`, `<=`, `>`, `>=` use compare.Comparing;
+// `==` and `!=` stay structural. The roles are nominal: an object with a
+// `plus` action but no `does Adding<…>` gets no `+`.
+
+// a + b
+role Adding<T, R> {
+    plus(other is T) is R;
+}
+
+// a - b
+role Subtracting<T, R> {
+    minus(other is T) is R;
+}
+
+// a * b
+role Multiplying<T, R> {
+    times(other is T) is R;
+}
+
+// a / b
+role Dividing<T, R> {
+    divided(other is T) is R;
+}
+
+// a % b
+role Remaindering<T, R> {
+    remainder(other is T) is R;
+}
+
+// -a
+role Negating<R> {
+    negated() is R;
+}

@@ -2,7 +2,7 @@ module logging/write v1.0.0;
 import "logging/record" take LogRecord;
 import "collections/sequence" take Sequencing;
 import "async/atomic" take Atomic;
-import "numbers/bigint" take BigInt,BigSum;
+import "numbers/bigint" take BigInt;
 role LogWriting{write(origin is LogRecord) is void;}
 object DiscardingLogs does LogWriting{DiscardingLogs();write(origin is LogRecord) is void{}}
 object CollectedLogs does LogWriting{
@@ -36,7 +36,7 @@ object FallbackLogs does LogWriting{
 object BestEffortLogs does LogWriting{
     has origin is LogWriting;has count is Atomic<BigInt>;
     BestEffortLogs(origin is LogWriting){self.origin=origin;count=Atomic(BigInt("0"));}
-    write(record is LogRecord) is void{try{origin.write(record);}catch failure is Error{count.replace(BigSum(left:count.value(),right:BigInt("1")).value());}}
+    write(record is LogRecord) is void{try{origin.write(record);}catch failure is Error{count.replace((count.value() + BigInt("1")));}}
     failures() is BigInt{count.value();}
 }
 enum LogDeliveryFailure is Error = (failed(destinations is int, first is string));

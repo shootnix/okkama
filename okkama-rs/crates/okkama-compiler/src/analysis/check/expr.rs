@@ -6,7 +6,7 @@ use crate::analysis::thir::{
     ArithOp, ArrayPart, BinaryOp, BitOp, Catch, CatchAlt, CatchType, CompareKind, CompareOp,
     Constant, Expr, ExprKind, Match, NumericKind, Stmt, StmtKind, Try, UnaryOp,
 };
-use crate::analysis::ty::{EnumId, Ty};
+use crate::analysis::ty::{EnumId, ParamId, RoleId, Ty};
 use crate::ir::IntValue;
 use crate::source::Span;
 use crate::syntax::ast;
@@ -154,6 +154,11 @@ impl Checker<'_, '_> {
                     return self.binary_values(*op, lhs, rhs, span);
                 }
                 let lhs = self.value(left, None);
+                // An object, a role or a role-bounded type on the left: the
+                // operator role it declares (#215).
+                if Self::operator_operand(*op, &lhs) {
+                    return self.operator_call(*op, lhs, right, span);
+                }
                 let rhs = if is_fake_get(right) || matches!(lhs.ty, Some(Ty::Variant(..))) {
                     let ty = Self::ty_of(&lhs).taken();
                     self.value(right, Some(&ty))
@@ -402,6 +407,9 @@ impl Checker<'_, '_> {
         if ty.is_error() {
             return Self::poisoned(span);
         }
+        if op == ast::UnaryOp::Negate && matches!(ty, Ty::Object(..) | Ty::Role(..) | Ty::Param(_)) {
+            return self.negation_call(value, span);
+        }
         let (unary, result) = match (op, &ty) {
             (ast::UnaryOp::Not, Ty::Bool) => (UnaryOp::Not, Ty::Bool),
             (ast::UnaryOp::Negate, Ty::Int) => (UnaryOp::Negate(NumericKind::Int), Ty::Int),
@@ -612,6 +620,169 @@ impl Checker<'_, '_> {
                 Self::poisoned(span)
             }
         }
+    }
+
+    /// Whether `op` with this left operand goes through an operator role (#215):
+    /// arithmetic or ordering with an object, a role or a type parameter.
+    fn operator_operand(op: ast::BinaryOp, lhs: &Expr) -> bool {
+        use ast::BinaryOp as B;
+        matches!(
+            op,
+            B::Add | B::Subtract | B::Multiply | B::Divide | B::Remainder | B::Less | B::LessEqual | B::Greater | B::GreaterEqual
+        ) && !lhs.diverges
+            && matches!(Self::ty_of(lhs).taken(), Ty::Object(..) | Ty::Role(..) | Ty::Param(_))
+    }
+
+    /// The instances of `role` that `ty` declares, as role arguments: an
+    /// object's `does`, a role reference of that role, or a type parameter
+    /// bounded by it.
+    fn declared_roles(&self, ty: &Ty, role: RoleId) -> Vec<Vec<Ty>> {
+        match ty {
+            Ty::Object(object, type_args) => {
+                let info = &self.reg.objects[object.0];
+                let env: Vec<(ParamId, Ty)> = info.params.iter().copied().zip(type_args.iter().cloned()).collect();
+                info.does
+                    .iter()
+                    .filter(|(found, _)| *found == role)
+                    .map(|(_, args)| args.iter().map(|arg| arg.subst(&env)).collect())
+                    .collect()
+            }
+            Ty::Role(found, args) if *found == role => vec![args.clone()],
+            Ty::Param(param) => match &self.reg.params[param.0].bound {
+                Some(Ty::Role(found, args)) if *found == role => vec![args.clone()],
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    /// The action call an operator stands for, on an already checked left
+    /// operand; `None` for the role name when the type has no such action.
+    fn role_action(&mut self, target: Expr, action: &str, args: &[ast::Argument], span: Span) -> Expr {
+        let name = ast::Name { text: action.to_string(), span };
+        match Self::ty_of(&target).taken() {
+            Ty::Object(object, type_args) => self.object_method(target, object, type_args, &name, args, false, span),
+            Ty::Role(role, role_args) => self.role_method(target, role, role_args, &name, args, span),
+            Ty::Param(param) => match self.reg.params[param.0].bound.clone() {
+                Some(Ty::Role(role, role_args)) => self.role_method(target, role, role_args, &name, args, span),
+                _ => Self::poisoned(span),
+            },
+            _ => Self::poisoned(span),
+        }
+    }
+
+    /// `a op b` through the operator role of `a` (#215): `a.plus(b)`, …;
+    /// `<`, `<=`, `>`, `>=` compare `a.order(b)` with an `Order` case. The
+    /// right operand is checked by the action's own overload selection, and
+    /// the chosen overload must be one the declared role instances name.
+    fn operator_call(&mut self, op: ast::BinaryOp, lhs: Expr, right: &ast::Expr, span: Span) -> Expr {
+        use ast::BinaryOp as B;
+        let operators = self.reg.standard.operators;
+        let (role, action, role_name) = match op {
+            B::Add => (operators.adding, "plus", "Adding"),
+            B::Subtract => (operators.subtracting, "minus", "Subtracting"),
+            B::Multiply => (operators.multiplying, "times", "Multiplying"),
+            B::Divide => (operators.dividing, "divided", "Dividing"),
+            B::Remainder => (operators.remaindering, "remainder", "Remaindering"),
+            _ => (self.reg.standard.comparing, "order", "Comparing"),
+        };
+        let left = Self::ty_of(&lhs).taken();
+        let instances = role.map(|role| self.declared_roles(&left, role)).unwrap_or_default();
+        if instances.is_empty() {
+            let rhs = self.value(right, None);
+            let right_ty = Self::ty_of(&rhs).taken();
+            if !right_ty.is_error() {
+                let message = format!(
+                    "Operator {} cannot be applied to {} and {}: {} does not do {}",
+                    op.symbol(),
+                    self.type_name(&left),
+                    self.type_name(&right_ty),
+                    self.type_name(&left),
+                    role_name
+                );
+                self.error(span, message);
+            }
+            return Self::poisoned(span);
+        }
+        let args = [ast::Argument { name: None, value: right.clone(), span: right.span }];
+        let call = self.role_action(lhs, action, &args, span);
+        let (operand, result) = match &call.kind {
+            ExprKind::Call { args, .. } if !call.diverges => (
+                args.first().map(|arg| Self::ty_of(arg).taken()),
+                Self::ty_of(&call).taken(),
+            ),
+            _ => return call,
+        };
+        let comparison = !matches!(op, B::Add | B::Subtract | B::Multiply | B::Divide | B::Remainder);
+        let declared = instances.iter().any(|args| {
+            operand.as_ref() == args.first() && (comparison || Some(&result) == args.get(1))
+        });
+        if !declared {
+            let message = format!(
+                "Operator {} on {} calls {}({}), which is not one of the {} roles {} declares",
+                op.symbol(),
+                self.type_name(&left),
+                action,
+                operand.as_ref().map_or_else(String::new, |ty| self.type_name(ty)),
+                role_name,
+                self.type_name(&left)
+            );
+            self.error(span, message);
+            return Self::poisoned(span);
+        }
+        if !comparison {
+            return call;
+        }
+        let Some(order) = self.reg.standard.order else {
+            return Self::poisoned(span);
+        };
+        let (case_name, negated) = match op {
+            B::Less => ("less", false),
+            B::LessEqual => ("greater", true),
+            B::Greater => ("greater", false),
+            _ => ("less", true),
+        };
+        let Some(case) = self.reg.enums[order.0].cases.iter().position(|case| case == case_name) else {
+            return Self::poisoned(span);
+        };
+        let constant = Self::typed(ExprKind::EnumCase { ty: order, case }, Ty::Enum(order), span);
+        self.binary_values(if negated { B::NotEqual } else { B::Equal }, call, constant, span)
+    }
+
+    /// `-a` through `Negating<R>` (#215).
+    fn negation_call(&mut self, value: Expr, span: Span) -> Expr {
+        let ty = Self::ty_of(&value).taken();
+        let instances = self
+            .reg
+            .standard
+            .operators
+            .negating
+            .map(|role| self.declared_roles(&ty, role))
+            .unwrap_or_default();
+        if instances.is_empty() {
+            let message = format!(
+                "Operator - cannot be applied to {}: {} does not do Negating",
+                self.type_name(&ty),
+                self.type_name(&ty)
+            );
+            self.error(span, message);
+            return Self::poisoned(span);
+        }
+        let call = self.role_action(value, "negated", &[], span);
+        if call.diverges || !matches!(call.kind, ExprKind::Call { .. }) {
+            return call;
+        }
+        let result = Self::ty_of(&call).taken();
+        if !instances.iter().any(|args| args.first() == Some(&result)) {
+            let message = format!(
+                "Operator - on {} gives {}, which is not the result its Negating role declares",
+                self.type_name(&ty),
+                self.type_name(&result)
+            );
+            self.error(span, message);
+            return Self::poisoned(span);
+        }
+        call
     }
 
     /// `+`/`-` над массивами и словарями: тип результата — общий тип операндов.

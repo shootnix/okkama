@@ -1168,11 +1168,13 @@
     "boundary": {
      "cases": [
       "L03.overloads.named-shape",
+      "L03.overloads.results-differ-by-parameter-types",
       "L03.overloads.selection",
       "L03.variadic.overloaded"
      ],
      "mandatory_cases": [
       "L03.overloads.named-shape",
+      "L03.overloads.results-differ-by-parameter-types",
       "L03.overloads.selection",
       "L03.variadic.overloaded"
      ],
@@ -1186,14 +1188,12 @@
     "invalid": {
      "cases": [
       "L03.overloads.ambiguous",
-      "L03.overloads.incompatible-returns",
       "L03.overloads.no-candidate",
       "L03.variadic.overload-duplicate-signature",
       "L03.variadic.overload-empty-tail-ambiguous"
      ],
      "mandatory_cases": [
       "L03.overloads.ambiguous",
-      "L03.overloads.incompatible-returns",
       "L03.overloads.no-candidate",
       "L03.variadic.overload-duplicate-signature",
       "L03.variadic.overload-empty-tail-ambiguous"
@@ -1202,10 +1202,12 @@
     },
     "normal": {
      "cases": [
+      "L03.overloads.results-differ-by-parameter-types",
       "L03.overloads.selection",
       "L03.variadic.overload-by-tail-type"
      ],
      "mandatory_cases": [
+      "L03.overloads.results-differ-by-parameter-types",
       "L03.overloads.selection",
       "L03.variadic.overload-by-tail-type"
      ],
@@ -7704,6 +7706,52 @@
    ],
    "status": "mandatory",
    "title": "No inheritance or access grants: extends/isa/super/abstract/protected/allow are rejected"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "mandatory_cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
+    },
+    "invalid": {
+     "cases": [
+      "L04.operators.same-role-instance-twice-rejected",
+      "L04.operators.undeclared-role-rejected"
+     ],
+     "mandatory_cases": [
+      "L04.operators.same-role-instance-twice-rejected",
+      "L04.operators.undeclared-role-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "mandatory_cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "OBJ.OPERATOR-ROLES",
+   "discrepancies": [],
+   "family": "Objects, roles, caps and successors",
+   "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.2"
+   ],
+   "status": "mandatory",
+   "title": "Arithmetic and ordering operators on objects dispatch to the operator roles the type declares"
   },
   {
    "aspects": {
@@ -21295,7 +21343,7 @@
     "std/numbers/bigint.ok"
    ],
    "status": "mandatory",
-   "title": "std numbers/bigint public contract (BigDifference, BigDivisionByZero, BigGcd, BigInt, BigLcm, BigPower, BigPowerLimitExceeded, BigProduct, BigQuotient, BigRemainder, BigSum, InvalidBigExponent, InvalidBigInt, InvalidBigPowerLimit)"
+   "title": "std numbers/bigint public contract (BigDivisionByZero, BigInt, BigPowerLimitExceeded, InvalidBigExponent, InvalidBigInt, InvalidBigPowerLimit)"
   },
   {
    "aspects": {
@@ -21375,6 +21423,50 @@
    ],
    "status": "mandatory",
    "title": "std numbers/float public contract (Binary64RoundingInterval, BinaryPowerRatio, FloatDecimalCandidate, InvalidFloatRepresentation, ShortestFloat)"
+  },
+  {
+   "aspects": {
+    "boundary": {
+     "cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "mandatory_cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "requirement": "required"
+    },
+    "interaction": {
+     "cases": [],
+     "mandatory_cases": [],
+     "requirement": "n/a: cross-module interactions are tracked as L12/L13 interaction contracts"
+    },
+    "invalid": {
+     "cases": [
+      "L04.operators.undeclared-role-rejected"
+     ],
+     "mandatory_cases": [
+      "L04.operators.undeclared-role-rejected"
+     ],
+     "requirement": "required"
+    },
+    "normal": {
+     "cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "mandatory_cases": [
+      "L04.operators.arithmetic-and-ordering"
+     ],
+     "requirement": "required"
+    }
+   },
+   "contract": "STD.OPERATORS",
+   "discrepancies": [],
+   "family": "Standard library: operators",
+   "spec_refs": [
+    "std/operators.ok"
+   ],
+   "status": "mandatory",
+   "title": "std operators public contract (Adding, Dividing, Multiplying, Negating, Remaindering, Subtracting)"
   },
   {
    "aspects": {
@@ -25427,9 +25519,11 @@
     },
     "normal": {
      "cases": [
+      "L09.time.operators",
       "L10.clock.monotonic-order"
      ],
      "mandatory_cases": [
+      "L09.time.operators",
       "L10.clock.monotonic-order"
      ],
      "requirement": "required"
@@ -25550,10 +25644,12 @@
     },
     "normal": {
      "cases": [
-      "L09.time.durations"
+      "L09.time.durations",
+      "L09.time.operators"
      ],
      "mandatory_cases": [
-      "L09.time.durations"
+      "L09.time.durations",
+      "L09.time.operators"
      ],
      "requirement": "required"
     }
@@ -30901,5 +30997,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "91a1b55692343871c90987b532e87a2382dd661700a1ed4fee7278b110052d8c"
+ "suite_tree_sha256": "c3338410eb2f39b9a06f082ce57ec777dc980aca1b461ed898f112708c5cc102"
 }

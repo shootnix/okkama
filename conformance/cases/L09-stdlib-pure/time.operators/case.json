@@ -1,0 +1,51 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L09.time.operators",
+  "title": "Duration and Instant arithmetic and ordering with operators",
+  "purpose": "Codecs are plain objects over Json: optional members read as the given fallback when absent or null; reading errors keep the pointer of the failing value.",
+  "level": "L09",
+  "contracts": [
+    {
+      "contract": "STD.TIME.DURATION",
+      "aspects": [
+        "normal"
+      ]
+    },
+    {
+      "contract": "STD.TIME.CLOCK",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "harness": true,
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "120 1060 -60\ntrue true\n"
+    }
+  },
+  "spec_refs": [
+    "std/time/duration.ok",
+    "std/time/clock.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #215",
+    "expected_basis": "Instant + Duration is an Instant, Instant - Instant a Duration, Instant - Duration an Instant, -Duration negates; ordering through Comparing."
+  },
+  "status": "mandatory"
+}

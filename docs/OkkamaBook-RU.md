@@ -2239,8 +2239,9 @@ print(value is any) is int { 3; }
 7. Именованные вызовы дополнительно фильтруются по именам параметров,
    поэтому сигнатуры с одинаковыми типами различимы по имени там, где
    позиционный вызов не справится.
-8. Перегрузки одного имени и одной арности объявляют один и тот же
-   возвращаемый тип.
+8. Перегрузки одного имени и одной арности могут объявлять разные
+   результаты, если различаются типы параметров (#215): результат вызова —
+   результат выбранной перегрузки.
 9. Вариадический хвост сравнивает тип элемента с каждым значением хвоста.
    Вызов с пустым хвостом неоднозначен между `f(xs is ...int)` и
    `f(xs is ...string)`; объявите `f()`, чтобы придать ему смысл.
@@ -2899,6 +2900,54 @@ Generic `T`, выведенный из ограниченной ссылки, с
 описывать состояния протокола: каждая роль показывает только то, что допустимо
 в этом состоянии, а недопустимый переход не проходит проверку типов. Полный
 паттерн — в разделе 30.6.
+
+### 22.3 Операторные роли
+
+Модуль `operators` придаёт арифметическим операторам смысл для объектов (#215).
+У каждого оператора своя роль; первый параметр типа — правый операнд, второй —
+результат:
+
+| Роль | Действие | Оператор |
+|---|---|---|
+| `Adding<T, R>` | `plus(other is T) is R` | `a + b` |
+| `Subtracting<T, R>` | `minus(other is T) is R` | `a - b` |
+| `Multiplying<T, R>` | `times(other is T) is R` | `a * b` |
+| `Dividing<T, R>` | `divided(other is T) is R` | `a / b` |
+| `Remaindering<T, R>` | `remainder(other is T) is R` | `a % b` |
+| `Negating<R>` | `negated() is R` | `-a` |
+
+```okkama
+import "operators" take Adding, Subtracting;
+import "compare" take Comparing, Order;
+
+object Money does Adding<Money, Money>, Subtracting<Money, Money>, Comparing<Money> {
+    has cents is int;
+    Money(:cents);
+    cents() is int { cents; }
+    plus(other is Money) is Money { Money(cents: cents + other.cents()); }
+    minus(other is Money) is Money { Money(cents: cents - other.cents()); }
+    order(other is Money) is Order { cents.order(other.cents()); }
+}
+
+let total = Money(cents: 250) + Money(cents: 75);   // total.plus(...)
+total > Money(cents: 300);                           // order() == Order.greater
+```
+
+- Если слева объект, ссылка через роль или параметр типа с ограничением-ролью,
+  `a + b` — это `a.plus(b)`. Тип обязан объявить роль: действие `plus` без
+  `does Adding<…>` оператора не даёт
+  (`Operator + cannot be applied to Plain and Plain: Plain does not do Adding`).
+- Правый операнд проверяется как обычный аргумент, без неявных
+  преобразований, а выбранная перегрузка должна быть экземпляром роли,
+  объявленным типом. Одну роль можно объявить несколько раз с разными
+  аргументами: `Instant` делает `Subtracting<Duration, Instant>` и
+  `Subtracting<Instant, Duration>`, поэтому `later - minute` — момент, а
+  `later - start` — длительность.
+- `<`, `<=`, `>`, `>=` идут через `compare.Comparing<T>`: `a < b` — это
+  `a.order(b) == Order.less`. `==` остаётся структурным.
+- В std: `BigInt` (`+ - * / %`, `-a`, сравнения; `/` отбрасывает дробную часть
+  к нулю), `Duration` (`+ -`, `-a`, сравнения), `Instant` и `MonotonicInstant`
+  (`+ Duration`, `- Duration`, `- Instant`, сравнения), `Decimal` (сравнения).
 
 ## Глава 23. Фейки ролей и тестирование
 
