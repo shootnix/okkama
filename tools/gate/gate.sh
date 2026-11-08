@@ -167,10 +167,12 @@ conformance jvm --adapter-env OCS_RUST_ENGINE=jvm
 conformance sparrow --adapter-env OCS_RUST_ENGINE=sparrow
 # Every engine runs the passed OIR: the IR suite again with the passes off
 # shows a pass that changes meaning (#29).
-conformance ir-passes-off --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_IR_PASSES=none
+# Without the passes tail calls are real calls: L03.recursion.tail-constant-stack
+# makes 10^7 of them in the adapter's debug build, past its budget on CI.
+conformance ir-passes-off --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_IR_PASSES=none
 # The IR cycle collector at every candidate: an edge it miscounts frees a
 # live value at once instead of thousands of candidates later (#43).
-conformance ir-gc-stress --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_GC=stress
+conformance ir-gc-stress --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_GC=stress
 if [[ $QUICK -eq 0 ]]; then
     conformance sparrow-origin --adapter-env OCS_RUST_ENGINE=sparrow-origin
 fi
