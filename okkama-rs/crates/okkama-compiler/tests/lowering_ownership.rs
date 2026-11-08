@@ -159,6 +159,39 @@ fn regions_without_identities_are_elided() {
     assert!(count(main, |kind| matches!(kind, InstKind::RegionLeave { .. })) >= 1);
 }
 
+/// Функции, которые ничего с `destroy` не захватывают, регионы не
+/// учитывают, даже если `destroy` в программе есть (#292).
+#[test]
+fn plain_closures_are_not_tracked() {
+    let module = module(&format!(
+        "{RES} object Pipeline {{ Pipeline(); adder(amount is int) is (int) is int {{ (value is int) is int {{ value + amount; }}; }} \
+         compose(f is (int) is int, g is (int) is int) is (int) is int {{ (value is int) is int {{ g(f(value)); }}; }} }} \
+         main() is int {{ let r = Res(n: 1); let p = Pipeline(); let both = p.compose(p.adder(1), p.adder(2)); both(3); }}"
+    ));
+    for symbol in ["Pipeline.adder", "Pipeline.compose"] {
+        let function = function(&module, symbol);
+        assert_eq!(count(function, |kind| matches!(kind, InstKind::RegionEnter)), 0, "{symbol}");
+        // Без регионов тело — один блок (`ir::cfg::merge_blocks`).
+        assert_eq!(function.blocks.len(), 1, "{symbol}");
+    }
+    let main = function(&module, "main");
+    assert_eq!(count(main, |kind| matches!(kind, InstKind::RegionTrack { .. })), 1, "only Res");
+}
+
+/// Замыкание, захватившее объект с `destroy`, владеет им: функции программы
+/// по-прежнему учитываются регионами (#292).
+#[test]
+fn closures_that_capture_resources_stay_tracked() {
+    let module = module(&format!(
+        "{RES} object Keeper {{ Keeper(); keep(res is Res) is () is Res {{ () is Res {{ res; }}; }} }} \
+         main() is int {{ let keep = Keeper().keep(Res(n: 1)); let res = keep(); 0; }}"
+    ));
+    let keep = function(&module, "Keeper.keep");
+    assert_eq!(count(keep, |kind| matches!(kind, InstKind::RegionTrack { .. })), 1);
+    let main = function(&module, "main");
+    assert!(count(main, |kind| matches!(kind, InstKind::RegionAdopt { .. })) >= 1);
+}
+
 /// `async destroy` (#154): scopes of async functions close with
 /// `region.settle`, so the destroy is awaited; synchronous ones keep
 /// `region.leave`, and a program without an async destroy never settles.

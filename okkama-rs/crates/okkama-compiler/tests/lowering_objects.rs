@@ -130,7 +130,7 @@ fn rebinding_in_loops_and_branches_threads_values_through_parameters() {
         main.contains("%7: ^C = call @C.inc(%5)\n    %8: C = succ.take %7\n"),
         "{main}"
     );
-    assert!(main.contains("br ^b2(%11, %9)"), "{main}");
+    assert!(main.contains("br ^b2(%10, %8)"), "{main}");
     // Обе ветви `if` перепривязывают `c`: значение приходит параметром.
     assert!(main.matches("succ.take").count() >= 3, "{main}");
     assert!(main.contains("(%"), "{main}");

@@ -14,14 +14,22 @@
 //! сразу к его обработчику или из функции, а сам он удаляется. Иначе каждый
 //! вызов машинного кода несёт ветку обработчика, который ничего не делает.
 //!
+//! Сначала из регионов уходят значения, которые ничем не владеют (#292).
+//! Lowering решает это по типу и осторожно: функция не plain никогда (что
+//! захвачено, тип не говорит), роль — по всем объявлениям программы. В
+//! собранном модуле видно всё: какие объекты есть, какие роли они делают и
+//! что захватывает каждое замыкание. Тогда `adopt`, `track` и `transfer`
+//! plain значения и его `keep` ничего не делают, а регион без них пуст.
+//!
 //! Проход идёт до генерации кода всех движков, поэтому места инструкций
 //! (`Function::span_at`) остаются согласованными с исполняемым кодом.
 use std::collections::{HashMap, HashSet};
 
-use super::{BlockId, Function, InstKind, Module, TermKind, ValueId, cfg};
+use super::{BlockId, Function, InstKind, Module, TermKind, Type, ValueId, cfg};
 
 /// Убрать пустые регионы во всех функциях; число убранных.
 pub fn elide_unused_regions(module: &mut Module) -> usize {
+    drop_plain_ownership(module);
     module
         .functions
         .iter_mut()
@@ -170,4 +178,117 @@ fn elide(function: &mut Function) -> usize {
         }
     }
     unused.len()
+}
+
+/// Plain-ность всего модуля: объект plain, если у него нет `destroy` и все
+/// поля plain; роль — если её делают только plain объекты; функция — если ни
+/// одно замыкание не захватывает не plain значение.
+struct Plain {
+    objects: Vec<bool>,
+    roles: Vec<bool>,
+    functions: bool,
+}
+
+impl Plain {
+    fn of(module: &Module) -> Self {
+        let captured: Vec<&Type> = module
+            .functions
+            .iter()
+            .flat_map(|function| {
+                function.blocks.iter().flat_map(|block| &block.insts).flat_map(|inst| match &inst.kind {
+                    InstKind::FnClosure { captures, .. } => {
+                        captures.iter().map(|value| &function.values[value.0]).collect()
+                    }
+                    _ => Vec::new(),
+                })
+            })
+            .collect();
+        // Функцию без тела (native, intrinsic) не видно: если она отдаёт
+        // функцию, что та захватила, неизвестно.
+        let opaque = module.functions.iter().any(|function| {
+            function.blocks.is_empty()
+                && matches!(&function.result, super::ResultType::Value(ty) if mentions_function(ty))
+        });
+        let mut plain = Plain {
+            objects: vec![true; module.objects.len()],
+            roles: vec![true; module.roles.len()],
+            functions: !opaque,
+        };
+        loop {
+            let mut changed = false;
+            for (index, object) in module.objects.iter().enumerate() {
+                if plain.objects[index]
+                    && (object.destroy.is_some() || !object.fields.iter().all(|field| plain.ty(&field.ty)))
+                {
+                    plain.objects[index] = false;
+                    changed = true;
+                }
+                if !plain.objects[index] {
+                    for witness in &object.does {
+                        if plain.roles[witness.role.0] {
+                            plain.roles[witness.role.0] = false;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if plain.functions && !captured.iter().all(|ty| plain.ty(ty)) {
+                plain.functions = false;
+                changed = true;
+            }
+            if !changed {
+                return plain;
+            }
+        }
+    }
+
+    /// Значение типа не достигает идентичностей с `destroy` (как
+    /// `Ctx::is_plain`, но по всему модулю).
+    fn ty(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Object(object) | Type::Successor(object) => self.objects[object.0],
+            Type::Role(role) => self.roles[role.0],
+            Type::Array(element) | Type::Builder(element) => self.ty(element),
+            Type::Map(_, value) | Type::MapBuilder(_, value) => self.ty(value),
+            Type::Fn(_) => self.functions,
+            Type::Any | Type::Cap(_) => false,
+            _ => true,
+        }
+    }
+}
+
+fn mentions_function(ty: &Type) -> bool {
+    match ty {
+        Type::Fn(_) | Type::Any => true,
+        Type::Array(element) | Type::Builder(element) => mentions_function(element),
+        Type::Map(_, value) | Type::MapBuilder(_, value) => mentions_function(value),
+        _ => false,
+    }
+}
+
+/// Убрать из регионов plain значения (#292); число убранных инструкций.
+fn drop_plain_ownership(module: &mut Module) -> usize {
+    let plain = Plain::of(module);
+    let mut dropped = 0;
+    for function in &mut module.functions {
+        let values = &function.values;
+        for block in &mut function.blocks {
+            let before = block.insts.len();
+            block.insts.retain(|inst| match &inst.kind {
+                InstKind::RegionAdopt { value, .. }
+                | InstKind::RegionTrack { value, .. }
+                | InstKind::RegionTransfer { value, .. } => !plain.ty(&values[value.0]),
+                _ => true,
+            });
+            dropped += before - block.insts.len();
+            for inst in &mut block.insts {
+                if let InstKind::RegionLeave { keep, .. } | InstKind::RegionSettle { keep, .. } = &mut inst.kind
+                    && keep.is_some_and(|value| plain.ty(&values[value.0]))
+                {
+                    *keep = None;
+                }
+            }
+        }
+    }
+    dropped
 }

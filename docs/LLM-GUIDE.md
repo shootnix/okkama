@@ -213,12 +213,17 @@ phase guarantees and what checks it: [phases.md](phases.md).
 
 **IR passes** (`lowering/mod.rs`, after lowering, before `ir::verify`), each
 on verified OIR and keeping it verifiable and meaning-preserving, in this
-order: `regions` (regions that own nothing are not opened; first, so that
-an empty `region.leave` does not hide a tail call, #285), `tail-calls` (self
-tail calls become loops; needs calls in tail position, empty trampolines
-allowed), `fold` (exact constant arithmetic and comparisons; never what may
-fail), `hoist` (loop-invariant constants to the entry block), `jumps` (empty
-trampoline blocks are skipped), `undef` (unread `undef` removed). `OKKAMA_IR_PASSES=none|all|list`
+order: `regions` (plainness is recomputed over the whole module — objects
+without `destroy` and with plain fields, roles done only by plain objects,
+function values when no closure captures a non-plain value — and region ops
+on plain values are dropped, #292; then regions that own nothing are not
+opened; first, so that an empty `region.leave` does not hide a tail call,
+#285), `tail-calls` (self tail calls become loops; needs calls in tail
+position, empty trampolines allowed), `fold` (exact constant arithmetic and
+comparisons; never what may fail), `hoist` (loop-invariant constants to the
+entry block), `undef` (unread `undef` removed), `jumps` (empty trampoline
+blocks are skipped; after `undef`, which empties the blocks of elided
+regions). `OKKAMA_IR_PASSES=none|all|list`
 selects them; every engine runs the passed OIR, so the gate runs the IR
 conformance suite with the passes off as well (`tests/ir_passes.rs` checks
 each pass alone and that `sabotage-int-add` is caught). A new pass gets a
@@ -230,7 +235,10 @@ name there.
 `{$tag, $<case>_<name>: array}`; runtime-raised errors are the first case);
 resources (`destroy`) are released by cleanup regions that the compiler emits
 (`region.enter/track/adopt/leave/transfer`); plainness (`is_plain`) decides
-where regions are needed.
+where regions are needed. Lowering decides it conservatively per type (a
+function value is never plain, a role is judged over every declaration);
+the `regions` pass recomputes it over the finished module and drops what is
+not needed (#292).
 
 **sparrow-core** (`crates/sparrow-core/src`):
 
