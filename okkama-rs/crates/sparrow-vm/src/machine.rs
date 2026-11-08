@@ -983,6 +983,32 @@ pub(crate) fn evaluate<'a>(
             Ok(Step::Write(None, Value::Undef))
         }
         I::ObjGet { dst, object, field } => write(*dst, ops::object_get(r(*object)?, *field as usize)?),
+        // Вариант (#290): значение — объект случая.
+        I::VariantNew { dst, variant, case, fields } => {
+            let (_, object) = &program.variants[variant.0 as usize].cases[*case as usize];
+            write(*dst, ObjectHeap.allocate(object.0 as usize, values(fields)?))
+        }
+        I::VariantTag { dst, value } => {
+            let declaration = ObjectHeap.declaration(r(*value)?)?;
+            let tag = program
+                .variants
+                .iter()
+                .find_map(|variant| variant.cases.iter().position(|(_, object)| object.0 as usize == declaration))
+                .ok_or_else(|| invalid("variant.tag of a value that is not a variant case"))?;
+            write(*dst, Value::Int(sparrow_runtime::IntValue::from_i64(tag as i64)))
+        }
+        I::VariantGet { dst, value, case, field } => {
+            let value = r(*value)?;
+            let declaration = ObjectHeap.declaration(value)?;
+            let active = program.variants.iter().any(|variant| {
+                variant.cases.get(*case as usize).is_some_and(|(_, object)| object.0 as usize == declaration)
+            });
+            if !active {
+                return Err(invalid("variant.get of an inactive case"));
+            }
+            write(*dst, ops::object_get(value, *field as usize)?)
+        }
+        I::VariantOf { dst, source, .. } => write(*dst, r(*source)?.clone()),
         I::ObjNext { dst, object, updates } => {
             let updates = updates
                 .iter()
@@ -1219,6 +1245,7 @@ pub(crate) fn evaluate<'a>(
                 let matches = match kind {
                     CatchKind::Object => program.objects[*ty as usize].is_native_failure(),
                     CatchKind::Role => program.roles[*ty as usize].is_error(),
+                    CatchKind::Variant => false,
                 };
                 return Ok(if matches {
                     Step::Transfer(handler, Some((payload.0, Value::NativeFailure(native.clone()))))
@@ -1230,6 +1257,10 @@ pub(crate) fn evaluate<'a>(
                 let caught = Value::Object(object.0.clone());
                 let matches = match kind {
                     CatchKind::Object => engine.object_declaration(&caught)? == *ty as usize,
+                    CatchKind::Variant => {
+                        let declaration = engine.object_declaration(&caught)?;
+                        program.variants[*ty as usize].cases.iter().any(|(_, object)| object.0 as usize == declaration)
+                    }
                     CatchKind::Role => {
                         engine.role_witness(&caught, RoleRef(*ty))?.is_some()
                             || (is_runtime_cancelled(&caught) && program.roles[*ty as usize].is_error())

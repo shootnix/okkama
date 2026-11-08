@@ -745,7 +745,43 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
                     .invoke_interface(index, count, args.len() as i32 + 1, pushes);
             }
             // Ссылка роли на JVM — тот же объект, типизированный интерфейсом.
-            InstKind::SuccTake(value) | InstKind::RoleWrap(value) => self.load(*value),
+            InstKind::SuccTake(value) | InstKind::RoleWrap(value) | InstKind::VariantOf(value) => {
+                self.load(*value)
+            }
+            // Значение варианта — объект класса случая (#290).
+            InstKind::VariantNew { case, fields } => {
+                let Some(Type::Variant(variant)) = result.map(|value| &self.function.values[value.0]) else {
+                    return Err(error("variant.new must define a variant"));
+                };
+                let object = self.case_object(variant.0, *case);
+                self.construct(object, |generator, index| {
+                    generator.load(fields[index]);
+                    Ok(())
+                })?;
+            }
+            InstKind::VariantTag(value) => {
+                let Type::Variant(variant) = &self.function.values[value.0] else {
+                    return Err(error("variant.tag reads a variant"));
+                };
+                let class = self.class.layout.variants[variant.0].class.clone();
+                self.load(*value);
+                let tag = self.class.pool.field_ref(&class, "$tag", "Ljava/math/BigInteger;")?;
+                self.asm.op_index(0xb4, tag, 1, 1); // getfield $tag
+            }
+            InstKind::VariantGet { value, case, field } => {
+                let Type::Variant(variant) = &self.function.values[value.0] else {
+                    return Err(error("variant.get reads a variant"));
+                };
+                let object = self.case_object(variant.0, *case);
+                let layout = &self.class.layout.objects[object];
+                let (case_class, (name, descriptor)) = (layout.class.clone(), layout.fields[*field].clone());
+                self.load(*value);
+                // Другой случай — ClassCastException: поле не читается.
+                let class = self.class.pool.class(&case_class)?;
+                self.asm.op_index(0xc0, class, 1, 1); // checkcast
+                let index = self.class.pool.field_ref(&case_class, &name, &descriptor)?;
+                self.asm.op_index(0xb4, index, 1, 1); // getfield
+            }
             // Значение cap — его владелец; поле — функция над владельцем.
             InstKind::CapMake(owner) => self.load(*owner),
             InstKind::CallCap { cap, field } => {
@@ -1490,6 +1526,11 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
         Ok(())
     }
 
+    /// Объект раскладки случая `case` варианта.
+    fn case_object(&self, variant: usize, case: usize) -> usize {
+        self.class.layout.variants[variant].cases[case]
+    }
+
     fn get_field(&mut self, object: ValueId, owner: usize, field: usize) -> Result<()> {
         self.load(object);
         let layout = &self.class.layout.objects[owner];
@@ -1778,6 +1819,7 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
         let class_name = match ty {
             CatchType::Object(object) => self.class.layout.objects[object.0].class.clone(),
             CatchType::Role(role) => self.class.layout.roles[role.0].class.clone(),
+            CatchType::Variant(variant) => self.class.layout.variants[variant.0].class.clone(),
         };
         let class = self.class.pool.class(&class_name)?;
         let miss = self.asm.label();

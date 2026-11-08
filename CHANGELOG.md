@@ -6,6 +6,24 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Changed
+
+- Variants — enums with payloads, `Maybe`, `Presence` and error enums — have
+  a representation of their own (#290). OIR gains the variant type and
+  `variant.new`, `variant.tag`, `variant.get` and `variant.of`; each case is
+  an object holding only its own payload, so a value is one allocation, and
+  building or reading one no longer depends on the fields of the other
+  cases. Before, a variant was one object with a one-element array per
+  payload field of every case. Sparrow (bytecode version 13: a variant table,
+  four instructions, `catch … variant`), the IR engine and the JVM (an
+  abstract class per variant, a subclass per case) store a value as the
+  object of its case; the Sparrow verifier rejects a case or a field outside
+  the layout, and reading the payload of an inactive case traps. Sparrow,
+  10 M steps that build and match a value: `value`/`pair` 1.46 → 0.53 s and
+  30 M → 0 arrays; a 13-case variant 7.58 → 0.64 s and 260 M → 0 arrays.
+  Conformance case `L05.variants.case-layouts`; the Sparrow Book documents
+  the instructions.
+
 ## [0.4.1] — 2026-11-09
 
 0.4.1 completes the language proof of concept and the first hardening

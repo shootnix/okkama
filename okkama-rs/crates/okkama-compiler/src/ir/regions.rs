@@ -187,6 +187,8 @@ struct Plain {
     objects: Vec<bool>,
     roles: Vec<bool>,
     functions: bool,
+    /// Объекты случаев каждого варианта (#290).
+    variants: Vec<Vec<usize>>,
 }
 
 impl Plain {
@@ -213,6 +215,11 @@ impl Plain {
             objects: vec![true; module.objects.len()],
             roles: vec![true; module.roles.len()],
             functions: !opaque,
+            variants: module
+                .variants
+                .iter()
+                .map(|variant| variant.cases.iter().map(|(_, object)| object.0).collect())
+                .collect(),
         };
         loop {
             let mut changed = false;
@@ -248,6 +255,7 @@ impl Plain {
         match ty {
             Type::Object(object) | Type::Successor(object) => self.objects[object.0],
             Type::Role(role) => self.roles[role.0],
+            Type::Variant(id) => self.variants[id.0].iter().all(|object| self.objects[*object]),
             Type::Array(element) | Type::Builder(element) => self.ty(element),
             Type::Map(_, value) | Type::MapBuilder(_, value) => self.ty(value),
             Type::Fn(_) => self.functions,

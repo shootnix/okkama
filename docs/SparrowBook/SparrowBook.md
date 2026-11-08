@@ -55,7 +55,7 @@ uncaught failure is printed on stderr and the exit status is 1.
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 12
+sparrow 13
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ result. Comments start with `;`.
 ## 3. The shape of a file
 
 ```text
-sparrow 12                      ; format version
+sparrow 13                      ; format version
 module "name" "version"         ; the module's name and version (may be "")
 type t0 …                       ; the type table, in order
 enum enum0 "Name" ["a", "b"]    ; enums with their cases
@@ -133,6 +133,7 @@ accepts them in any order, each table numbered on its own.
 | `successor objN` | an object under construction by `obj.next` | pointer |
 | `role roleN` | a reference through a role | pointer |
 | `enum enumN` | a payload-less enum case | raw word |
+| `variant variantN` | a value of an enum with payloads: an object of one of its cases | pointer |
 | `array tN`, `map tK tV` | immutable collections | pointer |
 | `builder tN`, `mbuilder tK tV` | linear builders of them | pointer |
 | `fn [t…] -> t` | a closure | pointer |
@@ -171,7 +172,7 @@ Integer operations never overflow: results that leave 64 bits become BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 12
+sparrow 13
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -230,7 +231,7 @@ taken, all at once — every source is read before any destination is written.
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 12
+sparrow 13
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -279,7 +280,7 @@ scalar values. String constants use `\n`, `\t`, `\"`, `\\` and `\u{…}`.
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 12
+sparrow 13
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -355,13 +356,21 @@ $ sparrow run shapes.spb; echo $?
   `call.role r7, r5, role0, 0, []` calls slot 0 of the role on it.
 - `role.narrow` converts between roles and fails with its message when the
   object does not do the target role.
+- An enum with payloads is a `variant variantN "Name" { case "c" objK … }`
+  declaration: each case has its own object, whose fields are that case's
+  payload and nothing else. `variant.new rD, variant0, 1, [r0]` makes case 1,
+  `variant.tag` gives the active case number, `variant.get rD, rV, 1, 0`
+  reads field 0 of case 1 and fails if another case is active, and
+  `variant.of` turns a case object into a value of its variant. The core
+  needs the cases of a variant to be consecutive objects: it reads the case
+  number from the object header.
 
 ## 10. Arrays, builders and maps
 
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 12
+sparrow 13
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -432,7 +441,7 @@ maps (a repeated key takes the rightmost value).
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 12
+sparrow 13
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -478,7 +487,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 12
+sparrow 13
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -546,7 +555,8 @@ $ sparrow run errors.spb; echo $?
 - `handler START END @TARGET rF` covers instructions `START..END-1`: a failure
   there jumps to `TARGET` with the failure in `rF` (type `failure`).
 - `catch rF, object, N, rV, @MATCH, @OTHER` tests the failure: if it is an
-  `objN` (or, with `role`, does `roleN`), the caught value goes to `rV` on
+  `objN` (with `role`, does `roleN`; with `variant`, is a case of
+  `variantN`), the caught value goes to `rV` on
   the edge to `MATCH`; otherwise control goes to `OTHER`.
 - `raise rF` sends a failure on unchanged. `fail.caused` and
   `fail.secondary` build failures that carry the one they replaced.
@@ -564,7 +574,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 12
+sparrow 13
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -638,7 +648,7 @@ keeps what is reachable from `rK` (a value being returned).
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 12
+sparrow 13
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -685,7 +695,7 @@ or observes one. An async function is compiled as a resumable state machine;
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 12
+sparrow 13
 module "testing" "1.0.0"
 type t0 int
 type t1 bool
@@ -847,6 +857,10 @@ edge moves; `[…]` a list.
 | 93 | `obj.next rD, rX, [N: rX, …]` | successor: a copy with fields replaced (`[N: rX, …]`) |
 | 94 | `role.wrap rD, rX, roleN` | an object as a reference of a role it does |
 | 95 | `role.narrow rD, rX, roleN, "…"` | a role reference as another role; fails with the message otherwise |
+| 151 | `variant.new rD, variantN, N, [rX, …]` | a variant value: an object of case N from its fields |
+| 152 | `variant.tag rD, rX` | the number of the active case (an int) |
+| 153 | `variant.get rD, rX, N, N` | a payload field: the case, then the field; another active case fails |
+| 154 | `variant.of rD, rX, variantN` | a case object as a value of its variant |
 | 100 | `arr.new rD, [rX, …]` | an array of the listed registers |
 | 101 | `arr.len rD, rX` | length |
 | 102 | `arr.get rD, rX, rX` | element by index; a bad index fails |
@@ -898,6 +912,6 @@ edge moves; `[…]` a list.
 | 145 | `unreachable` | control never gets here |
 | 146 | `throw rX` | throw an object that does the builtin Error role |
 | 147 | `raise rX` | send a failure on |
-| 148 | `catch rX, object/role, N, rD, @T, @T` | match a failure against `object N` or `role N`: the value on the edge to the first target, else the second |
+| 148 | `catch rX, object/role/variant, N, rD, @T, @T` | match a failure against `object N` or `role N`: the value on the edge to the first target, else the second |
 | 149 | `arr.lookup rX, rX, rD, @T, @T` | element by index on the first edge, or the second if missing |
 | 150 | `map.lookup rX, rX, rD, @T, @T` | value by key on the first edge, or the second if missing |

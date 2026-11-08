@@ -189,10 +189,8 @@ pub(super) fn lower_task(ctx: &mut Ctx<'_, '_>, func: FuncId) -> Result<ir::Func
             adapters::lower_method(ctx, symbol, object, method)
         }
         Task::AdapterNew { object } => adapters::lower_new(ctx, symbol, object),
-        Task::VariantGet { object, field } => {
-            adapters::lower_variant_get(ctx, symbol, object, field)
-        }
-        Task::VariantText { object } => adapters::lower_variant_text(ctx, symbol, object),
+        Task::VariantText { variant } => adapters::lower_variant_text(ctx, symbol, variant),
+        Task::CaseText { object } => adapters::lower_case_text(ctx, symbol, object),
         Task::Describe { ty } => adapters::lower_describe(ctx, symbol, &ty),
         Task::Global { constant } => adapters::lower_global(ctx, symbol, constant),
         Task::Closure { index } => lower_closure(ctx, symbol, index),
@@ -2132,64 +2130,42 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
             ExprKind::VariantNew { case, values } => {
                 let ty = self.expr_type(expr)?;
-                let Type::Object(object) = ty else {
-                    unreachable!()
-                };
-                let semantic = expr.ty.as_ref().unwrap().subst(&self.env);
-                let Ty::Variant(id, _) = semantic else {
-                    unreachable!()
-                };
-                let offset = 1 + self.ctx.reg.enums[id.0].payloads[..*case]
-                    .iter()
-                    .map(Vec::len)
-                    .sum::<usize>();
-                let field_types: Vec<_> = self.ctx.objects[object.0]
-                    .fields
-                    .iter()
-                    .map(|(_, t, _)| t.clone())
-                    .collect();
                 let mut fields = Vec::new();
-                for (index, ty) in field_types.into_iter().enumerate() {
-                    let value = if index == 0 {
-                        self.constant(
-                            Constant::Int(IntValue::parse(&case.to_string()).unwrap()),
-                            span,
-                        )
-                    } else if index >= offset && index < offset + values.len() {
-                        let Some(value) = self.value(&values[index - offset])? else {
-                            return Ok(Out::Diverged);
-                        };
-                        self.emit(InstKind::ArrayNew(vec![value.value]), ty, span)
-                    } else {
-                        self.emit(InstKind::ArrayNew(Vec::new()), ty, span)
+                for value in values {
+                    let Some(value) = self.value(value)? else {
+                        return Ok(Out::Diverged);
                     };
                     fields.push(value.value);
                 }
-                let func = self.ctx.adapter_ctor(object);
                 Ok(Out::Value(self.emit(
-                    InstKind::Call { func, args: fields },
-                    Type::Object(object),
+                    InstKind::VariantNew {
+                        case: *case,
+                        fields,
+                    },
+                    ty,
                     span,
                 )))
             }
-            ExprKind::VariantTag(value) | ExprKind::VariantGet { value, .. } => {
-                let field = if let ExprKind::VariantGet { field, .. } = &expr.kind {
-                    *field
-                } else {
-                    0
-                };
+            ExprKind::VariantTag(value) => {
                 let Some(value) = self.value(value)? else {
                     return Ok(Out::Diverged);
                 };
-                let Type::Object(object) = value.ty else {
+                Ok(Out::Value(self.emit(InstKind::VariantTag(value.value), Type::Int, span)))
+            }
+            ExprKind::VariantGet { value, field } => {
+                let Some(value) = self.value(value)? else {
+                    return Ok(Out::Diverged);
+                };
+                let Type::Variant(id) = value.ty else {
                     unreachable!()
                 };
-                let func = self.ctx.variant_getter(object, field);
+                let (case, field) = self.case_field(id, *field);
                 let ty = self.expr_type(expr)?;
                 Ok(Out::Value(self.emit(
-                    InstKind::Call {
-                        func,
-                        args: vec![value.value],
+                    InstKind::VariantGet {
+                        value: value.value,
+                        case,
+                        field,
                     },
                     ty,
                     span,
@@ -2713,7 +2689,8 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
         if typed.ty == target {
             return Ok(typed);
         }
-        if matches!(typed.ty, Type::Object(_)) {
+        // Вариант делает роль, если её делает объект каждого его случая (#290).
+        if matches!(typed.ty, Type::Object(_) | Type::Variant(_)) {
             return Ok(self.emit(InstKind::RoleWrap(typed.value), target, span));
         }
         // Параметр с границей-ролью, специализированный ролью (`T = Authorized`

@@ -54,7 +54,8 @@ fn error(main: &str) -> String {
 
 #[test]
 fn roles_are_declared_with_witness_tables() {
-    // Значение error enum — объект варианта; он делает Error с порождённым text().
+    // Значение error enum — вариант (#290): объект каждого случая делает Error
+    // с порождённым text(), а сам вариант объявлен списком случаев.
     let text = module("let w is Wallet = Purse(digit: 1); throw Boom.failed(w.total());").to_string();
     assert!(
         text.contains("role Wallet {\n    total() -> int\n    add(int) -> int\n}\n"),
@@ -64,8 +65,9 @@ fn roles_are_declared_with_witness_tables() {
         text.contains("role Error [builtin] {\n    text() -> str\n}\n"),
         "{text}"
     );
+    assert!(text.contains("variant Boom = (failed: Boom)\n"), "{text}");
     assert!(
-        text.contains("    does Error { text = @Boom.text }\n"),
+        text.contains("object Boom {\n    field code: int\n    does Error { text = @Boom.failed.text }\n}\n"),
         "{text}"
     );
     assert!(
@@ -104,25 +106,23 @@ fn try_catch_lowers_to_dispatch_handlers_and_causes() {
             "    %2: C = succ.take %1\n",
             "    br ^b2\n",
             "^b2 unwind ^b3(%2):\n",
-            "    %3: int = const 0\n",
-            "    %4: int = const 1\n",
-            "    %5: array<int> = array.new [%4]\n",
-            "    %6: Boom = call @Boom.new(%3, %5)\n",
-            "    throw %6\n",
-            "^b3(%7: C, %8: failure):\n",
-            "    catch %8 is Boom, ^b4(%7, %8), ^b7(%7, %8)\n",
-            "^b4(%9: C, %10: failure, %11: Boom) unwind ^b6(%9, %10):\n",
-            "    %12: int = const 7\n",
+            "    %3: int = const 1\n",
+            "    %4: Boom = variant.new 0 (%3)\n",
+            "    throw %4\n",
+            "^b3(%5: C, %6: failure):\n",
+            "    catch %6 is Boom, ^b4(%5, %6), ^b7(%5, %6)\n",
+            "^b4(%7: C, %8: failure, %9: Boom) unwind ^b6(%7, %8):\n",
+            "    %10: int = const 7\n",
             "    br ^b5\n",
             "^b5:\n",
-            "    %13: int = call @C.value(%9)\n",
-            "    %14: int = int.add %12, %13\n",
-            "    ret %14\n",
-            "^b6(%15: C, %16: failure, %17: failure):\n",
-            "    %18: failure = fail.caused %17, %16\n",
+            "    %11: int = call @C.value(%7)\n",
+            "    %12: int = int.add %10, %11\n",
+            "    ret %12\n",
+            "^b6(%13: C, %14: failure, %15: failure):\n",
+            "    %16: failure = fail.caused %15, %14\n",
+            "    raise %16\n",
+            "^b7(%17: C, %18: failure):\n",
             "    raise %18\n",
-            "^b7(%19: C, %20: failure):\n",
-            "    raise %20\n",
             "}\n",
         )
     );

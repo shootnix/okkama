@@ -1344,6 +1344,60 @@ impl Emitter<'_, '_> {
                 let value = self.get(value);
                 self.set(&dst.0, value);
             }
+            // Вариант (#290): значение — объект своего случая, только с полями
+            // payload. Случаи идут подряд (это проверяет загрузка), поэтому
+            // номер случая — разность дескрипторов.
+            I::VariantNew { dst, variant, case, fields } => {
+                let object = program.variants[variant.0 as usize].cases[*case as usize].1;
+                let words = fields.len().max(1) + 1;
+                let pointer = self.allocate(words);
+                let header = self.iconst(heap::header(heap::OBJECT, Repr::Raw, object.0) as i64);
+                self.builder.ins().store(MEMORY, header, pointer, 0);
+                for (i, field) in fields.iter().enumerate() {
+                    let value = self.word(field);
+                    self.builder.ins().store(MEMORY, value, pointer, ((i + 1) * 8) as i32);
+                }
+                self.set(&dst.0, pointer);
+                self.created(object.0 as usize, pointer);
+            }
+            I::VariantTag { dst, value } => {
+                let first = match self.register_type(value) {
+                    Some(Type::Variant(v)) => program.variants[v.0 as usize].cases[0].1.0,
+                    _ => return Err(unsupported()),
+                };
+                let pointer = self.get(value);
+                let header = self.builder.ins().load(types::I64, MEMORY, pointer, 0);
+                let descriptor = self.builder.ins().ushr_imm_u(header, 32);
+                let tag = self.builder.ins().iadd_imm_s(descriptor, -i64::from(first));
+                let doubled = self.builder.ins().ishl_imm_u(tag, 1);
+                let tagged = self.builder.ins().bor_imm_u(doubled, 1);
+                self.set(&dst.0, tagged);
+            }
+            I::VariantGet { dst, value, case, field } => {
+                let object = match self.register_type(value) {
+                    Some(Type::Variant(v)) => program.variants[v.0 as usize].cases[*case as usize].1.0,
+                    _ => return Err(unsupported()),
+                };
+                let pointer = self.get(value);
+                let header = self.builder.ins().load(types::I64, MEMORY, pointer, 0);
+                let descriptor = self.builder.ins().ushr_imm_u(header, 32);
+                let active = self.builder.ins().icmp_imm_s(IntCC::Equal, descriptor, i64::from(object));
+                let load = self.builder.create_block();
+                let inactive = self.builder.create_block();
+                self.builder.ins().brif(active, load, &[], inactive, &[]);
+                self.builder.switch_to_block(inactive);
+                let message = self.constant_text("Variant payload of an inactive case");
+                self.helper(|h| h.trap, &[ctx, message]);
+                self.check(pc);
+                self.builder.ins().jump(load, &[]);
+                self.builder.switch_to_block(load);
+                let value = self.builder.ins().load(types::I64, MEMORY, pointer, ((*field + 1) * 8) as i32);
+                self.set_word(&dst.0, value);
+            }
+            I::VariantOf { dst, source, .. } => {
+                let value = self.get(source);
+                self.set(&dst.0, value);
+            }
             I::CallRole { dst, receiver, role, slot, args } => {
                 let objects = program.objects.len();
                 let table = self.jit.dispatch.entry((role.0, *slot)).or_insert_with(|| {
