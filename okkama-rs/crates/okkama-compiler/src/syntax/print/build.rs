@@ -104,6 +104,10 @@ fn item_node(item: &Item) -> Node {
         }
         Item::Cap(decl) => cap_node(decl),
         Item::Action(decl) => action_node(decl),
+        Item::Const(decl) => hidden(Node::new("ConstDecl", decl.span), decl.hidden)
+            .field("name", name(&decl.name))
+            .field("type", opt_node(decl.ty.as_ref(), type_node))
+            .field("value", Value::node(expr_node(&decl.value))),
     }
 }
 

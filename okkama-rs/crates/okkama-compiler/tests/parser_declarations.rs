@@ -810,3 +810,23 @@ fn class_interface_extends_implements_and_static_are_explained() {
         assert_rejects(source, expected);
     }
 }
+
+/// Module constants (#153): `const`, an optional type, `hidden const`.
+#[test]
+fn module_constants_parse_and_print() {
+    let text = "module app v1.0.0; const LANG = \"en\"; hidden const MB is int = 1024 * 1024; main() is int { 0; }";
+    let program = parse_ok(text);
+    let consts: Vec<&okkama_compiler::syntax::ast::ConstDecl> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            okkama_compiler::syntax::ast::Item::Const(decl) => Some(decl),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(consts.len(), 2);
+    assert_eq!((consts[0].name.text.as_str(), consts[0].hidden, consts[0].ty.is_some()), ("LANG", false, false));
+    assert_eq!((consts[1].name.text.as_str(), consts[1].hidden, consts[1].ty.is_some()), ("MB", true, true));
+    assert_rejects("module app v1.0.0; const = 1; main() is int { 0; }", "Expect constant name after \"const\".");
+    assert_rejects("module app v1.0.0; const X 1; main() is int { 0; }", "Expect \"=\" after constant name.");
+}

@@ -5,7 +5,7 @@ Sparrow — байткод Okkama: его пишет `okkama build --target spar
 Sparrow (`sparrow`, `okkama exec`) проверяет его и исполняет как машинный код.
 Книга учит текстовой форме байткода — ассемблеру Sparrow (`.spa`) — настолько,
 чтобы читать то, что выдаёт компилятор, и писать программы вручную. Описана
-версия SPB 9, формат Okkama 0.4.
+версия SPB 10, формат Okkama 0.4.1.
 
 Все примеры лежат в [examples/](examples/); при сборке книги каждый из них
 ассемблируется, проверяется и запускается, а показанный после примера
@@ -55,7 +55,7 @@ okkama exec prog.spb                       # запуск SPB внутри okkam
 
 ```text
 ; Hello from Sparrow assembly: a native writes the UTF-8 bytes of a string.
-sparrow 9
+sparrow 10
 module "hello" "1.0.0"
 type t0 int
 type t1 str
@@ -97,7 +97,7 @@ Hello, Sparrow!
 ## 3. Устройство файла
 
 ```text
-sparrow 9                       ; версия формата
+sparrow 10                      ; версия формата
 module "name" "version"         ; имя и версия модуля (можно "")
 type t0 …                       ; таблица типов по порядку
 enum enum0 "Name" ["a", "b"]    ; enum и его варианты
@@ -105,6 +105,7 @@ role role0 "Name" { method "m" [t…] -> t… … }
 object obj0 "Name" { field "f" t… … does role0 [f…] destroy f… }
 handle "Name"                   ; непрозрачные типы хоста (handle)
 cap cap0 "Name" obj0 { field "f" f… }
+global g0 t3 f2                ; константа модуля: тип и init (#153)
 function f0 "symbol" [async] [native "…"] [intrinsic "…" [obj…] [f…]] { … }
 entry f3                        ; main программы
 tests { test "name" f5 … }      ; или тестовый профиль
@@ -171,7 +172,7 @@ BigInt.
 
 ```text
 ; 30! with a loop: exact integers grow into BigInt transparently.
-sparrow 9
+sparrow 10
 module "factorial" "1.0.0"
 type t0 int
 type t1 bool
@@ -231,7 +232,7 @@ $ sparrow run factorial.spb
 
 ```text
 ; Fibonacci with edge moves: the jump back writes both loop registers at once.
-sparrow 9
+sparrow 10
 module "fibonacci" "1.0.0"
 type t0 int
 type t1 bool
@@ -271,7 +272,8 @@ $ sparrow run fibonacci.spb; echo $?
 
 `str.concat`, `str.len`, `str.slice`, `str.split`, `str.replace`,
 `str.replace_first`, `str.trim`, `str.chomp`, `str.cmp` и `str.utf8` (в
-`array byte`) работают с неизменяемым текстом. Длины и позиции считаются в
+`array byte`) работают с неизменяемым текстом; остальное — поиск, края,
+регистр, повтор и символы строки — называет `str.fn`. Длины и позиции считаются в
 скалярных значениях Unicode. В строковых константах есть `\n`, `\t`, `\"`,
 `\\` и `\u{…}`.
 
@@ -280,7 +282,7 @@ $ sparrow run fibonacci.spb; echo $?
 ```text
 ; Objects, a role with two implementations, dispatch through role slots and
 ; a successor (a changed copy of an immutable object).
-sparrow 9
+sparrow 10
 module "shapes" "1.0.0"
 type t0 int
 type t1 object obj0
@@ -362,7 +364,7 @@ $ sparrow run shapes.spb; echo $?
 ```text
 ; Arrays are built through a linear builder; `arr.lookup` and `map.lookup`
 ; branch on whether the element exists.
-sparrow 9
+sparrow 10
 module "collections" "1.0.0"
 type t0 int
 type t1 array t0
@@ -432,7 +434,7 @@ $ sparrow run collections.spb; echo $?
 ```text
 ; A closure value: `fn.closure` fills the leading parameters of its function
 ; with captures; `call.fn` passes the rest.
-sparrow 9
+sparrow 10
 module "closures" "1.0.0"
 type t0 int
 type t1 fn [t0] -> t0
@@ -477,7 +479,7 @@ $ sparrow run closures.spb; echo $?
 ```text
 ; Throwing and catching: an object that does the builtin Error role is
 ; thrown; a handler range sends failures to a `catch`, which matches the type.
-sparrow 9
+sparrow 10
 module "errors" "1.0.0"
 type t0 int
 type t1 str
@@ -564,7 +566,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: register r2 may b
 ; Ownership regions: an object with `destroy` is tracked and adopted by the
 ; region of its scope; leaving the region runs `destroy`, on the failure path
 ; too (`region.unwind`).
-sparrow 9
+sparrow 10
 module "resources" "1.0.0"
 type t0 int
 type t1 str
@@ -638,7 +640,7 @@ closing data.txt
 ```text
 ; Async functions: a call makes a cold future, `await` runs it to its value,
 ; `fut.spawn` starts one now so it runs while the caller goes on.
-sparrow 9
+sparrow 10
 module "tasks" "1.0.0"
 type t0 int
 type t1 future t0
@@ -686,7 +688,7 @@ async.
 ```text
 ; A test profile: `tests` lists parameterless functions; `sparrow test` runs
 ; each on a fresh runtime and reports it. A failure fails the test.
-sparrow 9
+sparrow 10
 module "testing" "1.0.0"
 type t0 int
 type t1 bool
@@ -835,6 +837,8 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: r1 has type str, 
 | 76 | `str.replace_first rD, rX, rX, rX` | замена первого вхождения |
 | 77 | `str.trim rD, rX` | обрезка пробелов по краям |
 | 78 | `str.chomp rD, rX` | удаление одного конца строки |
+| 86 | `str.fn FN, rD, [rX, …]` | строковая функция: `find`, `find_last`, `starts_with`, `ends_with`, `trim_start`, `trim_end`, `lower`, `upper`, `repeat`, `characters` |
+| 87 | `global.get rD, N` | значение константы модуля, построенное один раз её функцией init |
 | 80 | `val.cmp CMP, rD, rX, rX` | глубокое равенство, только `eq` и `ne` |
 | 81 | `enum.case rD, enumN, N` | вариант enum по номеру |
 | 82 | `enum.cmp CMP, rD, rX, rX` | сравнение вариантов enum |

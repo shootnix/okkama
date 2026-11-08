@@ -14,7 +14,7 @@ use crate::{ir, source::Span};
 use okkama_sparrow::{
     BitOp, CapDecl, CapRef, CatchKind, Cmp, Constant, Dst, EnumDecl, EnumRef, FuncRef, FutOp, Function,
     Handler, Instruction as I, Intrinsic, ObjectDecl, ObjectRef, Program, Register, RoleDecl, RoleMethod,
-    RoleRef, StrFn, Target, TrapCode, Type, TypeRef, Witness,
+    GlobalDecl, RoleRef, StrFn, Target, TrapCode, Type, TypeRef, Witness,
 };
 use std::{collections::HashMap, fmt};
 
@@ -173,6 +173,7 @@ impl FunctionGen<'_> {
             _ => Err(error(span, "role result type is missing")),
         };
         Ok(match &inst.kind {
+            K::Global(index) => I::GlobalGet { dst: dst()?, global: *index as u32 },
             K::Const(constant) => I::Const {
                 dst: dst()?,
                 value: match constant {
@@ -598,6 +599,14 @@ pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
             fields: cap.fields.iter().map(|(name, function)| (name.clone(), FuncRef(function.0 as u32))).collect(),
         })
         .collect();
+    let globals = module
+        .globals
+        .iter()
+        .map(|global| GlobalDecl {
+            ty: types.intern(&global.ty),
+            init: FuncRef(global.init.0 as u32),
+        })
+        .collect();
     let functions = module
         .functions
         .iter()
@@ -612,6 +621,7 @@ pub fn generate(module: &ir::Module) -> Result<Program, GenerateError> {
         objects,
         handles,
         caps,
+        globals,
         functions,
         entry: module.entry.map(|entry| FuncRef(entry.0 as u32)),
         tests: module

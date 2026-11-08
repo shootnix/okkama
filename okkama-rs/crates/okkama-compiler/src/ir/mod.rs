@@ -226,6 +226,8 @@ pub struct Module {
     pub handles: Vec<Handle>,
     /// Caps объектов (§8.5).
     pub caps: Vec<Cap>,
+    /// Значения `const` модуля, построенные при запуске (#153).
+    pub globals: Vec<Global>,
     /// Тестовый профиль (§15): тесты корневого модуля (имя и функция);
     /// `None` — production-модуль.
     pub tests: Option<Vec<(String, FuncId)>>,
@@ -418,6 +420,14 @@ pub struct Cap {
     pub owner: ObjectId,
     pub fields: Vec<(String, FuncId)>,
     pub span: Span,
+}
+
+/// `const` модуля (#153): массив или словарь, который движок строит один
+/// раз при запуске программы функцией `init` без параметров и разделяет.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Global {
+    pub ty: Type,
+    pub init: FuncId,
 }
 
 /// Native object модуля: только имя; значения создаёт и читает рантайм.
@@ -868,6 +878,8 @@ impl CompareOp {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InstKind {
     Const(Constant),
+    /// Значение `globals[index]` модуля (#153).
+    Global(usize),
     IntBinary {
         op: IntBinaryOp,
         left: ValueId,
@@ -1387,7 +1399,7 @@ impl InstKind {
                 .chain(fields.iter().copied())
                 .collect(),
             InstKind::RangePart { range, .. } => vec![*range],
-            InstKind::EnumCase { .. } | InstKind::RegionEnter | InstKind::Undef => Vec::new(),
+            InstKind::EnumCase { .. } | InstKind::Global(_) | InstKind::RegionEnter | InstKind::Undef => Vec::new(),
             InstKind::RegionAdopt { region, value } | InstKind::RegionTrack { region, value } => {
                 vec![*region, *value]
             }
@@ -1501,7 +1513,7 @@ impl InstKind {
                 .chain(fields.iter_mut())
                 .collect(),
             InstKind::RangePart { range, .. } => vec![range],
-            InstKind::EnumCase { .. } | InstKind::RegionEnter | InstKind::Undef => Vec::new(),
+            InstKind::EnumCase { .. } | InstKind::Global(_) | InstKind::RegionEnter | InstKind::Undef => Vec::new(),
             InstKind::RegionAdopt { region, value } | InstKind::RegionTrack { region, value } => {
                 vec![region, value]
             }

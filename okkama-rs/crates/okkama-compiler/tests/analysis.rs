@@ -579,3 +579,20 @@ fn break_and_continue_point_to_last_and_next() {
     let found = messages("main() is int { for [1] -> n { continue; } 0; }");
     assert!(found.iter().any(|m| m.contains("next iteration with `next`")), "{found:?}");
 }
+
+/// Module constants (#153): the compiler computes them, so what it cannot
+/// compute — a call, a cycle, a failing operation — is an error.
+#[test]
+fn constants_are_computed_by_the_compiler() {
+    assert!(messages("const A = B * 2; const B = 21; main() is int { A; }").is_empty());
+    for (text, expected) in [
+        ("const A = B + 1; const B = A + 1; main() is int { 0; }", "Constant \"A\" depends on itself"),
+        ("const X = \"a\".length(); main() is int { 0; }", "it calls an action or a constructor"),
+        ("const Z = 1 % 0; main() is int { 0; }", "cannot be computed by the compiler: Modulo by zero"),
+        ("const X is int = \"a\"; main() is int { 0; }", "Constant must be int, got string"),
+        ("const X = 1; const X = 2; main() is int { 0; }", "Constant \"X\" is already declared"),
+    ] {
+        let found = messages(text);
+        assert!(found.iter().any(|m| m.contains(expected)), "{text}: {found:?}");
+    }
+}

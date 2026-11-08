@@ -124,6 +124,7 @@ pub(crate) fn new_engine(module: &ir::Module) -> Rc<Engine> {
     let engine = Rc::new(Engine {
         module: module.clone(),
         state: State::default(),
+        globals: std::cell::RefCell::new(vec![None; module.globals.len()]),
         fatal: std::cell::RefCell::new(None),
         uncaught: std::cell::RefCell::new(None),
     });
@@ -149,6 +150,9 @@ pub(crate) fn into_failure(error: RuntimeError) -> Result<Rc<Failure>, RuntimeEr
 pub(crate) struct Engine {
     pub(crate) module: ir::Module,
     pub(crate) state: State,
+    /// Значения `const` модуля (#153): строятся функцией init при первом
+    /// чтении и затем разделяются; init чистая, поэтому порядок не виден.
+    globals: std::cell::RefCell<Vec<Option<Value>>>,
     /// Ошибка реализации внутри задачи: завершает запуск после планировщика.
     fatal: std::cell::RefCell<Option<RuntimeError>>,
     /// Последний отказ, дошедший до корня исполнения (его стек вызовов —
@@ -638,6 +642,7 @@ pub(crate) fn execute_function(
                         state.object_next(read(slots, *object, inst.span)?, updates, inst.span)?
                     }
                     InstKind::Undef => Value::Undef,
+                    InstKind::Global(index) => global(engine, *index, inst.span)?,
                     InstKind::Const(value) => operations::constant(value, inst.span)?,
                     InstKind::Str {
                         op: ir::StrOp::Split,
@@ -1238,6 +1243,18 @@ impl Frame {
             boundary: false,
         })
     }
+}
+
+/// `globals[index]`, built by its init function at the first read (#153).
+fn global(engine: &Rc<Engine>, index: usize, span: Span) -> Result<Value, RuntimeError> {
+    if let Some(value) = engine.globals.borrow().get(index).cloned().flatten() {
+        return Ok(value);
+    }
+    let init = engine.module.globals.get(index).ok_or_else(|| invalid_state(span, "missing global"))?.init;
+    let value = execute_function(engine, init, Vec::new())?
+        .ok_or_else(|| invalid_state(span, "a global init returned no value"))?;
+    engine.globals.borrow_mut()[index] = Some(value.clone());
+    Ok(value)
 }
 
 fn read(slots: &[Option<Value>], id: ir::ValueId, span: Span) -> Result<&Value, RuntimeError> {

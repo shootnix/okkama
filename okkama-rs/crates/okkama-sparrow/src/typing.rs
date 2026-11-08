@@ -215,6 +215,13 @@ impl<'a> Typing<'a> {
         let rat = Type::Rat;
         let str_ = Type::Str;
         match instruction {
+            I::GlobalGet { dst, global } => match self.program.globals.get(*global as usize) {
+                Some(decl) => {
+                    let ty = self.resolve(decl.ty).clone();
+                    self.define(dst.0, &ty, "global.get")
+                }
+                None => Err(format!("global g{global} does not exist")),
+            },
             I::Const { dst, value } => {
                 let ty = match value {
                     Constant::Int(_) => Type::Int,
@@ -1020,6 +1027,15 @@ pub(crate) fn tables(program: &Program) -> Result<(), String> {
             if !owner || function.is_async || function.result.is_none() {
                 return Err(format!("@{} is not field {name} of cap {}", function.symbol, cap.name));
             }
+        }
+    }
+    for (index, global) in program.globals.iter().enumerate() {
+        let (function, params) = signature(global.init);
+        let typing = Typing::new(program, function);
+        let result = function.result.map(|result| typing.resolve(result).clone());
+        let ty = typing.resolve(global.ty).clone();
+        if !params.is_empty() || function.is_async || !result.is_some_and(|result| typing.equal(&result, &ty)) {
+            return Err(format!("@{} is not the init of global g{index}", function.symbol));
         }
     }
     for function in &program.functions {

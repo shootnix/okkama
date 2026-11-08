@@ -882,6 +882,7 @@ fn document_symbol(item: &OutlineItem) -> DocumentSymbol {
             OutlineKind::Action => SymbolKind::METHOD,
             OutlineKind::Cap => SymbolKind::STRUCT,
             OutlineKind::Native => SymbolKind::FUNCTION,
+            OutlineKind::Constant => SymbolKind::CONSTANT,
             OutlineKind::Test => SymbolKind::EVENT,
             OutlineKind::Main => SymbolKind::FUNCTION,
         },

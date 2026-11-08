@@ -12,6 +12,7 @@
 mod builtin;
 mod call;
 mod collections;
+mod consts;
 mod expr;
 mod generics;
 mod stmt;
@@ -39,6 +40,8 @@ pub(super) enum Kind {
     CapField,
     Closure,
     Test,
+    /// Инициализатор `const` модуля (#153).
+    Const,
 }
 
 /// Активный цикл: цель `next`/`last` и типы значений `last`.
@@ -103,6 +106,10 @@ pub(super) struct Checker<'r, 'a> {
 /// Проверить все тела программы: зависимости раньше корня, в порядке исходника.
 pub(super) fn check_bodies(reg: &mut Registry<'_>) -> Vec<Body> {
     let mut bodies = Vec::new();
+    // Every constant, used or not, is computed once and reports its errors (#153).
+    for id in 0..reg.consts.len() {
+        let _ = consts::evaluate(reg, id);
+    }
     for module in 0..reg.modules.len() {
         reg.set_module(module);
         let objects: Vec<ObjectId> = (0..reg.objects.len())

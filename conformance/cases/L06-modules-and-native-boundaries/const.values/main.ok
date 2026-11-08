@@ -1,0 +1,36 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+const LANG = "en";
+const MB = 1024 * 1024;
+const HALF = 1 / 2;
+const NAME = "okkama-" + LANG;
+const PRIMES = [2, 3, 5, 7];
+const SQUARES is %int:int = [1: 1, 2: 4, 3: 9];
+// Past 64 bits, exactly as at run time.
+const BIG = 2 * 9223372036854775807;
+const PI_ISH = 3.14;
+const LETTER = 'Ж';
+hidden const SECRET = ANSWER;
+const ANSWER = 42;
+enum Color = (red, green);
+const DEFAULT = Color.green;
+const RANGE = [0..3, 10];
+const NESTED = [PRIMES, [11, 13]];
+
+object Report {
+    Report() {}
+    line() is string { NAME + " " + SECRET.string(); }
+}
+
+main() is int {
+    let out = Stdout();
+    out.writeln(LANG + " " + MB.string() + " " + HALF.string() + " " + NAME);
+    out.writeln(PRIMES.size().string() + " " + PRIMES[3].string() + " " + SQUARES[3].string());
+    out.writeln(BIG.string() + " " + PI_ISH.string() + " " + LETTER.string());
+    let shade = match DEFAULT { case Color.red { "red"; } case Color.green { "green"; } };
+    out.writeln(shade + " " + RANGE.map() -> n { n.string(); }.join(","));
+    out.writeln(Report().line() + " " + NESTED[1][0].string());
+    0;
+}

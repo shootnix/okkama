@@ -8,6 +8,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Language: module constants (#153). `const NAME = value;` (optionally
+  `is Type`) at module scope names a value the compiler computes from
+  literals, payload-free enum cases, `rat(n, d)`, casts, operators, other
+  constants (any declaration order) and arrays and maps of such values, with
+  the semantics of the running program (a big integer stays exact, `1 / 2` is
+  a `rat`); a call, a constructor, an object or a local is an error, and so is
+  a failing computation (`1 % 0`) or a cycle. Constants are public (`take
+  LANG`, `settings.LANG`) unless `hidden const`; upper-case names work. A
+  scalar is inlined where it is used; an array or a map is a module global
+  built once per run by an init function and shared: IR `global gN`, Sparrow
+  `global.get` (SPB format 10: the program lists its globals), a static field
+  of the JVM main class set in `<clinit>`; sparrow-origin reports it
+  unsupported (#14). OCS `L06.const.*` and contract `MOD.CONST`; Book §26.3.2,
+  spec §5.1.2, grammar, LLM context, Sparrow book (also `str.fn`), VS Code
+  highlighting (EN/RU) ([#153](https://github.com/shootnix/okkama/issues/153)).
+
 - Language: string builtins (#210) — `contains`, `starts_with`, `ends_with`,
   `find` and `find_last` (a `Maybe<int>` code point index; an empty part is
   found at the start, respectively the end), `trim_start`, `trim_end`,

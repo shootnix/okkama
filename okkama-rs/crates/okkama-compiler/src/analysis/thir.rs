@@ -162,6 +162,18 @@ pub enum Constant {
     Byte(u8),
 }
 
+/// Значение `const` модуля (#153), вычисленное при компиляции.
+#[derive(Clone, Debug)]
+pub enum ConstValue {
+    Scalar(Constant),
+    /// Несократимая дробь: числитель и знаменатель десятичной записью.
+    Rat(String, String),
+    Enum(EnumId, usize),
+    Array(Vec<ConstValue>),
+    /// Записи в порядке ключей.
+    Map(Vec<(ConstValue, ConstValue)>),
+}
+
 /// Неявная граница типа (§12.1, §8.4).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Coercion {
@@ -291,6 +303,9 @@ pub enum ExprKind {
         field: usize,
     },
     Constant(Constant),
+    /// Массив или словарь `const` (#153): индекс в `Registry::consts`;
+    /// значение строится один раз и разделяется без копий.
+    Global(usize),
     Local(LocalId),
     SelfValue,
     /// Поле receiver в action/destroy (исходное значение, D04).
@@ -653,7 +668,7 @@ fn expr_uses_receiver(expr: &Expr) -> bool {
     let any = |values: &[Expr]| values.iter().any(expr_uses_receiver);
     match &expr.kind {
         ExprKind::SelfValue | ExprKind::Field(_) | ExprKind::PendingField(_) | ExprKind::OwnerField(_) => true,
-        ExprKind::Constant(_)
+        ExprKind::Constant(_) | ExprKind::Global(_)
         | ExprKind::Local(_)
         | ExprKind::EnumCase { .. }
         | ExprKind::TestCapability
@@ -770,7 +785,7 @@ pub fn expr_mentions(expr: &Expr, local: LocalId) -> usize {
     let block = |block: &Block| local_mentions(block, local);
     match &expr.kind {
         ExprKind::Local(found) => usize::from(*found == local),
-        ExprKind::Constant(_)
+        ExprKind::Constant(_) | ExprKind::Global(_)
         | ExprKind::SelfValue
         | ExprKind::Field(_)
         | ExprKind::PendingField(_)
@@ -921,7 +936,7 @@ fn each_source_expr<'e>(source: &'e Source, visit: &mut dyn FnMut(&'e Expr)) {
 fn each_child<'e>(expr: &'e Expr, visit: &mut dyn FnMut(&'e Expr)) {
     match &expr.kind {
         ExprKind::Local(_)
-        | ExprKind::Constant(_)
+        | ExprKind::Constant(_) | ExprKind::Global(_)
         | ExprKind::SelfValue
         | ExprKind::Field(_)
         | ExprKind::PendingField(_)

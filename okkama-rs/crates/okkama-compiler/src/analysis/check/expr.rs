@@ -307,6 +307,9 @@ impl Checker<'_, '_> {
                 let ty = self.field_type(field);
                 return Self::typed(ExprKind::Field(field), ty, name.span);
             }
+        if let Some(id) = self.reg.find_const(self.module, &name.text) {
+            return self.const_value(id, name.span);
+        }
         if name.text == "test" {
             return Self::typed(ExprKind::TestCapability, Ty::Test, name.span);
         }

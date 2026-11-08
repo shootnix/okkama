@@ -266,7 +266,29 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
         }
         (None, None) => unreachable!("checked above"),
     }
-    let main_file = classfile::write_class(&class.pool, &names, &[], &methods)?;
+    // `const` модуля (#153): статическое поле на значение, построенное
+    // функцией init в `<clinit>` до `main`.
+    let mut fields = Vec::new();
+    if !module.globals.is_empty() {
+        let mut asm = asm::Asm::default();
+        for (index, global) in module.globals.iter().enumerate() {
+            let name = format!("G{index}");
+            let descriptor = class.layout.descriptor(&global.ty);
+            fields.push(classfile::FieldInfo {
+                access: 0x001a, // private static final
+                name: class.pool.utf8(&name)?,
+                descriptor: class.pool.utf8(&descriptor)?,
+            });
+            let (method, signature) = class.layout.signatures[global.init.0].clone();
+            let init = class.pool.method_ref(class_name, &method, &signature)?;
+            asm.op_index(0xb8, init, 0, 1); // invokestatic
+            let field = class.pool.field_ref(class_name, &name, &descriptor)?;
+            asm.op_index(0xb3, field, 1, 0); // putstatic
+        }
+        asm.op(&[0xb1], 0, 0); // return
+        methods.push(class.function_method(asm, "<clinit>", "()V", 0)?);
+    }
+    let main_file = classfile::write_class(&class.pool, &names, &fields, &methods)?;
 
     let layout = &class.layout;
     let mut files = vec![(format!("{class_name}.class"), main_file)];

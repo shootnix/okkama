@@ -520,7 +520,7 @@ impl<'r> Flow<'r, '_> {
                 self.expr(value, true, state)?;
                 none()
             }
-            ExprKind::Constant(_)
+            ExprKind::Constant(_) | ExprKind::Global(_)
             | ExprKind::SelfValue
             | ExprKind::Field(_)
             | ExprKind::EnumCase { .. }

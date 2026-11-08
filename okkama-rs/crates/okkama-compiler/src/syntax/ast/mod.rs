@@ -118,6 +118,8 @@ pub enum Item {
     Cap(CapDecl),
     /// The entry point. The grammar allows only `main()` at module scope.
     Action(ActionDecl),
+    /// `const NAME = value;` (#153).
+    Const(ConstDecl),
 }
 
 impl Item {
@@ -131,6 +133,7 @@ impl Item {
             Item::NativeObject(decl) => decl.span,
             Item::Cap(decl) => decl.span,
             Item::Action(decl) => decl.span,
+            Item::Const(decl) => decl.span,
         }
     }
 }
@@ -364,6 +367,17 @@ pub struct FakeDecl {
 pub enum FakeBody {
     Parsed(Vec<ObjectMember>),
     Skipped(Span),
+}
+
+/// `const NAME is Type = value;`: a module constant the compiler computes
+/// (#153); `hidden const` keeps it inside its module.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConstDecl {
+    pub hidden: bool,
+    pub name: Name,
+    pub ty: Option<TypeExpr>,
+    pub value: Expr,
+    pub span: Span,
 }
 
 /// `enum Name = (a, b);`

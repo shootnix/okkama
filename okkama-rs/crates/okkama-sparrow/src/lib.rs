@@ -302,6 +302,8 @@ instructions! {
     StrUtf8 = 79, "str.utf8" { dst: Dst, text: Register }
     /// Строковая функция `op` над `args` (первый — строка, #210).
     StrFn = 86, "str.fn" { op: StrFn, dst: Dst, args: Vec<Register> }
+    /// Значение `globals[global]` программы (#153).
+    GlobalGet = 87, "global.get" { dst: Dst, global: u32 }
 
     /// Глубокое равенство (§16.3), только `eq`/`ne`.
     ValCmp = 80, "val.cmp" { op: Cmp, dst: Dst, left: Register, right: Register }
@@ -496,6 +498,14 @@ impl ObjectDecl {
     }
 }
 
+/// `const` модуля (#153): значение типа `ty` строит `init` (без параметров)
+/// при запуске программы, а `global.get` читает его без копии.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GlobalDecl {
+    pub ty: TypeRef,
+    pub init: FuncRef,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapDecl {
     pub name: String,
@@ -560,6 +570,7 @@ pub struct Program {
     pub objects: Vec<ObjectDecl>,
     pub handles: Vec<String>,
     pub caps: Vec<CapDecl>,
+    pub globals: Vec<GlobalDecl>,
     pub functions: Vec<Function>,
     pub entry: Option<FuncRef>,
     /// Тестовый профиль: имя и функция каждого теста корня.

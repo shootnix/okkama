@@ -139,6 +139,12 @@ impl Rewrite {
                 }
             }
             ast::Item::NativeObject(_) => {}
+            ast::Item::Const(decl) => {
+                if let Some(ty) = &mut decl.ty {
+                    self.ty(ty);
+                }
+                self.expr(&mut decl.value, false);
+            }
             ast::Item::Test(test) => self.test(test),
             ast::Item::NativeAction(decl) => {
                 self.params(&mut decl.params);

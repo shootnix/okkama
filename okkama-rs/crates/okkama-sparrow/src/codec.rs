@@ -3,7 +3,7 @@
 //! операции и операнды в порядке полей; никакой сериализации layout Rust.
 use crate::operand::Operand;
 use crate::{
-    CapDecl, CapRef, EnumDecl, EnumRef, FuncRef, Function, Handler, Instruction, Intrinsic, ObjectDecl,
+    CapDecl, CapRef, EnumDecl, EnumRef, FuncRef, Function, GlobalDecl, Handler, Instruction, Intrinsic, ObjectDecl,
     ObjectRef, Program, Register, RoleDecl, RoleMethod, RoleRef, Target, Type, TypeRef, Witness,
 };
 use std::fmt;
@@ -15,7 +15,7 @@ pub const MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
 /// expand into a large `Program` (each encoded element is at least a byte).
 pub const MAX_DECODED_BYTES: usize = 512 * 1024 * 1024;
 /// Версия формата.
-pub const VERSION: u16 = 9;
+pub const VERSION: u16 = 10;
 const MAGIC: &[u8; 4] = b"SPRW";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -432,6 +432,11 @@ pub fn encode(program: &Program) -> Result<Vec<u8>, CodecError> {
             function.encode(&mut writer);
         }
     }
+    writer.number(program.globals.len() as u64);
+    for global in &program.globals {
+        type_ref(&mut writer, global.ty);
+        global.init.encode(&mut writer);
+    }
     writer.number(program.functions.len() as u64);
     for function in &program.functions {
         encode_function(&mut writer, function);
@@ -548,6 +553,14 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
         }
         caps.push(CapDecl { name, owner, fields });
     }
+    let count = reader.count_of::<GlobalDecl>()?;
+    let mut globals = Vec::with_capacity(count);
+    for _ in 0..count {
+        globals.push(GlobalDecl {
+            ty: read_type_ref(&mut reader)?,
+            init: FuncRef::decode(&mut reader)?,
+        });
+    }
     let count = reader.count_of::<Function>()?;
     let mut functions = Vec::with_capacity(count);
     for _ in 0..count {
@@ -578,6 +591,7 @@ pub fn decode(bytes: &[u8]) -> Result<Program, CodecError> {
         objects,
         handles,
         caps,
+        globals,
         functions,
         entry,
         tests,
