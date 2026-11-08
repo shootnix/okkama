@@ -793,6 +793,8 @@ pub struct Region {
     id: u64,
     entries: RefCell<Vec<Rc<Object>>>,
     known: RefCell<std::collections::HashSet<*const Object>>,
+    /// Самый старый `serial` среди `entries` (`u64::MAX` — записей нет).
+    oldest: Cell<u64>,
 }
 
 impl Default for Region {
@@ -820,6 +822,125 @@ fn plain(value: &Value) -> bool {
 struct WalkScratch {
     seen: std::collections::HashSet<*const Object>,
     pending: Vec<Value>,
+    open: Vec<Walked>,
+}
+
+/// Контейнер, элементы которого обходит `collect`: его поддерево пройдено,
+/// когда `pending` вернулся к `base`.
+struct Walked {
+    container: Value,
+    base: usize,
+    steps: usize,
+    events: usize,
+}
+
+/// Шагов обхода под контейнером, ради которых его стоит запомнить: меньший
+/// дешевле обойти заново.
+const SUMMARY_STEPS: usize = 64;
+
+/// Слабая ссылка на запомненный контейнер: пока она жива, его адрес не
+/// достанется другому значению.
+enum Held {
+    Array(std::rc::Weak<Array>),
+    Map(std::rc::Weak<Map>),
+    Fn(std::rc::Weak<Closure>),
+    Any(std::rc::Weak<Value>),
+}
+
+impl Held {
+    fn alive(&self) -> bool {
+        match self {
+            Held::Array(weak) => weak.strong_count() > 0,
+            Held::Map(weak) => weak.strong_count() > 0,
+            Held::Fn(weak) => weak.strong_count() > 0,
+            Held::Any(weak) => weak.strong_count() > 0,
+        }
+    }
+}
+
+/// Адрес контейнера — ключ его сводки.
+fn container_key(value: &Value) -> Option<usize> {
+    Some(match value {
+        Value::Array(array) => Rc::as_ptr(array) as usize,
+        Value::Map(map) => Rc::as_ptr(map) as usize,
+        Value::Fn(closure) => Rc::as_ptr(closure) as usize,
+        Value::Any(value) => Rc::as_ptr(value) as usize,
+        _ => return None,
+    })
+}
+
+/// Контейнеры, обход которых не встретил свободных идентичностей (#9), со
+/// счётчиком идентичностей в тот момент: всё, что они достигают, не новее
+/// его. Освобождение идентичности не новее `summarized` сбрасывает все.
+#[derive(Default)]
+struct Summaries {
+    entries: std::collections::HashMap<usize, (Held, u64)>,
+    summarized: u64,
+    /// Размер `entries` после последней чистки мёртвых.
+    pruned: usize,
+}
+
+thread_local! {
+    static SUMMARIES: RefCell<Summaries> = RefCell::new(Summaries::default());
+}
+
+/// Запомнить, что `container` сейчас не достигает свободных идентичностей.
+fn summarize(container: &Value) {
+    let held = match container {
+        Value::Array(array) => Held::Array(Rc::downgrade(array)),
+        Value::Map(map) => Held::Map(Rc::downgrade(map)),
+        Value::Fn(closure) => Held::Fn(Rc::downgrade(closure)),
+        Value::Any(value) => Held::Any(Rc::downgrade(value)),
+        _ => return,
+    };
+    let Some(key) = container_key(container) else { return };
+    let serial = CREATED.with(Cell::get);
+    let _ = SUMMARIES.try_with(|summaries| {
+        let mut summaries = summaries.borrow_mut();
+        summaries.entries.insert(key, (held, serial));
+        summaries.summarized = summaries.summarized.max(serial);
+        if summaries.entries.len() > 2 * summaries.pruned.max(1024) {
+            summaries.entries.retain(|_, (held, _)| held.alive());
+            summaries.pruned = summaries.entries.len();
+        }
+    });
+}
+
+/// Может ли обход (через регион `via`: его id и самая старая запись)
+/// пропустить `container`?
+fn summary_holds(container: &Value, via: Option<(u64, u64)>) -> bool {
+    let Some(key) = container_key(container) else { return false };
+    let serial = SUMMARIES
+        .try_with(|summaries| summaries.borrow().entries.get(&key).map(|(_, serial)| *serial))
+        .ok()
+        .flatten();
+    match (serial, via) {
+        (None, _) => false,
+        (Some(_), None) => true,
+        (Some(serial), Some((_, oldest))) => serial < oldest,
+    }
+}
+
+/// Свободной снова стала идентичность не новее сводки: сводки могут её
+/// достигать.
+fn freed(serial: u64) {
+    let dropped = SUMMARIES
+        .try_with(|summaries| {
+            let mut summaries = summaries.borrow_mut();
+            if serial > summaries.summarized {
+                return None;
+            }
+            summaries.summarized = 0;
+            summaries.pruned = 0;
+            Some(std::mem::take(&mut summaries.entries))
+        })
+        .ok()
+        .flatten();
+    drop(dropped);
+}
+
+fn has_summaries() -> bool {
+    SUMMARIES.try_with(|summaries| !summaries.borrow().entries.is_empty()).unwrap_or(false)
 }
 
 thread_local! {
@@ -841,6 +962,7 @@ impl Drop for WalkLease {
         // Clear before borrowing the cache: dropping a Value can reenter runtime.
         scratch.pending.clear();
         scratch.seen.clear();
+        scratch.open.clear();
         // Do not retain an unusually large traversal's high-water mark forever.
         if scratch.pending.capacity() > 1024 || scratch.seen.capacity() > 4096 {
             return;
@@ -854,29 +976,54 @@ impl Drop for WalkLease {
     }
 }
 
-/// Идентичности, достижимые из `value`: свободные, а при `via` ещё и
-/// принадлежащие `via`. Чужие идентичности не обходятся. Без рекурсии.
-fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<u64>) {
+/// Идентичности, достижимые из `value`: свободные, а при `via` (id региона
+/// и его самая старая запись) ещё и принадлежащие `via`. Чужие идентичности
+/// не обходятся. Без рекурсии.
+///
+/// Контейнеры неизменяемы, поэтому всё, что контейнер достигает, не новее
+/// его. Контейнер, обход которого не встретил свободной идентичности (только
+/// чужие, уничтоженные или скаляры), запоминается (#9): следующие обходы его
+/// пропускают, пока не освободится идентичность не новее сводки, а обход
+/// через `via` — пока все записи `via` новее её. Большая структура, которой
+/// владеет открытый регион, обходится один раз, а не на каждое значение,
+/// которое на неё ссылается.
+fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<(u64, u64)>) {
     #[cfg(feature = "allocation-scopes")]
     let _allocation_scope = okkama_allocation_counter::enter(2);
     #[cfg(feature = "region-walk-stats")]
     let mut stats = [0, 0, 0, 1, 0, 0, 0, 0, 0];
     let mut lease = WalkLease::new();
-    let WalkScratch { seen, pending } = lease.0.as_mut().expect("walk scratch");
+    let WalkScratch { seen, pending, open } = lease.0.as_mut().expect("walk scratch");
     pending.push(value.clone());
-    while let Some(value) = pending.pop() {
+    let summaries = has_summaries();
+    // `events` — то, что мешает сводке: свободная идентичность или
+    // идентичность `via`, Future (его исход меняется).
+    let (mut steps, mut events) = (0, 0);
+    loop {
+        while let Some(walked) = open.last()
+            && pending.len() <= walked.base
+        {
+            let walked = open.pop().expect("open container");
+            if walked.events == events && steps - walked.steps >= SUMMARY_STEPS {
+                summarize(&walked.container);
+            }
+        }
+        let Some(value) = pending.pop() else { break };
+        steps += 1;
         #[cfg(feature = "region-walk-stats")]
         { stats[4] += 1; }
+        let base = pending.len();
         match value {
             Value::Object(object) => {
                 #[cfg(feature = "region-walk-stats")]
                 { stats[5] += 1; }
                 let owner = object.owner.get();
-                if !(owner == FREE || Some(owner) == via) {
+                if !(owner == FREE || via.is_some_and(|(id, _)| id == owner)) {
                     #[cfg(feature = "region-walk-stats")]
                     { stats[6] += 1; }
                     continue;
                 }
+                events += 1;
                 if !seen.insert(Rc::as_ptr(&object)) {
                     #[cfg(feature = "region-walk-stats")]
                     { stats[7] += 1; }
@@ -892,11 +1039,23 @@ fn collect(value: &Value, out: &mut Vec<Rc<Object>>, via: Option<u64>) {
                 }
                 out.push(object);
             }
-            Value::Array(array) => pending.extend(array.0.iter().rev().cloned()),
-            Value::Map(map) => pending.extend(map.0.values().rev().cloned()),
-            Value::Any(value) => pending.push((*value).clone()),
-            Value::Fn(closure) => pending.extend(closure.captures.iter().rev().cloned()),
-            Value::Future(future) => pending.extend(future.retained().into_iter().rev()),
+            Value::Array(_) | Value::Map(_) | Value::Any(_) | Value::Fn(_) => {
+                if summaries && summary_holds(&value, via) {
+                    continue;
+                }
+                match &value {
+                    Value::Array(array) => pending.extend(array.0.iter().rev().cloned()),
+                    Value::Map(map) => pending.extend(map.0.values().rev().cloned()),
+                    Value::Any(value) => pending.push((**value).clone()),
+                    Value::Fn(closure) => pending.extend(closure.captures.iter().rev().cloned()),
+                    _ => unreachable!("matched above"),
+                }
+                open.push(Walked { container: value, base, steps, events });
+            }
+            Value::Future(future) => {
+                events += 1;
+                pending.extend(future.retained().into_iter().rev());
+            }
             _ => {}
         }
     }
@@ -924,11 +1083,13 @@ impl Region {
             id,
             entries: RefCell::new(Vec::new()),
             known: RefCell::new(std::collections::HashSet::new()),
+            oldest: Cell::new(u64::MAX),
         }
     }
 
     fn remember(&self, object: Rc<Object>) {
         if self.known.borrow_mut().insert(Rc::as_ptr(&object)) {
+            self.oldest.set(self.oldest.get().min(object.serial));
             self.entries.borrow_mut().push(object);
         }
     }
@@ -976,7 +1137,7 @@ impl Region {
         let mut reachable = Vec::new();
         #[cfg(feature = "region-walk-stats")]
         walk_stats::add([0, 1, 0, 0, 0, 0, 0, 0, 0]);
-        collect(value, &mut reachable, Some(self.id));
+        collect(value, &mut reachable, Some((self.id, self.oldest.get())));
         reachable.sort_by_key(|object| object.serial);
         for object in reachable {
             if object.owner.get() != self.id {
@@ -1006,7 +1167,7 @@ impl Region {
             #[cfg(feature = "region-walk-stats")]
             walk_stats::add([0, 0, 1, 0, 0, 0, 0, 0, 0]);
             let mut reachable = Vec::new();
-            collect(value, &mut reachable, Some(self.id));
+            collect(value, &mut reachable, Some((self.id, self.oldest.get())));
             kept.extend(reachable.iter().map(Rc::as_ptr));
         }
         Closing {
@@ -1026,6 +1187,7 @@ impl Region {
             if closing.kept.contains(&Rc::as_ptr(&object)) {
                 if object.owner.get() == self.id {
                     object.owner.set(FREE);
+                    freed(object.serial);
                 }
                 continue;
             }
@@ -1038,6 +1200,7 @@ impl Region {
         }
         self.entries.borrow_mut().clear();
         self.known.borrow_mut().clear();
+        self.oldest.set(u64::MAX);
         None
     }
 }

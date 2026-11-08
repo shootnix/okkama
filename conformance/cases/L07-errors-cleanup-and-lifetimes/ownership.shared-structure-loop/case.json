@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.ownership.shared-structure-loop",
+  "title": "a fresh resource next to a large owned structure is destroyed with its step",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "normal",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "destroy 1000\ndestroy 1001\ndestroy 1002\nsum 300\ndestroy 50\ndestroy 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; region walk summaries by #9",
+    "expected_basis": "spec 11.6: each step's View refers to the store's 100 resources (owned by main) and to a fresh resource, which the step owns and destroys at its end; the store's resources are destroyed once, at main's exit."
+  },
+  "status": "mandatory"
+}
