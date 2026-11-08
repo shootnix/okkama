@@ -361,6 +361,13 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- Language: `bool.string()` (and `string(flag)`, `@string(..., flag)`) is
+  `"true"` or `"false"`, no longer the `"1"`/`"0"` inherited from the Perl
+  implementation; map keys in error messages read the same way, on every
+  engine. No std module printed a boolean; OCS cases that did now
+  expect the words. Book §5.1.1 and chapter 10, spec §6.6/§6.6.1, LLM context,
+  LSP completion (EN/RU) ([#262](https://github.com/shootnix/okkama/issues/262)).
+
 - JVM: the runtime (`okkama.rt`) is built for Java 22 as one source tree
   (the FFM natives in `src22` joined the rest), so the JVM engine needs JDK
   22+ — which the FFM natives already required in practice. `okkama run

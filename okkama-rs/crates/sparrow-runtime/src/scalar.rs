@@ -13,7 +13,7 @@ pub fn byte_shift(value: u8, count: &IntValue, left: bool) -> Result<u8, &'stati
 pub fn string(value: &Value) -> Result<String, ValueError> {
     match value {
         Value::Int(value) => Ok(value.to_string()),
-        Value::Bool(value) => Ok(if *value { "1" } else { "0" }.to_owned()),
+        Value::Bool(value) => Ok(if *value { "true" } else { "false" }.to_owned()),
         Value::Byte(value) => Ok(value.to_string()),
         _ => Err(ValueError {
             message: "expected int, bool or byte for string conversion".into(),

@@ -156,7 +156,7 @@ fn exact_scalar_conversions_keep_types_and_decimal_text() {
         ("int(byte(255));", "255"),
         ("byte(0).int();", "0"),
         (
-            r#"if string(true) + string(false) == "10" { 42; } else { 0; }"#,
+            r#"if string(true) + string(false) == "truefalse" { 42; } else { 0; }"#,
             "42",
         ),
         (
@@ -174,7 +174,7 @@ fn exact_scalar_conversions_keep_types_and_decimal_text() {
             "37",
         ),
         (
-            r#"if @string(1, true, byte(7)).join(",") == "1,1,7" { 42; } else { 0; }"#,
+            r#"if @string(1, true, byte(7)).join(",") == "1,true,7" { 42; } else { 0; }"#,
             "42",
         ),
         (

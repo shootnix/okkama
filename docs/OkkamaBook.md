@@ -480,7 +480,7 @@ Numeric and scalar conversions are explicit builtin actions:
 - `byte.int()` returns an ordinary `int`;
 - `int.string()`, `float.string()`, and `byte.string()` return canonical
   numeric text; an integral float therefore renders without a `.0` suffix;
-- `bool.string()` returns `"1"` for `true` and `"0"` for `false`.
+- `bool.string()` returns `"true"` or `"false"` (before 0.4.1 it was `"1"`/`"0"`).
 
 These actions take no arguments and never introduce implicit conversion at a
 typed boundary. A failed byte conversion is a runtime error.
@@ -496,14 +496,15 @@ let whole is int = int(-3.9);             // -3
 let packet = @byte(122, 11, 22);           // @byte
 let singleton = @byte(112);               // one-element @byte
 let empty = @byte();                      // typed empty @byte
-let labels = @string(101, byte(2), true);  // ["101", "2", "1"]
+let labels = @string(101, byte(2), true);  // ["101", "2", "true"]
 ```
 
 Numeric targets accept `int`, `byte`, `float`, and `rat`. Integer casts
 truncate toward zero, then check the signed-64 range for `int` or `0..255`
 for `byte`. Thus `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts
 round to finite binary64 and can lose integer precision. String casts accept
-numeric primitives, bool (`"1"`/`"0"`), and string; rational text is canonical.
+numeric primitives, bool (`"true"`/`"false"`), char and string; rational text
+is canonical.
 
 An empty `@byte()` also provides exact `T = byte` evidence to a generic
 constructor accepting `@T`; inference does not require a first element.
@@ -910,7 +911,7 @@ Rules:
 - Builtin calls are positional-only and exact-arity.
 - Builtin dispatch activates only for non-object receivers, so an object's
   own action named `size` or `less` is never shadowed and never shadows.
-- `bool` has one builtin, `string()` (`"1"` or `"0"`). Receivers with no
+- `bool` has one builtin, `string()` (`"true"` or `"false"`). Receivers with no
   builtin support at all (`range`, `enum`, `any`) still report
   `Can only call actions on objects` when called.
 

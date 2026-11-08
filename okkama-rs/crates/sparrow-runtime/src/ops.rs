@@ -473,7 +473,7 @@ pub fn map_get(map: &Value, key: &Value, case_name: &dyn Fn(usize, usize) -> Str
 fn key_text(key: &Value, case_name: &dyn Fn(usize, usize) -> String) -> String {
     match key {
         Value::Str(text) => format!("\"{text}\""),
-        Value::Bool(value) => if *value { "1" } else { "0" }.into(),
+        Value::Bool(value) => if *value { "true" } else { "false" }.into(),
         Value::Byte(value) => value.to_string(),
         Value::Float(value) => float::text(*value),
         Value::Char(value) => format!("\"{value}\""),
