@@ -503,6 +503,22 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- IR engine: calls are as fast as before #153 again (#265). The `const`
+  globals were built lazily from inside the instruction loop, which called
+  the interpreter back from the instruction evaluator; that one call edge
+  changed how the whole loop was compiled, and every call-heavy program lost
+  8–15% (`fib`, role calls, closures) while executing the same instructions.
+  Constants are now built when the engine starts, like the JVM's `<clinit>`
+  (an init is pure and reads no other global, so the order is not visible),
+  and `global gN` only reads. Two smaller causes went with it: the frame's
+  register file is filled by a closure of its own (a second `vec![None; n]`
+  had pushed `from_elem` out of line on every call), and awaiting an
+  `async destroy` (#154) moved out of the loop into a cold function. PGO
+  build against wave 10: calls +0.6%, roles +2.2%, arithmetic −0.6%,
+  objects −1.1%, closures +5.6% (PGO compiles that path differently;
+  without PGO both versions run the same instructions)
+  ([#265](https://github.com/shootnix/okkama/issues/265)).
+
 - Compiler: one function of many sequential loops compiles in linear time
   (#239). Three phases were quadratic on it. Lowering copied the value of
   every local at every branch; it now snapshots only the variables that can

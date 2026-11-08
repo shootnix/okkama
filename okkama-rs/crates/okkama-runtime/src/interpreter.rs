@@ -129,6 +129,14 @@ pub(crate) fn new_engine(module: &ir::Module) -> Rc<Engine> {
         uncaught: std::cell::RefCell::new(None),
     });
     engine.state.set_enums(module);
+    // Значения `const` (#153) строятся здесь, как в `<clinit>` JVM: init чист
+    // и не читает других глобалов, поэтому порядок не виден. Вызов
+    // исполнителя изнутри вычисления инструкции замедлял каждый вызов (#265).
+    for (index, global) in module.globals.iter().enumerate() {
+        if let Ok(Some(value)) = execute_function(&engine, global.init, Vec::new()) {
+            engine.globals.borrow_mut()[index] = Some(value);
+        }
+    }
     engine
 }
 
@@ -150,8 +158,7 @@ pub(crate) fn into_failure(error: RuntimeError) -> Result<Rc<Failure>, RuntimeEr
 pub(crate) struct Engine {
     pub(crate) module: ir::Module,
     pub(crate) state: State,
-    /// Значения `const` модуля (#153): строятся функцией init при первом
-    /// чтении и затем разделяются; init чистая, поэтому порядок не виден.
+    /// Значения `const` модуля (#153), построенные при создании движка.
     globals: std::cell::RefCell<Vec<Option<Value>>>,
     /// Ошибка реализации внутри задачи: завершает запуск после планировщика.
     fatal: std::cell::RefCell<Option<RuntimeError>>,
@@ -339,8 +346,7 @@ pub(crate) fn execute_function(
                         )));
                         continue;
                     }
-                    let settling = cold_call(engine, body, vec![Value::Object(object)]);
-                    if let Err(failure) = sched::await_shielded(&settling) {
+                    if let Some(failure) = settle_destroy(engine, body, object) {
                         pending.failures.push(failure);
                     }
                 }
@@ -666,7 +672,13 @@ pub(crate) fn execute_function(
                         state.object_next(read(slots, *object, inst.span)?, updates, inst.span)?
                     }
                     InstKind::Undef => Value::Undef,
-                    InstKind::Global(index) => global(engine, *index, inst.span)?,
+                    InstKind::Global(index) => engine
+                        .globals
+                        .borrow()
+                        .get(*index)
+                        .cloned()
+                        .flatten()
+                        .ok_or_else(|| invalid_state(inst.span, "a constant has no value"))?,
                     InstKind::Const(value) => operations::constant(value, inst.span)?,
                     InstKind::Str {
                         op: ir::StrOp::Split,
@@ -1253,7 +1265,11 @@ impl Frame {
                 "call argument count does not match parameters",
             ));
         }
-        let mut slots = vec![None; function.values.len()];
+        // Not `vec![None; n]`: its `from_elem` is shared with other callers,
+        // then stays out of line and clones `None` per slot on every call
+        // (#265); this closure is ours alone and inlines to a fill.
+        let mut slots = Vec::with_capacity(function.values.len());
+        slots.resize_with(function.values.len(), || None);
         for (param, value) in function.params.iter().zip(args) {
             slots[param.0] = Some(value);
         }
@@ -1269,16 +1285,14 @@ impl Frame {
     }
 }
 
-/// `globals[index]`, built by its init function at the first read (#153).
-fn global(engine: &Rc<Engine>, index: usize, span: Span) -> Result<Value, RuntimeError> {
-    if let Some(value) = engine.globals.borrow().get(index).cloned().flatten() {
-        return Ok(value);
-    }
-    let init = engine.module.globals.get(index).ok_or_else(|| invalid_state(span, "missing global"))?.init;
-    let value = execute_function(engine, init, Vec::new())?
-        .ok_or_else(|| invalid_state(span, "a global init returned no value"))?;
-    engine.globals.borrow_mut()[index] = Some(value.clone());
-    Ok(value)
+/// Await the async destroy of `object` where its region settles (#154). Out
+/// of line: the scheduler code would otherwise land in the instruction loop
+/// and slow every call (#265).
+#[cold]
+#[inline(never)]
+fn settle_destroy(engine: &Rc<Engine>, body: ir::FuncId, object: Rc<okkama_runtime_core::heap::Object>) -> Option<Rc<Failure>> {
+    let settling = cold_call(engine, body, vec![Value::Object(object)]);
+    sched::await_shielded(&settling).err()
 }
 
 fn read(slots: &[Option<Value>], id: ir::ValueId, span: Span) -> Result<&Value, RuntimeError> {
