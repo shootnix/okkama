@@ -1,0 +1,39 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has id is int;
+    Res(:id);
+    destroy {
+        if id % 50 == 0 || id >= 1000 {
+            Stdout().writeln("destroy " + id.string());
+        }
+    }
+}
+
+object View {
+    has items is @Res;
+    has extra is Res;
+    View(:items, :extra);
+    size() is int { items.size(); }
+}
+
+object Store {
+    has items is @Res;
+    Store(count is int) {
+        items = (0..count).map() -> i { Res(id: i); };
+    }
+    run(rounds is int) is int {
+        (0..rounds).reduce(0) -> sum, round {
+            let view = View(items: items, extra: Res(id: 1000 + round));
+            sum + view.size();
+        };
+    }
+}
+
+main() is int {
+    let store = Store(100);
+    Stdout().writeln("sum " + store.run(3).string());
+    0;
+}

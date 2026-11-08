@@ -1,0 +1,36 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Res {
+    has id is int;
+    Res(:id);
+    number() is int { id; }
+    destroy {
+        if id % 50 == 0 {
+            Stdout().writeln("destroy " + id.string());
+        }
+    }
+}
+
+object View {
+    has items is @Res;
+    View(:items);
+    first() is int { items[0].number(); }
+}
+
+object Maker {
+    Maker();
+    make(n is int) is @Res {
+        let items = (0..n).map() -> i { Res(id: i); };
+        let view = View(items: items);
+        Stdout().writeln("made " + view.first().string());
+        items;
+    }
+}
+
+main() is int {
+    let items = Maker().make(100);
+    Stdout().writeln("got " + items.size().string());
+    0;
+}

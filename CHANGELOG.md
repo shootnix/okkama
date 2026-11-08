@@ -503,6 +503,26 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Runtime: cleanup regions no longer walk a large structure again for every
+  value that points into it (#9). A region learns which resources to destroy
+  by walking what a value reaches; the walk stopped at objects owned
+  elsewhere, but arrays, maps and closures have no owner, so a fresh value
+  pointing at 100 000 owned records cost a walk over all of them, on every
+  track and every close: a loop that builds such values was quadratic. Arrays,
+  maps, closures and `any` boxes are immutable, so what one reaches is at
+  most as old as itself: a container whose walk meets no free resource is now
+  remembered with the identity counter of that moment and skipped by later
+  walks, until a resource at least as old becomes free again (a scope returns
+  it), which forgets all of them; a walk through a closing region skips it
+  only while every entry of that region is newer. The same rule on the Sparrow
+  core (a header bit and a side table, dropped by the collector), the IR
+  engine and the JVM (weak side tables); the JVM walk is no longer recursive.
+  The #9 probe (40 000 records, 2 000 rounds) on the core: 1.40 s → 0.03 s.
+  New benchmark `11-ownership` (100 000 records in an array and a map, 300
+  rounds); OCS `L07.ownership.shared-structure-returned` and
+  `.shared-structure-loop`
+  ([#9](https://github.com/shootnix/okkama/issues/9)).
+
 - Compiler: one function of many sequential loops compiles in linear time
   (#239). Three phases were quadratic on it. Lowering copied the value of
   every local at every branch; it now snapshots only the variables that can

@@ -1,8 +1,12 @@
 package okkama.rt;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 
 /**
@@ -21,6 +25,8 @@ public final class Region {
     // большинство вызовов не владеет ни одной идентичностью.
     private ArrayList<Obj> entries;
     private IdentityHashMap<Obj, Boolean> known;
+    /** Самый старый {@link Obj#serial} среди {@link #entries}. */
+    private long oldest = Long.MAX_VALUE;
 
     private void remember(Obj obj) {
         if (known == null) {
@@ -29,7 +35,93 @@ public final class Region {
         }
         if (known.put(obj, Boolean.TRUE) == null) {
             entries.add(obj);
+            oldest = Math.min(oldest, obj.serial);
         }
+    }
+
+    /** Шагов обхода под контейнером, ради которых его стоит запомнить. */
+    private static final int SUMMARY_STEPS = 64;
+
+    /** Запомненный контейнер и {@link Obj#newest()} в тот момент. */
+    private static final class Summary extends WeakReference<Object> {
+        final long serial;
+
+        Summary(Object container, long serial) {
+            super(container);
+            this.serial = serial;
+        }
+    }
+
+    /**
+     * Контейнеры (списки, словари, Any, Fn), обход которых не встретил
+     * свободных идентичностей (#9), по {@code identityHashCode}. Всё, что
+     * контейнер достигает, не новее его сводки; освобождение идентичности не
+     * новее {@link #summarized} сбрасывает все сводки.
+     */
+    private static final HashMap<Integer, ArrayList<Summary>> summaries = new HashMap<Integer, ArrayList<Summary>>();
+    private static int summaryCount;
+    private static int pruned;
+    private static long summarized;
+
+    private static void summarize(Object container) {
+        long serial = Obj.newest();
+        Integer key = System.identityHashCode(container);
+        ArrayList<Summary> bucket = summaries.get(key);
+        if (bucket == null) {
+            bucket = new ArrayList<Summary>(1);
+            summaries.put(key, bucket);
+        }
+        for (int i = 0; i < bucket.size(); i++) {
+            if (bucket.get(i).get() == container) {
+                bucket.set(i, new Summary(container, serial));
+                return;
+            }
+        }
+        bucket.add(new Summary(container, serial));
+        summaryCount++;
+        summarized = Math.max(summarized, serial);
+        if (summaryCount > 2 * Math.max(pruned, 1024)) {
+            summaryCount = 0;
+            for (Iterator<ArrayList<Summary>> buckets = summaries.values().iterator(); buckets.hasNext();) {
+                ArrayList<Summary> each = buckets.next();
+                for (Iterator<Summary> it = each.iterator(); it.hasNext();) {
+                    if (it.next().get() == null) {
+                        it.remove();
+                    }
+                }
+                if (each.isEmpty()) {
+                    buckets.remove();
+                } else {
+                    summaryCount += each.size();
+                }
+            }
+            pruned = summaryCount;
+        }
+    }
+
+    /** Может ли обход (через {@code via} с самой старой записью {@code oldest}) пропустить контейнер? */
+    private static boolean summaryHolds(Object container, Region via, long oldest) {
+        ArrayList<Summary> bucket = summaries.get(System.identityHashCode(container));
+        if (bucket == null) {
+            return false;
+        }
+        for (Summary summary : bucket) {
+            if (summary.get() == container) {
+                return via == null || summary.serial < oldest;
+            }
+        }
+        return false;
+    }
+
+    /** Свободной снова стала идентичность не новее сводки: сводки могут её достигать. */
+    private static void freed(long serial) {
+        if (serial > summarized) {
+            return;
+        }
+        summaries.clear();
+        summaryCount = 0;
+        pruned = 0;
+        summarized = 0;
     }
 
     /** Значение без идентичностей: обходить нечего. */
@@ -93,45 +185,97 @@ public final class Region {
         }
     }
 
+    /** Контейнер, элементы которого обходит {@link #collect}. */
+    private static final class Walked {
+        final Object container;
+        final int base;
+        final int steps;
+        final int events;
+
+        Walked(Object container, int base, int steps, int events) {
+            this.container = container;
+            this.base = base;
+            this.steps = steps;
+            this.events = events;
+        }
+    }
+
     /**
      * Идентичности, достижимые из {@code value}: свободные, а при {@code via}
-     * ещё и принадлежащие {@code via}. Чужие идентичности не обходятся.
+     * ещё и принадлежащие {@code via}. Чужие идентичности не обходятся. Без
+     * рекурсии: глубина данных не растит стек.
+     *
+     * <p>Контейнеры неизменяемы, поэтому всё, что контейнер достигает, не новее
+     * его. Контейнер, обход которого не встретил свободной идентичности,
+     * запоминается (#9): следующие обходы его пропускают, пока не освободится
+     * идентичность не новее сводки, а обход через {@code via} — пока все
+     * записи {@code via} новее её.
      */
     private static void collect(Object value, List<Obj> out, IdentityHashMap<Obj, Boolean> seen, Region via) {
-        if (value instanceof Obj) {
-            Obj obj = (Obj) value;
-            if (seen.containsKey(obj) || !(obj.owner == null || (via != null && obj.owner == via))) {
-                return;
-            }
-            seen.put(obj, Boolean.TRUE);
-            out.add(obj);
-            ArrayList<Object> refs = new ArrayList<Object>();
-            obj.refs(refs);
-            for (Object ref : refs) {
-                collect(ref, out, seen, via);
-            }
-        } else if (value instanceof List) {
-            for (Object item : (List<?>) value) {
-                collect(item, out, seen, via);
-            }
-        } else if (value instanceof Map) {
-            for (Object item : ((Map<?, ?>) value).values()) {
-                collect(item, out, seen, via);
-            }
-        } else if (value instanceof Any) {
-            collect(((Any) value).value, out, seen, via);
-        } else if (value instanceof Future) {
-            Future future = (Future) value;
-            if (future.retained != null) {
-                for (Object item : future.retained) {
-                    collect(item, out, seen, via);
+        ArrayList<Object> pending = new ArrayList<Object>();
+        ArrayList<Walked> open = new ArrayList<Walked>();
+        pending.add(value);
+        boolean any = !summaries.isEmpty();
+        long oldest = via == null ? Long.MAX_VALUE : via.oldest;
+        // events — то, что мешает сводке: свободная идентичность или
+        // идентичность via, Future (его исход меняется).
+        int steps = 0;
+        int events = 0;
+        while (true) {
+            while (!open.isEmpty() && pending.size() <= open.get(open.size() - 1).base) {
+                Walked walked = open.remove(open.size() - 1);
+                if (walked.events == events && steps - walked.steps >= SUMMARY_STEPS) {
+                    summarize(walked.container);
                 }
             }
-            collect(future.value, out, seen, via);
-        } else if (value instanceof Fn) {
-            for (Object item : ((Fn) value).captures()) {
-                collect(item, out, seen, via);
+            if (pending.isEmpty()) {
+                break;
             }
+            Object item = pending.remove(pending.size() - 1);
+            steps++;
+            int base = pending.size();
+            if (item instanceof Obj) {
+                Obj obj = (Obj) item;
+                if (!(obj.owner == null || (via != null && obj.owner == via))) {
+                    continue;
+                }
+                events++;
+                if (seen.containsKey(obj)) {
+                    continue;
+                }
+                seen.put(obj, Boolean.TRUE);
+                out.add(obj);
+                ArrayList<Object> refs = new ArrayList<Object>();
+                obj.refs(refs);
+                pushReversed(pending, refs);
+            } else if (item instanceof List || item instanceof Map || item instanceof Any || item instanceof Fn) {
+                if (any && summaryHolds(item, via, oldest)) {
+                    continue;
+                }
+                if (item instanceof List) {
+                    pushReversed(pending, (List<?>) item);
+                } else if (item instanceof Map) {
+                    pushReversed(pending, new ArrayList<Object>(((Map<?, ?>) item).values()));
+                } else if (item instanceof Any) {
+                    pending.add(((Any) item).value);
+                } else {
+                    pushReversed(pending, java.util.Arrays.asList(((Fn) item).captures()));
+                }
+                open.add(new Walked(item, base, steps, events));
+            } else if (item instanceof Future) {
+                events++;
+                Future future = (Future) item;
+                pending.add(future.value);
+                if (future.retained != null) {
+                    pushReversed(pending, java.util.Arrays.asList(future.retained));
+                }
+            }
+        }
+    }
+
+    private static void pushReversed(ArrayList<Object> pending, List<?> items) {
+        for (ListIterator<?> it = items.listIterator(items.size()); it.hasPrevious();) {
+            pending.add(it.previous());
         }
     }
 
@@ -201,6 +345,7 @@ public final class Region {
             if (kept.containsKey(obj)) {
                 if (obj.owner == this) {
                     obj.owner = null;
+                    freed(obj.serial);
                 }
                 continue;
             }
@@ -236,6 +381,7 @@ public final class Region {
         }
         entries.clear();
         known.clear();
+        oldest = Long.MAX_VALUE;
         return primary;
     }
 }

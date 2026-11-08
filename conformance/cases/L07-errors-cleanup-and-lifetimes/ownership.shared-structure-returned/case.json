@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L07.ownership.shared-structure-returned",
+  "title": "a large structure referenced while its owner is open still moves to the caller when returned",
+  "purpose": "Observe failure, cleanup and lifetime ordering during execution.",
+  "level": "L07",
+  "contracts": [
+    {
+      "contract": "LIFE.OWNERSHIP",
+      "aspects": [
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "made 0\ngot 100\ndestroy 50\ndestroy 0\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.6",
+    "docs/okkama-spec-11072026.md#10"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for OCS 0.1.0; region walk summaries by #9",
+    "expected_basis": "spec 11.6: make owns the 100 resources while a View refers to them; returning the array frees them for the caller, which owns them and destroys them (newest first) after printing, not when make returns."
+  },
+  "status": "mandatory"
+}

@@ -34,9 +34,28 @@ pub struct Resources {
     pub flags: Vec<bool>,
     serial: u64,
     identities: HashMap<Word, Identity>,
-    /// Work list and visited set of `resource_graph`, reused.
-    scratch: (Vec<(Word, Repr)>, Vec<Word>),
+    /// Work list, visited set and open containers of `resource_graph`, reused.
+    scratch: (Vec<(Word, Repr)>, Vec<Word>, Vec<Walked>),
+    /// Containers whose walk found no free identity (#9), with `serial` at
+    /// that moment: every identity they reach is at most that old. Freeing
+    /// an identity no newer than `summarized` drops them all.
+    summaries: HashMap<Word, u64>,
+    summarized: u64,
 }
+
+/// A container whose elements `resource_graph` is walking: its subtree is
+/// done when the work list is back to `base`.
+#[derive(Debug, Clone, Copy)]
+struct Walked {
+    container: Word,
+    base: usize,
+    steps: usize,
+    events: usize,
+}
+
+/// Walk steps under one container worth a summary: smaller ones are cheaper
+/// to walk again than to remember.
+const SUMMARY_STEPS: usize = 64;
 
 /// Entries of a region beyond its inline slots.
 #[derive(Debug, Default)]
@@ -44,6 +63,8 @@ pub struct RegionValue {
     entries: Vec<Word>,
     /// The entries as a set: membership checks stay constant-time.
     members: HashSet<Word>,
+    /// The oldest serial among `entries` (`None`: no entries).
+    oldest: Option<u64>,
     /// A `region.settle` that waits (#154): the async destroy it awaits and
     /// the failure gathered so far.
     settling: Option<Word>,
@@ -84,10 +105,11 @@ impl Resources {
             ..Self::default()
         }
     }
-    /// Drop identities of objects the collector reclaimed.
+    /// Drop identities and summaries of objects the collector reclaimed.
     pub fn forget(&mut self, released: &[Word]) {
         for object in released {
             self.identities.remove(object);
+            self.summaries.remove(object);
         }
     }
 }
@@ -175,18 +197,44 @@ impl Runtime {
 
     /// `resource_graph`, not descending into identities already in `known`
     /// (a region): objects are immutable, so their graph is already there.
+    ///
+    /// Containers are immutable too, so what a container reaches is at most
+    /// as old as the container. One whose walk meets no free identity (only
+    /// identities owned elsewhere, dead or plain) is summarized (#9): later
+    /// walks skip it until an identity at least as old becomes free again,
+    /// and a `via` walk skips it while every entry of `via` is newer. A big
+    /// structure held by an open region then costs one walk, not one per
+    /// value that points into it.
     fn resource_graph_into(&mut self, roots: &[Word], via: Option<Word>, known: Option<Word>) -> Vec<Word> {
         if !self.resources.enabled {
             return Vec::new();
         }
         // Scratch storage reused across calls (regions close on every scope
         // exit); visited objects carry a header mark until the walk ends.
-        let (mut pending, mut seen) = std::mem::take(&mut self.resources.scratch);
+        let (mut pending, mut seen, mut open) = std::mem::take(&mut self.resources.scratch);
         pending.clear();
         seen.clear();
+        open.clear();
         pending.extend(roots.iter().map(|&w| (w, Repr::Ref)));
         let mut found = Vec::new();
-        while let Some((word, repr)) = pending.pop() {
+        // `events` counts what keeps a container from a summary: a free or
+        // `via` identity, and anything met twice (its first meeting may have
+        // been one).
+        let (mut steps, mut events) = (0, 0);
+        let mut oldest = None;
+        loop {
+            while let Some(&walked) = open.last()
+                && pending.len() <= walked.base
+            {
+                open.pop();
+                if walked.events == events && steps - walked.steps >= SUMMARY_STEPS {
+                    self.summarize(walked.container);
+                }
+            }
+            let Some((word, repr)) = pending.pop() else {
+                break;
+            };
+            steps += 1;
             let Some(object) = repr.pointer(word) else {
                 continue;
             };
@@ -195,34 +243,38 @@ impl Runtime {
             match heap::kind(header) {
                 heap::OBJECT if !self.resources.flags[heap::payload(header) as usize] => continue,
                 heap::ARRAY if header & heap::PACKED != 0 || Repr::from_bits((header >> 9) & 3) != Repr::Ref => continue,
-                heap::OBJECT | heap::ARRAY | heap::CLOSURE | heap::PAYLOAD => {}
-                _ => continue,
-            }
-            if !self.heap.visit(object) {
-                continue;
-            }
-            seen.push(object);
-            match heap::kind(header) {
                 heap::OBJECT => {
-                    let descriptor = heap::payload(header) as usize;
-                    if !self.resources.flags[descriptor] {
-                        continue;
-                    }
                     let Some(identity) = self.resources.identities.get(&object) else {
                         continue;
                     };
                     if identity.owner != Owner::Free && Some(identity.owner) != via.map(Owner::Region) {
                         continue;
                     }
-                    if known.is_some_and(|region| self.region_contains(region, object)) {
+                    events += 1;
+                    if known.is_some_and(|region| self.region_contains(region, object)) || !self.heap.visit(object) {
                         continue;
                     }
-                    let layout = &self.heap.layouts.objects[descriptor];
+                    seen.push(object);
+                    let layout = &self.heap.layouts.objects[heap::payload(header) as usize];
                     for (index, &field) in layout.iter().enumerate().rev() {
                         pending.push((self.heap.field(object, index), field));
                     }
                     found.push(object);
+                    continue;
                 }
+                heap::ARRAY | heap::CLOSURE | heap::PAYLOAD => {}
+                _ => continue,
+            }
+            if header & heap::SUMMARY != 0 && self.summary_holds(object, via, &mut oldest) {
+                continue;
+            }
+            if !self.heap.visit(object) {
+                events += 1;
+                continue;
+            }
+            seen.push(object);
+            let base = pending.len();
+            match heap::kind(header) {
                 heap::ARRAY => {
                     let repr = Repr::from_bits((header >> 9) & 3);
                     let elements = self.heap.elements(object);
@@ -234,22 +286,60 @@ impl Runtime {
                         pending.push((self.heap.field(object, index), field));
                     }
                 }
-                heap::PAYLOAD => {
+                _ => {
                     if let Some(map) = self.heap.payload::<crate::ops::MapValue>(object) {
                         pending.extend(map.entries.values().rev().map(|(_, v)| (*v, map.value)));
                     } else if let Some(boxed) = self.heap.payload::<crate::ops::AnyBox>(object) {
                         pending.push((boxed.value, boxed.repr));
+                    } else {
+                        // Other payloads (region entries, waiters) change in
+                        // place: never summarized.
+                        continue;
                     }
                 }
-                _ => {}
             }
+            open.push(Walked { container: object, base, steps, events });
         }
         for &object in &seen {
             self.heap.unvisit(object);
         }
-        self.resources.scratch = (pending, seen);
+        self.resources.scratch = (pending, seen, open);
         found.sort_unstable_by_key(|o| self.resources.identities[o].serial);
         found
+    }
+
+    /// Remember that `container` reaches no free identity now.
+    fn summarize(&mut self, container: Word) {
+        let serial = self.resources.serial;
+        self.resources.summaries.insert(container, serial);
+        self.resources.summarized = self.resources.summarized.max(serial);
+        self.heap.summarized(container, true);
+        self.heap.watch(container);
+    }
+
+    /// May a walk (through `via`, if any) skip `container`? `oldest` caches
+    /// the oldest entry of `via` for the rest of the walk.
+    fn summary_holds(&self, container: Word, via: Option<Word>, oldest: &mut Option<u64>) -> bool {
+        let Some(&serial) = self.resources.summaries.get(&container) else {
+            return false;
+        };
+        let Some(region) = via else {
+            return true;
+        };
+        let oldest = *oldest.get_or_insert_with(|| self.region_oldest(region));
+        serial < oldest
+    }
+
+    /// An identity no newer than a summary becomes free: the summaries may
+    /// reach it now.
+    fn freed(&mut self, serial: u64) {
+        if serial > self.resources.summarized {
+            return;
+        }
+        for (container, _) in self.resources.summaries.drain() {
+            self.heap.summarized(container, false);
+        }
+        self.resources.summarized = 0;
     }
 
     /// Can `value` reach a free identity? False is certain (the common case:
@@ -316,10 +406,12 @@ impl Runtime {
             let overflow = self.heap.allocate_payload(Box::new(RegionValue::default()));
             self.heap.set_field(region, 0, overflow);
         }
+        let serial = self.serial_of(object);
         let overflow = self.heap.field(region, 0);
         let overflow = self.heap.payload_mut::<RegionValue>(overflow).expect("region");
         overflow.entries.push(object);
         overflow.members.insert(object);
+        overflow.oldest = Some(overflow.oldest.map_or(serial, |oldest| oldest.min(serial)));
     }
 
     fn region_clear(&mut self, region: Word) {
@@ -331,6 +423,29 @@ impl Runtime {
             let overflow = self.heap.payload_mut::<RegionValue>(overflow).expect("region");
             overflow.entries.clear();
             overflow.members.clear();
+            overflow.oldest = None;
+        }
+    }
+
+    /// Serial of an identity; 0 (older than anything) for none.
+    fn serial_of(&self, object: Word) -> u64 {
+        self.resources.identities.get(&object).map_or(0, |identity| identity.serial)
+    }
+
+    /// The oldest serial among the region's entries (`u64::MAX`: none).
+    fn region_oldest(&self, region: Word) -> u64 {
+        let inline = (1..=REGION_SLOTS)
+            .map(|slot| self.heap.field(region, slot))
+            .take_while(|&entry| entry != UNBOUND)
+            .map(|entry| self.serial_of(entry))
+            .min()
+            .unwrap_or(u64::MAX);
+        match self.heap.field(region, 0) {
+            UNBOUND => inline,
+            overflow => {
+                let overflow = self.heap.payload::<RegionValue>(overflow).expect("region");
+                overflow.oldest.map_or(inline, |oldest| oldest.min(inline))
+            }
         }
     }
 
@@ -465,6 +580,8 @@ impl Runtime {
             if kept.contains(&object) {
                 if identity.owner == Owner::Region(region) {
                     identity.owner = Owner::Free;
+                    let serial = identity.serial;
+                    self.freed(serial);
                 }
                 continue;
             }

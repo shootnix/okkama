@@ -20,6 +20,11 @@ public abstract class Obj {
         serial = ++created;
     }
 
+    /** {@link #serial} последней созданной идентичности. */
+    static long newest() {
+        return created;
+    }
+
     /** Тело {@code destroy} объекта; без блока {@code destroy} — ничего. */
     public void destroyBody() {}
 

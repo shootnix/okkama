@@ -35,6 +35,9 @@ pub const PACKED: u64 = 1 << 11;
 pub const VISITED: u64 = 1 << 12;
 /// A string whose bytes are all ASCII: lengths and slices are byte offsets.
 pub const ASCII: u64 = 1 << 13;
+/// A container (array, closure, map, box) with an entry in the resource walk
+/// summaries (#9): the walk looks the entry up only when this bit is set.
+pub const SUMMARY: u64 = 1 << 14;
 const PAGE_WORDS: usize = 64 * 1024 / 8;
 /// Bytes of one page of small cells.
 pub const PAGE_BYTES: usize = PAGE_WORDS * 8;
@@ -335,6 +338,18 @@ impl Heap {
     pub fn unvisit(&mut self, object: Word) {
         // SAFETY: as in `visit`.
         unsafe { *(object as *mut u64) &= !VISITED }
+    }
+    /// Set or clear the [`SUMMARY`] bit of `object`.
+    pub fn summarized(&mut self, object: Word, on: bool) {
+        // SAFETY: as in `visit`.
+        unsafe {
+            let header = &mut *(object as *mut u64);
+            if on {
+                *header |= SUMMARY;
+            } else {
+                *header &= !SUMMARY;
+            }
+        }
     }
     pub fn header_of(&self, object: Word) -> u64 {
         unsafe { *(object as *const u64) }
