@@ -10,8 +10,14 @@ use std::process::Command;
 fn compiled(case: &str) -> okkama_sparrow::Program {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let source = root.join(format!("conformance/cases/{case}/main.ok"));
-    // One file per case: the tests build in parallel.
-    let out = std::env::temp_dir().join(format!("intrinsic-contracts-{}-{}.spb", std::process::id(), case.replace('/', "-")));
+    // One file per build: the tests build in parallel, sometimes the same case.
+    static BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let build = BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let out = std::env::temp_dir().join(format!(
+        "intrinsic-contracts-{}-{build}-{}.spb",
+        std::process::id(),
+        case.replace('/', "-")
+    ));
     let built = Command::new(env!("CARGO_BIN_EXE_okkama"))
         .args(["build", "--target", "sparrow"])
         .arg(&source)
