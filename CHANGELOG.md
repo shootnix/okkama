@@ -9,8 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 ### Added
 
 - Benchmarks: steady state is measured (#236). `run.py --steady N` runs every
-  configuration once more with `BENCH_REPEAT=N`, and the program repeats its
-  work N times in one process, timing each repetition with its own
+  configuration once more, and the program repeats its work N times in one
+  process (an Okkama program gets N as its first argument, a reference port
+  as `BENCH_REPEAT=N`; the ladder first read it through `os/environment`,
+  which brought a `destroy` into every measured program and made 09-closures
+  6× slower on the JVM, #292), timing each repetition with its own
   monotonic clock (`iteration <ns>` on stderr; stdout must still match the
   cold runs). The ladder's Okkama programs repeat through a `Repeat` object
   (`10-app` through a loop in its async `main`). The Python, Perl and Ruby
