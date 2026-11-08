@@ -1,0 +1,34 @@
+module ocs/escaped_self_after v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Leaf {
+    has up is Tree;
+    Leaf(:up);
+    describe() is string { "leaf of " + up.name(); }
+}
+
+object Tree {
+    has name is string;
+    has leaf is Maybe<Leaf>;
+    Tree(name is string) {
+        self.name = name;
+        leaf = Maybe.some(Leaf(up: self));
+    }
+    name() is string { name; }
+    renamed(name is string) is ^Tree { ^name = name; }
+    describe() is string {
+        match leaf {
+            case Maybe.some(l) { name + " has a " + l.describe(); }
+            case Maybe.none { name; }
+        }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let oak = Tree("oak");
+    out.writeln(oak.describe());
+    out.writeln(oak.renamed("elm").name());
+    0;
+}

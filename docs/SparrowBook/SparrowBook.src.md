@@ -4,7 +4,7 @@ Sparrow is the bytecode of Okkama: `okkama build --target sparrow` writes it,
 the Sparrow core (`sparrow`, `okkama exec`) verifies it and runs it as machine
 code. This book teaches its text form, Sparrow assembly (`.spa`), well enough
 to read what the compiler produces and to write programs by hand. It describes
-SPB version 10, the format of Okkama 0.4.1.
+SPB version 12, the format of Okkama 0.4.1.
 
 Every example lives in [examples/](examples/) and is assembled, checked and
 run as part of writing this book; the result shown after each one is what

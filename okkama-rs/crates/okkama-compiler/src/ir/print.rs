@@ -419,6 +419,10 @@ fn write_inst(
             write!(f, "obj.get {object}, ")?;
             write_field(f, module, object_of(object), *field)
         }
+        InstKind::ObjPending { object, field } => {
+            write!(f, "obj.pending {object}, ")?;
+            write_field(f, module, object_of(object), *field)
+        }
         InstKind::ObjNext { object, updates } => {
             write!(f, "obj.next {object} {{")?;
             for (index, (field, value)) in updates.iter().enumerate() {

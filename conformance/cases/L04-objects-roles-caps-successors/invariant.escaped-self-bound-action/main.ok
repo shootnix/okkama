@@ -1,0 +1,24 @@
+module ocs/escaped_self_bound v1.0.0;
+
+import "io/stdout" take Stdout;
+
+object Child {
+    has seen is string;
+    Child(ask is () is string) { seen = ask(); }
+}
+
+object Parent {
+    has label is string;
+    has child is Maybe<Child>;
+    Parent(label is string) {
+        self.label = label;
+        let me = self;
+        child = Maybe.some(Child(me.name));
+    }
+    name() is string { label; }
+}
+
+main() is int {
+    Stdout().writeln(Parent("p").name());
+    0;
+}

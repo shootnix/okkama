@@ -20,6 +20,10 @@ use crate::ir::{self, FuncId, ObjectId, ResultType, RoleId, Type};
 use crate::source::Span;
 use crate::syntax::ast;
 
+/// Скрытое последнее поле объекта, чей конструктор отдаёт `self`: `true`,
+/// пока создание не завершено (#271).
+pub(super) const PENDING_FIELD: &str = "$pending";
+
 /// Специализация объекта в OIR.
 #[derive(Debug)]
 pub(super) struct Instance {
@@ -34,6 +38,9 @@ pub(super) struct Instance {
     pub methods: Vec<Option<FuncId>>,
     pub destroy: Option<FuncId>,
     pub does: Vec<(RoleId, Vec<FuncId>)>,
+    /// Номер скрытого поля `$pending`, если конструктор отдаёт `self`
+    /// значением: пока создание не завершено, действия отвергаются (#271).
+    pub pending: Option<usize>,
     pub span: Span,
 }
 
@@ -839,6 +846,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             module,
             fields: Vec::new(),
             methods: Vec::new(),
+            pending: None,
             destroy: None,
             does: Vec::new(),
             span,
@@ -1034,6 +1042,7 @@ impl<'r, 'a> Ctx<'r, 'a> {
             methods: vec![None; info.methods.len()],
             destroy: None,
             does: Vec::new(),
+            pending: None,
             span: info.decl.map_or(span, |decl| decl.span),
         });
         self.object_map.insert((decl, args), id);
@@ -1093,7 +1102,21 @@ impl<'r, 'a> Ctx<'r, 'a> {
                 _ => {}
             }
         }
+        if self.escapes_self(decl) {
+            let instance = &mut self.objects[id.0];
+            instance.pending = Some(instance.fields.len());
+            instance.fields.push((PENDING_FIELD.to_string(), Type::Bool, None));
+        }
         Ok(())
+    }
+
+    /// Конструктор объявления отдаёт `self` значением (§11.4): сотрудник может
+    /// получить объект, создание которого ещё не завершено.
+    fn escapes_self(&self, decl: DeclObject) -> bool {
+        self.bodies.iter().any(|body| {
+            matches!(body.owner, BodyOwner::Ctor { object, .. } if object == decl)
+                && thir::first_expr(&body.block, &|expr| matches!(expr.kind, thir::ExprKind::SelfValue)).is_some()
+        })
     }
 
     /// `does R`: функция каждого слота роли (анализ проверил соответствие).

@@ -1,0 +1,25 @@
+module ocs/escaped_self_role v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Named { name() is string; }
+
+object Child {
+    has seen is string;
+    Child(parent is Named) { seen = parent.name(); }
+}
+
+object Parent does Named {
+    has label is string;
+    has child is Maybe<Child>;
+    Parent(label is string) {
+        self.label = label;
+        child = Maybe.some(Child(self));
+    }
+    name() is string { label; }
+}
+
+main() is int {
+    Stdout().writeln(Parent("p").name());
+    0;
+}

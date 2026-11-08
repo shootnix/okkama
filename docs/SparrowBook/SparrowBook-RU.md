@@ -5,7 +5,7 @@ Sparrow — байткод Okkama: его пишет `okkama build --target spar
 Sparrow (`sparrow`, `okkama exec`) проверяет его и исполняет как машинный код.
 Книга учит текстовой форме байткода — ассемблеру Sparrow (`.spa`) — настолько,
 чтобы читать то, что выдаёт компилятор, и писать программы вручную. Описана
-версия SPB 10, формат Okkama 0.4.1.
+версия SPB 12, формат Okkama 0.4.1.
 
 Все примеры лежат в [examples/](examples/); при сборке книги каждый из них
 ассемблируется, проверяется и запускается, а показанный после примера
@@ -898,7 +898,7 @@ sparrow: Sparrow assembly line 0: Sparrow @main instruction 2: r1 has type str, 
 | 141 | `br rX, @T, @T` | ветвление по bool |
 | 142 | `ret rX/_` | возврат (`_` из void-функции) |
 | 143 | `panic rX` | отказ с сообщением str |
-| 144 | `trap CODE, "…"` | программная ошибка: `confirm`, `range`, `empty`, `unbound`, `unreachable` с сообщением |
+| 144 | `trap CODE, "…"` | программная ошибка: `confirm`, `range`, `empty`, `unbound`, `unreachable`, `pending` (действие у недостроенного объекта) с сообщением |
 | 145 | `unreachable` | управление сюда не приходит |
 | 146 | `throw rX` | бросить объект, делающий встроенную роль Error |
 | 147 | `raise rX` | передать отказ дальше |

@@ -5,7 +5,7 @@ Sparrow is the bytecode of Okkama: `okkama build --target sparrow` writes it,
 the Sparrow core (`sparrow`, `okkama exec`) verifies it and runs it as machine
 code. This book teaches its text form, Sparrow assembly (`.spa`), well enough
 to read what the compiler produces and to write programs by hand. It describes
-SPB version 10, the format of Okkama 0.4.1.
+SPB version 12, the format of Okkama 0.4.1.
 
 Every example lives in [examples/](examples/) and is assembled, checked and
 run as part of writing this book; the result shown after each one is what
@@ -894,7 +894,7 @@ edge moves; `[…]` a list.
 | 141 | `br rX, @T, @T` | branch on a bool |
 | 142 | `ret rX/_` | return (`_` from a void function) |
 | 143 | `panic rX` | fail with a str message |
-| 144 | `trap CODE, "…"` | program error: `confirm`, `range`, `empty`, `unbound`, `unreachable` with a message |
+| 144 | `trap CODE, "…"` | program error: `confirm`, `range`, `empty`, `unbound`, `unreachable`, `pending` (an action on an object under construction) with a message |
 | 145 | `unreachable` | control never gets here |
 | 146 | `throw rX` | throw an object that does the builtin Error role |
 | 147 | `raise rX` | send a failure on |

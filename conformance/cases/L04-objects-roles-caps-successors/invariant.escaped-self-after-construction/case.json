@@ -1,0 +1,43 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.invariant.escaped-self-after-construction",
+  "title": "a receiver stored by a collaborator is usable once its constructor returns",
+  "purpose": "Observe object, role, cap and successor semantics.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "OBJ.CONSTRUCTOR-INVARIANTS",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "oak has a leaf of oak\nelm\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#11.4"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #271 from the cited contract text",
+    "expected_basis": "spec 11.4: merely storing the unfinished receiver is allowed; calls through it are valid after construction completes, including on successors of it."
+  },
+  "status": "mandatory"
+}

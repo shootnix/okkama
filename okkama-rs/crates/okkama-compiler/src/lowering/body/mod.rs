@@ -815,6 +815,10 @@ fn lower_method(
         lowerer.params.push(value);
     }
     lowerer.open_root(span);
+    // Вызов через роль или связанное действие проверяется здесь; прямой —
+    // ещё до аргументов, в месте вызова (#271).
+    let name = info.name.clone();
+    lowerer.check_constructed(receiver, object, &name, span);
     let mut attrs = vec![if successor {
         ir::Attr::Successor(object)
     } else {
@@ -1010,6 +1014,16 @@ fn lower_ctor(
         };
         lowerer.adopt_into(0, &typed, span);
         lowerer.vars[var].value = Some(typed);
+        lowerer.mark_bound(field);
+    }
+    // `$pending` объекта, построенного в конце конструктора, — `false`; ранний
+    // `self` строит его несвязанным, `obj.init` в конце связывает `false` (#271).
+    if let Some(field) = lowerer.ctx.objects[object.0].pending {
+        let var = lowerer.field_vars[field];
+        lowerer.vars[var].value = Some(Typed {
+            value: no,
+            ty: Type::Bool,
+        });
         lowerer.mark_bound(field);
     }
     if full {
@@ -1380,9 +1394,29 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             self.b.switch_to(ok);
             self.sync_unwind();
         }
+        let pending = self.ctx.objects[object.0].pending;
         let built = match self.early_self.take() {
-            // `self` уже ушёл значением: результат — тот же объект.
-            Some((built, known)) if known == fields => built,
+            // `self` уже ушёл значением: результат — тот же объект, и его
+            // создание завершено (#271).
+            Some((built, known))
+                if known
+                    .iter()
+                    .zip(&fields)
+                    .enumerate()
+                    .all(|(index, (known, bound))| Some(index) == pending || known == bound) =>
+            {
+                if let (Some(field), Some((_, no))) = (pending, self.flag_values) {
+                    self.b.emit_void(
+                        InstKind::ObjInit {
+                            object: built,
+                            field,
+                            value: no,
+                        },
+                        span,
+                    );
+                }
+                built
+            }
             Some(_) => {
                 return Err(unsupported(
                     span,
@@ -1420,8 +1454,15 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }));
         }
         // Ещё не связанные поля: `undef`, позже — `obj.init` того же объекта.
+        // `$pending` не связано до конца конструктора: создание не
+        // завершено (#271).
+        let pending = self.ctx.objects[object.0].pending;
         let mut fields = Vec::new();
         for (index, var) in self.field_vars.clone().into_iter().enumerate() {
+            if Some(index) == pending {
+                fields.push(self.b.emit(InstKind::Undef, Type::Bool, span));
+                continue;
+            }
             match &self.vars[var].value {
                 Some(value) => fields.push(value.value),
                 None => {
@@ -1524,6 +1565,36 @@ impl<'r> BodyLowerer<'_, 'r, '_> {
             }
         });
         self.b.unwind = unwind;
+    }
+
+    /// Ловушка вызова `action` у объекта, создание которого не завершено
+    /// (§11.4, #271). Только у объектов, чей конструктор отдаёт `self`.
+    pub(super) fn check_constructed(&mut self, receiver: ValueId, object: ObjectId, action: &str, span: Span) {
+        let Some(field) = self.ctx.objects[object.0].pending else {
+            return;
+        };
+        let pending = self.b.emit(InstKind::ObjPending { object: receiver, field }, Type::Bool, span);
+        let stop = self.b.new_block();
+        let go = self.b.new_block();
+        self.b.terminate(
+            TermKind::Cond {
+                condition: pending,
+                then_target: Target::new(stop),
+                else_target: Target::new(go),
+            },
+            span,
+        );
+        self.b.switch_to(stop);
+        let name = self.ctx.objects[object.0].name.clone();
+        self.b.terminate(
+            TermKind::Trap {
+                code: TrapCode::Pending,
+                message: format!("Action \"{action}\" on object \"{name}\" was called before its construction completed"),
+            },
+            span,
+        );
+        self.b.switch_to(go);
+        self.sync_unwind();
     }
 
     /// После присваивания переменной, которую получает цель unwind, следующий
