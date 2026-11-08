@@ -134,6 +134,8 @@ pub(super) enum Task {
         receiver: Type,
         name: String,
         arity: usize,
+        /// Типы параметров, если имя и арность не выбирают одну перегрузку.
+        params: Option<Vec<Type>>,
         /// Тело bound action: receiver — захват замыкания (`fn.closure`).
         bound: bool,
     },
@@ -569,12 +571,14 @@ impl<'r, 'a> Ctx<'r, 'a> {
         receiver: Type,
         name: &str,
         arity: usize,
+        params: Option<Vec<Type>>,
         bound: bool,
     ) -> FuncId {
         let task = Task::Member {
             receiver,
             name: name.to_string(),
             arity,
+            params,
             bound,
         };
         if let Some(func) = self.task_map.get(&task) {
@@ -582,6 +586,37 @@ impl<'r, 'a> Ctx<'r, 'a> {
         }
         let symbol = format!("member.{name}#{}", self.tasks.len());
         self.allocate(task, symbol)
+    }
+
+    /// Действие `name` арности `arity` специализации `object`; с `params` —
+    /// перегрузка именно с этими типами параметров.
+    pub fn member_method(
+        &mut self,
+        object: ObjectId,
+        name: &str,
+        arity: usize,
+        params: Option<&[Type]>,
+        span: Span,
+    ) -> Result<Option<usize>> {
+        let env = self.objects[object.0].env.clone();
+        let reg = self.reg;
+        let info = &reg.objects[self.objects[object.0].decl.0];
+        for (index, method) in info.methods.iter().enumerate() {
+            if method.name != name || method.params.len() != arity {
+                continue;
+            }
+            let Some(params) = params else {
+                return Ok(Some(index));
+            };
+            let mut types = Vec::new();
+            for (_, ty) in &method.params {
+                types.push(self.ir_type(&ty.subst(&env), span)?);
+            }
+            if types == params {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
     }
 
     /// Вход воркера для `spawn` действия `method` специализации `object`.

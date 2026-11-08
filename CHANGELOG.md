@@ -35,6 +35,9 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   ordinary call, so no engine changes. `BigInt` does all six and `Comparing`;
   `Duration` does `Adding`, `Subtracting`, `Negating`; `Instant` and
   `MonotonicInstant` add or subtract a `Duration` and subtract each other.
+  The runtime helpers of `async/timeout.Before` now pick an overload by
+  argument type (`deadline.minus(now)` is the `Duration` one), with OCS
+  `L08.timeout.before-and-within`.
   OCS contract `OBJ.OPERATOR-ROLES` with `L04.operators.*` and
   `L09.time.operators`, std contract `STD.OPERATORS`; Book §22.3, spec §12.2,
   LLM context, BigInt guide (EN/RU)

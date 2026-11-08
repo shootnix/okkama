@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L08.timeout.before-and-within",
+  "title": "Within and Before return a settled origin's value",
+  "purpose": "Observe asynchronous behaviour through causal events.",
+  "level": "L08",
+  "contracts": [
+    {
+      "contract": "STD.ASYNC.TIMEOUT",
+      "aspects": [
+        "normal"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "real-clock"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "41 1\n"
+    }
+  },
+  "spec_refs": [
+    "std/async/timeout.ok"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #215: the Before helper must pick minus(MonotonicInstant) among the overloads",
+    "expected_basis": "async/timeout: an origin which is already settled wins without starting a clock wait."
+  },
+  "status": "mandatory"
+}
