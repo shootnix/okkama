@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
+### Documentation
+
+- `byte` no longer mixes with other numbers in the documents either (#294,
+  decision #230): the Book (5.3, 8.1, 8.4, the builtin rules; EN/RU), the
+  specification (8.3, 8.4, ranges, 8.7) and the LLM context said that
+  arithmetic and ordering accept `byte` with `int`/`rat`/`float`, that the
+  ordering operators are broader than equality, and that a `byte` is an array
+  index and a range bound. The compiler rejects all of these; the documents
+  now say so: `byte op byte` gives `int` (`/` gives `rat`), conversions are
+  explicit (`b.int()`), and indexes and range bounds are `int`.
+
 ## [0.4.1] — 2026-11-09
 
 0.4.1 completes the language proof of concept and the first hardening
