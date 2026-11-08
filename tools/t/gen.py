@@ -20,6 +20,7 @@ generates it.
 import argparse
 import fractions
 import os
+import re
 import shutil
 import sys
 
@@ -129,6 +130,19 @@ def name_of(text):
 
 # ----- a generated program ---------------------------------------------------------
 
+# Checks the family being generated has written: the same check over the same
+# setup is written once, whichever dimensions led to it.
+SEEN = set()
+
+
+def canonical(lines):
+    """Lines with the names their `let`s bind numbered in order."""
+    text = "\n".join(lines)
+    for index, name in enumerate(dict.fromkeys(re.findall(r"\blet (\w+)", text))):
+        text = re.sub(rf"\b{name}\b", f"_{index}", text)
+    return text
+
+
 class Program:
     def __init__(self, title, imports=(), declarations=(), asynchronous=False):
         self.title = title
@@ -142,6 +156,9 @@ class Program:
         self.skipped = {}
         # Checks of one group share setup and stay in one part.
         self.group_id = 0
+        self.setup = []
+        # The setup of a dropped duplicate, for the rest of its group.
+        self.carry = []
 
     def group(self):
         self.group_id += 1
@@ -153,15 +170,23 @@ class Program:
         self.counter += 1
         return f"{prefix}{self.counter}"
 
-    def is_(self, got, expected, name, setup=()):
+    def add(self, key, check, setup):
         if setup:
             self.group()
-        self.checks.append((list(setup), f't = t.is({got}, {expected}, "{name_of(name)}");', self.group_id))
+            self.setup, self.carry = list(setup), []
+        key = canonical(self.setup + [key])
+        if key in SEEN:
+            self.carry += list(setup)
+            return
+        SEEN.add(key)
+        self.checks.append((self.carry + list(setup), check, self.group_id))
+        self.carry = []
+
+    def is_(self, got, expected, name, setup=()):
+        self.add(f"is {got} {expected}", f't = t.is({got}, {expected}, "{name_of(name)}");', setup)
 
     def ok(self, condition, name, setup=()):
-        if setup:
-            self.group()
-        self.checks.append((list(setup), f't = t.ok({condition}, "{name_of(name)}");', self.group_id))
+        self.add(f"ok {condition}", f't = t.ok({condition}, "{name_of(name)}");', setup)
 
     def render(self):
         lines = ["module t v1.0.0;", "",
@@ -200,11 +225,6 @@ class Program:
             lines.append(f"    t = {'await ' if self.asynchronous else ''}checks.part{index}(t);")
         lines += ["    t.done();", "}", ""]
         return "\n".join(lines)
-
-
-def split(program_factory, checks_into, total_name, out):
-    """Write `program` files, PER_FILE checks each; returns (files, checks)."""
-    raise NotImplementedError
 
 
 # ----- family: values through syntactic contexts ---------------------------------
@@ -1289,7 +1309,8 @@ def control_family():
         for skip in (None, (2, 0), (3, 1)):
             for stop in (None, 2, 4):
                 for order in ("skip-first", "stop-first"):
-                    if skip is None and stop is None and order == "stop-first":
+                    # The order of the guards matters only when there are both.
+                    if (skip is None or stop is None) and order == "stop-first":
                         continue
                     variants.append((a, b, inclusive, skip, stop, order))
     for a, b, inclusive, skip, stop, order in variants:
@@ -1529,6 +1550,167 @@ def keys_family():
     return batch.programs
 
 
+# ----- family: casts --------------------------------------------------------------
+
+F = fractions.Fraction
+INT64 = (-(2 ** 63), 2 ** 63 - 1)
+
+# (source type, value, the targets it is a class for; None: every target).
+CAST_SOURCES = [
+    ("int", 0, None), ("int", -1, None), ("int", 255, None), ("int", 256, None),
+    ("int", 2 ** 53 + 1, None), ("int", INT64[1], None), ("int", INT64[0], None), ("int", 2 ** 63, None),
+    ("int", 65, {"char"}), ("int", 0xD7FF, {"char"}), ("int", 0xE000, {"char"}),
+    ("int", 0x1F600, {"char"}), ("int", 0x10FFFF, {"char"}),
+    ("byte", 0, None), ("byte", 255, None),
+    ("float", 0.0, None), ("float", -0.0, None), ("float", -3.9, None), ("float", 0.5, None), ("float", -0.5, None),
+    ("float", 255.9, None), ("float", 1e-05, None), ("float", 1e16, None), ("float", 5e-324, None),
+    ("float", 1.7976931348623157e308, None), ("float", -9.223372036854776e18, None), ("float", 9.223372036854776e18, None),
+    ("rat", F(7, 2), None), ("rat", F(-7, 2), None), ("rat", F(1, 3), None), ("rat", F(-1, 2), None),
+    ("rat", F(511, 2), None), ("rat", F(10 ** 20, 3), None), ("rat", F(10 ** 30 + 1, 3 * 10 ** 29), None),
+    ("rat", F(10 ** 400 + 1, 10 ** 400), None),
+    ("bool", True, None), ("bool", False, None),
+    ("char", "x", None), ("char", "😀", None), ("char", "'", None), ("char", "\n", None),
+    ("string", "", None), ("string", "héllo", None), ("string", "😀\n\"q\"", None),
+]
+
+# `x.T()` exists for these pairs (checked against the compiler).
+CAST_METHODS = {
+    "int": {"int", "float", "byte", "string", "rat", "char"},
+    "byte": {"int", "float", "byte", "string", "rat"},
+    "float": {"int", "float", "byte", "string", "rat"},
+    "rat": {"int", "float", "byte", "string", "rat"},
+    "bool": {"string"}, "char": {"string"}, "string": set(),
+}
+# A second operand of another type for `@T(other, x)`.
+CAST_OTHER = {"int": "byte(1)", "float": "1", "byte": "1.5", "string": "true"}
+
+
+def cast_literal(source, value):
+    if source == "int":
+        return lit_int(value)
+    if source == "byte":
+        return f"byte({value})"
+    if source == "float":
+        return lit_float(value)
+    if source == "rat":
+        return lit_rat(value)
+    if source == "bool":
+        return lit_bool(value)
+    if source == "char":
+        return cast_char(value)
+    return lit_str(value)
+
+
+def cast_char(c):
+    # Code points that are not printable go as `\u{...}`.
+    return f"'\\u{{{ord(c):x}}}'" if ord(c) in (0, 0xD7FF, 0xE000, 0x10FFFF) else lit_char(c)
+
+
+class Held:
+    """A check held back until an issue is settled."""
+
+    def __init__(self, issue):
+        self.issue = issue
+
+
+def cast(source, value, target):
+    """The value of `target(value)`, None where the cast fails, or Held."""
+    if target == "string":
+        return {"int": str, "byte": str, "float": text_float, "rat": text_rat,
+                "bool": lambda b: "true" if b else "false"}.get(source, lambda v: v)(value)
+    if target == "char":
+        if source == "char":
+            return value
+        if source == "int" and 0 <= value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF:
+            return chr(value)
+        return None
+    if source in ("bool", "char", "string"):
+        return None
+    if target == "float":
+        try:
+            return float(value)
+        except OverflowError:
+            return None
+    if target == "rat":
+        # `float.rat()` takes the canonical decimal text, not the binary fraction.
+        return F(repr(value)) if source == "float" else F(value)
+    exact = F(repr(value)) if source == "float" else F(value)
+    whole = int(exact)  # truncates toward zero
+    if target == "byte":
+        return whole if 0 <= whole <= 255 else None
+    if not INT64[0] <= whole <= INT64[1]:
+        # The cast checks the signed-64 range only for float sources (#309).
+        return None if source == "float" else Held(309)
+    return whole
+
+
+def cast_expected(target, result):
+    """The checked expression around a cast result and its expected value."""
+    if target == "float":
+        # The text tells -0.0 from 0.0.
+        return (lambda got: f"string({got})"), lit_str(text_float(result))
+    if target == "byte":
+        return (lambda got: got), f"byte({result})"
+    if target == "rat":
+        return (lambda got: got), lit_rat(result)
+    if target == "char":
+        return (lambda got: got), cast_char(result)
+    if target == "string":
+        return (lambda got: got), lit_str(result)
+    return (lambda got: got), lit_int(result)
+
+
+def casts_family():
+    batch = Batch("casts: every source class into every target, as T(x), x.T(), @T(...) and a spread, from a literal, "
+                  "a variable and a generic call",
+                  declarations="""object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+}""".splitlines())
+    for source, value, targets in CAST_SOURCES:
+        for target in ["int", "float", "byte", "string", "char", "rat"]:
+            if targets is not None and target not in targets:
+                continue
+            result = cast(source, value, target)
+            if result is None:
+                continue
+            literal = cast_literal(source, value)
+            forms = []
+            if target != "rat":
+                forms.append(("T(x)", lambda x: f"{target}({x})"))
+            if target in CAST_METHODS[source]:
+                forms.append(("x.T()", lambda x: f"{receiver(x)}.{target}()"))
+            if target in CAST_OTHER:
+                forms.append(("@T(x)", lambda x: f"@{target}({x})[0]"))
+                forms.append(("@T(other, x)", lambda x: f"@{target}({CAST_OTHER[target]}, {x})[1]"))
+            for context in ["literal", "variable", "generic call"]:
+                program = batch.program()
+                if isinstance(result, Held):
+                    for _ in forms:
+                        program.skip(result.issue)
+                    continue
+                wrap, expected = cast_expected(target, result)
+                setup = []
+                if context == "literal":
+                    operand = literal
+                elif context == "variable":
+                    operand = program.fresh("v")
+                    setup.append(f"let {operand} is {source} = {literal};")
+                else:
+                    operand = f"Box(value: {literal}).get()"
+                for form, make in forms:
+                    program.is_(wrap(make(operand)), expected, f"{form} {source} {literal} -> {target} ({context})", setup)
+                    setup = []
+                if target in CAST_OTHER and context == "variable":
+                    xs = program.fresh("xs")
+                    program.is_(wrap(f"@{target}(1.5, {xs}..., {xs}...)[2]") if target != "string" else
+                                f"@{target}(true, {xs}..., {xs}...)[2]", expected,
+                                f"@T(other, xs..., xs...) {source} {literal} -> {target}",
+                                [f"let {xs} is @{source} = [{literal}];"])
+    return batch.programs
+
+
 FAMILIES = {
     "values": values_family,
     "int": int_family,
@@ -1544,6 +1726,7 @@ FAMILIES = {
     "control": control_family,
     "structures": structures_family,
     "keys": keys_family,
+    "casts": casts_family,
 }
 
 
@@ -1562,6 +1745,7 @@ def main():
         directory = os.path.join(args.out, name)
         shutil.rmtree(directory, ignore_errors=True)
         os.makedirs(directory)
+        SEEN.clear()
         programs = FAMILIES[name]()
         for index, program in enumerate(programs):
             with open(os.path.join(directory, f"{index:02d}.ok"), "w", encoding="utf-8") as out:
