@@ -340,7 +340,14 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
                 }
                 continue;
             }
-            Kind::Float | Kind::Raw | Kind::Byte => {
+            // Numerically, as scalar `==` (#314): `-0.0 == 0.0`.
+            Kind::Float => {
+                if f64::from_bits(a) != f64::from_bits(b) {
+                    return Ok(false);
+                }
+                continue;
+            }
+            Kind::Raw | Kind::Byte => {
                 if a != b {
                     return Ok(false);
                 }

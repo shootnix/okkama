@@ -72,6 +72,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Equality: a `float` inside a composite compares numerically, as scalar `==`
+  does (#314). `[-0.0] == [0.0]`, `Point(x: -0.0) == Point(x: 0.0)`,
+  `[Reading.value(-0.0)] == [Reading.value(0.0)]` and map values with `-0.0`
+  were `false` because deep equality compared float bits on the IR engine and
+  the Sparrow core and went through `Double.equals` on the JVM; `contains`,
+  `index_of`, array `-` and `Atomic.compare_and_replace` now agree with `==`,
+  and the core and the IR engine no longer disagree on `[-0.0, 2.0] - [0.0]`.
+  Stored values keep their sign. On the JVM, `==` over floats, lists, maps
+  and `any` and the generated `equals`/`hashCode` of objects go through
+  `Rt.equal`/`Rt.hash`: a pair stack instead of Java recursion, one hash for
+  `-0.0` and `0.0`. Conformance `L02.equality.signed-zero-composite`; spec
+  8.4, Book 8.5 (EN/RU), OIR-1.
 - Roles: `contains` and `index_of` on a `@Role` take an implementer, wrapped
   with `role.wrap` as an action parameter takes it (#299):
   `shapes.contains(Square(side: 2))` was rejected with "Cannot pass Square to

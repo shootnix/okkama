@@ -3,7 +3,6 @@ package okkama.rt;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Встроенный исполнитель тестов (§14): тесты корня по порядку, каждый в
@@ -101,7 +100,7 @@ public final class Tests {
             }
             return true;
         }
-        return Objects.equals(left, right);
+        return Rt.equal(left, right);
     }
 
     static String show(Object value) {

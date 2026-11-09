@@ -812,6 +812,106 @@ public final class Rt {
         return result;
     }
 
+    // ----- равенство значений (#314) -----
+
+    /**
+     * {@code ==} значений Okkama: {@code float} численно, как скалярное {@code ==}
+     * ({@code -0.0 == 0.0}), списки поэлементно, словари по ключам и значениям,
+     * объекты своим {@code equals}. Вложенные списки и словари обходит стек
+     * пар, а не рекурсия Java.
+     */
+    public static boolean equal(Object left, Object right) {
+        ArrayList<Object> pending = null;
+        Object a = left;
+        Object b = right;
+        while (true) {
+            if (a != b) {
+                if (a instanceof Double x) {
+                    if (!(b instanceof Double y) || x.doubleValue() != y.doubleValue()) {
+                        return false;
+                    }
+                } else if (a instanceof List<?> x) {
+                    if (!(b instanceof List<?> y) || x.size() != y.size()) {
+                        return false;
+                    }
+                    if (pending == null) {
+                        pending = new ArrayList<Object>();
+                    }
+                    for (int index = x.size() - 1; index >= 0; index--) {
+                        pending.add(y.get(index));
+                        pending.add(x.get(index));
+                    }
+                } else if (a instanceof Map<?, ?> x) {
+                    if (!(b instanceof Map<?, ?> y) || x.size() != y.size()) {
+                        return false;
+                    }
+                    if (pending == null) {
+                        pending = new ArrayList<Object>();
+                    }
+                    // Оба словаря в порядке ключей: пары сравниваются по порядку.
+                    java.util.Iterator<? extends Map.Entry<?, ?>> others = y.entrySet().iterator();
+                    for (Map.Entry<?, ?> entry : x.entrySet()) {
+                        Map.Entry<?, ?> other = others.next();
+                        pending.add(other.getValue());
+                        pending.add(entry.getValue());
+                        pending.add(other.getKey());
+                        pending.add(entry.getKey());
+                    }
+                } else if (a == null || !a.equals(b)) {
+                    return false;
+                }
+            }
+            if (pending == null || pending.isEmpty()) {
+                return true;
+            }
+            a = pending.remove(pending.size() - 1);
+            b = pending.remove(pending.size() - 1);
+        }
+    }
+
+    /**
+     * Хеш, согласованный с {@link #equal}: {@code -0.0} и {@code 0.0} дают один
+     * хеш (#314). Списки и словари обходятся стеком в прямом порядке.
+     */
+    public static int hash(Object value) {
+        ArrayList<Object> pending = null;
+        Object current = value;
+        int hash = 1;
+        while (true) {
+            if (current instanceof Double x) {
+                double number = x.doubleValue();
+                hash = 31 * hash + (number == 0.0 ? 0 : Double.hashCode(number));
+            } else if (current instanceof List<?> x) {
+                hash = 31 * hash + x.size();
+                if (pending == null) {
+                    pending = new ArrayList<Object>();
+                }
+                for (int index = x.size() - 1; index >= 0; index--) {
+                    pending.add(x.get(index));
+                }
+            } else if (current instanceof Map<?, ?> x) {
+                hash = 31 * hash + x.size() + 7;
+                if (pending == null) {
+                    pending = new ArrayList<Object>();
+                }
+                ArrayList<Object> entries = new ArrayList<Object>(2 * x.size());
+                for (Map.Entry<?, ?> entry : x.entrySet()) {
+                    entries.add(entry.getKey());
+                    entries.add(entry.getValue());
+                }
+                for (int index = entries.size() - 1; index >= 0; index--) {
+                    pending.add(entries.get(index));
+                }
+            } else {
+                hash = 31 * hash + java.util.Objects.hashCode(current);
+            }
+            if (pending == null || pending.isEmpty()) {
+                return hash;
+            }
+            current = pending.remove(pending.size() - 1);
+        }
+    }
+
     /** {@code a - b - ...} over arrays: elements equal to none of the removed ones, in order. */
     public static List<Object> difference(List<?> array, Object[] removed) {
         ArrayList<Object> all = new ArrayList<Object>();
@@ -823,10 +923,26 @@ public final class Rt {
                     || item instanceof Byte || item instanceof Character;
             }
         }
-        java.util.Collection<Object> excluded = hashable ? new java.util.HashSet<Object>(all) : all;
         ArrayList<Object> result = new ArrayList<Object>(array.size());
+        if (hashable) {
+            java.util.HashSet<Object> excluded = new java.util.HashSet<Object>(all);
+            for (Object item : array) {
+                if (!excluded.contains(item)) {
+                    result.add(item);
+                }
+            }
+            return result;
+        }
+        // Остальное — глубоким `==`: `float` численно (#314).
         for (Object item : array) {
-            if (!excluded.contains(item)) {
+            boolean found = false;
+            for (Object other : all) {
+                if (equal(item, other)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
                 result.add(item);
             }
         }

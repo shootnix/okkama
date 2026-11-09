@@ -1,0 +1,74 @@
+module ocs/signed_zero v1.0.0;
+
+import "io/stdout" take Stdout;
+import "async/atomic" take Atomic;
+
+object Point {
+    has x is float;
+    has y is float;
+    Point(:x, :y);
+}
+
+object Segment {
+    has from is Point;
+    has to is Point;
+    Segment(:from, :to);
+}
+
+object Link {
+    has up is Ring;
+    has mark is float;
+    Link(:up, :mark);
+}
+
+object Ring {
+    has weight is float;
+    has links is @Link;
+    Ring(weight is float, marks is @float) {
+        self.weight = weight;
+        let me = self;
+        links = marks.map() -> mark { Link(up: me, mark: mark); };
+    }
+}
+
+enum Reading = (missing, value(v is float), pair(a is float, b is @float));
+
+main() is int {
+    let out = Stdout();
+    let neg = -0.0;
+    let pos = 0.0;
+    // Scalars: numeric, and the sign is kept.
+    out.writeln((neg == pos).string() + " " + (neg != pos).string() + " " + neg.string() + " " + [neg][0].string());
+    // Arrays and nested arrays compare their floats as scalar == does.
+    out.writeln(([neg] == [pos]).string() + " " + ([[neg, 1.5]] == [[pos, 1.5]]).string() + " " + ([neg] != [pos]).string()
+        + " " + ([1.5] == [1.5]).string() + " " + ([1.5] == [2.5]).string());
+    // Objects, nested objects and a cycle through an escaped self.
+    out.writeln((Point(x: neg, y: 1.0) == Point(x: pos, y: 1.0)).string() + " "
+        + (Segment(from: Point(x: neg, y: pos), to: Point(x: 2.0, y: neg)) == Segment(from: Point(x: pos, y: neg), to: Point(x: 2.0, y: pos))).string() + " "
+        + (Point(x: 1.0, y: 2.0) == Point(x: 1.0, y: 2.5)).string());
+    out.writeln((Ring(neg, [neg, 1.0]) == Ring(pos, [pos, 1.0])).string() + " " + (Ring(neg, [neg]) == Ring(pos, [1.0])).string());
+    // Variant payloads, alone and inside arrays.
+    out.writeln((Reading.value(neg) == Reading.value(pos)).string() + " " + ([Reading.value(neg)] == [Reading.value(pos)]).string() + " "
+        + (Reading.pair(neg, [neg]) == Reading.pair(pos, [pos])).string() + " " + (Reading.value(neg) == Reading.missing).string());
+    // contains and index_of agree with ==.
+    out.writeln([neg].contains(pos).string() + " " + [[neg]].contains([pos]).string() + " "
+        + [Reading.value(neg)].contains(Reading.value(pos)).string() + " "
+        + ([Point(x: 1.0, y: neg)].index_of(Point(x: 1.0, y: pos)) else -1).string() + " "
+        + ([[1.0], [neg]].index_of([pos]) else -1).string());
+    // Array difference removes what == finds.
+    out.writeln(([neg, 2.0] - [pos]).size().string() + " " + ([[neg], [1.0]] - [[pos]]).size().string() + " "
+        + ([Reading.value(neg), Reading.missing] - [Reading.value(pos)]).size().string() + " "
+        + ([Point(x: neg, y: neg)] - [Point(x: pos, y: pos)]).size().string());
+    // Map values compare numerically; -0.0 and 0.0 stay one key.
+    out.writeln((["a": neg, "b": 1.0] == ["a": pos, "b": 1.0]).string() + " " + (["k": [neg]] == ["k": [pos]]).string() + " "
+        + (["k": Point(x: neg, y: 1.0)] == ["k": Point(x: pos, y: 1.0)]).string() + " " + (["a": 1.0] == ["a": 1.5]).string());
+    let keyed is %float:string = [neg: "z"];
+    let objects is %Point:string = [Point(x: neg, y: 1.0): "p"];
+    out.writeln(keyed.has(pos).string() + " " + (keyed[pos] else "-") + " " + objects.has(Point(x: pos, y: 1.0)).string() + " "
+        + ([neg: 1] == [pos: 1]).string());
+    // Atomic.compare_and_replace compares as == does.
+    let cell is Atomic<@float> = Atomic(value: [neg]);
+    let swapped = cell.compare_and_replace([pos], [2.0]);
+    out.writeln(swapped.string() + " " + cell.value()[0].string());
+    0;
+}

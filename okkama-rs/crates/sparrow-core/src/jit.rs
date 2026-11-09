@@ -1850,12 +1850,18 @@ impl Emitter<'_, '_> {
             I::ValCmp { op: op @ (Cmp::Eq | Cmp::Ne), dst, left, right }
                 if matches!(self.kinds[left.0 as usize], Kind::Int | Kind::Raw | Kind::Byte | Kind::Float) =>
             {
-                // Scalars compare by word (exact ints: two inline integers);
-                // anything else takes the structural slow path.
+                // Scalars compare by word (exact ints: two inline integers),
+                // floats numerically (#314); anything else takes the
+                // structural slow path.
                 let int = self.kinds[left.0 as usize] == Kind::Int;
-                let (l, r) = (self.word(left), self.word(right));
-                let condition = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
-                let flag = self.builder.ins().icmp(condition, l, r);
+                let (l, r) = (self.get(left), self.get(right));
+                let flag = if self.kinds[left.0 as usize] == Kind::Float {
+                    let condition = if *op == Cmp::Eq { FloatCC::Equal } else { FloatCC::NotEqual };
+                    self.builder.ins().fcmp(condition, l, r)
+                } else {
+                    let condition = if *op == Cmp::Eq { IntCC::Equal } else { IntCC::NotEqual };
+                    self.builder.ins().icmp(condition, l, r)
+                };
                 let flag = self.builder.ins().uextend(types::I64, flag);
                 if int {
                     let both = self.builder.ins().band(l, r);

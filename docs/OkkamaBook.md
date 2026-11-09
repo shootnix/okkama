@@ -863,6 +863,9 @@ tag.
 - Futures and action values compare by handle identity without running them.
   Aliases remain equal after completion; separate invocations, closures and
   independently obtained bound references are distinct;
+- elements and fields compare exactly as they would on their own: a `float`
+  numerically at any depth, so `[-0.0] == [0.0]` is `true`, as `-0.0 == 0.0`
+  is. `contains`, `index_of` and array `-` use the same equality;
 - mixed runtime categories are runtime errors, never `false`.
 
 ## Chapter 9. The Top Type `any`

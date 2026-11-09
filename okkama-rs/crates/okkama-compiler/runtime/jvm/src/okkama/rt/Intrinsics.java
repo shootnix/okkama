@@ -8,7 +8,6 @@ import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Intrinsics std {@code async/*} (OIR-1 §14.2): действия объектов, чьё
@@ -377,7 +376,7 @@ public final class Intrinsics {
     public static Object atomic_Atomic_compare_and_replace(
         Object closed, Object self, Object expected, Object revised) {
         AtomicState state = open(closed, self);
-        if (!Objects.equals(state.value, expected)) {
+        if (!Rt.equal(state.value, expected)) {
             return Boolean.FALSE;
         }
         state.value = revised;
