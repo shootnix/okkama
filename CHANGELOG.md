@@ -162,7 +162,7 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   them; calling it uses them; passing it as an argument, returning it and
   storing it in an array, map, `Maybe` or field transfer them. A closure
   that is never used is still an error, now naming it and the successor it
-  carries (the message below, under #324). A body that uses the capture on
+  carries (the message is quoted under #324). A body that uses the capture on
   one branch only does not carry it. Bound actions follow in #324.
 
 - Parser: `async` in front of an anonymous action says what is wrong (#323).
