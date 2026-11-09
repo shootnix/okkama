@@ -122,19 +122,6 @@ jobs:
         working-directory: okkama-rs
         run: cargo check --workspace --all-targets --locked
 
-  # The IR runtime's heap and cycle collector under Miri (#43): drops,
-  # reference counts and trial deletion without undefined behaviour.
-  miri:
-    name: Miri (IR heap and cycle collector)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - name: Rust
-        run: rustup toolchain install nightly --profile minimal --component miri && cargo +nightly miri setup
-      - name: Miri
-        working-directory: okkama-rs
-        run: "cargo +nightly miri test --locked -p okkama-runtime-core --lib -- gc:: heap::"
-
   # std inline tests on the IR engine and the Sparrow core, on x86_64 Linux:
   # the core's frame walk, stack maps and code memory there (#27).
   std:

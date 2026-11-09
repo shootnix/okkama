@@ -59,8 +59,9 @@ impl Hasher for Address {
 
 type Index = HashMap<usize, usize, BuildHasherDefault<Address>>;
 
-/// Наименьший порог новых кандидатов между сборками.
-const MIN_THRESHOLD: usize = 4096;
+/// Наименьший порог новых кандидатов между сборками. Под Miri порог мал:
+/// тесты доходят до сборок на сотнях узлов, а не на тысячах (#43).
+const MIN_THRESHOLD: usize = if cfg!(miri) { 64 } else { 4096 };
 
 enum Candidate {
     Object(Weak<Object>),
