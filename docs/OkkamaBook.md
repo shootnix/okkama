@@ -2806,6 +2806,15 @@ parameters, fields, results, collections, bound actions, generic inference
 result `^Customer` comes back as `^Presentation` when the role declares it,
 and the must-use obligation stays.
 
+An object becomes a role reference only where the role is already the
+expected type: a typed `let`, a field, a parameter of an action or of a
+builtin (`shapes.contains(Square(side: 2))` on a `@Shape`), a result, the
+fallback of a `Maybe<Shape>` or of `find()`, and the branches of an `if`,
+`match` or choice whose value has a declared role type. Elsewhere the static
+types stay exact: `shape == Square(side: 2)` is rejected (compare through a
+role-typed binding), and `if c { Rect(w: 1, h: 2); } else { Square(side: 2); }`
+with no declared type does not look for a role the two share.
+
 There is no way back: a role cannot be assigned to the concrete type
 (`Cannot initialize variable "c" of type Customer with Presentation`), and
 `any` never narrows. A role may cross into another role only if the original

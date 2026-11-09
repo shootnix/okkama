@@ -775,3 +775,26 @@ fn generic_cases_do_not_impose_an_uninferred_parameter_on_their_payloads() {
         ["Cannot infer type arguments for Slot.full; provide an expected type or explicit type arguments"]
     );
 }
+
+#[test]
+fn builtin_role_parameters_wrap_implementers_and_nothing_else_does() {
+    // #299: role.wrap where the role is the declared type, as for action parameters.
+    let decls = "role Shape { area() is int; } \
+                 object Square does Shape { has side is int; Square(:side); area() is int { side * side; } } \
+                 object Rect does Shape { has w is int; Rect(:w); area() is int { w; } }";
+    let check = |body: &str| messages(&format!("{decls} main() is int {{ let c = 1 > 0; let shapes is @Shape = [Square(side: 1)]; {body} 0; }}"));
+    for body in [
+        "let a = shapes.contains(Square(side: 1));",
+        "let a = shapes.index_of(Rect(w: 2)) else -1;",
+        "let s is Shape = Rect(w: 1); let a = shapes.contains(s);",
+    ] {
+        assert!(check(body).is_empty(), "{body}: {:?}", check(body));
+    }
+    for (body, expected) in [
+        ("let a = shapes.contains(5);", "Cannot pass int to builtin action \"contains\" parameter of type Shape"),
+        ("let s is Shape = Rect(w: 1); let a = s == Rect(w: 1);", "Cannot compare Shape and Rect"),
+        ("let a = if c { Rect(w: 1); } else { Square(side: 1); };", "Branches produce different types: Rect and Square"),
+    ] {
+        assert_eq!(check(body), [expected], "{body}");
+    }
+}

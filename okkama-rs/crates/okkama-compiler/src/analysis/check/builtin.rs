@@ -378,6 +378,14 @@ impl Checker<'_, '_> {
             };
             if let Some(expected) = expected
                 && actual != expected && !actual.is_error() && !value.diverges {
+                    // A role parameter takes an implementer through `role.wrap`,
+                    // as the parameter of an action does (#299).
+                    if let Ty::Role(..) = expected
+                        && let Ok(wrapped) = self.try_coerce(value, &expected, "Argument")
+                    {
+                        values.push(wrapped);
+                        continue;
+                    }
                     let message = if let Builtin::Bits { .. } = op {
                         format!("Builtin action \"{}\" requires an int count", name.text)
                     } else {
