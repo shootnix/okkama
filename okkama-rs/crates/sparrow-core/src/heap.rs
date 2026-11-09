@@ -1384,8 +1384,8 @@ mod tests {
             // Read as often as two passes, it becomes a flat shared view with
             // the same elements, still marked as made by a replacement.
             for pass in 0..2 {
-                for index in 0..n {
-                    assert_eq!(heap.trie_read(newest, index), model[index], "pass {pass}");
+                for (index, &item) in model.iter().enumerate() {
+                    assert_eq!(heap.trie_read(newest, index), item, "pass {pass}");
                 }
             }
             let header = heap.header_of(newest);
