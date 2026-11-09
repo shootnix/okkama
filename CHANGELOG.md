@@ -8,12 +8,6 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
-- Sparrow core: a map lookup with `else` on a `float` key failed JIT
-  verification (`arg has type f64, expected i64`): the key went to the
-  runtime helper as a float register instead of its word (#301). The other
-  helper calls were checked for the same mistake; none takes a float.
-  Conformance case `L05.map.float-key-fallback`.
-
 ### Documentation
 
 - `int(...)` keeps arbitrary precision (#309): casts of `int`, `byte` and
@@ -21,6 +15,21 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
   `float` source is checked against the signed-64 range. The specification
   (6.6.1) and the Book (5.1.1, EN/RU) said every source was range-checked;
   the engines never did. Conformance case `L02.cast.int-arbitrary-precision`.
+
+### - Sparrow core: a map lookup with `else` on a `float` key failed JIT
+
+  verification (`arg has type f64, expected i64`): the key went to the
+  runtime helper as a float register instead of its word (#301). The other
+  helper calls were checked for the same mistake; none takes a float.
+  Conformance case `L05.map.float-key-fallback`.
+
+### - Parser: a statement `match` and `try … catch` take one optional `;`, like
+
+  `if` and `loop` (#302); the formatter keeps the chosen spelling (it refused
+  to format such files before). `last if a { 1; } else { 2; };` leaves the
+  loop with the `if` expression instead of reading `a` as a condition; `last`
+  now parses its value like `return` and `throw` (#303). Compile time of the
+  t/ nesting and control files is unchanged (median of 10: 0.247 → 0.246 s).
 
 
 ### Added

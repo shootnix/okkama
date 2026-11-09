@@ -62,9 +62,13 @@ impl Parser<'_> {
         let kind = match self.peek_kind() {
             TokenKind::Let => self.let_statement()?,
             TokenKind::Defer => self.defer_statement()?,
+            // Like `if` and `loop`, a statement `try` and `match` take one
+            // optional `;` (#302).
             TokenKind::Try if !self.try_mark_follows() => {
                 self.advance();
-                StmtKind::Try(self.finish_try(start)?)
+                let statement = self.finish_try(start)?;
+                self.eat(TokenKind::Semicolon);
+                StmtKind::Try(statement)
             }
             TokenKind::Throw => self.throw_statement()?,
             TokenKind::Return => self.return_statement()?,
@@ -81,7 +85,9 @@ impl Parser<'_> {
             }
             TokenKind::Match => {
                 self.advance();
-                StmtKind::Match(self.finish_match(start)?)
+                let statement = self.finish_match(start)?;
+                self.eat(TokenKind::Semicolon);
+                StmtKind::Match(statement)
             }
             TokenKind::For => self.for_statement()?,
             TokenKind::Loop => self.loop_statement(start)?,
@@ -520,21 +526,12 @@ impl Parser<'_> {
         Ok(StmtKind::Next { condition })
     }
 
-    /// `last ("if" expr | expr ("if" expr)?)? ";"`. In `last if c`
-    /// the `if` introduces the condition; an `if` expression used as the
-    /// payload has to be grouped.
+    /// `last ("if" expr | expr ("if" expr)?)? ";"`, read like `return` and
+    /// `throw` (#303): `last if c;` is a condition, while
+    /// `last if c { 1; } else { 2; };` carries the `if` expression.
     fn last_statement(&mut self) -> PResult<StmtKind> {
         self.advance();
-        let mut value = None;
-        let mut condition = None;
-        if self.eat(TokenKind::If) {
-            condition = Some(self.expression()?);
-        } else if !self.check(TokenKind::Semicolon) {
-            value = Some(self.expression()?);
-            if self.eat(TokenKind::If) {
-                condition = Some(self.expression()?);
-            }
-        }
+        let (value, condition) = self.exit_value()?;
         self.consume(
             TokenKind::Semicolon,
             "Expect \";\" after loop control statement.",
