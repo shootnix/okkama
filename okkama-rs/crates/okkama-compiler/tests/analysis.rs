@@ -409,7 +409,7 @@ fn closures_carry_successor_obligations() {
     );
     let unused = |name: &str| {
         format!(
-            "Successor action result must be used; closure \"{name}\" captures it and can leave scope without being called, returned, passed or stored"
+            "Successor action result must be used; \"d\" is carried by action value \"{name}\", which can leave scope without being called, returned, passed or stored"
         )
     };
     let start = "let c = C(); let d = c.inc(); let show = () is int { d.value(); };";
@@ -496,6 +496,69 @@ fn closures_carry_successor_obligations() {
             .to_string(),
         // Замыкание без successor не меняется.
         "let n = 1; let plain = () is int { n; }; 0;".to_string(),
+    ] {
+        assert!(
+            messages(&format!("{objects} main() is int {{ {body} }}")).is_empty(),
+            "{body}"
+        );
+    }
+}
+
+/// Bound action (`d.value` без вызова) несёт обязательство получателя, как
+/// замыкание — свои захваты (#324); прямой вызов гасит сразу.
+#[test]
+fn bound_actions_carry_successor_obligations() {
+    let objects = format!(
+        "{COUNTER} role Valued {{ value() is int; }} object V does Valued {{ V(); value() is int {{ 7; }} }} \
+         object Run {{ Run(); call(f is () is int) is int {{ f(); }} }} \
+         object Keep {{ has f is () is int; Keep(:f); }} \
+         object Make {{ Make(); made() is () is int {{ let c = C(); let d = c.inc(); let r is () is int = d.value; r; }} }}"
+    );
+    let carried = |name: &str| {
+        format!(
+            "Successor action result must be used; \"d\" is carried by action value \"{name}\", which can leave scope without being called, returned, passed or stored"
+        )
+    };
+    let start = "let c = C(); let d = c.inc(); let read is () is int = d.value;";
+    for (body, expected) in [
+        ("let c = C(); let d = c.inc(); let read = d.value; 0;".to_string(), carried("read")),
+        (format!("{start} 0;"), carried("read")),
+        (format!("{start} let again = read; 0;"), carried("again")),
+        (format!("{start} let f = 1 > 0; if f {{ read(); }} 0;"), carried("read")),
+        (format!("{start} for 1..=2 -> i {{ read(); }} 0;"), carried("read")),
+        (format!("{start} return 0;"), carried("read")),
+        // Временный successor: назвать нечего, кроме значения-действия.
+        (
+            "let c = C(); let read is () is int = c.inc().value; 0;".to_string(),
+            "Successor action result must be used; action value \"read\" carries it and can leave scope without being called, returned, passed or stored"
+                .to_string(),
+        ),
+    ] {
+        assert_eq!(
+            messages(&format!("{objects} main() is int {{ {body} }}")),
+            [expected],
+            "{body}"
+        );
+    }
+    for body in [
+        format!("{start} read();"),
+        format!("{start} let again = read; again();"),
+        format!("{start} let other is () is int = d.value; other();"),
+        format!("{start} d.value();"),
+        "let c = C(); let d = c.inc(); d.value(); let read is () is int = d.value; 0;".to_string(),
+        format!("{start} Run().call(read);"),
+        format!("{start} let all = [read]; 0;"),
+        format!("{start} let kept = Keep(f: read); 0;"),
+        "let made = Make().made(); made();".to_string(),
+        format!("{start} defer read(); 0;"),
+        format!("{start} let show = () is int {{ read(); }}; show();"),
+        format!("{start} let f = 1 > 0; if f {{ read(); }} else {{ read() + 1; }}"),
+        // Bound action роли без successor не меняется.
+        "let v is Valued = V(); let read is () is int = v.value; read();".to_string(),
+        // Прямые вызовы и цепочки successor гасят получателя сразу.
+        "let c = C(); c.inc().value();".to_string(),
+        "let c = C(); c.inc().inc().value();".to_string(),
+        "let c = C(); let e = c.inc().inc(); e.value();".to_string(),
     ] {
         assert!(
             messages(&format!("{objects} main() is int {{ {body} }}")).is_empty(),

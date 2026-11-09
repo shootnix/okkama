@@ -131,27 +131,35 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Compiler: a bound action (`later.count` without a call) carries the
+  obligation of its successor receiver, like a closure since #322 (#324).
+  Creating it used the receiver at once, so `let read = later.count; 0;` hid
+  an unused successor. The receiver's `Take` now only adapts the type: the
+  action value carries the obligation, a call uses it, and passing,
+  returning or storing it transfers it. A direct call `later.count()` and
+  successor chains such as `c.inc().inc().value()` use the receiver at once,
+  as before. An action value that leaves its scope unused is reported with
+  the successor it carries: `"later" is carried by action value "read",
+  which can leave scope without being called, returned, passed or stored`.
+
 - Compiler: a successor captured by an anonymous action is used when the
   closure is (#322). `let later = c.bumped(); let show = () is int {
-  later.count(); }; show();` was rejected, "binding \"later\" can leave
-  scope without consumption", because the flow check did not follow
-  captures. A closure now carries the obligations of the successors its body
+  later.count(); }; show();` was rejected (`binding "later" can leave scope
+  without consumption`) because the flow check did not follow captures. A closure now carries the obligations of the successors its body
   uses on every normal path (spec 11.1; found by a second, silent pass over
   the body, run only when a capture holds one), transitively through
   captured closures. Creating it and binding it to locals or aliases keep
   them; calling it uses them; passing it as an argument, returning it and
   storing it in an array, map, `Maybe` or field transfer them. A closure
-  that is never used is still an error, now naming the closure: "closure
-  \"show\" captures it and can leave scope without being called, returned,
-  passed or stored". A body that uses the capture on one branch only does
-  not carry it. Bound actions (`later.count` without a call) still consume
-  their receiver at creation: #324.
+  that is never used is still an error, now naming it and the successor it
+  carries (the message below, under #324). A body that uses the capture on
+  one branch only does not carry it. Bound actions follow in #324.
 
 - Parser: `async` in front of an anonymous action says what is wrong (#323).
   `let later = async () is int { 1; };` read as a call of a name `async`
-  and failed at `is` with "Expect \";\" after let declaration". It now
-  fails at `async`: "Anonymous actions cannot be async; declare a named
-  async action instead." The check needs the anonymous action's signature
+  and failed at `is` with `Expect ";" after let declaration`. It now fails
+  at `async`: `Anonymous actions cannot be async; declare a named async
+  action instead.` The check needs the anonymous action's signature
   (`(…)` followed by `is`), so `async()`, `async(1)` and `receiver.async()`
   stay calls of an action labelled `async`; nothing else in the grammar
   changes, and a recovering parse (editors) reports the one error and goes
