@@ -1703,12 +1703,14 @@
     "boundary": {
      "cases": [
       "L05.collections.map-difference",
+      "L05.map.float-key-fallback",
       "L05.map.int-key-order",
       "L05.map.key-types",
       "L05.map.rat-keys"
      ],
      "mandatory_cases": [
       "L05.collections.map-difference",
+      "L05.map.float-key-fallback",
       "L05.map.int-key-order",
       "L05.map.key-types",
       "L05.map.rat-keys"
@@ -1752,6 +1754,7 @@
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
+      "L05.map.float-key-fallback",
       "L05.map.object-key",
       "L05.map.rat-keys"
      ],
@@ -1759,6 +1762,7 @@
       "L05.collections.map-difference",
       "L05.collections.map-merge",
       "L05.map.access",
+      "L05.map.float-key-fallback",
       "L05.map.object-key",
       "L05.map.rat-keys"
      ],
@@ -2915,10 +2919,12 @@
     "boundary": {
      "cases": [
       "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "mandatory_cases": [
       "L07.error-enum.non-exhaustive-match",
+      "L07.error-enum.text-escaping",
       "L07.error-enum.throw-and-catch"
      ],
      "requirement": "required"
@@ -5475,10 +5481,10 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr"
+      "L01.lex.crlf.raw-string-keeps-cr"
      ],
      "requirement": "required"
     },
@@ -5512,7 +5518,7 @@
     "contracts/DISCREPANCY-LEDGER.md#d-030"
    ],
    "status": "mandatory",
-   "title": "CR LF line endings are accepted and CR inside raw strings is discarded, as in Go (owner decision)"
+   "title": "CR LF line endings are accepted; a CR between tokens is whitespace and a fenced raw string keeps its CRs (owner decision, #310)"
   },
   {
    "aspects": {
@@ -5891,11 +5897,11 @@
     },
     "interaction": {
      "cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "mandatory_cases": [
-      "L01.lex.crlf.raw-string-discards-cr",
+      "L01.lex.crlf.raw-string-keeps-cr",
       "L01.lex.raw.concatenation"
      ],
      "requirement": "required"
@@ -27195,25 +27201,31 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.nested"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.nested"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.evaluation",
       "L05.variants.modules",
       "L05.variants.ownership",
-      "L05.variants.payload"
+      "L05.variants.payload",
+      "L05.variants.search"
      ],
      "requirement": "required"
     },
@@ -27232,9 +27244,11 @@
     },
     "normal": {
      "cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "mandatory_cases": [
+      "L05.variants.case-layouts",
       "L05.variants.payload"
      ],
      "requirement": "required"
@@ -27253,10 +27267,12 @@
    "aspects": {
     "boundary": {
      "cases": [
-      "L02.cast.arrays"
+      "L02.cast.arrays",
+      "L02.cast.int-arbitrary-precision"
      ],
      "mandatory_cases": [
-      "L02.cast.arrays"
+      "L02.cast.arrays",
+      "L02.cast.int-arbitrary-precision"
      ],
      "requirement": "required"
     },
@@ -27564,9 +27580,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "mandatory_cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.methods"
      ],
      "requirement": "required"
@@ -28355,9 +28373,11 @@
    "aspects": {
     "boundary": {
      "cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "mandatory_cases": [
+      "L02.cast.int-arbitrary-precision",
       "L02.cast.scalar-calls"
      ],
      "requirement": "required"
@@ -31031,5 +31051,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "d3a58f919a7468c9b16c179a17c799e8bc7dfc75cf775869d55d095b75d0e4c9"
+ "suite_tree_sha256": "ab032731a7cfbe339aad62f81173d1f4fcc95f8953cc956073f3842755c8c09f"
 }
