@@ -39,8 +39,9 @@ pub const ASCII: u64 = 1 << 13;
 /// summaries (#9): the walk looks the entry up only when this bit is set.
 pub const SUMMARY: u64 = 1 << 14;
 /// An array version whose elements live in a shared buffer (#246): word 1
-/// is the buffer, word 2 the position of the version's first element in it;
-/// the payload is the version's own length. Machine code reads elements
+/// is the address of the version's first element (so machine code reads an
+/// element with one more load than from a flat array), word 2 the buffer,
+/// which keeps it alive; the payload is the version's own length. Machine code reads elements
 /// through it (see `jit::element`), Rust code through [`Heap::elements`].
 pub const SHARED: u64 = 1 << 15;
 /// A flat array made by appending to an array of at least [`CHAIN_MIN`]
@@ -554,7 +555,10 @@ impl Heap {
     /// The buffer of a [`SHARED`] array and the position of its first element.
     pub fn shared(&self, array: Word) -> (Word, usize) {
         // SAFETY: a shared array has three words.
-        unsafe { (*((array + 8) as *const u64), *((array + 16) as *const u64) as usize) }
+        unsafe {
+            let (first, buffer) = (*((array + 8) as *const u64), *((array + 16) as *const u64));
+            (buffer, ((first - buffer - 8) / 8) as usize)
+        }
     }
 
     /// A buffer with room for `capacity` elements (rounded up to a power of
@@ -605,8 +609,8 @@ impl Heap {
         // SAFETY: three words.
         unsafe {
             *(view as *mut u64) = header(ARRAY, repr, length as u32) | SHARED;
-            *((view + 8) as *mut u64) = buffer;
-            *((view + 16) as *mut u64) = start as u64;
+            *((view + 8) as *mut u64) = buffer + 8 + start as u64 * 8;
+            *((view + 16) as *mut u64) = buffer;
         }
         view
     }
@@ -625,9 +629,10 @@ impl Heap {
     // ---- tries (#250) ----
 
     fn trie_parts(&self, array: Word) -> (Word, Word, u32) {
-        // SAFETY: a trie array has four words.
+        // SAFETY: a trie array has four words; the low byte of the fourth is
+        // the shift, the rest counts the reads of machine code.
         unsafe {
-            (*((array + 8) as *const u64), *((array + 16) as *const u64), *((array + 24) as *const u64) as u32)
+            (*((array + 8) as *const u64), *((array + 16) as *const u64), (*((array + 24) as *const u64) & 0xff) as u32)
         }
     }
 
@@ -682,6 +687,34 @@ impl Heap {
             shift -= TRIE_BITS;
         }
         Self::word_at(node, index & TRIE_MASK)
+    }
+
+    /// Element `index` (in bounds) read by machine code. A trie that is read
+    /// rather than changed flattens itself: after as many reads as two passes
+    /// over it, the object becomes a shared view ([`SHARED`]) of a flat copy,
+    /// which machine code reads inline. It stays [`REPLACED`], so the next
+    /// replacement makes it a trie again. Every holder of the word sees the
+    /// same elements before and after.
+    pub fn trie_read(&mut self, array: Word, index: usize) -> Word {
+        let item = self.trie_get(array, index);
+        let header = self.header_of(array);
+        let length = payload(header) as u64;
+        // SAFETY: a trie array has four words.
+        let counter = unsafe { &mut *((array + 24) as *mut u64) };
+        if (*counter >> 8) + 1 < 2 * length {
+            *counter += 1 << 8;
+            return item;
+        }
+        let items = self.trie_elements(array);
+        let flat = self.allocate_array(element_repr(header), &items);
+        // SAFETY: the four words of the trie become the three of a view.
+        unsafe {
+            *(array as *mut u64) = (header & !TRIE) | SHARED | REPLACED;
+            *((array + 8) as *mut u64) = flat + 8;
+            *((array + 16) as *mut u64) = flat;
+            *((array + 24) as *mut u64) = 0;
+        }
+        item
     }
 
     /// A new trie with element `index` (in bounds) replaced: the nodes on its
@@ -920,7 +953,7 @@ impl Heap {
                 FRAME => fields(&self.layouts.frames[payload(header) as usize], &mut push),
                 // A shared version keeps its buffer alive; the buffer traces
                 // the slots below its frontier like any array.
-                ARRAY if header & SHARED != 0 => push(unsafe { *((object + 8) as *const u64) }, Repr::Ref),
+                ARRAY if header & SHARED != 0 => push(unsafe { *((object + 16) as *const u64) }, Repr::Ref),
                 // A trie keeps its root and its tail; they trace the rest.
                 ARRAY if header & TRIE != 0 => {
                     push(unsafe { *((object + 8) as *const u64) }, Repr::Ref);
@@ -1348,6 +1381,18 @@ mod tests {
             heap.collect(|visit| visit(newest, Repr::Ref));
             assert_eq!(&*heap.elements(newest), &model[..]);
             assert_eq!(heap.trie_get(newest, n / 2), model[n / 2]);
+            // Read as often as two passes, it becomes a flat shared view with
+            // the same elements, still marked as made by a replacement.
+            for pass in 0..2 {
+                for index in 0..n {
+                    assert_eq!(heap.trie_read(newest, index), model[index], "pass {pass}");
+                }
+            }
+            let header = heap.header_of(newest);
+            assert!(header & SHARED != 0 && header & TRIE == 0 && header & REPLACED != 0);
+            assert_eq!(&*heap.elements(newest), &model[..]);
+            heap.collect(|visit| visit(newest, Repr::Ref));
+            assert_eq!(&*heap.elements(newest), &model[..]);
         }
     }
 

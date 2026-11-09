@@ -388,6 +388,12 @@ pub(crate) fn trie_arrays() -> bool {
     !matches!(arrays_mode(), "flat" | "shared")
 }
 
+/// Tries that are only read flatten themselves (`Heap::trie_read`) unless
+/// `OKKAMA_ARRAYS=trie` keeps them tries, so that both can be measured.
+fn flattening_tries() -> bool {
+    arrays_mode() != "trie"
+}
+
 /// `a + b + …` when `a` continues a chain of appends: written in place at
 /// the frontier of `a`'s buffer when `a` ends there and there is room, else
 /// into a new buffer twice the size. `None` for anything else, which is
@@ -600,8 +606,12 @@ pub extern "C" fn rt_builder_push(ctx: *mut Ctx, builder: Word, item: Word) -> W
 /// Element `position` (in bounds) of a trie array (#250), for machine code.
 #[inline(never)]
 pub extern "C" fn rt_trie_get(ctx: *mut Ctx, array: Word, position: u64) -> Word {
-    let runtime = unsafe { &*(*ctx).runtime };
-    runtime.heap.trie_get(array, position as usize)
+    let runtime = unsafe { &mut *(*ctx).runtime };
+    if flattening_tries() {
+        runtime.heap.trie_read(array, position as usize)
+    } else {
+        runtime.heap.trie_get(array, position as usize)
+    }
 }
 
 /// Grow a builder's items and charge the capacity its vector took on

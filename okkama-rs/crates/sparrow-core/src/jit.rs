@@ -107,7 +107,7 @@ helpers! {
     created = crate::failures::rt_created as (ctx, descriptor: u64, object: Word); [];
     region_add = crate::failures::rt_region_add as (ctx, region: Word, value: Word, own: u64); [];
     builder_push = crate::ops::rt_builder_push as (ctx, builder: Word, item: Word) -> Word; [];
-    trie_get = crate::ops::rt_trie_get as (ctx, array: Word, position: u64) -> Word; [];
+    trie_get = crate::ops::rt_trie_get as (ctx, array: Word, position: u64) -> Word; [Allocates];
     int_text = crate::ops::rt_int_text as (ctx, word: Word) -> Word; [Allocates, Collects];
     future_new = crate::tasks::rt_future_new as (ctx, function: u64, arguments: *const Word, count: u64) -> Word; [Allocates, Collects, Fails];
     await_ = crate::tasks::rt_await as (ctx, this: Word, future: Word) -> u64; [Collects, Reenters, Fails];
@@ -1966,7 +1966,7 @@ impl Emitter<'_, '_> {
     /// Element `position` (in bounds) of an array whose header is `header`: a
     /// word, or a byte of a packed array. One branch on two header bits keeps
     /// flat arrays on the plain load; a shared version (`heap::SHARED`, #246)
-    /// reads its buffer from its first element on, a trie (`heap::TRIE`,
+    /// reads from the address of its first element (one load more), a trie (`heap::TRIE`,
     /// #250) calls a helper. Byte arrays are never either.
     fn element(&mut self, array: Value, header: Value, position: Value, bytes: bool) -> Value {
         if bytes {
@@ -1992,12 +1992,10 @@ impl Emitter<'_, '_> {
         let shared = self.builder.ins().band_imm_u(header, heap::SHARED as i64);
         self.builder.ins().brif(shared, view, &[], trie, &[]);
         self.builder.switch_to_block(view);
-        let buffer = self.builder.ins().load(types::I64, MEMORY, array, 8);
-        let start = self.builder.ins().load(types::I64, MEMORY, array, 16);
-        let slot = self.builder.ins().iadd(position, start);
-        let offset = self.builder.ins().ishl_imm_u(slot, 3);
-        let address = self.builder.ins().iadd(buffer, offset);
-        let value = self.builder.ins().load(types::I64, MEMORY, address, 8);
+        let first = self.builder.ins().load(types::I64, MEMORY, array, 8);
+        let offset = self.builder.ins().ishl_imm_u(position, 3);
+        let address = self.builder.ins().iadd(first, offset);
+        let value = self.builder.ins().load(types::I64, MEMORY, address, 0);
         self.builder.ins().jump(done, &[value.into()]);
         self.builder.switch_to_block(trie);
         let ctx = self.ctx();
