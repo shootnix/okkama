@@ -825,3 +825,44 @@ fn builtin_role_parameters_wrap_implementers_and_nothing_else_does() {
         assert_eq!(check(body), [expected], "{body}");
     }
 }
+
+#[test]
+fn an_untyped_empty_reduce_accumulator_says_what_to_write() {
+    // #295: the block gives the type the initial value lacks.
+    assert_eq!(
+        messages("main() is int { let built = (0..3).reduce([]) -> acc, i { acc + [i * i]; }; 0; }"),
+        ["Reduce starts from [], which has no element type, and its block gives @int: start from @int() or declare the result type (let name is @int = …)"]
+    );
+    assert_eq!(
+        messages("main() is int { let index = (0..3).reduce([:]) -> found, i { found + [i: i]; }; 0; }"),
+        ["Reduce starts from [:], which has no key or value type, and its block gives %int:int: declare the result type (let name is %int:int = …)"]
+    );
+    for accepted in [
+        "main() is int { let built = (0..3).reduce(@int()) -> acc, i { acc + [i * i]; }; built.size(); }",
+        "main() is int { let built is @int = (0..3).reduce([]) -> acc, i { acc + [i * i]; }; built.size(); }",
+        "main() is int { let index is %int:int = (0..3).reduce([:]) -> found, i { found + [i: i]; }; index.size(); }",
+        // A block that keeps the untyped accumulator is still valid.
+        "main() is int { let same = (0..3).reduce([]) -> acc, i { acc; }; 0; }",
+    ] {
+        assert!(messages(accepted).is_empty(), "{accepted}: {:?}", messages(accepted));
+    }
+}
+
+#[test]
+fn an_ambiguous_call_names_the_argument_types_and_the_tied_candidates() {
+    // #273: as the no-match case names the argument types.
+    let pairing = "object Pairing { Pairing(); \
+        joined(left is int, right is any) is string { \"left\"; } \
+        joined(left is any, right is int) is string { \"right\"; } \
+        joined(left is string, right is string) is string { \"strings\"; } }";
+    assert_eq!(
+        messages(&format!("{pairing} main() is int {{ Pairing().joined(1, 2); 0; }}")),
+        ["Ambiguous call of action \"joined\" on object \"Pairing\" with (int, int): joined(int, any) and joined(any, int) fit equally well"]
+    );
+    let boxes = "object Box { has text is string; Box(left is int, right is any) { text = \"l\"; } \
+        Box(left is any, right is int) { text = \"r\"; } }";
+    assert_eq!(
+        messages(&format!("{boxes} main() is int {{ let b = Box(1, 2); 0; }}")),
+        ["Ambiguous construction of \"Box\" with (int, int): Box(int, any) and Box(any, int) fit equally well"]
+    );
+}
