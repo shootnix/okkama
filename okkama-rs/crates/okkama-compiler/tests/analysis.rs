@@ -667,7 +667,9 @@ fn positional_calls_of_shorthand_constructors_name_the_named_form() {
         assert!(check(body).is_empty(), "{body}: {:?}", check(body));
     }
     assert_eq!(check("let b = Box(v: []);"), ["Cannot infer generic parameter \"T\" for object \"Box\""]);
+}
 
+#[test]
 fn arrays_of_payload_enums_have_searches_and_errors_name_the_full_type() {
     // #300: contains/index_of take the equality of `==`, variants included.
     let decls = "enum Reading = (empty, value(item is int)); enum Slot<T> = (vacant, full(item is T));";
