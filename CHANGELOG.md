@@ -8,6 +8,19 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Added
 
+- Micro-benchmarks (#244), next to the ladder in `okkama-docs/benchmarks/micro`:
+  29 programs of one language construct each (numeric categories,
+  comparisons, strings, constructors plain, generic and with defaults,
+  successors, method and role calls, closures, array and map literals,
+  indexing and `+`, `map`/`filter`/`reduce`, an in-place `reduce` build,
+  `match`, `try`/`catch`, `destroy`) and 11 of one std action (JSON, base64,
+  hex, SHA-256, regex, UTF-8, split, replace, `Sorted`, `ParsedInt`). Each
+  times N repetitions in-process after a warm-up; `run.py` reports net ns/op
+  over the empty loop on the core, the IR engine and the JVM, checks that the
+  engines agree on a checksum, and flags changes beyond the noise band
+  against a saved release; `coverage.py` lists the std modules that have no
+  benchmark yet (12 of 473 have one).
+
 - The t/ suite (#245): self-checking Okkama programs that print TAP —
   hand-written basics, operators and language features (`t/base`, `t/op`,
   `t/lang`) and generated families (`tools/t/gen.py`: strings, collections,
