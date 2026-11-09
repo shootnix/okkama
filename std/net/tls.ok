@@ -69,8 +69,7 @@ object TlsClientHandshake {
         let sni=if kind=="DNS"{unrooted;}else{"";};
         let state=try{origin.client(mask,protocols,sni);}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.handshaking, e.code());};
         let published=Event();let anchor=TlsUnpublished(state,published);defer anchor.close();
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=TlsTaskCleanup(group);defer await cleanup.close();
-        try{let pending=tls.handshake(state);group.start(pending);await pending;}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.handshaking, e.code());}
+        try{let pending=tls.handshake(state);await pending;}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.handshaking, e.code());}
         let roots is @@byte=policy.trust().certificates().map()->certificate{certificate.der();};
         try{tls.authorize(state,roots,kind,identity,clock.instant().unix_duration().seconds().string());}catch e is NativeFailure{
             if e.domain()=="core.x509.verify" && e.code()=="permission_denied"{throw CertificateVerificationFailed.because(CertificateFailureCode(e.message()).value());}
@@ -99,16 +98,14 @@ object TlsConnection does Closing {
     input() is TlsReading{TlsReading(self);}output() is TlsWriting{TlsWriting(self);}details() is TlsDetails{info;}
     closed() is bool{tls.closed(state);}close() is void{tls.close(state);}destroy{tls.close(state);}
     async shutdown() is void{
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=TlsTaskCleanup(group);defer await cleanup.close();
-        try{let pending=tls.shutdown(state);group.start(pending);await pending;}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.closing, e.code());}
+        try{let pending=tls.shutdown(state);await pending;}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.closing, e.code());}
     }
 
     async read_bytes(limit is int) is @byte{
         confirm limit>0 else throw InvalidReadLimit.limit(limit);
         confirm busy.compare_and_replace(false,true) else throw InvalidState.because("TLS already has a pending read");
         let ticket=TlsReadTicket(busy);defer ticket.close();
-        let group is FutureGroup<@byte>=FutureGroup();let cleanup=TlsTaskCleanup(group);defer await cleanup.close();
-        try{let pending=tls.read(state,limit);group.start(pending);await pending;}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.reading, e.code());}
+        try{let pending=tls.read(state,limit);await pending;}catch e is NativeFailure{throw TlsFailure.detailed(TlsPhase.reading, e.code());}
     }
     async write_bytes(source is ByteSource) is bool{
         let guards is FutureGroup<LockGuard>=FutureGroup();let writing is FutureGroup<bool>=FutureGroup();

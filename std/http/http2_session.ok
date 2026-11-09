@@ -68,9 +68,7 @@ object Http2SessionState does Http2ReceivingEvents,Http2BodyEvents {
     start() is void{if !started.ready(){started.set();loops.start(self.reading());loops.start(self.writing());}}
     async reading() is bool{
         
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();
-        let reader=Http2ConnectionInput(input,self,output,local,peer.value(),HpackBudget(limits.header_bytes(),limits.header_bytes(),128));let pending=reader.run();group.start(pending);
-        try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);throw;}catch e is NativeFailure{self.shutdown(Http2SessionClosed.closed);throw;}
+        let reader=Http2ConnectionInput(input,self,output,local,peer.value(),HpackBudget(limits.header_bytes(),limits.header_bytes(),128));let pending=reader.run();try{await pending;}catch e is Cancelled{throw;}catch e is Error{self.shutdown(e);throw;}catch e is NativeFailure{self.shutdown(Http2SessionClosed.closed);throw;}
     }
     async writing() is bool{
         
@@ -242,7 +240,7 @@ object Http2RequestBodySending {
     async run() is bool{
         let source=opening.reading();defer source.close();let used=Atomic(0);
         loop{
-            let reads is FutureGroup<@byte>=FutureGroup();let reading=Http2SessionSettlement(reads);defer await reading.close();let remaining=maximum-used.value();let limit=if remaining>=16384{16384;}else{remaining+1;};let pending=source.bytes(limit);reads.start(pending);let bytes=await pending;
+            let remaining=maximum-used.value();let limit=if remaining>=16384{16384;}else{remaining+1;};let pending=source.bytes(limit);let bytes=await pending;
             confirm bytes.size()<=limit else throw InvalidReading.because("outgoing H2 body exceeded requested chunk");let total=used.value()+bytes.size();confirm total<=maximum else throw InvalidHttpMessage.because("outgoing body byte limit");
             for declared -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw InvalidHttpMessage.because("outgoing Content-Length overflow");}
             for known -> length{confirm BigInt(total.string()).order(length)!=Order.greater else throw InvalidHttpMessage.because("outgoing body exceeds source length");}
@@ -262,7 +260,7 @@ object Http2SessionBody does BodyOpening {
 object Http2SessionReading does BodyReading {
     has entry is Http2StreamEntry;Http2SessionReading(entry is Http2StreamEntry){self.entry=entry;}
     closed() is bool{entry.buffer().closed();}close() is void{entry.close();}trailers() is Headers{entry.buffer().trailers();}
-    async bytes(limit is int) is @byte{let group is FutureGroup<@byte>=FutureGroup();let cleanup=Http2SessionSettlement(group);defer await cleanup.close();let pending=entry.buffer().bytes(limit);group.start(pending);await pending;}
+    async bytes(limit is int) is @byte{let pending=entry.buffer().bytes(limit);await pending;}
     destroy{self.close();}
 }
 object Http2ExchangeCleanup {

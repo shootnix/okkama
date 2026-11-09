@@ -49,6 +49,23 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Changed
 
+- std: 33 more single-child settlement wrappers are gone (#264, wave A of the
+  second part). Each read, connect, accept, TLS handshake, read and shutdown,
+  DNS lookup, HTTP/2 server and session step and WebSocket output step built a
+  `FutureGroup`, a settlement object and a deferred `await close()` around one
+  future it awaited at once; under structured await (#147) a cancelled task
+  cancels and settles the future it awaits, so these are plain `await`s now
+  (`net/stream`, `net/tcp`, `net/tls`, `net/dns`, `http/http2_server`,
+  `http/http2_session`, `http/server`, `http/websocket_session`,
+  `http/internal/websocket_output`, `http/transport_observation`,
+  `http/robots`, `http/digest`, `http/endpoint`). Left as they are: groups
+  with several children, and 11 places that await a memoized future other
+  tasks may share (a frame or header reading, the HTTP/2 preface, a stored
+  ticket, a cached operation), where a group cancels it for everyone and
+  structured await would not; they need their own lifecycle review. No
+  public name changes: the settlement objects stay until the visibility wave.
+  New OCS case `L11.tcp.cancelled-read-keeps-data`.
+
 - The Sparrow core is now called Tomato: the current Sparrow runtime (crate `sparrow-core`, binary `sparrow`) in the docs, the Book and benchmark reports; entries below still say "Sparrow core".
 
 - std: a single await no longer needs a `FutureGroup` and a settlement

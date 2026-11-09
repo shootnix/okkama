@@ -73,7 +73,7 @@ object WebSocketOutputTicket {
     opcode() is int{opcode;}payload() is @byte{payload;}cancelled() is bool{cancellation.ready();}
     cancel() is void{if !finished.ready(){cancellation.set();finished.set();}}
     completed() is void{finished.set();}failed() is void{if !finished.ready(){stopped.set();finished.set();}}
-    async waiting() is bool{defer self.cancel();if self.cancelled(){throw WebSocketOutputCancelled.cancelled;}let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let submitting=owner.submit(self);group.start(submitting);await submitting;await finished.wait();confirm !stopped.ready() else throw WebSocketClosed.detailed(1006, "");if self.cancelled(){throw WebSocketOutputCancelled.cancelled;}true;}
+    async waiting() is bool{defer self.cancel();if self.cancelled(){throw WebSocketOutputCancelled.cancelled;}let submitting=owner.submit(self);await submitting;await finished.wait();confirm !stopped.ready() else throw WebSocketClosed.detailed(1006, "");if self.cancelled(){throw WebSocketOutputCancelled.cancelled;}true;}
     async result() is bool{let group is FutureGroup<bool>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let task=self.operation();group.start(task);await task;}
     private:
     operation() is Future<bool>{let known=waiting.value();if known.size()>0{known[0];}else{let task=self.waiting();waiting.replace([task]);task;}}

@@ -1,0 +1,57 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L11.tcp.cancelled-read-keeps-data",
+  "title": "a TCP read interrupted by a timeout or a cancelled task does not lose the reply that arrives later",
+  "purpose": "Exercise a protocol boundary against a suite-owned loopback fixture.",
+  "level": "L11",
+  "contracts": [
+    {
+      "contract": "STD.NET.TCP",
+      "aspects": [
+        "interaction"
+      ]
+    },
+    {
+      "contract": "STD.NET.STREAM",
+      "aspects": [
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout",
+      "args",
+      "loopback-network"
+    ],
+    "fixtures": [
+      "tcp-echo"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "timed out\ncancelled\necho:ping\n"
+    }
+  },
+  "spec_refs": [
+    "std/net/tcp.ok",
+    "std/net/stream.ok",
+    "std/async/timeout.ok",
+    "conformance/fixtures/tcp-echo/server.py"
+  ],
+  "budget": {
+    "timeout_s": 60
+  },
+  "provenance": {
+    "origin": "authored for #264 wave A",
+    "expected_basis": "The tcp-echo fixture answers `echo:` + the line only after a whole line arrives, so a read bounded to 0.1 s times out and a read in a cancelled task ends Cancelled; the reads await their native work directly since #264 wave A, so cancelling them cancels and settles that work and the next read receives the whole reply."
+  },
+  "status": "mandatory"
+}

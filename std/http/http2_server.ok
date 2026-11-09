@@ -87,24 +87,19 @@ object Http2ServerState does Http2ReceivingEvents,Http2ReceivingBarrier,Http2Bod
     }
     async reading() is bool{
         defer self.close();
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();
-        let wire=Http2ServerWireInput(input,self);let reader=Http2ConnectionInput(wire,self,output,local,peer.value(),HpackBudget(policy.limits().header_bytes(),policy.limits().header_bytes(),128),false,self,wire);let pending=reader.run();group.start(pending);
-        try{await pending;}catch e is Cancelled{if !stopped.ready(){throw;}false;}catch e is Http2Fault{failures.replace([e]);await self.connection_fault(e);false;}catch e is TimedOut{let fault=Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "HTTP2 wire deadline");failures.replace([fault]);await self.connection_fault(fault);false;}catch e is Error{failures.replace([e]);self.close();false;}catch e is NativeFailure{self.close();throw;}
+        let wire=Http2ServerWireInput(input,self);let reader=Http2ConnectionInput(wire,self,output,local,peer.value(),HpackBudget(policy.limits().header_bytes(),policy.limits().header_bytes(),128),false,self,wire);let pending=reader.run();try{await pending;}catch e is Cancelled{if !stopped.ready(){throw;}false;}catch e is Http2Fault{failures.replace([e]);await self.connection_fault(e);false;}catch e is TimedOut{let fault=Http2Fault.detailed(Http2FaultScope.connection, 1, 0, "HTTP2 wire deadline");failures.replace([fault]);await self.connection_fault(fault);false;}catch e is Error{failures.replace([e]);self.close();false;}catch e is NativeFailure{self.close();throw;}
     }
     busy(value is bool) is void{reading_busy.replace(value);self.wake();}
     async idling() is bool{
         let interval=policy.timeouts().keep_alive_timeout();
         loop{
             if self.closed(){return true;}let signal=changed.value();let pending=signal.wait();
-            let group is FutureGroup<Event>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();
-            let waiting=if interval.seconds()>0.rat() && active.value().size()==0 && !reading_busy.value(){let deadline is Within<Event>=Within(pending,interval,clock);deadline.result();}else{pending;};group.start(waiting);
-            try{await waiting;}catch e is TimedOut{if active.value().size()==0 && !reading_busy.value(){self.close();return true;}}
+            let waiting=if interval.seconds()>0.rat() && active.value().size()==0 && !reading_busy.value(){let deadline is Within<Event>=Within(pending,interval,clock);deadline.result();}else{pending;};try{await waiting;}catch e is TimedOut{if active.value().size()==0 && !reading_busy.value(){self.close();return true;}}
         }
     }
     async connection_fault(failure is Http2Fault) is bool{
         defer self.close();draining.set();flow.stop(failure);sender.value()[0].stop();for active.value() -> entry{entry.cancel();}
-        let group is FutureGroup<bool>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();
-        try{let ticket=output.submit([Http2GoAwayFrame(highest.value(),Http2FaultView(failure).code(),[]).frame()]);let bounded is Within<bool>=Within(ticket.result(),Duration(1.rat(),DurationUnit.second),clock);let pending=bounded.result();group.start(pending);await pending;}catch e is Cancelled{throw;}catch e is Error{}true;
+        try{let ticket=output.submit([Http2GoAwayFrame(highest.value(),Http2FaultView(failure).code(),[]).frame()]);let bounded is Within<bool>=Within(ticket.result(),Duration(1.rat(),DurationUnit.second),clock);let pending=bounded.result();await pending;}catch e is Cancelled{throw;}catch e is Error{}true;
     }
     async writing() is bool{
         defer self.close();
@@ -173,9 +168,8 @@ object Http2ServerStream {
             let opening=Http2ServerBody(self,Http2IncomingBody(body,declared),owner.policy().timeouts().body_idle_timeout(),owner.clock());let request=head.request(opening);let context=HttpRequestContext(owner.details(),cancelled.cancelling());
             let expected=head.headers().values(HeaderName("expect"));let unsupported=expected.size()>0 && (expected.size()!=1 || HttpAsciiLowercase(expected.item(0)).string()!="100-continue");
             let result is HandlingResult=if unsupported{ResponseHandling(Response(Status(417),Headers([]),EmptyBody(),HttpVersion.http_2));}else{
-                let handlers is FutureGroup<HandlingResult>=FutureGroup();let cleanup=Http2ServerSettlement(handlers);defer await cleanup.close();let pending=owner.handling().handling(request,context);let timeout=owner.policy().timeouts().handling_timeout();
-                let bounded=if timeout.seconds()>0.rat(){let deadline is Within<HandlingResult>=Within(pending,timeout,owner.clock());deadline.result();}else{pending;};handlers.start(bounded);
-                try{await bounded;}catch e is Cancelled{throw;}catch e is Http2Fault{throw;}catch e is TimedOut{ResponseHandling(Response(Status(503),Headers([]),EmptyBody(),HttpVersion.http_2));}catch e is Error{ResponseHandling(Response(Status(500),Headers([]),EmptyBody(),HttpVersion.http_2));}
+                let pending=owner.handling().handling(request,context);let timeout=owner.policy().timeouts().handling_timeout();
+                let bounded=if timeout.seconds()>0.rat(){let deadline is Within<HandlingResult>=Within(pending,timeout,owner.clock());deadline.result();}else{pending;};try{await bounded;}catch e is Cancelled{throw;}catch e is Http2Fault{throw;}catch e is TimedOut{ResponseHandling(Response(Status(503),Headers([]),EmptyBody(),HttpVersion.http_2));}catch e is Error{ResponseHandling(Response(Status(500),Headers([]),EmptyBody(),HttpVersion.http_2));}
             };
             confirm result.kind()==HandlingKind.response else throw Http2Fault.detailed(Http2FaultScope.stream, 1, self.stream(), "HTTP2 Upgrade requires negotiated extended CONNECT");
             try{await self.respond(request,result.response());}catch e is Cancelled{throw;}catch e is Error{if sent.value(){throw;}await self.respond(request,Response(Status(500),Headers([]),EmptyBody(),HttpVersion.http_2));}true;
@@ -206,13 +200,13 @@ object Http2ServerBodySending {
     async run() is bool{
         let source=opening.reading();defer source.close();let used=Atomic(0);
         loop{
-            let reads is FutureGroup<@byte>=FutureGroup();let reading=Http2ServerSettlement(reads);defer await reading.close();let remaining=maximum-used.value();let limit=if remaining>=16384{16384;}else{remaining+1;};let pending=source.bytes(limit);reads.start(pending);let bytes=await pending;
+            let remaining=maximum-used.value();let limit=if remaining>=16384{16384;}else{remaining+1;};let pending=source.bytes(limit);let bytes=await pending;
             confirm bytes.size()<=limit else throw InvalidReading.because("H2 response source exceeded requested chunk");let total=used.value()+bytes.size();confirm total<=maximum else throw InvalidHttpMessage.because("response byte limit");
             for [declared,known] -> batch{for batch -> length{let order=BigInt(total.string()).order(length);confirm order!=Order.greater && (bytes.size()>0 || order==Order.equal) else throw InvalidHttpMessage.because("response length mismatch");}}
-            let writes is FutureGroup<bool>=FutureGroup();let writing=Http2ServerSettlement(writes);defer await writing.close();let offered=if bytes.size()==0{
+            let offered=if bytes.size()==0{
                 let trailers=Http2OrdinaryFields(source.trailers(),false,stream).fields();Http2Trailers(trailers,stream);
                 if trailers.size()>0{output.headers(stream,trailers,budget,16384,true).result();}else{sender.data(stream,bytes,true);}
-            }else{sender.data(stream,bytes,false);};writes.start(offered);await offered;used.replace(total);if bytes.size()==0{return true;}
+            }else{sender.data(stream,bytes,false);};await offered;used.replace(total);if bytes.size()==0{return true;}
         }
     }
 }
@@ -225,7 +219,7 @@ object Http2ServerBodyReading does BodyReading {
     has entry is Http2ServerStream;has origin is BodyReading;has timeout is Duration;has clock is Timing;
     Http2ServerBodyReading(entry is Http2ServerStream,origin is BodyReading,timeout is Duration,clock is Timing){self.entry=entry;self.origin=origin;self.timeout=timeout;self.clock=clock;}
     closed() is bool{origin.closed();}close() is void{origin.close();}trailers() is Headers{origin.trailers();}
-    async bytes(limit is int) is @byte{await entry.continue_request();let group is FutureGroup<@byte>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();let reading=origin.bytes(limit);let pending=if timeout.seconds()>0.rat(){let deadline is Within<@byte>=Within(reading,timeout,clock);deadline.result();}else{reading;};group.start(pending);try{await pending;}catch e is TimedOut{throw Http2Fault.detailed(Http2FaultScope.stream, 8, entry.stream(), "request body idle deadline");}}
+    async bytes(limit is int) is @byte{await entry.continue_request();let reading=origin.bytes(limit);let pending=if timeout.seconds()>0.rat(){let deadline is Within<@byte>=Within(reading,timeout,clock);deadline.result();}else{reading;};try{await pending;}catch e is TimedOut{throw Http2Fault.detailed(Http2FaultScope.stream, 8, entry.stream(), "request body idle deadline");}}
 }
 // One memoized informational write per admitted request. A complete body
 // permits skipping100; construction and body opening alone emit nothing.
@@ -250,12 +244,12 @@ object Http2ServerWireInput does AsyncReading,Http2ReadBoundary {
     }
     async bytes(limit is int) is @byte{
         let first=between.value();let count=if first{1;}else{let available=if remaining.value()>0{remaining.value();}else{9-header.value().size();};if available<limit{available;}else{limit;}};
-        let group is FutureGroup<@byte>=FutureGroup();let cleanup=Http2ServerSettlement(group);defer await cleanup.close();let reading=origin.bytes(count);
+        let reading=origin.bytes(count);
         let pending=if !first && kind.value()==0 && remaining.value()>0{
             let interval=owner.policy().timeouts().body_idle_timeout();if interval.seconds()>0.rat(){let idle is Within<@byte>=Within(reading,interval,owner.clock());idle.result();}else{reading;}
         }else{
             if !first && deadlines.value().size()==1{let deadline is Before<@byte>=Before(origin:reading,deadline:deadlines.value()[0],clock:owner.clock());deadline.result();}else{reading;}
-        };group.start(pending);let bytes=await pending;confirm bytes.size()<=count else throw InvalidReading.because("H2 server input exceeded request");
+        };let bytes=await pending;confirm bytes.size()<=count else throw InvalidReading.because("H2 server input exceeded request");
         if first && bytes.size()>0{between.replace(false);owner.busy(true);let interval=owner.policy().timeouts().headers_timeout();if interval.seconds()>0.rat(){deadlines.replace([owner.clock().monotonic_instant().plus(interval)]);}}
         if bytes.size()>0{self.account(bytes);}bytes;
     }

@@ -59,10 +59,8 @@ object TcpConnecting {
     TcpConnecting(remote is IpEndpoint){confirm remote.port()>0 else throw InvalidArgument.because("TCP destination port must be positive");self.remote=remote;options=TcpOptions();}
     TcpConnecting(remote is IpEndpoint,options is TcpOptions){confirm remote.port()>0 else throw InvalidArgument.because("TCP destination port must be positive");self.remote=remote;self.options=options;}
     async connection() is TcpConnection {
-        let group is FutureGroup<network.SocketState>=FutureGroup();let cleanup=TcpConnectCleanup(group);defer await cleanup.close();
         try {
-            let pending=network.tcp_connect(TcpEndpointWire(remote).bytes(),remote.zone(),options.keep_alive(),options.no_delay());group.start(pending);
-            let state=await pending;let ready=Event();let anchor=TcpUnpublished(state,ready);defer anchor.close();
+            let pending=network.tcp_connect(TcpEndpointWire(remote).bytes(),remote.zone(),options.keep_alive(),options.no_delay());let state=await pending;let ready=Event();let anchor=TcpUnpublished(state,ready);defer anchor.close();
             let connection=TcpConnection(state);ready.set();connection;
         }catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.connecting,e);if translated.applicable(){throw translated.value();}throw;}
     }
@@ -92,9 +90,8 @@ object TcpAcceptance does Closing {
     close() is void{try{network.tcp_listener_close(state);}catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.closing,e);if translated.applicable(){throw translated.value();}throw;}}
     async connection() is TcpConnection {
         confirm !self.closed() else throw NetworkClosed.closed;
-        let group is FutureGroup<network.SocketState>=FutureGroup();let cleanup=TcpConnectCleanup(group);defer await cleanup.close();
         try{
-            let pending=network.tcp_accept(state,accepted.keep_alive(),accepted.no_delay());group.start(pending);let peer=await pending;
+            let pending=network.tcp_accept(state,accepted.keep_alive(),accepted.no_delay());let peer=await pending;
             let ready=Event();let anchor=TcpUnpublished(peer,ready);defer anchor.close();let connection=TcpConnection(peer);ready.set();connection;
         }catch e is NativeFailure{let translated=StreamFailure(NetworkOperation.accepting,e);if translated.applicable(){throw translated.value();}throw;}
     }

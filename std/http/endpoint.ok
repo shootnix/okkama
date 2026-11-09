@@ -57,11 +57,10 @@ object HttpEndpointSelection {
     }
     url() is Url{url;}
     async endpoints() is Sequencing<IpEndpoint>{
-        let group is FutureGroup<Sequencing<IpEndpoint>>=FutureGroup();let cleanup=HttpResolutionCleanup(group);defer await cleanup.close();
         let source is Sequencing<IpEndpoint>=if host.kind()==UrlHostKind.address{
             let direct is @IpEndpoint=[IpEndpoint(host.address(),port)];direct;
         }else{
-            let pending=resolver.addresses(HostEndpoint(host.name(),port));group.start(pending);await pending;
+            let pending=resolver.addresses(HostEndpoint(host.name(),port));await pending;
         };
         let count=source.size();confirm count>=0 && count<=256 else throw EndpointSelectionLimit.stage("addresses");
         let snapshot is @IpEndpoint=(0..count).map()->index{

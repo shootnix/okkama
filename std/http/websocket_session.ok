@@ -58,7 +58,7 @@ object WebSocketSessionState {
         let assembly=WebSocketMessageAssembly(limits);defer assembly.close();
         try{
             loop{
-                let group is FutureGroup<WebSocketFrame>=FutureGroup();let cleanup=WebSocketOutputSettlement(group);defer await cleanup.close();let pending=WebSocketFrameReading(input,!client,limits.frame_bytes()).result();group.start(pending);let frame=await pending;
+                let pending=WebSocketFrameReading(input,!client,limits.frame_bytes()).result();let frame=await pending;
                 if frame.opcode()==8{
                     let received=ParsedWebSocketClose(frame.payload(),client).value();let responding=!closing.ready();if responding{closing.set();output.closing();}failure.replace(received);incoming.sending().close();
                     if responding{let echo is Within<bool>=Within(output.control(8,frame.payload()).result(),close_timeout,clock);await echo.result();close_sent.set();}else{await close_sent.wait();}
@@ -95,7 +95,7 @@ object WebSocketSessionState {
     }
     async finish(code is int,reason is string) is bool{
         let cleanup=WebSocketSessionFinish(self);defer await cleanup.close();
-        if !self.closed(){let group is FutureGroup<bool>=FutureGroup();let settled=WebSocketOutputSettlement(group);defer await settled.close();let bounded is Within<bool>=Within(self.handshake(code,reason),close_timeout,clock);let pending=bounded.result();group.start(pending);await pending;}true;
+        if !self.closed(){let bounded is Within<bool>=Within(self.handshake(code,reason),close_timeout,clock);let pending=bounded.result();await pending;}true;
     }
 }
 object WebSocketSessionFinish {has owner is WebSocketSessionState;WebSocketSessionFinish(owner is WebSocketSessionState){self.owner=owner;}async close() is void{owner.abort();await owner.settled();}}
