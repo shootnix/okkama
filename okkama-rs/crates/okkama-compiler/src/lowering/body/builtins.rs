@@ -50,7 +50,7 @@ impl BodyLowerer<'_, '_, '_> {
         let found = self
             .emit(InstKind::IntCompare { op: CompareOp::Ge, left: index, right: zero }, Type::Bool, span)
             .value;
-        let (join, params) = self.block_with(&[], &[maybe.clone()]);
+        let (join, params) = self.block_with(&[], std::slice::from_ref(&maybe));
         let (some, none) = (self.b.new_block(), self.b.new_block());
         self.b.terminate(
             TermKind::Cond { condition: found, then_target: Target::new(some), else_target: Target::new(none) },
