@@ -1,0 +1,36 @@
+module t v1.0.0;
+
+// t/lang: module constants computed by the compiler (#153).
+import "tap" take Tap;
+
+enum Level = (low, high);
+
+const BIG = 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024;
+const HALF = 1 / 2;
+const ORDERED = [Level.low, Level.high];
+const NAMES = ["low": 1, "high": 2];
+const WORD = "ok" + "kama";
+const MASK = 0xFF & ~0x0F;
+const LAST = FIRST + 10;
+const FIRST = 5;
+const NESTED = [[1, 2], [3]];
+hidden const INNER = 7;
+const RATE is float = 2.5;
+const FLAG = 3 > 2 && !false;
+
+main() is int {
+    let t = Tap(12);
+    t = t.is(BIG.string(), "1180591620717411303424", "a big integer stays exact");
+    t = t.is(HALF, rat(1, 2), "1 / 2 is a rat");
+    t = t.ok(ORDERED == [Level.low, Level.high], "an array of enum cases");
+    t = t.is(NAMES["high"], 2, "a map");
+    t = t.is(WORD, "okkama", "string concatenation");
+    t = t.is(MASK, 240, "bitwise operators");
+    t = t.is(LAST, 15, "a constant declared before what it uses");
+    t = t.is(NESTED[0][1], 2, "nested arrays");
+    t = t.is(INNER, 7, "a hidden constant inside its module");
+    t = t.is(RATE, 2.5, "a typed float constant");
+    t = t.ok(FLAG, "boolean operators");
+    t = t.is(ORDERED.size() + NAMES.size(), 4, "constants in expressions");
+    t.done();
+}

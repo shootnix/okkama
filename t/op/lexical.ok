@@ -1,0 +1,35 @@
+module t v1.0.0;
+
+/* t/op: lexical structure (Book ch. 3) — comments, identifiers, literals.
+   A block comment may span lines. */
+import "tap" take Tap;
+
+/*
+=head1 NAME
+
+Pod-style documentation inside a block comment is ignored.
+
+=cut
+*/
+
+main() is int {
+    let t = Tap(9);
+    // A line comment.
+    let snake_case_name = 1; // a trailing comment
+    let _private_local = 2;
+    let UserName = 3;
+    t = t.is(snake_case_name + _private_local + UserName, 6, "identifier spellings");
+    let xor = 5;
+    t = t.is(xor, 5, "xor is an ordinary identifier");
+    t = t.is(10, 10, "an int literal");
+    t = t.is(3.14, 3.14, "a float literal");
+    t = t.is("a/* not a comment */b", "a/* not a comment */b", "comment markers inside a string");
+    t = t.is('x', 'x', "a char literal");
+    t = t.ok(true != false, "bool literals");
+    let fenced = ```
+two "quoted" \lines
+```;
+    t = t.is(fenced, "\ntwo \"quoted\" \\lines\n", "a fenced string keeps everything");
+    t = t.is(0B11 + 0XA, 13, "upper-case radix prefixes");
+    t.done();
+}

@@ -1,0 +1,23 @@
+module t v1.0.0;
+
+// t/base: let, typed let, nested scopes and block values.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..5");
+    let a = 40;
+    let b is int = 2;
+    out.writeln(if a + b == 42 { "ok 1 - let and typed let"; } else { "not ok 1 - let and typed let"; });
+    let shadowed = 1;
+    {
+        let shadowed = 2;
+        out.writeln(if shadowed == 2 { "ok 2 - inner scope shadows"; } else { "not ok 2 - inner scope shadows"; });
+    }
+    out.writeln(if shadowed == 1 { "ok 3 - outer binding survives"; } else { "not ok 3 - outer binding survives"; });
+    let value = if a > 0 { let half = a / 2; half == 20.rat(); } else { false; };
+    out.writeln(if value { "ok 4 - block value is its last expression"; } else { "not ok 4 - block value is its last expression"; });
+    let USER_NAME = "x";
+    out.writeln(if USER_NAME == "x" { "ok 5 - upper-case local name"; } else { "not ok 5 - upper-case local name"; });
+    0;
+}

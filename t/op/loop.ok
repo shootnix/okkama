@@ -1,0 +1,53 @@
+module t v1.0.0;
+
+// t/op: for, loop, next and last (Book ch. 12.5–12.7).
+import "tap" take Tap;
+import "cell" take Cell;
+
+main() is int {
+    let t = Tap(9);
+    let seen = Cell("");
+    for [1, 2, 3] -> n { seen.replace(seen.value() + n.string()); }
+    t = t.is(seen.value(), "123", "for over an array keeps order");
+    seen.replace("");
+    for 1..=4 -> n {
+        next if n == 2;
+        seen.replace(seen.value() + n.string());
+    }
+    t = t.is(seen.value(), "134", "next if skips");
+    seen.replace("");
+    for 1..10 -> n {
+        last if n == 4;
+        seen.replace(seen.value() + n.string());
+    }
+    t = t.is(seen.value(), "123", "last if stops");
+    let hundred = loop { last 100; };
+    t = t.is(hundred, 100, "loop produces its last value");
+    let count = Cell(0);
+    let found = loop {
+        count.replace(count.value() + 1);
+        last count.value() if count.value() * count.value() > 50;
+    };
+    t = t.is(found, 8, "last value if");
+    seen.replace("");
+    for [[1, 2], [3]] -> row {
+        for row -> n { seen.replace(seen.value() + n.string()); }
+    }
+    t = t.is(seen.value(), "123", "nested for");
+    seen.replace("");
+    for 0..3 -> i {
+        for 0..3 -> j {
+            last if j > i;
+            seen.replace(seen.value() + i.string() + j.string() + " ");
+        }
+    }
+    t = t.is(seen.value(), "00 10 11 20 21 22 ", "last leaves the inner loop only");
+    seen.replace("");
+    for "ab".characters() -> c { seen.replace(seen.value() + c.string() + "."); }
+    t = t.is(seen.value(), "a.b.", "for over characters");
+    let empty is @int = [];
+    seen.replace("x");
+    for empty -> n { seen.replace("ran"); }
+    t = t.is(seen.value(), "x", "for over an empty array");
+    t.done();
+}

@@ -1,0 +1,32 @@
+module t v1.0.0;
+
+// t/op: absence without null — Maybe, Presence and `else` (Book ch. 7, 24.2).
+import "tap" take Tap;
+
+object Directory {
+    Directory();
+    find(id is int) is Maybe<string> {
+        if id == 1 { Maybe.some("Ada"); } else { Maybe.none; }
+    }
+}
+
+main() is int {
+    let t = Tap(10);
+    let directory = Directory();
+    t = t.is(directory.find(1) else "nobody", "Ada", "else unwraps some");
+    t = t.is(directory.find(2) else "nobody", "nobody", "else takes the fallback on none");
+    let found = directory.find(1);
+    t = t.is(found ?? .some(name): name !! .none: "-", "Ada", "?? !! opens a Maybe");
+    let typed is Maybe<string> = Maybe.none;
+    t = t.ok(typed == Maybe<string>.none, "a typed none");
+    t = t.ok(Maybe.some(0) != Maybe.none, "zero is present");
+    t = t.ok(Maybe.some("") == Maybe.some(""), "the empty string is present");
+    let missing is Presence<int> = Presence.missing;
+    t = t.is(missing.fold() else 7, 7, "fold turns missing into none");
+    let cleared is Presence<int> = Presence.none;
+    t = t.is(cleared ?? .some(v): v !! .none: -1 !! .missing: -2, -1, "none is not missing");
+    t = t.ok(Maybe.some(1).as_presence() == Presence.some(1), "as_presence keeps some");
+    let prices = ["apple": 120];
+    t = t.is(prices["fig"] else 0, 0, "a missing map key with else");
+    t.done();
+}

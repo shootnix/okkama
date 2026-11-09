@@ -1,0 +1,56 @@
+module t v1.0.0;
+
+// t/lang: generic objects and roles over many argument types (Book ch. 25).
+import "tap" take Tap;
+
+enum Status = (ready, done);
+role Shape { area() is int; }
+object Square does Shape { has side is int; Square(:side); area() is int { side * side; } }
+object Point { has x is int; has y is int; Point(:x, :y); }
+
+object Box<T> {
+    has value is T;
+    Box(:value);
+    get() is T { value; }
+    put(next_value is T) is ^Box<T> { ^value = next_value; }
+}
+
+object Pair<A, B> {
+    has left is A;
+    has right is B;
+    Pair(:left, :right);
+    first() is A { left; }
+    second() is B { right; }
+    swapped() is Pair<B, A> { Pair(left: right, right: left); }
+}
+
+role Source<T> { item() is T; }
+object Constant<T> does Source<T> { has v is T; Constant(:v); item() is T { v; } }
+
+main() is int {
+    let t = Tap(16);
+    t = t.is(Box(value: 1).get(), 1, "Box<int>");
+    t = t.is(Box(value: "s").put("u").get(), "u", "a generic successor");
+    t = t.is(Box(value: 0.5).get(), 0.5, "Box<float>");
+    t = t.ok(Box(value: [1, 2]).get() == [1, 2], "Box<@int>");
+    t = t.ok(Box(value: Point(x: 1, y: 2)).get() == Point(x: 1, y: 2), "Box<Point>");
+    t = t.ok(Box(value: Status.done).get() == Status.done, "Box<Status>");
+    t = t.ok(Box(value: Maybe.some(3)).get() == Maybe.some(3), "Box<Maybe<int>>");
+    let boxed is Box<Box<int>> = Box(value: Box(value: 7));
+    t = t.is(boxed.get().get(), 7, "Box<Box<int>>");
+    let shape is Box<Shape> = Box(value: Square(side: 3));
+    t = t.is(shape.get().area(), 9, "Box<Shape> holds a role");
+    t = t.ok(Box(value: 1) == Box(value: 1), "generic objects compare by fields");
+    let pair = Pair(left: 1, right: "one");
+    t = t.is(pair.second(), "one", "Pair<int, string>");
+    t = t.is(pair.swapped().first(), "one", "a generic action returning another instance");
+    let source is Source<string> = Constant(v: "x");
+    t = t.is(source.item(), "x", "a generic role");
+    let nested is Source<Source<int>> = Constant(v: Constant(v: 4));
+    t = t.is(nested.item().item(), 4, "a generic role over a generic role");
+    let boxes is @Box<int> = [Box(value: 1), Box(value: 2)];
+    t = t.is(boxes.reduce(0) -> sum, b { sum + b.get(); }, 3, "an array of generic objects");
+    let keyed = [Box(value: 2): "two"];
+    t = t.is(keyed[Box(value: 2)] else "none", "two", "a generic value object as a key");
+    t.done();
+}

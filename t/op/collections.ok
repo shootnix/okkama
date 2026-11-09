@@ -1,0 +1,18 @@
+module t v1.0.0;
+
+// t/op: + and - on arrays and maps (Book ch. 8.2a).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(8);
+    t = t.ok([1, 2] + [3] + [4, 5] == [1, 2, 3, 4, 5], "array concatenation");
+    t = t.ok([1, 2, 3, 2] - [2] == [1, 3], "- removes every equal element");
+    t = t.ok(([1, 2, 3] - [1]) - [3] == [2], "chained removal");
+    t = t.ok([1, 2, 3] - ([1, 2] - [2]) == [2, 3], "grouping is kept");
+    let merged = ["a": 1] + ["a": 2, "b": 3];
+    t = t.is(merged["a"], 2, "the right map wins");
+    t = t.ok(merged - ["a": 0] == ["b": 3], "- on maps removes keys");
+    t = t.ok([1] + [] == [1], "an untagged empty operand");
+    t = t.ok(["x": 1] + [:] == ["x": 1], "an untagged empty map");
+    t.done();
+}

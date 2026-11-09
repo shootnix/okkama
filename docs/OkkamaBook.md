@@ -492,7 +492,8 @@ typed boundary. A failed byte conversion is a runtime error.
 ### 5.1.1 Scalar casts and array casts `@T(...)`
 
 Use `T(value)` for one primitive value and `@T(...)` for an immutable array.
-The supported targets are `int`, `float`, `byte`, and `string`:
+The supported targets are `int`, `float`, `byte`, and `string`; a scalar
+cast also has `char`:
 
 ```okkama
 let label is string = string(101);        // "101"
@@ -512,7 +513,9 @@ the signed-64 range: `int(1e30)` fails (#309). `byte(...)` checks
 `0..255`: `byte(255.9)` is 255 and `byte(-0.5)` is 0. Float casts round to
 finite binary64 and can lose integer precision. String casts accept
 numeric primitives, bool (`"true"`/`"false"`), char and string; rational text
-is canonical.
+is canonical. `char(value)` accepts an `int` code point or a `char`: `char(65)`
+is `'A'`, and a value outside `0..0x10FFFF` or a surrogate is a runtime error.
+There is no `@char(...)`; `'A'.code()` goes back to `int`.
 
 An empty `@byte()` also provides exact `T = byte` evidence to a generic
 constructor accepting `@T`; inference does not require a first element.

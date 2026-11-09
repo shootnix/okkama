@@ -1,0 +1,23 @@
+module t v1.0.0;
+
+// t/op: rat — exact fractions (Book ch. 5.2).
+import "tap" take Tap;
+
+main() is int {
+    let t = Tap(14);
+    t = t.is(rat(2, 6), rat(1, 3), "rat() reduces");
+    t = t.is(rat(1, -2).string(), "-1/2", "the denominator stays positive");
+    t = t.is((1 / 3 + 2 / 3).string(), "1", "exact sum");
+    t = t.ok(1 / 2 + 1 / 2 == 1.rat(), "equality needs aligned categories");
+    t = t.is(((1 / 2) * (2 / 3)).string(), "1/3", "multiplication");
+    t = t.is((7 / 2).int(), 3, "rat.int() truncates");
+    t = t.is((-7 / 2).int(), -3, "toward zero");
+    t = t.is((1 / 4).float(), 0.25, "rat.float()");
+    t = t.is(0.125.rat(), rat(1, 8), "float.rat() rationalizes the decimal value");
+    t = t.is((6 / 4).numerator(), "3", "numerator is decimal text");
+    t = t.is((6 / 4).denominator(), "2", "denominator is decimal text");
+    t = t.is((2 / 3).pow(2), 4 / 9, "pow");
+    t = t.is((2 / 3).pow(-1), 3 / 2, "a negative exponent inverts");
+    t = t.ok(1 / 3 < 1 / 2, "ordering");
+    t.done();
+}

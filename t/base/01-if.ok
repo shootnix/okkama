@@ -1,0 +1,17 @@
+module t v1.0.0;
+
+// t/base: `if` statements and expressions, before any comparison is trusted.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..7");
+    if true { out.writeln("ok 1 - if true runs its block"); }
+    if false { out.writeln("not ok 2 - if false ran its block"); } else { out.writeln("ok 2 - if false takes else"); }
+    if !false { out.writeln("ok 3 - !false is true"); }
+    if true { if true { out.writeln("ok 4 - nested if"); } }
+    if false { out.writeln("not ok 5 - else if"); } else if true { out.writeln("ok 5 - else if"); } else { out.writeln("not ok 5 - else if"); }
+    out.writeln(if true { "ok 6 - if expression"; } else { "not ok 6 - if expression"; });
+    out.writeln(if false { "not ok 7 - else if expression"; } else if false { "not ok 7 - else if expression"; } else { "ok 7 - else if expression"; });
+    0;
+}

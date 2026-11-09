@@ -1,0 +1,37 @@
+module shapes v1.0.0;
+
+// A support module for t/lang/modules.ok (#245): public and hidden
+// declarations, constants and a role with a hidden implementation.
+
+role Area {
+    value() is int;
+}
+
+hidden enum Kind = (square, strip);
+
+hidden object Tile does Area {
+    has side is int;
+    has kind is Kind = Kind.square;
+    Tile(:side);
+    value() is int { side * side; }
+}
+
+object Tiles {
+    Tiles();
+    square(side is int) is Area { Tile(side: side); }
+}
+
+enum Unit = (mm, cm);
+
+object Ruler {
+    has unit is Unit;
+    Ruler(:unit);
+    scale() is int { match unit { case Unit.mm { 1; } case Unit.cm { 10; } } }
+}
+
+const SIDE = 4;
+const AREA = SIDE * SIDE;
+const NAME = "shapes-" + string(SIDE);
+const PRIMES is @int = [2, 3, 5, 7];
+const LIMITS = ["small": SIDE, "large": AREA * 10];
+hidden const SECRET = 42;

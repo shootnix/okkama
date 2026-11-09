@@ -1,0 +1,20 @@
+module t v1.0.0;
+
+// t/base: ordering and inequality of ints, equality of strings and bools.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..10");
+    out.writeln(if 1 < 2 { "ok 1 - <"; } else { "not ok 1 - <"; });
+    out.writeln(if 2 > 1 { "ok 2 - >"; } else { "not ok 2 - >"; });
+    out.writeln(if 2 <= 2 { "ok 3 - <= on equal"; } else { "not ok 3 - <= on equal"; });
+    out.writeln(if 3 >= 2 { "ok 4 - >="; } else { "not ok 4 - >="; });
+    out.writeln(if 1 != 2 { "ok 5 - !="; } else { "not ok 5 - !="; });
+    out.writeln(if 2 < 1 { "not ok 6 - < is false"; } else { "ok 6 - < is false"; });
+    out.writeln(if "abc" == "abc" { "ok 7 - string =="; } else { "not ok 7 - string =="; });
+    out.writeln(if "abc" != "abd" { "ok 8 - string !="; } else { "not ok 8 - string !="; });
+    out.writeln(if true == true { "ok 9 - bool =="; } else { "not ok 9 - bool =="; });
+    out.writeln(if true != false { "ok 10 - bool !="; } else { "not ok 10 - bool !="; });
+    0;
+}

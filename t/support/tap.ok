@@ -1,0 +1,111 @@
+module tap v1.0.0;
+
+// TAP for t/ (#245): the plan `1..N`, then `ok N - name` or `not ok N - name`
+// per check and `# …` diagnostics. A check is a successor of the run, so a
+// file counts its checks without mutable state:
+//
+//     let t = Tap(3);
+//     t = t.ok(1 + 1 == 2, "int addition");
+//     t = t.is("ab" + "c", "abc", "string concatenation");
+//     t.done();
+//
+// `done()` is the exit status: 0 when every planned check ran and passed.
+// The helper uses only objects, successors, `if`, `int.string()` and
+// `Stdout`; t/base checks those without it.
+import "io/stdout" take Stdout;
+
+object Tap {
+    has planned is int;
+    has count is int = 0;
+    has failed is int = 0;
+
+    Tap(plan is int) {
+        planned = plan;
+        Stdout().writeln("1.." + plan.string());
+    }
+
+    ok(passed is bool, name is string) is ^Tap {
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+
+    // `is` compares with `==` and prints both values when they differ. A
+    // successor cannot hand its result to another one, so each overload
+    // advances the count itself.
+    is(got is int, expected is int, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, got.string(), expected.string());
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+    is(got is string, expected is string, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, "\"" + got + "\"", "\"" + expected + "\"");
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+    is(got is bool, expected is bool, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, got.string(), expected.string());
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+    is(got is float, expected is float, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, got.string(), expected.string());
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+    is(got is rat, expected is rat, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, got.string(), expected.string());
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+    is(got is byte, expected is byte, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, got.int().string(), expected.int().string());
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+    is(got is char, expected is char, name is string) is ^Tap {
+        let passed = got == expected;
+        self.explain(passed, got.string(), expected.string());
+        self.line(passed, name);
+        ^count = count + 1;
+        ^failed = if passed { failed; } else { failed + 1; };
+    }
+
+    // A diagnostic line; it does not count as a check.
+    note(text is string) is void {
+        Stdout().writeln("# " + text);
+    }
+
+    done() is int {
+        if count != planned {
+            Stdout().writeln("# planned " + planned.string() + " checks, ran " + count.string());
+        }
+        if failed > 0 || count != planned { 1; } else { 0; }
+    }
+
+    private:
+
+    line(passed is bool, name is string) is void {
+        let verdict = if passed { "ok "; } else { "not ok "; };
+        Stdout().writeln(verdict + (count + 1).string() + " - " + name);
+    }
+
+    explain(passed is bool, got is string, expected is string) is void {
+        if !passed {
+            Stdout().writeln("#      got: " + got);
+            Stdout().writeln("# expected: " + expected);
+        }
+    }
+}

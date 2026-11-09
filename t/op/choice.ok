@@ -1,0 +1,19 @@
+module t v1.0.0;
+
+// t/op: the compact choice ?? !! (Book ch. 24.3).
+import "tap" take Tap;
+
+enum Status = (ready, failed, done);
+
+main() is int {
+    let t = Tap(5);
+    let enabled = true;
+    t = t.is(enabled ?? "on" !! "off", "on", "a boolean choice");
+    t = t.is(!enabled ?? "on" !! "off", "off", "the other branch");
+    let status = Status.failed;
+    t = t.is(status ?? .ready: "go" !! .failed: "stop" !! .done: "done", "stop", "a choice on an enum");
+    t = t.is(status ?? .ready: "go" !! _: "wait", "wait", "_ covers the rest");
+    let found = Maybe.some(3);
+    t = t.is(found ?? .some(n): n * 2 !! .none: 0, 6, "a choice binds a payload");
+    t.done();
+}

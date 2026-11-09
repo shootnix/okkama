@@ -1,0 +1,20 @@
+module t v1.0.0;
+
+// t/base: && || ! and short-circuit evaluation.
+import "io/stdout" take Stdout;
+
+main() is int {
+    let out = Stdout();
+    out.writeln("1..8");
+    out.writeln(if true && true { "ok 1 - true && true"; } else { "not ok 1 - true && true"; });
+    out.writeln(if true && false { "not ok 2 - true && false"; } else { "ok 2 - true && false"; });
+    out.writeln(if false || true { "ok 3 - false || true"; } else { "not ok 3 - false || true"; });
+    out.writeln(if false || false { "not ok 4 - false || false"; } else { "ok 4 - false || false"; });
+    out.writeln(if !true { "not ok 5 - !true"; } else { "ok 5 - !true"; });
+    let empty is @int = [];
+    // The right operand would fail out of bounds if it ran.
+    out.writeln(if false && empty[0] == 1 { "not ok 6 - && short-circuits"; } else { "ok 6 - && short-circuits"; });
+    out.writeln(if true || empty[0] == 1 { "ok 7 - || short-circuits"; } else { "not ok 7 - || short-circuits"; });
+    out.writeln(if !(1 == 2) && (2 == 2 || 1 == 0) { "ok 8 - grouping"; } else { "not ok 8 - grouping"; });
+    0;
+}

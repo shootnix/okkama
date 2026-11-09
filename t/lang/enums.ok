@@ -1,0 +1,39 @@
+module t v1.0.0;
+
+// t/lang: enums, variants, generic enums, Maybe and Presence (Book ch. 24).
+import "tap" take Tap;
+
+enum Light = (red, amber, green);
+enum Shape = (dot, circle(radius is int), rect(w is int, h is int));
+enum Slot<T> = (vacant, full(item is T));
+
+object Paint {
+    Paint();
+    next(l is Light) is Light { match l { case Light.red { Light.green; } case Light.green { Light.amber; } case Light.amber { Light.red; } } }
+    area(s is Shape) is int { match s { case Shape.dot { 0; } case Shape.circle(r) { 3 * r * r; } case Shape.rect(w, h) { w * h; } } }
+    width(s is Shape) is int { match s { case Shape.rect(w, _) { w; } else { -1; } } }
+}
+
+main() is int {
+    let t = Tap(14);
+    let p = Paint();
+    t = t.ok(p.next(Light.red) == Light.green, "match returns a case");
+    t = t.ok(p.next(p.next(p.next(Light.red))) == Light.red, "a full cycle");
+    t = t.is(p.area(Shape.circle(2)), 12, "a payload binding");
+    t = t.is(p.area(Shape.rect(3, 4)), 12, "two payload bindings");
+    t = t.is(p.width(Shape.rect(5, 1)), 5, "_ ignores a field");
+    t = t.is(p.width(Shape.dot), -1, "else in a variant match");
+    t = t.ok(Shape.rect(1, 2) == Shape.rect(1, 2), "equal payloads");
+    t = t.ok(Shape.rect(1, 2) != Shape.rect(2, 1), "payload order matters");
+    t = t.ok(Shape.circle(1) != Shape.dot, "different cases");
+    let slot = Slot.full("x");
+    t = t.is(slot ?? .full(v): v !! .vacant: "-", "x", "a generic variant in a choice");
+    let empty is Slot<int> = Slot.vacant;
+    t = t.is(empty ?? .full(v): v !! .vacant: 0, 0, "a typed vacant case");
+    let counts = [Light.green: 3, Light.red: 1];
+    t = t.ok(counts.keys() == [Light.red, Light.green], "enum keys sort by declaration order");
+    let presence is Presence<string> = Presence.some("v");
+    t = t.is(presence.fold() else "none", "v", "Presence.fold keeps some");
+    t = t.ok(Maybe.some(Shape.dot) == Maybe.some(Shape.dot), "Maybe of a variant");
+    t.done();
+}

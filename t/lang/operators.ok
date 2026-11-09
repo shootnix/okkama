@@ -1,0 +1,41 @@
+module t v1.0.0;
+
+// t/lang: operator roles (#215) — + - * / % and unary - on objects.
+import "tap" take Tap;
+import "operators" take Adding, Subtracting, Multiplying, Dividing, Remaindering, Negating;
+import "compare" take Comparing, Order;
+
+object Money does Adding<Money, Money>, Subtracting<Money, Money>, Multiplying<int, Money>,
+        Dividing<int, Money>, Remaindering<int, Money>, Negating<Money>, Comparing<Money> {
+    has cents is int;
+    Money(:cents);
+    value() is int { cents; }
+    plus(other is Money) is Money { Money(cents: cents + other.value()); }
+    minus(other is Money) is Money { Money(cents: cents - other.value()); }
+    times(k is int) is Money { Money(cents: cents * k); }
+    divided(k is int) is Money { Money(cents: (cents / k).int()); }
+    remainder(k is int) is Money { Money(cents: cents % k); }
+    negated() is Money { Money(cents: -cents); }
+    order(other is Money) is Order { cents.order(other.value()); }
+}
+
+main() is int {
+    let t = Tap(12);
+    let a = Money(cents: 250);
+    let b = Money(cents: 75);
+    t = t.is((a + b).value(), 325, "+");
+    t = t.is((a - b).value(), 175, "-");
+    t = t.is((a * 3).value(), 750, "* by an int");
+    t = t.is((a / 3).value(), 83, "/ truncates in the action");
+    t = t.is((a % 3).value(), 1, "%");
+    t = t.is((-a).value(), -250, "unary -");
+    t = t.is((a + b * 2 - b).value(), 325, "precedence follows the operators");
+    t = t.ok(a > b && b < a && a >= a && b <= b, "ordering through Comparing");
+    t = t.ok(!(a < b), "a false ordering");
+    t = t.ok(a + b == Money(cents: 325), "== stays structural");
+    let total = [a, b, Money(cents: 5)].reduce(Money(cents: 0)) -> sum, m { sum + m; };
+    t = t.is(total.value(), 330, "+ inside reduce");
+    let negatives = ([a, b].map() -> m { -m; }).map() -> m { m.value(); };
+    t = t.ok(negatives == [-250, -75], "unary - inside map");
+    t.done();
+}

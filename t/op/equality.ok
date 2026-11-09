@@ -1,0 +1,30 @@
+module t v1.0.0;
+
+// t/op: equality of composite values (Book ch. 8.5).
+import "tap" take Tap;
+
+object Point {
+    has x is int;
+    has y is int;
+    Point(:x, :y);
+}
+
+object Labeled {
+    has point is Point;
+    has tags is @string;
+    Labeled(:point, :tags);
+}
+
+main() is int {
+    let t = Tap(8);
+    t = t.ok([1, 2] == [1, 2], "arrays: same elements");
+    t = t.ok([1, 2] != [2, 1], "arrays: order matters");
+    t = t.ok(["a": [1]] == ["a": [1]], "maps of arrays");
+    t = t.ok(Point(x: 1, y: 2) == Point(x: 1, y: 2), "objects compare by fields");
+    t = t.ok(Point(x: 1, y: 2) != Point(x: 2, y: 1), "different fields");
+    t = t.ok(Labeled(point: Point(x: 0, y: 0), tags: ["a"]) == Labeled(point: Point(x: 0, y: 0), tags: ["a"]), "nested objects and arrays");
+    let seen = [Point(x: 1, y: 2): "first"];
+    t = t.is(seen[Point(x: 1, y: 2)] else "missing", "first", "an equal object is the same map key");
+    t = t.ok(0..3 == 0..3, "ranges");
+    t.done();
+}
