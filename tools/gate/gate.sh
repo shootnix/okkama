@@ -14,7 +14,9 @@
 #      целиком), на IR без IR-проходов (OKKAMA_IR_PASSES=none) и на IR со
 #      сборкой циклов на каждом кандидате (OKKAMA_GC=stress). Прежний VM
 #      (`sparrow-origin`) воротами не проверяется;
-#   3. встроенные тесты всех модулей std на IR и Sparrow (tools/gate/std-tests.py);
+#   3. перечень std в conformance актуален (conformance/tools/inventory_std.py
+#      --check, #282); встроенные тесты всех модулей std на IR и Sparrow
+#      (tools/gate/std-tests.py);
 #   4. t/ — самопроверяющиеся программы на Okkama (tools/t/run.py, #245) на всех
 #      конфигурациях: IR, Sparrow, JVM, IR без проходов и IR со стресс-сборкой;
 #      TAP-потоки конфигураций обязаны совпадать.
@@ -173,6 +175,18 @@ conformance ir-passes-off --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --a
 # The IR cycle collector at every candidate: an edge it miscounts frees a
 # live value at once instead of thousands of candidates later (#43).
 conformance ir-gc-stress --timeout-scale 4 --adapter-env OCS_RUST_ENGINE=ir --adapter-env OKKAMA_GC=stress
+
+# The std inventory is generated from std/: a stale one hides new modules
+# from the coverage report (#282).
+step "std inventory"
+started=$SECONDS
+if (cd "$ROOT/conformance" && python3 tools/inventory_std.py ../std --check >"$LOGS/std-inventory.log" 2>&1); then
+    record "std inventory" pass $((SECONDS - started))
+else
+    record "std inventory" fail $((SECONDS - started))
+    tail -3 "$LOGS/std-inventory.log"
+    fail "std inventory"
+fi
 
 step "std inline tests"
 started=$SECONDS

@@ -102,6 +102,18 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Conformance: the std inventory (`contracts/stdlib.json`) is current again
+  and cannot go stale (#282). Regenerated from `std/`: 32 new `STD.*`
+  contracts for modules that existed but were missing (`STD.CELL`,
+  `STD.JSON`, `STD.DB.POSTGRES`, the crypto and digest modules, …; 28
+  mandatory, now coverage gaps until cases observe them) and 4 removed for
+  modules that no longer exist (`STD.JSON.PARSE/READ/VALUE/WRITE`; their six
+  cases now map to `STD.JSON`). `std/json.ok` declared `module local/json`
+  although it is imported as `"json"`; it is `module json` now.
+  `tools/inventory_std.py --check` fails on a stale file, the release gate
+  runs it, and `conformance/CONTRIBUTING.md` says to regenerate the file in
+  the change that adds, removes or renames a std module.
+
 - Diagnostics: `reduce` from an untyped `[]` or `[:]` says what to write
   (#295, also #267). `(0..3).reduce([]) -> acc, i { acc + [i * i]; }` gave
   "Reduce accumulator must be [], got @int", as if `[]` were a type the block
