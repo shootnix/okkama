@@ -279,6 +279,11 @@ impl Runtime {
         let extra = [
             ("heap bytes allocated".to_string(), heap.allocated_bytes as u64),
             ("heap live bytes, mean after collection".to_string(), (heap.live_sum / heap.collections.max(1)) as u64),
+            ("collections".to_string(), heap.collections as u64),
+            // Rust memory owned by heap objects, estimated (#331).
+            ("owned Rust bytes charged, estimate".to_string(), heap.external_allocated_bytes as u64),
+            ("owned Rust bytes live after the last collection, estimate".to_string(), heap.external_live_bytes as u64),
+            ("collections triggered by owned Rust memory".to_string(), heap.external_collections as u64),
         ];
         let helpers = self.jit.helper_calls();
         // Runtime allocations by kind (objects by type) and collection time.

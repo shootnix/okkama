@@ -6,7 +6,29 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ## [Unreleased]
 
-## [0.4.2] — 2026-11-09
+### Fixed
+
+- Tomato: maps no longer pile up in memory (#331). A map's entries live in
+  Rust memory that the collector did not count, so a program that made many
+  maps and few other objects never reached a collection: making 4 000
+  versions of a 1 000-key map took 2.3 GB, a put loop of 16 000 keys was
+  killed at 8 GB. The heap now counts what its objects own outside their
+  cells: pressure since the last collection (a payload as it is made, a
+  builder as it grows — O(1) per step —, big integer digits) and, apart from
+  it, an estimate of what the live objects own after the sweep, which sets
+  the next threshold together with the live cells, so large live maps do not
+  make every safepoint collect. A map's estimate is two entries' size per
+  entry (a counting allocator measured 1.5–1.95) plus its keys' data, the
+  `Rc` shares divided among their owners, computed once per map.
+  `--stats` reports the bytes charged and live and the collections they
+  triggered. Integer map keys that fit in 64 bits are no longer `BigInt`s:
+  making, copying, comparing and freeing them allocates nothing. Persistence
+  stand, before → after, n = 1 000 and 16 000: peak RSS 0.5–6.8 GB → 13–23 MB
+  on every map-writing scenario; lookups by `int` key −30…−46%, all map reads
+  −23.5%, writes −25.6% (put and merge −41…−46%), a `reduce`-built map
+  −32%. One scenario costs more: 4 000 versions `base - [k: 0]` thrown away
+  at once (+28…40%), which the old heap did not pay because it never freed
+  them.
 
 0.4.2 is a correctness and infrastructure release. Variants — enums with
 payloads, `Maybe`, `Presence` and error enums — keep their payload in place

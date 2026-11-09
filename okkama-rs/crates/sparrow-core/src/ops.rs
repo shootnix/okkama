@@ -47,15 +47,22 @@ pub struct MapValue {
     pub key: Repr,
     pub value: Repr,
     pub entries: BTreeMap<Key, (Word, Word)>,
+    /// The Rust memory estimate (#331), computed once: a finished map does
+    /// not change, and a builder adds each new entry's share as it goes.
+    pub owned: std::cell::Cell<Option<usize>>,
 }
 
 macro_rules! payload {
-    ($($ty:ty => |$this:ident, $visit:ident| $body:block)*) => {$(
+    ($($ty:ty => |$this:ident, $visit:ident| $body:block $(, owns |$owner:ident| $bytes:block)?)*) => {$(
         impl Payload for $ty {
             fn trace(&self, $visit: &mut dyn FnMut(Word, Repr)) {
                 let $this = self;
                 $body
             }
+            $(fn external_bytes(&self) -> usize {
+                let $owner = self;
+                $bytes
+            })?
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -66,16 +73,32 @@ macro_rules! payload {
     )*};
 }
 payload! {
-    Rational => |_this, _visit| {}
+    Rational => |_this, _visit| {}, owns |this| { rational_bytes(&this.0) }
     RangeValue => |this, visit| { visit(this.start, Repr::Int); visit(this.end, Repr::Int); }
-    Builder => |this, visit| { for &item in &this.items { visit(item, this.repr); } }
+    Builder => |this, visit| { for &item in &this.items { visit(item, this.repr); } },
+        owns |this| { this.items.capacity() * 8 }
     AnyBox => |this, visit| { visit(this.value, this.repr); }
     MapValue => |this, visit| {
         for &(key, value) in this.entries.values() {
             visit(key, this.key);
             visit(value, this.value);
         }
+    }, owns |this| {
+        this.owned.get().unwrap_or_else(|| {
+            let bytes = this.entries.len() * MAP_ENTRY_BYTES + this.entries.keys().map(Key::owned_bytes).sum::<usize>();
+            this.owned.set(Some(bytes));
+            bytes
+        })
     }
+}
+
+/// Bytes of B-tree nodes per map entry (#331): an entry's size twice. A
+/// counting allocator measured 1.5–1.95 times (random and ascending keys,
+/// 10³–10⁵ entries, Rust 1.97's `BTreeMap`); the estimate errs high.
+pub const MAP_ENTRY_BYTES: usize = 2 * std::mem::size_of::<(Key, (Word, Word))>();
+
+fn rational_bytes(value: &BigRational) -> usize {
+    (value.numer().bits() + value.denom().bits()).div_ceil(64) as usize * 8 + 32
 }
 
 /// Map keys own immutable data; order follows the previous engine. An
@@ -83,6 +106,11 @@ payload! {
 /// and order are structural, like `==`; the entry keeps the object's word.
 #[derive(Debug, Clone)]
 pub enum Key {
+    /// An `int` that fits in 64 bits: no allocation to make, copy or free
+    /// (#331). Always this form when the value fits, so equal keys are
+    /// equal variants.
+    Small(i64),
+    /// An `int` outside 64 bits.
     Int(BigInt),
     Float(f64),
     Raw(u64),
@@ -91,10 +119,40 @@ pub enum Key {
     Rat(Rc<BigRational>),
     Object(u32, Rc<[Key]>),
 }
+impl Key {
+    /// The key of an `int`: small when it fits in 64 bits.
+    pub fn int(value: Integer<'_>) -> Self {
+        match value {
+            Integer::Small(n) => Self::Small(n),
+            Integer::Big(n) => n.to_i64().map_or_else(|| Self::Int(n.clone()), Self::Small),
+        }
+    }
+
+    /// Rust memory this key owns beyond the enum itself (#331). Data shared
+    /// through `Rc` (copies of one map share their keys) counts its share
+    /// only, so a map and its copies do not each pay for it in full.
+    pub fn owned_bytes(&self) -> usize {
+        match self {
+            // A `BigInt` keeps its digits in a vector of its own.
+            Self::Int(n) => n.bits().div_ceil(64) as usize * 8,
+            Self::Small(_) | Self::Float(_) | Self::Raw(_) => 0,
+            Self::Str(text) => (text.len() + 16) / std::rc::Rc::strong_count(text),
+            Self::Rat(value) => rational_bytes(value) / std::rc::Rc::strong_count(value),
+            Self::Object(_, fields) => {
+                let own = 16 + fields.len() * std::mem::size_of::<Key>() + fields.iter().map(Key::owned_bytes).sum::<usize>();
+                own / std::rc::Rc::strong_count(fields)
+            }
+        }
+    }
+}
 impl Ord for Key {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
+            (Self::Small(a), Self::Small(b)) => a.cmp(b),
             (Self::Int(a), Self::Int(b)) => a.cmp(b),
+            // A wide key lies beyond every small one, on its sign's side.
+            (Self::Small(_), Self::Int(b)) => if b.is_positive() { Ordering::Less } else { Ordering::Greater },
+            (Self::Int(a), Self::Small(_)) => if a.is_positive() { Ordering::Greater } else { Ordering::Less },
             (Self::Float(a), Self::Float(b)) => a.partial_cmp(b).expect("finite float key"),
             (Self::Raw(a), Self::Raw(b)) => a.cmp(b),
             (Self::Str(a), Self::Str(b)) => a.cmp(b),
@@ -107,7 +165,7 @@ impl Ord for Key {
 impl Key {
     fn rank(&self) -> u8 {
         match self {
-            Self::Int(_) => 0,
+            Self::Small(_) | Self::Int(_) => 0,
             Self::Float(_) => 1,
             Self::Raw(_) => 2,
             Self::Str(_) => 3,
@@ -188,7 +246,7 @@ impl Runtime {
 
     pub(crate) fn key(&self, word: Word, kind: Kind, ty: Option<&Type>) -> Key {
         match (kind, ty) {
-            (Kind::Int, _) => Key::Int(self.big_value(word)),
+            (Kind::Int, _) => Key::int(self.heap.integer(word)),
             (Kind::Float, _) => Key::Float(f64::from_bits(word)),
             (Kind::Raw | Kind::Byte, _) => Key::Raw(word),
             (_, Some(Type::Str)) => Key::Str(Rc::from(self.heap.text(word))),
@@ -484,8 +542,22 @@ pub(crate) fn equal(runtime: &Runtime, left: Word, right: Word, ty: TypeRef) -> 
 #[inline(never)]
 pub extern "C" fn rt_builder_push(ctx: *mut Ctx, builder: Word, item: Word) -> Word {
     let runtime = unsafe { &mut *(*ctx).runtime };
-    runtime.heap.payload_mut::<Builder>(builder).expect("builder").items.push(item);
+    grow_builder(&mut runtime.heap, builder, |items| items.push(item));
     builder
+}
+
+/// Grow a builder's items and charge the capacity its vector took on
+/// (#331): O(1), and nothing at all while the capacity holds.
+fn grow_builder(heap: &mut crate::heap::Heap, builder: Word, grow: impl FnOnce(&mut Vec<Word>)) {
+    let grown = {
+        let items = &mut heap.payload_mut::<Builder>(builder).expect("builder").items;
+        let before = items.capacity();
+        grow(items);
+        items.capacity().saturating_sub(before)
+    };
+    if grown > 0 {
+        heap.charge_external(grown * 8);
+    }
 }
 
 /// Execute instruction `pc` of `function` with its used words at `uses`.
@@ -921,13 +993,13 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         }
         I::BuilderPush { builder, value: item, .. } => {
             let (builder, item) = (value(builder), value(item));
-            runtime.heap.payload_mut::<Builder>(builder).expect("builder").items.push(item);
+            grow_builder(&mut runtime.heap, builder, |items| items.push(item));
             Ok(builder)
         }
         I::BuilderAppend { builder, array, .. } => {
             let builder = value(builder);
             let items = runtime.heap.elements(value(array)).to_vec();
-            runtime.heap.payload_mut::<Builder>(builder).expect("builder").items.extend(items);
+            grow_builder(&mut runtime.heap, builder, |all| all.extend(items));
             Ok(builder)
         }
         I::BuilderRange { builder, start, end, inclusive, .. } => {
@@ -942,7 +1014,7 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
                 items.push(integer_word(runtime, n.clone()));
                 n += 1;
             }
-            runtime.heap.payload_mut::<Builder>(builder).expect("builder").items.extend(items);
+            grow_builder(&mut runtime.heap, builder, |all| all.extend(items));
             Ok(builder)
         }
         I::BuilderFinish { dst, builder } => {
@@ -1050,8 +1122,23 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
             let (builder, key, item) = (value(builder), value(key), value(item));
             let (key_kind, key_type) = map_key(runtime, function, *builder_register(instruction));
             let k = runtime.checked_key(key, key_kind, key_type.as_ref())?;
+            let bytes = MAP_ENTRY_BYTES + k.owned_bytes();
             let map = runtime.heap.payload_mut::<MapValue>(builder).expect("map builder");
-            map.entries.entry(k).and_modify(|e| e.1 = item).or_insert((key, item));
+            let fresh = match map.entries.entry(k) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.get_mut().1 = item;
+                    false
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert((key, item));
+                    true
+                }
+            };
+            // A new entry is Rust memory the builder took on (#331).
+            if fresh {
+                map.owned.set(map.owned.get().map(|owned| owned + bytes));
+                runtime.heap.charge_external(bytes);
+            }
             Ok(builder)
         }
         I::WorkerBind { action, entry, fields, .. } => {
@@ -1060,8 +1147,10 @@ fn execute(runtime: &mut Runtime, function: usize, instruction: &I, value: &dyn 
         }
         I::MapBuilderFinish { builder, .. } => {
             let map = runtime.heap.payload_mut::<MapValue>(value(builder)).expect("map builder");
-            let finished = MapValue { key: map.key, value: map.value, entries: std::mem::take(&mut map.entries) };
-            Ok(runtime.heap.allocate_payload(Box::new(finished)))
+            let owned = map.owned.replace(Some(0));
+            let finished = MapValue { key: map.key, value: map.value, entries: std::mem::take(&mut map.entries), owned: owned.into() };
+            // The entries were charged as the builder took them.
+            Ok(runtime.heap.allocate_payload_moved(Box::new(finished)))
         }
         I::MapLen { map, .. } => {
             let length = runtime.heap.payload::<MapValue>(value(map)).expect("map").entries.len();
@@ -1124,6 +1213,7 @@ fn map_for(runtime: &Runtime, function: usize, register: okkama_sparrow::Registe
             key: runtime.kind_of(*key).repr(),
             value: runtime.kind_of(*value).repr(),
             entries: BTreeMap::new(),
+            owned: Default::default(),
         }),
         _ => Err("map instruction needs a map type".into()),
     }

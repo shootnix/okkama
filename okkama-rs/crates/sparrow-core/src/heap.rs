@@ -71,6 +71,12 @@ fn element_repr(header: u64) -> Repr {
 pub trait Payload: std::any::Any + std::fmt::Debug {
     /// Report every word this payload keeps alive.
     fn trace(&self, _visit: &mut dyn FnMut(Word, Repr)) {}
+    /// Rust memory this payload owns beyond its own struct (#331): tree
+    /// nodes, vector capacity, owned key data. An estimate for the collection
+    /// trigger, not a measurement; heap words it refers to are not counted.
+    fn external_bytes(&self) -> usize {
+        0
+    }
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
@@ -106,6 +112,13 @@ pub struct HeapStats {
     pub live_bytes: usize,
     pub pages: usize,
     pub large: usize,
+    /// Rust memory owned by heap objects (payloads, big integer digits;
+    /// estimated, #331): charged since the start, and owned by the objects
+    /// alive after the last collection.
+    pub external_allocated_bytes: usize,
+    pub external_live_bytes: usize,
+    /// Collections triggered mostly by that memory rather than by heap cells.
+    pub external_collections: usize,
 }
 
 #[derive(Debug)]
@@ -115,11 +128,23 @@ pub struct Heap {
     /// Free list heads per class; a free cell's second word links the next.
     free: [Word; CLASSES.len()],
     large: Vec<Box<[u64]>>,
+    /// Allocation pressure since the last collection, in two parts (#331):
+    /// heap cells (pages and large objects) and Rust memory owned by heap
+    /// objects (payloads as they are made or grow, big integer digits). A
+    /// collection is due when their sum reaches `threshold`.
     allocated: usize,
+    external: usize,
+    /// The live heap after the last collection: its cells (`live`) plus the
+    /// Rust memory its objects own (`external_live`, recomputed by every
+    /// sweep). It sets the next threshold, so a heap of large live maps does
+    /// not collect over and over for nothing.
     threshold: usize,
     live: usize,
+    external_live: usize,
     collections: usize,
+    external_collections: usize,
     allocated_before: usize,
+    external_before: usize,
     live_sum: usize,
     worklist: Vec<Word>,
     /// Objects whose death must be reported (resource identities).
@@ -198,10 +223,14 @@ impl Heap {
             free: [0; CLASSES.len()],
             large: Vec::new(),
             allocated: 0,
+            external: 0,
             threshold: COLLECTION_FLOOR,
             live: 0,
+            external_live: 0,
             collections: 0,
+            external_collections: 0,
             allocated_before: 0,
+            external_before: 0,
             live_sum: 0,
             worklist: Vec::new(),
             watched: crate::word::FastSet::default(),
@@ -215,7 +244,13 @@ impl Heap {
 
     /// Allocation-triggered collection is proportional to the live heap.
     pub fn needs_collection(&self) -> bool {
-        self.allocated >= self.threshold
+        self.allocated + self.external >= self.threshold
+    }
+
+    /// Charge Rust memory that a heap object owns and just took on (a
+    /// payload that grew). Nothing collects here: the next safepoint does.
+    pub fn charge_external(&mut self, bytes: usize) {
+        self.external += bytes;
     }
 
     /// Collector stress: a zero threshold makes every safepoint collect.
@@ -242,6 +277,9 @@ impl Heap {
             live_bytes: self.live,
             pages: self.pages.len(),
             large: self.large.len(),
+            external_allocated_bytes: self.external_before + self.external,
+            external_live_bytes: self.external_live,
+            external_collections: self.external_collections,
         }
     }
 
@@ -537,9 +575,9 @@ impl Heap {
         if let Some(word) = n.to_i64().and_then(word::small) {
             return word;
         }
-        // The digits live outside the heap pages; count them so that garbage
+        // The digits live outside the heap pages; charge them so that garbage
         // big integers trigger collections by their real size.
-        self.allocated += (n.bits() / 8) as usize + 32;
+        self.external += big_bytes(&n);
         self.counted("bigint", 0, 2);
         let object = self.allocate(2);
         // SAFETY: two fresh words; the box is dropped by the sweep.
@@ -560,6 +598,13 @@ impl Heap {
     // ---- Rust payloads ----
 
     pub fn allocate_payload(&mut self, payload: Box<dyn Payload>) -> Word {
+        self.external += payload_bytes(&*payload);
+        self.allocate_payload_moved(payload)
+    }
+    /// [`Heap::allocate_payload`] for Rust memory already charged: a builder's
+    /// entries moved into the finished value. Only the boxes are new.
+    pub fn allocate_payload_moved(&mut self, payload: Box<dyn Payload>) -> Word {
+        self.external += BOX_BYTES;
         self.counted("payload", 0, 2);
         let object = self.allocate(2);
         // SAFETY: two fresh words; the double box gives a thin pointer.
@@ -689,6 +734,7 @@ impl Heap {
     fn sweep(&mut self) {
         self.free = [0; CLASSES.len()];
         let mut live = 0;
+        let mut external_live = 0;
         for page in &mut self.pages {
             let size = CLASSES[page.class];
             let base = page.memory.as_mut_ptr() as Word;
@@ -699,6 +745,7 @@ impl Heap {
                 if header & MARK != 0 {
                     unsafe { *(address as *mut u64) = header & !MARK };
                     live += size * 8;
+                    external_live += unsafe { owned_bytes(address, header) };
                     continue;
                 }
                 if kind(header) != FREE {
@@ -718,6 +765,7 @@ impl Heap {
             if header & MARK != 0 {
                 memory[0] = header & !MARK;
                 live += memory.len() * 8;
+                external_live += unsafe { owned_bytes(address, header) };
                 true
             } else {
                 unsafe { release(address, header) };
@@ -732,10 +780,41 @@ impl Heap {
         }
         self.live = live;
         self.live_sum += live;
+        if self.external > self.allocated {
+            self.external_collections += 1;
+        }
         self.allocated_before += self.allocated;
         self.allocated = 0;
-        self.threshold = if self.stress { 0 } else { live.max(COLLECTION_FLOOR) };
+        self.external_before += self.external;
+        self.external = 0;
+        self.external_live = external_live;
+        self.threshold = if self.stress { 0 } else { (live + external_live).max(COLLECTION_FLOOR) };
         self.collections += 1;
+    }
+}
+
+/// The two boxes of a payload cell (`Box<Box<dyn Payload>>`): the fat
+/// pointer and the allocator's rounding of each.
+const BOX_BYTES: usize = 32;
+
+/// Rust memory of a payload: its boxes, its struct and what it owns.
+fn payload_bytes(payload: &dyn Payload) -> usize {
+    BOX_BYTES + std::mem::size_of_val(payload) + payload.external_bytes()
+}
+
+/// Rust memory of the digits of a big integer and its box.
+fn big_bytes(n: &BigInt) -> usize {
+    (n.bits() / 8) as usize + 32
+}
+
+/// Rust memory owned by a live object: a payload or a big integer.
+///
+/// SAFETY: `address` is a live object with `header`.
+unsafe fn owned_bytes(address: Word, header: u64) -> usize {
+    match kind(header) {
+        BIGINT => big_bytes(unsafe { &*(*((address + 8) as *const u64) as *const BigInt) }),
+        PAYLOAD => payload_bytes(unsafe { &**(*((address + 8) as *const u64) as *const Box<dyn Payload>) }),
+        _ => 0,
     }
 }
 
@@ -929,6 +1008,57 @@ mod tests {
         assert_eq!(heap.stats().large, 2);
         heap.collect(|_| {});
         assert_eq!(heap.stats().large, 0);
+    }
+
+    /// A payload that owns the given number of bytes of Rust memory.
+    #[derive(Debug)]
+    struct Owning(usize);
+    impl Payload for Owning {
+        fn external_bytes(&self) -> usize {
+            self.0
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// #331: Rust memory owned by heap objects drives collection like heap
+    /// cells do. Dead owners trigger a collection by what they own; live ones
+    /// raise the next threshold instead of making every safepoint collect;
+    /// pressure starts over at each collection, the live estimate is
+    /// recomputed by the sweep, and big integer digits count too.
+    #[test]
+    fn owned_rust_memory_drives_collection() {
+        let mut heap = Heap::new(layouts());
+        // Two small cells and a megabyte owned: due before any page fills.
+        let _dead = heap.allocate_payload(Box::new(Owning(COLLECTION_FLOOR)));
+        assert!(heap.needs_collection(), "{:?}", heap.stats());
+        heap.collect(|_| {});
+        let stats = heap.stats();
+        assert_eq!((stats.external_live_bytes, stats.external_collections), (0, 1));
+        assert!(!heap.needs_collection());
+
+        let kept = heap.allocate_payload(Box::new(Owning(8 * COLLECTION_FLOOR)));
+        let huge = heap.big(BigInt::from(1) << 100_000);
+        let pair = heap.object_new(1, &[kept, huge]);
+        heap.collect(|visit| visit(pair, Repr::Ref));
+        let live = heap.stats().external_live_bytes;
+        assert!(live >= 8 * COLLECTION_FLOOR + 100_000 / 8, "{live}");
+        assert!(!heap.needs_collection(), "a large live owner must not make every safepoint collect");
+        // The next collection waits for as much again as is alive.
+        heap.charge_external(live / 2);
+        assert!(!heap.needs_collection());
+        heap.charge_external(live);
+        assert!(heap.needs_collection());
+        heap.collect(|visit| visit(pair, Repr::Ref));
+        assert_eq!(heap.stats().external_live_bytes, live, "the estimate of the same live objects is stable");
+        heap.collect(|_| {});
+        assert_eq!(heap.stats().external_live_bytes, 0);
+        let total = heap.stats().external_allocated_bytes;
+        assert!(total >= 9 * COLLECTION_FLOOR + live / 2 + live, "{total}");
     }
 
     /// Code point positions agree with a plain count from the start, in any

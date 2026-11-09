@@ -448,14 +448,12 @@ impl Heap {
             key: repr(entries.first().map(|e| &e.0)),
             value: repr(entries.first().map(|e| &e.1)),
             entries: Default::default(),
+            owned: Default::default(),
         };
         for (key, value) in entries {
             let k = match key.kind() {
-                SMALL => Key::Int(BigInt::from(key.bits as i64)),
-                BIG => Key::Int(match self.core().integer(key.bits) {
-                    crate::heap::Integer::Small(n) => BigInt::from(n),
-                    crate::heap::Integer::Big(n) => n.clone(),
-                }),
+                SMALL => Key::Small(key.bits as i64),
+                BIG => Key::int(self.core().integer(key.bits)),
                 STR => Key::Str(self.text(key)?.into()),
                 FLOAT => Key::Float(f64::from_bits(key.bits)),
                 _ => Key::Raw(key.bits),

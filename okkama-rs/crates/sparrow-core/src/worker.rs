@@ -236,6 +236,7 @@ fn build(runtime: &mut Runtime, ty: TypeRef, values: &[Word]) -> Word {
                 key: key_kind.repr(),
                 value: Kind::of(program, item).repr(),
                 entries: Default::default(),
+                owned: Default::default(),
             };
             for pair in values.chunks_exact(2) {
                 let k = runtime.key(pair[0], key_kind, key_type.as_ref());
