@@ -132,18 +132,48 @@ impl Failure {
 }
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let prefix = match &self.kind {
-            Kind::Native(_) => "NativeFailure",
-            Kind::Thrown { name, .. } => name.as_str(),
-            Kind::Panic(_) => "Panic",
-            Kind::Program(_) => "RuntimeError",
-        };
-        write!(f, "{prefix}: {}", self.message())?;
-        for secondary in self.secondary.borrow().iter() {
-            write!(f, "\nSecondary cleanup failure:\n  {secondary}")?;
-        }
-        Ok(())
+        f.write_str(&chain_text(self))
     }
+}
+
+/// Сколько отказов показывает отчёт: дальше цепочка обрывается строкой.
+pub const CHAIN_ENTRIES: usize = 64;
+
+/// Текст неперехваченного отказа без места и стека, как у ядра Sparrow (#270):
+/// сам отказ, затем вторичные отказы cleanup и причина, у каждого — свои.
+/// Обход в глубину стеком; отказ, уже показанный выше, — ссылкой на номер,
+/// так что цикл в графе отказов не зацикливает отчёт.
+pub fn chain_text(root: &Failure) -> String {
+    let mut output = describe(root);
+    let mut shown: std::collections::HashMap<*const Failure, usize> = Default::default();
+    shown.insert(root as *const Failure, 0);
+    let mut pending = Vec::new();
+    push_links(root, &mut pending);
+    while let Some((failure, label)) = pending.pop() {
+        output.push('\n');
+        output.push_str(label);
+        output.push_str("\n  ");
+        if let Some(index) = shown.get(&Rc::as_ptr(&failure)) {
+            output.push_str(&format!("[failure #{index} already shown]"));
+            continue;
+        }
+        if shown.len() == CHAIN_ENTRIES {
+            output.push_str("... further failures not shown");
+            break;
+        }
+        shown.insert(Rc::as_ptr(&failure), shown.len());
+        output.push_str(&describe(&failure).replace('\n', "\n  "));
+        push_links(&failure, &mut pending);
+    }
+    output
+}
+
+/// Причина и вторичные отказы в порядке стека: первыми снимаются вторичные.
+fn push_links(failure: &Failure, pending: &mut Vec<(Rc<Failure>, &'static str)>) {
+    if let Some(cause) = failure.cause() {
+        pending.push((cause, "Caused by:"));
+    }
+    pending.extend(failure.secondaries().into_iter().rev().map(|secondary| (secondary, "Secondary cleanup failure:")));
 }
 
 /// Имя Okkama-типа Error-объекта: последний сегмент имени класса JVM
@@ -153,14 +183,16 @@ pub fn error_type_name(name: &str) -> String {
     class.rsplit('$').next().unwrap_or(&class).to_string()
 }
 
-/// `Rt.describe` JVM: текст одного описанного отказа.
+/// Текст одного отказа в отчёте, общий для движков (#270): `Тип: text()`,
+/// `NativeFailure: …` с подробностями хоста, `Panic: …`, `RuntimeError: …`.
 pub fn describe(failure: &Failure) -> String {
     match &failure.kind {
         Kind::Native(native) => format!(
-            "NativeError: {}\ncode: {}\ndomain: {}\noperation: {}",
+            "NativeFailure: {}\ncode: {}\ndomain: {}\noperation: {}",
             native.message, native.code, native.domain, native.operation
         ),
-        Kind::Thrown { name, message, .. } => format!("{name}: {}", message.as_deref().unwrap_or("")),
+        Kind::Thrown { name, message: Some(message), .. } => format!("{name}: {message}"),
+        Kind::Thrown { name, message: None, .. } => format!("Uncaught {name}"),
         Kind::Panic(message) => format!("Panic: {message}"),
         Kind::Program(message) => format!("RuntimeError: {message}"),
     }

@@ -25,7 +25,7 @@ pub(crate) fn show(module: &ir::Module, value: &Value) -> String {
 fn describe(engine: &Rc<Engine>, failure: &Rc<Failure>) -> Result<String, RuntimeError> {
     Ok(match &failure.kind {
         Kind::Native(native) => format!(
-            "NativeError: {}\ncode: {}\ndomain: {}\noperation: {}",
+            "NativeFailure: {}\ncode: {}\ndomain: {}\noperation: {}",
             native.message, native.code, native.domain, native.operation
         ),
         Kind::Thrown { .. } => {

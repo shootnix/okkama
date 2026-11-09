@@ -18,6 +18,7 @@ fn names(
         interfaces: Vec::new(),
         code: pool.utf8("Code")?,
         stack_map_table: pool.utf8("StackMapTable")?,
+        line_number_table: 0,
     })
 }
 
@@ -40,6 +41,7 @@ fn method(
         code: assembled.code,
         exceptions: assembled.exceptions,
         stack_map: assembled.stack_map,
+        lines: assembled.lines,
     })
 }
 
@@ -442,6 +444,7 @@ pub(super) fn role_interface(role: &RoleLayout) -> Result<Vec<u8>> {
             code: Vec::new(),
             exceptions: Vec::new(),
             stack_map: None,
+            lines: Vec::new(),
         });
     }
     classfile::write_class(&pool, &names, &[], &methods)

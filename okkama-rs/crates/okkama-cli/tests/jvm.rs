@@ -57,8 +57,11 @@ impl WorkDir {
         path
     }
 
+    /// The failure report without its place and stack: the tests compare
+    /// messages; `uncaught_failures_report_causes_place_and_stack` the rest.
     fn java(&self, class: &str, args: &[&str]) -> Output {
         Command::new("java")
+            .env("OKKAMA_TRACE", "off")
             .arg("-Xverify:all")
             .arg("-cp")
             .arg(&self.0)
@@ -1637,7 +1640,7 @@ fn native_failures_are_catchable_system_objects() {
     );
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
-        "NativeError: BigInt division by zero\ncode: invalid_input\ndomain: core.bigint\n\
+        "NativeFailure: BigInt division by zero\ncode: invalid_input\ndomain: core.bigint\n\
          operation: runtime/bigint@1::bigint_quotient/2\n"
     );
     let build = dir.build_files(
@@ -2433,4 +2436,26 @@ fn variant_payloads_optional_fallback_and_presence_run_on_jvm() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn uncaught_failures_report_causes_place_and_stack() {
+    // #270: the JVM prints the report of the Sparrow core — causes, secondary
+    // cleanup failures, the place and the Okkama stack, not the JVM's frames.
+    for name in ["recursion", "closure", "rethrow", "task", "cause", "chain", "cleanup", "deep"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/traces/{name}.ok"));
+        let run = |engine: &str| {
+            Command::new(env!("CARGO_BIN_EXE_okkama"))
+                .args(["run", "--engine", engine])
+                .arg(&path)
+                .env_remove("OKKAMA_TRACE")
+                .output()
+                .unwrap()
+        };
+        let (jvm, core) = (run("jvm"), run("sparrow"));
+        assert_eq!(jvm.status.code(), Some(1), "{name}");
+        let (jvm, core) = (String::from_utf8(jvm.stderr).unwrap(), String::from_utf8(core.stderr).unwrap());
+        assert!(jvm.contains("Stack trace (most recent call first):\n"), "{name}:\n{jvm}");
+        assert_eq!(jvm, core, "{name}");
+    }
 }

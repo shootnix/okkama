@@ -32,6 +32,9 @@ struct FunctionGen<'c, 'f> {
     types: Vec<VType>,
     asm: Asm,
     labels: Vec<asm::Label>,
+    /// Места инструкций (#270): номер в списке + 1 — «строка» LineNumberTable.
+    sites: Vec<crate::source::Span>,
+    site_index: std::collections::HashMap<crate::source::Span, u16>,
 }
 
 impl<'c, 'f> FunctionGen<'c, 'f> {
@@ -70,6 +73,8 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             types,
             asm,
             labels,
+            sites: Vec::new(),
+            site_index: std::collections::HashMap::new(),
         })
     }
 
@@ -125,11 +130,13 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             }
             let ir_block = &self.function.blocks[index];
             for inst in &ir_block.insts {
+                self.site(inst.span);
                 self.inst(&inst.kind, inst.result)?;
                 if let Some(result) = inst.result {
                     self.store(result);
                 }
             }
+            self.site(ir_block.term.span);
             self.terminator(block, &ir_block.term.kind)?;
             if ir_block.unwind.is_some() {
                 let end = self.asm.label();
@@ -172,8 +179,29 @@ impl<'c, 'f> FunctionGen<'c, 'f> {
             None => self.class.layout.signatures[self.index].clone(),
         };
         let max_locals = self.function.values.len() as u16;
-        let FunctionGen { class, asm, .. } = self;
+        let FunctionGen { class, asm, sites, index, .. } = self;
+        class.sites.push((name.clone(), index, sites));
         class.function_method(asm, &name, &descriptor, max_locals)
+    }
+
+    /// Код дальше — место `span` (#270): его номер + 1 — «строка» в
+    /// LineNumberTable, по которой отчёт об отказе найдёт место кадра.
+    fn site(&mut self, span: crate::source::Span) {
+        if span == crate::source::Span::default() {
+            return;
+        }
+        let next = self.sites.len();
+        let index = match self.site_index.get(&span) {
+            Some(index) => *index,
+            // Номер — u16 «строки»; дальше места не различаются.
+            None if next < usize::from(u16::MAX) - 1 => {
+                self.sites.push(span);
+                self.site_index.insert(span, next as u16);
+                next as u16
+            }
+            None => return,
+        };
+        self.asm.line(index + 1);
     }
 
     fn inst(&mut self, kind: &InstKind, result: Option<ValueId>) -> Result<()> {

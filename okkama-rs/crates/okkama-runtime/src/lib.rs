@@ -95,22 +95,14 @@ pub(crate) fn invalid_state(span: Span, message: impl Into<String>) -> RuntimeEr
     }
 }
 
-/// `Rt.describe` JVM: текст одного отказа.
+/// Текст одного отказа (общий для движков, #270).
 pub fn describe(failure: &okkama_runtime_core::failure::Failure) -> String {
-    use okkama_runtime_core::failure::Kind;
-    match &failure.kind {
-        Kind::Native(native) => native_text(native),
-        Kind::Thrown { name, message, .. } => {
-            format!("{name}: {}", message.as_deref().unwrap_or(""))
-        }
-        Kind::Panic(message) => format!("Panic: {message}"),
-        Kind::Program(message) => format!("RuntimeError: {message}"),
-    }
+    okkama_runtime_core::failure::describe(failure)
 }
 
 fn native_text(native: &okkama_runtime_core::abi::NativeFailure) -> String {
     format!(
-        "NativeError: {}\ncode: {}\ndomain: {}\noperation: {}",
+        "NativeFailure: {}\ncode: {}\ndomain: {}\noperation: {}",
         native.message, native.code, native.domain, native.operation
     )
 }
@@ -119,14 +111,8 @@ fn native_text(native: &okkama_runtime_core::abi::NativeFailure) -> String {
 /// код выхода 1) или None для ошибок реализации.
 pub fn report(error: &RuntimeError) -> Option<String> {
     let mut text = match error {
-        RuntimeError::Unwind { failure, .. } => {
-            let mut text = describe(failure);
-            for secondary in failure.secondaries() {
-                text.push_str("\nSecondary cleanup failure:\n  ");
-                text.push_str(&describe(&secondary));
-            }
-            text
-        }
+        // Причины и вторичные отказы — как у ядра Sparrow (#270).
+        RuntimeError::Unwind { failure, .. } => okkama_runtime_core::failure::chain_text(failure),
         RuntimeError::Panic { message, .. } => format!("Panic: {message}"),
         RuntimeError::Trap { message, .. } => format!("RuntimeError: {message}"),
         RuntimeError::NativeFailure { failure, .. } => native_text(failure),

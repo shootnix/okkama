@@ -1,0 +1,21 @@
+module app v1.0.0;
+enum DiskError is Error = (full);
+enum StoreError is Error = (closed);
+enum OrderError is Error = (failed(id is int));
+object Disk {
+    Disk();
+    write() is int { throw DiskError.full; }
+}
+object Store {
+    Store();
+    save() is int {
+        try { Disk().write(); } catch e is DiskError { throw StoreError.closed; }
+    }
+}
+object Orders {
+    Orders();
+    place(id is int) is int {
+        try { Store().save(); } catch e is StoreError { throw OrderError.failed(id); }
+    }
+}
+main() is int { Orders().place(7); }

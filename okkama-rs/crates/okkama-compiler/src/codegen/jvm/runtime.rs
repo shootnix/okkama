@@ -68,6 +68,9 @@ pub(super) struct ClassGen {
     /// (`Rt.step`, #237) так же, как IR: вход в функцию и обратный переход.
     /// Функции `0..n` — исходные; вход в часть, вынесенную `outline`, не шаг.
     pub steps: Option<usize>,
+    /// Методы функций и их места (span по номеру «строки» − 1) — для
+    /// таблицы `okkama-debug.tsv` отчёта об отказе (#270).
+    pub sites: Vec<(String, usize, Vec<crate::source::Span>)>,
 }
 
 impl ClassGen {
@@ -76,6 +79,7 @@ impl ClassGen {
             pool: ConstantPool::default(),
             layout,
             steps,
+            sites: Vec::new(),
         }
     }
 
@@ -206,6 +210,7 @@ impl ClassGen {
             code: assembled.code,
             exceptions: assembled.exceptions,
             stack_map: assembled.stack_map,
+            lines: assembled.lines,
         })
     }
 

@@ -1489,6 +1489,28 @@ pub(crate) fn describe_failure(
     failure: &Rc<Failure>,
     span: Span,
 ) -> Result<Rc<Failure>, RuntimeError> {
+    // Причины и вторичные отказы тоже описаны (#270): отчёт печатает их
+    // `text()`. Общий отказ описывается один раз, как и показывается.
+    let mut described = std::collections::HashMap::new();
+    let mut budget = okkama_runtime_core::failure::CHAIN_ENTRIES;
+    describe_graph(engine, failure, span, &mut described, &mut budget)
+}
+
+fn describe_graph(
+    engine: &Rc<Engine>,
+    failure: &Rc<Failure>,
+    span: Span,
+    done: &mut std::collections::HashMap<*const Failure, Rc<Failure>>,
+    budget: &mut usize,
+) -> Result<Rc<Failure>, RuntimeError> {
+    if let Some(described) = done.get(&Rc::as_ptr(failure)) {
+        return Ok(described.clone());
+    }
+    // Отчёт показывает не больше CHAIN_ENTRIES отказов: дальше не описываем.
+    if *budget == 0 {
+        return Ok(failure.clone());
+    }
+    *budget -= 1;
     let (module, state) = (&engine.module, &engine.state);
     let mut described = (**failure).clone();
     if let FailureKind::Thrown {
@@ -1522,13 +1544,18 @@ pub(crate) fn describe_failure(
                 .ok_or_else(|| invalid_state(span, "Error.text returned void"))?;
             *message = Some(text.string(span)?.to_owned());
         }
-    described.secondary = std::cell::RefCell::new(failure
+    let described = Rc::new(described);
+    done.insert(Rc::as_ptr(failure), described.clone());
+    let secondaries = failure
         .secondaries()
         .iter()
-        .map(|f| describe_failure(engine, f, span))
-        .collect::<Result<_, _>>()?);
-    // Causes are retained as records; diagnostics currently print primary and cleanup failures.
-    Ok(Rc::new(described))
+        .map(|f| describe_graph(engine, f, span, done, budget))
+        .collect::<Result<_, _>>()?;
+    *described.secondary.borrow_mut() = secondaries;
+    if let Some(cause) = failure.cause() {
+        *described.cause.borrow_mut() = Some(describe_graph(engine, &cause, span, done, budget)?);
+    }
+    Ok(described)
 }
 
 /// Номер активного случая значения варианта `value`: позиция объекта его
