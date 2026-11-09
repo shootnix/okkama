@@ -1,0 +1,9 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+async main() is int {
+    Stdout().writeln("unreachable");
+    let later = async () is int { 1; };
+    await later();
+}

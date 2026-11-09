@@ -165,3 +165,29 @@ fn damaged_input_always_terminates() {
         assert!(recovered.diagnostics.len() <= MAX_RECOVERED_ERRORS + 8);
     }
 }
+
+/// An async anonymous action is one error at `async`; the statement is
+/// skipped past its braces and the next declarations parse (#323).
+#[test]
+fn an_async_anonymous_action_costs_one_error() {
+    let text = format!(
+        "{MODULE}
+object Clean {{
+    Clean();
+}}
+
+async main() is int {{
+    let later = async () is int {{ 1; }};
+    let fine = 2;
+    0;
+}}
+
+object Later {{
+    Later();
+}}
+"
+    );
+    let (kept, errors) = recover(&text);
+    assert_eq!(errors, ["8: Anonymous actions cannot be async; declare a named async action instead."]);
+    assert_eq!(kept, ["Clean", "Later"]);
+}

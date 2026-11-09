@@ -2083,7 +2083,7 @@ collection or value-returning tail is invalid. Typed throws, panic, cancellation
 A call creates a lazy reusable completion handle: `let pending = command.commit();`
 may be followed by `await pending;` more than once. Its inferred internal
 completion contract has no source-level type spelling. `spawn` starts it eagerly.
-Async anonymous action expressions remain unsupported.
+Anonymous actions cannot be async; an action that awaits is a named `async` action.
 
 Explicit receiver result:
 

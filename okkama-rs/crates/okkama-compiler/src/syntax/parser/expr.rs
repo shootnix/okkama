@@ -750,6 +750,11 @@ impl Parser<'_> {
                 self.if_expression(start)
             }
             TokenKind::Match => self.match_expression(start),
+            // `async` before an anonymous action signature: the action would
+            // read as a call of a name `async` and fail later, at `is` (#323).
+            TokenKind::Async if self.starts_anonymous_action(self.pos + 1) => Err(self.error_here(
+                "Anonymous actions cannot be async; declare a named async action instead.",
+            )),
             _ if (self.check_type_name() && self.check_next(TokenKind::Less))
                 || (self.check_name()
                     && self.check_next(TokenKind::Dot)
