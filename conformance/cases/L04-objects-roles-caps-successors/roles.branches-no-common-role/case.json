@@ -1,0 +1,42 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.roles.branches-no-common-role",
+  "title": "Branches of different implementers infer no common role",
+  "purpose": "Without a declared type, if branches giving Rect and Square do not unify to a role they share.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "ROLE.CONFORMANCE",
+      "aspects": [
+        "invalid"
+      ]
+    }
+  ],
+  "mode": "check",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "reject",
+    "rejection": {
+      "stages": [
+        "check"
+      ],
+      "categories": [
+        "semantic"
+      ]
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#299",
+    "expected_basis": "Owner decision on #299: equality keeps exact static operand types; unconstrained branches do not infer a common role."
+  },
+  "status": "mandatory"
+}

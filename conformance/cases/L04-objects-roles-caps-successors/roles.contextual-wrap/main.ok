@@ -1,0 +1,57 @@
+module app v1.0.0;
+
+import "io/stdout" take Stdout;
+
+role Shape {
+    area() is int;
+}
+
+object Square does Shape {
+    has side is int;
+    Square(:side);
+    area() is int { side * side; }
+}
+
+object Rect does Shape {
+    has w is int;
+    has h is int;
+    Rect(:w, :h);
+    area() is int { w * h; }
+}
+
+object Shop {
+    Shop();
+    pick(wide is bool) is Shape {
+        if wide { Rect(w: 2, h: 3); } else { Square(side: 2); }
+    }
+}
+
+main() is int {
+    let out = Stdout();
+    let shapes is @Shape = [Square(side: 2), Rect(w: 1, h: 2)];
+    // A builtin parameter of a role type wraps an implementer, as an action parameter does.
+    out.writeln(shapes.contains(Square(side: 2)).string() + " " + shapes.contains(Square(side: 3)).string()
+        + " " + shapes.contains(Rect(w: 1, h: 2)).string());
+    out.writeln((shapes.index_of(Rect(w: 1, h: 2)) else -1).string() + " "
+        + (shapes.index_of(Rect(w: 2, h: 1)) else -1).string());
+    // The fallback of a Maybe<Shape> or a find() has the expected type Shape.
+    let empty is Maybe<Shape> = Maybe<Shape>.none;
+    let full is Maybe<Shape> = Maybe.some(Square(side: 3));
+    let a = empty else Square(side: 4);
+    let b = full else Square(side: 4);
+    let c = shapes.find() -> s { s.area() > 4; } else Rect(w: 5, h: 1);
+    let d = shapes.find() -> s { s.area() == 2; } else Rect(w: 5, h: 1);
+    out.writeln(a.area().string() + " " + b.area().string() + " " + c.area().string() + " " + d.area().string());
+    // Branches under a declared Shape, and an action result.
+    let wide = 1 > 0;
+    let e is Shape = if wide { Rect(w: 2, h: 5); } else { Square(side: 1); };
+    let f is Shape = match 2 { case 1 { Square(side: 1); } else { Rect(w: 3, h: 3); } };
+    let g is Shape = wide ?? Square(side: 6) !! Rect(w: 1, h: 1);
+    let h = Shop().pick(false);
+    out.writeln(e.area().string() + " " + f.area().string() + " " + g.area().string() + " " + h.area().string());
+    // Comparing through the role: both operands are Shape.
+    let s is Shape = Square(side: 2);
+    let t is Shape = Square(side: 2);
+    out.writeln((s == t).string() + " " + (s == shapes[1]).string());
+    0;
+}

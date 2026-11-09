@@ -1,0 +1,18 @@
+module app v1.0.0;
+
+role Shape {
+    area() is int;
+}
+
+object Square does Shape {
+    has side is int;
+    Square(:side);
+    area() is int { side * side; }
+}
+
+main() is int {
+    let s is Shape = Square(side: 2);
+    // `==` keeps the exact static types: the implementer is not wrapped.
+    let same = s == Square(side: 2);
+    0;
+}

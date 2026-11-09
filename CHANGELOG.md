@@ -72,6 +72,15 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Roles: `contains` and `index_of` on a `@Role` take an implementer, wrapped
+  with `role.wrap` as an action parameter takes it (#299):
+  `shapes.contains(Square(side: 2))` was rejected with "Cannot pass Square to
+  builtin action". As decided, a role wraps an implementer only where it is
+  already the expected type — typed bindings, fields, parameters, results,
+  `Maybe<Role>` and `find()` fallbacks, branches with a declared role type —
+  and `role == implementer` and branches with no declared type stay rejected.
+  Conformance: `L04.roles.contextual-wrap`, `roles.compare-implementer-rejected`,
+  `roles.branches-no-common-role`; Book 22.1 and Bible 14.3 (EN/RU).
 - Inference: a generic enum case no longer passes its uninferred `T` as the
   expected type of a payload (#304), so `Maybe.some(loop { last 42; })`,
   `Maybe.some(Maybe.some(42) else 0)`, `Maybe.some(xs.reduce(0) -> …)` and

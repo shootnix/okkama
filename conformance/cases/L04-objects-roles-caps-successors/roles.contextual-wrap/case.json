@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L04.roles.contextual-wrap",
+  "title": "An implementer becomes a role reference where the role is already the expected type",
+  "purpose": "Builtin role parameters (contains, index_of), Maybe<Role> and find() fallbacks, branches under a declared role and action results wrap implementers; comparisons go through role-typed operands.",
+  "level": "L04",
+  "contracts": [
+    {
+      "contract": "ROLE.CONFORMANCE",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "true false true\n1 -1\n16 9 5 2\n10 9 36 4\ntrue false\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#12.1"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#299 (found by the t/ suite, #245)",
+    "expected_basis": "Owner decision on #299: implicit role.wrap only where the target role is established by the surrounding contract — builtin parameters like action parameters, typed fallbacks, declared results and branches."
+  },
+  "status": "mandatory",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  }
+}
