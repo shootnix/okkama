@@ -177,6 +177,8 @@ pub(super) struct Method {
     pub exceptions: Vec<ExceptionEntry>,
     /// Готовое тело атрибута StackMapTable (`number_of_entries` и кадры) или пусто.
     pub stack_map: Option<Vec<u8>>,
+    /// LineNumberTable: (смещение, «строка»); пусто — атрибута нет.
+    pub lines: Vec<(u16, u16)>,
 }
 
 pub(super) struct ClassNames {
@@ -187,6 +189,8 @@ pub(super) struct ClassNames {
     pub interfaces: Vec<u16>,
     pub code: u16,
     pub stack_map_table: u16,
+    /// Имя атрибута LineNumberTable; 0 — у методов класса его нет.
+    pub line_number_table: u16,
 }
 
 pub(super) const ACC_ABSTRACT: u16 = 0x0400;
@@ -257,14 +261,26 @@ pub(super) fn write_class(
             u16_to(&mut code, entry.handler);
             u16_to(&mut code, entry.catch_type);
         }
-        match &method.stack_map {
-            Some(table) => {
-                u16_to(&mut code, 1);
-                u16_to(&mut code, names.stack_map_table);
-                code.extend_from_slice(&(table.len() as u32).to_be_bytes());
-                code.extend_from_slice(table);
+        let lines = !method.lines.is_empty();
+        if lines && names.line_number_table == 0 {
+            return Err(error("LineNumberTable without its attribute name"));
+        }
+        u16_to(&mut code, u16::from(method.stack_map.is_some()) + u16::from(lines));
+        if let Some(table) = &method.stack_map {
+            u16_to(&mut code, names.stack_map_table);
+            code.extend_from_slice(&(table.len() as u32).to_be_bytes());
+            code.extend_from_slice(table);
+        }
+        if lines {
+            let count = u16::try_from(method.lines.len())
+                .map_err(|_| error("LineNumberTable exceeds the JVM u16 limit"))?;
+            u16_to(&mut code, names.line_number_table);
+            code.extend_from_slice(&(2 + 4 * u32::from(count)).to_be_bytes());
+            u16_to(&mut code, count);
+            for &(at, line) in &method.lines {
+                u16_to(&mut code, at);
+                u16_to(&mut code, line);
             }
-            None => u16_to(&mut code, 0),
         }
         bytes.extend_from_slice(&(code.len() as u32).to_be_bytes());
         bytes.extend_from_slice(&code);

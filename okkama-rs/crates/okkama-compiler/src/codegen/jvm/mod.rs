@@ -258,6 +258,7 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
         interfaces: Vec::new(),
         code: class.pool.utf8("Code")?,
         stack_map_table: class.pool.utf8("StackMapTable")?,
+        line_number_table: class.pool.utf8("LineNumberTable")?,
     };
     let mut methods = Vec::new();
     for (index, function) in module.functions.iter().enumerate() {
@@ -333,7 +334,64 @@ pub fn generate(module: &ir::Module, class_name: &str, budgeted: bool) -> Result
     for (name, bytes) in runtime::RUNTIME_FILES {
         files.push((name.to_string(), bytes.to_vec()));
     }
+    files.push(("okkama-debug.tsv".to_string(), debug_table(module, class_name, &class.sites).into_bytes()));
     Ok(files)
+}
+
+/// Ресурс `okkama-debug.tsv` для отчёта об отказе (`okkama.rt.Report`, #270):
+/// на метод функции — строка `M` (класс, метод, имя кадра, функция-родитель,
+/// вынесенная ли это часть, исходник, файл ли программы), за ней строки `S`
+/// мест по номеру «строки» LineNumberTable: начало и конец (строка, колонка).
+fn debug_table(module: &ir::Module, class_name: &str, methods: &[(String, usize, Vec<crate::source::Span>)]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    for (method, index, sites) in methods {
+        let symbol = module.functions[*index].symbol.as_str();
+        // Часть, вынесенная `outline` (`f$part7`), — кадр своей функции.
+        let mut parent = symbol;
+        while let Some((head, number)) = parent.rsplit_once("$part")
+            && !number.is_empty()
+            && number.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            parent = head;
+        }
+        let part = parent != symbol;
+        let origin = if part {
+            module.functions.iter().position(|function| function.symbol == parent).map(ir::FuncId)
+        } else {
+            Some(ir::FuncId(*index))
+        };
+        let source = origin.and_then(|func| module.source_of(func));
+        let root = origin.is_some_and(|func| module.in_root(func));
+        let _ = writeln!(
+            out,
+            "M\t{class_name}\t{method}\t{}\t{parent}\t{}\t{}\t{}",
+            frame_name(parent),
+            u8::from(part),
+            source.map_or("", |source| source.name()),
+            u8::from(root)
+        );
+        if let Some(source) = source {
+            for span in sites {
+                let (start, end) = (source.location(span.start), source.location(span.end));
+                let _ = writeln!(out, "S\t{}\t{}\t{}\t{}", start.line, start.column, end.line, end.column);
+            }
+        }
+    }
+    out
+}
+
+/// Имя функции для стека, как у IR и ядра: без номера перегрузки или
+/// конструктора (`Bag.new#1` → `Bag.new`); номер анонимного действия остаётся.
+fn frame_name(symbol: &str) -> &str {
+    match symbol.rsplit_once('#') {
+        Some((name, number))
+            if !name.ends_with("lambda") && !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            name
+        }
+        _ => symbol,
+    }
 }
 
 fn layout(module: &ir::Module, class_name: &str, entry: Option<ir::FuncId>) -> Result<Layout> {

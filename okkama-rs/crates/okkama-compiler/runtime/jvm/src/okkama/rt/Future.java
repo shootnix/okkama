@@ -80,6 +80,7 @@ public final class Future {
 
     Object outcome() {
         if (state == FAILED) {
+            failure.awaitedBy(new Throwable().getStackTrace());
             throw failure;
         }
         return value;

@@ -72,6 +72,28 @@ and versions follow [Semantic Versioning](https://semver.org/). A release versio
 
 ### Fixed
 
+- Uncaught failures: every engine prints the report of the Sparrow core,
+  byte for byte (#270) — the failure, its secondary cleanup failures and its
+  causes (`Caused by:`), the place with its source line, and the Okkama
+  stack. The IR engine left out the causes; the JVM printed only the first
+  line. A shared renderer walks the failure graph (cycles print
+  `[failure #N already shown]`, at most 64 failures); a native failure is
+  `NativeFailure: message` with `code`, `domain` and `operation` on all
+  three (the IR engine and the JVM said `NativeError`, the core gave no
+  details), and the core no longer reports "program has no NativeFailure"
+  for a native failure in a program that never names the type. On the JVM,
+  `okkama.rt.Failure` keeps the JVM stack from where it is created; each
+  method's LineNumberTable numbers its source places and `okkama-debug.tsv`
+  (next to the classes, ~2% of a jar) maps them back to files, lines and
+  columns, so the stack shows Okkama frames only, outlined `$part` methods
+  merged into their function, and `await` adds the awaiting task's frames.
+  The success path is unchanged; a throw on the JVM now costs about as much
+  as on the core (a loop of 500 000 throws twelve calls deep: 0.27 → 0.48 s;
+  the core takes 0.47 s). The JVM keeps at most 1 024 frames and says so
+  when older ones are missing; `OKKAMA_TRACE=off` leaves the place and the
+  stack out on every engine. Tests compare the full report of eight
+  programs across the engines (`tests/traces`).
+
 - Roles: `contains` and `index_of` on a `@Role` take an implementer, wrapped
   with `role.wrap` as an action parameter takes it (#299):
   `shapes.contains(Square(side: 2))` was rejected with "Cannot pass Square to

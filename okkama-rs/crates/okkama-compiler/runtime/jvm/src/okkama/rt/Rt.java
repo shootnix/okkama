@@ -39,7 +39,7 @@ public final class Rt {
     public static String describe(Failure failure) {
         if (failure.error instanceof NativeFailure) {
             NativeFailure native_ = (NativeFailure) failure.error;
-            return "NativeError: " + native_.message + "\ncode: " + native_.code
+            return "NativeFailure: " + native_.message + "\ncode: " + native_.code
                 + "\ndomain: " + native_.domain + "\noperation: " + native_.operation;
         }
         if (failure.kind == Failure.THROWN) {
@@ -236,15 +236,15 @@ public final class Rt {
         return Natives.runtime_utf__utf8_encode(text);
     }
 
-    /** Неперехваченный отказ: диагностика в stderr и код 1. */
+    /**
+     * Неперехваченный отказ: диагностика в stderr и код 1 — причины, вторичные
+     * отказы, место и стек, как у ядра Sparrow (#270).
+     */
     public static void report(Failure failure) {
         System.out.flush();
         recordFailure(failure);
-        System.err.println(describe(failure));
-        for (Failure secondary : failure.secondary) {
-            System.err.println("Secondary cleanup failure:");
-            System.err.println("  " + describe(secondary));
-        }
+        System.err.print(Report.text(failure));
+        System.err.flush();
         System.exit(1);
     }
 

@@ -726,6 +726,7 @@ impl Runtime {
     }
 
     fn report(&self, root: Word, messages: &HashMap<Word, String>) -> String {
+        const CHAIN_ENTRIES: usize = 64;
         use std::fmt::Write;
         let mut output = String::new();
         let mut pending = vec![(root, "")];
@@ -739,6 +740,11 @@ impl Runtime {
                 let _ = write!(output, "[failure #{index} already shown]");
                 continue;
             }
+            // The same bound as the other engines' reports (#270).
+            if next_index == CHAIN_ENTRIES {
+                output.push_str("... further failures not shown");
+                break;
+            }
             shown.insert(failure, next_index);
             next_index += 1;
             let Some(record) = self.failure(failure) else {
@@ -748,7 +754,17 @@ impl Runtime {
             match &record.kind {
                 FailureKind::Cancelled => output.push_str("Cancelled: Operation was cancelled"),
                 FailureKind::Native(object) => {
-                    let _ = write!(output, "NativeFailure: {}", self.heap.text(self.heap.field(*object, 3)));
+                    // Host details as the IR engine and the JVM print them; a
+                    // nested entry keeps them indented under its label.
+                    let field = |index| self.heap.text(self.heap.field(*object, index));
+                    let text = format!(
+                        "NativeFailure: {}\ncode: {}\ndomain: {}\noperation: {}",
+                        field(3),
+                        field(1),
+                        field(0),
+                        field(2)
+                    );
+                    output.push_str(&if label.is_empty() { text } else { text.replace('\n', "\n  ") });
                 }
                 FailureKind::Program(message) => {
                     let _ = write!(output, "RuntimeError: {message}");

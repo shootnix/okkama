@@ -1,0 +1,11 @@
+module app v1.0.0;
+enum StoreError is Error = (closed);
+enum OrderError is Error = (failed(id is int));
+object Orders {
+    Orders();
+    save(id is int) is int { throw StoreError.closed; }
+    place(id is int) is int {
+        try { self.save(id); } catch e is StoreError { throw OrderError.failed(id); }
+    }
+}
+main() is int { Orders().place(7); }

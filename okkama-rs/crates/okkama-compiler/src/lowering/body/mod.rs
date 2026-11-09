@@ -1070,6 +1070,10 @@ fn lower_native(ctx: &mut Ctx<'_, '_>, symbol: String, native: usize) -> Result<
         values.push(ctx.ir_type(ty, info.decl.span)?);
     }
     let result = ctx.ir_result(&info.result, &[], info.decl.span)?;
+    // A native can fail with a NativeFailure even where the program never
+    // names one: the Sparrow core builds that object from its declaration
+    // (an uncaught failure printed "program has no NativeFailure", #270).
+    ctx.object_instance(reg.system.native_failure, Vec::new(), info.decl.span)?;
     Ok(ir::Function {
         symbol,
         params: (0..values.len()).map(ValueId).collect(),

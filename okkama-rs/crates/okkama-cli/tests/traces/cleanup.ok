@@ -1,0 +1,21 @@
+module app v1.0.0;
+enum JobError is Error = (broken);
+enum CloseError is Error = (stuck(name is string));
+enum StoreError is Error = (closed);
+object Handle {
+    has name is string;
+    Handle(:name);
+    close() is void { throw CloseError.stuck(name); }
+}
+object Job {
+    Job();
+    save() is int { throw StoreError.closed; }
+    run() is int {
+        let first = Handle(name: "a");
+        defer first.close();
+        let second = Handle(name: "b");
+        defer second.close();
+        try { self.save(); } catch e is StoreError { throw JobError.broken; }
+    }
+}
+main() is int { Job().run(); }
