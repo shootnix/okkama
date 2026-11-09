@@ -2335,10 +2335,12 @@ not retained. A reference to `self`, or to the implicit receiver of
 `fake.storage`, retains that receiver. Access permissions from the declaring
 action remain in force even when the receiver is not captured.
 
-A `let` initialized directly with an anonymous action (optionally parenthesized)
-can refer recursively to its own name when no outer binding of that name is
-visible. That name is supplied in each invocation, without retaining the
-original scope. Mutual recursion through later declarations is not supported.
+Anonymous actions use ordinary lexical scope. A local binding becomes visible
+only after its initializer has been checked, so an anonymous action assigned to
+a `let` cannot refer to itself through that binding: inside the initializer the
+name is undefined, or it is an outer binding of the same name if one is
+visible. Names declared later are not visible either. Anonymous actions capture
+values declared before them; use named object actions for recursion.
 
 The public type of an action value is its exact signature:
 
@@ -2395,6 +2397,8 @@ Current boundaries are intentionally narrow:
 - anonymous parameters require explicit types and cannot be variadic;
 - a trailing comma in an anonymous parameter list is rejected;
 - no implicit currying, partial application, or async anonymous actions;
+- no recursion through the `let` that holds the action: the binding is not
+  visible in its own initializer (use a named action);
 - action values cannot cross `any` or the native ABI;
 - there is no automatic conversion to an arbitrary user role;
 - each call is a control boundary: `next`/`last` cannot escape into an outer

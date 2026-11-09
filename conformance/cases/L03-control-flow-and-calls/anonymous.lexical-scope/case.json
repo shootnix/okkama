@@ -1,0 +1,44 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L03.anonymous.lexical-scope",
+  "title": "anonymous actions see what was declared before them, and recursion goes through named actions",
+  "purpose": "Observe the lexical scope of anonymous actions.",
+  "level": "L03",
+  "contracts": [
+    {
+      "contract": "CALL.ANON-ACTIONS",
+      "aspects": [
+        "boundary"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "21\n8\n13\n6\n120\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#9.2",
+    "docs/okkama-spec-11072026.md#8.10.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "authored for #318",
+    "expected_basis": "spec 9.2 and 8.10.2: anonymous actions capture the bindings visible before them; a shadowing let resolves the name to the outer binding inside its own initializer; named object actions recurse (#318)."
+  },
+  "status": "mandatory"
+}
