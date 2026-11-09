@@ -1655,20 +1655,30 @@
     "boundary": {
      "cases": [
       "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-numbers-rejected",
       "L05.literal.heterogeneous-to-any"
      ],
      "mandatory_cases": [
       "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-numbers-rejected",
       "L05.literal.heterogeneous-to-any"
      ],
      "requirement": "required"
     },
     "interaction": {
      "cases": [
-      "L05.literal.empty-collections"
+      "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-untyped-local-rejected"
      ],
      "mandatory_cases": [
-      "L05.literal.empty-collections"
+      "L05.literal.empty-collections",
+      "L05.literal.heterogeneous-boundaries",
+      "L05.literal.heterogeneous-untyped-local-rejected"
      ],
      "requirement": "n/a: no fragile cross-feature interaction is identified in the audited sources"
     },
@@ -1676,20 +1686,32 @@
      "cases": [
       "L05.boundary.array-element",
       "L05.boundary.no-numeric-widening",
-      "L05.literal.heterogeneous-not-int"
+      "L05.literal.heterogeneous-map-rejected",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-not-int",
+      "L05.literal.heterogeneous-numbers-rejected",
+      "L05.literal.heterogeneous-rejected",
+      "L05.literal.heterogeneous-untyped-local-rejected"
      ],
      "mandatory_cases": [
       "L05.boundary.array-element",
       "L05.boundary.no-numeric-widening",
-      "L05.literal.heterogeneous-not-int"
+      "L05.literal.heterogeneous-map-rejected",
+      "L05.literal.heterogeneous-nested-rejected",
+      "L05.literal.heterogeneous-not-int",
+      "L05.literal.heterogeneous-numbers-rejected",
+      "L05.literal.heterogeneous-rejected",
+      "L05.literal.heterogeneous-untyped-local-rejected"
      ],
      "requirement": "required"
     },
     "normal": {
      "cases": [
+      "L05.literal.heterogeneous-boundaries",
       "L05.literal.homogeneous-inference"
      ],
      "mandatory_cases": [
+      "L05.literal.heterogeneous-boundaries",
       "L05.literal.homogeneous-inference"
      ],
      "requirement": "required"
@@ -1702,7 +1724,7 @@
     "docs/okkama-spec-11072026.md#6.6.2"
    ],
    "status": "mandatory",
-   "title": "Homogeneous literals infer exact element types; empty and heterogeneous literals stay untagged"
+   "title": "Homogeneous literals infer exact element types; empty literals stay untagged; heterogeneous literals need an explicit any boundary"
   },
   {
    "aspects": {
@@ -31079,5 +31101,5 @@
  },
  "results_from": [],
  "schema": "ocs-coverage/1",
- "suite_tree_sha256": "c2b5c8fcb2a1ccd2cb5270020ccc2f5c448e878913343cc98ca7bf8a449757f8"
+ "suite_tree_sha256": "37daabbd15753c84672a167f38628caf32197854574fe5d70e3716337a692099"
 }

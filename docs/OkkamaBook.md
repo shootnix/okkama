@@ -890,8 +890,12 @@ The rules:
 - Repeated `any` boundaries do not nest boxes.
 - `@any` and `%K:any` preserve the same opacity per element. Map *keys*
   cannot be `any`.
-- Untyped heterogeneous literals (`[1, "two"]`) keep concrete elements; they
-  do not infer `any` automatically. Only an explicit `any` boundary boxes.
+- A heterogeneous literal (`[1, "two"]`, `["id": 7, "name": "Ada"]`) needs
+  an explicit `any` boundary: a typed binding, a declared parameter or result,
+  a typed constant, or a nested position under one. Without it the literal is
+  a compile-time error that names the two element types; an untyped `let`
+  does not box it (`let a = [1, "two"];` is rejected, `let a is @any = [1,
+  "two"];` is accepted).
 - Role and fake signatures must spell `any` exactly; it is not variance.
 - Trusted native dispatch is the one place concrete payloads are visible: a
   native parameter declared exactly `any` (or `...any`) receives the unboxed
@@ -6060,10 +6064,14 @@ let names = ["first": "Ada", "last": "L"];   // exact %string:string
 The fixed rules follow the language's existing philosophy:
 
 - **Exactness, not widening.** Inference only recognizes one identical exact
-  element type. `[1, 2.0]` stays untagged — no `@number`, no union, no
-  automatic `@any`.
-- **Heterogeneous collections stay legal and untagged.** `[1, "two", 3.0]`
-  keeps concrete elements; `@any` remains an explicit boundary.
+  element type. `[1, 2.0]` has none — no `@number`, no union, no automatic
+  `@any` — so without a boundary it is an error.
+- **Heterogeneous collections need an explicit boundary.**
+  `let mixed is @any = [1, "two", 3.0];` boxes each element and
+  `let row is %string:any = ["id": 7, "name": "Ada"];` each value; without the
+  declared type the compiler reports "Array elements have incompatible types
+  int and string; declare an explicit @any boundary to allow heterogeneous
+  values". `any` is never inferred.
 - **Empty collections stay untagged without context.** `[]` and `[:]` still
   take their tag from the first explicit boundary; emptiness proves nothing.
 - Inference is recursive through nesting, and the exact identity becomes

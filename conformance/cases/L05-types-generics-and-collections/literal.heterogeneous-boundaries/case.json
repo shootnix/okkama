@@ -1,0 +1,45 @@
+{
+  "schema": "ocs-case/1",
+  "id": "L05.literal.heterogeneous-boundaries",
+  "title": "heterogeneous literals compile under every declared any boundary",
+  "purpose": "A typed binding, an @any parameter, an action result, nested @@any and %string:@any positions and %string:any map values each box a heterogeneous literal; homogeneous literals and an untagged [] beside [1] (#297) keep exact types.",
+  "level": "L05",
+  "contracts": [
+    {
+      "contract": "COLL.LITERAL-IDENTITY",
+      "aspects": [
+        "normal",
+        "boundary",
+        "interaction"
+      ]
+    }
+  ],
+  "mode": "run",
+  "sources": [
+    "main.ok"
+  ],
+  "entry": "main.ok",
+  "requires": {
+    "environment": [
+      "stdout"
+    ]
+  },
+  "expect": {
+    "outcome": "success",
+    "exit_status": 0,
+    "stdout": {
+      "text": "3 2 3 2 2\n2 3\n3 1\n"
+    }
+  },
+  "spec_refs": [
+    "docs/okkama-spec-11072026.md#6.6.2"
+  ],
+  "budget": {
+    "timeout_s": 30
+  },
+  "provenance": {
+    "origin": "#315",
+    "expected_basis": "Owner decision on #315: heterogeneous concrete elements without an expected any element type are a compile-time error; any is never inferred."
+  },
+  "status": "mandatory"
+}
